@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from generateur import generer_app_complete
 from gabarit import entites_du_plan
 import oria_provisioning
+import client_provisioning
 import packager
 
 AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
@@ -78,6 +79,8 @@ def _init_db():
             conn.execute("ALTER TABLE apps ADD COLUMN oria_world_id TEXT")
         if "oria_salons" not in cols:
             conn.execute("ALTER TABLE apps ADD COLUMN oria_salons TEXT")
+        if "client_onboarding" not in cols:
+            conn.execute("ALTER TABLE apps ADD COLUMN client_onboarding TEXT")
         conn.commit()
 
 
@@ -136,7 +139,9 @@ def _provisionner_messagerie(audit: dict) -> dict | None:
     }
 
 
-async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie: bool):
+async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie: bool,
+                                 email_client: str | None = None,
+                                 contact_client: str | None = None):
     try:
         hebergee = mode == "hebergee"
         api_base = DONNEES_URL_PUBLIQUE if hebergee else ""
@@ -152,12 +157,27 @@ async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie
         )
         if hebergee:
             await _semer_donnees(app_id, plan)
+
+        # Compte client auto (S23) : à la livraison, on onboarde le client (best-effort).
+        onboarding = None
+        if email_client:
+            import anyio
+            nom_ent = audit.get("nom_entreprise", "Entreprise")
+            onboarding = await anyio.to_thread.run_sync(
+                client_provisioning.creer_compte_client,
+                email_client, contact_client or "",
+                (oria_cfg or {}).get("world_id"), nom_ent,
+            )
+            print(f"[generateur] onboarding client {email_client} : {onboarding.get('message')}")
+
         with _connexion() as conn:
             conn.execute(
-                "UPDATE apps SET plan=?, html=?, statut='termine', oria_world_id=?, oria_salons=? WHERE id=?",
+                "UPDATE apps SET plan=?, html=?, statut='termine', oria_world_id=?, "
+                "oria_salons=?, client_onboarding=? WHERE id=?",
                 (json.dumps(plan, ensure_ascii=False), html,
                  (oria_cfg or {}).get("world_id"),
                  json.dumps((oria_cfg or {}).get("salons", []), ensure_ascii=False) if oria_cfg else None,
+                 json.dumps(onboarding, ensure_ascii=False) if onboarding else None,
                  app_id),
             )
             conn.commit()
@@ -180,6 +200,11 @@ class DemandeGeneration(BaseModel):
     # Messagerie interne Oria (espace + salons par entreprise). N'a de sens qu'en mode
     # hébergé ; ignorée en autonome.
     messagerie: bool = True
+    # Compte client auto (S23) : si fourni, on crée à la livraison un compte d'accès
+    # Keycloak à cet email + on lui envoie un lien « définis ton mot de passe » et on le
+    # rattache à son espace Oria. Best-effort (n'interrompt pas la génération).
+    email_client: str | None = None
+    contact_client: str | None = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -209,9 +234,12 @@ async def generer(demande: DemandeGeneration, background_tasks: BackgroundTasks)
         )
         conn.commit()
 
-    background_tasks.add_task(_generer_en_background, app_id, audit, mode, demande.messagerie)
+    background_tasks.add_task(_generer_en_background, app_id, audit, mode,
+                              demande.messagerie, demande.email_client,
+                              demande.contact_client)
     return {"id": app_id, "statut": "en_cours", "nom_entreprise": nom, "mode": mode,
-            "messagerie": bool(mode == "hebergee" and demande.messagerie)}
+            "messagerie": bool(mode == "hebergee" and demande.messagerie),
+            "compte_client": bool(demande.email_client)}
 
 
 @app.get("/apps")
@@ -228,7 +256,7 @@ def lire_app(app_id: str):
     with _connexion() as conn:
         row = conn.execute(
             "SELECT id, date_creation, audit_id, nom_entreprise, plan, statut, erreur, mode, "
-            "oria_world_id, oria_salons FROM apps WHERE id=?",
+            "oria_world_id, oria_salons, client_onboarding FROM apps WHERE id=?",
             (app_id,),
         ).fetchone()
     if not row:
@@ -242,6 +270,11 @@ def lire_app(app_id: str):
     if d.get("oria_salons"):
         try:
             d["oria_salons"] = json.loads(d["oria_salons"])
+        except Exception:
+            pass
+    if d.get("client_onboarding"):
+        try:
+            d["client_onboarding"] = json.loads(d["client_onboarding"])
         except Exception:
             pass
     return d

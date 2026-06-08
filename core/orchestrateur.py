@@ -81,19 +81,27 @@ def init_db():
                 package        TEXT,                       -- json: récap packaging
                 etapes         TEXT,                       -- json: journal d'étapes
                 erreur         TEXT,
-                dossier        TEXT                        -- chemin du dossier portable (si décrochée)
+                dossier        TEXT,                       -- chemin du dossier portable (si décrochée)
+                email_client   TEXT,                       -- email du client (compte auto, S23)
+                contact_client TEXT                        -- nom du contact client (S23)
             )
             """
         )
-        # Migration : ajoute la colonne aux bases déjà créées sans elle (S6).
+        # Migration : ajoute les colonnes aux bases déjà créées sans elles.
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(livraisons)").fetchall()}
-        if "dossier" not in cols:
+        if "dossier" not in cols:  # S6
             conn.execute("ALTER TABLE livraisons ADD COLUMN dossier TEXT")
+        if "email_client" not in cols:  # S23
+            conn.execute("ALTER TABLE livraisons ADD COLUMN email_client TEXT")
+        if "contact_client" not in cols:  # S23
+            conn.execute("ALTER TABLE livraisons ADD COLUMN contact_client TEXT")
         conn.commit()
 
 
 def creer_livraison(livraison_id: str, nom: str, mode: str,
-                    messagerie: bool, packager: bool):
+                    messagerie: bool, packager: bool,
+                    email_client: str | None = None,
+                    contact_client: str | None = None):
     journal = [{"etape": e, "statut": "en_attente"} for e in ETAPES]
     if not packager:
         journal = [e for e in journal if e["etape"] != "packaging"]
@@ -101,11 +109,12 @@ def creer_livraison(livraison_id: str, nom: str, mode: str,
         conn.execute(
             """INSERT INTO livraisons
                (id, date_creation, date_maj, nom_entreprise, statut, etape_courante,
-                mode, messagerie, packager, etapes)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                mode, messagerie, packager, etapes, email_client, contact_client)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (livraison_id, _maintenant(), _maintenant(), nom, "en_cours", None,
              mode, int(messagerie), int(packager),
-             json.dumps(journal, ensure_ascii=False)),
+             json.dumps(journal, ensure_ascii=False),
+             (email_client or None), (contact_client or None)),
         )
         conn.commit()
 
@@ -258,11 +267,13 @@ async def _etape_audit(client, audit_base, doc_ids, livraison_id) -> dict:
     return audit
 
 
-async def _etape_generation(client, gen_base, audit_id, mode, messagerie, livraison_id) -> str:
+async def _etape_generation(client, gen_base, audit_id, mode, messagerie, livraison_id,
+                            email_client=None, contact_client=None) -> str:
     _maj_etape(livraison_id, "generation", "en_cours")
     r = await client.post(
         f"{gen_base}/generer",
-        json={"audit_id": audit_id, "persistance": mode, "messagerie": messagerie},
+        json={"audit_id": audit_id, "persistance": mode, "messagerie": messagerie,
+              "email_client": email_client, "contact_client": contact_client},
     )
     if r.status_code >= 400:
         raise EchecEtape("generation", f"Générateur a refusé la demande : {r.text}")
@@ -285,7 +296,9 @@ async def _etape_packaging(client, gen_base, app_id, livraison_id) -> dict:
 
 
 async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
-                           mode: str, messagerie: bool, packager: bool):
+                           mode: str, messagerie: bool, packager: bool,
+                           email_client: str | None = None,
+                           contact_client: str | None = None):
     """Enchaîne ETL → Audit → Génération (→ Packaging). Met à jour la livraison
     à chaque étape ; capture toute erreur en l'attribuant à son étape."""
     try:
@@ -301,7 +314,8 @@ async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
             doc_ids = await _etape_ingestion(client, etl_base, fichiers, livraison_id)
             audit = await _etape_audit(client, audit_base, doc_ids, livraison_id)
             app_id = await _etape_generation(
-                client, gen_base, audit["id"], mode, messagerie, livraison_id
+                client, gen_base, audit["id"], mode, messagerie, livraison_id,
+                email_client, contact_client,
             )
             if packager:
                 await _etape_packaging(client, gen_base, app_id, livraison_id)
