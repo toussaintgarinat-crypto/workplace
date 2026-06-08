@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "加载中…",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "confirm": "确认",
+    "close": "关闭",
+    "error": "错误",
+    "back": "← 返回",
+    "add": "添加"
+  },
+  "login": {
+    "tagline": "您的数字办公室",
+    "login": "登录",
+    "register": "注册",
+    "email": "电子邮件",
+    "password": "密码",
+    "name": "您的名字或昵称",
+    "connect": "登录 →",
+    "createAccount": "创建账号 →",
+    "connectionError": "连接错误",
+    "wrongCode": "验证码错误",
+    "twoFaTitle": "🔐 已启用双重认证。请输入应用中的验证码。",
+    "sixDigitCode": "6位数验证码",
+    "verify": "验证 →"
+  },
+  "app": {
+    "loading": "加载中…"
+  },
+  "main": {
+    "selectRoom": "从左侧面板选择一个房间",
+    "createOrJoin": "创建或加入一个社区以开始",
+    "needWorld": "从侧边栏选择一个世界来管理其代理。",
+    "needWorldMap": "从侧边栏选择一个世界以查看其地图。",
+    "resizeHandle": "拖动以调整大小"
+  },
+  "channel": {
+    "selectWorld": "选择一个社区",
+    "inviteTitle": "邀请",
+    "manageSubscriptions": "管理订阅",
+    "worldDocs": "社区文档",
+    "membersAgents": "代理与成员",
+    "addService": "添加服务",
+    "addDistrict": "添加区域",
+    "tools": "工具",
+    "search": "搜索",
+    "calendar": "日历",
+    "network": "网络",
+    "zones": "区域",
+    "aiConfig": "AI配置",
+    "deleteBuilding": "删除「{{name}}」？",
+    "deleteRoom": "删除「{{name}}」？",
+    "deleteDistrict": "删除区域「{{name}}」？",
+    "addRoom": "添加房间",
+    "buildingDocs": "服务文档",
+    "subscribe": "需要订阅：{{plans}}",
+    "projects": "项目"
+  },
+  "room": {
+    "checkingAccess": "正在验证访问权限...",
+    "paidRoom": "此房间需要付费订阅。",
+    "paidFrom": "起价 {{price}} {{currency}}",
+    "paidMonthly": "/月",
+    "payAccess": "💳 付款并访问",
+    "connectingVoice": "正在连接语音...",
+    "startOf": "开始于",
+    "broadcastLocked": "只读频道 — 仅所有者可以在此发言",
+    "messagePlaceholder": "在 {{roomName}} 中发送消息",
+    "react": "反应",
+    "deleteMessage": "删除",
+    "uploadFile": "上传文件",
+    "encryptedE2EE": "端对端加密消息",
+    "coinsTitle": "成员代币",
+    "finished": "完成"
+  }
+}

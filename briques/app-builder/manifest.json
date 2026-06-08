@@ -1,0 +1,18 @@
+{
+  "nom": "app-builder",
+  "version": "2.8.0",
+  "description": "Générateur d'application — Studio de création d'apps sur-mesure",
+  "role": "generateur",
+  "couche": "frontend",
+  "statut": "actif",
+  "chemin_source": "briques/app-builder/strategic-app-builder-studio-v2.html",
+  "port": null,
+  "url_sante": null,
+  "depends_on": [],
+  "offre": [
+    "generation_app",
+    "audit_entreprise",
+    "dashboard"
+  ],
+  "besoin": []
+}

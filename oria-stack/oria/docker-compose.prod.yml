@@ -1,0 +1,66 @@
+version: '3.9'
+
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Variables requises dans .env :
+#   DOMAIN
+#   POSTGRES_PASSWORD               (DB principale Oria)
+#   ORIA_LIVEKIT_API_SECRET         (LiveKit voix/vidéo)
+#   ORIA_MATRIX_AS_TOKEN            (Application Service Dendrite)
+#   ORIA_MATRIX_HS_TOKEN            (Homeserver Dendrite)
+#
+# Note : les healthchecks (backend, dendrite, livekit) sont définis dans
+# docker-compose.yml de base et héritent automatiquement en prod.
+
+services:
+
+  redis:
+    ports: []    # interne uniquement
+
+  dendrite:
+    restart: unless-stopped
+
+  livekit:
+    restart: unless-stopped
+
+  backend:
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: "http://10.10.10.10:8080"
+      KEYCLOAK_REALM: "oria"
+      KEYCLOAK_CLIENT_ID: "oria-app"
+      REDIS_URL: "redis://redis:6379"
+      ALLOWED_ORIGINS: "https://oria.${DOMAIN}"
+      MATRIX_SERVER_NAME: "matrix.${DOMAIN}"
+    volumes:
+      - uploads_data:/app/uploads   # garde les uploads, enlève le hot-reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: "https://oria.${DOMAIN}"
+        VITE_WS_URL: "wss://oria.${DOMAIN}"
+        VITE_LIVEKIT_URL: "wss://livekit.${DOMAIN}"
+        VITE_MATRIX_URL: "https://matrix.${DOMAIN}"
+        VITE_KEYCLOAK_URL: "https://auth.${DOMAIN}"
+        VITE_KEYCLOAK_REALM: "oria"
+        VITE_KEYCLOAK_CLIENT_ID: "oria-app"
+    ports:
+      - "${ORIA_FRONTEND_HOST_PORT:-3000}:80"
+    volumes: []    # pas de hot-reload en prod
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  db:
+    ports: []    # interne uniquement
+
+volumes:
+  uploads_data:

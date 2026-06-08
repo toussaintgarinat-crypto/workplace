@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Oria — proposition de direction visuelle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   ORIA — DESIGN TOKENS (proposition)
+   Dark chaud "habité", accent or (Oria → or)
+   ============================================================ */
+:root{
+  /* — DEUX couleurs réglables indépendamment (chacune via nuancier) — */
+  --accent:#d49a36;    /* boutons, liserés, badges, liens */
+  --surface:#d49a36;   /* teinte de l'ambiance / des fonds */
+  --tint:16%;          /* intensité de l'ambiance : dose de --surface injectée dans les fonds */
+
+  /* — Encre : surfaces dérivées de --surface → l'espace entier prend la teinte — */
+  --ink-900:color-mix(in oklab, #100f12, var(--surface) var(--tint));  /* fond profond */
+  --ink-850:color-mix(in oklab, #161519, var(--surface) var(--tint));  /* rail des mondes */
+  --ink-800:color-mix(in oklab, #1c1b20, var(--surface) var(--tint));  /* colonne salons */
+  --ink-750:color-mix(in oklab, #232228, var(--surface) var(--tint));  /* surfaces basses */
+  --ink-700:color-mix(in oklab, #2c2a32, var(--surface) calc(var(--tint) + 4%)); /* hover / cartes */
+  --ink-650:color-mix(in oklab, #38353f, var(--surface) calc(var(--tint) + 8%)); /* bordures actives */
+  --line:color-mix(in oklab, #2e2c35, var(--surface) calc(var(--tint) + 4%));    /* séparateurs */
+
+  /* — Texte : couleur de base réglable, hiérarchie en fondu vers le fond — */
+  --text-base:#f1ece3;   /* ← réglable via nuancier */
+  --text-hi:var(--text-base);                                            /* titres */
+  --text:color-mix(in oklab, var(--text-base), var(--ink-900) 18%);      /* courant */
+  --text-mut:color-mix(in oklab, var(--text-base), var(--ink-900) 45%);  /* secondaire */
+  --text-dim:color-mix(in oklab, var(--text-base), var(--ink-900) 62%);  /* tertiaire / placeholders */
+
+  /* — Nuances d'accent (boutons, liserés, badges) — */
+  --or-300:color-mix(in oklab, var(--accent), #fff 36%);
+  --or-400:color-mix(in oklab, var(--accent), #fff 16%);
+  --or-500:var(--accent);
+  --or-600:color-mix(in oklab, var(--accent), #000 24%);
+  --or-glow:color-mix(in srgb, var(--accent), transparent 78%);
+
+  /* — Secondaire botanique (le Jardin) — */
+  --sauge:#7e9b73;
+  --sauge-dim:rgba(126,155,115,.16);
+
+  /* — États — */
+  --vert:#62a36b;      /* en ligne */
+  --rouge:#c5654f;
+  --bleu-info:#6c8ab0;
+
+  /* — Rayons / élévation / motion — */
+  --r-sm:7px; --r-md:11px; --r-lg:16px; --r-xl:22px; --r-full:999px;
+  --sh-1:0 1px 2px rgba(0,0,0,.35);
+  --sh-2:0 6px 20px rgba(0,0,0,.40);
+  --sh-pop:0 18px 50px rgba(0,0,0,.55);
+  --glow-or:0 0 0 1px color-mix(in srgb, var(--accent), transparent 65%), 0 8px 28px var(--or-glow);
+  --ease:cubic-bezier(.22,.61,.36,1);
+
+  /* — Échelle typographique — */
+  --f-display:'Fraunces',Georgia,serif;
+  --f-ui:'Hanken Grotesk',system-ui,sans-serif;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--f-ui);
+  background:var(--ink-900);
+  color:var(--text);
+  font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+/* Grain + halo chaud : l'atmosphère */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;
+  opacity:.04;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+::-webkit-scrollbar{width:9px}
+::-webkit-scrollbar-thumb{background:var(--ink-650);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--ink-700)}
+
+.layout{
+  display:grid;
+  grid-template-columns:80px 268px 1fr;
+  height:100vh;position:relative;
+}
+/* halo de lumière chaude derrière la zone principale */
+.layout::after{
+  content:"";position:absolute;top:-12%;right:6%;width:46vw;height:60vh;
+  background:radial-gradient(closest-side,var(--or-glow),transparent 72%);
+  pointer-events:none;z-index:0;filter:blur(6px);
+}
+
+/* ─────────────── RAIL DES MONDES ─────────────── */
+.rail{
+  background:var(--ink-850);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;
+  padding:14px 0 12px;gap:10px;z-index:2;
+}
+.brand{
+  font-family:var(--f-display);font-weight:600;font-size:26px;
+  color:var(--or-400);line-height:1;letter-spacing:-.5px;
+  width:48px;height:48px;display:grid;place-items:center;
+  border-radius:var(--r-md);margin-bottom:4px;
+  text-shadow:0 0 22px var(--or-glow);
+}
+.rail-sep{width:30px;height:1px;background:var(--line);margin:2px 0}
+.world{
+  --c:var(--or-500);
+  width:50px;height:50px;border-radius:18px;
+  display:grid;place-items:center;font-size:22px;
+  background:var(--ink-750);color:var(--text);
+  position:relative;cursor:pointer;flex-shrink:0;
+  transition:border-radius .25s var(--ease),transform .2s var(--ease),background .2s;
+  border:1px solid transparent;
+}
+.world:hover{border-radius:14px;transform:translateY(-1px);background:var(--ink-700)}
+.world.actif{
+  border-radius:14px;background:var(--ink-700);
+  box-shadow:var(--glow-or);border-color:rgba(212,154,54,.4);
+}
+.world.actif::before{
+  content:"";position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+  width:5px;height:30px;background:var(--or-500);border-radius:0 4px 4px 0;
+}
+.world .pip{
+  position:absolute;bottom:-2px;right:-2px;width:15px;height:15px;border-radius:99px;
+  background:var(--or-500);color:#1a1206;font-size:9px;font-weight:700;
+  display:grid;place-items:center;border:2px solid var(--ink-850);
+}
+.rail-nav{margin-top:auto;display:flex;flex-direction:column;gap:8px;align-items:center}
+.nav-ico{
+  width:44px;height:44px;border-radius:var(--r-md);display:grid;place-items:center;
+  font-size:18px;color:var(--text-mut);cursor:pointer;transition:.18s var(--ease);
+}
+.nav-ico:hover{background:var(--ink-700);color:var(--or-300)}
+.nav-ico.jardin:hover{color:var(--sauge)}
+
+/* ─────────────── COLONNE SALONS ─────────────── */
+.channels{
+  background:var(--ink-800);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;z-index:1;
+}
+.world-head{
+  padding:20px 18px 16px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(212,154,54,.06),transparent);
+}
+.world-head .eyebrow{
+  font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--or-500);font-weight:600;margin-bottom:6px;
+}
+.world-head h1{
+  font-family:var(--f-display);font-weight:600;font-size:23px;color:var(--text-hi);
+  line-height:1.1;letter-spacing:-.3px;display:flex;align-items:center;gap:9px;
+}
+.world-head p{font-size:12.5px;color:var(--text-mut);margin-top:7px}
+
+.ch-scroll{flex:1;overflow-y:auto;padding:14px 10px}
+.building{margin-bottom:18px}
+.building-label{
+  display:flex;align-items:center;gap:7px;
+  font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--text-dim);font-weight:600;padding:0 8px 8px;
+}
+.building-label .b-ico{font-size:13px;opacity:.8}
+.building-label::after{content:"";flex:1;height:1px;background:var(--line)}
+.room{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:var(--r-sm);
+  color:var(--text-mut);cursor:pointer;font-size:14px;
+  transition:.14s var(--ease);position:relative;
+}
+.room .glyph{font-size:13px;width:16px;text-align:center;opacity:.7}
+.room:hover{background:var(--ink-700);color:var(--text)}
+.room.actif{background:var(--ink-700);color:var(--text-hi)}
+.room.actif::before{
+  content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:3px;height:18px;background:var(--or-500);border-radius:99px;
+}
+.room.unread{color:var(--text-hi);font-weight:600}
+.room .count{
+  margin-left:auto;background:var(--or-500);color:#1a1206;
+  font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:99px;
+  display:grid;place-items:center;padding:0 5px;
+}
+.room .dot{margin-left:auto;width:7px;height:7px;border-radius:99px;background:var(--vert)}
+
+/* carte "moi" en bas */
+.me{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border-top:1px solid var(--line);background:var(--ink-850);
+}
+.me .av{
+  width:36px;height:36px;border-radius:var(--r-full);display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--or-500),var(--or-600));font-size:17px;
+  box-shadow:var(--sh-1);
+}
+.me .who b{display:block;color:var(--text-hi);font-size:13.5px;font-weight:600}
+.me .who span{font-size:11.5px;color:var(--vert)}
+.me .gear{margin-left:auto;color:var(--text-dim);font-size:16px;cursor:pointer}
+.me .gear:hover{color:var(--or-300)}
+
+/* ─────────────── ZONE PRINCIPALE ─────────────── */
+.main{display:flex;flex-direction:column;background:var(--ink-900);position:relative;z-index:1;min-width:0}
+.room-head{
+  display:flex;align-items:center;gap:12px;padding:16px 22px;
+  border-bottom:1px solid var(--line);
+  background:rgba(22,19,15,.7);backdrop-filter:blur(8px);
+}
+.room-head .glyph{font-size:18px;color:var(--or-400)}
+.room-head h2{font-family:var(--f-display);font-weight:600;font-size:18px;color:var(--text-hi)}
+.room-head .topic{font-size:12.5px;color:var(--text-mut);padding-left:12px;margin-left:4px;border-left:1px solid var(--line)}
+.room-head .actions{margin-left:auto;display:flex;gap:6px}
+.head-ico{width:36px;height:36px;border-radius:var(--r-sm);display:grid;place-items:center;color:var(--text-mut);cursor:pointer;transition:.15s}
+.head-ico:hover{background:var(--ink-750);color:var(--or-300)}
+
+.stream{flex:1;overflow-y:auto;padding:26px 22px 8px;display:flex;flex-direction:column;gap:22px}
+.day{display:flex;align-items:center;gap:14px;color:var(--text-dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:6px 0}
+.day::before,.day::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.msg{display:flex;gap:13px;animation:rise .5s var(--ease) both}
+.msg .av{
+  width:42px;height:42px;border-radius:14px;flex-shrink:0;display:grid;place-items:center;
+  font-size:19px;background:var(--ink-750);box-shadow:var(--sh-1);
+}
+.msg.gold .av{background:linear-gradient(135deg,var(--or-500),var(--or-600))}
+.msg.sauge .av{background:linear-gradient(135deg,#6f8c64,#566e4d)}
+.msg .body{min-width:0}
+.msg .meta{display:flex;align-items:baseline;gap:9px;margin-bottom:3px}
+.msg .name{font-weight:600;color:var(--text-hi);font-size:14.5px}
+.msg .agent-tag{
+  font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;
+  color:var(--or-300);background:var(--or-glow);padding:2px 7px;border-radius:99px;
+}
+.msg .time{font-size:11px;color:var(--text-dim)}
+.msg .text{color:var(--text);font-size:14px;line-height:1.62}
+.msg .text.assistant{
+  background:linear-gradient(180deg,rgba(212,154,54,.06),transparent);
+  border:1px solid var(--line);border-left:2px solid var(--or-500);
+  padding:12px 15px;border-radius:0 var(--r-md) var(--r-md) 0;margin-top:2px;
+}
+.chips{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+.chip{
+  font-size:12.5px;color:var(--text);background:var(--ink-750);
+  border:1px solid var(--line);border-radius:var(--r-full);padding:6px 13px;cursor:pointer;
+  transition:.15s var(--ease);
+}
+.chip:hover{border-color:var(--or-500);color:var(--or-300);background:var(--ink-700)}
+
+/* composer */
+.composer{padding:14px 22px 20px}
+.composer-inner{
+  display:flex;align-items:center;gap:12px;
+  background:var(--ink-750);border:1px solid var(--line);border-radius:var(--r-xl);
+  padding:13px 16px;transition:.2s var(--ease);
+}
+.composer-inner:focus-within{border-color:var(--or-600);box-shadow:0 0 0 3px var(--or-glow)}
+.composer .plus{font-size:21px;color:var(--text-mut);cursor:pointer}
+.composer input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:14.5px}
+.composer input::placeholder{color:var(--text-dim)}
+.composer .send{
+  width:38px;height:38px;border-radius:var(--r-md);border:none;
+  background:linear-gradient(135deg,var(--or-400),var(--or-600));color:#1a1206;
+  font-size:16px;display:grid;place-items:center;cursor:pointer;box-shadow:var(--sh-1);
+  transition:.18s var(--ease);
+}
+.composer .send:hover{transform:translateY(-1px) scale(1.04);box-shadow:var(--glow-or)}
+
+/* badge proposition flottant */
+/* ── Modale Réglages → Apparence (le bouton ⚙ ouvre ceci) ── */
+.overlay{
+  position:fixed;inset:0;z-index:200;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(10,8,5,.62);backdrop-filter:blur(5px);
+}
+.overlay.show{display:flex;animation:fade .2s var(--ease)}
+.modal{
+  width:min(560px,94vw);max-height:92vh;display:flex;flex-direction:column;
+  background:var(--ink-800);
+  border:1px solid var(--ink-650);border-radius:var(--r-xl);
+  box-shadow:var(--sh-pop);overflow:hidden;animation:pop .28s var(--ease);
+}
+.modal-head{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  padding:22px 24px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(212,154,54,.07),transparent);
+}
+.modal-head h3{font-family:var(--f-display);font-weight:600;font-size:22px;color:var(--text-hi);margin-top:4px}
+.modal-x{
+  width:34px;height:34px;border:none;background:var(--ink-750);color:var(--text-mut);
+  border-radius:var(--r-sm);font-size:14px;cursor:pointer;transition:.15s var(--ease);
+}
+.modal-x:hover{background:var(--ink-700);color:var(--text-hi)}
+.modal-body{overflow-y:auto;padding:4px 0}
+.setting-block{padding:18px 24px;border-bottom:1px solid var(--line)}
+.setting-label b{display:block;color:var(--text-hi);font-size:14.5px;font-weight:600;margin-bottom:3px}
+.setting-label span{font-size:12.5px;color:var(--text-mut);display:block}
+.setting-label .cur{
+  float:right;font-size:11.5px;color:var(--text-mut);background:var(--ink-750);
+  border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 8px;
+  display:inline-flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums;
+}
+.setting-label .cur i{width:13px;height:13px;border-radius:99px;display:inline-block}
+
+/* ── Nuancier : grille de nuances cliquables ── */
+.nuancier{
+  display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin:13px 0 11px;
+}
+.nu{
+  aspect-ratio:1;border-radius:6px;cursor:pointer;border:2px solid transparent;
+  transition:transform .12s var(--ease),border-color .12s;
+}
+.nu:hover{transform:scale(1.18);z-index:2}
+.nu.on{border-color:var(--text-hi);box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.free-row{display:flex;align-items:center;gap:13px;font-size:12.5px;color:var(--text-mut)}
+.free-row .hex{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--text);letter-spacing:.04em}
+.tint-row{display:flex;align-items:center;gap:14px;margin-top:14px}
+.tint-row input[type=range]{flex:1;accent-color:var(--or-500);height:4px}
+.tint-row .val{font-size:12px;color:var(--text);min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.preview-strip{
+  display:flex;align-items:center;gap:14px;margin:0 24px 8px;
+  padding:16px 18px;background:var(--ink-750);border:1px solid var(--line);border-radius:var(--r-md);
+}
+.ps-dot{width:13px;height:13px;border-radius:99px;background:var(--or-500);box-shadow:0 0 12px var(--or-glow)}
+.ps-chip{font-size:12px;color:var(--or-300);background:var(--or-glow);padding:5px 12px;border-radius:99px}
+.ps-btn{
+  border:none;border-radius:var(--r-sm);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;
+  background:linear-gradient(135deg,var(--or-400),var(--or-600));color:#1a1206;
+}
+.ps-link{color:var(--or-400);font-size:13px;text-decoration:underline;text-underline-offset:3px;margin-left:auto}
+.modal-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 24px 22px;
+}
+.modal-foot .hint{font-size:12px;color:var(--text-mut)}
+.modal-foot .hint b{color:var(--or-300)}
+.btn-primary{
+  border:none;border-radius:var(--r-md);padding:11px 22px;font-size:13.5px;font-weight:600;cursor:pointer;
+  background:linear-gradient(135deg,var(--or-400),var(--or-600));color:#1a1206;
+  box-shadow:var(--sh-1);transition:.18s var(--ease);
+}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:var(--glow-or)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+
+.sw-pick{position:relative;width:46px;height:46px;flex-shrink:0}
+.sw-pick input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border-radius:99px}
+.sw-pick .ring{
+  width:46px;height:46px;border-radius:99px;pointer-events:none;
+  background:
+    radial-gradient(closest-side, var(--ink-800) 0 33%, transparent 34%),
+    conic-gradient(from 0deg,#e6b65c,#c5654f,#cf5a3f,#d14e7e,#9b6ca8,#6f6cc0,#6c8ab0,#56a08f,#7e9b73,#b7b14e,#e6b65c);
+  border:2px solid var(--ink-750);box-shadow:0 0 0 1px var(--line), var(--sh-1);
+  transition:transform .15s var(--ease);
+}
+.sw-pick:hover .ring{transform:scale(1.06)}
+.sw-pick .ring::after{
+  content:"＋";position:absolute;inset:0;display:grid;place-items:center;
+  font-size:15px;color:var(--text);
+}
+
+/* ── Profils de réglages (export / import / sauvegarde) ── */
+.profile-block{padding:18px 24px;border-bottom:1px solid var(--line)}
+.profile-save{display:flex;gap:9px;align-items:center;margin:12px 0 10px}
+.pname{
+  flex:1;background:var(--ink-750);border:1px solid var(--line);border-radius:var(--r-sm);
+  color:var(--text);font-size:13px;padding:9px 12px;outline:none;
+}
+.pname:focus{border-color:var(--or-600)}
+.mini-btn{
+  border:1px solid var(--line);background:var(--ink-750);color:var(--text);
+  border-radius:var(--r-sm);padding:9px 14px;font-size:12.5px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;transition:.15s var(--ease);white-space:nowrap;
+}
+.mini-btn:hover{border-color:var(--or-600);color:var(--or-300)}
+.mini-btn.accent{background:linear-gradient(135deg,var(--or-400),var(--or-600));color:#1a1206;border:none}
+.profiles-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.profile-item{
+  display:flex;align-items:center;gap:10px;padding:8px 11px;
+  background:var(--ink-750);border:1px solid var(--line);border-radius:var(--r-sm);font-size:13px;
+}
+.profile-item .swatches-mini{display:flex;gap:3px}
+.profile-item .swatches-mini i{width:13px;height:13px;border-radius:99px;display:inline-block}
+.profile-item .pn{color:var(--text-hi);font-weight:600}
+.profile-item .acts{margin-left:auto;display:flex;gap:6px}
+.profile-item .acts button{
+  border:none;background:none;color:var(--text-mut);cursor:pointer;font-size:12px;
+  padding:4px 8px;border-radius:5px;
+}
+.profile-item .acts button:hover{background:var(--ink-700);color:var(--text-hi)}
+.profile-item .acts .apply{color:var(--or-300)}
+.io-row{display:flex;gap:9px;margin-top:11px}
+.empty-p{font-size:12px;color:var(--text-dim);padding:4px 2px}
+
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.msg:nth-child(2){animation-delay:.05s}
+.msg:nth-child(3){animation-delay:.12s}
+.msg:nth-child(5){animation-delay:.18s}
+.msg:nth-child(6){animation-delay:.26s}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ══ RAIL DES MONDES ══ -->
+  <nav class="rail">
+    <div class="brand">O</div>
+    <div class="rail-sep"></div>
+    <div class="world actif" title="Atelier Verre & Bois">🪵<span class="pip">3</span></div>
+    <div class="world" title="Coopérative">🌾</div>
+    <div class="world" title="Studio Lumen">💡</div>
+    <div class="world" title="Le Jardin">🌿</div>
+    <div class="nav-ico" style="margin-top:10px" title="Créer un monde">＋</div>
+    <div class="rail-nav">
+      <div class="nav-ico" title="Carte">🗺</div>
+      <div class="nav-ico" title="Découvrir">🧭</div>
+      <div class="nav-ico" title="Activité">🔔</div>
+      <div class="nav-ico jardin" title="Jardin">🌿</div>
+    </div>
+  </nav>
+
+  <!-- ══ COLONNE SALONS ══ -->
+  <aside class="channels">
+    <header class="world-head">
+      <div class="eyebrow">Monde · 4 membres</div>
+      <h1>🪵 Atelier Verre & Bois</h1>
+      <p>L'établi partagé de l'atelier — projets, voix, documents.</p>
+    </header>
+    <div class="ch-scroll">
+      <div class="building">
+        <div class="building-label"><span class="b-ico">🏠</span>Maison commune</div>
+        <div class="room actif"><span class="glyph">#</span>annonces</div>
+        <div class="room unread"><span class="glyph">#</span>établi<span class="count">5</span></div>
+        <div class="room"><span class="glyph">🔊</span>voix · atelier<span class="dot"></span></div>
+      </div>
+      <div class="building">
+        <div class="building-label"><span class="b-ico">🏗</span>Chantier Dupont</div>
+        <div class="room"><span class="glyph">#</span>brief-client</div>
+        <div class="room"><span class="glyph">#</span>plans-&amp;-cotes</div>
+        <div class="room"><span class="glyph">🔊</span>point-quotidien</div>
+      </div>
+      <div class="building">
+        <div class="building-label"><span class="b-ico">🤖</span>Assistants</div>
+        <div class="room"><span class="glyph">✦</span>Oria · concierge</div>
+        <div class="room"><span class="glyph">✦</span>Devis &amp; relances</div>
+      </div>
+    </div>
+    <div class="me">
+      <div class="av">🦊</div>
+      <div class="who"><b>Toi</b><span>● en ligne</span></div>
+      <div class="gear" id="openSettings" title="Réglages">⚙</div>
+    </div>
+  </aside>
+
+  <!-- ══ ZONE PRINCIPALE ══ -->
+  <main class="main">
+    <header class="room-head">
+      <span class="glyph">#</span>
+      <h2>établi</h2>
+      <span class="topic">Là où l'atelier pense à voix haute</span>
+      <div class="actions">
+        <div class="head-ico" title="Documents">📄</div>
+        <div class="head-ico" title="Membres">👥</div>
+        <div class="head-ico" title="Rechercher">🔍</div>
+      </div>
+    </header>
+
+    <div class="stream">
+      <div class="day">Aujourd'hui</div>
+
+      <div class="msg">
+        <div class="av">🦝</div>
+        <div class="body">
+          <div class="meta"><span class="name">Camille</span><span class="time">09:14</span></div>
+          <div class="text">On valide le devis Dupont avant midi ? Le client attend pour lancer la commande de chêne.</div>
+        </div>
+      </div>
+
+      <div class="msg gold">
+        <div class="av">✦</div>
+        <div class="body">
+          <div class="meta"><span class="name">Oria</span><span class="agent-tag">Assistant</span><span class="time">09:14</span></div>
+          <div class="text assistant">
+            Le devis <b>#D-204 (Dupont)</b> est prêt — 4 820 € HT, marge 31 %. Deux postes ont changé depuis hier : <b>chêne massif</b> (+8 %) et <b>pose</b> (−1 j). Je peux l'envoyer signé dès validation.
+          </div>
+          <div class="chips">
+            <span class="chip">📄 Ouvrir le devis</span>
+            <span class="chip">✓ Valider &amp; envoyer</span>
+            <span class="chip">↻ Recalculer la marge</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="av">🦊</div>
+        <div class="body">
+          <div class="meta"><span class="name">Toi</span><span class="time">09:16</span></div>
+          <div class="text">Valide et envoie. Et préviens-moi quand c'est signé.</div>
+        </div>
+      </div>
+
+      <div class="msg sauge">
+        <div class="av">✦</div>
+        <div class="body">
+          <div class="meta"><span class="name">Devis &amp; relances</span><span class="agent-tag">Assistant</span><span class="time">09:16</span></div>
+          <div class="text assistant">C'est parti. Devis envoyé à <b>contact@menuiserie-dupont.fr</b>, relance automatique programmée à J+3 si pas de signature. Je poste ici dès retour. ✅</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <span class="plus">＋</span>
+        <input placeholder="Écrire dans #établi — ou demander à Oria…" />
+        <button class="send">↑</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ══ MODALE RÉGLAGES (ouverte par l'engrenage ⚙) ══ -->
+<div class="overlay" id="settings">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Réglages</div>
+        <h3>Apparence</h3>
+      </div>
+      <button class="modal-x" id="closeSettings" title="Fermer">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- ACCENT -->
+      <div class="setting-block">
+        <div class="setting-label">
+          <span class="cur"><i id="cur-accent"></i><span id="hex-accent">#d49a36</span></span>
+          <b>Accent</b>
+          <span>Boutons, liserés, badges, liens. Choisis une nuance ci-dessous.</span>
+        </div>
+        <div class="nuancier" data-target="--accent"></div>
+        <div class="free-row">
+          <label class="sw-pick" title="Couleur libre"><span class="ring"></span><input type="color" data-target="--accent" value="#d49a36" /></label>
+          Couleur sur-mesure
+        </div>
+      </div>
+
+      <!-- AMBIANCE / FOND -->
+      <div class="setting-block">
+        <div class="setting-label">
+          <span class="cur"><i id="cur-surface"></i><span id="hex-surface">#d49a36</span></span>
+          <b>Ambiance (fonds)</b>
+          <span>La teinte des fonds : rail, colonnes, cartes. Indépendante de l'accent.</span>
+        </div>
+        <div class="nuancier" data-target="--surface"></div>
+        <div class="free-row">
+          <label class="sw-pick" title="Couleur libre"><span class="ring"></span><input type="color" data-target="--surface" value="#d49a36" /></label>
+          Couleur sur-mesure
+        </div>
+        <div class="tint-row">
+          <span style="font-size:12.5px;color:var(--text-mut)">Intensité</span>
+          <input type="range" id="tint" min="0" max="34" value="16" />
+          <span class="val" id="tintval">16%</span>
+        </div>
+      </div>
+
+      <!-- TEXTE -->
+      <div class="setting-block">
+        <div class="setting-label">
+          <span class="cur"><i id="cur-text-base"></i><span id="hex-text-base">#F1ECE3</span></span>
+          <b>Texte</b>
+          <span>La teinte du texte. Nuancier fin (clair → soutenu, neutre ou légèrement coloré).</span>
+        </div>
+        <div class="nuancier" data-target="--text-base" data-palette="text"></div>
+        <div class="free-row">
+          <label class="sw-pick" title="Couleur libre"><span class="ring"></span><input type="color" data-target="--text-base" value="#f1ece3" /></label>
+          Couleur sur-mesure
+        </div>
+      </div>
+
+      <!-- PROFILS -->
+      <div class="profile-block">
+        <div class="setting-label">
+          <b>Profil de réglages</b>
+          <span>Sauvegarde, exporte ou importe une combinaison complète de couleurs.</span>
+        </div>
+        <div class="profile-save">
+          <input class="pname" id="pname" placeholder="Nom du profil (ex. Atelier — chaleur)" />
+          <button class="mini-btn accent" id="saveProfile">💾 Sauvegarder</button>
+        </div>
+        <div class="profiles-list" id="profilesList"></div>
+        <div class="io-row">
+          <button class="mini-btn" id="exportProfile">⤓ Exporter (.json)</button>
+          <button class="mini-btn" id="importProfile">⤒ Importer</button>
+          <input type="file" id="importFile" accept="application/json" style="display:none" />
+        </div>
+      </div>
+
+      <!-- APERÇU -->
+      <div class="setting-block" style="border-bottom:none">
+        <div class="preview-strip">
+          <span class="ps-dot"></span>
+          <span class="ps-chip">Aperçu</span>
+          <button class="ps-btn">Bouton</button>
+          <span class="ps-link">Lien accentué</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <span class="hint">💡 Chaque <b>monde</b> peut garder ses propres couleurs.</span>
+      <button class="btn-primary" id="closeSettings2">Terminé</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const root=document.documentElement;
+
+  // hsl → hex
+  function hslHex(h,s,l){
+    s/=100; l/=100;
+    const k=n=>(n+h/30)%12, a=s*Math.min(l,1-l);
+    const f=n=>l-a*Math.max(-1,Math.min(k(n)-3,9-k(n),1));
+    const v=n=>Math.round(255*f(n)).toString(16).padStart(2,'0');
+    return '#'+v(0)+v(8)+v(4);
+  }
+  // applique une couleur à une variable (--accent ou --surface) et met à jour l'UI du picker
+  function applyColor(target,hex){
+    root.style.setProperty(target,hex);
+    const key=target.replace('--','');
+    const chip=document.getElementById('cur-'+key);
+    const lbl=document.getElementById('hex-'+key);
+    if(chip) chip.style.background=hex;
+    if(lbl) lbl.textContent=hex.toUpperCase();
+    document.querySelectorAll('.sw-pick input[data-target="'+target+'"]').forEach(i=>i.value=hex);
+    document.querySelectorAll('.nuancier[data-target="'+target+'"] .nu').forEach(n=>{
+      n.classList.toggle('on', n.dataset.hex.toLowerCase()===hex.toLowerCase());
+    });
+  }
+
+  function addTile(grid,target,hex){
+    const tile=document.createElement('span');
+    tile.className='nu'; tile.style.background=hex; tile.dataset.hex=hex; tile.title=hex;
+    tile.addEventListener('click',()=>applyColor(target,hex));
+    grid.appendChild(tile);
+  }
+  // Nuancier standard (accent/ambiance) : 12 teintes × 4 intensités
+  const HUES=[35,18,2,330,300,270,235,205,170,135,95,60];
+  const SHADES=[{s:68,l:64},{s:62,l:54},{s:58,l:45},{s:52,l:37}];
+  // Nuancier TEXTE, plus fin : 5 familles × 12 niveaux de clarté (clair→soutenu)
+  const TFAM=[{h:40,s:16},{h:0,s:0},{h:210,s:15},{h:140,s:13},{h:285,s:13}];
+  const TLS=[95,91,87,83,79,75,71,67,63,59,55,51];
+  document.querySelectorAll('.nuancier').forEach(grid=>{
+    const target=grid.dataset.target;
+    if(grid.dataset.palette==='text'){
+      TFAM.forEach(f=>TLS.forEach(l=>addTile(grid,target,hslHex(f.h,f.s,l))));
+    } else {
+      SHADES.forEach(sh=>HUES.forEach(h=>addTile(grid,target,hslHex(h,sh.s,sh.l))));
+    }
+  });
+  // Pickers couleur libre
+  document.querySelectorAll('.sw-pick input[data-target]').forEach(inp=>{
+    inp.addEventListener('input',e=>applyColor(e.target.dataset.target,e.target.value));
+  });
+  // Slider d'intensité
+  const tint=document.getElementById('tint');
+  tint.addEventListener('input',e=>{
+    root.style.setProperty('--tint',e.target.value+'%');
+    document.getElementById('tintval').textContent=e.target.value+'%';
+  });
+  function setTint(v){v=parseInt(v)||0;tint.value=v;root.style.setProperty('--tint',v+'%');document.getElementById('tintval').textContent=v+'%';}
+
+  // ── Thème courant ↔ objet ──────────────────────────────────
+  function getTheme(){
+    const g=p=>getComputedStyle(root).getPropertyValue(p).trim();
+    return {accent:g('--accent'),surface:g('--surface'),text:g('--text-base'),tint:parseInt(g('--tint'))||0};
+  }
+  function applyTheme(t){
+    if(!t) return;
+    if(t.accent)  applyColor('--accent',t.accent);
+    if(t.surface) applyColor('--surface',t.surface);
+    if(t.text)    applyColor('--text-base',t.text);
+    if(t.tint!=null) setTint(t.tint);
+  }
+
+  // ── Profils (localStorage) ─────────────────────────────────
+  const LSK='oria-theme-profiles';
+  const loadP=()=>{try{return JSON.parse(localStorage.getItem(LSK)||'{}')}catch(e){return{}}};
+  const saveP=o=>localStorage.setItem(LSK,JSON.stringify(o));
+  function renderProfiles(){
+    const list=document.getElementById('profilesList'); const ps=loadP(); list.innerHTML='';
+    const names=Object.keys(ps);
+    if(!names.length){list.innerHTML='<div class="empty-p">Aucun profil sauvegardé pour l’instant.</div>';return;}
+    names.forEach(name=>{
+      const t=ps[name];
+      const row=document.createElement('div'); row.className='profile-item';
+      row.innerHTML=
+        '<span class="swatches-mini"><i style="background:'+t.accent+'"></i><i style="background:'+t.surface+'"></i><i style="background:'+t.text+'"></i></span>'+
+        '<span class="pn"></span>'+
+        '<span class="acts"><button class="apply">Appliquer</button><button class="del">Supprimer</button></span>';
+      row.querySelector('.pn').textContent=name;
+      row.querySelector('.apply').addEventListener('click',()=>applyTheme(t));
+      row.querySelector('.del').addEventListener('click',()=>{const o=loadP();delete o[name];saveP(o);renderProfiles();});
+      list.appendChild(row);
+    });
+  }
+  document.getElementById('saveProfile').addEventListener('click',()=>{
+    const inp=document.getElementById('pname'); const name=(inp.value||'').trim();
+    if(!name){inp.focus();inp.style.borderColor='var(--rouge)';return;}
+    const o=loadP(); o[name]=getTheme(); saveP(o); inp.value=''; inp.style.borderColor='';
+    renderProfiles();
+  });
+  // Export → fichier .json
+  document.getElementById('exportProfile').addEventListener('click',()=>{
+    const data=JSON.stringify({oriaTheme:1,...getTheme()},null,2);
+    const blob=new Blob([data],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='oria-theme.json'; a.click(); URL.revokeObjectURL(a.href);
+  });
+  // Import ← fichier .json
+  const importFile=document.getElementById('importFile');
+  document.getElementById('importProfile').addEventListener('click',()=>importFile.click());
+  importFile.addEventListener('change',e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{ try{ applyTheme(JSON.parse(r.result)); }catch(err){ alert('Fichier de thème invalide'); } };
+    r.readAsText(f); importFile.value='';
+  });
+
+  // Init des pastilles "courant" + profils
+  applyColor('--accent','#d49a36');
+  applyColor('--surface','#d49a36');
+  applyColor('--text-base','#f1ece3');
+  renderProfiles();
+
+  // Ouverture / fermeture de la modale
+  const overlay=document.getElementById('settings');
+  const open=()=>overlay.classList.add('show');
+  const close=()=>overlay.classList.remove('show');
+  document.getElementById('openSettings').addEventListener('click',open);
+  document.getElementById('closeSettings').addEventListener('click',close);
+  document.getElementById('closeSettings2').addEventListener('click',close);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
+</script>
+</body>
+</html>

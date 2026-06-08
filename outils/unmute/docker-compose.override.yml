@@ -1,0 +1,33 @@
+# Override Workplace pour Kyutai Unmute.
+#
+# À utiliser PAR-DESSUS le docker-compose.yml officiel d'Unmute (cloné dans ce dossier) :
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+#
+# Ce que fait cet override :
+#  1) Pointe le backend Unmute sur la **Gateway LiteLLM de Workplace** (au lieu du
+#     vLLM embarqué) → Unmute utilise le MÊME modèle que l'assistant.
+#  2) Neutralise le service `llm` embarqué (on n'a pas besoin d'un 2e LLM sur le GPU :
+#     tout le GPU reste pour STT + TTS).
+#
+# Les valeurs viennent de .env (voir .env.example dans ce dossier).
+
+services:
+  backend:
+    environment:
+      # Endpoint OpenAI-compatible = la Gateway de Workplace.
+      # - même machine que Workplace : http://host.docker.internal:4001/v1
+      # - GPU distant : http://<IP_DE_LA_MACHINE_WORKPLACE>:4001/v1
+      # (Si Unmute double le « /v1 », retire-le ici.)
+      - KYUTAI_LLM_URL=${KYUTAI_LLM_URL}
+      - KYUTAI_LLM_API_KEY=${KYUTAI_LLM_API_KEY}
+      # Modèle servi par la Gateway (doit exister dans litellm_config.yaml).
+      # Selon la version d'Unmute la variable peut différer — vérifie le README amont.
+      - KYUTAI_LLM_MODEL=${KYUTAI_LLM_MODEL}
+    extra_hosts:
+      # Permet à `host.docker.internal` de viser l'hôte sous Linux.
+      - "host.docker.internal:host-gateway"
+
+  # On désactive le LLM embarqué : 0 réplique = il ne démarre pas.
+  llm:
+    deploy:
+      replicas: 0

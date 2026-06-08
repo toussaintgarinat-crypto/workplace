@@ -1,0 +1,6 @@
+# Les Dockerfiles réinstallent les deps (npm install) — ne jamais copier les
+# node_modules locaux (symlinks bun → corrompent le COPY) ni les artefacts de build.
+**/node_modules
+**/dist
+**/.git
+**/.DS_Store

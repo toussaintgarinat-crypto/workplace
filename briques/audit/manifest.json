@@ -1,0 +1,26 @@
+{
+  "nom": "audit",
+  "version": "0.1.0",
+  "description": "Audit d'entreprise IA — 4 couches : Territoire (DDD/Canvas/Stakeholders), Flux (VSM/SIPOC/EventStorming), Problèmes (Ishikawa/Pareto/TOC/5Pourquoi), Priorités (CPM/PERT/SWOT/OKRs/MoSCoW)",
+  "role": "audit",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/audit",
+  "port": 5300,
+  "url_sante": "http://host.docker.internal:5300/sante",
+  "depends_on": [
+    "etl",
+    "gateway"
+  ],
+  "offre": [
+    "audit_entreprise",
+    "fiche_territoire",
+    "fiche_flux",
+    "fiche_problemes",
+    "fiche_priorites"
+  ],
+  "besoin": [
+    "ingestion_fichier",
+    "llm_chat"
+  ]
+}

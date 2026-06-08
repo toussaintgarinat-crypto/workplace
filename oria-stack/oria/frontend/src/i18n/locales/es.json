@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "Cargando…",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "error": "Error",
+    "back": "← Volver",
+    "add": "Agregar"
+  },
+  "login": {
+    "tagline": "Tu oficina digital",
+    "login": "Iniciar sesión",
+    "register": "Registrarse",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "name": "Tu nombre o apodo",
+    "connect": "Iniciar sesión →",
+    "createAccount": "Crear cuenta →",
+    "connectionError": "Error de conexión",
+    "wrongCode": "Código incorrecto",
+    "twoFaTitle": "🔐 Autenticación de dos factores activada. Introduce el código de tu aplicación.",
+    "sixDigitCode": "Código de 6 dígitos",
+    "verify": "Verificar →"
+  },
+  "app": {
+    "loading": "Cargando…"
+  },
+  "main": {
+    "selectRoom": "Selecciona una sala en el panel izquierdo",
+    "createOrJoin": "Crea o únete a una comunidad para empezar",
+    "needWorld": "Selecciona un mundo en la barra lateral para gestionar sus agentes.",
+    "needWorldMap": "Selecciona un mundo en la barra lateral para ver su mapa.",
+    "resizeHandle": "Arrastra para redimensionar"
+  },
+  "channel": {
+    "selectWorld": "Selecciona una comunidad",
+    "inviteTitle": "Invitar",
+    "manageSubscriptions": "Gestionar suscripciones",
+    "worldDocs": "Documentos de la comunidad",
+    "membersAgents": "Agentes y miembros",
+    "addService": "Agregar un servicio",
+    "addDistrict": "Agregar un distrito",
+    "tools": "Herramientas",
+    "search": "Búsqueda",
+    "calendar": "Calendario",
+    "network": "Red",
+    "zones": "Zonas",
+    "aiConfig": "Config IA",
+    "deleteBuilding": "¿Eliminar «{{name}}»?",
+    "deleteRoom": "¿Eliminar «{{name}}»?",
+    "deleteDistrict": "¿Eliminar el distrito «{{name}}»?",
+    "addRoom": "Agregar una sala",
+    "buildingDocs": "Documentos del servicio",
+    "subscribe": "Suscripción requerida: {{plans}}",
+    "projects": "Proyectos"
+  },
+  "room": {
+    "checkingAccess": "Verificando acceso...",
+    "paidRoom": "Esta sala requiere suscripción de pago.",
+    "paidFrom": "Acceso desde {{price}} {{currency}}",
+    "paidMonthly": "/mes",
+    "payAccess": "💳 Pagar y acceder",
+    "connectingVoice": "Conectando a voz...",
+    "startOf": "Inicio de",
+    "broadcastLocked": "Canal de solo lectura — solo el propietario puede escribir aquí",
+    "messagePlaceholder": "Mensaje en {{roomName}}",
+    "react": "Reaccionar",
+    "deleteMessage": "Eliminar",
+    "uploadFile": "Subir un archivo",
+    "encryptedE2EE": "Mensajes cifrados E2EE",
+    "coinsTitle": "Monedas de miembros",
+    "finished": "Terminado"
+  }
+}

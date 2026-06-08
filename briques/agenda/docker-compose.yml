@@ -1,0 +1,58 @@
+services:
+
+  # ── Agenda (FastAPI, repris de workspace/calendar) ────────────────
+  agenda:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Nom fixe : permet à Traefik de router par nom de conteneur sur proxy_net
+    # (cf. oria-stack/infra/traefik/dynamic/agenda.yml → http://agenda:8400).
+    container_name: agenda
+    ports:
+      - "8400:8400"
+    environment:
+      # SQLite par défaut (DATABASE_URL vide), pas de Redis.
+      - DATABASE_URL=
+      - REDIS_URL=
+      - CORS_ORIGINS=http://localhost:5100,http://localhost:3000
+      - ATTACHMENTS_DIR=/data/calendar/attachments
+      # ── Auth ──────────────────────────────────────────────────────────────
+      # Défaut false = mono-utilisateur « perso », identité via en-tête X-User-Id
+      # (OK sur réseau interne). Pour un VRAI partage multi-personnes, passer
+      # AUTH_ENABLED=true : les invités se connectent via Keycloak (page
+      # d'acceptation), et l'assistant appelle en S2S avec CALENDAR_SERVICE_TOKEN.
+      - AUTH_ENABLED=${AGENDA_AUTH_ENABLED:-false}
+      - CALENDAR_SERVICE_TOKEN=${CALENDAR_SERVICE_TOKEN:-}
+      # Keycloak : KEYCLOAK_URL = vu par la brique (validation JWT, réseau interne) ;
+      # KEYCLOAK_PUBLIC_URL = vu par le navigateur de l'invité (ex https://auth.${DOMAIN}).
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://host.docker.internal:8080}
+      - KEYCLOAK_PUBLIC_URL=${KEYCLOAK_PUBLIC_URL:-}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-forge}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-calendar-app}
+      # Audience attendue dans le jeton (verify_aud). Défaut = le client de l'agenda :
+      # un jeton émis pour une autre app du même realm est rejeté. N'a d'effet que si
+      # AUTH_ENABLED=true. Requiert le mapper d'audience sur le client calendar-app
+      # (présent dans forge-realm.json ; pour un Keycloak déjà importé, l'ajouter à la
+      # main ou ré-importer le realm — sinon mettre KEYCLOAK_AUDIENCE="" pour désactiver).
+      - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-calendar-app}
+    volumes:
+      - agenda_data:/data
+    networks:
+      - default
+      - proxy_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8400/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  agenda_data:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net

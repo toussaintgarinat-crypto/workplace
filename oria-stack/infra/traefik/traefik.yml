@@ -1,0 +1,58 @@
+api:
+  dashboard: true
+
+ping: {}
+
+entryPoints:
+  ping:
+    address: ":8082"
+
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+
+  # Netbird signal (gRPC WebSocket)
+  netbird-signal:
+    address: ":10000"
+
+  # Netbird management (gRPC)
+  netbird-management:
+    address: ":33073"
+
+  # STUN/TURN UDP (coturn)
+  turn-udp:
+    address: ":3478/udp"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: toussaintgarinat@gmail.com
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+      # DNS-01 via Cloudflare (Node 2 ou si port 80 indisponible) :
+      #   1. Commenter httpChallenge ci-dessus
+      #   2. Décommenter dnsChallenge ci-dessous
+      #   3. Injecter CF_DNS_API_TOKEN dans l'env du container
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

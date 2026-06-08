@@ -1,0 +1,39 @@
+services:
+  escalation:
+    build: .
+    image: escalation:latest
+    container_name: escalation
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9001:9001"
+    environment:
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      ONCALL_PHONE_NUMBER: ${ONCALL_PHONE_NUMBER:-}
+      ESCALATION_TIMEOUT_MINUTES: ${ESCALATION_TIMEOUT_MINUTES:-10}
+      ACK_TOKEN: ${ACK_TOKEN:-}
+    env_file:
+      - ../../.env
+    networks:
+      - proxy_net
+      - observability_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  proxy_net:
+    external: true
+    name: proxy_net
+  observability_net:
+    external: true
+    name: observability_net

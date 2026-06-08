@@ -1,0 +1,76 @@
+services:
+
+  # Base Postgres + pgvector dédiée à la mémoire (l'extension vector est activée
+  # par init-pgvector.sql avant que le backend ne crée ses tables Vector(384)).
+  memoire-db:
+    image: pgvector/pgvector:0.8.2-pg16
+    environment:
+      POSTGRES_USER: memory
+      # Défaut = valeur historique (volume memoire_pgdata déjà initialisé avec).
+      # Pour durcir : définir MEMOIRE_DB_PASSWORD dans le .env racine ET recréer le volume.
+      POSTGRES_PASSWORD: ${MEMOIRE_DB_PASSWORD:-memory}
+      POSTGRES_DB: memory
+    volumes:
+      - memoire_pgdata:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memory -d memory"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    # Sans ça, après un redémarrage de Docker la DB ne remonte pas et le backend
+    # (lui en restart) tourne en boucle faute de pouvoir s'y connecter.
+    restart: unless-stopped
+
+  # Backend du projet Memory (désormais inclus dans la brique : ./memory/backend).
+  # Schéma auto-créé au démarrage. Embeddings réels via le Gateway (cf. env plus bas).
+  memoire-backend:
+    build:
+      context: ./memory/backend
+    env_file:
+      # Secrets partagés (JWT_SECRET, LLM_API_KEY) — source unique à la racine.
+      - path: ../../.env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://memory:${MEMOIRE_DB_PASSWORD:-memory}@memoire-db:5432/memory
+      # JWT_SECRET vient du .env racine (env_file ci-dessus).
+      - GARDIEN_DEFAULT_MODE=off
+      # Embeddings réels via le Gateway (Ollama all-MiniLM, 384 dims → Vector(384)).
+      # Recherche sémantique active ; si le Gateway tombe, l'embedder dégrade tout seul.
+      - LLM_PROVIDER=openai
+      - LLM_BASE_URL=http://host.docker.internal:4001/v1
+      # LLM_API_KEY vient du .env racine (= clé Gateway partagée).
+      - EMBEDDING_MODEL=embedding/all-minilm
+    depends_on:
+      memoire-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Adaptateur : contrat Workplace (retenir/rappeler) exposé sur l'hôte (5600).
+  memoire:
+    build: .
+    ports:
+      - "5600:8000"
+    environment:
+      - MEMORY_API=http://memoire-backend:8000
+      - MEMOIRE_EMAIL=service@workplace.local
+      - MEMOIRE_PASSWORD=workplace-memoire
+      - MEMOIRE_ESPACE=Workplace
+    depends_on:
+      - memoire-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  memoire_pgdata:

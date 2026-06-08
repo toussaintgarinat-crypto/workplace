@@ -1,0 +1,111 @@
+# ── VM-Forge : 10.10.10.10 ────────────────────────────────────────────────────
+# Traefik supporte les Go templates dans le file provider.
+# DOMAIN est passé comme variable d'environnement au container Traefik.
+
+http:
+  middlewares:
+    admin-auth:
+      basicAuth:
+        usersFile: /etc/traefik/users   # htpasswd : htpasswd -nB admin > users
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+
+  routers:
+    # Traefik dashboard (accès admin protégé)
+    traefik-dashboard:
+      rule: 'Host(`traefik.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: api@internal
+      middlewares: [admin-auth]
+      tls:
+        certResolver: letsencrypt
+
+    # Forge frontend — nginx interne proxy /api/ → core:3001
+    forge-frontend:
+      rule: 'Host(`forge.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: forge-frontend
+      middlewares: [secure-headers]
+      tls:
+        certResolver: letsencrypt
+
+    # Keycloak SSO (realm forge + realm oria)
+    keycloak:
+      rule: 'Host(`auth.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: keycloak
+      tls:
+        certResolver: letsencrypt
+
+    # Netbird dashboard
+    netbird-dashboard:
+      rule: 'Host(`netbird.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: netbird-dashboard
+      middlewares: [secure-headers]
+      tls:
+        certResolver: letsencrypt
+
+    # Qdrant admin (protégé)
+    qdrant:
+      rule: 'Host(`qdrant.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: qdrant
+      middlewares: [admin-auth]
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    forge-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.10:3000"
+
+    # Keycloak dans LXC infra (10.10.10.2)
+    keycloak:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://10.10.10.2:8080"
+
+    # NetBird dashboard dans LXC infra (10.10.10.2)
+    netbird-dashboard:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.2:8088"
+
+    # Qdrant Forge dans LXC forge (10.10.10.10)
+    qdrant:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.10:6333"
+
+# ── TCP passthrough — Netbird signal + management ────────────────────────────
+# Pas de TLS termination ici, les clients Netbird gèrent leur propre TLS.
+tcp:
+  routers:
+    netbird-management:
+      rule: "HostSNI(`*`)"
+      entryPoints: [netbird-management]
+      service: netbird-management
+
+    netbird-signal:
+      rule: "HostSNI(`*`)"
+      entryPoints: [netbird-signal]
+      service: netbird-signal
+
+  services:
+    netbird-management:
+      loadBalancer:
+        servers:
+          - address: "10.10.10.10:33073"
+
+    netbird-signal:
+      loadBalancer:
+        servers:
+          - address: "10.10.10.10:10000"

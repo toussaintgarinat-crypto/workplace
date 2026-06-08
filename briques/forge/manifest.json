@@ -1,0 +1,26 @@
+{
+  "nom": "forge",
+  "version": "1.0.0",
+  "description": "Agents IA + RAG — moteur d'automatisation et base vectorielle",
+  "role": "agents",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "briques/forge/forge",
+  "port": 5700,
+  "url_sante": "http://host.docker.internal:5700/sante",
+  "url_ui": "http://localhost:3000",
+  "vue_dashboard": "forge",
+  "depends_on": [
+    "gateway",
+    "memoire"
+  ],
+  "offre": [
+    "agents_ia",
+    "rag",
+    "vectorisation"
+  ],
+  "besoin": [
+    "rappeler",
+    "retenir"
+  ]
+}

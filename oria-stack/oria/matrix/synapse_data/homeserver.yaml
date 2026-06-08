@@ -1,0 +1,52 @@
+server_name: "oria.local"
+pid_file: /data/homeserver.pid
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
+
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: synapse_secret
+    database: synapse
+    host: synapse_db
+    cp_min: 5
+    cp_max: 10
+
+log_config: "/data/oria.local.log.config"
+media_store_path: /data/media_store
+
+# Pas de fédération en dev
+federation_domain_whitelist: []
+allow_public_rooms_over_federation: false
+
+# Désactiver inscription publique — tout passe par l'Application Service
+enable_registration: false
+
+# Clé partagée pour les opérations admin (migrations, scripts one-shot)
+registration_shared_secret: "oria_shared_secret_dev_only"
+
+# Application Service (FastAPI)
+app_service_config_files:
+  - /data/appservice.yaml
+
+# Présence
+presence:
+  enabled: true
+
+# Supprimer les warnings dev
+suppress_key_server_warning: true
+report_stats: false
+
+# Clé de signature (générée au premier démarrage)
+signing_key_path: "/data/oria.local.signing.key"
+
+trusted_key_servers:
+  - server_name: "matrix.org"

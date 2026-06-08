@@ -1,0 +1,18 @@
+{
+  "nom": "memoire",
+  "version": "0.1.0",
+  "description": "Mémoire de la solution — souvenirs en graphe (projet Memory : nœuds/arêtes, stages IPCRa, tiers, recherche hybride). Brique adaptatrice exposant un contrat simple retenir/rappeler.",
+  "role": "memoire",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/memoire",
+  "port": 5600,
+  "url_sante": "http://host.docker.internal:5600/sante",
+  "depends_on": [],
+  "offre": [
+    "retenir",
+    "rappeler",
+    "lister_souvenirs"
+  ],
+  "besoin": []
+}

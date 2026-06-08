@@ -1,0 +1,5 @@
+# forge/core — test deps (S126). Aligné sur assistant/backend.
+pytest==8.4.2
+pytest-asyncio==0.25.3
+pytest-cov==6.3.0
+respx==0.22.0          # mock httpx (parité / proxy) sans monkey-patch

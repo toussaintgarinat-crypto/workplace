@@ -1,0 +1,12 @@
+# Le build du core n'a besoin que de shared/ et forge/core/. On exclut tout ce
+# qui est lourd/regénérable pour garder le contexte de build léger.
+**/node_modules
+**/dist
+**/.next
+**/.git
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/*.egg-info
+**/venv
+**/.venv

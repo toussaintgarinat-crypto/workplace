@@ -1,0 +1,39 @@
+# ── Agenda (brique Workplace) ────────────────────────────────────────────────
+# Expose UNIQUEMENT les endpoints d'invitation au public : c'est le strict
+# nécessaire pour qu'un lien d'invitation transmis à un invité soit joignable
+# depuis l'extérieur (GET /invitations/{token}, POST /invitations/{token}/accept).
+#
+# ⚠️ Le reste de l'API agenda tourne avec AUTH_ENABLED=false (identité via en-tête
+# X-User-Id) et NE DOIT PAS être exposé tel quel : on le laisse donc interne.
+# L'assistant (core) continue d'y accéder en interne, pas via Traefik.
+#
+# Adresse du service — DEUX topologies possibles :
+#
+#  A. VPS / serveur maison (tout sur un hôte) : Traefik et la brique partagent
+#     proxy_net → on route par NOM de conteneur. Pré-requis : ajouter proxy_net
+#     aux networks du docker-compose de Traefik (il n'y est pas par défaut).
+#       url: "http://agenda:8400"
+#
+#  B. Lab multi-nœuds (Traefik sur sa VM 10.10.10.2, comme les autres routes
+#     forge/oria) : router par IP de l'hôte qui porte la brique agenda.
+#       url: "http://10.10.10.XX:8400"
+#
+# Décommente la bonne ligne selon ton déploiement.
+
+http:
+  routers:
+    agenda-invitations:
+      rule: 'Host(`agenda.{{ env "DOMAIN" }}`) && PathPrefix(`/invitations`)'
+      entryPoints: [websecure]
+      service: agenda
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    agenda:
+      loadBalancer:
+        servers:
+          # A. single-host (proxy_net partagé) :
+          - url: "http://agenda:8400"
+          # B. multi-nœuds (IP de l'hôte agenda) :
+          # - url: "http://10.10.10.XX:8400"

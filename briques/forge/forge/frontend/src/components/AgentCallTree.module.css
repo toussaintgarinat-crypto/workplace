@@ -1,0 +1,31 @@
+.tree {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px;
+  background: var(--bg-secondary, #1a1a2e);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  margin: 4px 0 8px;
+  flex-wrap: wrap;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arrow {
+  color: var(--accent, #6c63ff);
+  font-weight: 600;
+}
+
+.label {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary, #ccc);
+  background: var(--bg-tertiary, #252540);
+  padding: 1px 6px;
+  border-radius: 4px;
+}

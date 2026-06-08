@@ -1,0 +1,70 @@
+{
+  "common": {
+    "loading": "読み込み中...",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "add": "追加",
+    "activate": "有効化",
+    "deactivate": "無効化",
+    "error": "エラー",
+    "noData": "データなし",
+    "back": "戻る"
+  },
+  "workspace": {
+    "title": "ワークスペース",
+    "newConversation": "新しい会話",
+    "placeholder": "メッセージ Forge… (Enterで送信)",
+    "thinking": "考え中...",
+    "ready": "準備完了",
+    "you": "あなた",
+    "reactMode": "ReActモードが有効",
+    "reactBadge": "⚛ ReActモード — エージェントがツールを使用可能"
+  },
+  "hitl": {
+    "title": "承認が必要",
+    "approve": "承認",
+    "reject": "却下",
+    "levels": {
+      "1": "情報",
+      "2": "確認",
+      "3": "承認",
+      "4": "検証",
+      "5": "許可",
+      "6": "重大"
+    }
+  },
+  "mcp": {
+    "title": "MCPサーバー",
+    "subtitle": "Model Context ProtocolでForgeに外部ツールを接続します。",
+    "addServer": "サーバーを追加",
+    "noServers": "MCPサーバーが設定されていません。",
+    "listTools": "ツール",
+    "toolsAvailable": "個のツールが利用可能"
+  },
+  "skills": {
+    "title": "スキル",
+    "subtitle": "トリガーに基づいてコンテキストに注入される専門的な指示。",
+    "newSkill": "新しいスキル",
+    "noSkills": "スキルが設定されていません。",
+    "global": "グローバル",
+    "skillMd": "SKILL.md"
+  },
+  "nav": {
+    "workspace": "ワークスペース",
+    "commandBridge": "コマンドブリッジ",
+    "analytics": "分析",
+    "morningBrief": "モーニングブリーフ",
+    "search": "検索",
+    "tools": "ビジネスツール",
+    "governance": "AIガバナンス",
+    "org": "組織",
+    "mcp": "MCP",
+    "skills": "スキル",
+    "agents": "エージェント",
+    "governor": "Governor",
+    "slo": "SLOダッシュボード",
+    "automation": "オートメーション"
+  }
+}

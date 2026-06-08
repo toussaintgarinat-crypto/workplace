@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "読み込み中…",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "confirm": "確認",
+    "close": "閉じる",
+    "error": "エラー",
+    "back": "← 戻る",
+    "add": "追加"
+  },
+  "login": {
+    "tagline": "あなたのデジタルオフィス",
+    "login": "ログイン",
+    "register": "登録",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "name": "お名前またはニックネーム",
+    "connect": "ログイン →",
+    "createAccount": "アカウント作成 →",
+    "connectionError": "接続エラー",
+    "wrongCode": "コードが正しくありません",
+    "twoFaTitle": "🔐 二段階認証が有効です。アプリのコードを入力してください。",
+    "sixDigitCode": "6桁のコード",
+    "verify": "確認 →"
+  },
+  "app": {
+    "loading": "読み込み中…"
+  },
+  "main": {
+    "selectRoom": "左パネルからルームを選択してください",
+    "createOrJoin": "コミュニティを作成または参加して始めましょう",
+    "needWorld": "サイドバーからワールドを選択してエージェントを管理します。",
+    "needWorldMap": "サイドバーからワールドを選択してマップを表示します。",
+    "resizeHandle": "ドラッグしてサイズを変更"
+  },
+  "channel": {
+    "selectWorld": "コミュニティを選択",
+    "inviteTitle": "招待",
+    "manageSubscriptions": "サブスクリプション管理",
+    "worldDocs": "コミュニティドキュメント",
+    "membersAgents": "エージェントとメンバー",
+    "addService": "サービスを追加",
+    "addDistrict": "地区を追加",
+    "tools": "ツール",
+    "search": "検索",
+    "calendar": "カレンダー",
+    "network": "ネットワーク",
+    "zones": "ゾーン",
+    "aiConfig": "AI設定",
+    "deleteBuilding": "「{{name}}」を削除しますか？",
+    "deleteRoom": "「{{name}}」を削除しますか？",
+    "deleteDistrict": "地区「{{name}}」を削除しますか？",
+    "addRoom": "ルームを追加",
+    "buildingDocs": "サービスドキュメント",
+    "subscribe": "サブスクリプションが必要です：{{plans}}",
+    "projects": "プロジェクト"
+  },
+  "room": {
+    "checkingAccess": "アクセスを確認中...",
+    "paidRoom": "このルームは有料サブスクリプションが必要です。",
+    "paidFrom": "{{price}} {{currency}}からアクセス",
+    "paidMonthly": "/月",
+    "payAccess": "💳 支払ってアクセス",
+    "connectingVoice": "音声に接続中...",
+    "startOf": "開始",
+    "broadcastLocked": "読み取り専用チャンネル — オーナーのみ書き込み可能",
+    "messagePlaceholder": "{{roomName}}へメッセージ",
+    "react": "リアクション",
+    "deleteMessage": "削除",
+    "uploadFile": "ファイルをアップロード",
+    "encryptedE2EE": "E2EE暗号化メッセージ",
+    "coinsTitle": "メンバーコイン",
+    "finished": "完了"
+  }
+}

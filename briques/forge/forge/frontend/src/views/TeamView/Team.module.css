@@ -1,0 +1,22 @@
+.page { padding: 24px; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.title { margin: 0; font-size: 22px; color: #e8e8f0; }
+.form { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.formActions { display: flex; gap: 8px; }
+.input, .select { padding: 8px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: #0f0f14; color: #e8e8f0; font-size: 13px; outline: none; }
+.input:focus, .select:focus { border-color: #6366f1; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.memberCard { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; }
+.memberAvatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.memberInfo { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.memberName { font-size: 14px; font-weight: 600; color: #e8e8f0; }
+.memberEmail { font-size: 12px; color: #6b6b80; }
+.memberMeta { margin-top: 4px; }
+.statutBadge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.memberRight { display: flex; align-items: center; gap: 8px; }
+.deleteBtn { padding: 5px 8px; border-radius: 6px; border: 1px solid #2a2a3e; background: transparent; color: #6b6b80; cursor: pointer; }
+.deleteBtn:hover { color: #ef4444; border-color: #ef4444; }
+.empty { color: #6b6b80; font-size: 13px; text-align: center; padding: 32px; }
+.btnPrimary { padding: 7px 16px; border-radius: 8px; border: none; background: #6366f1; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btnPrimary:disabled { opacity: 0.5; }
+.btnGhost { padding: 7px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: transparent; color: #6b6b80; cursor: pointer; font-size: 13px; }

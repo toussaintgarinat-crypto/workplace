@@ -1,0 +1,28 @@
+version: '3.9'
+
+# Lance le pont Ollama en standalone sur la machine qui héberge Ollama.
+# Le bridge écoute sur 0.0.0.0:11436 → forward vers localhost:11434 (Ollama).
+# Les autres apps (Forge, Oria) pointent OLLAMA_BASE_URL vers l'IP de cette machine.
+#
+# Démarrage : docker-compose up -d
+# Test      : curl http://<IP-MAC>:11436/api/tags
+
+services:
+  ollama-bridge:
+    build: .
+    restart: unless-stopped
+    network_mode: host        # accès direct à localhost:11434 (Ollama)
+    environment:
+      OLLAMA_URL:       ${OLLAMA_URL:-http://localhost:11434}
+      BRIDGE_PORT:      ${BRIDGE_PORT:-11436}
+      BRIDGE_API_KEY:   ${BRIDGE_API_KEY:-}
+      # SÉCURITÉ : remplacer '*' par les origines exactes si le bridge est exposé hors LAN/NetBird
+      # Exemple : ALLOWED_ORIGINS=http://192.168.1.10:3000,https://app.example.com
+      # '*' est acceptable uniquement si le bridge est isolé (réseau local ou VPN NetBird uniquement)
+      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-*}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${BRIDGE_PORT:-11436}/api/tags >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

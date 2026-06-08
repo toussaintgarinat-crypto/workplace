@@ -1,0 +1,19 @@
+{
+  "nom": "etl",
+  "version": "0.1.0",
+  "description": "Ingestion de documents — extraction de texte (PDF, Word, images, Excel, HTML…) et stockage pour l'Audit",
+  "role": "etl",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/etl",
+  "port": 5200,
+  "url_sante": "http://host.docker.internal:5200/sante",
+  "depends_on": [],
+  "offre": [
+    "ingestion_fichier",
+    "ingestion_url",
+    "liste_documents",
+    "lecture_document"
+  ],
+  "besoin": []
+}

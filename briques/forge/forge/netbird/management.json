@@ -1,0 +1,104 @@
+{
+    "Stuns": [
+        {
+            "Proto": "udp",
+            "URI": "stun:coturn:3478",
+            "Username": "",
+            "Password": ""
+        }
+    ],
+    "TURNConfig": {
+        "TimeBasedCredentials": false,
+        "CredentialsTTL": "0s",
+        "Secret": "netbird-turn-secret",
+        "Turns": [
+            {
+                "Proto": "udp",
+                "URI": "turn:coturn:3478",
+                "Username": "netbird",
+                "Password": "netbird-turn-secret"
+            }
+        ]
+    },
+    "Relay": null,
+    "Signal": {
+        "Proto": "http",
+        "URI": "netbird-signal:10000",
+        "Username": "",
+        "Password": ""
+    },
+    "Datadir": "/var/lib/netbird/",
+    "DataStoreEncryptionKey": "${NETBIRD_DATASTORE_ENCRYPTION_KEY}",
+    "HttpConfig": {
+        "LetsEncryptDomain": "",
+        "CertFile": "",
+        "CertKey": "",
+        "AuthClientID": "",
+        "AuthAudience": "netbird-client",
+        "CLIAuthAudience": "",
+        "AuthIssuer": "http://localhost:8080/realms/forge",
+        "AuthUserIDClaim": "",
+        "AuthKeysLocation": "http://keycloak:8080/realms/forge/protocol/openid-connect/certs",
+        "OIDCConfigEndpoint": "",
+        "IdpSignKeyRefreshEnabled": false,
+        "ExtraAuthAudience": "",
+        "AuthCallbackURL": ""
+    },
+    "IdpManagerConfig": {
+        "ManagerType": "none",
+        "ClientConfig": null,
+        "ExtraConfig": null,
+        "Auth0ClientCredentials": null,
+        "AzureClientCredentials": null,
+        "KeycloakClientCredentials": null,
+        "ZitadelClientCredentials": null
+    },
+    "DeviceAuthorizationFlow": {
+        "Provider": "none",
+        "ProviderConfig": {
+            "ClientID": "",
+            "ClientSecret": "",
+            "Domain": "",
+            "Audience": "",
+            "TokenEndpoint": "",
+            "DeviceAuthEndpoint": "",
+            "AuthorizationEndpoint": "",
+            "Scope": "",
+            "UseIDToken": false,
+            "RedirectURLs": null,
+            "DisablePromptLogin": false,
+            "LoginFlag": 0
+        }
+    },
+    "PKCEAuthorizationFlow": {
+        "ProviderConfig": {
+            "ClientID": "netbird-client",
+            "ClientSecret": "",
+            "Domain": "",
+            "Audience": "netbird-client",
+            "TokenEndpoint": "http://localhost:8080/realms/forge/protocol/openid-connect/token",
+            "DeviceAuthEndpoint": "",
+            "AuthorizationEndpoint": "http://localhost:8080/realms/forge/protocol/openid-connect/auth",
+            "Scope": "openid profile email offline_access api",
+            "UseIDToken": false,
+            "RedirectURLs": [
+                "http://localhost:8088/callback",
+                "http://localhost:33073/callback"
+            ],
+            "DisablePromptLogin": false,
+            "LoginFlag": 0
+        }
+    },
+    "StoreConfig": {
+        "Engine": ""
+    },
+    "ReverseProxy": {
+        "TrustedHTTPProxies": null,
+        "TrustedHTTPProxiesCount": 0,
+        "TrustedPeers": null,
+        "AccessLogRetentionDays": 0,
+        "AccessLogCleanupIntervalHours": 0
+    },
+    "DisableDefaultPolicy": false,
+    "EmbeddedIdP": null
+}

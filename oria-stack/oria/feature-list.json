@@ -1,0 +1,225 @@
+{
+  "version": "2.0.0",
+  "project_name": "Oria Mairie",
+  "project_type": "web-app-collectivites",
+  "domain": "communication-interne-mairie",
+  "stack": "FastAPI, React 18, Vite, LiveKit, SQLAlchemy, SQLite/PostgreSQL, Matrix E2EE",
+  "last_updated": "2026-03-21",
+  "total_features": 24,
+  "completed_features": 0,
+  "categories": ["UI", "GED", "AGENDA", "ANNUAIRE", "CITOYEN", "BROADCAST", "AUDIT", "TABLEAU"],
+  "features": [
+
+    {
+      "id": "UI-001", "category": "UI", "priority": "HIGH", "complexity": "LOW",
+      "title": "Renommage domaine mairie",
+      "description": "Adapter tous les labels UI au vocabulaire municipal",
+      "acceptance_criteria": [
+        "Monde → Commune",
+        "Bâtiment → Service municipal (types: Mairie centrale / Direction / Antenne)",
+        "Room texte → Salle de discussion",
+        "Room vocal → Salle de réunion",
+        "Réseau de mondes → Intercommunalité",
+        "Membres → Agents & Élus",
+        "Quartier → Direction / Pôle"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "UI-002", "category": "UI", "priority": "MEDIUM", "complexity": "LOW",
+      "title": "Thème institutionnel",
+      "description": "Palette de couleurs institutionnelle (bleu République #003189)",
+      "acceptance_criteria": [
+        "Couleur primaire bleue institutionnelle",
+        "Accents tricolores subtils",
+        "Logo / titre Oria Mairie"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "GED-001", "category": "GED", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Délibérations",
+      "description": "Registre des délibérations du conseil municipal avec upload PDF",
+      "acceptance_criteria": [
+        "Créer une délibération (numéro, titre, date, objet, statut)",
+        "Upload PDF joint",
+        "Filtrer par statut (en_cours / adopté / rejeté / reporté)",
+        "Accès selon rôle (propriétaire/admin = écriture, membre = lecture)"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "GED-002", "category": "GED", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Arrêtés municipaux",
+      "description": "Registre des arrêtés avec upload PDF",
+      "acceptance_criteria": [
+        "Créer un arrêté (numéro, type, date, objet)",
+        "Types : municipal / préfectoral / délégué",
+        "Upload PDF joint",
+        "Accès par rôle"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "GED-003", "category": "GED", "priority": "MEDIUM", "complexity": "LOW",
+      "title": "Accès documents par rôle",
+      "description": "Certains documents réservés aux élus (propriétaire/admin)",
+      "acceptance_criteria": [
+        "Flag 'confidentiel' sur délibération/arrêté",
+        "Documents confidentiels invisibles pour les membres simples",
+        "Badge 'Confidentiel' visible côté admin"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "AGENDA-001", "category": "AGENDA", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Agenda conseil municipal",
+      "description": "Séances du conseil avec ordre du jour et PV",
+      "acceptance_criteria": [
+        "Planifier une séance (date, heure, ordre du jour Markdown)",
+        "Upload PV après la séance",
+        "Statuts : planifié / en cours / terminé / annulé",
+        "Prochain conseil mis en avant"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "AGENDA-002", "category": "AGENDA", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Convocations automatiques",
+      "description": "Envoi automatique d'une convocation dans le canal lors de la création d'une séance",
+      "acceptance_criteria": [
+        "Message automatique posté dans le canal principal de la commune",
+        "Contient : date, heure, ordre du jour",
+        "Notification visible dans le fil de discussion"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "AGENDA-003", "category": "AGENDA", "priority": "MEDIUM", "complexity": "LOW",
+      "title": "Agenda commissions",
+      "description": "Réunions de commission liées à un service municipal",
+      "acceptance_criteria": [
+        "Créer une réunion de commission dans un service",
+        "Ordre du jour + participants",
+        "Compte-rendu attachable"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "ANNUAIRE-001", "category": "ANNUAIRE", "priority": "HIGH", "complexity": "LOW",
+      "title": "Annuaire agents & élus",
+      "description": "Répertoire de toutes les personnes de la commune",
+      "acceptance_criteria": [
+        "Fiche : nom, prénom, type (agent/élu/stagiaire/externe), service, fonction, téléphone, email pro, bureau",
+        "Filtres par type et service",
+        "Lien optionnel vers compte Oria",
+        "Accès lecture pour tous les membres"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "ANNUAIRE-002", "category": "ANNUAIRE", "priority": "MEDIUM", "complexity": "MEDIUM",
+      "title": "Organigramme dynamique",
+      "description": "Vue hiérarchique des services et agents",
+      "acceptance_criteria": [
+        "Arbre services → agents",
+        "Affichage des fonctions",
+        "Export possible"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "CITOYEN-001", "category": "CITOYEN", "priority": "HIGH", "complexity": "HIGH",
+      "title": "Portail citoyen",
+      "description": "Interface publique pour les habitants (sans compte Oria)",
+      "acceptance_criteria": [
+        "Page publique accessible sans connexion",
+        "Formulaire de demande / signalement",
+        "Types : travaux / permis / nuisance / autre",
+        "Confirmation par email au citoyen"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "CITOYEN-002", "category": "CITOYEN", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Gestion des tickets citoyens",
+      "description": "Suivi interne des demandes citoyennes",
+      "acceptance_criteria": [
+        "Liste des tickets entrants dans le panel agent",
+        "Statuts : nouveau / en traitement / résolu / fermé",
+        "Assignation à un agent/service",
+        "Réponse au citoyen depuis l'interface"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "CITOYEN-003", "category": "CITOYEN", "priority": "MEDIUM", "complexity": "LOW",
+      "title": "Notifications publiques",
+      "description": "Alertes locales publiables (coupures, événements, urgences)",
+      "acceptance_criteria": [
+        "Créer une notification publique (titre, texte, type, date expiration)",
+        "Types : info / alerte / urgence",
+        "Visible sur le portail citoyen",
+        "Badge sur la page publique si alerte active"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "BROADCAST-001", "category": "BROADCAST", "priority": "HIGH", "complexity": "LOW",
+      "title": "Canal diffusion maire",
+      "description": "Canal broadcast unidirectionnel du maire vers tous les agents",
+      "acceptance_criteria": [
+        "Room spéciale 'Diffusion officielle' créée automatiquement à la création de la commune",
+        "Seuls les propriétaires/admins peuvent écrire",
+        "Tous les membres peuvent lire",
+        "Badge 📢 distinctif sur ce canal"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "AUDIT-001", "category": "AUDIT", "priority": "HIGH", "complexity": "MEDIUM",
+      "title": "Journalisation des actions",
+      "description": "Audit trail réglementaire de toutes les actions sensibles",
+      "acceptance_criteria": [
+        "Log : création/modification/suppression délibérations, arrêtés",
+        "Log : accès aux documents confidentiels",
+        "Log : connexions utilisateurs",
+        "Consultable par les admins",
+        "Format : qui / quoi / quand / depuis quelle IP"
+      ],
+      "passes": false, "completed_at": null
+    },
+    {
+      "id": "AUDIT-002", "category": "AUDIT", "priority": "MEDIUM", "complexity": "MEDIUM",
+      "title": "Export RGPD",
+      "description": "Export des données personnelles + droit à l'oubli",
+      "acceptance_criteria": [
+        "Export JSON de toutes les données d'un utilisateur",
+        "Suppression complète d'un compte (droit à l'oubli)",
+        "Log des exports dans l'audit trail"
+      ],
+      "passes": false, "completed_at": null
+    },
+
+    {
+      "id": "TABLEAU-001", "category": "TABLEAU", "priority": "MEDIUM", "complexity": "LOW",
+      "title": "Tableau de bord maire",
+      "description": "Vue d'ensemble des indicateurs de la commune",
+      "acceptance_criteria": [
+        "KPIs : nb agents, nb élus, nb services",
+        "Délibérations par statut",
+        "Arrêtés cette année",
+        "Prochain conseil municipal",
+        "Tickets citoyens en attente",
+        "Accessible aux propriétaires/admins uniquement"
+      ],
+      "passes": false, "completed_at": null
+    }
+  ]
+}

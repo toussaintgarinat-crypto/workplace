@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Secrets — JAMAIS dans le repo. Recréer chaque .env depuis son .env.example.
+# (Clés Gateway/OpenRouter, JWT, mots de passe DB, secrets Matrix/Keycloak…)
+# Les .env.example ne sont pas concernés (nom différent) → ils restent versionnés.
+# ─────────────────────────────────────────────────────────────────────────────
+.env
+**/.env
+.env.*
+!.env.example
+!**/.env.example
+
+# ── Dépendances & artefacts régénérables (recréés au build) ──
+**/node_modules
+**/dist
+**/.next
+**/build
+**/__pycache__
+*.pyc
+*.pyo
+**/*.egg-info
+**/venv
+**/.venv
+
+# ── OS / éditeurs ──
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ── Logs & captures de debug ──
+*.log
+.playwright-mcp/
+
+# ── Données locales / livraisons client (contiennent des données clients réelles) ──
+# Les apps déjà livrées ne sont PAS versionnées (données privées clients).
+apps_exportees/

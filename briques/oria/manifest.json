@@ -1,0 +1,23 @@
+{
+  "nom": "oria",
+  "version": "1.0.0",
+  "description": "Collaboration — messagerie interne + visio (Matrix / LiveKit)",
+  "role": "collaboration",
+  "couche": "frontend",
+  "statut": "actif",
+  "chemin_source": "oria-stack/oria",
+  "port": 3003,
+  "url_sante": "http://host.docker.internal:8000/health",
+  "url_ui": "http://localhost:3003",
+  "depends_on": [
+    "gateway"
+  ],
+  "offre": [
+    "messagerie_interne",
+    "visioconference",
+    "agents_canaux"
+  ],
+  "besoin": [
+    "MATRIX_SERVER_SECRET"
+  ]
+}

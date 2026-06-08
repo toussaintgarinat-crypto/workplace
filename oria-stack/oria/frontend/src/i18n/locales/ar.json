@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "جارٍ التحميل…",
+    "save": "حفظ",
+    "saving": "جارٍ الحفظ…",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "confirm": "تأكيد",
+    "close": "إغلاق",
+    "error": "خطأ",
+    "back": "→ رجوع",
+    "add": "إضافة"
+  },
+  "login": {
+    "tagline": "مكتبك الرقمي",
+    "login": "تسجيل الدخول",
+    "register": "إنشاء حساب",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "name": "اسمك أو اسم مستعار",
+    "connect": "→ تسجيل الدخول",
+    "createAccount": "→ إنشاء حساب",
+    "connectionError": "خطأ في الاتصال",
+    "wrongCode": "رمز غير صحيح",
+    "twoFaTitle": "🔐 المصادقة الثنائية مفعّلة. أدخل الرمز من تطبيقك.",
+    "sixDigitCode": "رمز مكون من 6 أرقام",
+    "verify": "→ التحقق"
+  },
+  "app": {
+    "loading": "جارٍ التحميل…"
+  },
+  "main": {
+    "selectRoom": "اختر غرفة من اللوحة اليسرى",
+    "createOrJoin": "أنشئ أو انضم إلى مجتمع للبدء",
+    "needWorld": "اختر عالماً من الشريط الجانبي لإدارة وكلائه.",
+    "needWorldMap": "اختر عالماً من الشريط الجانبي لعرض خريطته.",
+    "resizeHandle": "اسحب لتغيير الحجم"
+  },
+  "channel": {
+    "selectWorld": "اختر مجتمعاً",
+    "inviteTitle": "دعوة",
+    "manageSubscriptions": "إدارة الاشتراكات",
+    "worldDocs": "وثائق المجتمع",
+    "membersAgents": "الوكلاء والأعضاء",
+    "addService": "إضافة خدمة",
+    "addDistrict": "إضافة منطقة",
+    "tools": "الأدوات",
+    "search": "بحث",
+    "calendar": "التقويم",
+    "network": "الشبكة",
+    "zones": "المناطق",
+    "aiConfig": "إعداد الذكاء الاصطناعي",
+    "deleteBuilding": "حذف «{{name}}»؟",
+    "deleteRoom": "حذف «{{name}}»؟",
+    "deleteDistrict": "حذف المنطقة «{{name}}»؟",
+    "addRoom": "إضافة غرفة",
+    "buildingDocs": "وثائق الخدمة",
+    "subscribe": "الاشتراك مطلوب: {{plans}}",
+    "projects": "المشاريع"
+  },
+  "room": {
+    "checkingAccess": "جارٍ التحقق من الوصول...",
+    "paidRoom": "هذه الغرفة تتطلب اشتراكاً مدفوعاً.",
+    "paidFrom": "الوصول من {{price}} {{currency}}",
+    "paidMonthly": "/شهر",
+    "payAccess": "💳 الدفع والوصول",
+    "connectingVoice": "جارٍ الاتصال بالصوت...",
+    "startOf": "بداية",
+    "broadcastLocked": "قناة للقراءة فقط — المالك فقط يمكنه الكتابة هنا",
+    "messagePlaceholder": "رسالة في {{roomName}}",
+    "react": "تفاعل",
+    "deleteMessage": "حذف",
+    "uploadFile": "رفع ملف",
+    "encryptedE2EE": "رسائل مشفرة E2EE",
+    "coinsTitle": "عملات الأعضاء",
+    "finished": "منتهٍ"
+  }
+}

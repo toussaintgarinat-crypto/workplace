@@ -1,0 +1,18 @@
+{
+  "nom": "donnees",
+  "version": "0.1.0",
+  "description": "Persistance serveur générique multi-tenant — magasin CRUD (app × entité → enregistrements avec identifiants serveur) qui remplace le localStorage des apps générées",
+  "role": "persistance",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/donnees",
+  "port": 5500,
+  "url_sante": "http://host.docker.internal:5500/sante",
+  "depends_on": [],
+  "offre": [
+    "persistance_crud",
+    "stockage_enregistrements",
+    "multi_tenant"
+  ],
+  "besoin": []
+}

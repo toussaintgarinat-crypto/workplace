@@ -1,0 +1,9 @@
+{
+  "name": "ollama-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --hot run index.ts"
+  }
+}

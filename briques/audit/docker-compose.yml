@@ -1,0 +1,28 @@
+services:
+  audit:
+    build: .
+    container_name: workplace_audit
+    env_file:
+      # Secrets partagés (GATEWAY_KEY…) — source unique à la racine du projet.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5300:5300"
+    volumes:
+      - audit_data:/data
+    environment:
+      - ETL_URL=http://host.docker.internal:5200
+      - GATEWAY_URL=http://host.docker.internal:4001
+      # GATEWAY_KEY vient du .env racine (env_file ci-dessus).
+      - GATEWAY_MODEL=openai/gpt-4o-mini
+      - DB_PATH=/data/audits.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5300/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  audit_data:

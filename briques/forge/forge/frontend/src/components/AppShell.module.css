@@ -1,0 +1,17 @@
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100vh;
+  overflow: hidden;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.shellCollapsed {
+  grid-template-columns: 48px 1fr;
+}
+
+.main {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

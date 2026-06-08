@@ -1,0 +1,70 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "error": "Error",
+    "noData": "No data",
+    "back": "Back"
+  },
+  "workspace": {
+    "title": "Workspace",
+    "newConversation": "New conversation",
+    "placeholder": "Message Forge… (Enter to send)",
+    "thinking": "thinking...",
+    "ready": "ready",
+    "you": "You",
+    "reactMode": "ReAct mode enabled",
+    "reactBadge": "⚛ ReAct mode — agent can use tools"
+  },
+  "hitl": {
+    "title": "Approvals required",
+    "approve": "Approve",
+    "reject": "Reject",
+    "levels": {
+      "1": "Information",
+      "2": "Confirmation",
+      "3": "Approval",
+      "4": "Validation",
+      "5": "Authorization",
+      "6": "Critical"
+    }
+  },
+  "mcp": {
+    "title": "MCP Servers",
+    "subtitle": "Connect external tools to Forge via Model Context Protocol.",
+    "addServer": "Add server",
+    "noServers": "No MCP servers configured.",
+    "listTools": "Tools",
+    "toolsAvailable": "tool(s) available"
+  },
+  "skills": {
+    "title": "Skills",
+    "subtitle": "Expert instructions injected into context based on triggers.",
+    "newSkill": "New skill",
+    "noSkills": "No skills configured.",
+    "global": "Global",
+    "skillMd": "SKILL.md"
+  },
+  "nav": {
+    "workspace": "Workspace",
+    "commandBridge": "Command Bridge",
+    "analytics": "Analytics",
+    "morningBrief": "Morning Brief",
+    "search": "Search",
+    "tools": "Business Tools",
+    "governance": "AI Governance",
+    "org": "Organization",
+    "mcp": "MCP",
+    "skills": "Skills",
+    "agents": "Agents",
+    "governor": "Governor",
+    "slo": "SLO Dashboard",
+    "automation": "Automation"
+  }
+}

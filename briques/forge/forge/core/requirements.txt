@@ -1,0 +1,21 @@
+# forge/core — runtime deps (S126 socle).
+# Versions alignées sur assistant/backend pour cohérence inter-services.
+fastapi==0.115.0
+starlette==0.38.6
+uvicorn==0.32.0
+httpx==0.27.0
+anyio==4.13.0
+pydantic==2.9.0
+pydantic-settings==2.5.2
+SQLAlchemy==2.0.49
+asyncpg==0.31.0
+prometheus-fastapi-instrumentator==7.0.0
+python-jose[cryptography]==3.3.0   # vérif JWT Keycloak (via agent_personnel_shared.keycloak_auth)
+cryptography==43.0.3               # AES-256-GCM api-keys — compat schéma Bun (config/crypto.ts)
+openai==1.54.0                     # client LLM/embeddings via LiteLLM Gateway (S128/S129, remplace Vercel AI SDK)
+qdrant-client==1.12.1              # RAG forge — recherche/ingestion sémantique (S129, memory/*.ts)
+python-multipart==0.0.12           # upload form multipart — STT /voice/transcribe (S134, remplace c.req.formData)
+websockets==13.1                   # client WS sortant — proxy OpenAI Realtime /voice/realtime (S134)
+pywebpush==1.14.1                  # Web Push VAPID — /push/send (S134, remplace web-push npm) ; py-vapid<1.9.4 garde cryptography==43
+py-vapid==1.9.0                    # épinglé : py-vapid>=1.9.4 exige cryptography>=46, casse le pin AES-GCM (crypto.py)
+# agent_personnel_shared est installé séparément (pip install /shared) — cf. Dockerfile.

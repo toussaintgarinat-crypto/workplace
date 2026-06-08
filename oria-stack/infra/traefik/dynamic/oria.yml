@@ -1,0 +1,53 @@
+# ── VM-Oria : 10.10.10.20 ─────────────────────────────────────────────────────
+
+http:
+  routers:
+    # Auth endpoints — rate limit strict (20 req/min par IP)
+    oria-auth:
+      rule: 'Host(`oria.{{ env "DOMAIN" }}`) && PathPrefix(`/api/auth`)'
+      entryPoints: [websecure]
+      middlewares: [rate-limit-auth]
+      service: oria-frontend
+      priority: 10
+      tls:
+        certResolver: letsencrypt
+
+    # Oria frontend — nginx interne proxy /api/ → backend:8000 + /ws/
+    oria-frontend:
+      rule: 'Host(`oria.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: oria-frontend
+      tls:
+        certResolver: letsencrypt
+
+    # Matrix / Synapse
+    matrix:
+      rule: 'Host(`matrix.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: synapse
+      tls:
+        certResolver: letsencrypt
+
+    # LiveKit (WebRTC signaling — WebSocket)
+    livekit:
+      rule: 'Host(`livekit.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: livekit
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    oria-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.20:3000"
+
+    synapse:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.20:8008"
+
+    livekit:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.20:7880"

@@ -1,0 +1,20 @@
+services:
+  donnees:
+    build: .
+    container_name: workplace_donnees
+    ports:
+      - "5500:5500"
+    volumes:
+      - donnees_data:/data
+    environment:
+      - DB_PATH=/data/donnees.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5500/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  donnees_data:

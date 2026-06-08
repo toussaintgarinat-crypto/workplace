@@ -1,0 +1,19 @@
+{
+  "nom": "agenda",
+  "version": "1.0.0",
+  "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
+  "role": "agenda",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/agenda",
+  "port": 8400,
+  "url_sante": "http://host.docker.internal:8400/health",
+  "vue_dashboard": "agenda",
+  "depends_on": [],
+  "offre": [
+    "calendriers",
+    "evenements",
+    "invitations"
+  ],
+  "besoin": []
+}

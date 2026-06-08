@@ -1,0 +1,70 @@
+{
+  "common": {
+    "loading": "جارٍ التحميل...",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "add": "إضافة",
+    "activate": "تفعيل",
+    "deactivate": "إلغاء التفعيل",
+    "error": "خطأ",
+    "noData": "لا توجد بيانات",
+    "back": "رجوع"
+  },
+  "workspace": {
+    "title": "مساحة العمل",
+    "newConversation": "محادثة جديدة",
+    "placeholder": "رسالة Forge… (Enter للإرسال)",
+    "thinking": "جارٍ التفكير...",
+    "ready": "جاهز",
+    "you": "أنت",
+    "reactMode": "وضع ReAct مفعّل",
+    "reactBadge": "⚛ وضع ReAct — يمكن للوكيل استخدام الأدوات"
+  },
+  "hitl": {
+    "title": "موافقات مطلوبة",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "levels": {
+      "1": "معلومات",
+      "2": "تأكيد",
+      "3": "موافقة",
+      "4": "تحقق",
+      "5": "تفويض",
+      "6": "حرج"
+    }
+  },
+  "mcp": {
+    "title": "خوادم MCP",
+    "subtitle": "ربط الأدوات الخارجية بـ Forge عبر Model Context Protocol.",
+    "addServer": "إضافة خادم",
+    "noServers": "لا توجد خوادم MCP مهيأة.",
+    "listTools": "أدوات",
+    "toolsAvailable": "أداة (أدوات) متاحة"
+  },
+  "skills": {
+    "title": "المهارات",
+    "subtitle": "تعليمات خبراء تُحقن في السياق بناءً على المشغلات.",
+    "newSkill": "مهارة جديدة",
+    "noSkills": "لا توجد مهارات مهيأة.",
+    "global": "عام",
+    "skillMd": "SKILL.md"
+  },
+  "nav": {
+    "workspace": "مساحة العمل",
+    "commandBridge": "جسر الأوامر",
+    "analytics": "تحليلات",
+    "morningBrief": "الإحاطة الصباحية",
+    "search": "بحث",
+    "tools": "أدوات العمل",
+    "governance": "حوكمة الذكاء الاصطناعي",
+    "org": "المنظمة",
+    "mcp": "MCP",
+    "skills": "المهارات",
+    "agents": "الوكلاء",
+    "governor": "Governor",
+    "slo": "لوحة SLO",
+    "automation": "الأتمتة"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "close": "Close",
+    "error": "Error",
+    "back": "← Back",
+    "add": "Add"
+  },
+  "login": {
+    "tagline": "Your digital office",
+    "login": "Login",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "name": "Your first name or nickname",
+    "connect": "Sign in →",
+    "createAccount": "Create account →",
+    "connectionError": "Connection error",
+    "wrongCode": "Incorrect code",
+    "twoFaTitle": "🔐 Two-factor authentication enabled. Enter the code from your app.",
+    "sixDigitCode": "6-digit code",
+    "verify": "Verify →"
+  },
+  "app": {
+    "loading": "Loading…"
+  },
+  "main": {
+    "selectRoom": "Select a room from the left panel",
+    "createOrJoin": "Create or join a community to get started",
+    "needWorld": "Select a world from the sidebar to manage its agents.",
+    "needWorldMap": "Select a world from the sidebar to view its map.",
+    "resizeHandle": "Drag to resize"
+  },
+  "channel": {
+    "selectWorld": "Select a community",
+    "inviteTitle": "Invite",
+    "manageSubscriptions": "Manage subscriptions",
+    "worldDocs": "Community documents",
+    "membersAgents": "Agents & Members",
+    "addService": "Add a service",
+    "addDistrict": "Add a district",
+    "tools": "Tools",
+    "search": "Search",
+    "calendar": "Calendar",
+    "network": "Network",
+    "zones": "Zones",
+    "aiConfig": "AI Config",
+    "deleteBuilding": "Delete « {{name}} »?",
+    "deleteRoom": "Delete « {{name}} »?",
+    "deleteDistrict": "Delete district « {{name}} »?",
+    "addRoom": "Add a room",
+    "buildingDocs": "Service documents",
+    "subscribe": "Subscription required: {{plans}}",
+    "projects": "Projects"
+  },
+  "room": {
+    "checkingAccess": "Checking access...",
+    "paidRoom": "This room requires a paid subscription.",
+    "paidFrom": "Access from {{price}} {{currency}}",
+    "paidMonthly": "/month",
+    "payAccess": "💳 Pay and access",
+    "connectingVoice": "Connecting to voice...",
+    "startOf": "Start of",
+    "broadcastLocked": "Read-only channel — only the owner can write here",
+    "messagePlaceholder": "Message in {{roomName}}",
+    "react": "React",
+    "deleteMessage": "Delete",
+    "uploadFile": "Upload a file",
+    "encryptedE2EE": "E2EE encrypted messages",
+    "coinsTitle": "Member coins",
+    "finished": "Done"
+  }
+}

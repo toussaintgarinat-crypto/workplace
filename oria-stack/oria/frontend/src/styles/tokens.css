@@ -1,0 +1,54 @@
+/* ============================================================
+   ORIA — DESIGN TOKENS
+   Dark chaud « habité », 3 couleurs réglables (accent / ambiance / texte).
+   Les valeurs --accent, --surface, --text-base et --tint sont surchargées
+   à l'exécution par le moteur de thème (src/theme/theme.js) en inline-style
+   sur :root. Ici on définit les DÉFAUTS + tout ce qui en dérive.
+   ============================================================ */
+:root{
+  /* — Les 3 couleurs réglables + l'intensité de l'ambiance — */
+  --accent:#d49a36;    /* boutons, liserés, badges, liens */
+  --surface:#d49a36;   /* teinte des fonds (rail, colonnes, cartes) */
+  --text-base:#f1ece3; /* couleur de base du texte */
+  --tint:16%;          /* dose de --surface injectée dans les fonds */
+
+  /* — Encre : surfaces dérivées de --surface — */
+  --ink-900:color-mix(in oklab, #100f12, var(--surface) var(--tint));
+  --ink-850:color-mix(in oklab, #161519, var(--surface) var(--tint));
+  --ink-800:color-mix(in oklab, #1c1b20, var(--surface) var(--tint));
+  --ink-750:color-mix(in oklab, #232228, var(--surface) var(--tint));
+  --ink-700:color-mix(in oklab, #2c2a32, var(--surface) calc(var(--tint) + 4%));
+  --ink-650:color-mix(in oklab, #38353f, var(--surface) calc(var(--tint) + 8%));
+  --line:color-mix(in oklab, #2e2c35, var(--surface) calc(var(--tint) + 4%));
+
+  /* — Texte : base réglable, hiérarchie en fondu vers le fond — */
+  --text-hi:var(--text-base);
+  --text:color-mix(in oklab, var(--text-base), var(--ink-900) 18%);
+  --text-mut:color-mix(in oklab, var(--text-base), var(--ink-900) 45%);
+  --text-dim:color-mix(in oklab, var(--text-base), var(--ink-900) 62%);
+
+  /* — Nuances d'accent — */
+  --or-300:color-mix(in oklab, var(--accent), #fff 36%);
+  --or-400:color-mix(in oklab, var(--accent), #fff 16%);
+  --or-500:var(--accent);
+  --or-600:color-mix(in oklab, var(--accent), #000 24%);
+  --or-glow:color-mix(in srgb, var(--accent), transparent 78%);
+
+  /* — Secondaire botanique (le Jardin) & états — */
+  --sauge:#7e9b73;
+  --vert:#62a36b;      /* en ligne / succès */
+  --rouge:#c5654f;     /* danger */
+  --bleu-info:#6c8ab0;
+
+  /* — Rayons / élévation / motion — */
+  --r-sm:7px; --r-md:11px; --r-lg:16px; --r-xl:22px; --r-full:999px;
+  --sh-1:0 1px 2px rgba(0,0,0,.35);
+  --sh-2:0 6px 20px rgba(0,0,0,.40);
+  --sh-pop:0 18px 50px rgba(0,0,0,.55);
+  --glow-or:0 0 0 1px color-mix(in srgb, var(--accent), transparent 65%), 0 8px 28px var(--or-glow);
+  --ease:cubic-bezier(.22,.61,.36,1);
+
+  /* — Typographie — */
+  --f-display:'Fraunces', Georgia, serif;
+  --f-ui:'Hanken Grotesk', system-ui, sans-serif;
+}

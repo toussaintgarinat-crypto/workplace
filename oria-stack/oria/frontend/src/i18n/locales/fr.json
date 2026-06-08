@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "Chargement…",
+    "save": "Sauvegarder",
+    "saving": "Sauvegarde…",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "confirm": "Confirmer",
+    "close": "Fermer",
+    "error": "Erreur",
+    "back": "← Retour",
+    "add": "Ajouter"
+  },
+  "login": {
+    "tagline": "Ton bureau digital",
+    "login": "Connexion",
+    "register": "Inscription",
+    "email": "Email",
+    "password": "Mot de passe",
+    "name": "Ton prénom ou pseudo",
+    "connect": "Se connecter →",
+    "createAccount": "Créer mon compte →",
+    "connectionError": "Erreur de connexion",
+    "wrongCode": "Code incorrect",
+    "twoFaTitle": "🔐 Double authentification activée. Saisir le code depuis votre application.",
+    "sixDigitCode": "Code à 6 chiffres",
+    "verify": "Vérifier →"
+  },
+  "app": {
+    "loading": "Chargement…"
+  },
+  "main": {
+    "selectRoom": "Sélectionne une salle dans le panel de gauche",
+    "createOrJoin": "Crée ou rejoins une commune pour commencer",
+    "needWorld": "Sélectionne un monde dans la sidebar pour gérer ses agents.",
+    "needWorldMap": "Sélectionne un monde dans la sidebar pour voir sa carte.",
+    "resizeHandle": "Glisser pour redimensionner"
+  },
+  "channel": {
+    "selectWorld": "Sélectionne une commune",
+    "inviteTitle": "Inviter",
+    "manageSubscriptions": "Gérer les abonnements",
+    "worldDocs": "Documents commune",
+    "membersAgents": "Agents & Élus",
+    "addService": "Ajouter un service",
+    "addDistrict": "Ajouter une direction",
+    "tools": "Outils",
+    "search": "Recherche",
+    "calendar": "Calendrier",
+    "network": "Réseau",
+    "zones": "Zones",
+    "aiConfig": "Config IA",
+    "deleteBuilding": "Supprimer « {{name}} » ?",
+    "deleteRoom": "Supprimer « {{name}} » ?",
+    "deleteDistrict": "Supprimer le quartier « {{name}} » ?",
+    "addRoom": "Ajouter une salle",
+    "buildingDocs": "Documents service",
+    "subscribe": "Abonnement requis : {{plans}}",
+    "projects": "Projets"
+  },
+  "room": {
+    "checkingAccess": "Vérification de l'accès...",
+    "paidRoom": "Cette room est en accès payant.",
+    "paidFrom": "Accès à partir de {{price}} {{currency}}",
+    "paidMonthly": "/mois",
+    "payAccess": "💳 Payer et accéder",
+    "connectingVoice": "Connexion au vocal...",
+    "startOf": "Début de",
+    "broadcastLocked": "Canal en lecture seule — seul le maire peut écrire ici",
+    "messagePlaceholder": "Message dans {{roomName}}",
+    "react": "Réagir",
+    "deleteMessage": "Supprimer",
+    "uploadFile": "Envoyer un fichier",
+    "encryptedE2EE": "Messages chiffrés E2EE",
+    "coinsTitle": "Coins des membres",
+    "finished": "Terminé"
+  }
+}

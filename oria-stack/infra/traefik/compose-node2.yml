@@ -1,0 +1,36 @@
+version: '3.9'
+
+# Traefik Node 2 — standby DNS failover
+# Déployer sur Node 2 quand disponible (voir docs/runbooks/phase-b-checklist.md)
+#
+# Usage sur Node 2 :
+#   cp .env.example .env && nano .env  # renseigner DOMAIN, CF_API_TOKEN
+#   docker compose -f infra/traefik/compose-node2.yml up -d
+
+services:
+  traefik:
+    image: traefik:v3.3.7
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "10000:10000"
+      - "33073:33073"
+      - "3478:3478/udp"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - CF_DNS_API_TOKEN=${CF_API_TOKEN}
+    volumes:
+      - ./traefik-node2.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./users:/etc/traefik/users:ro
+      - letsencrypt-n2:/letsencrypt
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/ping >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  letsencrypt-n2:

@@ -1,0 +1,11 @@
+[run]
+source = app
+omit =
+    # Modèles auto-générés (sqlacodegen) : reflètent le schéma, pas de logique à tester.
+    app/models/*
+    tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

@@ -1,0 +1,58 @@
+version: '3.9'
+
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Variables requises dans .env :
+#   DOMAIN, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD, ENCRYPTION_KEY,
+#   ANTHROPIC_API_KEY, NETBIRD_DATASTORE_ENCRYPTION_KEY,
+#   MACBOOK_NETBIRD_IP (IP Netbird du MacBook M5, ex: 100.64.0.2)
+
+services:
+
+  keycloak:
+    command: start --import-realm
+    environment:
+      - KC_HOSTNAME=auth.${DOMAIN}
+      - KC_PROXY=edge
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+
+  # S136 : core est l'unique backend forge (Bun supprimé). Overrides prod.
+  # NODE_ENV=production active le fail-fast ENCRYPTION_KEY de crypto.py.
+  core:
+    environment:
+      - NODE_ENV=production
+      - FRONTEND_URL=https://forge.${DOMAIN}
+      - CORS_ORIGINS=https://forge.${DOMAIN}
+      - OLLAMA_BASE_URL=http://${MACBOOK_NETBIRD_IP}:11434/api
+    volumes: []
+
+  ml-module:
+    volumes: []
+
+  frontend:
+    volumes: []
+
+  netbird-dashboard:
+    environment:
+      - AUTH_AUTHORITY=https://auth.${DOMAIN}/realms/forge
+      - AUTH_CLIENT_ID=netbird-client
+      - AUTH_AUDIENCE=netbird-client
+      - AUTH_SUPPORTED_SCOPES=openid profile email offline_access api
+      - AUTH_REDIRECT_URI=https://netbird.${DOMAIN}/callback
+      - AUTH_SILENT_REDIRECT_URI=https://netbird.${DOMAIN}/silent-callback
+      - NETBIRD_MGMT_API_ENDPOINT=https://${DOMAIN}:33073
+      - NETBIRD_SIGNAL_ENDPOINT=wss://${DOMAIN}:10000
+      - USE_AUTH0=false
+
+  postgres:
+    ports: []    # interne uniquement — pas d'accès externe
+
+  qdrant:
+    ports: []    # accessible via Traefik (qdrant.DOMAIN) avec basicAuth
+
+  netbird-signal:
+    ports: []    # TCP passthrough Traefik
+
+  netbird-management:
+    ports: []    # TCP passthrough Traefik

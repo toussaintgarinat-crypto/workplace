@@ -1,0 +1,70 @@
+services:
+
+  core:
+    build: .
+    env_file:
+      # Secrets partagés (GATEWAY_KEY…) — source unique à la racine du projet.
+      - path: ../.env
+        required: false
+    ports:
+      - "5100:5000"
+    environment:
+      - BRIQUES_DIR=/briques
+      - LIVRAISONS_DB=/data/livraisons.db
+      # Hôte par lequel le Cœur joint les autres briques (cf. manifests).
+      - BRIQUE_HOST=host.docker.internal
+      # URL publique du Générateur (liens aperçu/téléchargement du tableau, vus du navigateur).
+      - GENERATEUR_URL_PUBLIQUE=http://localhost:5400
+      # URL publique de l'Agenda (liens d'invitation transmis aux invités, joignables
+      # depuis l'extérieur). En déploiement : https://agenda.${DOMAIN} via Traefik.
+      - AGENDA_URL_PUBLIQUE=${AGENDA_URL_PUBLIQUE:-http://localhost:8400}
+      # Service-token S2S vers la brique Agenda. Requis seulement quand l'agenda
+      # tourne avec AUTH_ENABLED=true (doit valoir le même CALENDAR_SERVICE_TOKEN).
+      - CALENDAR_SERVICE_TOKEN=${CALENDAR_SERVICE_TOKEN:-}
+      # Dossiers portables des entreprises décrochées (cycle de vie S6).
+      - EXPORT_DIR=/export
+      # LLM de l'assistant du Cœur (S7) — même Gateway que les autres briques.
+      - GATEWAY_URL=http://host.docker.internal:4001
+      # GATEWAY_KEY vient du .env racine (env_file ci-dessus).
+      # Cerveau par défaut « de base » (modifiable à chaud via ⚙ Cerveau, persisté
+      # dans le volume du Cœur). Priorité aux COÛTS via la CASCADE AUTO : l'assistant
+      # essaie les meilleurs modèles GRATUITS servis par la Gateway (auto-sélectionnés,
+      # function-calling, bornés), puis bascule sur le repli payant si tous échouent /
+      # sont rate-limités. GATEWAY_MODEL vide = pas de tête imposée (cascade pure) ;
+      # choisir un modèle dans ⚙ Cerveau le met en tête (ex. IA locale, ou payant d'abord).
+      - GATEWAY_MODEL=
+      - CASCADE_AUTO=1
+      - REPLI_PAYANT=deepseek/deepseek-v4-flash
+      - CASCADE_FREE_N=3
+      # Réglage du cerveau depuis le front : où écrire la clé OpenRouter et quel
+      # projet compose redémarrer (cf. config_assistant.py).
+      - GATEWAY_ENV_PATH=/gateway/.env
+      - GATEWAY_COMPOSE_PROJECT=gateway
+      - ASSISTANT_CONFIG_PATH=/data/assistant_config.json
+    volumes:
+      - ../briques:/briques:ro
+      - core_data:/data
+      - ../apps_exportees:/export
+      # Le .env de la Gateway en écriture (pour y poser la clé OpenRouter)…
+      - ../briques/gateway/.env:/gateway/.env
+      # …et le socket Docker (pour redémarrer la Gateway après changement de clé).
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - default
+      - proxy_net
+
+volumes:
+  core_data:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net

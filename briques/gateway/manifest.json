@@ -1,0 +1,19 @@
+{
+  "nom": "gateway",
+  "version": "1.0.0",
+  "description": "Routeur LLM — LiteLLM proxy (OpenRouter, Ollama, Groq…)",
+  "role": "llm",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "briques/gateway",
+  "port": 4001,
+  "url_sante": "http://host.docker.internal:4001/health/liveliness",
+  "depends_on": [],
+  "offre": [
+    "chat_completions",
+    "routing_llm"
+  ],
+  "besoin": [
+    "LITELLM_MASTER_KEY"
+  ]
+}

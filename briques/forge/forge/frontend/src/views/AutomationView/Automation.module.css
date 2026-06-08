@@ -1,0 +1,27 @@
+.page { padding: 24px; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.title { margin: 0; font-size: 22px; color: #e8e8f0; }
+.form { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.label { font-size: 12px; color: #6b6b80; }
+.input, .select { padding: 8px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: #0f0f14; color: #e8e8f0; font-size: 13px; outline: none; }
+.input:focus, .select:focus { border-color: #6366f1; }
+.formActions { display: flex; gap: 8px; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.ruleCard { display: flex; align-items: center; justify-content: space-between; padding: 16px; background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; gap: 16px; }
+.ruleLeft { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.ruleRight { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ruleName { font-size: 14px; font-weight: 600; color: #e8e8f0; }
+.ruleSub { font-size: 12px; color: #6b6b80; }
+.ruleMeta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.chip { padding: 2px 8px; background: #1e1e2e; border-radius: 4px; font-size: 11px; color: #818cf8; }
+.executions { font-size: 12px; color: #6b6b80; }
+.toggleBtn { padding: 5px 12px; border-radius: 6px; border: 1px solid #2a2a3e; background: transparent; cursor: pointer; font-size: 12px; }
+.toggleBtn.on { color: #10b981; border-color: #10b981; }
+.toggleBtn.off { color: #6b6b80; }
+.deleteBtn { padding: 5px 8px; border-radius: 6px; border: 1px solid #2a2a3e; background: transparent; color: #6b6b80; cursor: pointer; font-size: 12px; }
+.deleteBtn:hover { color: #ef4444; border-color: #ef4444; }
+.empty { color: #6b6b80; font-size: 13px; text-align: center; padding: 32px; }
+.btnPrimary { padding: 7px 16px; border-radius: 8px; border: none; background: #6366f1; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btnPrimary:disabled { opacity: 0.5; }
+.btnGhost { padding: 7px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: transparent; color: #6b6b80; cursor: pointer; font-size: 13px; }

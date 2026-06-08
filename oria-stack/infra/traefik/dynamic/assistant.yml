@@ -1,0 +1,29 @@
+# ── LXC assistant : 10.10.10.40 ──────────────────────────────────────────────
+
+http:
+  routers:
+    assistant-frontend:
+      rule: 'Host(`assistant.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: assistant-frontend
+      tls:
+        certResolver: letsencrypt
+
+    assistant-api:
+      rule: 'Host(`assistant.{{ env "DOMAIN" }}`) && PathPrefix(`/api`)'
+      entryPoints: [websecure]
+      middlewares: [rate-limit-api]
+      service: assistant-api
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    assistant-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.40:8300"
+
+    assistant-api:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.40:8200"

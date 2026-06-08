@@ -1,0 +1,70 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "add": "添加",
+    "activate": "激活",
+    "deactivate": "停用",
+    "error": "错误",
+    "noData": "无数据",
+    "back": "返回"
+  },
+  "workspace": {
+    "title": "工作区",
+    "newConversation": "新对话",
+    "placeholder": "发送消息… (按回车发送)",
+    "thinking": "思考中...",
+    "ready": "就绪",
+    "you": "您",
+    "reactMode": "ReAct 模式已启用",
+    "reactBadge": "⚛ ReAct 模式 — 代理可以使用工具"
+  },
+  "hitl": {
+    "title": "需要审批",
+    "approve": "批准",
+    "reject": "拒绝",
+    "levels": {
+      "1": "信息",
+      "2": "确认",
+      "3": "审批",
+      "4": "验证",
+      "5": "授权",
+      "6": "关键"
+    }
+  },
+  "mcp": {
+    "title": "MCP 服务器",
+    "subtitle": "通过 Model Context Protocol 将外部工具连接到 Forge。",
+    "addServer": "添加服务器",
+    "noServers": "未配置 MCP 服务器。",
+    "listTools": "工具",
+    "toolsAvailable": "个工具可用"
+  },
+  "skills": {
+    "title": "技能",
+    "subtitle": "根据触发器注入上下文的专家指令。",
+    "newSkill": "新技能",
+    "noSkills": "未配置技能。",
+    "global": "全局",
+    "skillMd": "SKILL.md"
+  },
+  "nav": {
+    "workspace": "工作区",
+    "commandBridge": "命令桥",
+    "analytics": "分析",
+    "morningBrief": "晨报",
+    "search": "搜索",
+    "tools": "业务工具",
+    "governance": "AI 治理",
+    "org": "组织",
+    "mcp": "MCP",
+    "skills": "技能",
+    "agents": "代理",
+    "governor": "Governor",
+    "slo": "SLO 仪表板",
+    "automation": "自动化"
+  }
+}

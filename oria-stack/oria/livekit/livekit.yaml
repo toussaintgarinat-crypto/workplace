@@ -1,0 +1,10 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+keys:
+  devkey: devsecret_oria_local_dev_key_32chars
+logging:
+  json: false
+  level: info

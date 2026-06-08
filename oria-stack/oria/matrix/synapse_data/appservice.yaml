@@ -1,0 +1,16 @@
+id: oria_appservice
+url: http://backend:8000/_matrix/app/v1
+as_token: "5c95b040fc487db2901d458463a84b187a521e647e6d2ad14a7fe8d4a4eac097"
+hs_token: "216582996e3addbb9eba6327a3fa3a3760c11da3226b6aa3f3cce2b2a87445f1"
+sender_localpart: oriabot
+namespaces:
+  users:
+    - exclusive: true
+      regex: "@oria_.*:oria.local"
+  rooms:
+    - exclusive: false
+      regex: "!.*:oria.local"
+  aliases:
+    - exclusive: true
+      regex: "#oria_.*:oria.local"
+rate_limited: false

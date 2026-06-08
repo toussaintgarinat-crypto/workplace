@@ -1,0 +1,51 @@
+api:
+  dashboard: true
+
+ping: {}
+
+entryPoints:
+  ping:
+    address: ":8082"
+
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+
+  netbird-signal:
+    address: ":10000"
+
+  netbird-management:
+    address: ":33073"
+
+  turn-udp:
+    address: ":3478/udp"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: toussaintgarinat@gmail.com
+      storage: /letsencrypt/acme.json
+      # DNS-01 via Cloudflare — port 80 pas nécessaire sur Node 2
+      # CF_DNS_API_TOKEN injecté via env dans compose-node2.yml
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

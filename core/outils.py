@@ -1,0 +1,688 @@
+"""Outils de l'assistant du Cœur (Sprints S7/S8).
+
+L'assistant n'est pas cantonné à l'usine : il sert **toute la solution**. Chaque
+outil est une spec function-calling + un répartiteur `executer(nom, args)` qui
+appelle les **contrats HTTP existants** des briques (ETL, Audit, Générateur,
+Données, Mémoire) et les fonctions internes du Cœur (orchestrateur, cycle de vie).
+Aucune logique métier n'est réécrite.
+
+Familles :
+  • LECTURE : consulter l'état (entreprises, documents, apps, données, mémoire,
+    santé des briques).
+  • ACTION  : livrer/décrocher/reprendre une entreprise, ingérer un document,
+    créer un enregistrement, mémoriser un souvenir. Toute action est **gardée par
+    confirmation** : refus tant que `confirme=true` n'est pas passé, et message de
+    confirmation renvoyé au modèle pour qu'il demande l'accord de l'utilisateur.
+"""
+
+import asyncio
+import json
+import uuid
+
+import httpx
+
+import agenda
+import cycle_de_vie
+import orchestrateur
+
+
+# ── Catalogue (specs function-calling) ───────────────────────────────────────
+
+def _p(props: dict, required: list[str]) -> dict:
+    return {"type": "object", "properties": props, "required": required}
+
+
+OUTILS: list[dict] = [
+    # — LECTURE —
+    {"type": "function", "function": {
+        "name": "lister_entreprises",
+        "description": "Liste les entreprises livrées et leur statut (livree, decrochee, en_cours, erreur). À appeler en premier pour retrouver l'identifiant (livraison_id) avant toute action.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "details_entreprise",
+        "description": "Détail d'une entreprise : étapes, app, audit, dossier, erreurs.",
+        "parameters": _p({"livraison_id": {"type": "string"}}, ["livraison_id"])}},
+    {"type": "function", "function": {
+        "name": "etat_briques",
+        "description": "Liste les briques de la solution (ETL, Audit, Générateur, Données, Mémoire…) et leur santé.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "chercher_documents",
+        "description": "Cherche dans les documents ingérés (ETL) et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
+        "parameters": _p({
+            "q": {"type": "string", "description": "Filtre texte sur le nom/contenu (optionnel)."},
+            "categorie": {"type": "string", "description": "Filtre par catégorie (devis, facture, contrat…)."},
+            "projet": {"type": "string", "description": "Filtre par dossier de projet (ex. « prochain sprint »)."},
+            "entreprise_id": {"type": "string", "description": "Filtre par entreprise rattachée (livraison_id)."},
+        }, [])}},
+    {"type": "function", "function": {
+        "name": "lister_dossiers",
+        "description": "Liste les dossiers de documents : projets et catégories, avec le nombre de documents dans chacun.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "lire_document",
+        "description": "Lit le texte extrait d'un document de l'ETL.",
+        "parameters": _p({"doc_id": {"type": "string"}}, ["doc_id"])}},
+    {"type": "function", "function": {
+        "name": "lister_apps",
+        "description": "Liste les applications générées (Générateur).",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "consulter_donnees",
+        "description": "Résume les enregistrements saisis dans une app (Données) : nombre par entité.",
+        "parameters": _p({"app_id": {"type": "string"}}, ["app_id"])}},
+    {"type": "function", "function": {
+        "name": "memoire_rappeler",
+        "description": "Cherche dans la mémoire. 'espace' = 'solution' (usine, entreprises, projets) ou 'perso' (préférences/faits sur l'utilisateur lui-même). Défaut : solution.",
+        "parameters": _p({
+            "requete": {"type": "string"},
+            "espace": {"type": "string", "enum": ["solution", "perso"]},
+        }, ["requete"])}},
+    {"type": "function", "function": {
+        "name": "agenda_consulter",
+        "description": "Liste les rendez-vous/événements de l'agenda personnel sur une période. 'debut' et 'fin' au format ISO 8601 (ex. 2026-06-06T00:00:00). Sans période, renvoie les prochains événements.",
+        "parameters": _p({
+            "debut": {"type": "string", "description": "Début de la plage (ISO 8601)."},
+            "fin": {"type": "string", "description": "Fin de la plage (ISO 8601)."},
+        }, [])}},
+    {"type": "function", "function": {
+        "name": "agenda_lister",
+        "description": "Liste les agendas (calendriers) accessibles : l'agenda perso et les agendas partagés, avec le rôle de l'utilisateur (owner/editor/viewer) et l'id de chacun. Utile avant d'inviter quelqu'un ou de voir les membres.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "forge_capacites",
+        "description": "État et capacités de la brique Forge (agents IA, RAG, vectorisation) : ce que Forge sait faire et si son moteur est en ligne. À appeler pour répondre « que peut faire Forge ? » ou « est-ce que Forge tourne ? ». Lecture seule.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "forge_rag_chercher",
+        "description": "Cherche dans les documents ingérés dans le RAG de Forge (recherche sémantique) et renvoie les passages pertinents. À utiliser pour « que dit le doc sur X ? » ou « cherche X dans Forge ». Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "q": {"type": "string", "description": "La question ou les termes à rechercher."},
+        }, ["q"])}},
+    {"type": "function", "function": {
+        "name": "forge_factures_lister",
+        "description": "Liste les devis et factures de Forge avec le chiffre d'affaires (encaissé, en attente). À utiliser pour « mes factures impayées », « mon CA », « liste mes devis ». Pour les impayés, utilise statut='envoyée'. Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "type": {"type": "string", "enum": ["facture", "devis"], "description": "Filtre par type (optionnel)."},
+            "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"], "description": "Filtre par statut (optionnel). 'envoyée' = impayé en attente."},
+        }, [])}},
+    {"type": "function", "function": {
+        "name": "forge_crm_lister",
+        "description": "Liste les prospects/clients du CRM de Forge avec le pipeline commercial (valeur estimée totale, ventilation par statut). À utiliser pour « mes prospects », « mon pipeline », « qui est en cours de négo ». Filtre 'statut' optionnel. Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "statut": {"type": "string", "description": "Filtre par statut (optionnel), ex. 'prospect', 'qualifié', 'gagné', 'perdu'."},
+        }, [])}},
+
+    # — ACTION (gardées par confirmation) —
+    {"type": "function", "function": {
+        "name": "livrer_entreprise",
+        "description": "Lance une livraison (audit→génération) sur les documents déjà dans l'ETL. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "nom_entreprise": {"type": "string"},
+            "persistance": {"type": "string", "enum": ["hebergee", "autonome"]},
+            "messagerie": {"type": "boolean"},
+            "packager": {"type": "boolean"},
+            "confirme": {"type": "boolean"},
+        }, ["nom_entreprise"])}},
+    {"type": "function", "function": {
+        "name": "decrocher_entreprise",
+        "description": "Décroche une entreprise (dossier portable + retrait des bases centrales). ACTION DESTRUCTRICE : confirme=true requis après accord.",
+        "parameters": _p({"livraison_id": {"type": "string"}, "confirme": {"type": "boolean"}}, ["livraison_id"])}},
+    {"type": "function", "function": {
+        "name": "reprendre_entreprise",
+        "description": "Réinjecte une entreprise décrochée pour la modifier. ACTION : confirme=true requis après accord.",
+        "parameters": _p({"livraison_id": {"type": "string"}, "confirme": {"type": "boolean"}}, ["livraison_id"])}},
+    {"type": "function", "function": {
+        "name": "ingerer_document",
+        "description": "Ingère un document dans l'ETL depuis une URL. ACTION : confirme=true requis après accord.",
+        "parameters": _p({"url": {"type": "string"}, "confirme": {"type": "boolean"}}, ["url"])}},
+    {"type": "function", "function": {
+        "name": "classer_document",
+        "description": "Range/ajuste le classement d'un document déjà ingéré : catégorie, mots-clés (tags), entreprise rattachée (entreprise_id), dossier de projet, résumé. Ne passe que les champs à changer. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "doc_id": {"type": "string"},
+            "categorie": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "entreprise_id": {"type": "string", "description": "livraison_id de l'entreprise à rattacher."},
+            "projet": {"type": "string", "description": "Nom du dossier de projet (ex. « prochain sprint »)."},
+            "resume": {"type": "string"},
+            "confirme": {"type": "boolean"},
+        }, ["doc_id"])}},
+    {"type": "function", "function": {
+        "name": "creer_enregistrement",
+        "description": "Crée un enregistrement dans une app (Données). ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "app_id": {"type": "string"},
+            "entite": {"type": "string", "description": "Identifiant de l'entité (ex. devis, chantier)."},
+            "donnees": {"type": "object", "description": "Champs de l'enregistrement."},
+            "confirme": {"type": "boolean"},
+        }, ["app_id", "entite", "donnees"])}},
+    {"type": "function", "function": {
+        "name": "memoire_retenir",
+        "description": "Mémorise un souvenir/fait/préférence. 'espace' = 'solution' (usine, entreprises) ou 'perso' (ce qui concerne l'utilisateur : ses préférences, habitudes, faits perso). Défaut : solution. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "contenu": {"type": "string"},
+            "titre": {"type": "string"},
+            "espace": {"type": "string", "enum": ["solution", "perso"]},
+            "confirme": {"type": "boolean"},
+        }, ["contenu"])}},
+    {"type": "function", "function": {
+        "name": "agenda_creer_evenement",
+        "description": "Ajoute un rendez-vous/événement à l'agenda (effet immédiat, pas de confirmation). 'debut' et 'fin' au format ISO 8601 (utilise la date/heure courante fournie pour interpréter « demain », « lundi prochain »…). Si l'heure de fin n'est pas précisée, mets +1h.",
+        "parameters": _p({
+            "titre": {"type": "string"},
+            "debut": {"type": "string", "description": "Date/heure de début (ISO 8601)."},
+            "fin": {"type": "string", "description": "Date/heure de fin (ISO 8601). Si non précisée, mets +1h."},
+            "lieu": {"type": "string"},
+            "description": {"type": "string"},
+        }, ["titre", "debut", "fin"])}},
+    {"type": "function", "function": {
+        "name": "agenda_deplacer_evenement",
+        "description": "Replanifie un événement existant (nouvelles dates, effet immédiat). Retrouve d'abord son event_id via agenda_consulter.",
+        "parameters": _p({
+            "event_id": {"type": "string"},
+            "debut": {"type": "string", "description": "Nouveau début (ISO 8601)."},
+            "fin": {"type": "string", "description": "Nouvelle fin (ISO 8601)."},
+        }, ["event_id", "debut", "fin"])}},
+    {"type": "function", "function": {
+        "name": "agenda_supprimer_evenement",
+        "description": "Annule (supprime) un événement de l'agenda. Retrouve d'abord son event_id via agenda_consulter. ACTION DESTRUCTRICE : confirme=true requis après accord.",
+        "parameters": _p({
+            "event_id": {"type": "string"},
+            "confirme": {"type": "boolean"},
+        }, ["event_id"])}},
+    {"type": "function", "function": {
+        "name": "agenda_creer_partage",
+        "description": "Crée un nouvel agenda (calendrier) partageable, distinct de l'agenda perso (effet immédiat, pas de confirmation). Le créateur en est propriétaire et peut ensuite inviter des personnes via agenda_inviter. Renvoie l'id de l'agenda créé.",
+        "parameters": _p({
+            "nom": {"type": "string", "description": "Nom de l'agenda (ex. « Famille », « Équipe chantier »)."},
+            "description": {"type": "string"},
+            "couleur": {"type": "string", "description": "Couleur hex, ex. #3B82F6."},
+        }, ["nom"])}},
+    {"type": "function", "function": {
+        "name": "agenda_inviter",
+        "description": "Génère un lien d'invitation à un agenda partagé pour donner l'accès à quelqu'un. Récupère d'abord le calendar_id via agenda_lister. Renvoie un lien et un token à transmettre à l'invité. ACTION (donne un accès) : confirme=true requis après accord.",
+        "parameters": _p({
+            "calendar_id": {"type": "string", "description": "Id de l'agenda à partager (via agenda_lister)."},
+            "role": {"type": "string", "enum": ["viewer", "editor"], "description": "viewer = lecture seule ; editor = peut modifier. Défaut viewer."},
+            "expire_heures": {"type": "integer", "description": "Durée de validité du lien en heures (défaut 72)."},
+            "email": {"type": "string", "description": "Email de l'invité (optionnel, informatif)."},
+            "confirme": {"type": "boolean"},
+        }, ["calendar_id"])}},
+    {"type": "function", "function": {
+        "name": "forge_rag_ingerer",
+        "description": "Ingère un document dans la base RAG de Forge (vectorisation) pour pouvoir l'interroger ensuite. ACTION (écrit dans Forge) : confirme=true requis après accord.",
+        "parameters": _p({
+            "nom": {"type": "string", "description": "Nom/titre du document."},
+            "contenu": {"type": "string", "description": "Le texte du document à ingérer."},
+            "confirme": {"type": "boolean"},
+        }, ["nom", "contenu"])}},
+    {"type": "function", "function": {
+        "name": "forge_lancer_agent",
+        "description": "Lance un agent IA de Forge sur une tâche (il raisonne et peut utiliser des outils, via la Gateway). ACTION (exécution dans Forge) : confirme=true requis après accord.",
+        "parameters": _p({
+            "objectif": {"type": "string", "description": "Ce que l'agent doit accomplir."},
+            "contexte": {"type": "string", "description": "Contexte utile (optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["objectif"])}},
+    {"type": "function", "function": {
+        "name": "forge_facture_creer",
+        "description": "Crée un devis ou une facture dans Forge (numérotation et calcul HT/TVA/TTC automatiques). ACTION (écrit dans Forge) : confirme=true requis après accord.",
+        "parameters": _p({
+            "client": {"type": "string", "description": "Nom du client."},
+            "lignes": {"type": "array", "description": "Lignes du document.", "items": {"type": "object", "properties": {
+                "description": {"type": "string"},
+                "quantite": {"type": "number"},
+                "prix_unitaire": {"type": "number"},
+                "tva": {"type": "number", "description": "Taux TVA en % (défaut 20)."},
+            }, "required": ["description", "prix_unitaire"]}},
+            "type": {"type": "string", "enum": ["facture", "devis"], "description": "Défaut : facture."},
+            "email": {"type": "string", "description": "Email du client (optionnel)."},
+            "tva_taux": {"type": "number", "description": "Taux TVA par défaut (%)."},
+            "notes": {"type": "string"},
+            "echeance": {"type": "string", "description": "Date d'échéance (ISO, optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["client", "lignes"])}},
+    {"type": "function", "function": {
+        "name": "forge_facture_statut",
+        "description": "Change le statut d'une facture/devis : la passer 'payée' (encaissement → entre dans le CA), 'envoyée', 'annulée'. Récupère d'abord son id via forge_factures_lister. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "id": {"type": "string", "description": "Id du document (via forge_factures_lister)."},
+            "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"]},
+            "confirme": {"type": "boolean"},
+        }, ["id", "statut"])}},
+    {"type": "function", "function": {
+        "name": "forge_facture_transformer",
+        "description": "Transforme un devis accepté en facture (crée la facture, marque le devis transformé). Récupère d'abord l'id du devis via forge_factures_lister. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "id": {"type": "string", "description": "Id du devis à transformer."},
+            "confirme": {"type": "boolean"},
+        }, ["id"])}},
+    {"type": "function", "function": {
+        "name": "forge_crm_creer",
+        "description": "Ajoute un prospect/client dans le CRM de Forge. ACTION (écrit dans Forge) : confirme=true requis après accord.",
+        "parameters": _p({
+            "nom": {"type": "string", "description": "Nom du contact."},
+            "entreprise": {"type": "string"},
+            "email": {"type": "string"},
+            "telephone": {"type": "string"},
+            "statut": {"type": "string", "description": "Étape du pipeline (défaut 'prospect')."},
+            "valeur": {"type": "integer", "description": "Valeur estimée de l'affaire en euros."},
+            "notes": {"type": "string"},
+            "confirme": {"type": "boolean"},
+        }, ["nom"])}},
+    {"type": "function", "function": {
+        "name": "forge_crm_modifier",
+        "description": "Met à jour un prospect / le fait avancer dans le pipeline (changer le statut, ajuster la valeur, corriger les coordonnées). Récupère d'abord son id via forge_crm_lister. Ne passe que les champs à changer. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "id": {"type": "string", "description": "Id du prospect (via forge_crm_lister)."},
+            "statut": {"type": "string", "description": "Nouvelle étape (ex. 'qualifié', 'gagné', 'perdu')."},
+            "valeur": {"type": "integer", "description": "Valeur estimée (€)."},
+            "nom": {"type": "string"},
+            "entreprise": {"type": "string"},
+            "email": {"type": "string"},
+            "telephone": {"type": "string"},
+            "notes": {"type": "string"},
+            "confirme": {"type": "boolean"},
+        }, ["id"])}},
+]
+
+OUTILS_ACTION = {
+    "livrer_entreprise", "decrocher_entreprise", "reprendre_entreprise",
+    "ingerer_document", "classer_document", "creer_enregistrement", "memoire_retenir",
+    "agenda_supprimer_evenement", "agenda_inviter",
+    "forge_rag_ingerer", "forge_lancer_agent",
+    "forge_facture_creer", "forge_facture_statut", "forge_facture_transformer",
+    "forge_crm_creer", "forge_crm_modifier",
+}
+
+
+def _confirmation(action: str, cible: str) -> str:
+    return json.dumps({
+        "confirmation_requise": True, "action": action, "cible": cible,
+        "message": f"Action « {action} » sur « {cible} » PAS encore exécutée. "
+                   "Si l'utilisateur a DÉJÀ donné son accord dans la conversation "
+                   "(ex. « oui », « vas-y », « confirme »), tu DOIS rappeler MAINTENANT le "
+                   "même outil avec confirme=true — n'émets AUCUN texte, ne redemande PAS "
+                   "l'accord une seconde fois. Si l'accord n'a pas encore été donné, "
+                   "demande-lui simplement de confirmer.",
+    }, ensure_ascii=False)
+
+
+def _resume_liv(l: dict) -> dict:
+    return {"livraison_id": l.get("id"), "nom_entreprise": l.get("nom_entreprise"),
+            "statut": l.get("statut"), "app_id": l.get("app_id"), "dossier": l.get("dossier")}
+
+
+def _base(registre, nom: str) -> str:
+    return orchestrateur._brique_base(registre, nom)
+
+
+def _espace_memoire(espace: str | None) -> str | None:
+    """Mappe l'espace logique de l'assistant → nom d'espace de la brique Mémoire.
+    'solution' (défaut) → None (= espace « Workplace » côté brique) ; 'perso' → « Perso »."""
+    return "Perso" if (espace or "").lower() == "perso" else None
+
+
+# ── Répartiteur ──────────────────────────────────────────────────────────────
+
+async def executer(nom: str, args: dict, registre) -> str:
+    """Exécute un outil et renvoie une chaîne (résultat ou message) pour le LLM."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # — LECTURE —
+            if nom == "lister_entreprises":
+                liv = [_resume_liv(l) for l in orchestrateur.lister_livraisons()]
+                return json.dumps({"entreprises": liv, "total": len(liv)}, ensure_ascii=False)
+
+            if nom == "details_entreprise":
+                l = orchestrateur.lire_livraison(args.get("livraison_id", ""))
+                return json.dumps(l, ensure_ascii=False) if l else "Aucune entreprise avec cet identifiant."
+
+            if nom == "etat_briques":
+                return json.dumps(await _etat_briques(client, registre), ensure_ascii=False)
+
+            if nom == "chercher_documents":
+                params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
+                          if args.get(k)}
+                params["limite"] = 200
+                r = await client.get(f"{_base(registre, 'etl')}/documents", params=params)
+                docs = r.json().get("documents", []) if r.status_code < 400 else []
+                q = (args.get("q") or "").lower()
+                if q:
+                    docs = [d for d in docs if q in json.dumps(d, ensure_ascii=False).lower()]
+                apercu = [{"id": d.get("id"), "nom": d.get("nom"), "type": d.get("type_mime"),
+                           "classement": d.get("classement")} for d in docs]
+                return json.dumps({"documents": apercu, "total": len(apercu)}, ensure_ascii=False)
+
+            if nom == "lister_dossiers":
+                r = await client.get(f"{_base(registre, 'etl')}/dossiers")
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "ETL injoignable."
+
+            if nom == "lire_document":
+                r = await client.get(f"{_base(registre, 'etl')}/documents/{args.get('doc_id','')}")
+                if r.status_code >= 400:
+                    return "Document introuvable."
+                d = r.json()
+                return json.dumps({"id": d.get("id"), "nom": d.get("nom"),
+                                   "texte": (d.get("texte_extrait") or "")[:2000]}, ensure_ascii=False)
+
+            if nom == "lister_apps":
+                r = await client.get(f"{_base(registre, 'generateur')}/apps")
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "Générateur injoignable."
+
+            if nom == "consulter_donnees":
+                r = await client.get(f"{_base(registre, 'donnees')}/apps/{args.get('app_id','')}/resume")
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "Données injoignables."
+
+            if nom == "memoire_rappeler":
+                params = {"q": args.get("requete", "")}
+                esp = _espace_memoire(args.get("espace"))
+                if esp:
+                    params["espace"] = esp
+                r = await client.get(f"{_base(registre, 'memoire')}/rappeler", params=params)
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "Mémoire injoignable."
+
+            if nom == "agenda_consulter":
+                evts = await agenda.lister_evenements(registre, args.get("debut"), args.get("fin"))
+                apercu = [{"event_id": e.get("id"), "titre": e.get("title"),
+                           "debut": e.get("start_at"), "fin": e.get("end_at"),
+                           "lieu": e.get("location")} for e in evts]
+                return json.dumps({"evenements": apercu, "total": len(apercu)}, ensure_ascii=False)
+
+            if nom == "agenda_lister":
+                cals = await agenda.lister_agendas(registre)
+                apercu = [{"calendar_id": c.get("id"), "nom": c.get("name"),
+                           "role": c.get("role"), "defaut": c.get("is_default")}
+                          for c in cals]
+                return json.dumps({"agendas": apercu, "total": len(apercu)}, ensure_ascii=False)
+
+            if nom == "forge_capacites":
+                return await _forge_capacites(client, registre)
+
+            if nom == "forge_rag_chercher":
+                q = (args.get("q") or "").strip()
+                if not q:
+                    return "Précise ce que tu veux chercher dans Forge."
+                return await _forge_appel(client, registre, "GET", "/rag/chercher",
+                                          params={"q": q}, timeout=30)
+
+            if nom == "forge_factures_lister":
+                params = {k: args[k] for k in ("type", "statut") if args.get(k)}
+                return await _forge_appel(client, registre, "GET", "/facturation",
+                                          params=params, timeout=30)
+
+            if nom == "forge_crm_lister":
+                params = {"statut": args["statut"]} if args.get("statut") else {}
+                return await _forge_appel(client, registre, "GET", "/crm",
+                                          params=params, timeout=30)
+
+            # — ACTION —
+            if nom == "livrer_entreprise":
+                cible = args.get("nom_entreprise") or "entreprise"
+                if not args.get("confirme"):
+                    return _confirmation("livrer", cible)
+                return await _livrer(registre, args)
+
+            if nom == "decrocher_entreprise":
+                lid = args.get("livraison_id", "")
+                cible = (orchestrateur.lire_livraison(lid) or {}).get("nom_entreprise") or lid
+                if not args.get("confirme"):
+                    return _confirmation("décrocher", cible)
+                return json.dumps(await cycle_de_vie.decrocher(registre, lid), ensure_ascii=False)
+
+            if nom == "reprendre_entreprise":
+                lid = args.get("livraison_id", "")
+                cible = (orchestrateur.lire_livraison(lid) or {}).get("nom_entreprise") or lid
+                if not args.get("confirme"):
+                    return _confirmation("reprendre", cible)
+                return json.dumps(await cycle_de_vie.reprendre(registre, lid), ensure_ascii=False)
+
+            if nom == "ingerer_document":
+                url = args.get("url", "")
+                if not args.get("confirme"):
+                    return _confirmation("ingérer le document", url)
+                r = await client.post(f"{_base(registre, 'etl')}/ingerer/url", json={"url": url})
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec ingestion : {r.text}"
+
+            if nom == "classer_document":
+                doc_id = args.get("doc_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("classer le document", doc_id)
+                classement = {k: args[k] for k in
+                              ("categorie", "tags", "entreprise_id", "projet", "resume")
+                              if args.get(k) is not None}
+                r = await client.patch(
+                    f"{_base(registre, 'etl')}/documents/{doc_id}/classement", json=classement)
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec classement : {r.text}"
+
+            if nom == "creer_enregistrement":
+                app_id, entite = args.get("app_id", ""), args.get("entite", "")
+                if not args.get("confirme"):
+                    return _confirmation("créer un enregistrement", f"{entite} (app {app_id})")
+                r = await client.post(
+                    f"{_base(registre, 'donnees')}/apps/{app_id}/entites/{entite}/enregistrements",
+                    json=args.get("donnees") or {})
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec : {r.text}"
+
+            if nom == "memoire_retenir":
+                if not args.get("confirme"):
+                    return _confirmation("mémoriser", (args.get("titre") or args.get("contenu", ""))[:60])
+                corps_mem = {"contenu": args.get("contenu", ""), "titre": args.get("titre")}
+                esp = _espace_memoire(args.get("espace"))
+                if esp:
+                    corps_mem["espace"] = esp
+                r = await client.post(f"{_base(registre, 'memoire')}/retenir", json=corps_mem)
+                return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec mémorisation : {r.text}"
+
+            if nom == "agenda_creer_evenement":
+                titre = args.get("titre") or "Événement"
+                evt = await agenda.creer_evenement(
+                    registre, titre, args.get("debut", ""), args.get("fin", ""),
+                    args.get("lieu"), args.get("description"))
+                return json.dumps({"cree": True, "event_id": evt.get("id"), "titre": evt.get("title"),
+                                   "debut": evt.get("start_at"), "fin": evt.get("end_at")}, ensure_ascii=False)
+
+            if nom == "agenda_deplacer_evenement":
+                evt = await agenda.deplacer_evenement(
+                    registre, args.get("event_id", ""), args.get("debut", ""), args.get("fin", ""))
+                return json.dumps({"deplace": True, "event_id": evt.get("id"),
+                                   "debut": evt.get("start_at"), "fin": evt.get("end_at")}, ensure_ascii=False)
+
+            if nom == "agenda_supprimer_evenement":
+                if not args.get("confirme"):
+                    return _confirmation("annuler l'événement", args.get("event_id", ""))
+                ok = await agenda.supprimer_evenement(registre, args.get("event_id", ""))
+                return json.dumps({"supprime": ok}, ensure_ascii=False)
+
+            if nom == "agenda_creer_partage":
+                cal = await agenda.creer_agenda_partage(
+                    registre, args.get("nom") or "Agenda partagé",
+                    args.get("description"), args.get("couleur"))
+                return json.dumps({"cree": True, "calendar_id": cal.get("id"),
+                                   "nom": cal.get("name"), "role": cal.get("role")}, ensure_ascii=False)
+
+            if nom == "agenda_inviter":
+                cal_id = args.get("calendar_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("inviter à l'agenda partagé", cal_id)
+                inv = await agenda.inviter(
+                    registre, cal_id, args.get("role") or "viewer",
+                    args.get("expire_heures", 72), args.get("email"))
+                return json.dumps({"invite": True, "calendar_id": inv.get("calendar_id"),
+                                   "lien": inv.get("lien"), "token": inv.get("token"),
+                                   "role": inv.get("role"), "expire_le": inv.get("expires_at")},
+                                  ensure_ascii=False)
+
+            if nom == "forge_rag_ingerer":
+                nom_doc = (args.get("nom") or "document").strip()
+                if not args.get("confirme"):
+                    return _confirmation("ingérer dans le RAG de Forge", nom_doc)
+                return await _forge_appel(client, registre, "POST", "/rag/ingerer",
+                                          charge={"nom": nom_doc, "contenu": args.get("contenu", "")},
+                                          timeout=60)
+
+            if nom == "forge_lancer_agent":
+                objectif = (args.get("objectif") or "").strip()
+                if not args.get("confirme"):
+                    return _confirmation("lancer un agent Forge", objectif[:60] or "tâche")
+                charge = {"objectif": objectif}
+                if args.get("contexte"):
+                    charge["contexte"] = args["contexte"]
+                return await _forge_appel(client, registre, "POST", "/agent/lancer",
+                                          charge=charge, timeout=185)
+
+            if nom == "forge_facture_creer":
+                client_nom = (args.get("client") or "").strip()
+                type_ = args.get("type") or "facture"
+                if not args.get("confirme"):
+                    libelle = "devis" if type_ == "devis" else "facture"
+                    return _confirmation(f"créer un {libelle} Forge", client_nom or "client")
+                charge = {k: args[k] for k in
+                          ("client", "lignes", "type", "email", "tva_taux", "notes", "echeance")
+                          if args.get(k) is not None}
+                return await _forge_appel(client, registre, "POST", "/facturation",
+                                          charge=charge, timeout=30)
+
+            if nom == "forge_facture_statut":
+                fid, statut = args.get("id", ""), args.get("statut", "")
+                if not args.get("confirme"):
+                    return _confirmation(f"passer le document au statut « {statut} »", fid)
+                return await _forge_appel(client, registre, "POST", f"/facturation/{fid}/statut",
+                                          charge={"statut": statut}, timeout=30)
+
+            if nom == "forge_facture_transformer":
+                fid = args.get("id", "")
+                if not args.get("confirme"):
+                    return _confirmation("transformer le devis en facture", fid)
+                return await _forge_appel(client, registre, "POST",
+                                          f"/facturation/{fid}/transformer", timeout=30)
+
+            if nom == "forge_crm_creer":
+                cible = (args.get("nom") or "prospect").strip()
+                if not args.get("confirme"):
+                    return _confirmation("ajouter un prospect au CRM Forge", cible)
+                charge = {k: args[k] for k in
+                          ("nom", "entreprise", "email", "telephone", "statut", "valeur", "notes")
+                          if args.get(k) is not None}
+                return await _forge_appel(client, registre, "POST", "/crm",
+                                          charge=charge, timeout=30)
+
+            if nom == "forge_crm_modifier":
+                lid = args.get("id", "")
+                if not args.get("confirme"):
+                    cible = f"prospect {lid}" + (f" → {args['statut']}" if args.get("statut") else "")
+                    return _confirmation("mettre à jour le prospect", cible)
+                champs = {k: args[k] for k in
+                          ("statut", "valeur", "nom", "entreprise", "email", "telephone", "notes")
+                          if args.get(k) is not None}
+                return await _forge_appel(client, registre, "POST", f"/crm/{lid}",
+                                          charge=champs, timeout=30)
+
+            return f"Outil inconnu : {nom}"
+
+    except ValueError as e:
+        return f"Impossible : {e}"
+    except cycle_de_vie.EchecCycle as e:
+        return f"Échec ({nom}) : {e}"
+    except RuntimeError as e:  # brique absente du registre
+        return f"Indisponible ({nom}) : {e}"
+    except httpx.HTTPError as e:
+        return f"Brique injoignable ({nom}) : {e}"
+    except Exception as e:  # noqa: BLE001
+        return f"Erreur ({nom}) : {e}"
+
+
+async def _livrer(registre, args: dict) -> str:
+    mode = "hebergee" if args.get("persistance", "hebergee") == "hebergee" else "autonome"
+    nom = args.get("nom_entreprise") or "Entreprise"
+    livraison_id = str(uuid.uuid4())
+    orchestrateur.creer_livraison(livraison_id, nom, mode,
+                                  bool(args.get("messagerie", False)), bool(args.get("packager", False)))
+    asyncio.create_task(orchestrateur.executer_pipeline(
+        registre, livraison_id, [], mode, bool(args.get("messagerie", False)), bool(args.get("packager", False))))
+    return json.dumps({"lancee": True, "livraison_id": livraison_id, "nom_entreprise": nom,
+                       "statut": "en_cours", "note": "Suis l'avancement avec details_entreprise."},
+                      ensure_ascii=False)
+
+
+async def _forge_capacites(client: httpx.AsyncClient, registre) -> str:
+    """Agrège /capacites + /sante de l'adaptateur Forge (lecture seule).
+
+    Dégrade proprement si Forge est down : message clair, jamais de stacktrace —
+    l'assistant doit pouvoir dire « Forge est hors ligne » plutôt que planter.
+    """
+    base = _base(registre, "forge")
+    try:
+        rc = await client.get(f"{base}/capacites", timeout=6)
+    except httpx.HTTPError:
+        return json.dumps({
+            "en_ligne": False,
+            "message": "La brique Forge est injoignable (hors ligne ou en cours de démarrage).",
+        }, ensure_ascii=False)
+    if rc.status_code >= 400:
+        return json.dumps({
+            "en_ligne": False,
+            "message": f"Forge a répondu en erreur (HTTP {rc.status_code}).",
+        }, ensure_ascii=False)
+
+    capas = rc.json()
+    # Santé agrégée (tolérante : on garde les capacités même si /sante échoue).
+    sante = {"statut": "inconnu"}
+    try:
+        rs = await client.get(f"{base}/sante", timeout=6)
+        sante = rs.json() if rs.status_code < 400 else {"statut": "degrade"}
+    except httpx.HTTPError:
+        sante = {"statut": "injoignable"}
+
+    return json.dumps({
+        "en_ligne": bool(capas.get("core_en_ligne")),
+        "sante": sante.get("statut"),
+        "capacites": capas.get("capacites", []),
+        "note": capas.get("note"),
+    }, ensure_ascii=False)
+
+
+async def _forge_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
+                       charge: dict | None = None, params: dict | None = None,
+                       timeout: float = 30) -> str:
+    """Appelle une route fonctionnelle de l'adaptateur Forge (S17) et renvoie une
+
+    chaîne pour le LLM. Dégrade proprement (jamais de stacktrace) : Forge hors ligne,
+    auth de service absente ou core en erreur → message clair que l'assistant peut
+    relayer. L'auth machine-à-machine est gérée *dans* l'adaptateur Forge.
+    """
+    base = _base(registre, "forge")
+    try:
+        r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
+                                  timeout=timeout)
+    except httpx.HTTPError:
+        return json.dumps({"ok": False,
+                           "message": "La brique Forge est injoignable (hors ligne ou en démarrage)."},
+                          ensure_ascii=False)
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except Exception:  # noqa: BLE001
+            detail = r.text[:200]
+        return json.dumps({"ok": False,
+                           "message": f"Forge n'a pas pu traiter la demande (HTTP {r.status_code}) : {detail}"},
+                          ensure_ascii=False)
+    return json.dumps(r.json(), ensure_ascii=False)
+
+
+async def _etat_briques(client: httpx.AsyncClient, registre) -> dict:
+    briques = []
+    for nom, manifest in registre.briques.items():
+        entree = {"nom": nom, "role": manifest.get("role"), "sante": "inconnu"}
+        # Chemin de santé propre à chaque brique (certaines exposent /health, d'autres /sante) :
+        # on dérive le chemin de l'url_sante du manifest, et l'hôte du registre.
+        url_sante = manifest.get("url_sante") or ""
+        chemin = "/" + url_sante.split("/", 3)[-1] if url_sante.count("/") >= 3 else "/sante"
+        try:
+            r = await client.get(f"{_base(registre, nom)}{chemin}", timeout=4)
+            entree["sante"] = "ok" if r.status_code < 400 else "inaccessible"
+        except Exception:
+            entree["sante"] = "inaccessible"
+        briques.append(entree)
+    return {"briques": briques, "total": len(briques)}

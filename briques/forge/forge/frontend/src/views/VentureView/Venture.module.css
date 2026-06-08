@@ -1,0 +1,101 @@
+.page { padding: 24px; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.title { margin: 0; font-size: 22px; color: #e8e8f0; }
+.form { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.formRow { display: flex; gap: 8px; align-items: center; }
+.formActions { display: flex; gap: 8px; }
+.inputEmoji { padding: 8px; border-radius: 8px; border: 1px solid #2a2a3e; background: #0f0f14; color: #e8e8f0; font-size: 16px; width: 44px; text-align: center; outline: none; }
+.input, .select { padding: 8px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: #0f0f14; color: #e8e8f0; font-size: 13px; outline: none; }
+.input:focus, .select:focus { border-color: #6366f1; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.ventureCard { display: flex; align-items: flex-start; gap: 12px; padding: 16px; background: #13131a; border: 1px solid #1e1e2e; border-left: 3px solid #6366f1; border-radius: 10px; }
+.ventureCard.archived { opacity: 0.5; }
+.ventureIcon { font-size: 28px; flex-shrink: 0; }
+.ventureInfo { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.ventureName { font-size: 15px; font-weight: 600; color: #e8e8f0; }
+.ventureDesc { font-size: 12px; color: #6b6b80; }
+.ventureMeta { display: flex; align-items: center; gap: 8px; }
+.typeChip { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #1e1e3e; color: #818cf8; }
+.statut { font-size: 11px; color: #6b6b80; text-transform: uppercase; letter-spacing: 0.04em; }
+.archiveBtn { padding: 4px 8px; border-radius: 6px; border: 1px solid #2a2a3e; background: transparent; cursor: pointer; font-size: 14px; }
+.archiveBtn:hover { background: #1e1e2e; }
+.archivesSection { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 16px; }
+.archivesSummary { cursor: pointer; font-size: 14px; color: #6b6b80; }
+.empty { text-align: center; padding: 48px 24px; }
+.empty p { color: #6b6b80; margin: 0 0 8px; }
+.hint { font-size: 13px !important; }
+.btnPrimary { padding: 7px 16px; border-radius: 8px; border: none; background: #6366f1; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btnPrimary:disabled { opacity: 0.5; }
+.btnGhost { padding: 7px 12px; border-radius: 8px; border: 1px solid #2a2a3e; background: transparent; color: #6b6b80; cursor: pointer; font-size: 13px; }
+
+/* Actions sur la carte venture */
+.ventureActions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.deleteBtn { padding: 4px 8px; border-radius: 6px; border: 1px solid #3a1a1a; background: transparent; cursor: pointer; font-size: 14px; }
+.deleteBtn:hover { background: #2a1010; }
+
+/* Modal de suppression */
+.modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+.modal { background: #13131a; border: 1px solid #2a2a3e; border-radius: 16px; padding: 32px; max-width: 420px; width: 90%; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.modalIcon { font-size: 40px; }
+.modalTitle { margin: 0; font-size: 18px; font-weight: 700; color: #e8e8f0; }
+.modalText { margin: 0; font-size: 14px; color: #8888a0; line-height: 1.6; }
+.modalText strong { color: #e8e8f0; }
+.modalActions { display: flex; gap: 8px; margin-top: 4px; }
+.modalError { color: #f87171; font-size: 13px; margin: 0; }
+.btnDanger { padding: 8px 16px; border-radius: 8px; border: none; background: #ef4444; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btnDanger:hover { background: #dc2626; }
+.btnDanger:disabled { opacity: 0.5; cursor: default; }
+.codeInput { font-size: 28px; font-weight: 700; letter-spacing: 10px; text-align: center; padding: 12px 16px; border-radius: 10px; border: 2px solid #2a2a3e; background: #0f0f14; color: #818cf8; width: 180px; outline: none; }
+.codeInput:focus { border-color: #6366f1; }
+
+/* Onglets venture detail */
+.tabsBar { display: flex; gap: 4px; border-bottom: 1px solid #1e1e2e; margin-bottom: 20px; }
+.tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; color: #6b6b80; cursor: pointer; font-size: 13px; font-weight: 500; margin-bottom: -1px; transition: all 0.15s; }
+.tab:hover { color: #a8a8c0; }
+.tabActive { color: #818cf8; border-bottom-color: #6366f1; }
+
+/* Gouvernance IA */
+.govTab { display: flex; flex-direction: column; gap: 20px; }
+.govNav { display: flex; gap: 8px; }
+.govNavBtn { padding: 7px 16px; border-radius: 8px; border: 1px solid #2a2a3e; background: transparent; color: #8888a0; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+.govNavBtn:hover { color: #e8e8f0; border-color: #4a4a6e; }
+.govNavActive { background: #1e1e3e; color: #818cf8; border-color: #6366f1; }
+.govSection { display: flex; flex-direction: column; gap: 10px; }
+.govSectionHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.govSectionTitle { font-size: 14px; color: #a8a8c0; font-weight: 600; }
+.govForm { display: flex; flex-direction: column; gap: 8px; padding: 16px; background: #0f0f14; border: 1px solid #2a2a3e; border-radius: 10px; }
+.govCard { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #13131a; border: 1px solid #1e1e2e; border-radius: 8px; }
+.govCardInfo { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.govCardName { font-size: 14px; color: #e8e8f0; font-weight: 500; }
+.govCardUrl { font-size: 12px; color: #6b6b80; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.govCardActions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.govBadge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
+.govBadgeGreen { background: #052e16; color: #10b981; border: 1px solid #10b981; }
+.govBadgeGray  { background: #1e1e2e; color: #6b6b80; border: 1px solid #2a2a3e; }
+.govDelete { background: none; border: none; color: #6b6b80; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 4px; }
+.govDelete:hover { color: #ef4444; background: #2a1010; }
+.govEmpty { color: #6b6b80; font-size: 13px; padding: 20px 0; text-align: center; }
+.textarea { background: #0f0f14; border: 1px solid #2a2a3e; border-radius: 8px; color: #e8e8f0; padding: 10px 12px; font-size: 13px; resize: vertical; font-family: monospace; }
+
+/* Morning Brief venture */
+.ventureBrief { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.ventureBriefHeader { display: flex; align-items: center; gap: 10px; }
+.ventureBriefTitle { flex: 1; font-size: 14px; font-weight: 600; color: #e8e8f0; }
+.ventureBriefContent { font-size: 13px; color: #a8a8c0; line-height: 1.7; white-space: pre-wrap; background: #0f0f14; border: 1px solid #1e1e2e; border-radius: 8px; padding: 14px; }
+
+/* Onglet LLM */
+.llmTab { display: flex; flex-direction: column; gap: 24px; }
+.llmHint { font-size: 12px; color: #6b6b80; margin: 0; padding: 10px 14px; background: #13131a; border: 1px solid #1e1e2e; border-radius: 8px; }
+.llmSection { display: flex; flex-direction: column; gap: 8px; }
+.llmSectionTitle { font-size: 13px; font-weight: 600; color: #a8a8c0; margin-bottom: 4px; }
+.llmPresetRow { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px; overflow: hidden; }
+.llmPresetHeader { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none; transition: background 0.15s; }
+.llmPresetHeader:hover { background: #1a1a2e; }
+.llmPresetScope { font-size: 10px; font-weight: 700; color: #6366f1; background: #1e1e3e; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.llmPresetLabel { flex: 1; font-size: 14px; color: #e8e8f0; font-weight: 500; }
+.llmPresetBadge { font-size: 11px; color: #10b981; background: #052e16; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
+.llmPresetBadgeEmpty { font-size: 11px; color: #6b6b80; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
+.llmPresetChevron { font-size: 12px; color: #6b6b80; flex-shrink: 0; }
+.llmPresetForm { padding: 16px; border-top: 1px solid #1e1e2e; display: flex; flex-direction: column; gap: 10px; background: #0f0f14; }
+.llmRow { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.llmLabel { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #6b6b80; flex: 1; min-width: 120px; }

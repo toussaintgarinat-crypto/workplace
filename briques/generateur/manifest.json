@@ -1,0 +1,27 @@
+{
+  "nom": "generateur",
+  "version": "0.2.0",
+  "description": "Générateur d'applications sur-mesure — lit un audit et génère une app HTML (Bootstrap 5) adaptée à l'entreprise via LLM, puis l'empaquette en bundle Docker reproductible livrable",
+  "role": "generateur",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/briques/generateur",
+  "port": 5400,
+  "url_sante": "http://host.docker.internal:5400/sante",
+  "depends_on": [
+    "audit",
+    "gateway",
+    "donnees"
+  ],
+  "offre": [
+    "generation_app",
+    "export_html",
+    "dashboard_entreprise",
+    "packaging_deploiement"
+  ],
+  "besoin": [
+    "audit_entreprise",
+    "llm_chat",
+    "persistance_crud"
+  ]
+}

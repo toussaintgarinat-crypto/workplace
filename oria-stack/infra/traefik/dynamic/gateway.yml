@@ -1,0 +1,22 @@
+# ── LXC gateway : 10.10.10.50 ────────────────────────────────────────────────
+
+http:
+  middlewares:
+    gateway-admin-auth:
+      basicAuth:
+        usersFile: /etc/traefik/users
+
+  routers:
+    gateway-ui:
+      rule: 'Host(`gateway.{{ env "DOMAIN" }}`)'
+      entryPoints: [websecure]
+      service: gateway-ui
+      middlewares: [gateway-admin-auth]
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    gateway-ui:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.50:4000"

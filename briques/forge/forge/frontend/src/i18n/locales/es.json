@@ -1,0 +1,70 @@
+{
+  "common": {
+    "loading": "Cargando...",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "add": "Agregar",
+    "activate": "Activar",
+    "deactivate": "Desactivar",
+    "error": "Error",
+    "noData": "Sin datos",
+    "back": "Volver"
+  },
+  "workspace": {
+    "title": "Espacio de trabajo",
+    "newConversation": "Nueva conversación",
+    "placeholder": "Mensaje Forge… (Enter para enviar)",
+    "thinking": "pensando...",
+    "ready": "listo",
+    "you": "Usted",
+    "reactMode": "Modo ReAct activado",
+    "reactBadge": "⚛ Modo ReAct — el agente puede usar herramientas"
+  },
+  "hitl": {
+    "title": "Aprobaciones requeridas",
+    "approve": "Aprobar",
+    "reject": "Rechazar",
+    "levels": {
+      "1": "Información",
+      "2": "Confirmación",
+      "3": "Aprobación",
+      "4": "Validación",
+      "5": "Autorización",
+      "6": "Crítico"
+    }
+  },
+  "mcp": {
+    "title": "Servidores MCP",
+    "subtitle": "Conecta herramientas externas a Forge mediante Model Context Protocol.",
+    "addServer": "Agregar servidor",
+    "noServers": "No hay servidores MCP configurados.",
+    "listTools": "Herramientas",
+    "toolsAvailable": "herramienta(s) disponible(s)"
+  },
+  "skills": {
+    "title": "Skills",
+    "subtitle": "Instrucciones expertas inyectadas en el contexto según los disparadores.",
+    "newSkill": "Nuevo skill",
+    "noSkills": "No hay skills configurados.",
+    "global": "Global",
+    "skillMd": "SKILL.md"
+  },
+  "nav": {
+    "workspace": "Espacio de trabajo",
+    "commandBridge": "Puente de comandos",
+    "analytics": "Analítica",
+    "morningBrief": "Informe matutino",
+    "search": "Búsqueda",
+    "tools": "Herramientas de negocio",
+    "governance": "Gobernanza IA",
+    "org": "Organización",
+    "mcp": "MCP",
+    "skills": "Skills",
+    "agents": "Agentes",
+    "governor": "Governor",
+    "slo": "Panel SLO",
+    "automation": "Automatización"
+  }
+}

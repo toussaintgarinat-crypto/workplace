@@ -1,0 +1,196 @@
+services:
+
+  # Postgres dédié à Forge — base vierge, NON partagée (le Bun a disparu au cutover
+  # S136). Le schéma y est créé par le service `forge-migrate` (cf. ci-dessous) à
+  # partir des modèles SQLAlchemy reflétés ; ce n'est plus une base « qui ne bouge pas ».
+  forge-db:
+    image: postgres:16.14
+    environment:
+      POSTGRES_USER: forge
+      POSTGRES_PASSWORD: ${FORGE_DB_PASSWORD:-forge_secret_change_this}
+      POSTGRES_DB: forge
+    volumes:
+      - forge_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forge"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  # Le vrai core de Forge (FastAPI, ~28 400 lignes) — code vendorisé DANS la brique
+  # (./forge + ./shared, copiés depuis l'ancien workspace) → brique autonome, repo
+  # git self-contained. Le Dockerfile a besoin de `shared/` et `forge/core/` à la
+  # racine du contexte. Branché aux briques Workplace par contrats HTTP (modèle
+  # Neovim) : LLM via la brique Gateway, mémoire via la brique Mémoire.
+  # Base vectorielle RAG (S17 C1). Stocke les embeddings des documents ingérés
+  # (collections forge_local/openai/… ; en pratique forge_local 384d via Gateway).
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    volumes:
+      - forge_qdrant:/qdrant/storage
+    restart: unless-stopped
+    # L'image qdrant n'embarque ni curl ni wget : on interroge /healthz via le
+    # /dev/tcp de bash (IPv4 explicite, built-ins bash uniquement → aucun binaire
+    # externe requis). Vérifié sur v1.12.4 : /healthz renvoie « 200 OK » quand le
+    # service est prêt. Sans ça, `restart: unless-stopped` redémarrait un Qdrant
+    # potentiellement sourd sans que Docker le détecte (et `forge` en dépend).
+    healthcheck:
+      # NB : `$$line` (double $) — sinon docker compose interpole `$line` au parse
+      # et le compare à du vide. `$$` = un `$` littéral passé au bash du conteneur.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333; printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; IFS= read -r line <&3; [[ \"$$line\" == *'200 OK'* ]]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Migration one-shot du schéma Forge (S17-1). Même image que le core ; crée les
+  # tables manquantes depuis app/models/generated.py puis sort. `forge` attend sa
+  # complétion réussie → schéma garanti présent avant le 1er appel. Rejouable.
+  forge-migrate:
+    build:
+      context: .
+      dockerfile: forge/core/Dockerfile
+    image: workplace-forge-core:latest
+    command: ["python", "-m", "scripts.init_db"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://forge:${FORGE_DB_PASSWORD:-forge_secret_change_this}@forge-db:5432/forge
+    depends_on:
+      forge-db:
+        condition: service_healthy
+    restart: "no"
+
+  forge:
+    build:
+      context: .
+      dockerfile: forge/core/Dockerfile
+    image: workplace-forge-core:latest
+    ports:
+      - "8600:8600"
+    env_file:
+      # Clé Gateway partagée (LLM_API_KEY) — source unique à la racine de Workplace.
+      - path: ../../.env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://forge:${FORGE_DB_PASSWORD:-forge_secret_change_this}@forge-db:5432/forge
+      # ── Branchement Workplace (briques sur l'hôte) ──
+      - GATEWAY_BASE_URL=http://host.docker.internal:4001
+      # GATEWAY_API_KEY vient de l'env_file racine (../../.env) — clé maître partagée.
+      # Surtout PAS ré-interpolée ici : `${LLM_API_KEY}` n'est pas résolu au parse
+      # (il est dans l'env_file, pas dans l'env de compose) → retombait sur un faux
+      # défaut et la Gateway refusait les embeddings (403/401). Cf. S17 C1.
+      - DEFAULT_LLM_PROVIDER=openai
+      - DEFAULT_LLM_MODEL=openai/gpt-4o-mini
+      - MEMOIRE_URL=http://host.docker.internal:5600
+      - MEMOIRE_ESPACE=Workplace
+      # Auth (S17) — le core vérifie les JWT contre le realm `oria` du Keycloak
+      # d'Oria (infra déjà debout, :8081).
+      - KEYCLOAK_URL=http://host.docker.internal:8081
+      - KEYCLOAK_REALM=oria
+      # Audience (S18-2) — posture verrouillée. Vide par défaut ⇒ verify_aud OFF
+      # (rétro-compatible S17). Pour activer : (1) ré-importer oria-realm.json (le
+      # mapper `audience-forge` ajoute `aud: forge` aux tokens forge-service + oria-app),
+      # puis (2) `FORGE_KEYCLOAK_AUDIENCE=forge` dans l'env, puis restart. Rollback :
+      # remettre la variable à vide. Cf. docs/sprints/S18 Chantier 1.
+      - KEYCLOAK_AUDIENCE=${FORGE_KEYCLOAK_AUDIENCE:-}
+      # RAG (S17 C1) : base vectorielle Qdrant dans la brique ; embeddings routés
+      # vers la Gateway (provider "local" = modèle all-minilm 384d). Le ml-module
+      # torch de Forge n'est PAS levé (décision S17-5 : un seul moteur Workplace).
+      - QDRANT_URL=http://qdrant:6333
+      - ML_MODULE_URL=
+      - ENCRYPTION_KEY=${FORGE_ENCRYPTION_KEY:-change_this_32_char_random_key!!}
+    depends_on:
+      forge-db:
+        condition: service_healthy
+      forge-migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8600/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      default:
+        # Alias `core` : le nginx de la SPA Forge proxy-fie /api → http://core:8600.
+        # Le service s'appelle `forge` dans la brique, mais l'image standalone d'origine
+        # l'appelait `core` (cf. forge/nginx.conf). L'alias rend le même nginx valable
+        # dans les deux mondes sans toucher la conf nginx. Cf. S19 Chantier 1.
+        aliases:
+          - core
+
+  # Adaptateur : contrat Workplace (sante/capacites) exposé sur l'hôte (5700).
+  # Modèle Neovim (cf. brique memoire) : masque l'API interne du core derrière un
+  # contrat français. Périmètre S16 = non authentifié (lecture d'état/capacités) ;
+  # le fonctionnel auth (agents, RAG) viendra ici en S17.
+  forge-adapter:
+    build: .
+    ports:
+      - "5700:8000"
+    env_file:
+      # Secret du client de service forge-service (FORGE_SERVICE_SECRET) — source
+      # unique à la racine de Workplace, jamais en clair dans le compose.
+      - path: ../../.env
+        required: false
+    environment:
+      - FORGE_CORE_URL=http://forge:8600
+      # Auth de service (S17) : l'adaptateur obtient un token client_credentials
+      # auprès du Keycloak d'Oria et le présente en Bearer au core sur chaque route
+      # protégée. host.docker.internal car le KC tourne dans la stack Oria.
+      - KEYCLOAK_URL=http://host.docker.internal:8081
+      - KEYCLOAK_REALM=oria
+      - FORGE_SERVICE_CLIENT_ID=forge-service
+      # FORGE_SERVICE_SECRET vient de l'env_file racine (../../.env) — pas répété
+      # ici pour ne pas l'écraser à vide (environment > env_file en précédence).
+    depends_on:
+      - forge
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Frontend Forge (SPA Vite/React servie par nginx) — S19 Chantier 1 ──
+  # La SPA riche de Forge (workspace/agents/RAG/ventures…) servie derrière Workplace.
+  # Build : contexte = racine de la brique (besoin de `shared-ui/` vendorisé ici +
+  # `forge/frontend/`). Les VITE_* sont injectés au BUILD (bundle statique) :
+  #   - SSO realm `oria` (le même que le core et la messagerie Oria) → pas de realm
+  #     Forge séparé (cf. S19 Chantier 2). Keycloak joint par le NAVIGATEUR sur le
+  #     port hôte 8081, d'où http://localhost:8081 (et non host.docker.internal).
+  #   - client public `oria-app` : porte déjà le mapper `aud: forge` (S18) → le token
+  #     reste valide quand l'audience sera verrouillée live.
+  #   - VITE_API_URL vide ⇒ la SPA appelle son propre origin ; nginx proxy-fie /api et
+  #     /v1 vers le core (alias `core` ci-dessus).
+  # La SPA est exposée sur le port hôte FORGE_FRONTEND_PORT (défaut 3000), repris par
+  # l'onglet « Forge » du dashboard du Cœur via une iframe (FORGE_UI_URL côté Cœur).
+  frontend:
+    build:
+      context: .
+      dockerfile: forge/frontend/Dockerfile
+      args:
+        VITE_API_URL: ${FORGE_FRONTEND_API_URL:-}
+        VITE_KEYCLOAK_URL: ${FORGE_FRONTEND_KEYCLOAK_URL:-http://localhost:8081}
+        VITE_KEYCLOAK_REALM: ${FORGE_FRONTEND_KEYCLOAK_REALM:-oria}
+        VITE_KEYCLOAK_CLIENT_ID: ${FORGE_FRONTEND_KEYCLOAK_CLIENT_ID:-oria-app}
+    image: workplace-forge-frontend:latest
+    ports:
+      - "${FORGE_FRONTEND_PORT:-3000}:80"
+    depends_on:
+      forge:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  forge_pgdata:
+  forge_qdrant:

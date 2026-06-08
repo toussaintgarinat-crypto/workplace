@@ -1,0 +1,199 @@
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  port: 4000
+  ui_access_mode: "all"
+
+litellm_settings:
+  # Ignore les paramètres non supportés par le provider (ex. encoding_format=base64
+  # envoyé par le client OpenAI sur les embeddings Ollama) au lieu d'échouer en 400.
+  drop_params: true
+
+model_list:
+  - model_name: openai/gpt-4o
+    litellm_params:
+      model: openrouter/openai/gpt-4o
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  - model_name: openai/gpt-4o-mini
+    litellm_params:
+      model: openrouter/openai/gpt-4o-mini
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  - model_name: anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4-6
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  - model_name: google/gemini-2.5-flash-preview
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash-preview
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # DeepSeek V4 Flash — cerveau par défaut de l'assistant du Cœur (rapide, contexte
+  # 1M, function-calling). Payant (≠ free/*), donc déclaré explicitement ici : le
+  # sync des modèles gratuits ne le touche pas (il ne gère que le bloc AUTO ci-dessous).
+  - model_name: deepseek/deepseek-v4-flash
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # AUTO-FREE-MODELS-START — 2026-06-06 20:38 (12 modèles)
+  - model_name: free/openrouter/owl-alpha
+    litellm_params:
+      model: openrouter/openrouter/owl-alpha
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 1048756
+  - model_name: free/qwen/qwen3-coder
+    litellm_params:
+      model: openrouter/qwen/qwen3-coder:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 1048576
+  - model_name: free/nvidia/nemotron-3-ultra-550b-a55b
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 1000000
+  - model_name: free/nvidia/nemotron-3-super-120b-a12b
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 1000000
+  - model_name: free/poolside/laguna-xs.2
+    litellm_params:
+      model: openrouter/poolside/laguna-xs.2:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/poolside/laguna-m.1
+    litellm_params:
+      model: openrouter/poolside/laguna-m.1:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/moonshotai/kimi-k2.6
+    litellm_params:
+      model: openrouter/moonshotai/kimi-k2.6:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/google/gemma-4-26b-a4b-it
+    litellm_params:
+      model: openrouter/google/gemma-4-26b-a4b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/google/gemma-4-31b-it
+    litellm_params:
+      model: openrouter/google/gemma-4-31b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/qwen/qwen3-next-80b-a3b-instruct
+    litellm_params:
+      model: openrouter/qwen/qwen3-next-80b-a3b-instruct:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 256000
+  - model_name: free/nvidia/nemotron-3-nano-30b-a3b
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-nano-30b-a3b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 256000
+  # AUTO-FREE-MODELS-END
+
+  # Ollama local — OLLAMA_URL = IP du serveur Ollama (NetBird, LAN, ou localhost)
+  # Ces entrées sont ignorées si OLLAMA_URL est vide
+  - model_name: ollama/llama3.2
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: os.environ/OLLAMA_URL
+
+  - model_name: ollama/llama3.3
+    litellm_params:
+      model: ollama/llama3.3
+      api_base: os.environ/OLLAMA_URL
+
+  # Modèles réellement présents en local (vérifiés via `ollama list` le 2026-06-02)
+  - model_name: ollama/llama3
+    litellm_params:
+      model: ollama/llama3
+      api_base: os.environ/OLLAMA_URL
+
+  - model_name: ollama/gemma4
+    litellm_params:
+      model: ollama/gemma4:e4b
+      api_base: os.environ/OLLAMA_URL
+
+  # IA locale générique (LM Studio, llama.cpp server, ou tout serveur OpenAI-compatible).
+  # 100 % local & gratuit, aucune donnée ne sort de la machine. On pointe l'URL via
+  # LOCAL_OPENAI_URL (ex. LM Studio :1234/v1, llama.cpp :8080/v1). Le nom de modèle est
+  # géré par le serveur local (il sert le modèle chargé) ; clé factice. Entrée inerte
+  # tant que LOCAL_OPENAI_URL est vide. (Ollama a ses propres entrées ci-dessus.)
+  - model_name: local/llm
+    litellm_params:
+      model: openai/local
+      api_base: os.environ/LOCAL_OPENAI_URL
+      api_key: os.environ/LOCAL_API_KEY
+      timeout: 60
+      num_retries: 0
+
+  # Embeddings locaux (Ollama all-MiniLM, 384 dims) — alimente la brique mémoire
+  # (Memory, colonne Vector(384)). Local, gratuit, rapide même sur CPU.
+  - model_name: embedding/all-minilm
+    litellm_params:
+      model: ollama/all-minilm
+      api_base: os.environ/OLLAMA_URL
+
+virtual_keys:
+  - key: sk-forge
+    key_alias: forge
+    max_budget: 10
+    budget_duration: 1mo
+    models: auto
+
+  - key: sk-assistant
+    key_alias: assistant
+    max_budget: 10
+    budget_duration: 1mo
+    models: auto

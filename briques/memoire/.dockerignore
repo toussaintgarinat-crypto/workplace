@@ -1,0 +1,3 @@
+# L'image de l'adaptateur (build: .) ne doit PAS embarquer le projet Memory
+# complet (backend/frontend/cli/mcp) — il est bâti par son propre service.
+memory/

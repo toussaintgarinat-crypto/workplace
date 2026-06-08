@@ -1,0 +1,79 @@
+{
+  "common": {
+    "loading": "Carregando…",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "cancel": "Cancelar",
+    "delete": "Excluir",
+    "edit": "Editar",
+    "confirm": "Confirmar",
+    "close": "Fechar",
+    "error": "Erro",
+    "back": "← Voltar",
+    "add": "Adicionar"
+  },
+  "login": {
+    "tagline": "Seu escritório digital",
+    "login": "Entrar",
+    "register": "Cadastrar",
+    "email": "E-mail",
+    "password": "Senha",
+    "name": "Seu nome ou apelido",
+    "connect": "Entrar →",
+    "createAccount": "Criar conta →",
+    "connectionError": "Erro de conexão",
+    "wrongCode": "Código incorreto",
+    "twoFaTitle": "🔐 Autenticação de dois fatores ativada. Insira o código do seu aplicativo.",
+    "sixDigitCode": "Código de 6 dígitos",
+    "verify": "Verificar →"
+  },
+  "app": {
+    "loading": "Carregando…"
+  },
+  "main": {
+    "selectRoom": "Selecione uma sala no painel esquerdo",
+    "createOrJoin": "Crie ou entre em uma comunidade para começar",
+    "needWorld": "Selecione um mundo na barra lateral para gerenciar seus agentes.",
+    "needWorldMap": "Selecione um mundo na barra lateral para ver seu mapa.",
+    "resizeHandle": "Arrastar para redimensionar"
+  },
+  "channel": {
+    "selectWorld": "Selecione uma comunidade",
+    "inviteTitle": "Convidar",
+    "manageSubscriptions": "Gerenciar assinaturas",
+    "worldDocs": "Documentos da comunidade",
+    "membersAgents": "Agentes e membros",
+    "addService": "Adicionar um serviço",
+    "addDistrict": "Adicionar um distrito",
+    "tools": "Ferramentas",
+    "search": "Busca",
+    "calendar": "Calendário",
+    "network": "Rede",
+    "zones": "Zonas",
+    "aiConfig": "Config IA",
+    "deleteBuilding": "Excluir «{{name}}»?",
+    "deleteRoom": "Excluir «{{name}}»?",
+    "deleteDistrict": "Excluir o distrito «{{name}}»?",
+    "addRoom": "Adicionar uma sala",
+    "buildingDocs": "Documentos do serviço",
+    "subscribe": "Assinatura necessária: {{plans}}",
+    "projects": "Projetos"
+  },
+  "room": {
+    "checkingAccess": "Verificando acesso...",
+    "paidRoom": "Esta sala requer assinatura paga.",
+    "paidFrom": "Acesso a partir de {{price}} {{currency}}",
+    "paidMonthly": "/mês",
+    "payAccess": "💳 Pagar e acessar",
+    "connectingVoice": "Conectando à voz...",
+    "startOf": "Início de",
+    "broadcastLocked": "Canal somente leitura — apenas o proprietário pode escrever aqui",
+    "messagePlaceholder": "Mensagem em {{roomName}}",
+    "react": "Reagir",
+    "deleteMessage": "Excluir",
+    "uploadFile": "Enviar um arquivo",
+    "encryptedE2EE": "Mensagens criptografadas E2EE",
+    "coinsTitle": "Moedas dos membros",
+    "finished": "Concluído"
+  }
+}
