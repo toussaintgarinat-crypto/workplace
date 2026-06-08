@@ -15,6 +15,7 @@ from generateur import generer_app_complete
 from gabarit import entites_du_plan
 import oria_provisioning
 import client_provisioning
+import pont_crm
 import packager
 
 AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
@@ -81,6 +82,9 @@ def _init_db():
             conn.execute("ALTER TABLE apps ADD COLUMN oria_salons TEXT")
         if "client_onboarding" not in cols:
             conn.execute("ALTER TABLE apps ADD COLUMN client_onboarding TEXT")
+        if "partage_forge" not in cols:
+            # Consentement du pont app→CRM (S24) : {actif, entites:[...]}. Opt-in : Non par défaut.
+            conn.execute("ALTER TABLE apps ADD COLUMN partage_forge TEXT")
         conn.commit()
 
 
@@ -256,28 +260,74 @@ def lire_app(app_id: str):
     with _connexion() as conn:
         row = conn.execute(
             "SELECT id, date_creation, audit_id, nom_entreprise, plan, statut, erreur, mode, "
-            "oria_world_id, oria_salons, client_onboarding FROM apps WHERE id=?",
+            "oria_world_id, oria_salons, client_onboarding, partage_forge FROM apps WHERE id=?",
             (app_id,),
         ).fetchone()
     if not row:
         raise HTTPException(404, "App non trouvée")
     d = dict(row)
-    if d.get("plan"):
-        try:
-            d["plan"] = json.loads(d["plan"])
-        except Exception:
-            pass
-    if d.get("oria_salons"):
-        try:
-            d["oria_salons"] = json.loads(d["oria_salons"])
-        except Exception:
-            pass
-    if d.get("client_onboarding"):
-        try:
-            d["client_onboarding"] = json.loads(d["client_onboarding"])
-        except Exception:
-            pass
+    for champ in ("plan", "oria_salons", "client_onboarding", "partage_forge"):
+        if d.get(champ):
+            try:
+                d[champ] = json.loads(d[champ])
+            except Exception:
+                pass
     return d
+
+
+class PartageForge(BaseModel):
+    # Consentement du pont app→CRM (S24). Opt-in : actif=False par défaut.
+    actif: bool = False
+    entites: list[str] = []  # liste blanche des entités à remonter
+
+
+def _lire_partage(app_id: str) -> dict:
+    with _connexion() as conn:
+        row = conn.execute("SELECT partage_forge FROM apps WHERE id=?", (app_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "App non trouvée")
+    try:
+        return json.loads(row["partage_forge"]) if row["partage_forge"] else {"actif": False, "entites": []}
+    except Exception:
+        return {"actif": False, "entites": []}
+
+
+def _ecrire_partage(app_id: str, config: dict) -> None:
+    with _connexion() as conn:
+        conn.execute(
+            "UPDATE apps SET partage_forge=? WHERE id=?",
+            (json.dumps(config, ensure_ascii=False), app_id),
+        )
+        conn.commit()
+
+
+@app.put("/apps/{app_id}/partage-forge")
+def definir_partage_forge(app_id: str, corps: PartageForge):
+    """Règle le consentement du **pont app→CRM** (S24) et l'applique immédiatement.
+
+    `actif=True` + `entites=[...]` → les enregistrements de ces entités remontent dans
+    le CRM du cabinet (idempotent). `actif=False` (défaut) → rien ne sort. La remontée
+    est best-effort : l'app reste livrée même si le Forge est injoignable.
+    """
+    config = {"actif": bool(corps.actif), "entites": list(corps.entites or [])}
+    _ecrire_partage(app_id, config)
+    rapport = pont_crm.pousser(app_id, config) if config["actif"] else {
+        "actif": False, "pousses": 0, "message": "partage désactivé — rien ne sort"
+    }
+    print(f"[generateur] partage Forge {app_id} : {rapport.get('message')}")
+    return {"partage_forge": config, "remontee": rapport}
+
+
+@app.post("/apps/{app_id}/partage-forge/revoquer")
+def revoquer_partage_forge(app_id: str, purger: bool = False):
+    """Révoque le consentement : arrête le pont. `purger=true` ⇒ efface aussi du CRM
+    les prospects déjà remontés (décision : purge sur demande explicite uniquement)."""
+    config = _lire_partage(app_id)
+    config["actif"] = False
+    _ecrire_partage(app_id, config)
+    rapport = pont_crm.revoquer(app_id, purger=purger)
+    print(f"[generateur] révocation partage Forge {app_id} : {rapport.get('message')}")
+    return {"partage_forge": config, "revocation": rapport}
 
 
 @app.get("/apps/{app_id}/export")
@@ -292,7 +342,7 @@ def exporter_app_complet(app_id: str):
     if not row:
         raise HTTPException(404, "App non trouvée")
     d = dict(row)
-    for champ in ("plan", "oria_salons"):
+    for champ in ("plan", "oria_salons", "partage_forge"):
         if d.get(champ):
             try:
                 d[champ] = json.loads(d[champ])
@@ -310,12 +360,13 @@ def importer_app(payload: dict):
         return json.dumps(v, ensure_ascii=False)
 
     app_id = payload.get("id") or str(uuid.uuid4())
+    partage = payload.get("partage_forge")
     with _connexion() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO apps
                (id, date_creation, audit_id, nom_entreprise, plan, html, statut,
-                erreur, mode, oria_world_id, oria_salons)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                erreur, mode, oria_world_id, oria_salons, partage_forge)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 app_id,
                 payload.get("date_creation") or datetime.now(timezone.utc).isoformat(),
@@ -328,9 +379,17 @@ def importer_app(payload: dict):
                 payload.get("mode") or "autonome",
                 payload.get("oria_world_id"),
                 _ser(payload.get("oria_salons")),
+                _ser(partage),
             ),
         )
         conn.commit()
+    # Reprise (S6) : si l'app décrochée avait un partage consenti actif, on ré-arme le
+    # pont (best-effort) — le consentement voyage avec le dossier portable.
+    if isinstance(partage, dict) and partage.get("actif"):
+        try:
+            pont_crm.pousser(app_id, partage)
+        except Exception as e:
+            print(f"[generateur] ré-armement pont à la reprise échoué ({app_id}) : {e}")
     return {"id": app_id, "statut": "termine"}
 
 

@@ -22,6 +22,9 @@ services:
       - DONNEES_URL_INTERNE=http://host.docker.internal:5500
       - DONNEES_URL_PUBLIQUE=http://localhost:5500
       - DONNEES_SRC=/briques_src/donnees
+      # Pont consenti app→CRM (S24) : la brique forge (adaptateur) écrit dans le CRM
+      # du cabinet via son identité de service. Aucun secret ne vit ici.
+      - FORGE_URL_INTERNE=http://host.docker.internal:5700
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5400/sante')"]

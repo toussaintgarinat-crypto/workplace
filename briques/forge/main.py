@@ -569,6 +569,19 @@ async def crm_modifier(lead_id: str, corps: dict = Body(...)):
             "message": f"Prospect « {lead.get('nom')} » mis à jour (statut : {lead.get('statut')})."}
 
 
+@app.delete("/crm/{lead_id}", summary="Supprimer un prospect (action)")
+async def crm_supprimer(lead_id: str):
+    """Proxy authentifié → `DELETE /api/crm/{id}`. ACTION (écrit dans Forge).
+
+    Sert notamment à la **révocation/purge** d'un partage consenti (pont app→CRM,
+    S24) : on retire du CRM du cabinet un prospect remonté depuis une app livrée.
+    """
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "DELETE", f"/api/crm/{lead_id}")
+    _json_ou_erreur(r)
+    return {"ok": True, "message": "Prospect supprimé du CRM."}
+
+
 # ── Paiement : encaissement en ligne via Stripe (S21) ───────────────────────────
 #
 # Proxy authentifié du router `stripe` du core (checkout RÉEL via SDK, webhook signé).

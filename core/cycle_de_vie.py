@@ -199,6 +199,10 @@ async def _reinjecter(registre, data: dict) -> dict:
 
         app = data.get("app")
         if app:
+            # Le dossier porte `partage_forge` (consentement du pont app→CRM, S24) :
+            # `/apps/import` ré-arme le pont si le consentement était actif. Au
+            # décrochage, la suppression de l'app a naturellement arrêté le pont
+            # (aucune purge du CRM — décision : purge sur demande explicite seulement).
             r = await client.post(f"{bases['generateur']}/apps/import", json=app)
             rapport["app"] = r.status_code < 400
             app_id = app.get("id")
