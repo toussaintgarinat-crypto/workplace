@@ -267,11 +267,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
               <option value="autonome">Autonome (mono-poste)</option>
             </select>
           </div>
+          <div class="field">
+            <label>Email du client (compte d'accès)</label>
+            <input type="email" name="email_client" placeholder="client@exemple.fr">
+          </div>
+          <div class="field">
+            <label>Contact client (optionnel)</label>
+            <input type="text" name="contact_client" placeholder="Jean Dupont">
+          </div>
           <label class="check"><input type="checkbox" name="messagerie"> Messagerie Oria</label>
           <label class="check"><input type="checkbox" name="packager"> Bundle Docker</label>
           <button class="btn" type="submit" id="btn-livrer">Livrer</button>
         </div>
-        <div class="liv-sub" style="margin-top:10px">Sans documents, l'audit porte sur les fichiers déjà ingérés dans l'ETL.</div>
+        <div class="liv-sub" style="margin-top:10px">Sans documents, l'audit porte sur les fichiers déjà ingérés dans l'ETL. Avec un email client, un compte d'accès Oria est créé et un lien « définis ton mot de passe » lui est envoyé.</div>
       </form>
     </div>
     <div id="livraisons"></div>
@@ -1421,6 +1429,8 @@ async def livrer(
     persistance: str = Form("hebergee"),
     messagerie: bool = Form(False),
     packager: bool = Form(False),
+    email_client: str = Form(""),
+    contact_client: str = Form(""),
 ):
     """Livre une entreprise en une commande : ingère les documents, lance l'audit,
     génère l'app (→ packaging optionnel). Renvoie un id de livraison à suivre.
@@ -1430,21 +1440,28 @@ async def livrer(
     - `persistance` : « hebergee » (multi-utilisateur, défaut) ou « autonome ».
     - `messagerie` : embarquer la messagerie Oria (mode hébergé requis).
     - `packager` : produire en plus un bundle Docker de déploiement.
+    - `email_client` : si fourni, on crée à la livraison un compte d'accès Oria à cet
+      email + envoie un lien « définis ton mot de passe » et rattache le client à son
+      espace (S23, best-effort). `contact_client` = nom du contact (optionnel).
     """
     mode = "hebergee" if persistance == "hebergee" else "autonome"
+    email_client = (email_client or "").strip()
+    contact_client = (contact_client or "").strip()
     # Lire le contenu des uploads AVANT de rendre la main (les fichiers temporaires
     # sont fermés à la fin de la requête ; la tâche de fond tourne après).
     charges = [(f.filename, await f.read(), f.content_type) for f in fichiers]
 
     livraison_id = str(uuid.uuid4())
-    orchestrateur.creer_livraison(livraison_id, nom_entreprise, mode, messagerie, packager)
+    orchestrateur.creer_livraison(livraison_id, nom_entreprise, mode, messagerie, packager,
+                                  email_client, contact_client)
     background_tasks.add_task(
         orchestrateur.executer_pipeline,
         registre, livraison_id, charges, mode, messagerie, packager,
+        email_client, contact_client,
     )
     return {"id": livraison_id, "statut": "en_cours", "nom_entreprise": nom_entreprise,
             "mode": mode, "messagerie": messagerie, "packager": packager,
-            "nb_fichiers": len(charges)}
+            "compte_client": bool(email_client), "nb_fichiers": len(charges)}
 
 
 def _enrichir_livraison(liv: dict) -> dict:

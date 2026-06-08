@@ -54,13 +54,28 @@ class Settings(BaseSettings):
     MEMOIRE_URL: str = ""  # ex. http://host.docker.internal:5600
     MEMOIRE_ESPACE: str = ""  # vide = espace solution « Workplace » côté brique
 
-    # ── SMTP (S130) — email de confirmation suppression venture ─────────
+    # ── SMTP (S130 ; étendu S22 — emails transactionnels & relances) ────
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_SECURE: bool = False
+    SMTP_SECURE: bool = False  # True ⇒ SMTPS (SSL implicite, port 465)
+    # STARTTLS sur connexion claire (587). False pour un relais interne/dev sans TLS.
+    SMTP_STARTTLS: bool = True
     SMTP_USER: str = ""
+    # Mot de passe : repli env si pas de mot de passe chiffré en base (provider `smtp`).
+    # Préférer le coffre (`resolve_smtp_password`) — ne jamais laisser en clair en prod.
     SMTP_PASS: str = ""
     SMTP_FROM: str = ""
+
+    # ── Paiement Stripe réel (S21) — checkout + webhook signé ───────────
+    # Clé secrète : repli env si pas de clé chiffrée en base (provider `stripe`).
+    # Vide ⇒ checkout en mode `mock` (dégradation honnête, parité historique).
+    STRIPE_SECRET_KEY: str = ""
+    # Secret de signature des webhooks (whsec_…). Vide ⇒ webhook refuse en
+    # présence d'une vraie clé (jamais d'événement non vérifié accepté en prod).
+    STRIPE_WEBHOOK_SECRET: str = ""
+    # Redirections post-paiement (Checkout hébergé Stripe).
+    STRIPE_SUCCESS_URL: str = "http://localhost:3000/paiement/succes"
+    STRIPE_CANCEL_URL: str = "http://localhost:3000/paiement/annule"
 
     # ── DevOps & déploiement (S132) — deploy/servers/netbird/cloudflare ─
     # Image du forge-core déployée chez le client (docker-compose généré).

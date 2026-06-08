@@ -34,6 +34,8 @@ PROVIDERS = [
     {"id": "elevenlabs", "label": "ElevenLabs", "placeholder": "sk_...", "url": "https://elevenlabs.io/app/speech-synthesis"},
     {"id": "deepgram", "label": "Deepgram", "placeholder": "Token xxxxxxxx", "url": "https://console.deepgram.com/project"},
     {"id": "ollama", "label": "Ollama", "placeholder": "http://localhost:11434", "url": ""},
+    {"id": "stripe", "label": "Stripe (clé secrète)", "placeholder": "sk_test_... / sk_live_...", "url": "https://dashboard.stripe.com/apikeys"},
+    {"id": "smtp", "label": "SMTP (mot de passe)", "placeholder": "mot de passe d'application", "url": ""},
 ]
 _PROVIDER_IDS = {p["id"] for p in PROVIDERS}
 

@@ -18,4 +18,5 @@ python-multipart==0.0.12           # upload form multipart — STT /voice/transc
 websockets==13.1                   # client WS sortant — proxy OpenAI Realtime /voice/realtime (S134)
 pywebpush==1.14.1                  # Web Push VAPID — /push/send (S134, remplace web-push npm) ; py-vapid<1.9.4 garde cryptography==43
 py-vapid==1.9.0                    # épinglé : py-vapid>=1.9.4 exige cryptography>=46, casse le pin AES-GCM (crypto.py)
+stripe==11.1.0                     # SDK Stripe officiel — checkout réel + vérif signature webhook (S21, remplace le mock)
 # agent_personnel_shared est installé séparément (pip install /shared) — cf. Dockerfile.

@@ -112,6 +112,14 @@ OUTILS: list[dict] = [
         "parameters": _p({
             "statut": {"type": "string", "description": "Filtre par statut (optionnel), ex. 'prospect', 'qualifié', 'gagné', 'perdu'."},
         }, [])}},
+    {"type": "function", "function": {
+        "name": "forge_paiement_etat",
+        "description": "État du paiement en ligne Stripe : encaissement RÉEL (clé test/live configurée) ou SIMULÉ (mode mock), abonnement courant et historique des paiements. À utiliser pour « est-ce que les paiements marchent ? », « Stripe est-il configuré ? », « mes paiements ». Ne révèle jamais la clé. Lecture seule (aucune confirmation).",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "forge_relances_apercu",
+        "description": "Aperçu (dry-run) des relances de factures impayées qui SERAIENT envoyées (J+7/J+15/J+30), avec le montant total à recouvrer et les factures ignorées (sans email/échéance). N'envoie RIEN. À utiliser pour « qui dois-je relancer ? », « mes impayés à relancer ». Lecture seule (aucune confirmation).",
+        "parameters": _p({}, [])}},
 
     # — ACTION (gardées par confirmation) —
     {"type": "function", "function": {
@@ -285,6 +293,24 @@ OUTILS: list[dict] = [
             "notes": {"type": "string"},
             "confirme": {"type": "boolean"},
         }, ["id"])}},
+    {"type": "function", "function": {
+        "name": "forge_paiement_lien",
+        "description": "Crée un lien de paiement Stripe pour un plan d'abonnement (starter/pro/enterprise), à envoyer au client pour qu'il paie en ligne. Si Stripe est configuré le lien est réel, sinon il est simulé (clairement marqué). ACTION (crée une session de paiement) : confirme=true requis après accord.",
+        "parameters": _p({
+            "plan": {"type": "string", "enum": ["starter", "pro", "enterprise"], "description": "Plan d'abonnement à facturer."},
+            "confirme": {"type": "boolean"},
+        }, ["plan"])}},
+    {"type": "function", "function": {
+        "name": "forge_relances_envoyer",
+        "description": "Lance l'envoi des relances dues pour les factures impayées (emails J+7/J+15/J+30, une seule fois par niveau et par facture). Vérifie d'abord avec forge_relances_apercu. ACTION (envoie des emails réels) : confirme=true requis après accord.",
+        "parameters": _p({"confirme": {"type": "boolean"}}, [])}},
+    {"type": "function", "function": {
+        "name": "forge_facture_envoyer",
+        "description": "Envoie une facture au client par email et la passe au statut 'envoyée' (démarre le compteur des relances). Récupère d'abord son id via forge_factures_lister. La facture doit avoir un email client. ACTION (envoie un email réel) : confirme=true requis après accord.",
+        "parameters": _p({
+            "id": {"type": "string", "description": "Id de la facture (via forge_factures_lister)."},
+            "confirme": {"type": "boolean"},
+        }, ["id"])}},
 ]
 
 OUTILS_ACTION = {
@@ -293,7 +319,8 @@ OUTILS_ACTION = {
     "agenda_supprimer_evenement", "agenda_inviter",
     "forge_rag_ingerer", "forge_lancer_agent",
     "forge_facture_creer", "forge_facture_statut", "forge_facture_transformer",
-    "forge_crm_creer", "forge_crm_modifier",
+    "forge_crm_creer", "forge_crm_modifier", "forge_paiement_lien",
+    "forge_relances_envoyer", "forge_facture_envoyer",
 }
 
 
@@ -416,6 +443,12 @@ async def executer(nom: str, args: dict, registre) -> str:
                 params = {"statut": args["statut"]} if args.get("statut") else {}
                 return await _forge_appel(client, registre, "GET", "/crm",
                                           params=params, timeout=30)
+
+            if nom == "forge_paiement_etat":
+                return await _forge_appel(client, registre, "GET", "/paiement/etat", timeout=15)
+
+            if nom == "forge_relances_apercu":
+                return await _forge_appel(client, registre, "GET", "/relances/apercu", timeout=30)
 
             # — ACTION —
             if nom == "livrer_entreprise":
@@ -578,6 +611,25 @@ async def executer(nom: str, args: dict, registre) -> str:
                           if args.get(k) is not None}
                 return await _forge_appel(client, registre, "POST", f"/crm/{lid}",
                                           charge=champs, timeout=30)
+
+            if nom == "forge_paiement_lien":
+                plan = (args.get("plan") or "").strip()
+                if not args.get("confirme"):
+                    return _confirmation("créer un lien de paiement Stripe", f"plan {plan}")
+                return await _forge_appel(client, registre, "POST", "/paiement/lien",
+                                          charge={"plan": plan}, timeout=30)
+
+            if nom == "forge_relances_envoyer":
+                if not args.get("confirme"):
+                    return _confirmation("envoyer les relances d'impayés dues", "factures J+7/15/30")
+                return await _forge_appel(client, registre, "POST", "/relances/executer", timeout=60)
+
+            if nom == "forge_facture_envoyer":
+                fid = args.get("id", "")
+                if not args.get("confirme"):
+                    return _confirmation("envoyer la facture au client par email", fid)
+                return await _forge_appel(client, registre, "POST", f"/facturation/{fid}/envoyer",
+                                          timeout=30)
 
             return f"Outil inconnu : {nom}"
 

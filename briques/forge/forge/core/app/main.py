@@ -78,6 +78,7 @@ from app.routers.search import router as search_router
 from app.routers.seo_agent import router as seo_agent_router
 from app.routers.slo import router as slo_router
 from app.routers.stripe import router as stripe_router
+from app.routers.relances import router as relances_router
 from app.routers.team import router as team_router
 from app.routers.veille import router as veille_router
 from app.routers.ventures import router as ventures_router
@@ -220,6 +221,7 @@ mount_both(prospection_router, "/api")
 mount_both(contrats_router, "/api")
 mount_both(facturation_router, "/api")
 mount_both(stripe_router, "/api")
+mount_both(relances_router, "/api")
 mount_both(budget_router, "/api")
 mount_both(forecast_router, "/api")
 mount_both(okr_router, "/api")

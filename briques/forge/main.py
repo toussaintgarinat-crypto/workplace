@@ -74,6 +74,22 @@ CAPACITES = {
                        "le pipeline (statut, valeur estimée) pour piloter la vente.",
         "disponible_sans_auth": False,
     },
+    "paiement": {
+        "famille": "paiement",
+        "titre": "Paiement en ligne (Stripe)",
+        "description": "Encaisser en ligne via Stripe : créer un lien de paiement pour un "
+                       "plan, consulter l'abonnement et l'historique des paiements. La "
+                       "configuration de la clé se fait hors assistant (coffre chiffré).",
+        "disponible_sans_auth": False,
+    },
+    "relances": {
+        "famille": "relances",
+        "titre": "Emails & relances d'impayés",
+        "description": "Envoyer une facture par email et relancer automatiquement les "
+                       "factures impayées (J+7/J+15/J+30, anti-doublon). Aperçu avant envoi, "
+                       "exécution et journal des relances.",
+        "disponible_sans_auth": False,
+    },
 }
 
 app = FastAPI(title="Forge Workplace", version="0.2.0")
@@ -551,3 +567,119 @@ async def crm_modifier(lead_id: str, corps: dict = Body(...)):
         raise HTTPException(404, "Prospect introuvable.")
     return {"ok": True, **_resume_lead(lead),
             "message": f"Prospect « {lead.get('nom')} » mis à jour (statut : {lead.get('statut')})."}
+
+
+# ── Paiement : encaissement en ligne via Stripe (S21) ───────────────────────────
+#
+# Proxy authentifié du router `stripe` du core (checkout RÉEL via SDK, webhook signé).
+# La clé secrète vit dans le coffre chiffré de Forge (jamais via l'assistant). Contrat
+# exposé en français : constater l'état (réel/mock), créer un lien de paiement, lire
+# l'abonnement et l'historique. Même identité de service unique que facturation/crm.
+
+# Plans payants exposés au lien de paiement (parité core).
+_PLANS_PAIEMENT = {"starter", "pro", "enterprise"}
+
+
+@app.get("/paiement/etat", summary="Stripe est-il réellement configuré ? (lecture)")
+async def paiement_etat():
+    """Proxy authentifié → `GET /api/stripe/etat`. Lecture seule.
+
+    Dit honnêtement si l'encaissement est **réel** (clé test/live) ou **simulé**
+    (mode mock). Ne renvoie jamais la clé, seulement un indice masqué.
+    """
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "GET", "/api/stripe/etat")
+    return _json_ou_erreur(r)
+
+
+@app.get("/paiement/plans", summary="Plans d'abonnement et tarifs (lecture)")
+async def paiement_plans():
+    """Proxy authentifié → `GET /api/stripe/plans`. Lecture seule."""
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "GET", "/api/stripe/plans")
+    return _json_ou_erreur(r)
+
+
+@app.get("/paiement/abonnement", summary="Abonnement courant (lecture)")
+async def paiement_abonnement():
+    """Proxy authentifié → `GET /api/stripe/abonnement`. Lecture seule."""
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "GET", "/api/stripe/abonnement")
+    return _json_ou_erreur(r)
+
+
+@app.get("/paiement/paiements", summary="Historique des paiements (lecture)")
+async def paiement_historique():
+    """Proxy authentifié → `GET /api/stripe/payments`. Lecture seule."""
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "GET", "/api/stripe/payments")
+    paiements = _json_ou_erreur(r)
+    return {"total": len(paiements) if isinstance(paiements, list) else 0, "paiements": paiements}
+
+
+@app.post("/paiement/lien", summary="Créer un lien de paiement Stripe pour un plan (action)")
+async def paiement_lien(corps: dict = Body(...)):
+    """Proxy authentifié → `POST /api/stripe/checkout`. ACTION (crée une session Stripe).
+
+    Entrée : ``{plan: 'starter'|'pro'|'enterprise'}``. Renvoie le lien de paiement
+    (réel si Stripe est configuré, sinon un lien simulé clairement marqué `mock`).
+    """
+    plan = (corps.get("plan") or "").strip()
+    if plan not in _PLANS_PAIEMENT:
+        raise HTTPException(422, f"'plan' doit être l'un de : {', '.join(sorted(_PLANS_PAIEMENT))}.")
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "POST", "/api/stripe/checkout", json={"plan": plan})
+    data = _json_ou_erreur(r)
+    mode = data.get("mode", "inconnu")
+    lien = data.get("checkoutUrl")
+    suffixe = " (simulé — Stripe non configuré)" if mode == "mock" else ""
+    return {
+        "ok": True,
+        "mode": mode,
+        "plan": plan,
+        "lien_paiement": lien,
+        "session_id": data.get("sessionId"),
+        "message": f"Lien de paiement pour le plan « {plan} »{suffixe} : {lien}",
+    }
+
+
+# ── Relances : emails de recouvrement des impayés (S22) ─────────────────────────
+#
+# Proxy authentifié du router `relances` du core (envoi de facture par email + moteur
+# de relances J+7/15/30, anti-doublon). Même identité de service que facturation/crm.
+
+
+@app.get("/relances/apercu", summary="Aperçu des relances dues (dry-run, lecture)")
+async def relances_apercu():
+    """Proxy authentifié → `GET /api/relances/impayes/apercu`. N'envoie rien."""
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "GET", "/api/relances/impayes/apercu")
+    return _json_ou_erreur(r)
+
+
+@app.post("/relances/executer", summary="Lancer les relances d'impayés dues (action)")
+async def relances_executer():
+    """Proxy authentifié → `POST /api/relances/impayes/executer`. ACTION (envoie des emails)."""
+    async with await _client(timeout=60) as client:
+        r = await _appel_protege(client, "POST", "/api/relances/impayes/executer")
+    data = _json_ou_erreur(r)
+    nb = data.get("nb_envoyees", 0)
+    return {"ok": True, **data,
+            "message": f"{nb} relance(s) envoyée(s) pour {data.get('montant_relance', 0)} € d'impayés."}
+
+
+@app.get("/relances/journal", summary="Historique des relances envoyées (lecture)")
+async def relances_journal():
+    """Proxy authentifié → `GET /api/relances/journal`. Lecture seule."""
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "GET", "/api/relances/journal")
+    return _json_ou_erreur(r)
+
+
+@app.post("/facturation/{did}/envoyer", summary="Envoyer une facture au client par email (action)")
+async def facturation_envoyer(did: str):
+    """Proxy authentifié → `POST /api/facturation/{id}/envoyer`. ACTION (email + statut envoyée)."""
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "POST", f"/api/facturation/{did}/envoyer")
+    doc = _json_ou_erreur(r)
+    return {"ok": True, "message": f"Facture envoyée à {doc.get('envoye_a')}.", **doc}
