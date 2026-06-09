@@ -1,0 +1,12 @@
+# Secrets : injectés au runtime via compose (environment:), jamais cuits dans l'image.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Bruit Python / bases locales / tests.
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/.pytest_cache/
+**/.DS_Store
+backend/tests/
