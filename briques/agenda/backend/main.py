@@ -13,6 +13,7 @@ from routers.attachments import router as attachments_router
 from routers.calendars import router as calendars_router
 from routers.comments import router as comments_router
 from routers.events import router as events_router
+from routers.google_sync import router as google_router
 from routers.health import router as health_router
 from routers.invitations import router as invitations_router
 from routers.members import router as members_router
@@ -46,3 +47,4 @@ app.include_router(participants_router)
 app.include_router(comments_router)
 app.include_router(attachments_router)
 app.include_router(sse_router)
+app.include_router(google_router)

@@ -35,6 +35,16 @@ services:
       # (présent dans forge-realm.json ; pour un Keycloak déjà importé, l'ajouter à la
       # main ou ré-importer le realm — sinon mettre KEYCLOAK_AUDIENCE="" pour désactiver).
       - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-calendar-app}
+      # ── Pont Google Agenda (S27) ──────────────────────────────────────────
+      # Coffre de tokens OAuth chiffrés (AES-GCM). Obligatoire dès qu'on connecte
+      # un compte Google. En prod : au coffre chiffré, jamais en clair ici.
+      - VAULT_SECRET=${AGENDA_VAULT_SECRET:-}
+      # Identifiants OAuth d'un projet Google Cloud (scope calendar.readonly).
+      # Vides ⇒ pont désactivé (les endpoints /google/* renvoient 503).
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      # Doit matcher l'URI enregistrée côté Google Cloud, à l'octet près.
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8400/google/callback}
     volumes:
       - agenda_data:/data
     networks:

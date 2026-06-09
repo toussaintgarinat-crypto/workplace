@@ -22,6 +22,21 @@ class Settings(BaseSettings):
     # Stockage pièces jointes (local filesystem)
     ATTACHMENTS_DIR: str = "/data/calendar/attachments"
 
+    # ── Coffre de tokens chiffrés (rapatrié de l'assistant) ────────────────────
+    # Secret qui dérive la clé AES-GCM des tokens OAuth stockés par utilisateur.
+    # Obligatoire dès qu'on stocke un token (le coffre lève sinon). En prod : au
+    # coffre chiffré, jamais en clair dans l'image.
+    VAULT_SECRET: str = ""
+
+    # ── Pont Google Agenda (sync consentie, pull one-way) ──────────────────────
+    # Identifiants OAuth2 d'un projet Google Cloud (scope calendar.readonly).
+    # Vides ⇒ le pont est désactivé (les endpoints /google/* renvoient 503).
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    # URI de redirection enregistrée côté Google Cloud (doit matcher à l'octet près).
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8400/google/callback"
+    GOOGLE_SCOPE: str = "https://www.googleapis.com/auth/calendar.readonly"
+
     class Config:
         env_file = ".env"
 

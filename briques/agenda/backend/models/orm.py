@@ -11,8 +11,10 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -87,6 +89,12 @@ class Event(Base):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     recurrence_rule: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Provenance de l'événement : "manuel" (saisi dans la brique) ou "google"
+    # (rapatrié par le pont). Permet de ne jamais écraser le travail de l'user.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="manuel")
+    # Identifiant de l'événement chez la source externe (id Google). Sert de clé
+    # d'idempotence : une re-sync met à jour au lieu de dupliquer.
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -138,3 +146,25 @@ class EventAttachment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     event: Mapped["Event"] = relationship(back_populates="attachments")
+
+
+class UserToken(Base):
+    """Coffre de tokens OAuth par utilisateur (rapatrié de l'assistant).
+
+    Les tokens (access + refresh) sont chiffrés AES-GCM au repos via vault.py ;
+    seul l'enregistrement chiffré transite par la base. Une ligne par
+    (user_id, provider) — l'upsert remplace, le disconnect supprime.
+    """
+
+    __tablename__ = "user_tokens"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_provider"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="google")
+    access_token_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    refresh_token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scope: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
