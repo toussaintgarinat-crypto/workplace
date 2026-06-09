@@ -27,3 +27,6 @@ class User(Base):
     # Onboarding
     setup_completed_at              = Column(DateTime, nullable=True)
     documents_partageables_par_defaut = Column(Boolean, default=False)
+    # S25 — thème d'apparence (design system « dark chaud & or »), persisté par
+    # utilisateur. JSON sérialisé {accent, surface, text, tint}. Vide = défaut front.
+    theme                           = Column(Text, default="")

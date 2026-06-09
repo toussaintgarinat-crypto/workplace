@@ -3,7 +3,7 @@ import {
   getActiveTheme, saveActiveTheme, setVar, setTint,
   getProfiles, saveProfile, deleteProfile,
   exportTheme, importThemeFromFile,
-  paletteStandard, paletteTexte,
+  paletteStandard, paletteTexte, pushRemoteTheme,
 } from '../theme/theme.js'
 
 const STANDARD = paletteStandard()
@@ -37,7 +37,11 @@ export default function AppearanceSettings() {
 
   const theme = { accent, surface, text, tint }
 
-  function persist(next) { saveActiveTheme({ accent, surface, text, tint, ...next }) }
+  function persist(next) {
+    const t = { accent, surface, text, tint, ...next }
+    saveActiveTheme(t)        // cache local immédiat
+    pushRemoteTheme(t)        // persistance backend (débouncée), cf. S25
+  }
 
   function pickAccent(hex)  { setAccent(hex);  setVar('accent', hex);  persist({ accent: hex }) }
   function pickSurface(hex) { setSurface(hex); setVar('surface', hex); persist({ surface: hex }) }
@@ -48,6 +52,7 @@ export default function AppearanceSettings() {
     setAccent(t.accent); setSurface(t.surface); setText(t.text); setTintState(t.tint)
     setVar('accent', t.accent); setVar('surface', t.surface); setVar('text', t.text); setTint(t.tint)
     saveActiveTheme(t)
+    pushRemoteTheme(t)
   }
 
   function onSave() {

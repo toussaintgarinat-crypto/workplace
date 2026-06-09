@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import keycloak from '../keycloak'
+import { hydrateRemoteTheme } from '../theme/theme.js'
 
 const AuthContext = createContext(null)
 
@@ -38,6 +39,8 @@ export function AuthProvider({ children }) {
       if (!r.ok) { keycloak.logout(); return }
       const data = await r.json()
       setUser(data.user)
+      // S25 — le thème persisté côté serveur prime sur le cache local au login.
+      if (data.user?.theme) hydrateRemoteTheme(data.user.theme)
       if (data.matrix_user_id) {
         setMatrixCreds({ userId: data.matrix_user_id, accessToken: data.matrix_access_token })
       }

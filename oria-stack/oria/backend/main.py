@@ -41,6 +41,8 @@ _MIGRATIONS = [
     "ALTER TABLE rooms ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "ALTER TABLE rooms ADD COLUMN status TEXT DEFAULT 'active'",
     "ALTER TABLE rooms ADD COLUMN closed_at TIMESTAMP",
+    # S25 — persistance backend du thème d'apparence par utilisateur
+    "ALTER TABLE users ADD COLUMN theme TEXT DEFAULT ''",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:

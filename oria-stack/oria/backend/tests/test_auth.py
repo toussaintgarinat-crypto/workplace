@@ -84,6 +84,45 @@ class TestProfil:
         assert r.status_code == 200
         assert r.json()["user"]["avatar_emoji"] == "🐉"
 
+    # ── S25 — persistance backend du thème d'apparence ──────────────────────
+    def test_theme_absent_par_defaut(self, client, user_in_db):
+        """Un compte sans thème renvoie theme=None (le front applique son défaut)."""
+        r = client.get("/api/auth/me")
+        assert r.status_code == 200
+        assert r.json()["user"]["theme"] is None
+
+    def test_patch_me_persiste_theme(self, client, user_in_db):
+        """PATCH /me enregistre le thème ; GET /me le relit (persistance serveur)."""
+        theme = {"accent": "#C9A24B", "surface": "#2A1F14", "text": "#F1ECE3", "tint": 22}
+        r = client.patch("/api/auth/me", json={"theme": theme})
+        assert r.status_code == 200
+        saved = r.json()["user"]["theme"]
+        assert saved == {"accent": "#c9a24b", "surface": "#2a1f14", "text": "#f1ece3", "tint": 22}
+        # Relecture indépendante : c'est bien persisté côté base, pas juste renvoyé.
+        again = client.get("/api/auth/me").json()["user"]["theme"]
+        assert again == saved
+
+    def test_patch_me_sanitize_theme_invalide(self, client, user_in_db):
+        """Les valeurs non-hex sont écartées, le tint est borné [0..100]."""
+        r = client.patch("/api/auth/me", json={"theme": {
+            "accent": "pas-une-couleur", "surface": "#abc", "text": "#112233",
+            "tint": 999, "malveillant": "<script>",
+        }})
+        assert r.status_code == 200
+        saved = r.json()["user"]["theme"]
+        assert "accent" not in saved          # hex invalide → écarté
+        assert saved["surface"] == "#abc"     # hex court valide → gardé
+        assert saved["text"] == "#112233"
+        assert saved["tint"] == 100           # borné
+        assert "malveillant" not in saved     # clé inconnue → ignorée
+
+    def test_patch_me_theme_ne_casse_pas_le_reste(self, client, user_in_db):
+        """Envoyer un thème seul ne doit pas effacer nom/emoji (update partiel)."""
+        client.patch("/api/auth/me", json={"theme": {"accent": "#aabbcc"}})
+        u = client.get("/api/auth/me").json()["user"]
+        assert u["nom"] == TEST_USER["nom"]
+        assert u["theme"]["accent"] == "#aabbcc"
+
     def test_statut_2fa_retourne_false(self, client, user_in_db):
         r = client.get("/api/auth/me/2fa-status")
         assert r.status_code == 200

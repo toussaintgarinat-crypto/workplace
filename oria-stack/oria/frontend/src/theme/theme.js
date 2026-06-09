@@ -56,6 +56,62 @@ export function initTheme() {
   return applyTheme(getActiveTheme())
 }
 
+/* ── Persistance backend (S25) ───────────────────────────────────
+   Le thème vit côté serveur (modèle User, route /auth/me) en plus du
+   localStorage. Source de vérité au login = backend ; le localStorage
+   sert de cache hors-ligne et de repli avant la résolution de /me. */
+import { api } from '../services/api.js'
+
+/** Hydrate le thème depuis le backend (objet renvoyé par GET /auth/me).
+ *  Applique + met à jour le cache localStorage. No-op si rien de serveur. */
+export function hydrateRemoteTheme(remote) {
+  if (!remote || typeof remote !== 'object') return getActiveTheme()
+  const t = { ...DEFAULT_THEME, ...remote }
+  applyTheme(t)
+  saveActiveTheme(t)
+  return t
+}
+
+/** Ambiance par monde (S25) : un monde porte sa couleur (`World.couleur`) comme
+ *  accent pour tous ses membres, le temps qu'on y est. Override ÉPHÉMÈRE — on ne
+ *  touche ni au localStorage ni au backend, c'est le thème perso de l'utilisateur
+ *  qui reste la base.
+ *
+ *  L'ambiance ne s'applique QU'aux mondes dont la couleur a été choisie
+ *  délibérément. Les couleurs par défaut HÉRITÉES (le blurple Discord `#5865F2` du
+ *  modèle, le vert `#2D5A27` posé par l'onboarding avant la refonte « dark chaud &
+ *  or ») sont ignorées : sinon elles masqueraient le thème perso de l'utilisateur
+ *  et on aurait l'impression que changer son accent ne fait rien. */
+const _LEGACY_DEFAULTS = new Set(['#5865f2', '#2d5a27'])
+export function applyWorldAmbiance(couleur) {
+  const c = (couleur || '').trim().toLowerCase()
+  if (!c || !/^#[0-9a-f]{3,8}$/.test(c) || _LEGACY_DEFAULTS.has(c)) {
+    clearWorldAmbiance()
+    return
+  }
+  setVar('accent', c)
+}
+
+/** Restaure l'accent du thème perso (sortie de monde / monde sans couleur). */
+export function clearWorldAmbiance() {
+  setVar('accent', getActiveTheme().accent)
+}
+
+let _pushTimer = null
+/** Pousse le thème vers le backend (PATCH /auth/me), débouncé pour ne pas
+ *  spammer pendant le drag d'un curseur ou le balayage d'un nuancier. */
+export function pushRemoteTheme(theme, delay = 600) {
+  clearTimeout(_pushTimer)
+  _pushTimer = setTimeout(() => {
+    api.patch('/auth/me', { theme: {
+      accent:  theme.accent,
+      surface: theme.surface,
+      text:    theme.text,
+      tint:    parseInt(theme.tint) || 0,
+    } })
+  }, delay)
+}
+
 /* ── Profils nommés ──────────────────────────────────────────── */
 export function getProfiles() {
   try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || '{}') }

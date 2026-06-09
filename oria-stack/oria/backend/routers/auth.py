@@ -1,4 +1,6 @@
+import json
 import os
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Optional
@@ -138,6 +140,42 @@ class MiseAJourProfil(BaseModel):
     bio: Optional[str] = None
     is_public: Optional[bool] = None
     documents_partageables_par_defaut: Optional[bool] = None
+    # S25 — thème d'apparence. Dict {accent, surface, text, tint} (les 3 premiers
+    # = couleurs hex, tint = 0..100). Sanitisé côté serveur avant persistance.
+    theme: Optional[dict] = None
+
+
+# ─── Thème d'apparence (S25) ──────────────────────────────────────────────────
+
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+def _sanitize_theme(raw) -> Optional[str]:
+    """Valide/normalise un thème en JSON compact. Ne garde que les clés connues ;
+    renvoie None si rien d'exploitable (on n'écrase alors pas l'existant)."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for k in ("accent", "surface", "text"):
+        v = raw.get(k)
+        if isinstance(v, str) and _HEX_RE.match(v.strip()):
+            out[k] = v.strip().lower()
+    if "tint" in raw:
+        try:
+            out["tint"] = max(0, min(100, int(raw["tint"])))
+        except (TypeError, ValueError):
+            pass
+    return json.dumps(out, separators=(",", ":")) if out else None
+
+
+def _theme_to_dict(stored: Optional[str]) -> Optional[dict]:
+    if not stored:
+        return None
+    try:
+        d = json.loads(stored)
+        return d if isinstance(d, dict) else None
+    except (ValueError, TypeError):
+        return None
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -154,6 +192,7 @@ def get_me(
             "bio": db_user.bio or "" if db_user else "",
             "is_public": db_user.is_public if db_user else True,
             "documents_partageables_par_defaut": db_user.documents_partageables_par_defaut if db_user else False,
+            "theme": _theme_to_dict(db_user.theme if db_user else None),
             "setup_completed_at": (
                 db_user.setup_completed_at.isoformat()
                 if (db_user and db_user.setup_completed_at) else None
@@ -180,6 +219,7 @@ def update_profil(
     if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     nom_clean = data.nom.strip() if data.nom is not None else None
+    theme_clean = _sanitize_theme(data.theme) if data.theme is not None else None
     db_user = svc.update_profile(
         db_user,
         nom=nom_clean,
@@ -187,12 +227,14 @@ def update_profil(
         bio=data.bio,
         is_public=data.is_public,
         documents_partageables_par_defaut=data.documents_partageables_par_defaut,
+        theme=theme_clean,
     )
     return {
         "user": {
             "id": db_user.id, "nom": db_user.nom, "avatar_emoji": db_user.avatar_emoji,
             "bio": db_user.bio or "", "is_public": db_user.is_public,
             "documents_partageables_par_defaut": db_user.documents_partageables_par_defaut,
+            "theme": _theme_to_dict(db_user.theme),
             "setup_completed_at": (
                 db_user.setup_completed_at.isoformat() if db_user.setup_completed_at else None
             ),
