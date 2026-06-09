@@ -2,15 +2,9 @@ import NotificationBell from './NotificationBell.jsx'
 
 export default function WorldSidebar({
   worlds, worldActifId, moi,
-  onSelectWorld, onCreerWorld, onDeconnexion, onNetwork, showNetwork, onSettings,
-  onDiscovery, showDiscovery,
-  onMyDocs, showMyDocs,
-  onMap, showMap,
-  onAgents, showAgents,
-  onIPCRA, showIPCRA,
-  onFeed, showFeed,
-  showJardin,
-  onConductor, showConductor,
+  onSelectWorld, onCreerWorld, onDeconnexion, onNetwork, onSettings,
+  onDiscovery, onMyDocs, onMap, onAgents, onIPCRA, onFeed, onConductor,
+  vueActive,
 }) {
   const jardin       = worlds.find(w => w.is_garden)
   const autresWorlds = worlds.filter(w => !w.is_garden)
@@ -24,7 +18,7 @@ export default function WorldSidebar({
       {jardin && (
         <>
           <button
-            className={`world-btn garden-btn ${showJardin ? 'actif' : ''}`}
+            className={`world-btn garden-btn ${vueActive === 'jardin' ? 'actif' : ''}`}
             onClick={() => onSelectWorld(jardin.id)}
             title="Mon Jardin Secret"
           >
@@ -61,7 +55,7 @@ export default function WorldSidebar({
 
       {/* Navigation globale */}
       <button
-        className={`world-btn nav-btn ${showDiscovery ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'discovery' ? 'actif' : ''}`}
         onClick={onDiscovery}
         title="Explorer"
       >
@@ -70,7 +64,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showFeed ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'feed' ? 'actif' : ''}`}
         onClick={onFeed}
         title="Fil d'activité"
       >
@@ -79,7 +73,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showMap ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'map' ? 'actif' : ''}`}
         onClick={onMap}
         title="Carte 2D"
       >
@@ -88,7 +82,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showAgents ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'agents' ? 'actif' : ''}`}
         onClick={onAgents}
         title="Agents IA"
       >
@@ -97,7 +91,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showMyDocs ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'mydocs' ? 'actif' : ''}`}
         onClick={onMyDocs}
         title="Mes dossiers"
       >
@@ -106,7 +100,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showIPCRA ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'ipcra' ? 'actif' : ''}`}
         onClick={onIPCRA}
         title="IPCRA"
       >
@@ -115,7 +109,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn nav-btn ${showConductor ? 'actif' : ''}`}
+        className={`world-btn nav-btn ${vueActive === 'conductor' ? 'actif' : ''}`}
         onClick={onConductor}
         title="Conductor"
       >
@@ -124,7 +118,7 @@ export default function WorldSidebar({
       </button>
 
       <button
-        className={`world-btn network-btn ${showNetwork ? 'actif' : ''}`}
+        className={`world-btn network-btn ${vueActive === 'network' ? 'actif' : ''}`}
         onClick={onNetwork}
         title="Réseau"
       >

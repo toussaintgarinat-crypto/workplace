@@ -7,6 +7,8 @@ const AVATAR_EMOJIS = [
   '🌊', '🌿', '🌺', '🍀', '💎', '🏆', '🎭', '🦄',
 ]
 
+const WORLD_EMOJIS = ['🏛', '🏙', '🌆', '🏘', '⚜️', '🗺', '🏟', '🌇', '🏫', '🗼', '🌿', '🚀']
+
 const S = {
   overlay: {
     position: 'fixed', inset: 0, background: 'var(--ink-900)',
@@ -104,6 +106,10 @@ export default function EasySetupWizard({ user, onComplete }) {
   const [followed, setFollowed] = useState(new Set())
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
+  // Étape 4 — premier monde
+  const [worldNom, setWorldNom]         = useState('')
+  const [worldEmoji, setWorldEmoji]     = useState('🏛')
+  const [worldCouleur, setWorldCouleur] = useState('var(--or-600)')
 
   useEffect(() => {
     if (step === 3) {
@@ -128,11 +134,28 @@ export default function EasySetupWizard({ user, onComplete }) {
     setStep(3)
   }
 
-  async function finish() {
+  // Finalise l'onboarding. Si un monde vient d'être créé, on dépose un repère
+  // de première visite (sessionStorage) et on pointe l'URL vers ce monde pour
+  // que MainLayout l'ouvre directement avec le fil guidé « première pièce ».
+  async function finaliser(worldId) {
     setSaving(true)
     await api.post('/auth/me/setup-complete', {})
+    if (worldId) {
+      sessionStorage.setItem('oria_onboarding', '1')
+      window.location.hash = `#/w/${worldId}`
+    }
     setSaving(false)
     await onComplete()
+  }
+
+  async function creerPremierMonde() {
+    if (!worldNom.trim()) { setError('Donne un nom à ton monde.'); return }
+    setError(''); setSaving(true)
+    const data = await api.post('/worlds/', {
+      nom: worldNom.trim(), description: '', emoji: worldEmoji, couleur: worldCouleur,
+    })
+    setSaving(false)
+    await finaliser(data?.id)
   }
 
   async function toggleFollow(uid) {
@@ -149,7 +172,7 @@ export default function EasySetupWizard({ user, onComplete }) {
     <div style={S.overlay}>
       <div style={S.card}>
         <div style={S.dots}>
-          {[1, 2, 3].map(n => <div key={n} style={S.dot(step >= n)} />)}
+          {[1, 2, 3, 4].map(n => <div key={n} style={S.dot(step >= n)} />)}
         </div>
 
         {step === 1 && (
@@ -248,9 +271,42 @@ export default function EasySetupWizard({ user, onComplete }) {
             )}
 
             <div style={{ ...S.row, marginTop: '24px' }}>
-              <button style={S.btnSecondary} onClick={finish} disabled={saving}>Passer</button>
-              <button style={S.btnPrimary} onClick={finish} disabled={saving}>
-                {saving ? '…' : 'Terminer →'}
+              <button style={S.btnSecondary} onClick={() => setStep(4)} disabled={saving}>Passer</button>
+              <button style={S.btnPrimary} onClick={() => setStep(4)} disabled={saving}>
+                {saving ? '…' : 'Suivant →'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <h2 style={S.h2}>Crée ton premier monde</h2>
+            <p style={S.sub}>Un monde regroupe tes espaces et tes pièces. Tu pourras en créer d'autres ensuite.</p>
+
+            <label style={S.label}>Emblème</label>
+            <div style={S.emojiGrid}>
+              {WORLD_EMOJIS.map(e => (
+                <button key={e} style={S.emojiBtn(worldEmoji === e)} onClick={() => setWorldEmoji(e)}>
+                  {e}
+                </button>
+              ))}
+            </div>
+
+            <label style={S.label}>Nom du monde</label>
+            <input
+              style={{ ...S.input, borderColor: error ? 'var(--rouge)' : 'var(--ink-700)' }}
+              value={worldNom}
+              onChange={e => { setWorldNom(e.target.value); setError('') }}
+              placeholder="Ex. Mon atelier, Ma commune…"
+              autoFocus
+            />
+            {error && <p style={{ color: 'var(--rouge)', fontSize: '12px', marginTop: '-14px', marginBottom: '14px' }}>{error}</p>}
+
+            <div style={{ ...S.row, marginTop: '24px' }}>
+              <button style={S.btnSecondary} onClick={() => finaliser(null)} disabled={saving}>Plus tard</button>
+              <button style={S.btnPrimary} onClick={creerPremierMonde} disabled={saving}>
+                {saving ? '…' : 'Créer mon monde →'}
               </button>
             </div>
           </>

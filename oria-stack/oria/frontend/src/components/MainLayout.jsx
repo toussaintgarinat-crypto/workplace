@@ -9,6 +9,7 @@ import DMPanel from './DMPanel.jsx'
 import NetworkView from './NetworkView.jsx'
 import CreateWorldModal from './CreateWorldModal.jsx'
 import { api } from '../services/api.js'
+import { applyWorldAmbiance, clearWorldAmbiance } from '../theme/theme.js'
 import Toast from './Toast.jsx'
 import SyncStatus from './SyncStatus.jsx'
 import SettingsModal from './SettingsModal.jsx'
@@ -21,6 +22,7 @@ import SharedZonesPanel from './SharedZonesPanel.jsx'
 import LLMConfigPanel from './LLMConfigPanel.jsx'
 import { useUnreadCounts } from '../hooks/useUnreadCounts.js'
 import { useUnreadDMCounts } from '../hooks/useUnreadDMCounts.js'
+import { useUrlSync, parseHash } from '../hooks/useUrlSync.js'
 // Nouvelles vues
 import WorldMap from './WorldMap.jsx'
 import DiscoveryPage from './DiscoveryPage.jsx'
@@ -39,27 +41,34 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
   const [roomsOuvertes, setRoomsOuvertes]   = useState([])   // [{ room, building }]
   const [largeurs, setLargeurs]             = useState([])   // flex values
   const [creerWorld, setCreerWorld]         = useState(false)
-  const [showMembers, setShowMembers]       = useState(false)
-  const [dmDestinataire, setDmDestinataire] = useState(null)
-  const [showNetwork, setShowNetwork]       = useState(false)
   const [showSettings, setShowSettings]     = useState(false)
-  const [docsScope, setDocsScope]           = useState(null) // { type, id, nom }
-  const [outilActif, setOutilActif]         = useState(null)
-  const [voteConseil, setVoteConseil]       = useState(null) // { conseil, world }
-  // Nouvelles vues
-  const [showMap, setShowMap]               = useState(false)
-  const [showDiscovery, setShowDiscovery]   = useState(false)
-  const [showMyDocs, setShowMyDocs]         = useState(false)
-  const [showAgents, setShowAgents]         = useState(false)
-  const [showIPCRA, setShowIPCRA]           = useState(false)
-  const [showFeed, setShowFeed]             = useState(false)
-  const [showJardin, setShowJardin]         = useState(false)
-  const [showConductor, setShowConductor]   = useState(false)
   const [worldAgents, setWorldAgents]       = useState([])
+
+  // ── Vue centrale : un seul état d'overlay exclusif (S26) ──────────
+  // `roomsOuvertes` est la couche de base ; `vue` est l'overlay actif
+  // par-dessus (ou null = on retombe sur les rooms / l'écran d'accueil).
+  //   null
+  //   { kind: 'map' | 'agents' | 'ipcra' | 'feed' | 'discovery'
+  //          | 'mydocs' | 'conductor' | 'jardin' | 'network' | 'members' }
+  //   { kind: 'dm',    membre }
+  //   { kind: 'docs',  scope, scopeId, scopeNom }
+  //   { kind: 'votes', conseil }
+  //   { kind: 'outil', outil }   // search|calendar|reseau-docs|shared-zones|llm-config|projects
+  const [vue, setVue] = useState(null)
+
+  // Repère de première visite, déposé par l'onboarding (consommé une seule fois) :
+  // déclenche un accueil guidé dans la zone principale.
+  const [premiereVisite] = useState(() => {
+    if (sessionStorage.getItem('oria_onboarding') === '1') {
+      sessionStorage.removeItem('oria_onboarding')
+      return true
+    }
+    return false
+  })
 
   const resizeRef = useRef(null) // { index, startX, startWidths, containerWidth }
 
-  useEffect(() => { chargerWorlds(); gererInvitation() }, [])
+  useEffect(() => { chargerWorlds(parseHash()); gererInvitation() }, [])
 
   useEffect(() => {
     if (worldActif?.id) {
@@ -68,6 +77,14 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
       })
     }
   }, [worldActif?.id])
+
+  // S25 — ambiance par monde : l'accent suit `World.couleur` tant qu'on est dans
+  // le monde, puis revient au thème perso à la sortie.
+  useEffect(() => {
+    if (worldActif?.couleur) applyWorldAmbiance(worldActif.couleur)
+    else clearWorldAmbiance()
+    return clearWorldAmbiance
+  }, [worldActif?.id, worldActif?.couleur])
 
   async function gererInvitation() {
     const params = new URLSearchParams(window.location.search)
@@ -78,36 +95,61 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
     chargerWorlds()
   }
 
-  async function chargerWorlds() {
+  async function chargerWorlds(cibleInitiale) {
     const data = await api.get('/worlds')
     if (Array.isArray(data)) {
       setWorlds(data)
-      if (data.length > 0 && !worldActif) chargerWorldComplet(data[0].id)
+      // Au montage : on applique la cible présente dans l'URL (deep-link / refresh) ;
+      // sinon on ouvre le premier monde par défaut.
+      if (cibleInitiale && cibleInitiale.kind) {
+        appliquerCible(cibleInitiale)
+      } else if (data.length > 0 && !worldActif) {
+        chargerWorldComplet(data[0].id)
+      }
     }
   }
+
+  // Applique une cible de navigation parsée depuis l'URL (montage ou popstate).
+  const appliquerCible = useCallback(async (cible) => {
+    if (!cible || !cible.kind) return
+    // Vues globales (indépendantes d'un monde).
+    if (['feed', 'discovery', 'network', 'conductor', 'jardin', 'mydocs'].includes(cible.kind)) {
+      setVue({ kind: cible.kind })
+      return
+    }
+    if (!cible.worldId) return
+    const w = await chargerWorldComplet(cible.worldId)
+    if (cible.kind === 'rooms') {
+      const aOuvrir = []
+      for (const b of (w?.buildings || [])) {
+        for (const r of (b.rooms || [])) {
+          if (cible.roomIds.includes(r.id)) aOuvrir.push({ room: r, building: b, world: w })
+        }
+      }
+      setVue(null)
+      setRoomsOuvertes(aOuvrir)
+      setLargeurs(aOuvrir.map(() => 1))
+      aOuvrir.forEach(ra => markAsRead(ra.room.matrix_room_id))
+    } else if (cible.kind === 'outil') {
+      setVue({ kind: 'outil', outil: cible.outil })
+    } else if (cible.kind === 'world') {
+      setVue(null)
+    } else {
+      setVue({ kind: cible.kind }) // map | agents | ipcra | members
+    }
+  }, [])
 
   async function chargerWorldComplet(id) {
     const data = await api.get(`/worlds/${id}`)
     setWorldActif(data)
-    // On ne ferme PAS les panneaux ouverts d'autres mondes
-    setShowMembers(false)
-    setDmDestinataire(null)
-    setShowNetwork(false)
-  }
-
-  function clearAllViews() {
-    setShowMembers(false); setDmDestinataire(null); setDocsScope(null)
-    setOutilActif(null); setVoteConseil(null)
-    setShowMap(false); setShowDiscovery(false); setShowMyDocs(false)
-    setShowAgents(false); setShowIPCRA(false); setShowNetwork(false); setShowFeed(false); setShowJardin(false)
-    setShowConductor(false)
+    // On ne ferme PAS les panneaux ouverts d'autres mondes (docs, outils, votes…) ;
+    // seuls les overlays liés à l'ancien contexte (membres/DM/réseau) se referment.
+    setVue(v => (v && ['members', 'dm', 'network'].includes(v.kind) ? null : v))
+    return data
   }
 
   function entrerRoom(room, building) {
-    setShowMembers(false)
-    setDmDestinataire(null)
-    setDocsScope(null)
-    setOutilActif(null)
+    setVue(null)
     markAsRead(room.matrix_room_id)
     setRoomsOuvertes(prev => {
       if (prev.find(r => r.room.id === room.id)) return prev
@@ -126,38 +168,24 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
   }
 
   function ouvrirMembers() {
-    setShowMembers(true)
-    setDmDestinataire(null)
+    setVue({ kind: 'members' })
   }
 
   function ouvrirOutil(outil) {
-    setOutilActif(outil)
-    setShowMembers(false)
-    setDmDestinataire(null)
-    setDocsScope(null)
-    setVoteConseil(null)
+    setVue({ kind: 'outil', outil })
   }
 
   function ouvrirVotes(conseil) {
-    setVoteConseil(conseil)
-    setShowMembers(false)
-    setDmDestinataire(null)
-    setDocsScope(null)
-    setOutilActif(null)
+    setVue({ kind: 'votes', conseil })
   }
 
   function ouvrirDM(membre) {
-    setDmDestinataire(membre)
-    setShowMembers(false)
+    setVue({ kind: 'dm', membre })
     markDMAsRead(membre.matrix_user_id)
   }
 
   function basculerNetwork() {
-    setShowNetwork(v => !v)
-    if (!showNetwork) {
-      setShowMembers(false)
-      setDmDestinataire(null)
-    }
+    setVue(v => (v?.kind === 'network' ? null : { kind: 'network' }))
   }
 
   async function onWorldCree(world) {
@@ -207,49 +235,65 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
   )
   const { counts: unreadCounts, markAsRead } = useUnreadCounts(activeMatrixRoomIds)
   const { total: dmUnreadTotal, byMxid: dmUnreadByMxid, markDMAsRead } = useUnreadDMCounts(
-    dmDestinataire?.matrix_user_id || null
+    (vue?.kind === 'dm' ? vue.membre?.matrix_user_id : null) || null
   )
+
+  // S26 — l'URL suit la vue (refresh, deep-link, précédent/suivant).
+  useUrlSync({ worldActif, vue, roomsOuvertes }, appliquerCible)
 
   // ── Zone principale ────────────────────────────────────────────
   const roomIds = new Set(roomsOuvertes.map(r => r.room.id))
 
+  // Première pièce ouvrable du monde actif (pour le fil guidé d'accueil).
+  const premiereRoomDispo = (() => {
+    for (const b of (worldActif?.buildings || [])) {
+      const r = (b.rooms || [])[0]
+      if (r) return { room: r, building: b }
+    }
+    return null
+  })()
+
+  // Outil (panneau) éventuellement actif, dérivé de la vue.
+  const outilActif = vue?.kind === 'outil' ? vue.outil : null
+  const fermerVue = () => setVue(null)
+
   let contenuPrincipal
-  if (showConductor) {
+  if (vue?.kind === 'conductor') {
     contenuPrincipal = <ConductorView moi={moi} />
-  } else if (showJardin) {
+  } else if (vue?.kind === 'jardin') {
     contenuPrincipal = <JardinPanel moi={moi} />
-  } else if (showFeed) {
+  } else if (vue?.kind === 'feed') {
     contenuPrincipal = (
       <ActivityFeed
         moi={moi}
         onOuvrirWorld={async (worldId) => {
-          clearAllViews()
           await chargerWorldComplet(worldId)
+          setVue(null)
         }}
       />
     )
-  } else if (showDiscovery) {
+  } else if (vue?.kind === 'discovery') {
     contenuPrincipal = (
       <DiscoveryPage
         moi={moi}
-        onJoinWorld={() => { chargerWorlds(); setShowDiscovery(false) }}
+        onJoinWorld={() => { chargerWorlds(); setVue(null) }}
       />
     )
-  } else if (showMyDocs) {
+  } else if (vue?.kind === 'mydocs') {
     contenuPrincipal = (
       <DocumentsManager moi={moi} worldId={worldActif?.id} />
     )
-  } else if (showAgents) {
+  } else if (vue?.kind === 'agents') {
     contenuPrincipal = worldActif
       ? <AgentManager world={worldActif} moi={moi} onAgentsChange={() => {
           api.get(`/agents/world/${worldActif.id}`).then(d => setWorldAgents(Array.isArray(d) ? d : []))
         }} />
       : <div className="need-world-msg"><span>🤖</span><p>{t('main.needWorld')}</p></div>
-  } else if (showIPCRA) {
+  } else if (vue?.kind === 'ipcra') {
     contenuPrincipal = (
       <IPCRAPanel worldId={worldActif?.id} agents={worldAgents} />
     )
-  } else if (showMap) {
+  } else if (vue?.kind === 'map') {
     if (!worldActif) {
       contenuPrincipal = <div className="need-world-msg"><span>🗺</span><p>{t('main.needWorldMap')}</p></div>
     } else {
@@ -260,37 +304,37 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
           buildings={worldActif.buildings || []}
           agents={worldAgents}
           onEntrerBuilding={b => {
-            setShowMap(false)
             const room = b.rooms?.[0]
             if (room) entrerRoom(room, b)
+            else setVue(null)
           }}
         />
       )
     }
-  } else if (showNetwork) {
+  } else if (vue?.kind === 'network') {
     contenuPrincipal = (
-      <NetworkView moi={moi} onOuvrirWorld={w => { setShowNetwork(false); chargerWorldComplet(w.id) }} />
+      <NetworkView moi={moi} onOuvrirWorld={w => { chargerWorldComplet(w.id) }} />
     )
-  } else if (docsScope) {
+  } else if (vue?.kind === 'docs') {
     contenuPrincipal = (
       <DocumentsPanel
-        scope={docsScope.type}
-        scopeId={docsScope.id}
-        scopeNom={docsScope.nom}
+        scope={vue.scope}
+        scopeId={vue.scopeId}
+        scopeNom={vue.scopeNom}
         moi={moi}
-        onFermer={() => setDocsScope(null)}
+        onFermer={fermerVue}
       />
     )
   } else if (outilActif === 'search') {
-    contenuPrincipal = <SearchPanel world={worldActif} moi={moi} onFermer={() => setOutilActif(null)} onNavigate={() => {}} />
+    contenuPrincipal = <SearchPanel world={worldActif} moi={moi} onFermer={fermerVue} onNavigate={() => {}} />
   } else if (outilActif === 'calendar') {
-    contenuPrincipal = <CalendarPanel world={worldActif} moi={moi} onFermer={() => setOutilActif(null)} />
+    contenuPrincipal = <CalendarPanel world={worldActif} moi={moi} onFermer={fermerVue} />
   } else if (outilActif === 'reseau-docs') {
-    contenuPrincipal = <ReseauDocumentsPanel world={worldActif} moi={moi} onFermer={() => setOutilActif(null)} />
+    contenuPrincipal = <ReseauDocumentsPanel world={worldActif} moi={moi} onFermer={fermerVue} />
   } else if (outilActif === 'shared-zones') {
-    contenuPrincipal = <SharedZonesPanel onFermer={() => setOutilActif(null)} />
+    contenuPrincipal = <SharedZonesPanel onFermer={fermerVue} />
   } else if (outilActif === 'llm-config') {
-    contenuPrincipal = <LLMConfigPanel world={worldActif} moi={moi} onFermer={() => setOutilActif(null)} />
+    contenuPrincipal = <LLMConfigPanel world={worldActif} moi={moi} onFermer={fermerVue} />
   } else if (outilActif === 'projects') {
     contenuPrincipal = (
       <ProjectsPanel
@@ -299,15 +343,15 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
         onWorldMisAJour={() => chargerWorldComplet(worldActif?.id)}
       />
     )
-  } else if (voteConseil) {
-    contenuPrincipal = <VotePanel conseil={voteConseil} world={worldActif} moi={moi} onFermer={() => setVoteConseil(null)} />
-  } else if (dmDestinataire) {
+  } else if (vue?.kind === 'votes') {
+    contenuPrincipal = <VotePanel conseil={vue.conseil} world={worldActif} moi={moi} onFermer={fermerVue} />
+  } else if (vue?.kind === 'dm') {
     contenuPrincipal = (
-      <DMPanel world={worldActif} moi={moi} destinataire={dmDestinataire} onFermer={() => setDmDestinataire(null)} />
+      <DMPanel world={worldActif} moi={moi} destinataire={vue.membre} onFermer={fermerVue} />
     )
-  } else if (showMembers) {
+  } else if (vue?.kind === 'members') {
     contenuPrincipal = (
-      <MembersPanel world={worldActif} moi={moi} onFermer={() => setShowMembers(false)} onOuvrirDM={ouvrirDM} dmUnreadByMxid={dmUnreadByMxid} />
+      <MembersPanel world={worldActif} moi={moi} onFermer={fermerVue} onOuvrirDM={ouvrirDM} dmUnreadByMxid={dmUnreadByMxid} />
     )
   } else if (roomsOuvertes.length > 0) {
     contenuPrincipal = (
@@ -338,8 +382,24 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
         {worldActif ? (
           <>
             <span className="main-welcome-emoji">{worldActif.emoji}</span>
-            <h2>{worldActif.nom}</h2>
-            <p>{t('main.selectRoom')}</p>
+            <h2>{premiereVisite ? `Bienvenue dans ${worldActif.nom} ! 🎉` : worldActif.nom}</h2>
+            {premiereRoomDispo ? (
+              <>
+                <p>{premiereVisite ? 'Ouvre ta première pièce pour commencer.' : t('main.selectRoom')}</p>
+                <button
+                  className="btn-primary"
+                  style={{ marginTop: 16 }}
+                  onClick={() => entrerRoom(premiereRoomDispo.room, premiereRoomDispo.building)}
+                >
+                  ▶ Ouvrir « {premiereRoomDispo.room.nom} »
+                </button>
+              </>
+            ) : premiereVisite ? (
+              <p>Ton monde est prêt ! Crée ton premier espace puis une pièce
+                 depuis le panneau de gauche&nbsp;←</p>
+            ) : (
+              <p>{t('main.selectRoom')}</p>
+            )}
           </>
         ) : (
           <>
@@ -359,32 +419,24 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
         moi={moi}
         onSelectWorld={id => {
           const w = worlds.find(w => w.id === id)
-          if (w?.is_garden) { clearAllViews(); setShowJardin(true) }
-          else { clearAllViews(); chargerWorldComplet(id) }
+          if (w?.is_garden) { setVue({ kind: 'jardin' }) }
+          else { setVue(null); chargerWorldComplet(id) }
         }}
         onCreerWorld={() => setCreerWorld(true)}
         onDeconnexion={onDeconnexion}
-        onNetwork={() => { clearAllViews(); setShowNetwork(true) }}
-        showNetwork={showNetwork}
+        onNetwork={() => setVue({ kind: 'network' })}
         onSettings={() => setShowSettings(true)}
-        onDiscovery={() => { clearAllViews(); setShowDiscovery(true) }}
-        showDiscovery={showDiscovery}
-        onMap={() => { clearAllViews(); setShowMap(true) }}
-        showMap={showMap}
-        onAgents={() => { clearAllViews(); setShowAgents(true) }}
-        showAgents={showAgents}
-        onMyDocs={() => { clearAllViews(); setShowMyDocs(true) }}
-        showMyDocs={showMyDocs}
-        onIPCRA={() => { clearAllViews(); setShowIPCRA(true) }}
-        showIPCRA={showIPCRA}
-        onFeed={() => { clearAllViews(); setShowFeed(true) }}
-        showFeed={showFeed}
-        showJardin={showJardin}
-        onConductor={() => { clearAllViews(); setShowConductor(true) }}
-        showConductor={showConductor}
+        onDiscovery={() => setVue({ kind: 'discovery' })}
+        onMap={() => setVue({ kind: 'map' })}
+        onAgents={() => setVue({ kind: 'agents' })}
+        onMyDocs={() => setVue({ kind: 'mydocs' })}
+        onIPCRA={() => setVue({ kind: 'ipcra' })}
+        onFeed={() => setVue({ kind: 'feed' })}
+        onConductor={() => setVue({ kind: 'conductor' })}
+        vueActive={vue?.kind}
       />
 
-      {!showNetwork && (
+      {vue?.kind !== 'network' && (
         <ChannelPanel
           world={worldActif}
           moi={moi}
@@ -395,11 +447,7 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
           onWorldMisAJour={() => chargerWorldComplet(worldActif?.id)}
           onOuvrirMembers={ouvrirMembers}
           onOuvrirDM={ouvrirDM}
-          onOuvrirDocs={(type, id, nom) => {
-            setDocsScope({ type, id, nom })
-            setShowMembers(false)
-            setDmDestinataire(null)
-          }}
+          onOuvrirDocs={(type, id, nom) => setVue({ kind: 'docs', scope: type, scopeId: id, scopeNom: nom })}
           onOuvrirOutil={ouvrirOutil}
           onOuvrirVotes={ouvrirVotes}
         />
