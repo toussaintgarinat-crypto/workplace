@@ -1,8 +1,11 @@
 # Sprint S27 — Pont Google Agenda (sync consentie, pull one-way)
 
-> **Statut** : ✅ **CODE LIVRÉ + PROUVÉ OFFLINE** (24 tests + E2E HTTP) — **2026-06-09**.
-> **Reste LIVE** (honnêteté) : projet Google Cloud (client_id/secret) + consentement réel
-> + pull d'un vrai compte Google. Bloqué sur des credentials Google à fournir.
+> **Statut** : ✅ **CODE LIVRÉ + PROUVÉ OFFLINE (24 tests + E2E) + PROUVÉ LIVE** — **2026-06-09**.
+> LIVE : projet Google Cloud `workplace-oria`, consentement réel de
+> `toussaintgarinat@gmail.com` (scope `calendar.readonly`), **3 événements réels rapatriés**
+> dans le calendrier « Google » de l'utilisateur, **re-sync idempotente prouvée** (0 créé / 3 maj,
+> aucun doublon). **Reste = déploiement** : reconstruire l'image Docker `agenda` (le conteneur en
+> cours tourne le code pré-S27) + durcir le `state` du callback (anti-CSRF).
 
 ## Objectif
 
@@ -66,16 +69,32 @@ async de la brique.
   → status `True` → sync#1 `{created:2}` → sync#2 `{created:0, updated:2}` (idempotent) →
   disconnect `True` → status `False`.
 
-## Reste à prouver LIVE (honnêteté technique)
+## Preuve LIVE (2026-06-09)
 
-1. **Projet Google Cloud** : créer un OAuth client (type Web), scope `calendar.readonly`, et
-   enregistrer l'URI de redirection (= `GOOGLE_REDIRECT_URI`, à l'octet près).
-2. **Consentement réel** : ouvrir l'URL `/google/connect`, accepter, vérifier le callback range
-   bien access+refresh chiffrés en base.
-3. **Pull réel** : `POST /google/sync` contre un vrai compte, vérifier les events dans le
-   calendrier `« Google »` et l'idempotence sur re-sync.
-4. **Durcissement state** (sécurité) : le `state` du callback porte aujourd'hui l'identité en clair.
-   En déploiement, le remplacer par un state opaque vérifié (anti-CSRF) — noté ici, hors incrément.
+Jouée contre la **vraie API Google**, code S27 servi en local sur 8400 (uvicorn, `.env` réel),
+le conteneur Docker `agenda` arrêté le temps du test puis redémarré.
+
+1. **Projet Google Cloud** `workplace-oria` : OAuth client *Application Web*, scope
+   `calendar.readonly`, redirect `http://localhost:8400/google/callback`, écran de consentement
+   en mode **Test** + `toussaintgarinat@gmail.com` en utilisateur test.
+2. **Consentement réel** : `GET /google/connect` → URL Google → écran « Oria souhaite accéder à
+   votre agenda » → autorisé → callback `« Google Agenda connecté ✅ »`. `/google/status` =
+   `connected:true`, scope `calendar.readonly`, tokens chiffrés en base.
+3. **Pull réel** : `POST /google/sync` → `{created:3, fetched:3}`. 3 événements réels rapatriés
+   (« TOUSSAINT GARINAT - 30 minutes de discussion », « Eyetech », « RE: Lecture du cahier des
+   charges ») dans le calendrier « Google ».
+4. **Idempotence réelle** : 2ᵉ `POST /google/sync` → `{created:0, updated:3}`, **un seul**
+   calendrier « Google », **zéro doublon**.
+
+## Reste (déploiement, hors incrément applicatif)
+
+1. **Reconstruire l'image Docker `agenda`** : le conteneur en service tourne le code pré-S27 (pas
+   de routes `/google`). `docker compose build agenda && docker compose up -d agenda` avec les
+   variables `VAULT_SECRET`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI` au coffre.
+2. **Durcissement state** (sécurité) : le `state` du callback porte aujourd'hui l'identité en clair.
+   En déploiement, le remplacer par un state opaque vérifié (anti-CSRF).
+3. **Redirect prod** : aligner `GOOGLE_REDIRECT_URI` sur `https://agenda.<domaine>/google/callback`
+   et l'enregistrer côté Google Cloud.
 
 ## Hors périmètre (évolutions)
 
