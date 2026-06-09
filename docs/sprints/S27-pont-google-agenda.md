@@ -86,15 +86,23 @@ le conteneur Docker `agenda` arrêté le temps du test puis redémarré.
 4. **Idempotence réelle** : 2ᵉ `POST /google/sync` → `{created:0, updated:3}`, **un seul**
    calendrier « Google », **zéro doublon**.
 
-## Reste (déploiement, hors incrément applicatif)
+## Déploiement (fait 2026-06-09)
 
-1. **Reconstruire l'image Docker `agenda`** : le conteneur en service tourne le code pré-S27 (pas
-   de routes `/google`). `docker compose build agenda && docker compose up -d agenda` avec les
-   variables `VAULT_SECRET`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI` au coffre.
-2. **Durcissement state** (sécurité) : le `state` du callback porte aujourd'hui l'identité en clair.
-   En déploiement, le remplacer par un state opaque vérifié (anti-CSRF).
-3. **Redirect prod** : aligner `GOOGLE_REDIRECT_URI` sur `https://agenda.<domaine>/google/callback`
-   et l'enregistrer côté Google Cloud.
+- ✅ **Image Docker reconstruite** + conteneur `agenda` recréé : routes `/google/*` live
+  (connect/status 200), pont configuré (pas de 503), table `user_tokens` créée par `create_all`.
+- ✅ **Migration de schéma** : colonnes `Event.source`/`external_id` ajoutées à chaud au volume
+  existant — **4 événements préservés**. Migration Alembic `0003` versionnée pour les futurs déploiements.
+- ✅ **Secrets au runtime** : `briques/agenda/.env` (compose, gitignoré) → substitution `${...}` →
+  bloc `environment:`. `.dockerignore` garantit que `.env` n'est **pas cuit dans l'image** (vérifié).
+- ↩️ **Re-consentement** : le token du test LIVE vivait dans une base éphémère ; sur le conteneur,
+  rejouer une fois `/google/connect` pour un token persistant dans le volume.
+
+## Reste (durcissement, hors incrément)
+
+1. **Durcissement state** (sécurité) : le `state` du callback porte aujourd'hui l'identité en clair.
+   En déploiement public, le remplacer par un state opaque vérifié (anti-CSRF).
+2. **Redirect prod** : aligner `GOOGLE_REDIRECT_URI` sur `https://agenda.<domaine>/google/callback`
+   et l'enregistrer côté Google Cloud (+ écran de consentement en production vérifiée si ouverture publique).
 
 ## Hors périmètre (évolutions)
 
