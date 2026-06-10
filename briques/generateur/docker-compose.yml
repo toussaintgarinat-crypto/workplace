@@ -25,6 +25,14 @@ services:
       # Pont consenti app→CRM (S24) : la brique forge (adaptateur) écrit dans le CRM
       # du cabinet via son identité de service. Aucun secret ne vit ici.
       - FORGE_URL_INTERNE=http://host.docker.internal:5700
+      # Onboarding client auto (S23, bascule LIVE S28) : à la livraison, le client
+      # reçoit un email Keycloak « définis ton mot de passe » dont le redirect_uri
+      # DOIT figurer dans les redirectUris autorisés du client `oria-app`
+      # (localhost:3003 = frontend Oria). Le défaut code `:8000` n'y est PAS et
+      # provoque un 400 sur execute-actions-email — d'où ce câblage explicite.
+      - ORIA_URL_PUBLIQUE=http://localhost:3003
+      - ORIA_URL_INTERNE=http://host.docker.internal:8000
+      - KEYCLOAK_URL_INTERNE=http://host.docker.internal:8081
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5400/sante')"]
