@@ -15,5 +15,18 @@
     "evenements",
     "invitations"
   ],
-  "besoin": []
+  "besoin": [],
+  "taches": [
+    {
+      "nom": "sync-google",
+      "description": "Pull one-way des événements Google Agenda → calendrier « Google » (consenti, idempotent S27)",
+      "methode": "POST",
+      "chemin": "/google/sync",
+      "cadence_heures": 6,
+      "idempotent": true,
+      "entetes": {"X-User-Id": "perso"},
+      "entete_token_env": "CALENDAR_SERVICE_TOKEN",
+      "tolere_echec": true
+    }
+  ]
 }

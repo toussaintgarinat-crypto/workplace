@@ -18,6 +18,7 @@ import journal_usage
 import personas
 import shadow
 import proactif
+import horloge
 import cycle_de_vie
 import orchestrateur
 from registre import Registre
@@ -1321,10 +1322,14 @@ async def lifespan(app: FastAPI):
     registre.charger()
     orchestrateur.init_db()
     proactif.init_db()
+    horloge.init_db()
     # Boucle proactive en tâche de fond (rappels : agenda imminent, docs à classer).
     tache_proactif = asyncio.create_task(proactif.boucle(registre))
+    # Horloge : déclenche les tâches périodiques déclarées par les briques (S29).
+    tache_horloge = asyncio.create_task(horloge.boucle(registre))
     yield
     tache_proactif.cancel()
+    tache_horloge.cancel()
 
 
 app = FastAPI(
@@ -1389,6 +1394,23 @@ async def sante_brique(nom: str):
             return {"nom": nom, "statut": statut, "code_http": r.status_code}
     except Exception as e:
         return {"nom": nom, "statut": "inaccessible", "erreur": str(e)}
+
+
+@app.get("/horloge/taches", tags=["horloge"])
+def horloge_taches():
+    """Tâches périodiques déclarées par les briques (manifest `taches`) avec, pour
+    chacune, sa cadence, sa dernière exécution et sa prochaine échéance (S29)."""
+    taches = horloge.lister_etat(registre)
+    return {"total": len(taches), "taches": taches}
+
+
+@app.post("/horloge/executer", tags=["horloge"])
+async def horloge_executer(forcer: bool = False, brique: str | None = None,
+                           tache: str | None = None):
+    """Déclenche les tâches dues maintenant. `forcer=true` ignore la cadence ;
+    `brique`/`tache` restreignent à une seule tâche (utile pour tester ou rejouer)."""
+    return await horloge.run_due(registre, forcer=forcer,
+                                 filtre_brique=brique, filtre_tache=tache)
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)

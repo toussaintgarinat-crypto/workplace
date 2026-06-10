@@ -22,5 +22,15 @@
   "besoin": [
     "rappeler",
     "retenir"
+  ],
+  "taches": [
+    {
+      "nom": "relances-impayes",
+      "description": "Relances J+7/15/30 des factures impayées (anti-doublon facture×niveau, géré par la brique)",
+      "methode": "POST",
+      "chemin": "/relances/executer",
+      "cadence_heures": 24,
+      "idempotent": true
+    }
   ]
 }
