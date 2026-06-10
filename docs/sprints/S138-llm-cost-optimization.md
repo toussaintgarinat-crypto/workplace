@@ -7,9 +7,29 @@
 
 - **Sprint** : S138
 - **Pré-requis** : S128 (react_executor), S133 (governor + pricing), S129 (memory/embeddings Ollama)
-- **Statut** : **les 5 chantiers (0,1,2,3,4) implémentés dans Workplace** (adaptés fichier, kill-switches par config)
+- **Statut** : **les 5 chantiers (0,1,2,3,4) implémentés dans Workplace** (adaptés fichier, kill-switches par config) — **chat + cache sémantique + routage PROUVÉS LIVE le 2026-06-10**
 - **Date de planification** : 2026-06-05
 - **Date d'implémentation (Workplace)** : 2026-06-06
+- **Date de preuve LIVE** : 2026-06-10
+
+### Preuve LIVE (2026-06-10)
+
+Script jetable exécuté **dans le conteneur `core-core-1`** contre la **vraie Gateway LiteLLM**
+(`gateway-gateway-1`, `host.docker.internal:4001`), journal & cache isolés en `/tmp` :
+
+| Chantier | Résultat LIVE |
+|---|---|
+| C0 chat + coût | `openai/gpt-4o-mini` → « Paris. », 19 tok in / 3 out, **coût réel $0.000005** lu dans l'en-tête `x-litellm-response-cost` |
+| C2 cache sémantique | 1er appel miss (26 tok, $0.000160) → 2e identique **HIT à 0 token, $0** (embeddings `embedding/all-minilm` réels, 0 appel LLM) |
+| C1 routage dynamique | « merci, c'est parfait ! » → `trivial` → servi par l'économe local **`ollama/llama3`** (coût $0) ; requête code → `complexe` → reste sur `gpt-4o-mini` |
+| Journal | 5 appels agrégés, `cache_hits=1`, `appels_retrogrades=1` |
+
+**Pièges notés** : les modèles `free/*` (OpenRouter) renvoient parfois **429** (rate limit) →
+préférer un économe **local** `ollama/llama3` ; la Gateway met ~1 min à accepter les complétions
+après un (re)démarrage Docker (`health: starting`) alors que `/v1/models` répond déjà.
+
+**Reste non prouvé en réel** : shadow routing LIVE (validé offline seulement) et les **métriques
+cibles du sprint** (−40 % coût, ≥25 % hit) sur du trafic réel.
 
 ---
 

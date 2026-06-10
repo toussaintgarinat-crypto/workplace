@@ -235,6 +235,32 @@ Pareto CA×Temps×Pénibilité, analyses, vue « Application proposée », expor
 | **S7 — Assistant du Cœur (« Jarvis »)** | Un **agent conversationnel** qui pilote l'usine : on lui parle en langage naturel, il consulte l'état et **agit** (livrer / décrocher / reprendre) via des outils, avec **confirmation** avant toute action. | Objectif 2 « Jarvis réel » : il n'assiste pas seulement, il **agit** | ✅ v1 fait (2026-06-05) |
 | **S8 — Assistant de toute la solution + Mémoire** | Élargir l'assistant à **toutes les briques** (ETL, Générateur, Données, Mémoire…), lecture **et** actions (avec confirmation). Intégrer le projet **Memory** comme brique (`memoire`) → l'assistant a une **mémoire persistante** (retenir / rappeler). | l'assistant sert la solution entière, pas que l'usine ; il se souvient | ✅ v1 fait (2026-06-05) |
 
+### 🗺️ Backlog S28+ (décidé le 2026-06-10)
+
+> Construit à partir des **dettes ouvertes** des sprints S19–S27 + S138 et de **deux features
+> nouvelles** retenues : le **briefing quotidien** (le Jarvis parle le premier) et
+> **« l'app vivante »** (re-audit post-livraison → revenu récurrent). Ordre choisi pour que
+> chaque sprint débloque le suivant.
+
+| Sprint | Objectif | Pourquoi / ce qu'il solde | Statut |
+|---|---|---|---|
+| **S28 — Clôture LIVE groupée (Stripe + emails + comptes)** | Configurer une fois les prérequis communs (vrai SMTP, clé Stripe `sk_test_`, rôle Keycloak `manage-users` + SMTP realm `oria`) puis **rejouer les 3 flux en LIVE** : paiement Stripe (S21), envoi email + relance d'impayé déclenchée à la main (S22), compte client auto + lien « définis ton mdp » (S23). | **Solde 3 dettes d'un coup** (S21/S22/S23, tous « code livré + prouvé offline, reste LIVE ») ; c'est la chaîne qui rapproche de l'euro : devis → facture → paiement → relance → compte client. | ⬜ à faire |
+| **S29 — Brique `horloge` (planificateur)** | Une petite brique (ou un module du Cœur étendant `proactif.py`) qui exécute des **tâches périodiques déclarées par les autres briques** (contrat manifest : quoi, quand, idempotence). Premiers branchements : **relances J+7/15/30** (S22) et **sync Google Agenda** (S27, pull périodique). | Trois sprints butaient sur le même mur (cron des relances, déclencheur de sync, proactif) ; une seule brique fidèle au modèle noyau+briques débloque tout. **Prérequis de S30.** | ⬜ à faire |
+| **S30 — Briefing quotidien (Jarvis proactif)** | Chaque matin, l'assistant **vient vers l'utilisateur** : RDV du jour (agenda + pont Google), factures approchant J+7/15/30, pipeline CRM, coût LLM de la veille — synthèse rédigée par l'**économe local** (routage S138, coût ~0), livrée dans le chat (pastille 🔔 existante) et/ou en message Oria. Techniquement : nouvelles coroutines dans `CHECKS` de `proactif.py` + 1 synthèse LLM, déclenchée par `horloge`. | Le comportement qui définit un Jarvis : **parler le premier**. Petit, visible tous les matins, capitalise S10/S20/S22/S27/S138. | ⬜ à faire |
+| **S31 — « L'app vivante » (re-audit post-livraison)** | Boucler la chaîne de l'usine : les données d'usage **consenties** remontées par le pont S24 (+ nouveaux documents) alimentent un **re-audit** de l'entreprise livrée → le générateur **propose un incrément** (« module Planning utilisé 40×/jour, Devis jamais ; le Pareto a changé ; je propose X »), à valider avant toute génération. S'appuie sur : pont consenti (S24), cycle de vie décrocher/reprendre (S6), audit (S7). | L'app livrée cesse d'être one-shot : **revenu récurrent** (contrat d'évolution) — le critère « ça rapproche d'un euro ? » mieux que tout le reste du backlog. | ⬜ à faire |
+
+**En parallèle (pas des sprints, mais à ne pas perdre)** :
+- **Mesure réelle S138** : activer le journal sur le trafic normal de l'assistant pendant S28–S30,
+  prouver le **shadow routing LIVE** et vérifier les cibles (−40 % coût, ≥25 % hit) — sinon recalibrer.
+- **Durcissement S27** : `state` OAuth opaque (anti-CSRF) + redirect prod — à faire **avant toute
+  ouverture publique** du pont Google.
+- **Dette identité Forge (S20)** — critère de déclenchement écrit : à résoudre (propager le token
+  utilisateur, pas le token de service) **avant tout 2ᵉ utilisateur Workplace réel** ou avant le
+  branchement d'un 3ᵉ router scope `user_id`. Ne pas brancher de router en croyant l'isolation acquise.
+- **Bug de concurrence S19** (course au 1er login → double provisioning, 500 auto-réparé) : à glisser
+  dans le premier sprint qui retouche le core Forge.
+- **Long-tail Oria UX** (palettes intentionnelles) : opportuniste, au fil de l'eau.
+
 #### ✅ S1 livré — architecture briques du générateur (2026-06-03)
 - `gabarit.py` ne contient plus un `generer_html` monolithique : un **registre de briques** (`_REGISTRE`)
   où chaque brique est un constructeur `ctx -> list[vue]`. L'app s'assemble en parcourant le registre.
