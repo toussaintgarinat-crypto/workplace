@@ -75,6 +75,23 @@ def lister(non_lus: bool = False, limite: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def existe_cle(cle: str) -> bool:
+    """Vrai si un rappel porte déjà cette clé, LU ou NON (contrairement au
+    dédoublonnage « non lu » de `_ajouter`). Sert l'idempotence par jour du
+    briefing (S30) : un seul briefing par date, même s'il a déjà été lu."""
+    with _conn() as c:
+        return c.execute(
+            "SELECT 1 FROM rappels WHERE cle = ? LIMIT 1", (cle,)
+        ).fetchone() is not None
+
+
+def supprimer_cle(cle: str) -> int:
+    """Supprime tous les rappels portant cette clé (lus ou non). Sert la
+    régénération forcée du briefing (S30) : on remplace, on ne duplique pas."""
+    with _conn() as c:
+        return c.execute("DELETE FROM rappels WHERE cle = ?", (cle,)).rowcount
+
+
 def compter_non_lus() -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) FROM rappels WHERE vu = 0").fetchone()[0]

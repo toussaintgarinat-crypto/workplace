@@ -13,6 +13,10 @@ services:
       - LIVRAISONS_DB=/data/livraisons.db
       # Hôte par lequel le Cœur joint les autres briques (cf. manifests).
       - BRIQUE_HOST=host.docker.internal
+      # Self-call interne : l'horloge (S29) déclenche le briefing quotidien (S30)
+      # via le contrat de la pseudo-brique « noyau ». On reste DANS le conteneur
+      # (127.0.0.1:5000) plutôt que de ressortir par le port publié 5100.
+      - NOYAU_URL=http://127.0.0.1:5000
       # URL publique du Générateur (liens aperçu/téléchargement du tableau, vus du navigateur).
       - GENERATEUR_URL_PUBLIQUE=http://localhost:5400
       # URL publique de l'Agenda (liens d'invitation transmis aux invités, joignables

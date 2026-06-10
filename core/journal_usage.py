@@ -89,6 +89,15 @@ def _agreger(lignes: list[dict]) -> dict:
     }
 
 
+def agregat_jour(jour: str) -> dict:
+    """Agrégats d'usage LLM pour une date donnée `AAAA-MM-JJ` (préfixe `ts`, UTC).
+
+    Sert le briefing quotidien (S30) qui demande le coût « de la veille » ; ne
+    dépend pas du jour courant, contrairement à `resume()`."""
+    lignes = [l for l in _lignes() if (l.get("ts") or "").startswith(jour)]
+    return _agreger(lignes)
+
+
 def resume() -> dict:
     """Agrégats jour courant / mois courant / total + détail des budgets."""
     lignes = _lignes()

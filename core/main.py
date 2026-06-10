@@ -19,6 +19,7 @@ import personas
 import shadow
 import proactif
 import horloge
+import briefing
 import cycle_de_vie
 import orchestrateur
 from registre import Registre
@@ -554,7 +555,7 @@ async function chargerRappels() {
     if (!rs.length) { corps.innerHTML = '<span class="liv-sub">Aucun rappel pour le moment.</span>'; return; }
     corps.innerHTML = rs.map(r => `
       <div class="rappel ${r.vu ? 'vu' : ''}">
-        <div class="rappel-txt"><b>${escHtml(r.titre)}</b>${r.corps ? '<br><span class="liv-sub">'+escHtml(r.corps)+'</span>' : ''}</div>
+        <div class="rappel-txt"><b>${escHtml(r.titre)}</b>${r.corps ? '<br><span class="liv-sub" style="white-space:pre-wrap">'+escHtml(r.corps)+'</span>' : ''}</div>
         <div class="rappel-actions">
           <button class="btn ghost" onclick='parlerRappel(${JSON.stringify(r.titre)})'>En parler</button>
           ${r.vu ? '' : `<button class="btn ghost" onclick="marquerRappelVu('${r.id}')">Vu</button>`}
@@ -1411,6 +1412,22 @@ async def horloge_executer(forcer: bool = False, brique: str | None = None,
     `brique`/`tache` restreignent à une seule tâche (utile pour tester ou rejouer)."""
     return await horloge.run_due(registre, forcer=forcer,
                                  filtre_brique=brique, filtre_tache=tache)
+
+
+@app.post("/briefing/executer", tags=["assistant"])
+async def briefing_executer(forcer: bool = False):
+    """Génère le briefing quotidien (RDV, impayés, pipeline, coût LLM de la veille)
+    et le dépose en rappel 🔔. Synthèse par l'économe local (S138). Idempotent par
+    jour ; `forcer=true` régénère. Déclenché chaque matin par l'horloge S29 via la
+    tâche `briefing-quotidien` du manifest `noyau` (S30)."""
+    return await briefing.executer(registre, forcer=forcer)
+
+
+@app.get("/briefing/dernier", tags=["assistant"])
+async def briefing_dernier():
+    """Dernier briefing déposé (rappel de type `briefing`), s'il existe."""
+    briefings = [r for r in proactif.lister(limite=60) if r.get("type") == "briefing"]
+    return {"briefing": briefings[0] if briefings else None}
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)

@@ -1,0 +1,25 @@
+{
+  "nom": "noyau",
+  "version": "1.0.0",
+  "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30) à l'horloge S29 — il n'est pas une brique séparée.",
+  "role": "noyau",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "~/Desktop/Workplace/core",
+  "port": 5100,
+  "url_sante": "http://host.docker.internal:5100/health",
+  "depends_on": [],
+  "offre": [],
+  "besoin": [],
+  "taches": [
+    {
+      "nom": "briefing-quotidien",
+      "description": "Briefing du matin (RDV du jour, impayés J+7/15/30, pipeline CRM, coût LLM de la veille) synthétisé par l'économe local et déposé en rappel 🔔 (S30).",
+      "methode": "POST",
+      "chemin": "/briefing/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "tolere_echec": true
+    }
+  ]
+}
