@@ -23,5 +23,16 @@
     "audit_entreprise",
     "llm_chat",
     "persistance_crud"
+  ],
+  "taches": [
+    {
+      "nom": "revue-app-vivante",
+      "description": "Revue périodique « app vivante » (S31) : pour chaque app au consentement actif, mesure l'usage consenti et PROPOSE un incrément (statut « propose »). Ne valide ni n'applique rien — la chaîne humaine valider (S31) → appliquer (S32) reste manuelle. Balayage best-effort (S33).",
+      "methode": "POST",
+      "chemin": "/revues/balayage",
+      "cadence_heures": 168,
+      "idempotent": true,
+      "tolere_echec": true
+    }
   ]
 }

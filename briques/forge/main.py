@@ -25,6 +25,7 @@ plutôt qu'une stacktrace — le Cœur doit pouvoir afficher un état honnête.
 """
 
 import asyncio
+import contextvars
 import os
 import time
 
@@ -95,6 +96,30 @@ CAPACITES = {
 app = FastAPI(title="Forge Workplace", version="0.2.0")
 
 
+# ── Propagation d'identité utilisateur (dette S20) ───────────────────────────────
+# L'adaptateur s'authentifie au core avec un **token de service** (choix S16/S17). Mais
+# pour les opérations scopées par utilisateur/organisation, l'identité réelle doit
+# pouvoir traverser. Si l'appelant (le Cœur) fournit le JWT de l'utilisateur dans
+# l'en-tête `X-Forge-User-Token`, on le **propage** au core (qui provisionne/scope par cet
+# utilisateur) ; sinon on retombe sur le token de service (rétrocompatible, flux S17/S24
+# inchangés). Le token voyage par requête via un ContextVar → aucune signature de route à
+# modifier, et `_resoudre_pole_crm` (qui rappelle `_appel_protege`) en bénéficie aussi.
+_JETON_UTILISATEUR: "contextvars.ContextVar[str | None]" = contextvars.ContextVar(
+    "forge_user_token", default=None
+)
+
+
+@app.middleware("http")
+async def _capter_jeton_utilisateur(request, call_next):
+    brut = request.headers.get("X-Forge-User-Token")
+    token = brut.split(" ", 1)[1] if brut and brut.lower().startswith("bearer ") else brut
+    jeton = _JETON_UTILISATEUR.set(token or None)
+    try:
+        return await call_next(request)
+    finally:
+        _JETON_UTILISATEUR.reset(jeton)
+
+
 async def _client(timeout: float = 15) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout)
 
@@ -142,19 +167,28 @@ _auth = _ServiceAuth()
 async def _appel_protege(
     client: httpx.AsyncClient, methode: str, chemin: str, **kw
 ) -> httpx.Response:
-    """Appelle une route protégée du core avec le token de service en Bearer.
+    """Appelle une route protégée du core en Bearer.
+
+    Identité (dette S20) : si l'appelant a fourni le JWT de l'utilisateur
+    (`X-Forge-User-Token`, capté dans le ContextVar), on le **propage** — le core scope
+    alors par l'utilisateur réel. Sinon, repli sur le **token de service** (comportement
+    historique S17, flux service/S24 inchangés).
 
     Mappe les pannes en HTTPException claires (jamais de stacktrace au Cœur) :
-    - secret absent → 503 (auth de service non configurée) ;
-    - Keycloak injoignable / refus → 502 (jeton de service indisponible) ;
+    - secret absent (et pas de token utilisateur) → 503 ;
+    - Keycloak injoignable / refus → 502 ;
     - core injoignable → 503.
     """
-    if not _auth.configure:
-        raise HTTPException(503, "Auth de service non configurée (FORGE_SERVICE_SECRET absent).")
-    try:
-        token = await _auth.token(client)
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Jeton de service Keycloak indisponible : {e}")
+    jeton_utilisateur = _JETON_UTILISATEUR.get()
+    if jeton_utilisateur:
+        token = jeton_utilisateur
+    else:
+        if not _auth.configure:
+            raise HTTPException(503, "Auth de service non configurée (FORGE_SERVICE_SECRET absent).")
+        try:
+            token = await _auth.token(client)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"Jeton de service Keycloak indisponible : {e}")
     headers = {**kw.pop("headers", {}), "Authorization": f"Bearer {token}"}
     try:
         return await client.request(methode, f"{FORGE_CORE_URL}{chemin}", headers=headers, **kw)

@@ -34,8 +34,12 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     # URI de redirection enregistrée côté Google Cloud (doit matcher à l'octet près).
+    # En déploiement : https://agenda.${DOMAIN}/google/callback (via Traefik), à
+    # déclarer aussi dans la console Google Cloud.
     GOOGLE_REDIRECT_URI: str = "http://localhost:8400/google/callback"
     GOOGLE_SCOPE: str = "https://www.googleapis.com/auth/calendar.readonly"
+    # Secret signant le `state` OAuth (anti-CSRF, S35). Vide ⇒ dérivé de VAULT_SECRET.
+    GOOGLE_STATE_SECRET: str = ""
 
     class Config:
         env_file = ".env"

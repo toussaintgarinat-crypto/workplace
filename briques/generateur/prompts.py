@@ -131,3 +131,36 @@ Produis UNIQUEMENT un JSON avec EXACTEMENT ces clés :
   {{"nom", "raison"}} — à confirmer, fusionner ou retirer.
 
 N'invente pas d'usage non mesuré. Si un module est "dormant", dis-le franchement."""
+
+
+def prompt_schema_module(nom_entreprise: str, module_nom: str, raison: str,
+                         audit: dict | None = None) -> str:
+    """Prompt du schéma fin d'un module proposé (S34) : à partir du nom du module retenu
+    pour l'incrément, dérive ses **champs typés** dans le vocabulaire de l'entreprise —
+    au lieu d'un schéma CRUD générique."""
+    audit = audit or {}
+    glossaire = ((audit.get("territoire") or {}).get("glossaire_metier")) or []
+    contexte = json.dumps({
+        "nom_entreprise": nom_entreprise,
+        "module_a_concevoir": module_nom,
+        "raison_de_l_ajout": raison,
+        "glossaire_metier": glossaire,
+    }, ensure_ascii=False, indent=2)
+
+    return f"""On ajoute à l'application de "{nom_entreprise}" un nouveau module métier :
+« {module_nom} ». Contexte :
+{contexte}
+
+Conçois le SCHÉMA de ce module (les attributs d'un enregistrement), dans le vocabulaire
+exact de l'entreprise (réutilise le glossaire_metier si pertinent ; pas de termes
+génériques si l'entreprise a son propre mot).
+
+Produis UNIQUEMENT un JSON avec EXACTEMENT ces clés :
+- "icone" : nom d'icône Bootstrap Icons adapté au module (ex: "bi-calendar-check", "bi-cash-coin")
+- "champs" : liste de 3 à 6 attributs, chacun un OBJET avec :
+    - "cle" : identifiant court sans espaces ni accents (ex: "client", "montant", "date_pose", "statut")
+    - "label" : libellé affiché, dans le vocabulaire de l'entreprise
+    - "type" : un parmi "texte" | "nombre" | "montant" | "date" | "statut"
+    - "options" : UNIQUEMENT si type = "statut", 2 à 5 valeurs possibles
+
+N'ajoute aucune autre clé."""

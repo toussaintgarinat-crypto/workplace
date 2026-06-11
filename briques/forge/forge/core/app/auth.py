@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from agent_personnel_shared.keycloak_auth import KeycloakSettings, verify_token
 
@@ -49,9 +50,18 @@ class UserContext:
 
 async def _provision_user(session, payload: dict) -> Users:
     keycloak_sub = payload["sub"]
-    user = (
-        await session.execute(select(Users).where(Users.keycloak_sub == keycloak_sub))
-    ).scalar_one_or_none()
+
+    async def _par_sub():
+        return (
+            await session.execute(select(Users).where(Users.keycloak_sub == keycloak_sub))
+        ).scalar_one_or_none()
+
+    async def _par_email(email):
+        return (
+            await session.execute(select(Users).where(Users.email == email))
+        ).scalar_one_or_none()
+
+    user = await _par_sub()
     if user:
         return user
 
@@ -59,34 +69,55 @@ async def _provision_user(session, payload: dict) -> Users:
     email = payload.get("email") or f"{keycloak_sub}@forge.local"
     avatar_emoji = payload.get("avatarEmoji") or "👤"
 
-    by_email = (
-        await session.execute(select(Users).where(Users.email == email))
-    ).scalar_one_or_none()
+    by_email = await _par_email(email)
     if by_email:
         by_email.keycloak_sub = keycloak_sub
         await session.flush()
         return by_email
 
-    user = Users(email=email, nom=nom, avatar_emoji=avatar_emoji, keycloak_sub=keycloak_sub)
-    session.add(user)
-    await session.flush()
-    return user
+    # Course concurrente (bug S19) : deux 1ers logins du même utilisateur passent tous
+    # deux le select ci-dessus, puis insèrent → violation d'unicité (keycloak_sub/email)
+    # → 500 « auto-réparé » au retry. On isole l'insert dans un savepoint : si l'unicité
+    # saute, l'autre transaction a gagné — on récupère l'utilisateur déjà créé.
+    try:
+        async with session.begin_nested():
+            user = Users(email=email, nom=nom, avatar_emoji=avatar_emoji, keycloak_sub=keycloak_sub)
+            session.add(user)
+            await session.flush()
+        return user
+    except IntegrityError:
+        gagnant = await _par_sub() or await _par_email(email)
+        if gagnant is None:
+            raise  # unicité violée pour une autre raison : ne pas masquer
+        logger.info("[forge:auth] provision concurrente résolue pour sub=%s", keycloak_sub)
+        return gagnant
 
 
 async def _ensure_personal_org(session, user: Users) -> None:
-    existing = (
-        await session.execute(select(Organizations).where(Organizations.owner_id == str(user.id)))
-    ).scalars().first()
-    if existing:
+    async def _org_existante():
+        return (
+            await session.execute(select(Organizations).where(Organizations.owner_id == str(user.id)))
+        ).scalars().first()
+
+    if await _org_existante():
         return
     local = user.email.split("@")[0].lower()
     slug_base = "".join(ch if ch.isalnum() else "-" for ch in local)
     slug = f"{slug_base}-{int(time.time() * 1000)}"
-    org = Organizations(nom=user.nom, slug=slug, emoji="🏠", owner_id=str(user.id), plan="personal")
-    session.add(org)
-    await session.flush()
-    session.add(OrganizationMembers(org_id=org.id, user_id=str(user.id), role="owner"))
-    await session.flush()
+    # Même course que pour l'utilisateur (S19) : isole la création dans un savepoint. Si
+    # un login concurrent a créé l'org personnelle entre-temps (collision de slug ou org
+    # déjà présente), on récupère l'existante au lieu de planter en 500.
+    try:
+        async with session.begin_nested():
+            org = Organizations(nom=user.nom, slug=slug, emoji="🏠", owner_id=str(user.id), plan="personal")
+            session.add(org)
+            await session.flush()
+            session.add(OrganizationMembers(org_id=org.id, user_id=str(user.id), role="owner"))
+            await session.flush()
+    except IntegrityError:
+        if await _org_existante() is None:
+            raise
+        logger.info("[forge:auth] org personnelle concurrente résolue pour user=%s", user.id)
 
 
 async def _resolve_org(session, user: Users, requested_org_id: str | None) -> str | None:

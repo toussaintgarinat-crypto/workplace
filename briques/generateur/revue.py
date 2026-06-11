@@ -34,6 +34,24 @@ import os
 DONNEES_URL_INTERNE = os.getenv("DONNEES_URL_INTERNE", "http://host.docker.internal:5500")
 
 
+# ── Éligibilité au balayage périodique (S33) ─────────────────────────────────────
+
+def doit_reviser(config_partage: dict | None, revue_actuelle: dict | None) -> tuple[bool, str]:
+    """Une app est-elle à (re)proposer lors du balayage horloge (S33) ?
+
+    Souveraineté : sans **consentement actif**, jamais (aucune mesure sans accord).
+    Respect de l'humain : on ne ré-propose pas par-dessus une revue **validée** en attente
+    d'application (S31→S32), sinon on écraserait une décision. Une revue déjà appliquée,
+    rejetée, ou absente → on peut proposer un nouvel incrément au cycle suivant.
+    Renvoie `(éligible, raison_si_non)`.
+    """
+    if not (config_partage or {}).get("actif"):
+        return False, "consentement inactif"
+    if isinstance(revue_actuelle, dict) and revue_actuelle.get("statut") == "validee":
+        return False, "revue validée en attente d'application"
+    return True, ""
+
+
 # ── Mesure d'usage (consentie) ───────────────────────────────────────────────────
 
 def _entites_du_plan(plan: dict) -> list[dict]:

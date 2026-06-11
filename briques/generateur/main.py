@@ -375,20 +375,17 @@ class DemandeRevue(BaseModel):
     nouveaux_docs: list[str] = []
 
 
-@app.post("/apps/{app_id}/revue")
-async def lancer_revue(app_id: str, corps: DemandeRevue | None = None):
-    """Re-audit post-livraison (S31) : mesure l'usage **consenti**, re-audite et
-    **propose** un incrément. NE GÉNÈRE RIEN — la proposition (statut « propose ») doit
-    être validée via `/revue/valider` avant toute (re)génération.
+async def _revue_app(app_id: str, app_row: dict, nouveaux_docs: list[str]) -> dict:
+    """Mesure l'usage consenti + propose un incrément pour UNE app, et persiste la revue
+    au statut « propose ». Partagé par la revue manuelle (S31) et le balayage horloge (S33).
+    NE GÉNÈRE RIEN.
     """
-    corps = corps or DemandeRevue()
-    app_row = _charger_app(app_id)
     plan = app_row.get("plan") or {}
     partage = app_row.get("partage_forge") or {"actif": False, "entites": []}
 
     usage = revue.mesurer_usage(app_id, plan, partage)
     audit = await _charger_audit(app_row.get("audit_id"))
-    proposition = await revue.proposer_increment(audit, plan, usage, corps.nouveaux_docs)
+    proposition = await revue.proposer_increment(audit, plan, usage, nouveaux_docs)
 
     enregistrement = {
         "statut": "propose",
@@ -402,7 +399,69 @@ async def lancer_revue(app_id: str, corps: DemandeRevue | None = None):
         conn.commit()
     print(f"[generateur] revue {app_id} : {usage.get('message')} — "
           f"proposition {proposition.get('source')}")
+    return enregistrement
+
+
+@app.post("/apps/{app_id}/revue")
+async def lancer_revue(app_id: str, corps: DemandeRevue | None = None):
+    """Re-audit post-livraison (S31) : mesure l'usage **consenti**, re-audite et
+    **propose** un incrément. NE GÉNÈRE RIEN — la proposition (statut « propose ») doit
+    être validée via `/revue/valider` avant toute (re)génération.
+    """
+    corps = corps or DemandeRevue()
+    app_row = _charger_app(app_id)
+    enregistrement = await _revue_app(app_id, app_row, corps.nouveaux_docs)
     return {"app_id": app_id, **enregistrement}
+
+
+@app.post("/revues/balayage")
+async def balayer_revues():
+    """Revue périodique de **toutes** les apps livrées (S33) — déclenchée par l'horloge S29.
+
+    Pour chaque app au **consentement actif** (souveraineté : sans consentement, aucune
+    mesure), mesure l'usage et **propose** un incrément (statut « propose »). Best-effort :
+    une app en erreur n'interrompt pas le balayage. **Ne valide ni n'applique rien** — la
+    chaîne humaine (S31 valider → S32 appliquer) reste intacte. Pour ne pas écraser une
+    décision en attente, on **saute** les apps dont la revue est déjà « validee »
+    (incrément validé mais pas encore appliqué).
+    """
+    with _connexion() as conn:
+        rows = conn.execute(
+            "SELECT id, audit_id, plan, partage_forge, revue FROM apps"
+        ).fetchall()
+
+    proposees, ignorees, erreurs = [], [], []
+    for row in rows:
+        app_id = row["id"]
+        try:
+            partage = json.loads(row["partage_forge"]) if row["partage_forge"] else {}
+        except Exception:
+            partage = {}
+        try:
+            rev_actuelle = json.loads(row["revue"]) if row["revue"] else None
+        except Exception:
+            rev_actuelle = None
+        eligible, raison = revue.doit_reviser(partage, rev_actuelle)
+        if not eligible:
+            ignorees.append({"app_id": app_id, "raison": raison})
+            continue
+
+        app_row = {
+            "audit_id": row["audit_id"],
+            "plan": json.loads(row["plan"]) if row["plan"] else {},
+            "partage_forge": partage,
+        }
+        try:
+            enr = await _revue_app(app_id, app_row, [])
+            proposees.append({"app_id": app_id,
+                              "source": enr["proposition"].get("source"),
+                              "message": enr["usage"].get("message")})
+        except Exception as e:
+            print(f"[generateur] balayage revue {app_id} échoué : {e}")
+            erreurs.append({"app_id": app_id, "detail": str(e)})
+
+    return {"balayees": len(rows), "proposees": proposees,
+            "ignorees": ignorees, "erreurs": erreurs}
 
 
 @app.get("/apps/{app_id}/revue")
@@ -488,15 +547,18 @@ async def appliquer_revue(app_id: str):
 
     plan = json.loads(row["plan"]) if row["plan"] else {}
     proposition = rev.get("proposition") or {}
-    plan_enrichi, ajoutes = appliquer.construire_plan_enrichi(plan, proposition)
 
-    if not ajoutes:
-        # Honnêteté : rien à appliquer (repli heuristique sans module, ou déjà appliqué).
+    # Pré-check d'idempotence sans LLM : s'il n'y a aucun nouveau module, on s'arrête avant
+    # tout appel (honnêteté + économie).
+    _, ajoutes_secs = appliquer.construire_plan_enrichi(plan, proposition)
+    if not ajoutes_secs:
         return {"app_id": app_id, "applique": False, "modules_ajoutes": [],
                 "raison": "aucun nouveau module à ajouter "
                           "(proposition sans module ou incrément déjà appliqué)"}
 
+    # Schéma fin par module via le LLM (S34), repli générique si Gateway KO.
     audit = await _charger_audit(row["audit_id"])
+    plan_enrichi, ajoutes = await appliquer.construire_plan_enrichi_llm(plan, proposition, audit)
     hebergee = (row["mode"] or "autonome") == "hebergee"
     salons = json.loads(row["oria_salons"]) if row["oria_salons"] else []
     oria_cfg = _oria_cfg_depuis_app(row["oria_world_id"], salons)

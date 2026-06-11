@@ -74,10 +74,45 @@ def run():
     print("✅ 5. gabarit : plan enrichi régénéré, le nouveau module apparaît dans l'app")
     ok += 1
 
-    print(f"\n{ok}/5 scénarios OK")
+    # 6) Schéma fin LLM (S34) : champs spécifiques au lieu du générique.
+    import asyncio
+
+    async def faux_schema(prompt):
+        return {"icone": "bi-calendar-x", "champs": [
+            {"cle": "salarie", "label": "Salarié", "type": "texte"},
+            {"cle": "motif", "label": "Motif", "type": "statut", "options": ["Congé", "Maladie", "RTT"]},
+            {"cle": "debut", "label": "Début", "type": "date"},
+        ]}
+    import gateway
+    gw_orig = gateway.appeler_llm
+    gateway.appeler_llm = faux_schema
+    plan7, ajoutes7 = asyncio.run(appliquer.construire_plan_enrichi_llm(PLAN, prop, {"nom_entreprise": "Cabinet"}))
+    gateway.appeler_llm = gw_orig
+    nv = next(e for e in plan7["entites"] if e["id"] == "gestion-des-absences")
+    assert ajoutes7[0]["schema"] == "llm", ajoutes7
+    assert nv["icone"] == "bi-calendar-x", nv
+    assert {c["cle"] for c in nv["champs"]} == {"salarie", "motif", "debut"}, nv["champs"]
+    motif = next(c for c in nv["champs"] if c["cle"] == "motif")
+    assert motif["type"] == "statut" and motif["options"] == ["Congé", "Maladie", "RTT"], motif
+    print("✅ 6. schéma fin LLM : champs spécifiques + icône, type statut normalisé")
+    ok += 1
+
+    # 7) Repli générique (S34) : LLM en panne → schéma CRUD, source=generique, 0 exception.
+    async def schema_ko(prompt):
+        raise RuntimeError("Gateway indisponible")
+    gateway.appeler_llm = schema_ko
+    plan8, ajoutes8 = asyncio.run(appliquer.construire_plan_enrichi_llm(PLAN, prop, {"nom_entreprise": "Cabinet"}))
+    gateway.appeler_llm = gw_orig
+    nv8 = next(e for e in plan8["entites"] if e["id"] == "gestion-des-absences")
+    assert ajoutes8[0]["schema"] == "generique", ajoutes8
+    assert {c["cle"] for c in nv8["champs"]} == {"libelle", "statut", "date", "montant", "notes"}, nv8["champs"]
+    print("✅ 7. repli générique : LLM KO → schéma CRUD, source=generique, aucune exception")
+    ok += 1
+
+    print(f"\n{ok}/7 scénarios OK")
     return ok
 
 
 if __name__ == "__main__":
     import sys
-    sys.exit(0 if run() == 5 else 1)
+    sys.exit(0 if run() == 7 else 1)
