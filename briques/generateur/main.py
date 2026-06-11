@@ -12,12 +12,13 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from generateur import generer_app_complete
-from gabarit import entites_du_plan
+from gabarit import entites_du_plan, generer_html
 import oria_provisioning
 import client_provisioning
 import pont_crm
 import packager
 import revue
+import appliquer
 
 AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
 DB_PATH = os.getenv("DB_PATH", "/data/apps.db")
@@ -434,6 +435,92 @@ def valider_revue(app_id: str, decision: str = "valider"):
                      (json.dumps(rev, ensure_ascii=False), app_id))
         conn.commit()
     return {"app_id": app_id, **rev}
+
+
+def _oria_cfg_depuis_app(world_id: str | None, salons: list | None) -> dict | None:
+    """Reconstruit la config messagerie injectée dans l'app à partir des champs stockés.
+
+    À l'application d'un incrément (S32) on régénère le HTML sans repasser par le
+    provisioning Oria : la messagerie existante (world + salons déjà créés) est préservée
+    en réinjectant la même config navigateur que `_provisionner_messagerie`.
+    """
+    if not world_id:
+        return None
+    return {
+        "world_id": world_id,
+        "salons": salons or [],
+        "oria_api": ORIA_URL_PUBLIQUE,
+        "matrix": MATRIX_URL_PUBLIQUE,
+        "keycloak": {
+            "url": KEYCLOAK_URL_PUBLIQUE,
+            "realm": KEYCLOAK_REALM,
+            "clientId": ORIA_CLIENT_ID,
+        },
+    }
+
+
+@app.post("/apps/{app_id}/revue/appliquer")
+async def appliquer_revue(app_id: str):
+    """Applique une revue **validée** : régénère l'app enrichie des modules proposés (S32).
+
+    Dernier maillon de la chaîne S31 (**proposer ≠ valider ≠ appliquer**). Refuse si la
+    revue n'est pas au statut « validee » (409). Réinjecte les modules proposés dans le
+    plan livré, **régénère** l'app (même gabarit, messagerie préservée), met à jour
+    `plan` + `html` et trace l'application (`statut: appliquee`). Idempotent et non
+    destructif : un module déjà présent n'est pas dupliqué, les dormants ne sont pas
+    supprimés. Proposition sans nouveau module → 200 `applique:false` (on n'invente rien).
+    """
+    with _connexion() as conn:
+        row = conn.execute(
+            "SELECT audit_id, plan, mode, oria_world_id, oria_salons, revue FROM apps WHERE id=?",
+            (app_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "App non trouvée")
+
+    rev = json.loads(row["revue"]) if row["revue"] else None
+    if not rev or not isinstance(rev, dict):
+        raise HTTPException(400, "Aucune revue — lance d'abord POST /revue")
+    if rev.get("statut") != "validee":
+        raise HTTPException(
+            409, f"Revue non validée (statut : {rev.get('statut')}) — "
+                 "valide-la d'abord via POST /revue/valider?decision=valider")
+
+    plan = json.loads(row["plan"]) if row["plan"] else {}
+    proposition = rev.get("proposition") or {}
+    plan_enrichi, ajoutes = appliquer.construire_plan_enrichi(plan, proposition)
+
+    if not ajoutes:
+        # Honnêteté : rien à appliquer (repli heuristique sans module, ou déjà appliqué).
+        return {"app_id": app_id, "applique": False, "modules_ajoutes": [],
+                "raison": "aucun nouveau module à ajouter "
+                          "(proposition sans module ou incrément déjà appliqué)"}
+
+    audit = await _charger_audit(row["audit_id"])
+    hebergee = (row["mode"] or "autonome") == "hebergee"
+    salons = json.loads(row["oria_salons"]) if row["oria_salons"] else []
+    oria_cfg = _oria_cfg_depuis_app(row["oria_world_id"], salons)
+
+    html = generer_html(
+        audit, plan_enrichi,
+        app_id=(app_id if hebergee else ""),
+        api_base=(DONNEES_URL_PUBLIQUE if hebergee else ""),
+        oria=oria_cfg,
+    )
+
+    rev["statut"] = "appliquee"
+    rev["applique_le"] = datetime.now(timezone.utc).isoformat()
+    rev["modules_ajoutes"] = ajoutes
+    with _connexion() as conn:
+        conn.execute("UPDATE apps SET plan=?, html=?, revue=? WHERE id=?",
+                     (json.dumps(plan_enrichi, ensure_ascii=False), html,
+                      json.dumps(rev, ensure_ascii=False), app_id))
+        conn.commit()
+    print(f"[generateur] revue {app_id} appliquée : +{len(ajoutes)} module(s) "
+          f"({', '.join(a['nom'] for a in ajoutes)})")
+    return {"app_id": app_id, "applique": True, "modules_ajoutes": ajoutes,
+            "nb_entites_plan": len([e for e in plan_enrichi.get("entites") or []
+                                    if isinstance(e, dict)])}
 
 
 @app.get("/apps/{app_id}/export")

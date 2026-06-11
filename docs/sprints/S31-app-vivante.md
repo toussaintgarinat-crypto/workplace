@@ -8,7 +8,8 @@ Pareto a changé ; je propose X ». La proposition est **toujours à valider ava
 génération** : c'est un contrat d'évolution, pas une régénération sauvage. Le critère
 « ça rapproche d'un euro ? » : du one-shot au **revenu récurrent**.
 
-**Statut** : ✅ LIVRÉ CODE + **5 tests offline verts** le 2026-06-11. Reste à rejouer LIVE.
+**Statut** : ✅ LIVRÉ CODE + **5 tests offline verts** + **PROUVÉ LIVE (dev)** le 2026-06-11
+(vraie stack `donnees` 5500 + Gateway 4001 + `generateur` 5400 — voir « Preuve LIVE » en bas).
 
 S'appuie sur : **pont consenti S24** (la mesure ne lit que ce que le client a accepté de
 partager), **cycle de vie S6** (la revue voyage dans le dossier portable), **audit S7**
@@ -80,5 +81,28 @@ Non-régression : `test_pont_crm.py` (6/6) vert. `py_compile` OK sur `revue.py`,
 - **Déclenchement par l'horloge S29** : la revue est manuelle (HTTP) ; la déclarer comme
   tâche périodique dans le manifest du générateur la rendrait automatique, comme le
   briefing S30.
-- **Preuve LIVE** : à rejouer contre la vraie stack (`donnees` 5500 + Gateway), avec une
-  app réelle ayant de l'usage et un consentement actif.
+- ~~**Preuve LIVE** : à rejouer contre la vraie stack~~ → **fait le 2026-06-11** (section ci-dessous).
+
+## Preuve LIVE (dev) — 2026-06-11
+
+Rejouée contre la **vraie stack** (conteneurs réels) : `donnees` (5500) + Gateway LiteLLM
+(4001, clé OpenRouter) + `generateur` (5400). Aucun mock — tout passe par les contrats HTTP.
+
+**Scénario** (`/tmp/s31_live.sh`) : une app réelle « Cabinet Kiné Lefèvre » importée (S6)
+avec plan à **3 modules** (`planning`, `devis`, `factures`) et un **consentement actif**
+(liste blanche S24 = `{planning, devis}`, **`factures` volontairement hors liste**). Usage
+réel semé dans la brique `donnees` via son contrat HTTP : `planning`=5, `devis`=0,
+`factures`=3.
+
+| Vérité prouvée | Observé LIVE |
+|---|---|
+| Mesure consentie contre la **vraie** brique | `POST /revue` → `planning`=5 (100 %), `devis`=0, `total=5` |
+| **Souveraineté** (le cœur du sprint) | `donnees` contient bien **3 `factures`** (vérifié via `/resume`), mais la revue en compte **0** : `factures` apparaît dans `non_consenties`, **jamais** dans les comptes. La mesure n'a pas touché les données non consenties. |
+| Module **dormant** détecté | `modules_dormants: ["devis"]` |
+| Proposition par le LLM (économe) | `proposition.source = "llm"` — vraie synthèse rédigée par le Gateway (modèle gratuit, coût ~0 $), pas le repli heuristique |
+| **Proposer ≠ générer** | `/revue` → `statut: propose` (aucune génération) ; `POST /revue/valider?decision=valider` → `statut: validee` + `decide_le` horodaté |
+| Persistance | `GET /revue` relit la revue (colonne `revue`, migration douce) |
+
+Conclusion : la chaîne **mesure consentie → re-audit → proposition à valider** tourne de
+bout en bout sur la vraie stack, et la garantie de souveraineté (ne mesurer que le
+consenti) tient face à des données non consenties réellement présentes dans la source.
