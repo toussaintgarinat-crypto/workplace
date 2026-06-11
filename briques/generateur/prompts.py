@@ -80,3 +80,54 @@ Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord a
     - "icone" : nom d'icône Bootstrap Icons
 - "message_introduction" : phrase d'accueil personnalisée affichée en haut du dashboard (max 120 caractères)
 """
+
+
+def prompt_revue(audit: dict, plan: dict, usage: dict,
+                 nouveaux_docs: list[str] | None = None) -> str:
+    """Prompt du re-audit post-livraison (S31) : usage réel + audit initial +
+    nouveaux documents → proposition d'incrément, à valider avant toute génération."""
+    nom = audit.get("nom_entreprise", "Entreprise")
+    problemes = audit.get("problemes") or {}
+    priorites = audit.get("priorites") or {}
+    pareto_initial = (problemes.get("pareto") or {})
+    moscow = priorites.get("moscow") or {}
+
+    modules = [
+        {"id": e.get("id"), "nom": e.get("nom"), "description": e.get("description")}
+        for e in (plan or {}).get("entites") or [] if isinstance(e, dict)
+    ]
+
+    contexte = json.dumps({
+        "nom_entreprise": nom,
+        "modules_livres": modules,
+        "usage_reel": {
+            "pareto": usage.get("pareto"),
+            "modules_dormants": usage.get("modules_dormants"),
+            "total_enregistrements": usage.get("total_enregistrements"),
+            "non_mesures_souverainete": usage.get("non_consenties"),
+        },
+        "pareto_audit_initial": pareto_initial,
+        "must_have_initiaux": moscow.get("must"),
+    }, ensure_ascii=False, indent=2)
+
+    docs = "\n\n---\n\n".join((nouveaux_docs or []))[:6000]
+    bloc_docs = f"\n\nNOUVEAUX DOCUMENTS depuis la livraison :\n{docs}" if docs else ""
+
+    return f"""L'application livrée à "{nom}" tourne depuis un moment. Voici son USAGE RÉEL
+mesuré (uniquement sur les modules que le client a consenti à partager), comparé à
+l'audit initial :
+{contexte}{bloc_docs}
+
+Tu es l'analyste qui propose au cabinet le PROCHAIN INCRÉMENT de cette app. Compare
+l'usage réel à l'intention initiale (le Pareto a-t-il changé ? quels modules sont
+massivement utilisés, lesquels dorment ?) et tiens compte des nouveaux documents.
+
+Produis UNIQUEMENT un JSON avec EXACTEMENT ces clés :
+- "resume" : 2-3 phrases — ce que l'usage révèle et la direction proposée.
+- "pareto_commentaire" : 1 phrase comparant le Pareto réel au Pareto initial.
+- "modules_proposes" : liste de 0 à 3 NOUVEAUX modules à ajouter, chacun {{"nom", "raison"}}
+  (raison ancrée dans l'usage observé ou les nouveaux documents).
+- "modules_sous_utilises" : liste des modules existants peu/pas utilisés, chacun
+  {{"nom", "raison"}} — à confirmer, fusionner ou retirer.
+
+N'invente pas d'usage non mesuré. Si un module est "dormant", dis-le franchement."""

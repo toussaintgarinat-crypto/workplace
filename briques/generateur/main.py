@@ -17,6 +17,7 @@ import oria_provisioning
 import client_provisioning
 import pont_crm
 import packager
+import revue
 
 AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
 DB_PATH = os.getenv("DB_PATH", "/data/apps.db")
@@ -85,6 +86,10 @@ def _init_db():
         if "partage_forge" not in cols:
             # Consentement du pont app→CRM (S24) : {actif, entites:[...]}. Opt-in : Non par défaut.
             conn.execute("ALTER TABLE apps ADD COLUMN partage_forge TEXT")
+        if "revue" not in cols:
+            # Dernière revue « app vivante » (S31) : {statut, proposition, date}. Null tant
+            # qu'aucune revue n'a tourné. La proposition est à valider avant toute génération.
+            conn.execute("ALTER TABLE apps ADD COLUMN revue TEXT")
         conn.commit()
 
 
@@ -330,6 +335,107 @@ def revoquer_partage_forge(app_id: str, purger: bool = False):
     return {"partage_forge": config, "revocation": rapport}
 
 
+# ── Revue « app vivante » (S31) — re-audit post-livraison ────────────────────────
+
+def _charger_app(app_id: str) -> dict:
+    with _connexion() as conn:
+        row = conn.execute(
+            "SELECT id, audit_id, nom_entreprise, plan, partage_forge, revue FROM apps WHERE id=?",
+            (app_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "App non trouvée")
+    d = dict(row)
+    for champ in ("plan", "partage_forge", "revue"):
+        if d.get(champ):
+            try:
+                d[champ] = json.loads(d[champ])
+            except Exception:
+                pass
+    return d
+
+
+async def _charger_audit(audit_id: str) -> dict:
+    if not audit_id:
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{AUDIT_URL}/audits/{audit_id}")
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        print(f"[generateur] audit {audit_id} injoignable pour la revue : {e}")
+        return {}
+
+
+class DemandeRevue(BaseModel):
+    # Textes de nouveaux documents observés depuis la livraison (optionnel) — nourrissent
+    # le re-audit en plus des données d'usage.
+    nouveaux_docs: list[str] = []
+
+
+@app.post("/apps/{app_id}/revue")
+async def lancer_revue(app_id: str, corps: DemandeRevue | None = None):
+    """Re-audit post-livraison (S31) : mesure l'usage **consenti**, re-audite et
+    **propose** un incrément. NE GÉNÈRE RIEN — la proposition (statut « propose ») doit
+    être validée via `/revue/valider` avant toute (re)génération.
+    """
+    corps = corps or DemandeRevue()
+    app_row = _charger_app(app_id)
+    plan = app_row.get("plan") or {}
+    partage = app_row.get("partage_forge") or {"actif": False, "entites": []}
+
+    usage = revue.mesurer_usage(app_id, plan, partage)
+    audit = await _charger_audit(app_row.get("audit_id"))
+    proposition = await revue.proposer_increment(audit, plan, usage, corps.nouveaux_docs)
+
+    enregistrement = {
+        "statut": "propose",
+        "date": datetime.now(timezone.utc).isoformat(),
+        "usage": usage,
+        "proposition": proposition,
+    }
+    with _connexion() as conn:
+        conn.execute("UPDATE apps SET revue=? WHERE id=?",
+                     (json.dumps(enregistrement, ensure_ascii=False), app_id))
+        conn.commit()
+    print(f"[generateur] revue {app_id} : {usage.get('message')} — "
+          f"proposition {proposition.get('source')}")
+    return {"app_id": app_id, **enregistrement}
+
+
+@app.get("/apps/{app_id}/revue")
+def lire_revue(app_id: str):
+    """Dernière revue produite pour l'app (ou statut « aucune » si jamais lancée)."""
+    app_row = _charger_app(app_id)
+    rev = app_row.get("revue")
+    if not rev:
+        return {"app_id": app_id, "statut": "aucune"}
+    return {"app_id": app_id, **rev}
+
+
+@app.post("/apps/{app_id}/revue/valider")
+def valider_revue(app_id: str, decision: str = "valider"):
+    """Décision humaine sur la proposition (le **garde-fou** avant génération).
+
+    `decision=valider` → statut « validee » (l'incrément peut être lancé) ;
+    `decision=rejeter` → statut « rejetee ». Sans revue préalable : 400.
+    """
+    app_row = _charger_app(app_id)
+    rev = app_row.get("revue")
+    if not rev or not isinstance(rev, dict):
+        raise HTTPException(400, "Aucune revue à valider — lance d'abord POST /revue")
+    if decision not in ("valider", "rejeter"):
+        raise HTTPException(400, "decision doit être 'valider' ou 'rejeter'")
+    rev["statut"] = "validee" if decision == "valider" else "rejetee"
+    rev["decide_le"] = datetime.now(timezone.utc).isoformat()
+    with _connexion() as conn:
+        conn.execute("UPDATE apps SET revue=? WHERE id=?",
+                     (json.dumps(rev, ensure_ascii=False), app_id))
+        conn.commit()
+    return {"app_id": app_id, **rev}
+
+
 @app.get("/apps/{app_id}/export")
 def exporter_app_complet(app_id: str):
     """Renvoie l'app COMPLÈTE (html + plan + refs Oria) pour décrochage (S6).
@@ -342,7 +448,7 @@ def exporter_app_complet(app_id: str):
     if not row:
         raise HTTPException(404, "App non trouvée")
     d = dict(row)
-    for champ in ("plan", "oria_salons", "partage_forge"):
+    for champ in ("plan", "oria_salons", "partage_forge", "revue"):
         if d.get(champ):
             try:
                 d[champ] = json.loads(d[champ])
