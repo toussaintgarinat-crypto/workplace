@@ -7,3 +7,5 @@ numpy==2.4.6
 scipy==1.17.1
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+# Facturation one-off du nom de marque (palier payant S43) — motif S21.
+stripe==11.4.0

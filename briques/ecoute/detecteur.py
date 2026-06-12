@@ -20,16 +20,24 @@ testable hors ligne (cf. `test_detecteur.py`) avec les mêmes échantillons que 
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 from openwakeword.model import Model
 
 # Un modèle openWakeWord = un nom. Par défaut le `hey_jarvis` pré-entraîné (l'assistant
 # s'appelle déjà « le Jarvis »), prouvé sur notre infra au POC S41. Le palier payant S43
-# remplacera ce nom par un modèle entraîné sur la marque du client (même mécanique).
+# remplace ce nom par un modèle entraîné sur la marque du client (même mécanique) : il
+# suffit de passer le **chemin** du .onnx livré au lieu d'un nom du catalogue gratuit.
 MOT_DEFAUT = os.getenv("WAKEWORD_MODELE", "hey_jarvis_v0.1")
 SEUIL_DEFAUT = float(os.getenv("WAKEWORD_SEUIL", "0.5"))
 PAS = 1280  # échantillons par appel à predict (80 ms @ 16 kHz) — imposé par openWakeWord
+
+
+def _cle_prediction(modele: str) -> str:
+    """Clé sous laquelle openWakeWord range le score de ce modèle. Pour un nom embarqué
+    c'est le nom lui-même ; pour un fichier sur mesure c'est le *stem* du .onnx."""
+    return Path(modele).stem if modele.endswith(".onnx") else modele
 
 
 class Detecteur:
@@ -43,7 +51,10 @@ class Detecteur:
 
     def __init__(self, mot: str = MOT_DEFAUT, seuil: float = SEUIL_DEFAUT,
                  refraction_pas: int = 12):
-        self.mot = mot
+        # `mot` = soit un nom du catalogue gratuit (« hey_jarvis_v0.1 »), soit le chemin
+        # d'un .onnx sur mesure livré par le palier payant. La clé de prédiction diffère.
+        self.modele_ref = mot
+        self.mot = _cle_prediction(mot)
         self.seuil = seuil
         # Nombre de fenêtres « muettes » imposées après un réveil (12 × 80 ms ≈ 1 s).
         self.refraction_pas = refraction_pas

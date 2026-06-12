@@ -1,8 +1,39 @@
-# Brique `ecoute` — mot-clé « comme Siri » (S42)
+# Brique `ecoute` — mot-clé « comme Siri » (S42) + paliers commerciaux (S43)
 
 Détection de mot-clé vocal (**openWakeWord**, ONNX/CPU) en **flux WebSocket**.
 Suite directe du POC S41 (`poc/`, décision **GO**) : ici on industrialise le moteur
-prouvé en une vraie brique du registre.
+prouvé en une vraie brique du registre (S42), puis on bâtit dessus **deux paliers
+commerciaux** (S43).
+
+## Paliers commerciaux (S43)
+
+| Palier | Quoi | Mécanique |
+|---|---|---|
+| **Gratuit** | 4 noms d'éveil **réellement embarqués** (Hey Jarvis, Alexa, Hey Mycroft, Hey Rhasspy) | `catalogue.py` ; le client en choisit un, `GET /noms` les liste, le WS `?mot=` charge le modèle |
+| **Payant** | Le **nom de marque** du client (« Maison Léon ») | `commandes.py` (cycle + idempotence) → Stripe one-off `paiement.py` (motif S21) → **file d'entraînement pilotée par l'horloge S29** `entrainement.py` → nom livré et sélectionnable |
+
+Honnêteté assumée : openWakeWord ne livre que **4 modèles qui sont des noms d'éveil**
+(pas « 5-6 » — `timer`/`weather` sont des commandes, les présenter mentirait).
+
+Cycle d'une commande : `en_attente_paiement → payee → en_entrainement → livree` (ou `echec`).
+
+### L'entraînement est honnête (point délicat)
+
+Le POC S41 a établi qu'entraîner un modèle par nom demande **Piper + GPU (~1 h)**, non
+embarqué ici. L'entraîneur est donc **pluggable** : `ENTRAINEUR_CMD` (vrai job GPU en
+prod → `factice=False`) ; à défaut, **stand-in honnête** (copie d'un pré-entraîné sous
+le nom de marque, **`factice=True`** + message explicite) qui prouve le câblage
+*livraison → nom sélectionnable* sans prétendre que la marque est réellement reconnue.
+
+### Endpoints S43
+
+- `GET /noms` — noms gratuits + sur mesure livrés (avec `defaut`).
+- `GET /paiement/etat` — config Stripe honnête (mock vs test/live, jamais la clé).
+- `POST /commandes {nom_marque}` — crée (idempotent) + émet un lien de paiement.
+- `GET /commandes[?statut=]`, `GET /commandes/{id}`.
+- `POST /commandes/{id}/payer` — confirmation **mock** (refusée 409 si Stripe configuré : c'est le webhook qui confirme).
+- `POST /paiement/webhook` — webhook Stripe **à signature vérifiée** (motif S21).
+- `POST /entrainement/traiter` — **tâche de l'horloge S29** (déclarée au manifest) : avance la file + relance les impayées.
 
 ## Pourquoi une brique serveur ?
 
@@ -32,24 +63,30 @@ wake word **garde toute la boucle à outils** de l'assistant.
 ## Lancer
 
 ```bash
-docker compose up --build      # port 5800, image épinglée workplace/ecoute:0.1.0
+docker compose up --build      # port 5800, image épinglée workplace/ecoute:0.2.0
 # ou en local (Python 3.11 OBLIGATOIRE — pas de wheels onnxruntime en 3.14) :
 python main.py
 ```
 
 Le mot par défaut est le `hey_jarvis` pré-entraîné (l'assistant s'appelle « le Jarvis »).
-Un modèle = un nom : le **palier payant S43** montera un modèle entraîné par marque via
-la variable `WAKEWORD_MODELE` (même mécanique).
+Les modèles sur mesure livrés sont stockés dans `/data/modeles` (volume) ; commandes en
+`/data/ecoute.db` (SQLite side-car, comme le journal de l'horloge).
 
 ## Tests
 
 ```bash
-# Hors ligne — détecteur en flux, sur les échantillons WAV du POC :
-poc/.venv/bin/python -m pytest test_detecteur.py -v        # 10 verts
+# Hors ligne (Python 3.11, venv du POC) :
+poc/.venv/bin/python -m pytest -q        # 34 verts
+#   test_detecteur (10, S42) + test_catalogue (4) + test_commandes (10)
+#   + test_entrainement (6) + test_paiement (4)
 
-# LIVE — vrai service + vrai WebSocket (cf. journal S42) :
-#   3 positifs « hey jarvis » → 1 réveil chacun ; 7 négatifs (parole FR,
-#   « hey google » phonétiquement proche) → 0 réveil.
+# LIVE S42 — vrai service + vrai WebSocket :
+#   3 positifs « hey jarvis » → 1 réveil chacun ; 7 négatifs → 0 réveil.
+# LIVE S43 (mode mock) — flux palier payant complet prouvé :
+#   /noms (4 gratuits) ; commande « Maison Léon » → payer (mock) →
+#   POST /entrainement/traiter (la tâche de l'horloge) → livrée + relance d'une impayée ;
+#   WS ?mot=alexa_v0.1 → pret ; ?mot=inconnu → erreur+close ;
+#   WS ?mot=maison_leon (modèle livré) → pret + réveil sur l'audio du POC.
 ```
 
 ## Limite assumée (mesurée, cf. `poc/DECISION.md`)
