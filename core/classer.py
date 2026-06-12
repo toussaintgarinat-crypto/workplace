@@ -14,6 +14,7 @@ import json
 import logging
 
 import config_assistant
+import langue as langue_mod
 import llm_pipeline
 
 logger = logging.getLogger(__name__)
@@ -21,18 +22,23 @@ logger = logging.getLogger(__name__)
 CATEGORIES = ["devis", "facture", "contrat", "compte_rendu", "specification",
               "courrier", "note", "rapport", "autre"]
 
-_PROMPT = (
-    "Tu es un archiviste. On te donne le NOM et le TEXTE d'un document, et la liste "
-    "des ENTREPRISES connues de la solution. Range ce document.\n"
-    "Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, avec ces clés :\n"
-    '  "categorie" : une parmi ' + ", ".join(CATEGORIES) + ".\n"
-    '  "tags"      : 2 à 5 mots-clés courts (minuscules), tableau de chaînes.\n'
-    '  "entreprise": le NOM EXACT d\'une entreprise de la liste si le document la '
-    "concerne clairement, sinon null.\n"
-    '  "projet"    : le nom d\'un projet/dossier si le document s\'y rapporte '
-    "explicitement (ex. « prochain sprint »), sinon null.\n"
-    '  "resume"    : une phrase (≤ 200 caractères) résumant le document, en français.\n'
-)
+
+def _prompt(langue=None) -> str:
+    """Prompt de classement. Les CLÉS et les CATÉGORIES restent structurelles (lues
+    par l'ETL) ; seul le `resume` suit la langue du Jarvis (S39, défaut `fr`)."""
+    return (
+        "Tu es un archiviste. On te donne le NOM et le TEXTE d'un document, et la liste "
+        "des ENTREPRISES connues de la solution. Range ce document.\n"
+        "Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, avec ces clés :\n"
+        '  "categorie" : une parmi ' + ", ".join(CATEGORIES) + ".\n"
+        '  "tags"      : 2 à 5 mots-clés courts (minuscules), tableau de chaînes.\n'
+        '  "entreprise": le NOM EXACT d\'une entreprise de la liste si le document la '
+        "concerne clairement, sinon null.\n"
+        '  "projet"    : le nom d\'un projet/dossier si le document s\'y rapporte '
+        "explicitement (ex. « prochain sprint »), sinon null.\n"
+        '  "resume"    : une phrase (≤ 200 caractères) résumant le document, '
+        + langue_mod.consigne_resume(langue) + ".\n"
+    )
 
 
 def _entreprises_connues() -> list[dict]:
@@ -80,7 +86,7 @@ async def classer_texte(texte: str, nom: str) -> dict:
     # Pipeline unifié (S138) : bascule de modèles + comptage tokens/coût + journal.
     # Le classement est un prompt court et stable : pas de trimming nécessaire.
     res = await llm_pipeline.completer(
-        [{"role": "system", "content": _PROMPT},
+        [{"role": "system", "content": _prompt(conf.get("langue"))},
          {"role": "user", "content": user}],
         modeles=modeles, temperature=0,
         response_format={"type": "json_object"},

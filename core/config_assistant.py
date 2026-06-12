@@ -63,6 +63,11 @@ DEFAUT_SHADOW_TAUX = float(os.getenv("SHADOW_TAUX", "0.05"))
 DEFAUT_VOIX_PROVIDER = os.getenv("VOIX_PROVIDER", "webspeech")
 DEFAUT_UNMUTE_URL = os.getenv("UNMUTE_URL", "")
 
+# Langue du Jarvis (S39) : langue de ses réponses (chat/briefing/résumé/classement)
+# ET de la voix (reco/synthèse). Préférence de l'utilisateur, réglable ⚙ Cerveau,
+# défaut `fr`. La normalisation/repli est dans `langue.py` (source de vérité).
+DEFAUT_LANGUE = os.getenv("ASSISTANT_LANGUE", "fr")
+
 
 # ── Modèle + voix (persistés, lus à chaud) ──────────────────────────────────
 def charger() -> dict:
@@ -76,6 +81,7 @@ def charger() -> dict:
         "voix_provider": DEFAUT_VOIX_PROVIDER,
         "unmute_url": DEFAUT_UNMUTE_URL,
         "persona": "default",
+        "langue": DEFAUT_LANGUE,
         "routage_actif": DEFAUT_ROUTAGE_ACTIF,
         "modele_econome": DEFAUT_MODELE_ECONOME,
         "resume_actif": DEFAUT_RESUME_ACTIF,
@@ -96,6 +102,7 @@ def charger() -> dict:
             if d.get("unmute_url") is not None:
                 base["unmute_url"] = d.get("unmute_url")
             base["persona"] = d.get("persona") or base["persona"]
+            base["langue"] = d.get("langue") or base["langue"]
             if d.get("routage_actif") is not None:
                 base["routage_actif"] = bool(d.get("routage_actif"))
             if d.get("modele_econome") is not None:
@@ -149,6 +156,17 @@ def definir_persona(persona: str | None) -> dict:
     conf = charger()
     if persona:
         conf["persona"] = persona
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
+
+
+def definir_langue(langue: str | None) -> dict:
+    """Règle la langue du Jarvis (réponses + voix), normalisée/repli `fr` via langue.py."""
+    import langue as langue_mod  # import tardif : évite tout cycle au chargement
+    conf = charger()
+    if langue:
+        conf["langue"] = langue_mod.normaliser(langue)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf

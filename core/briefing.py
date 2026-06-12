@@ -33,6 +33,7 @@ import httpx
 import agenda
 import config_assistant
 import journal_usage
+import langue as langue_mod
 import llm_pipeline
 import orchestrateur
 import proactif
@@ -41,16 +42,18 @@ logger = logging.getLogger(__name__)
 
 FUSEAU = "Europe/Paris"
 
-PROMPT_BRIEFING = (
-    "Tu es le Jarvis de Workplace. Rédige le BRIEFING DU MATIN de l'utilisateur, "
-    "en français, chaleureux et concret, ~120 mots maximum. À partir des FAITS "
-    "fournis (au format JSON), couvre dans cet ordre et SEULEMENT si pertinent : "
-    "les rendez-vous du jour, les factures à relancer (impayés J+7/15/30), l'état "
-    "du pipeline commercial, et le coût LLM de la veille. Mets en avant ce qui "
-    "demande une action. N'invente RIEN : si une source porte le champ "
-    "`indisponible`, ignore-la silencieusement. Si la journée est calme, dis-le "
-    "simplement. Commence directement par le contenu (pas de « Voici votre briefing »)."
-)
+def prompt_briefing(langue=None) -> str:
+    """Prompt système du briefing, rédigé dans la langue du Jarvis (S39, défaut `fr`)."""
+    return (
+        "Tu es le Jarvis de Workplace. Rédige le BRIEFING DU MATIN de l'utilisateur, "
+        f"{langue_mod.consigne_resume(langue)}, chaleureux et concret, ~120 mots maximum. "
+        "À partir des FAITS fournis (au format JSON), couvre dans cet ordre et SEULEMENT "
+        "si pertinent : les rendez-vous du jour, les factures à relancer (impayés "
+        "J+7/15/30), l'état du pipeline commercial, et le coût LLM de la veille. Mets en "
+        "avant ce qui demande une action. N'invente RIEN : si une source porte le champ "
+        "`indisponible`, ignore-la silencieusement. Si la journée est calme, dis-le "
+        "simplement. Commence directement par le contenu (pas de « Voici votre briefing »)."
+    )
 
 
 # ── Heure locale ─────────────────────────────────────────────────────────────
@@ -144,7 +147,7 @@ async def rediger(faits: dict, conf: dict | None = None) -> llm_pipeline.Resulta
     if not modeles:  # garde-fou : ne jamais partir sans modèle
         modeles = [conf.get("repli_payant") or config_assistant.DEFAUT_REPLI_PAYANT]
     messages = [
-        {"role": "system", "content": PROMPT_BRIEFING},
+        {"role": "system", "content": prompt_briefing(conf.get("langue"))},
         {"role": "user", "content": "FAITS (JSON) :\n"
          + json.dumps(faits, ensure_ascii=False)},
     ]

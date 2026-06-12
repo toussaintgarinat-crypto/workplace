@@ -21,6 +21,7 @@ import os
 import httpx
 
 import journal_usage
+import langue as langue_mod
 import trimming
 
 logger = logging.getLogger(__name__)
@@ -31,12 +32,15 @@ GATEWAY_KEY = os.environ["GATEWAY_KEY"]  # requis — défini dans le .env racin
 SEUIL_DEFAUT = int(os.getenv("RESUME_SEUIL_TOKENS", "3000"))   # en deçà : on ne fait rien
 GARDER_DEFAUT = int(os.getenv("RESUME_GARDER", "6"))           # derniers tours intacts
 
-_PROMPT = (
-    "Tu es un assistant qui CONDENSE un historique de conversation. Résume les "
-    "échanges ci-dessous en français, en une note compacte qui PRÉSERVE : les "
-    "faits établis, les décisions prises, les identifiants/noms cités, et les "
-    "tâches en cours. Pas de bavardage, pas de salutations. Va à l'essentiel."
-)
+def _prompt(langue=None) -> str:
+    """Prompt de condensation, rédigé dans la langue du Jarvis (S39, défaut `fr`)."""
+    return (
+        "Tu es un assistant qui CONDENSE un historique de conversation. Résume les "
+        f"échanges ci-dessous {langue_mod.consigne_resume(langue)}, en une note compacte "
+        "qui PRÉSERVE : les faits établis, les décisions prises, les identifiants/noms "
+        "cités, et les tâches en cours. Pas de bavardage, pas de salutations. Va à "
+        "l'essentiel."
+    )
 
 
 def _modele_resume(conf: dict) -> str | None:
@@ -81,7 +85,7 @@ async def condenser(client: httpx.AsyncClient, messages: list[dict], conf: dict)
             f"{GATEWAY_URL}/v1/chat/completions",
             headers={"Authorization": f"Bearer {GATEWAY_KEY}"},
             json={"model": modele, "temperature": 0,
-                  "messages": [{"role": "system", "content": _PROMPT},
+                  "messages": [{"role": "system", "content": _prompt(conf.get("langue"))},
                                {"role": "user", "content": a_resumer[:12000]}]},
         )
         if r.status_code >= 400:

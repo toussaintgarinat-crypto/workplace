@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 import config_assistant
+import langue as langue_mod
 import llm_pipeline
 import outils
 import personas
@@ -73,8 +74,9 @@ PROMPT_SYSTEME = (
     "directement l'outil avec `confirme=true` — ne redemande pas une seconde fois.\n"
     "- « décrocher » retire vraiment l'entreprise des bases centrales (vers un "
     "dossier portable) : préviens-en l'utilisateur avant de confirmer.\n"
-    "- Si un outil échoue, explique-le simplement et continue.\n"
-    "- Réponds toujours en français, de façon concise et concrète."
+    "- Si un outil échoue, explique-le simplement et continue."
+    # La langue de réponse est ajoutée à chaud (cf. converser → langue.consigne_reponse) :
+    # c'est une préférence d'utilisateur (S39), pas un choix codé en dur.
 )
 
 
@@ -96,7 +98,8 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     )
     # Modèle + persona lus à CHAUD (réglables depuis le front, cf. config_assistant).
     conf = config_assistant.charger()
-    systeme = PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
+    systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
+               + "\n- " + langue_mod.consigne_reponse(conf.get("langue")))
     historique = ([{"role": "system", "content": systeme},
                    {"role": "system", "content": contexte_date}] + list(messages))
     # Ordre effectif : cascade auto (gratuits → repli payant) ou chaîne manuelle.

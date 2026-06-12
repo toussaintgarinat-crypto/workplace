@@ -15,6 +15,7 @@ import assistant
 import classer
 import config_assistant
 import journal_usage
+import langue as langue_mod
 import personas
 import shadow
 import proactif
@@ -270,6 +271,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             </select>
           </div>
           <div class="field">
+            <label>Langue de l'app</label>
+            <select name="langue">
+              <option value="fr">Français</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+            </select>
+          </div>
+          <div class="field">
             <label>Email du client (compte d'accès)</label>
             <input type="email" name="email_client" placeholder="client@exemple.fr">
           </div>
@@ -331,6 +340,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div class="liv-sub" id="persona-desc" style="margin-top:4px">Le ton et la façon de répondre de l'assistant.</div>
         </div>
         <button class="btn" id="btn-persona" onclick="enregistrerPersona()">Choisir</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Langue <span id="langue-statut" class="cerveau-pill">—</span></label>
+          <select id="cerveau-langue"><option>Chargement…</option></select>
+          <div class="liv-sub" style="margin-top:4px">Langue des réponses du Jarvis et de la voix (reconnaissance + lecture).</div>
+        </div>
+        <button class="btn" id="btn-langue" onclick="enregistrerLangue()">Choisir</button>
       </div>
       <div class="cerveau-row" style="margin-top:14px">
         <div class="field" style="flex:1">
@@ -619,6 +636,16 @@ async function chargerCerveau(force) {
       pill(document.getElementById('persona-statut'), c.persona !== 'default' ? null : true,
            (actuel ? (actuel.emoji + ' ' + actuel.label) : c.persona));
     }
+    // Langue (S39) : peupler le sélecteur + régler la locale de la voix.
+    const selL = document.getElementById('cerveau-langue');
+    if (selL) {
+      const ls = c.langues || [];
+      selL.innerHTML = ls.map(l => `<option value="${l.code}"${l.code===c.langue?' selected':''}>${l.label}</option>`).join('');
+      const actuelle = ls.find(l => l.code === c.langue);
+      if (actuelle) VOIX_LOCALE = actuelle.locale_voix;
+      pill(document.getElementById('langue-statut'), c.langue !== 'fr' ? null : true,
+           actuelle ? actuelle.label : (c.langue || 'fr'));
+    }
     pill(document.getElementById('cle-statut'),
          c.cle_openrouter_definie ? true : false,
          c.cle_openrouter_definie ? '● définie' : '● absente');
@@ -678,6 +705,23 @@ async function enregistrerPersona() {
     }).then(r => r.json());
     pill(document.getElementById('persona-statut'), r.persona !== 'default' ? null : true, r.persona);
     cerveauMsg('✔ Personnalité « ' + r.persona + ' » active dès le prochain message.', 'ok');
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
+async function enregistrerLangue() {
+  const btn = document.getElementById('btn-langue');
+  const langue = document.getElementById('cerveau-langue').value;
+  btn.classList.add('loading');
+  try {
+    const r = await fetch('/assistant/langue', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ langue })
+    }).then(r => r.json());
+    VOIX_LOCALE = r.locale_voix || 'fr-FR';  // la voix suit immédiatement (sans recharger)
+    const opt = document.querySelector('#cerveau-langue option[value="' + r.langue + '"]');
+    pill(document.getElementById('langue-statut'), r.langue !== 'fr' ? null : true,
+         opt ? opt.textContent : r.langue);
+    cerveauMsg('✔ Langue « ' + (opt ? opt.textContent : r.langue) + ' » active : réponses et voix.', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
 }
@@ -961,6 +1005,9 @@ async function envoyerMessage(e) {
 // persistée côté serveur) : passer de 'webspeech' à 'unmute' est une simple config.
 let VOIX_PROVIDER = 'webspeech';
 let UNMUTE_URL = '';
+// Langue de la voix (S39) : locale BCP-47 pour reco.lang/utt.lang + choix de la voix.
+// Pilotée par la config (⚙ Cerveau) ; défaut français. 'fr-FR' → préfixe 'fr'.
+let VOIX_LOCALE = 'fr-FR';
 let LECTURE_VOCALE = localStorage.getItem('wp_lecture_vocale') === '1';
 let MICRO_ACTIF = false;
 
@@ -975,7 +1022,7 @@ function creerWebSpeech() {
       if (!Reco) { alert("La reconnaissance vocale n'est pas supportée par ce navigateur (essayez Chrome, Edge ou Safari)."); return false; }
       window.speechSynthesis && window.speechSynthesis.cancel();  // barge-in : on coupe la lecture
       reco = new Reco();
-      reco.lang = 'fr-FR'; reco.interimResults = true; reco.continuous = false;
+      reco.lang = VOIX_LOCALE; reco.interimResults = true; reco.continuous = false;
       reco.onresult = (e) => {
         const t = Array.from(e.results).map(r => r[0].transcript).join('');
         document.getElementById('chat-input').value = t;
@@ -992,8 +1039,9 @@ function creerWebSpeech() {
       if (!('speechSynthesis' in window) || !texte) return;
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(texte);
-      u.lang = 'fr-FR'; u.rate = 1.05;
-      const vf = window.speechSynthesis.getVoices().find(v => v.lang && v.lang.startsWith('fr'));
+      u.lang = VOIX_LOCALE; u.rate = 1.05;
+      const pref = VOIX_LOCALE.slice(0, 2);
+      const vf = window.speechSynthesis.getVoices().find(v => v.lang && v.lang.startsWith(pref));
       if (vf) u.voice = vf;
       window.speechSynthesis.speak(u);
     },
@@ -1009,7 +1057,15 @@ function creerWebSpeech() {
 // NB : Unmute EST le cerveau (il utilise notre LLM via KYUTAI_LLM_URL) mais ne passe PAS
 // par la boucle à outils de l'assistant → mode « conversation/brainstorming » à voix.
 // À VALIDER avec un vrai serveur (impossible sans GPU ici) ; structurellement conforme.
-const UNMUTE_INSTRUCTIONS = "Tu es l'assistant de Workplace. Réponds en français, de façon concise, pour aider à réfléchir et préparer le travail.";
+// Consigne Unmute localisée (S39) : choisie selon VOIX_LOCALE au moment de l'ouverture WS.
+const UNMUTE_INSTRUCTIONS_PAR_LANGUE = {
+  fr: "Tu es l'assistant de Workplace. Réponds en français, de façon concise, pour aider à réfléchir et préparer le travail.",
+  en: "You are the Workplace assistant. Answer in English, concisely, to help think through and prepare the work.",
+  es: "Eres el asistente de Workplace. Responde en español, de forma concisa, para ayudar a reflexionar y preparar el trabajo."
+};
+function instructionsUnmute() {
+  return UNMUTE_INSTRUCTIONS_PAR_LANGUE[VOIX_LOCALE.slice(0, 2)] || UNMUTE_INSTRUCTIONS_PAR_LANGUE.fr;
+}
 function creerUnmute(url) {
   let ws = null, ctx = null, micFlux = null, worklet = null, enc = null, dec = null, bulle = null;
   const okWebCodecs = ('AudioEncoder' in window) && ('AudioDecoder' in window);
@@ -1028,7 +1084,7 @@ function creerUnmute(url) {
       try {
         ws = new WebSocket(url, 'realtime');
         ws.onopen = () => ws.send(JSON.stringify({ type:'session.update',
-          session:{ instructions: UNMUTE_INSTRUCTIONS, voice:'default' } }));
+          session:{ instructions: instructionsUnmute(), voice:'default' } }));
         ws.onmessage = (e) => {
           let m; try { m = JSON.parse(e.data); } catch(_) { return; }
           if (m.type === 'conversation.item.input_audio_transcription.delta') {
@@ -1470,6 +1526,7 @@ async def livrer(
     packager: bool = Form(False),
     email_client: str = Form(""),
     contact_client: str = Form(""),
+    langue: str = Form("fr"),
 ):
     """Livre une entreprise en une commande : ingère les documents, lance l'audit,
     génère l'app (→ packaging optionnel). Renvoie un id de livraison à suivre.
@@ -1482,8 +1539,11 @@ async def livrer(
     - `email_client` : si fourni, on crée à la livraison un compte d'accès Oria à cet
       email + envoie un lien « définis ton mot de passe » et rattache le client à son
       espace (S23, best-effort). `contact_client` = nom du contact (optionnel).
+    - `langue` (S37) : langue de l'app livrée — « fr » (défaut) | « en » | « es » | « ar ».
+      Toute valeur inconnue est ramenée à « fr » par le générateur (repli honnête).
     """
     mode = "hebergee" if persistance == "hebergee" else "autonome"
+    langue = (langue or "fr").strip().lower()[:2] or "fr"
     email_client = (email_client or "").strip()
     contact_client = (contact_client or "").strip()
     # Lire le contenu des uploads AVANT de rendre la main (les fichiers temporaires
@@ -1496,10 +1556,10 @@ async def livrer(
     background_tasks.add_task(
         orchestrateur.executer_pipeline,
         registre, livraison_id, charges, mode, messagerie, packager,
-        email_client, contact_client,
+        email_client, contact_client, langue,
     )
     return {"id": livraison_id, "statut": "en_cours", "nom_entreprise": nom_entreprise,
-            "mode": mode, "messagerie": messagerie, "packager": packager,
+            "mode": mode, "messagerie": messagerie, "packager": packager, "langue": langue,
             "compte_client": bool(email_client), "nb_fichiers": len(charges)}
 
 
@@ -1593,6 +1653,8 @@ async def assistant_config_get():
         "unmute_url": conf["unmute_url"],
         "persona": conf["persona"],
         "personas": personas.catalogue(),
+        "langue": conf["langue"],
+        "langues": langue_mod.catalogue(),
         "routage_actif": conf["routage_actif"],
         "modele_econome": conf["modele_econome"],
         # Cascade auto (cost-first) : gratuits → repli payant, + chaîne effective.
@@ -1693,6 +1755,16 @@ async def assistant_persona_post(corps: dict):
     """Change la personnalité de l'assistant (effet immédiat au prochain message)."""
     conf = config_assistant.definir_persona(corps.get("persona"))
     return {"ok": True, "persona": conf["persona"]}
+
+
+@app.post("/assistant/langue", tags=["assistant"])
+async def assistant_langue_post(corps: dict):
+    """Change la langue du Jarvis — réponses ET voix (effet immédiat, S39).
+
+    Corps : {"langue": "fr"|"en"|"es"}. Toute langue inconnue retombe sur `fr`."""
+    conf = config_assistant.definir_langue(corps.get("langue"))
+    return {"ok": True, "langue": conf["langue"],
+            "locale_voix": langue_mod.locale_voix(conf["langue"])}
 
 
 @app.post("/assistant/voix", tags=["assistant"])
