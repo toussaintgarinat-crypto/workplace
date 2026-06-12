@@ -378,5 +378,61 @@
     "join": "🚀 Unirse",
     "joining": "⏳ Uniéndose…",
     "yourWorld": "✨ Tu mundo"
+  },
+  "members": {
+    "title": "Agentes y cargos",
+    "online": "En línea",
+    "offline": "Desconectado",
+    "me": " (yo)",
+    "inRoom": "En una sala",
+    "manageSubs": "Gestionar suscripciones",
+    "privateMsg": "Mensaje privado",
+    "subsOf": "Suscripciones de {{nom}}",
+    "noTiers": "No hay ningún nivel de suscripción definido para este mundo.",
+    "free": "Gratis",
+    "perMonth": "{{prix}} {{devise}}/mes",
+    "remove": "Quitar",
+    "assign": "Asignar"
+  },
+  "conductor": {
+    "idle": "Disponible",
+    "working": "En curso…",
+    "error": "Error",
+    "call": "💬 Llamar",
+    "room": "🚪 Sala",
+    "enterRoom": "Entrar en la sala",
+    "forge": "🔧 Forge",
+    "openForge": "Abrir Forge",
+    "msgPlaceholder": "Mensaje para el agente {{pole}}…",
+    "send": "Enviar",
+    "title": "🎛 Conductor",
+    "subtitle": "Agentes residentes de polo — presencia en tiempo real",
+    "connected": "Conectado",
+    "reconnecting": "Reconectando…",
+    "summary": "{{idle}} disponibles · {{working}} activos · {{error}} errores",
+    "empty": "Ningún agente residente configurado."
+  },
+  "worldView": {
+    "emptyCreate": "Crea tu primer mundo con el ＋ de la izquierda",
+    "invite": "✉ Invitar",
+    "quartier": "🏘 Distrito",
+    "space": "＋ Espacio",
+    "addSpace": "Agregar un espacio",
+    "emptyNoSpace": "Ningún espacio por ahora.",
+    "createSpace": "＋ Crear un espacio",
+    "createQuartier": "🏘 Crear un distrito",
+    "emptyQuartier": "Ningún espacio en este distrito.",
+    "confirmDelBuilding": "¿Eliminar el espacio «{{nom}}»?",
+    "confirmDelRoom": "¿Eliminar la sala «{{nom}}»?",
+    "confirmDelQuartier": "¿Eliminar el distrito «{{nom}}» y todos sus espacios?"
+  },
+  "network": {
+    "title": "🕸 Intercomunidad",
+    "graph": "Grafo",
+    "list": "Lista",
+    "resetPos": "Restablecer posiciones",
+    "addLink": "+ Vínculo",
+    "private": "Privado",
+    "emptyList": "Ningún vínculo. Conecta comunidades con \"+ Vínculo\"."
   }
 }

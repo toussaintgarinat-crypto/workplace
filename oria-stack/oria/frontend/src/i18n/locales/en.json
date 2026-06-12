@@ -378,5 +378,61 @@
     "join": "🚀 Join",
     "joining": "⏳ Joining…",
     "yourWorld": "✨ Your world"
+  },
+  "members": {
+    "title": "Agents & Officials",
+    "online": "Online",
+    "offline": "Offline",
+    "me": " (me)",
+    "inRoom": "In a room",
+    "manageSubs": "Manage subscriptions",
+    "privateMsg": "Private message",
+    "subsOf": "{{nom}}'s subscriptions",
+    "noTiers": "No subscription tier defined for this world.",
+    "free": "Free",
+    "perMonth": "{{prix}} {{devise}}/month",
+    "remove": "Remove",
+    "assign": "Assign"
+  },
+  "conductor": {
+    "idle": "Available",
+    "working": "Working…",
+    "error": "Error",
+    "call": "💬 Call",
+    "room": "🚪 Room",
+    "enterRoom": "Enter the room",
+    "forge": "🔧 Forge",
+    "openForge": "Open Forge",
+    "msgPlaceholder": "Message for the {{pole}} agent…",
+    "send": "Send",
+    "title": "🎛 Conductor",
+    "subtitle": "Resident pole agents — real-time presence",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting…",
+    "summary": "{{idle}} available · {{working}} active · {{error}} errors",
+    "empty": "No resident agent configured."
+  },
+  "worldView": {
+    "emptyCreate": "Create your first world with the ＋ on the left",
+    "invite": "✉ Invite",
+    "quartier": "🏘 District",
+    "space": "＋ Space",
+    "addSpace": "Add a space",
+    "emptyNoSpace": "No space yet.",
+    "createSpace": "＋ Create a space",
+    "createQuartier": "🏘 Create a district",
+    "emptyQuartier": "No space in this district.",
+    "confirmDelBuilding": "Delete the space « {{nom}} »?",
+    "confirmDelRoom": "Delete the room « {{nom}} »?",
+    "confirmDelQuartier": "Delete the district « {{nom}} » and all its spaces?"
+  },
+  "network": {
+    "title": "🕸 Inter-community",
+    "graph": "Graph",
+    "list": "List",
+    "resetPos": "Reset positions",
+    "addLink": "+ Link",
+    "private": "Private",
+    "emptyList": "No link. Connect communities with \"+ Link\"."
   }
 }

@@ -378,5 +378,61 @@
     "join": "🚀 Rejoindre",
     "joining": "⏳ Rejoindre…",
     "yourWorld": "✨ Ton monde"
+  },
+  "members": {
+    "title": "Agents & Élus",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "me": " (moi)",
+    "inRoom": "Dans une pièce",
+    "manageSubs": "Gérer les abonnements",
+    "privateMsg": "Message privé",
+    "subsOf": "Abonnements de {{nom}}",
+    "noTiers": "Aucun tier d'abonnement défini pour ce world.",
+    "free": "Gratuit",
+    "perMonth": "{{prix}} {{devise}}/mois",
+    "remove": "Retirer",
+    "assign": "Assigner"
+  },
+  "conductor": {
+    "idle": "Disponible",
+    "working": "En cours…",
+    "error": "Erreur",
+    "call": "💬 Appeler",
+    "room": "🚪 Room",
+    "enterRoom": "Entrer dans la room",
+    "forge": "🔧 Forge",
+    "openForge": "Ouvrir Forge",
+    "msgPlaceholder": "Message pour l'agent {{pole}}…",
+    "send": "Envoyer",
+    "title": "🎛 Conductor",
+    "subtitle": "Agents résidents pôle — présence temps réel",
+    "connected": "Connecté",
+    "reconnecting": "Reconnexion…",
+    "summary": "{{idle}} disponibles · {{working}} actifs · {{error}} erreurs",
+    "empty": "Aucun agent résident configuré."
+  },
+  "worldView": {
+    "emptyCreate": "Crée ton premier monde avec le ＋ à gauche",
+    "invite": "✉ Inviter",
+    "quartier": "🏘 Quartier",
+    "space": "＋ Espace",
+    "addSpace": "Ajouter un espace",
+    "emptyNoSpace": "Aucun espace pour l'instant.",
+    "createSpace": "＋ Créer un espace",
+    "createQuartier": "🏘 Créer un quartier",
+    "emptyQuartier": "Aucun espace dans ce quartier.",
+    "confirmDelBuilding": "Supprimer l'espace « {{nom}} » ?",
+    "confirmDelRoom": "Supprimer la pièce « {{nom}} » ?",
+    "confirmDelQuartier": "Supprimer le quartier « {{nom}} » et tous ses espaces ?"
+  },
+  "network": {
+    "title": "🕸 Intercommunalité",
+    "graph": "Graphe",
+    "list": "Liste",
+    "resetPos": "Réinitialiser les positions",
+    "addLink": "+ Lien",
+    "private": "Privé",
+    "emptyList": "Aucun lien. Reliez des communes avec \"+ Lien\"."
   }
 }
