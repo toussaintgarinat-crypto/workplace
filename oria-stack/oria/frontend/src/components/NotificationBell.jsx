@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 import keycloak from '../keycloak'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export default function NotificationBell() {
+  const { t, i18n } = useTranslation()
   const [count, setCount]     = useState(0)
   const [open, setOpen]       = useState(false)
   const [notifs, setNotifs]   = useState([])
@@ -78,37 +80,37 @@ export default function NotificationBell() {
 
   function labelNotif(n) {
     if (n.type === 'new_follower') {
-      return `${n.data.follower_avatar} ${n.data.follower_nom} te suit maintenant`
+      return t('notif.newFollower', { avatar: n.data.follower_avatar, nom: n.data.follower_nom })
     }
     if (n.type === 'new_world_public') {
-      return `${n.data.owner_avatar} ${n.data.owner_nom} a publié un monde : ${n.data.world_nom}`
+      return t('notif.newWorld', { avatar: n.data.owner_avatar, nom: n.data.owner_nom, world: n.data.world_nom })
     }
-    return 'Nouvelle notification'
+    return t('notif.generic')
   }
 
   return (
     <div className="notif-bell-wrap" ref={panelRef}>
-      <button className={`world-btn nav-btn ${open ? 'actif' : ''}`} onClick={openPanel} title="Notifications">
+      <button className={`world-btn nav-btn ${open ? 'actif' : ''}`} onClick={openPanel} title={t('notif.title')}>
         <span>🔔</span>
         {count > 0 && <span className="notif-badge">{count > 9 ? '9+' : count}</span>}
-        <span className="world-btn-tooltip">Notifications</span>
+        <span className="world-btn-tooltip">{t('notif.title')}</span>
       </button>
 
       {open && (
         <div className="notif-panel">
           <div className="notif-panel-header">
-            <span>Notifications</span>
-            {count > 0 && <button className="notif-mark-all" onClick={markAll}>Tout lire</button>}
+            <span>{t('notif.title')}</span>
+            {count > 0 && <button className="notif-mark-all" onClick={markAll}>{t('notif.markAll')}</button>}
           </div>
           {notifs.length === 0 ? (
-            <div className="notif-empty">Aucune notification</div>
+            <div className="notif-empty">{t('notif.empty')}</div>
           ) : (
             <ul className="notif-list">
               {notifs.map(n => (
                 <li key={n.id} className={`notif-item ${n.read ? 'read' : 'unread'}`}>
                   <span className="notif-dot" />
                   <span className="notif-text">{labelNotif(n)}</span>
-                  <span className="notif-time">{new Date(n.created_at).toLocaleDateString('fr')}</span>
+                  <span className="notif-time">{new Date(n.created_at).toLocaleDateString(i18n.language)}</span>
                 </li>
               ))}
             </ul>

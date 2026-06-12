@@ -175,5 +175,56 @@
     "subsHint": " (au moins un)",
     "noSubs": "Aucun tier d'abonnement défini. Créez-en via le bouton 💳 dans la barre du world.",
     "submit": "Ajouter →"
+  },
+  "sync": {
+    "reconnecting": "Reconnexion au serveur de messagerie…"
+  },
+  "follow": {
+    "following": "✓ Suivi",
+    "follow": "+ Suivre"
+  },
+  "notif": {
+    "title": "Notifications",
+    "markAll": "Tout lire",
+    "empty": "Aucune notification",
+    "newFollower": "{{avatar}} {{nom}} te suit maintenant",
+    "newWorld": "{{avatar}} {{nom}} a publié un monde : {{world}}",
+    "generic": "Nouvelle notification"
+  },
+  "dm": {
+    "encrypted": "Chiffré Matrix",
+    "connecting": "Connexion au canal sécurisé…",
+    "placeholder": "Message à {{nom}}…"
+  },
+  "search": {
+    "title": "Recherche",
+    "placeholder": "Rechercher délibérations, arrêtés, agents, tickets...",
+    "noResults": "Aucun résultat pour « {{query}} »"
+  },
+  "sidebar": {
+    "garden": "Mon Jardin Secret",
+    "createWorld": "Créer un monde",
+    "newWorld": "Nouveau monde",
+    "explore": "Explorer",
+    "exploreWorlds": "Explorer les mondes",
+    "feed": "Fil d'activité",
+    "map2d": "Carte 2D",
+    "worldMap": "Carte du monde",
+    "agentsAI": "Agents IA",
+    "myFolders": "Mes dossiers",
+    "ipcra": "IPCRA",
+    "ipcraSessions": "Sessions IPCRA",
+    "conductor": "Conductor",
+    "network": "Réseau",
+    "notifications": "Notifications",
+    "settings": "Paramètres"
+  },
+  "building": {
+    "maison": "🏠 Maison",
+    "site": "🌐 Site",
+    "immeuble": "🏢 Immeuble",
+    "floorGround": "RDC",
+    "floorN": "Étage {{n}}",
+    "addRoom": "Ajouter une pièce"
   }
 }

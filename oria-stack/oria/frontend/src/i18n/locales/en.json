@@ -175,5 +175,56 @@
     "subsHint": " (at least one)",
     "noSubs": "No subscription tier defined. Create one via the 💳 button in the world bar.",
     "submit": "Add →"
+  },
+  "sync": {
+    "reconnecting": "Reconnecting to the messaging server…"
+  },
+  "follow": {
+    "following": "✓ Following",
+    "follow": "+ Follow"
+  },
+  "notif": {
+    "title": "Notifications",
+    "markAll": "Mark all read",
+    "empty": "No notifications",
+    "newFollower": "{{avatar}} {{nom}} now follows you",
+    "newWorld": "{{avatar}} {{nom}} published a world: {{world}}",
+    "generic": "New notification"
+  },
+  "dm": {
+    "encrypted": "Matrix encrypted",
+    "connecting": "Connecting to secure channel…",
+    "placeholder": "Message to {{nom}}…"
+  },
+  "search": {
+    "title": "Search",
+    "placeholder": "Search deliberations, decrees, agents, tickets...",
+    "noResults": "No results for « {{query}} »"
+  },
+  "sidebar": {
+    "garden": "My Secret Garden",
+    "createWorld": "Create a world",
+    "newWorld": "New world",
+    "explore": "Explore",
+    "exploreWorlds": "Explore worlds",
+    "feed": "Activity feed",
+    "map2d": "2D map",
+    "worldMap": "World map",
+    "agentsAI": "AI agents",
+    "myFolders": "My folders",
+    "ipcra": "IPCRA",
+    "ipcraSessions": "IPCRA sessions",
+    "conductor": "Conductor",
+    "network": "Network",
+    "notifications": "Notifications",
+    "settings": "Settings"
+  },
+  "building": {
+    "maison": "🏠 House",
+    "site": "🌐 Site",
+    "immeuble": "🏢 Building",
+    "floorGround": "Ground floor",
+    "floorN": "Floor {{n}}",
+    "addRoom": "Add a room"
   }
 }
