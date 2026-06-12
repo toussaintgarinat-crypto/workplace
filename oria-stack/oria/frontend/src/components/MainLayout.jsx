@@ -472,7 +472,7 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
 
       <Toast />
       <SyncStatus />
-      <LanguagePicker style={{ position: 'fixed', bottom: 12, left: 68, zIndex: 100 }} />
+      <LanguagePicker persist style={{ position: 'fixed', bottom: 12, left: 68, zIndex: 100 }} />
     </div>
   )
 }

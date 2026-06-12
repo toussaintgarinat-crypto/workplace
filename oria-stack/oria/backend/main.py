@@ -43,6 +43,8 @@ _MIGRATIONS = [
     "ALTER TABLE rooms ADD COLUMN closed_at TIMESTAMP",
     # S25 — persistance backend du thème d'apparence par utilisateur
     "ALTER TABLE users ADD COLUMN theme TEXT DEFAULT ''",
+    # S40 — persistance backend de la langue d'interface par utilisateur
+    "ALTER TABLE users ADD COLUMN langue TEXT DEFAULT ''",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:

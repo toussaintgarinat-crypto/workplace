@@ -123,6 +123,42 @@ class TestProfil:
         assert u["nom"] == TEST_USER["nom"]
         assert u["theme"]["accent"] == "#aabbcc"
 
+    # ── S40 — persistance backend de la langue d'interface ──────────────────
+    def test_langue_absente_par_defaut(self, client, user_in_db):
+        """Un compte sans langue renvoie langue=None (le front applique fr)."""
+        r = client.get("/api/auth/me")
+        assert r.status_code == 200
+        assert r.json()["user"]["langue"] is None
+
+    def test_patch_me_persiste_langue(self, client, user_in_db):
+        """PATCH /me enregistre la langue ; GET /me la relit (persistance serveur)."""
+        r = client.patch("/api/auth/me", json={"langue": "es"})
+        assert r.status_code == 200
+        assert r.json()["user"]["langue"] == "es"
+        # Relecture indépendante : persisté en base, pas juste renvoyé.
+        again = client.get("/api/auth/me").json()["user"]["langue"]
+        assert again == "es"
+
+    def test_patch_me_langue_normalise_la_casse(self, client, user_in_db):
+        """'EN' (espaces/majuscules) est normalisé en code court 'en'."""
+        r = client.patch("/api/auth/me", json={"langue": "  EN "})
+        assert r.status_code == 200
+        assert r.json()["user"]["langue"] == "en"
+
+    def test_patch_me_langue_inconnue_n_ecrase_pas(self, client, user_in_db):
+        """Une langue hors liste blanche est ignorée et n'écrase pas l'existant."""
+        client.patch("/api/auth/me", json={"langue": "es"})
+        r = client.patch("/api/auth/me", json={"langue": "klingon"})
+        assert r.status_code == 200
+        assert r.json()["user"]["langue"] == "es"   # préférence valide préservée
+
+    def test_patch_me_langue_ne_casse_pas_le_reste(self, client, user_in_db):
+        """Envoyer une langue seule ne doit pas effacer nom/emoji (update partiel)."""
+        client.patch("/api/auth/me", json={"langue": "en"})
+        u = client.get("/api/auth/me").json()["user"]
+        assert u["nom"] == TEST_USER["nom"]
+        assert u["langue"] == "en"
+
     def test_statut_2fa_retourne_false(self, client, user_in_db):
         r = client.get("/api/auth/me/2fa-status")
         assert r.status_code == 200
