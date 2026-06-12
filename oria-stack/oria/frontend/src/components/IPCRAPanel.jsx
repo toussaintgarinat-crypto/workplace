@@ -1,53 +1,24 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 // Système IPCRA d'Eliott Meunier — Input, Projet, Casquette, Ressource, Archive
+// (libellés/description/hint via i18n, voir namespace `ipcra`)
 const CATEGORIES = [
-  {
-    key: 'input',
-    label: 'Input',
-    icon: '📥',
-    color: '#6366f1',
-    description: 'Captures brutes, idées, articles à traiter',
-    hint: 'Ce qui arrive dans ta vie et qui n\'a pas encore été traité.',
-  },
-  {
-    key: 'projet',
-    label: 'Projet',
-    icon: '🎯',
-    color: '#10b981',
-    description: 'Projets actifs avec un objectif et une deadline',
-    hint: 'Un projet a un résultat attendu et une date de fin.',
-  },
-  {
-    key: 'casquette',
-    label: 'Casquette',
-    icon: '🎩',
-    color: '#f59e0b',
-    description: 'Rôles et responsabilités (chapeaux portés)',
-    hint: 'Entrepreneur, développeur, parent… chaque casquette que tu portes.',
-  },
-  {
-    key: 'ressource',
-    label: 'Ressource',
-    icon: '📚',
-    color: '#3b82f6',
-    description: 'Références, templates, connaissances réutilisables',
-    hint: 'Ce qui est utile maintenant ou plus tard, indépendamment d\'un projet.',
-  },
-  {
-    key: 'archive',
-    label: 'Archive',
-    icon: '🗄️',
-    color: '#6b7280',
-    description: 'Éléments terminés ou inactifs',
-    hint: 'Projets complétés, ressources obsolètes, inputs traités.',
-  },
+  { key: 'input',     icon: '📥', color: '#6366f1' },
+  { key: 'projet',    icon: '🎯', color: '#10b981' },
+  { key: 'casquette', icon: '🎩', color: '#f59e0b' },
+  { key: 'ressource', icon: '📚', color: '#3b82f6' },
+  { key: 'archive',   icon: '🗄️', color: '#6b7280' },
 ]
 
 const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map(c => [c.key, c]))
 
 export default function IPCRAPanel({ worldId, agents = [] }) {
+  const { t, i18n } = useTranslation()
+  const catLabel = (k) => t(`ipcra.cat_${k}_label`)
+  const catDesc  = (k) => t(`ipcra.cat_${k}_desc`)
+  const catHint  = (k) => t(`ipcra.cat_${k}_hint`)
   const [items, setItems]           = useState([])
   const [activeTab, setActiveTab]   = useState('input')
   const [selected, setSelected]     = useState(null)
@@ -131,7 +102,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
   }
 
   async function deleteItem(item) {
-    if (!confirm(`Supprimer "${item.titre}" ?`)) return
+    if (!confirm(t('ipcra.confirmDelete', { titre: item.titre }))) return
     await api.del(`/ipcra/${item.id}`)
     setItems(prev => prev.filter(i => i.id !== item.id))
     if (selected?.id === item.id) setSelected(null)
@@ -213,7 +184,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                 transition: 'all 0.15s',
               }}
             >
-              {c.icon} {c.label}
+              {c.icon} {catLabel(c.key)}
               <span style={{
                 background: activeTab === c.key ? c.color : 'var(--bg-tertiary)',
                 color: activeTab === c.key ? '#fff' : 'var(--text-secondary)',
@@ -233,8 +204,8 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontWeight: 600, color: cat.color }}>{cat.icon} {cat.label}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{cat.hint}</div>
+              <div style={{ fontWeight: 600, color: cat.color }}>{cat.icon} {catLabel(cat.key)}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{catHint(cat.key)}</div>
             </div>
             <button
               onClick={() => { setCreating(true); setNewForm(f => ({ ...f, categorie: activeTab })) }}
@@ -243,7 +214,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                 background: cat.color, color: '#fff', cursor: 'pointer',
                 fontWeight: 600, fontSize: '13px',
               }}
-            >+ Ajouter</button>
+            >{t('ipcra.add')}</button>
           </div>
         </div>
 
@@ -252,8 +223,8 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
           {tabItems(activeTab).length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
               <div style={{ fontSize: '32px', marginBottom: '8px' }}>{cat.icon}</div>
-              <div style={{ fontWeight: 600, marginBottom: '4px' }}>{cat.label} vide</div>
-              <div style={{ fontSize: '12px' }}>{cat.description}</div>
+              <div style={{ fontWeight: 600, marginBottom: '4px' }}>{t('ipcra.emptyCat', { cat: catLabel(cat.key) })}</div>
+              <div style={{ fontSize: '12px' }}>{catDesc(cat.key)}</div>
             </div>
           ) : (
             tabItems(activeTab).map(item => (
@@ -293,7 +264,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                   </div>
                 )}
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {new Date(item.updated_at).toLocaleDateString('fr-FR')}
+                  {new Date(item.updated_at).toLocaleDateString(i18n.language)}
                 </div>
               </div>
             ))
@@ -322,7 +293,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                   color: CATEGORY_MAP[selected.categorie]?.color,
                   fontWeight: 600,
                 }}>
-                  {CATEGORY_MAP[selected.categorie]?.icon} {selected.categorie}
+                  {CATEGORY_MAP[selected.categorie]?.icon} {catLabel(selected.categorie)}
                 </span>
                 {selected.casquette && (
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -333,7 +304,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
               <div style={{ fontWeight: 700, fontSize: '16px' }}>{selected.titre}</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-              <button onClick={startEdit} style={btnStyle}>✏️ Modifier</button>
+              <button onClick={startEdit} style={btnStyle}>{t('ipcra.edit')}</button>
               <button onClick={() => deleteItem(selected)} style={{ ...btnStyle, color: '#ef4444' }}>🗑️</button>
               <button onClick={() => setSelected(null)} style={btnStyle}>✕</button>
             </div>
@@ -344,7 +315,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
             {/* Déplacer entre catégories */}
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 500 }}>
-                Déplacer vers →
+                {t('ipcra.moveTo')}
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {CATEGORIES.filter(c => c.key !== selected.categorie).map(c => (
@@ -356,7 +327,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                       background: 'transparent', color: c.color, cursor: 'pointer', fontSize: '12px',
                     }}
                   >
-                    {c.icon} {c.label}
+                    {c.icon} {catLabel(c.key)}
                   </button>
                 ))}
               </div>
@@ -368,34 +339,34 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                 <input
                   value={editForm.titre}
                   onChange={e => setEditForm(f => ({ ...f, titre: e.target.value }))}
-                  placeholder="Titre"
+                  placeholder={t('ipcra.titlePlaceholder')}
                   style={inputStyle}
                 />
                 {selected.categorie === 'casquette' && (
                   <input
                     value={editForm.casquette}
                     onChange={e => setEditForm(f => ({ ...f, casquette: e.target.value }))}
-                    placeholder="Nom du rôle (ex: Entrepreneur, Parent…)"
+                    placeholder={t('ipcra.rolePlaceholder')}
                     style={inputStyle}
                   />
                 )}
                 <textarea
                   value={editForm.contenu}
                   onChange={e => setEditForm(f => ({ ...f, contenu: e.target.value }))}
-                  placeholder="Contenu…"
+                  placeholder={t('ipcra.contentPlaceholder')}
                   rows={10}
                   style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
                 />
                 <input
                   value={editForm.tags}
                   onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))}
-                  placeholder="Tags séparés par des virgules"
+                  placeholder={t('ipcra.tagsPlaceholder')}
                   style={inputStyle}
                 />
                 <input
                   value={editForm.source_url}
                   onChange={e => setEditForm(f => ({ ...f, source_url: e.target.value }))}
-                  placeholder="URL source (optionnel)"
+                  placeholder={t('ipcra.sourcePlaceholder')}
                   style={inputStyle}
                 />
                 <select
@@ -403,14 +374,14 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                   onChange={e => setEditForm(f => ({ ...f, agent_id: e.target.value }))}
                   style={inputStyle}
                 >
-                  <option value="">Aucun agent IA</option>
+                  <option value="">{t('ipcra.noAgent')}</option>
                   {agents.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                 </select>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={saveEdit} disabled={saving} style={primaryBtnStyle}>
-                    {saving ? '…' : '✓ Sauvegarder'}
+                    {saving ? '…' : t('ipcra.save')}
                   </button>
-                  <button onClick={() => setEditing(false)} style={btnStyle}>Annuler</button>
+                  <button onClick={() => setEditing(false)} style={btnStyle}>{t('common.cancel')}</button>
                 </div>
               </div>
             ) : (
@@ -421,7 +392,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                   </div>
                 ) : (
                   <div style={{ color: 'var(--text-secondary)', fontSize: '13px', fontStyle: 'italic', marginBottom: '16px' }}>
-                    Pas encore de contenu — clique sur Modifier pour ajouter des notes.
+                    {t('ipcra.noContent')}
                   </div>
                 )}
                 {selected.source_url && (
@@ -437,10 +408,10 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
             {!editing && (
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 600, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  🤖 Assistance IA
+                  {t('ipcra.aiAssist')}
                   {!selected.agent_id && (
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 400 }}>
-                      (assigne un agent pour activer)
+                      {t('ipcra.aiAssignHint')}
                     </span>
                   )}
                 </div>
@@ -449,7 +420,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                     value={aiPrompt}
                     onChange={e => setAiPrompt(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && askAI()}
-                    placeholder="Pose une question sur cet élément…"
+                    placeholder={t('ipcra.askPlaceholder')}
                     style={{ ...inputStyle, flex: 1 }}
                   />
                   <button onClick={askAI} disabled={aiLoading || !aiPrompt.trim()} style={primaryBtnStyle}>
@@ -468,7 +439,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                 {traces.length > 0 && (
                   <details style={{ marginTop: '12px' }}>
                     <summary style={{ cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Historique IA ({traces.length})
+                      {t('ipcra.aiHistory', { count: traces.length })}
                     </summary>
                     <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {traces.slice(-5).map(t => (
@@ -502,7 +473,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
             width: '480px', maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: '12px',
           }}>
             <div style={{ fontWeight: 700, fontSize: '16px' }}>
-              {CATEGORY_MAP[newForm.categorie]?.icon} Nouvel élément IPCRA
+              {CATEGORY_MAP[newForm.categorie]?.icon} {t('ipcra.newItem')}
             </div>
 
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -517,20 +488,20 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
                     cursor: 'pointer', fontSize: '12px', fontWeight: 500,
                   }}
                 >
-                  {c.icon} {c.label}
+                  {c.icon} {catLabel(c.key)}
                 </button>
               ))}
             </div>
 
             <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              {CATEGORY_MAP[newForm.categorie]?.hint}
+              {catHint(newForm.categorie)}
             </div>
 
             <input
               value={newForm.titre}
               onChange={e => setNewForm(f => ({ ...f, titre: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && createItem()}
-              placeholder="Titre *"
+              placeholder={t('ipcra.titleStar')}
               autoFocus
               style={inputStyle}
             />
@@ -539,7 +510,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
               <input
                 value={newForm.casquette}
                 onChange={e => setNewForm(f => ({ ...f, casquette: e.target.value }))}
-                placeholder="Nom du rôle (ex: Entrepreneur, Développeur…)"
+                placeholder={t('ipcra.roleNewPlaceholder')}
                 style={inputStyle}
               />
             )}
@@ -547,7 +518,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
             <textarea
               value={newForm.contenu}
               onChange={e => setNewForm(f => ({ ...f, contenu: e.target.value }))}
-              placeholder="Contenu (optionnel)"
+              placeholder={t('ipcra.contentOptional')}
               rows={4}
               style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
             />
@@ -555,7 +526,7 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
             <input
               value={newForm.tags}
               onChange={e => setNewForm(f => ({ ...f, tags: e.target.value }))}
-              placeholder="Tags (séparés par des virgules)"
+              placeholder={t('ipcra.tagsCommaPlaceholder')}
               style={inputStyle}
             />
 
@@ -564,18 +535,18 @@ export default function IPCRAPanel({ worldId, agents = [] }) {
               onChange={e => setNewForm(f => ({ ...f, agent_id: e.target.value }))}
               style={inputStyle}
             >
-              <option value="">Aucun agent IA</option>
+              <option value="">{t('ipcra.noAgent')}</option>
               {agents.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
             </select>
 
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setCreating(false)} style={btnStyle}>Annuler</button>
+              <button onClick={() => setCreating(false)} style={btnStyle}>{t('common.cancel')}</button>
               <button
                 onClick={createItem}
                 disabled={!newForm.titre.trim() || saving}
                 style={{ ...primaryBtnStyle, background: CATEGORY_MAP[newForm.categorie]?.color }}
               >
-                {saving ? '…' : `Créer ${CATEGORY_MAP[newForm.categorie]?.label}`}
+                {saving ? '…' : t('ipcra.create', { cat: catLabel(newForm.categorie) })}
               </button>
             </div>
           </div>
