@@ -226,5 +226,73 @@
     "floorGround": "Ground floor",
     "floorN": "Floor {{n}}",
     "addRoom": "Add a room"
+  },
+  "profile": {
+    "worlds": "Public worlds",
+    "noWorlds": "No public world yet."
+  },
+  "calendar": {
+    "title": "Calendar",
+    "today": "Today",
+    "conseilLabel": "🏛 Council {{heure}}",
+    "legendConseil": "🏛 Council",
+    "legendArrete": "📑 Decree",
+    "months": ["January","February","March","April","May","June","July","August","September","October","November","December"],
+    "days": ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+  },
+  "vocal": {
+    "you": "(you)",
+    "connected": "Voice connected",
+    "unknown": "Unknown",
+    "muteMic": "Mute microphone",
+    "unmuteMic": "Unmute microphone",
+    "camOff": "Turn off camera",
+    "camOn": "Turn on camera",
+    "camActive": "Camera on",
+    "micOff": "Mic muted",
+    "quitSalon": "Leave the room",
+    "micLabel": "Mic",
+    "muteLabel": "Muted",
+    "camLabel": "Camera",
+    "quitLabel": "Leave"
+  },
+  "editRoom": {
+    "title": "Edit the room",
+    "typeLabel": "Type",
+    "texteLabel": "Text",
+    "texteDesc": "Written chat",
+    "vocalLabel": "Voice",
+    "vocalDesc": "Voice/video",
+    "mixteLabel": "Mixed",
+    "mixteDesc": "Chat + voice",
+    "iconLabel": "Icon",
+    "noSubs": "No subscription tier defined for this world.",
+    "payAccess": "Paid access",
+    "payOn": "💰 Enabled",
+    "payOff": "🔓 Disabled",
+    "payHint": "Members will have to pay to access this room",
+    "priceLabel": "Price",
+    "pricePlaceholder": "e.g. 9.99",
+    "currencyLabel": "Currency",
+    "payTypeLabel": "Payment type",
+    "payOnce": "💳 One-time",
+    "payMonthly": "🔄 Monthly"
+  },
+  "vote": {
+    "title": "Votes — {{date}}",
+    "questionPlaceholder": "Question put to the vote...",
+    "launch": "🗳️ Launch the vote",
+    "empty": "No vote started",
+    "open": "🟢 Open",
+    "closed": "🔴 Closed",
+    "pour": "✅ For",
+    "contre": "❌ Against",
+    "abstention": "🔵 Abstention",
+    "voters_one": "{{count}} voter",
+    "voters_other": "{{count}} voters",
+    "myVote": "My vote:",
+    "changeHint": " (click to change)",
+    "close": "🔴 Close the vote",
+    "confirmDelete": "Delete this vote?"
   }
 }

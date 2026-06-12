@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 import FollowButton from './FollowButton.jsx'
 
 export default function PublicProfileModal({ userId, nom, avatarEmoji, moi, onFermer, onOuvrirWorld }) {
+  const { t } = useTranslation()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -40,7 +42,7 @@ export default function PublicProfileModal({ userId, nom, avatarEmoji, moi, onFe
 
             {profile?.worlds?.length > 0 ? (
               <div className="profile-worlds">
-                <h4>Mondes publics</h4>
+                <h4>{t('profile.worlds')}</h4>
                 <div className="profile-worlds-list">
                   {profile.worlds.map(w => (
                     <div
@@ -60,7 +62,7 @@ export default function PublicProfileModal({ userId, nom, avatarEmoji, moi, onFe
                 </div>
               </div>
             ) : (
-              <p className="profile-no-worlds">Aucun monde public pour l'instant.</p>
+              <p className="profile-no-worlds">{t('profile.noWorlds')}</p>
             )}
           </>
         )}

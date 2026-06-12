@@ -226,5 +226,73 @@
     "floorGround": "RDC",
     "floorN": "Étage {{n}}",
     "addRoom": "Ajouter une pièce"
+  },
+  "profile": {
+    "worlds": "Mondes publics",
+    "noWorlds": "Aucun monde public pour l'instant."
+  },
+  "calendar": {
+    "title": "Calendrier",
+    "today": "Aujourd'hui",
+    "conseilLabel": "🏛 Conseil {{heure}}",
+    "legendConseil": "🏛 Conseil",
+    "legendArrete": "📑 Arrêté",
+    "months": ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"],
+    "days": ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
+  },
+  "vocal": {
+    "you": "(vous)",
+    "connected": "Vocal connecté",
+    "unknown": "Inconnu",
+    "muteMic": "Couper le micro",
+    "unmuteMic": "Activer le micro",
+    "camOff": "Éteindre la caméra",
+    "camOn": "Activer la caméra",
+    "camActive": "Caméra active",
+    "micOff": "Micro coupé",
+    "quitSalon": "Quitter le salon",
+    "micLabel": "Micro",
+    "muteLabel": "Muet",
+    "camLabel": "Caméra",
+    "quitLabel": "Quitter"
+  },
+  "editRoom": {
+    "title": "Modifier la pièce",
+    "typeLabel": "Type",
+    "texteLabel": "Texte",
+    "texteDesc": "Chat écrit",
+    "vocalLabel": "Vocal",
+    "vocalDesc": "Voix/vidéo",
+    "mixteLabel": "Mixte",
+    "mixteDesc": "Chat + voix",
+    "iconLabel": "Icône",
+    "noSubs": "Aucun tier d'abonnement défini pour ce world.",
+    "payAccess": "Accès payant",
+    "payOn": "💰 Activé",
+    "payOff": "🔓 Désactivé",
+    "payHint": "Les membres devront payer pour accéder à cette room",
+    "priceLabel": "Prix",
+    "pricePlaceholder": "Ex: 9.99",
+    "currencyLabel": "Devise",
+    "payTypeLabel": "Type de paiement",
+    "payOnce": "💳 Achat unique",
+    "payMonthly": "🔄 Mensuel"
+  },
+  "vote": {
+    "title": "Votes — {{date}}",
+    "questionPlaceholder": "Question soumise au vote...",
+    "launch": "🗳️ Lancer le vote",
+    "empty": "Aucun vote lancé",
+    "open": "🟢 Ouvert",
+    "closed": "🔴 Fermé",
+    "pour": "✅ Pour",
+    "contre": "❌ Contre",
+    "abstention": "🔵 Abstention",
+    "voters_one": "{{count}} votant",
+    "voters_other": "{{count}} votants",
+    "myVote": "Mon vote :",
+    "changeHint": " (cliquer pour changer)",
+    "close": "🔴 Clore le vote",
+    "confirmDelete": "Supprimer ce vote ?"
   }
 }
