@@ -527,5 +527,42 @@
     "close": "🔒 Cerrar el proyecto",
     "reopen": "🔓 Reabrir",
     "closedOn": "Cerrado el {{date}}"
+  },
+  "docsManager": {
+    "title": "📁 Mis Carpetas",
+    "importing": "⏳ Importando…",
+    "import": "⬆️ Importar",
+    "info": "Tus archivos se convierten a Markdown y se indexan en tu memoria MemPalace. Tus agentes IA pueden consultarlos durante las conversaciones.",
+    "searchPlaceholder": "Buscar en tu memoria…",
+    "search": "🔍 Buscar",
+    "memResults": "Resultados de memoria ({{count}})",
+    "noResults": "Ningún resultado encontrado en tu memoria.",
+    "memorySource": "Memoria",
+    "score": "Puntuación: {{pct}}%",
+    "empty": "Ningún documento. Importa archivos para empezar.",
+    "formats": "Formatos: PDF, Word, Excel, PowerPoint, imágenes, audio…",
+    "indexTitle": "Indexar en MemPalace",
+    "noContent": "Contenido no disponible.",
+    "uploadError": "Error de subida {{status}}",
+    "uploadErrorGeneric": "Error de subida",
+    "confirmDelete": "¿Eliminar este documento?"
+  },
+  "reseauDocs": {
+    "title": "Documentos intercomunitarios",
+    "communes": "Comunidades:",
+    "noCommunes": "Ninguna comunidad vinculada a la red intercomunitaria.",
+    "noCommunesHint": "Conecta comunidades desde la vista Intercomunidad.",
+    "tabDeliberations": "📜 Deliberaciones",
+    "tabArretes": "📑 Decretos",
+    "tabAutres": "📁 Otros",
+    "tabMyShares": "🔗 Mis compartidos",
+    "loading": "Cargando…",
+    "emptyCategory": "Ningún documento compartido en esta categoría.",
+    "emptyCategoryHint": "Las comunidades asociadas pueden compartir sus documentos desde sus respectivos paneles.",
+    "file": "ARCHIVO",
+    "emptyMyDocs": "Ningún documento en este mundo.",
+    "emptyMyDocsHint": "Sube documentos desde el panel Documentos para compartirlos.",
+    "shared": "✓ Compartido",
+    "share": "Compartir"
   }
 }

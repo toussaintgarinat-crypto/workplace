@@ -527,5 +527,42 @@
     "close": "🔒 Fermer le projet",
     "reopen": "🔓 Rouvrir",
     "closedOn": "Fermé le {{date}}"
+  },
+  "docsManager": {
+    "title": "📁 Mes Dossiers",
+    "importing": "⏳ Import…",
+    "import": "⬆️ Importer",
+    "info": "Tes fichiers sont convertis en Markdown et indexés dans ta mémoire MemPalace. Tes agents IA peuvent les consulter lors des conversations.",
+    "searchPlaceholder": "Rechercher dans ta mémoire…",
+    "search": "🔍 Chercher",
+    "memResults": "Résultats mémoire ({{count}})",
+    "noResults": "Aucun résultat trouvé dans ta mémoire.",
+    "memorySource": "Mémoire",
+    "score": "Score : {{pct}}%",
+    "empty": "Aucun document. Importe des fichiers pour commencer.",
+    "formats": "Formats : PDF, Word, Excel, PowerPoint, images, audio…",
+    "indexTitle": "Indexer dans MemPalace",
+    "noContent": "Contenu non disponible.",
+    "uploadError": "Erreur upload {{status}}",
+    "uploadErrorGeneric": "Erreur upload",
+    "confirmDelete": "Supprimer ce document ?"
+  },
+  "reseauDocs": {
+    "title": "Documents intercommunaux",
+    "communes": "Communes :",
+    "noCommunes": "Aucune commune liée au réseau intercommunal.",
+    "noCommunesHint": "Connectez des communes via la vue Intercommunalité.",
+    "tabDeliberations": "📜 Délibérations",
+    "tabArretes": "📑 Arrêtés",
+    "tabAutres": "📁 Autres",
+    "tabMyShares": "🔗 Mes partages",
+    "loading": "Chargement…",
+    "emptyCategory": "Aucun document partagé dans cette catégorie.",
+    "emptyCategoryHint": "Les communes partenaires peuvent partager leurs documents depuis leurs panneaux respectifs.",
+    "file": "FICHIER",
+    "emptyMyDocs": "Aucun document dans ce world.",
+    "emptyMyDocsHint": "Uploadez des documents via le panneau Documents pour les partager.",
+    "shared": "✓ Partagé",
+    "share": "Partager"
   }
 }

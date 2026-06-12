@@ -527,5 +527,42 @@
     "close": "🔒 Close the project",
     "reopen": "🔓 Reopen",
     "closedOn": "Closed on {{date}}"
+  },
+  "docsManager": {
+    "title": "📁 My Folders",
+    "importing": "⏳ Importing…",
+    "import": "⬆️ Import",
+    "info": "Your files are converted to Markdown and indexed in your MemPalace memory. Your AI agents can consult them during conversations.",
+    "searchPlaceholder": "Search your memory…",
+    "search": "🔍 Search",
+    "memResults": "Memory results ({{count}})",
+    "noResults": "No result found in your memory.",
+    "memorySource": "Memory",
+    "score": "Score: {{pct}}%",
+    "empty": "No document. Import files to get started.",
+    "formats": "Formats: PDF, Word, Excel, PowerPoint, images, audio…",
+    "indexTitle": "Index into MemPalace",
+    "noContent": "Content not available.",
+    "uploadError": "Upload error {{status}}",
+    "uploadErrorGeneric": "Upload error",
+    "confirmDelete": "Delete this document?"
+  },
+  "reseauDocs": {
+    "title": "Inter-community documents",
+    "communes": "Communities:",
+    "noCommunes": "No community linked to the inter-community network.",
+    "noCommunesHint": "Connect communities via the Inter-community view.",
+    "tabDeliberations": "📜 Deliberations",
+    "tabArretes": "📑 Decrees",
+    "tabAutres": "📁 Others",
+    "tabMyShares": "🔗 My shares",
+    "loading": "Loading…",
+    "emptyCategory": "No document shared in this category.",
+    "emptyCategoryHint": "Partner communities can share their documents from their respective panels.",
+    "file": "FILE",
+    "emptyMyDocs": "No document in this world.",
+    "emptyMyDocsHint": "Upload documents via the Documents panel to share them.",
+    "shared": "✓ Shared",
+    "share": "Share"
   }
 }
