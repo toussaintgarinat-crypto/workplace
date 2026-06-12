@@ -172,7 +172,7 @@ export default function RoomView({ room, building, world, moi, onQuitter }) {
             <span style={{
               fontSize: 11, padding: '2px 8px', borderRadius: 10,
               background: '#3a3a3a', color: '#aaa', fontWeight: 600,
-            }}>🔒 Terminé</span>
+            }}>{t('room.closedBadge')}</span>
           )}
           {matrix.disponible && room.status !== 'closed' && (
             <span title={t('room.encryptedE2EE')} style={{ fontSize: 11, color: 'var(--vert)' }}>🔒</span>
@@ -309,7 +309,7 @@ export default function RoomView({ room, building, world, moi, onQuitter }) {
 
           {room.status === 'closed' ? (
             <div className="broadcast-locked">
-              <span>🔒</span> Projet terminé — cette room est en lecture seule
+              <span>🔒</span> {t('room.projectClosed')}
             </div>
           ) : room.type === 'broadcast' && world?.owner_id !== moi?.id ? (
             <div className="broadcast-locked">

@@ -43,7 +43,11 @@
     "createOrJoin": "Crea o únete a una comunidad para empezar",
     "needWorld": "Selecciona un mundo en la barra lateral para gestionar sus agentes.",
     "needWorldMap": "Selecciona un mundo en la barra lateral para ver su mapa.",
-    "resizeHandle": "Arrastra para redimensionar"
+    "resizeHandle": "Arrastra para redimensionar",
+    "welcome": "¡Bienvenido a {{world}}! 🎉",
+    "openFirstRoom": "Abre tu primera sala para empezar.",
+    "openRoom": "▶ Abrir «{{room}}»",
+    "worldReady": "¡Tu mundo está listo! Crea tu primer espacio y luego una sala desde el panel de la izquierda ←"
   },
   "channel": {
     "selectWorld": "Selecciona una comunidad",
@@ -82,7 +86,9 @@
     "uploadFile": "Subir un archivo",
     "encryptedE2EE": "Mensajes cifrados E2EE",
     "coinsTitle": "Monedas de miembros",
-    "finished": "Terminado"
+    "finished": "Terminado",
+    "closedBadge": "🔒 Terminado",
+    "projectClosed": "Proyecto terminado — esta sala es de solo lectura"
   },
   "createWorld": {
     "title": "Crear una comunidad",

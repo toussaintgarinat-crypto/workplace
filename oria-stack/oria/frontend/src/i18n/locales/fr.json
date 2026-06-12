@@ -43,7 +43,11 @@
     "createOrJoin": "Crée ou rejoins une commune pour commencer",
     "needWorld": "Sélectionne un monde dans la sidebar pour gérer ses agents.",
     "needWorldMap": "Sélectionne un monde dans la sidebar pour voir sa carte.",
-    "resizeHandle": "Glisser pour redimensionner"
+    "resizeHandle": "Glisser pour redimensionner",
+    "welcome": "Bienvenue dans {{world}} ! 🎉",
+    "openFirstRoom": "Ouvre ta première pièce pour commencer.",
+    "openRoom": "▶ Ouvrir « {{room}} »",
+    "worldReady": "Ton monde est prêt ! Crée ton premier espace puis une pièce depuis le panneau de gauche ←"
   },
   "channel": {
     "selectWorld": "Sélectionne une commune",
@@ -82,7 +86,9 @@
     "uploadFile": "Envoyer un fichier",
     "encryptedE2EE": "Messages chiffrés E2EE",
     "coinsTitle": "Coins des membres",
-    "finished": "Terminé"
+    "finished": "Terminé",
+    "closedBadge": "🔒 Terminé",
+    "projectClosed": "Projet terminé — cette room est en lecture seule"
   },
   "createWorld": {
     "title": "Créer une commune",

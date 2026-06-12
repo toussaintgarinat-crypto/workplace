@@ -43,7 +43,11 @@
     "createOrJoin": "Create or join a community to get started",
     "needWorld": "Select a world from the sidebar to manage its agents.",
     "needWorldMap": "Select a world from the sidebar to view its map.",
-    "resizeHandle": "Drag to resize"
+    "resizeHandle": "Drag to resize",
+    "welcome": "Welcome to {{world}}! 🎉",
+    "openFirstRoom": "Open your first room to get started.",
+    "openRoom": "▶ Open « {{room}} »",
+    "worldReady": "Your world is ready! Create your first space then a room from the left panel ←"
   },
   "channel": {
     "selectWorld": "Select a community",
@@ -82,7 +86,9 @@
     "uploadFile": "Upload a file",
     "encryptedE2EE": "E2EE encrypted messages",
     "coinsTitle": "Member coins",
-    "finished": "Done"
+    "finished": "Done",
+    "closedBadge": "🔒 Done",
+    "projectClosed": "Project finished — this room is read-only"
   },
   "createWorld": {
     "title": "Create a community",
