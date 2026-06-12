@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const AVATAR_EMOJIS = [
@@ -96,6 +97,7 @@ const S = {
 }
 
 export default function EasySetupWizard({ user, onComplete }) {
+  const { t } = useTranslation()
   const [step, setStep]       = useState(1)
   const [nom, setNom]         = useState(user.nom || '')
   const [emoji, setEmoji]     = useState(user.avatar_emoji || '👤')
@@ -120,7 +122,7 @@ export default function EasySetupWizard({ user, onComplete }) {
   }, [step, user.id])
 
   async function saveStep1() {
-    if (!nom.trim()) { setError('Le nom est requis.'); return }
+    if (!nom.trim()) { setError(t('setup.nameRequired')); return }
     setError(''); setSaving(true)
     await api.patch('/auth/me', { nom: nom.trim(), avatar_emoji: emoji, bio })
     setSaving(false)
@@ -149,7 +151,7 @@ export default function EasySetupWizard({ user, onComplete }) {
   }
 
   async function creerPremierMonde() {
-    if (!worldNom.trim()) { setError('Donne un nom à ton monde.'); return }
+    if (!worldNom.trim()) { setError(t('setup.worldNameRequired')); return }
     setError(''); setSaving(true)
     const data = await api.post('/worlds/', {
       nom: worldNom.trim(), description: '', emoji: worldEmoji, couleur: worldCouleur,
@@ -177,10 +179,10 @@ export default function EasySetupWizard({ user, onComplete }) {
 
         {step === 1 && (
           <>
-            <h2 style={S.h2}>Personnalise ton profil</h2>
-            <p style={S.sub}>Comment veux-tu apparaître sur Oria ?</p>
+            <h2 style={S.h2}>{t('setup.step1Title')}</h2>
+            <p style={S.sub}>{t('setup.step1Sub')}</p>
 
-            <label style={S.label}>Avatar</label>
+            <label style={S.label}>{t('setup.avatar')}</label>
             <div style={S.emojiGrid}>
               {AVATAR_EMOJIS.map(e => (
                 <button key={e} style={S.emojiBtn(emoji === e)} onClick={() => setEmoji(e)}>
@@ -189,28 +191,28 @@ export default function EasySetupWizard({ user, onComplete }) {
               ))}
             </div>
 
-            <label style={S.label}>Nom affiché</label>
+            <label style={S.label}>{t('setup.displayName')}</label>
             <input
               style={{ ...S.input, borderColor: error ? 'var(--rouge)' : 'var(--ink-700)' }}
               value={nom}
               onChange={e => { setNom(e.target.value); setError('') }}
-              placeholder="Ton nom ou pseudo"
+              placeholder={t('setup.namePlaceholder')}
               autoFocus
             />
             {error && <p style={{ color: 'var(--rouge)', fontSize: '12px', marginTop: '-14px', marginBottom: '14px' }}>{error}</p>}
 
-            <label style={S.label}>Bio <span style={{ color: 'var(--ink-650)', fontWeight: 400 }}>(optionnel)</span></label>
+            <label style={S.label}>{t('setup.bio')} <span style={{ color: 'var(--ink-650)', fontWeight: 400 }}>{t('setup.optional')}</span></label>
             <textarea
               style={S.textarea}
               value={bio}
               onChange={e => setBio(e.target.value)}
-              placeholder="Quelques mots sur toi…"
+              placeholder={t('setup.bioPlaceholder')}
               maxLength={280}
             />
 
             <div style={S.row}>
               <button style={S.btnPrimary} onClick={saveStep1} disabled={saving}>
-                {saving ? '…' : 'Suivant →'}
+                {saving ? '…' : t('setup.next')}
               </button>
             </div>
           </>
@@ -218,26 +220,26 @@ export default function EasySetupWizard({ user, onComplete }) {
 
         {step === 2 && (
           <>
-            <h2 style={S.h2}>Tes préférences</h2>
-            <p style={S.sub}>Tu pourras modifier ces réglages à tout moment.</p>
+            <h2 style={S.h2}>{t('setup.step2Title')}</h2>
+            <p style={S.sub}>{t('setup.step2Sub')}</p>
 
             <Toggle
-              label="Profil visible dans la Découverte"
-              sub="Les autres utilisateurs peuvent te trouver et te suivre"
+              label={t('setup.togglePublicLabel')}
+              sub={t('setup.togglePublicSub')}
               value={isPublic}
               onChange={setIsPublic}
             />
             <Toggle
-              label="Documents partageables par défaut"
-              sub="Tes nouveaux documents seront partageables avec le réseau"
+              label={t('setup.toggleDocsLabel')}
+              sub={t('setup.toggleDocsSub')}
               value={docsShare}
               onChange={setDocsShare}
             />
 
             <div style={{ ...S.row, marginTop: '24px' }}>
-              <button style={S.btnSecondary} onClick={() => setStep(3)}>Passer</button>
+              <button style={S.btnSecondary} onClick={() => setStep(3)}>{t('setup.skip')}</button>
               <button style={S.btnPrimary} onClick={saveStep2} disabled={saving}>
-                {saving ? '…' : 'Suivant →'}
+                {saving ? '…' : t('setup.next')}
               </button>
             </div>
           </>
@@ -245,8 +247,8 @@ export default function EasySetupWizard({ user, onComplete }) {
 
         {step === 3 && (
           <>
-            <h2 style={S.h2}>Bienvenue sur Oria ! 🎉</h2>
-            <p style={S.sub}>Commence par suivre quelques membres de la communauté.</p>
+            <h2 style={S.h2}>{t('setup.step3Title')}</h2>
+            <p style={S.sub}>{t('setup.step3Sub')}</p>
 
             {suggestions.length > 0 ? (
               suggestions.map(u => (
@@ -260,20 +262,20 @@ export default function EasySetupWizard({ user, onComplete }) {
                     style={S.followBtn(followed.has(u.id))}
                     onClick={() => toggleFollow(u.id)}
                   >
-                    {followed.has(u.id) ? 'Suivi ✓' : 'Suivre'}
+                    {followed.has(u.id) ? t('setup.following') : t('setup.follow')}
                   </button>
                 </div>
               ))
             ) : (
               <p style={{ color: 'var(--text-mut)', fontSize: '13px', marginBottom: '20px', textAlign: 'center' }}>
-                Pas encore de membres publics — tu seras le premier !
+                {t('setup.noMembers')}
               </p>
             )}
 
             <div style={{ ...S.row, marginTop: '24px' }}>
-              <button style={S.btnSecondary} onClick={() => setStep(4)} disabled={saving}>Passer</button>
+              <button style={S.btnSecondary} onClick={() => setStep(4)} disabled={saving}>{t('setup.skip')}</button>
               <button style={S.btnPrimary} onClick={() => setStep(4)} disabled={saving}>
-                {saving ? '…' : 'Suivant →'}
+                {saving ? '…' : t('setup.next')}
               </button>
             </div>
           </>
@@ -281,10 +283,10 @@ export default function EasySetupWizard({ user, onComplete }) {
 
         {step === 4 && (
           <>
-            <h2 style={S.h2}>Crée ton premier monde</h2>
-            <p style={S.sub}>Un monde regroupe tes espaces et tes pièces. Tu pourras en créer d'autres ensuite.</p>
+            <h2 style={S.h2}>{t('setup.step4Title')}</h2>
+            <p style={S.sub}>{t('setup.step4Sub')}</p>
 
-            <label style={S.label}>Emblème</label>
+            <label style={S.label}>{t('setup.emblem')}</label>
             <div style={S.emojiGrid}>
               {WORLD_EMOJIS.map(e => (
                 <button key={e} style={S.emojiBtn(worldEmoji === e)} onClick={() => setWorldEmoji(e)}>
@@ -293,20 +295,20 @@ export default function EasySetupWizard({ user, onComplete }) {
               ))}
             </div>
 
-            <label style={S.label}>Nom du monde</label>
+            <label style={S.label}>{t('setup.worldNameLabel')}</label>
             <input
               style={{ ...S.input, borderColor: error ? 'var(--rouge)' : 'var(--ink-700)' }}
               value={worldNom}
               onChange={e => { setWorldNom(e.target.value); setError('') }}
-              placeholder="Ex. Mon atelier, Ma commune…"
+              placeholder={t('setup.worldNamePlaceholder')}
               autoFocus
             />
             {error && <p style={{ color: 'var(--rouge)', fontSize: '12px', marginTop: '-14px', marginBottom: '14px' }}>{error}</p>}
 
             <div style={{ ...S.row, marginTop: '24px' }}>
-              <button style={S.btnSecondary} onClick={() => finaliser(null)} disabled={saving}>Plus tard</button>
+              <button style={S.btnSecondary} onClick={() => finaliser(null)} disabled={saving}>{t('setup.later')}</button>
               <button style={S.btnPrimary} onClick={creerPremierMonde} disabled={saving}>
-                {saving ? '…' : 'Créer mon monde →'}
+                {saving ? '…' : t('setup.createWorld')}
               </button>
             </div>
           </>
