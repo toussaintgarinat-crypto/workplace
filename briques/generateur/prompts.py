@@ -1,7 +1,9 @@
 import json
 
+from langues import consigne_langue
 
-def prompt_plan_app(audit: dict) -> str:
+
+def prompt_plan_app(audit: dict, langue: str = "fr") -> str:
     nom = audit.get("nom_entreprise", "Entreprise inconnue")
     territoire = audit.get("territoire") or {}
     flux = audit.get("flux") or {}
@@ -79,11 +81,11 @@ Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord a
     - "priorite" : "critique" | "haute" | "normale"
     - "icone" : nom d'icône Bootstrap Icons
 - "message_introduction" : phrase d'accueil personnalisée affichée en haut du dashboard (max 120 caractères)
-"""
+{consigne_langue(langue)}"""
 
 
 def prompt_revue(audit: dict, plan: dict, usage: dict,
-                 nouveaux_docs: list[str] | None = None) -> str:
+                 nouveaux_docs: list[str] | None = None, langue: str = "fr") -> str:
     """Prompt du re-audit post-livraison (S31) : usage réel + audit initial +
     nouveaux documents → proposition d'incrément, à valider avant toute génération."""
     nom = audit.get("nom_entreprise", "Entreprise")
@@ -130,11 +132,11 @@ Produis UNIQUEMENT un JSON avec EXACTEMENT ces clés :
 - "modules_sous_utilises" : liste des modules existants peu/pas utilisés, chacun
   {{"nom", "raison"}} — à confirmer, fusionner ou retirer.
 
-N'invente pas d'usage non mesuré. Si un module est "dormant", dis-le franchement."""
+N'invente pas d'usage non mesuré. Si un module est "dormant", dis-le franchement.{consigne_langue(langue)}"""
 
 
 def prompt_schema_module(nom_entreprise: str, module_nom: str, raison: str,
-                         audit: dict | None = None) -> str:
+                         audit: dict | None = None, langue: str = "fr") -> str:
     """Prompt du schéma fin d'un module proposé (S34) : à partir du nom du module retenu
     pour l'incrément, dérive ses **champs typés** dans le vocabulaire de l'entreprise —
     au lieu d'un schéma CRUD générique."""
@@ -163,4 +165,4 @@ Produis UNIQUEMENT un JSON avec EXACTEMENT ces clés :
     - "type" : un parmi "texte" | "nombre" | "montant" | "date" | "statut"
     - "options" : UNIQUEMENT si type = "statut", 2 à 5 valeurs possibles
 
-N'ajoute aucune autre clé."""
+N'ajoute aucune autre clé.{consigne_langue(langue)}"""

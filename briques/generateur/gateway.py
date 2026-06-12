@@ -5,6 +5,8 @@ import os
 
 import httpx
 
+from langues import consigne_langue
+
 logger = logging.getLogger(__name__)
 
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://host.docker.internal:4001")
@@ -32,12 +34,15 @@ SYSTEM_PROMPT = (
 )
 
 
-async def appeler_llm(user: str) -> dict:
-    """Appelle le Gateway et retourne le JSON parsé. Retente 1 fois si JSON invalide."""
+async def appeler_llm(user: str, langue: str = "fr") -> dict:
+    """Appelle le Gateway et retourne le JSON parsé. Retente 1 fois si JSON invalide.
+
+    `langue` renforce, côté system prompt, la langue des valeurs produites (le prompt
+    utilisateur porte déjà la consigne ; ceci la redouble pour fiabiliser le modèle)."""
     payload = {
         "model": GATEWAY_MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + consigne_langue(langue)},
             {"role": "user", "content": user},
         ],
         "temperature": 0.2,

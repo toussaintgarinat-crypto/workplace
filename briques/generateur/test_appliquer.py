@@ -77,7 +77,7 @@ def run():
     # 6) Schéma fin LLM (S34) : champs spécifiques au lieu du générique.
     import asyncio
 
-    async def faux_schema(prompt):
+    async def faux_schema(prompt, langue="fr"):
         return {"icone": "bi-calendar-x", "champs": [
             {"cle": "salarie", "label": "Salarié", "type": "texte"},
             {"cle": "motif", "label": "Motif", "type": "statut", "options": ["Congé", "Maladie", "RTT"]},
@@ -98,7 +98,7 @@ def run():
     ok += 1
 
     # 7) Repli générique (S34) : LLM en panne → schéma CRUD, source=generique, 0 exception.
-    async def schema_ko(prompt):
+    async def schema_ko(prompt, langue="fr"):
         raise RuntimeError("Gateway indisponible")
     gateway.appeler_llm = schema_ko
     plan8, ajoutes8 = asyncio.run(appliquer.construire_plan_enrichi_llm(PLAN, prop, {"nom_entreprise": "Cabinet"}))

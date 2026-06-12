@@ -4,6 +4,7 @@ import json
 from gateway import appeler_llm
 from gabarit import generer_html
 from prompts import prompt_plan_app
+from langues import normaliser_langue
 
 
 _PLAN_FALLBACK = {
@@ -23,18 +24,22 @@ _PLAN_FALLBACK = {
 
 
 async def generer_app_complete(audit: dict, app_id: str = "", api_base: str = "",
-                               oria: dict | None = None) -> tuple[dict, str]:
+                               oria: dict | None = None, langue: str = "fr") -> tuple[dict, str]:
     """Retourne (plan, html) à partir d'un audit complet.
 
     Si `app_id` + `api_base` sont fournis → app en mode hébergé (persistance serveur) ;
     sinon → mode autonome (localStorage). `oria` (optionnel) = config de la messagerie
-    interne (espace + salons) à embarquer dans l'app."""
+    interne (espace + salons) à embarquer dans l'app. `langue` = langue de l'app livrée
+    (contenu LLM + châssis) ; défaut/repli `fr`."""
+    langue = normaliser_langue(langue)
     try:
-        prompt = prompt_plan_app(audit)
-        plan = await appeler_llm(prompt)
+        prompt = prompt_plan_app(audit, langue)
+        plan = await appeler_llm(prompt, langue)
     except Exception:
+        # Repli heuristique : le LLM est indisponible. Le plan reste en français
+        # (on n'a pas de contenu traduit hors LLM), mais le CHÂSSIS suit la langue.
         plan = _PLAN_FALLBACK.copy()
         plan["nom_app"] = f"Dashboard {audit.get('nom_entreprise', 'Entreprise')}"
 
-    html = generer_html(audit, plan, app_id=app_id, api_base=api_base, oria=oria)
+    html = generer_html(audit, plan, app_id=app_id, api_base=api_base, oria=oria, langue=langue)
     return plan, html

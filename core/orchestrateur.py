@@ -268,12 +268,13 @@ async def _etape_audit(client, audit_base, doc_ids, livraison_id) -> dict:
 
 
 async def _etape_generation(client, gen_base, audit_id, mode, messagerie, livraison_id,
-                            email_client=None, contact_client=None) -> str:
+                            email_client=None, contact_client=None, langue="fr") -> str:
     _maj_etape(livraison_id, "generation", "en_cours")
     r = await client.post(
         f"{gen_base}/generer",
         json={"audit_id": audit_id, "persistance": mode, "messagerie": messagerie,
-              "email_client": email_client, "contact_client": contact_client},
+              "email_client": email_client, "contact_client": contact_client,
+              "langue": langue},
     )
     if r.status_code >= 400:
         raise EchecEtape("generation", f"Générateur a refusé la demande : {r.text}")
@@ -298,9 +299,11 @@ async def _etape_packaging(client, gen_base, app_id, livraison_id) -> dict:
 async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
                            mode: str, messagerie: bool, packager: bool,
                            email_client: str | None = None,
-                           contact_client: str | None = None):
+                           contact_client: str | None = None,
+                           langue: str = "fr"):
     """Enchaîne ETL → Audit → Génération (→ Packaging). Met à jour la livraison
-    à chaque étape ; capture toute erreur en l'attribuant à son étape."""
+    à chaque étape ; capture toute erreur en l'attribuant à son étape.
+    `langue` (S37) = langue de l'app livrée, propagée au générateur."""
     try:
         etl_base = _brique_base(registre, "etl")
         audit_base = _brique_base(registre, "audit")
@@ -315,7 +318,7 @@ async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
             audit = await _etape_audit(client, audit_base, doc_ids, livraison_id)
             app_id = await _etape_generation(
                 client, gen_base, audit["id"], mode, messagerie, livraison_id,
-                email_client, contact_client,
+                email_client, contact_client, langue,
             )
             if packager:
                 await _etape_packaging(client, gen_base, app_id, livraison_id)

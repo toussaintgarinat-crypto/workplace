@@ -124,13 +124,15 @@ def _normaliser_champs(brut) -> list | None:
     return out or None
 
 
-async def _schema_module_llm(audit: dict, nom_entreprise: str, module: dict) -> dict:
+async def _schema_module_llm(audit: dict, nom_entreprise: str, module: dict,
+                             langue: str = "fr") -> dict:
     """Schéma fin d'un module via le LLM (S34). Best-effort : repli silencieux → {}."""
     try:
         from gateway import appeler_llm
         from prompts import prompt_schema_module
         brut = await appeler_llm(
-            prompt_schema_module(nom_entreprise, module["nom"], module["raison"], audit))
+            prompt_schema_module(nom_entreprise, module["nom"], module["raison"], audit, langue),
+            langue)
         champs = _normaliser_champs(brut.get("champs"))
         icone = brut.get("icone") if isinstance(brut.get("icone"), str) else None
         return {"champs": champs, "icone": icone} if champs else {}
@@ -141,11 +143,12 @@ async def _schema_module_llm(audit: dict, nom_entreprise: str, module: dict) -> 
 
 
 async def construire_plan_enrichi_llm(plan: dict, proposition: dict,
-                                      audit: dict | None = None) -> tuple[dict, list]:
+                                      audit: dict | None = None,
+                                      langue: str = "fr") -> tuple[dict, list]:
     """Comme `construire_plan_enrichi`, mais demande au LLM un **schéma fin** par module
     (S34), dans le vocabulaire de l'entreprise. Repli sur le schéma générique si le LLM
     est indisponible — l'application aboutit toujours. `modules_ajoutes` indique la
-    `source` du schéma (`llm` | `generique`).
+    `source` du schéma (`llm` | `generique`). `langue` = langue de l'app (S37).
     """
     plan = dict(plan or {})
     entites = [e for e in (plan.get("entites") or []) if isinstance(e, dict)]
@@ -154,7 +157,7 @@ async def construire_plan_enrichi_llm(plan: dict, proposition: dict,
 
     ajoutes = []
     for m in nouveaux:
-        fin = await _schema_module_llm(audit or {}, nom_ent, m)
+        fin = await _schema_module_llm(audit or {}, nom_ent, m, langue)
         source = "llm" if fin.get("champs") else "generique"
         entites.append(_entite_increment(m["id"], m["nom"], m["raison"],
                                          champs=fin.get("champs"), icone=fin.get("icone")))

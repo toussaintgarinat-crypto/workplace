@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from generateur import generer_app_complete
 from gabarit import entites_du_plan, generer_html
+from langues import normaliser_langue
 import oria_provisioning
 import client_provisioning
 import pont_crm
@@ -91,6 +92,9 @@ def _init_db():
             # Dernière revue « app vivante » (S31) : {statut, proposition, date}. Null tant
             # qu'aucune revue n'a tourné. La proposition est à valider avant toute génération.
             conn.execute("ALTER TABLE apps ADD COLUMN revue TEXT")
+        if "langue" not in cols:
+            # Langue de l'app livrée (S37), fixée à la livraison. Défaut/repli 'fr'.
+            conn.execute("ALTER TABLE apps ADD COLUMN langue TEXT DEFAULT 'fr'")
         conn.commit()
 
 
@@ -151,7 +155,8 @@ def _provisionner_messagerie(audit: dict) -> dict | None:
 
 async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie: bool,
                                  email_client: str | None = None,
-                                 contact_client: str | None = None):
+                                 contact_client: str | None = None,
+                                 langue: str = "fr"):
     try:
         hebergee = mode == "hebergee"
         api_base = DONNEES_URL_PUBLIQUE if hebergee else ""
@@ -163,7 +168,8 @@ async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie
             oria_cfg = await anyio.to_thread.run_sync(_provisionner_messagerie, audit)
 
         plan, html = await generer_app_complete(
-            audit, app_id=(app_id if hebergee else ""), api_base=api_base, oria=oria_cfg
+            audit, app_id=(app_id if hebergee else ""), api_base=api_base, oria=oria_cfg,
+            langue=langue,
         )
         if hebergee:
             await _semer_donnees(app_id, plan)
@@ -215,6 +221,9 @@ class DemandeGeneration(BaseModel):
     # rattache à son espace Oria. Best-effort (n'interrompt pas la génération).
     email_client: str | None = None
     contact_client: str | None = None
+    # Langue de l'app livrée (S37), fixée à la livraison. 'fr' (défaut) | 'en' | 'es' | 'ar'.
+    # Toute valeur inconnue retombe sur 'fr' (repli honnête).
+    langue: str = "fr"
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -233,21 +242,24 @@ async def generer(demande: DemandeGeneration, background_tasks: BackgroundTasks)
         raise HTTPException(400, f"L'audit n'est pas terminé (statut : {audit.get('statut')})")
 
     mode = "hebergee" if demande.persistance == "hebergee" else "autonome"
+    langue = normaliser_langue(demande.langue)
     app_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     nom = audit.get("nom_entreprise", "Entreprise")
 
     with _connexion() as conn:
         conn.execute(
-            "INSERT INTO apps (id, date_creation, audit_id, nom_entreprise, statut, mode) VALUES (?,?,?,?,?,?)",
-            (app_id, now, demande.audit_id, nom, "en_cours", mode),
+            "INSERT INTO apps (id, date_creation, audit_id, nom_entreprise, statut, mode, langue) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (app_id, now, demande.audit_id, nom, "en_cours", mode, langue),
         )
         conn.commit()
 
     background_tasks.add_task(_generer_en_background, app_id, audit, mode,
                               demande.messagerie, demande.email_client,
-                              demande.contact_client)
+                              demande.contact_client, langue)
     return {"id": app_id, "statut": "en_cours", "nom_entreprise": nom, "mode": mode,
+            "langue": langue,
             "messagerie": bool(mode == "hebergee" and demande.messagerie),
             "compte_client": bool(demande.email_client)}
 
@@ -266,7 +278,7 @@ def lire_app(app_id: str):
     with _connexion() as conn:
         row = conn.execute(
             "SELECT id, date_creation, audit_id, nom_entreprise, plan, statut, erreur, mode, "
-            "oria_world_id, oria_salons, client_onboarding, partage_forge FROM apps WHERE id=?",
+            "langue, oria_world_id, oria_salons, client_onboarding, partage_forge FROM apps WHERE id=?",
             (app_id,),
         ).fetchone()
     if not row:
@@ -531,7 +543,7 @@ async def appliquer_revue(app_id: str):
     """
     with _connexion() as conn:
         row = conn.execute(
-            "SELECT audit_id, plan, mode, oria_world_id, oria_salons, revue FROM apps WHERE id=?",
+            "SELECT audit_id, plan, mode, oria_world_id, oria_salons, revue, langue FROM apps WHERE id=?",
             (app_id,),
         ).fetchone()
     if not row:
@@ -557,8 +569,9 @@ async def appliquer_revue(app_id: str):
                           "(proposition sans module ou incrément déjà appliqué)"}
 
     # Schéma fin par module via le LLM (S34), repli générique si Gateway KO.
+    langue = normaliser_langue(row["langue"])
     audit = await _charger_audit(row["audit_id"])
-    plan_enrichi, ajoutes = await appliquer.construire_plan_enrichi_llm(plan, proposition, audit)
+    plan_enrichi, ajoutes = await appliquer.construire_plan_enrichi_llm(plan, proposition, audit, langue)
     hebergee = (row["mode"] or "autonome") == "hebergee"
     salons = json.loads(row["oria_salons"]) if row["oria_salons"] else []
     oria_cfg = _oria_cfg_depuis_app(row["oria_world_id"], salons)
@@ -567,7 +580,7 @@ async def appliquer_revue(app_id: str):
         audit, plan_enrichi,
         app_id=(app_id if hebergee else ""),
         api_base=(DONNEES_URL_PUBLIQUE if hebergee else ""),
-        oria=oria_cfg,
+        oria=oria_cfg, langue=langue,
     )
 
     rev["statut"] = "appliquee"

@@ -8,6 +8,8 @@ Produit une app à la fois :
 """
 import json
 
+from langues import textes, textes_js, normaliser_langue
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -747,6 +749,7 @@ def _section_glossaire(glossaire: list) -> str:
 _SCRIPT = r"""
 const SLUG = "__SLUG__";
 const ENTITES = __ENTITES__;
+const T = __TEXTES__;   // libellés statiques localisés (langue fixée à la génération)
 
 // Persistance : si une API est injectée (mode hébergé), les données vivent sur le
 // serveur (brique « donnees ») → multi-utilisateur. Sinon (mode autonome), repli sur
@@ -789,7 +792,7 @@ async function _echangeCode(code){
     code:code, redirect_uri:_REDIRECT, code_verifier:_SS.getItem('wp_app_verifier') || '' });
   const r = await fetch(_kc('/protocol/openid-connect/token'),
     { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
-  if (!r.ok) throw new Error('Échec de connexion (' + r.status + ')');
+  if (!r.ok) throw new Error(T.js_echec_connexion + ' (' + r.status + ')');
   const d = await r.json();
   AUTH_TOKEN = d.access_token; _SS.setItem('wp_app_token', AUTH_TOKEN);
   window.__WP_TOKEN = AUTH_TOKEN; window.__WP_AUTH = AUTH;   // réutilisés par la messagerie
@@ -801,9 +804,9 @@ function _overlayAuth(msg){
     o.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--wp)';
     o.innerHTML = '<div style="background:#fff;border-radius:14px;padding:2.4rem 2.6rem;max-width:380px;text-align:center;box-shadow:0 14px 44px rgba(0,0,0,.28)">'
       + '<i class="bi bi-shield-lock" style="font-size:2.3rem;color:var(--wp)"></i>'
-      + '<h5 class="mt-2 mb-1" style="font-weight:700">Connexion requise</h5>'
-      + '<p class="text-muted small mb-3">Accès réservé aux comptes de l\'entreprise.</p>'
-      + '<button class="btn btn-wp w-100" id="wpAuthBtn"><i class="bi bi-box-arrow-in-right me-1"></i>Se connecter</button>'
+      + '<h5 class="mt-2 mb-1" style="font-weight:700">' + T.js_connexion_requise + '</h5>'
+      + '<p class="text-muted small mb-3">' + T.js_acces_reserve + '</p>'
+      + '<button class="btn btn-wp w-100" id="wpAuthBtn"><i class="bi bi-box-arrow-in-right me-1"></i>' + T.js_se_connecter + '</button>'
       + '<div id="wpAuthErr" class="text-danger small mt-2"></div></div>';
     document.body.appendChild(o);
     document.getElementById('wpAuthBtn').onclick = _login;
@@ -816,8 +819,8 @@ function _barreUtilisateur(nom){
   if (!nav || document.getElementById('wpUserBox')) return;
   const box = document.createElement('div');
   box.id = 'wpUserBox'; box.className = 'px-3 py-2'; box.style.cssText = 'border-top:1px solid rgba(255,255,255,.2)';
-  box.innerHTML = '<div class="small text-truncate" style="color:rgba(255,255,255,.9)"><i class="bi bi-person-circle me-1"></i>' + esc(nom || 'Utilisateur') + '</div>'
-    + '<a href="#" id="wpLogout" class="small" style="color:rgba(255,255,255,.6)"><i class="bi bi-box-arrow-right me-1"></i>Se déconnecter</a>';
+  box.innerHTML = '<div class="small text-truncate" style="color:rgba(255,255,255,.9)"><i class="bi bi-person-circle me-1"></i>' + esc(nom || T.js_utilisateur) + '</div>'
+    + '<a href="#" id="wpLogout" class="small" style="color:rgba(255,255,255,.6)"><i class="bi bi-box-arrow-right me-1"></i>' + T.js_se_deconnecter + '</a>';
   nav.appendChild(box);
   document.getElementById('wpLogout').onclick = function(e){
     e.preventDefault(); _SS.removeItem('wp_app_token');
@@ -910,8 +913,8 @@ const Store = {
 
 function fmt(ch, v){
   if (v == null || v === '') return '<span class="text-muted">—</span>';
-  if (ch.type === 'montant'){ const n = Number(v); return isNaN(n) ? esc(v) : n.toLocaleString('fr-FR') + ' €'; }
-  if (ch.type === 'nombre'){ const n = Number(v); return isNaN(n) ? esc(v) : n.toLocaleString('fr-FR'); }
+  if (ch.type === 'montant'){ const n = Number(v); return isNaN(n) ? esc(v) : n.toLocaleString(T.locale) + ' €'; }
+  if (ch.type === 'nombre'){ const n = Number(v); return isNaN(n) ? esc(v) : n.toLocaleString(T.locale); }
   if (ch.type === 'statut') return '<span class="badge bg-wp-light text-wp border">' + esc(v) + '</span>';
   return esc(v);
 }
@@ -923,13 +926,13 @@ async function renderTable(id){
   try { rows = await Store.list(id); }
   catch(e){
     tb.innerHTML = '<tr><td colspan="' + (ent.champs.length + 1) + '" class="text-center text-danger py-4">'
-      + '<i class="bi bi-exclamation-triangle me-1"></i>Serveur de données injoignable. Vérifiez que la brique « donnees » est démarrée.</td></tr>';
+      + '<i class="bi bi-exclamation-triangle me-1"></i>' + T.js_serveur_injoignable + '</td></tr>';
     return;
   }
   _cache[id] = rows;
   const cnt = document.getElementById('cnt-' + id); if (cnt) cnt.textContent = rows.length;
   if (!rows.length){
-    tb.innerHTML = '<tr><td colspan="' + (ent.champs.length + 1) + '" class="text-center text-muted fst-italic py-4">Aucun enregistrement — cliquez sur « Ajouter ».</td></tr>';
+    tb.innerHTML = '<tr><td colspan="' + (ent.champs.length + 1) + '" class="text-center text-muted fst-italic py-4">' + T.js_aucun_enregistrement + '</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(r =>
@@ -942,8 +945,8 @@ async function renderTable(id){
 }
 
 async function supprimer(id, rid){
-  if (!confirm('Supprimer cet enregistrement ?')) return;
-  try { await Store.remove(id, rid); } catch(e){ alert('Échec de la suppression : ' + e.message); return; }
+  if (!confirm(T.js_confirmer_suppression)) return;
+  try { await Store.remove(id, rid); } catch(e){ alert(T.js_echec_suppression + ' : ' + e.message); return; }
   renderTable(id);
 }
 
@@ -969,7 +972,7 @@ function _remplirModal(ent, valeurs){
 function ajouter(id){
   const ent = ENTITES.find(e => e.id === id); if (!ent) return;
   _entCourante = id; _editId = null;
-  document.getElementById('modalTitre').textContent = 'Nouveau : ' + ent.nom;
+  document.getElementById('modalTitre').textContent = T.prefixe_nouveau + ent.nom;
   _remplirModal(ent, null);
 }
 
@@ -977,7 +980,7 @@ function modifier(id, rid){
   const ent = ENTITES.find(e => e.id === id); if (!ent) return;
   const rec = (_cache[id] || []).find(x => x._id === rid); if (!rec) return;
   _entCourante = id; _editId = rid;
-  document.getElementById('modalTitre').textContent = 'Modifier : ' + ent.nom;
+  document.getElementById('modalTitre').textContent = T.prefixe_modifier + ent.nom;
   _remplirModal(ent, rec);
 }
 
@@ -989,7 +992,7 @@ async function enregistrer(){
   try {
     if (_editId) await Store.update(_entCourante, _editId, obj);
     else await Store.create(_entCourante, obj);
-  } catch(e){ alert('Échec de l\'enregistrement : ' + e.message); if (btn) btn.disabled = false; return; }
+  } catch(e){ alert(T.js_echec_enregistrement + ' : ' + e.message); if (btn) btn.disabled = false; return; }
   if (btn) btn.disabled = false;
   _modal.hide();
   renderTable(_entCourante);
@@ -1001,14 +1004,14 @@ function renderPareto(){
   if (!data || !ctx || !window.Chart) return;
   const aTemps = Array.isArray(data.temps) && data.temps.some(v => v != null);
   const datasets = [
-    { type: 'bar', label: 'Part du CA (%)', data: data.parts, yAxisID: 'y',
+    { type: 'bar', label: T.js_pareto_part_ca, data: data.parts, yAxisID: 'y',
       backgroundColor: 'rgba(13,110,253,.65)', order: 3 }
   ];
   if (aTemps) datasets.push(
-    { type: 'bar', label: 'Part du temps (%)', data: data.temps, yAxisID: 'y',
+    { type: 'bar', label: T.js_pareto_part_temps, data: data.temps, yAxisID: 'y',
       backgroundColor: 'rgba(220,53,69,.55)', order: 2 });
   datasets.push(
-    { type: 'line', label: 'Cumul CA (%)', data: data.cumul, yAxisID: 'y',
+    { type: 'line', label: T.js_pareto_cumul_ca, data: data.cumul, yAxisID: 'y',
       borderColor: '#198754', backgroundColor: '#198754', tension: .3, order: 1 });
   new Chart(ctx, {
     data: { labels: data.labels, datasets },
@@ -1071,28 +1074,31 @@ def _entete(titre, icone, sous_titre=""):
 
 @brique
 def _b_tableau_bord(ctx):
-    html = (_entete(f"Tableau de bord — {ctx['nom']}", "bi-speedometer2", ctx["sous_titre"])
+    T = ctx["T"]
+    html = (_entete(f"{T['entete_tableau_bord']}{ctx['nom']}", "bi-speedometer2", ctx["sous_titre"])
             + _section_resume(ctx["resume"], ctx["message"])
             + _section_kpis(ctx["kpis"])
             + _section_pareto(ctx["pareto_lignes"], ctx["pareto_base"])
             + _section_actions(ctx["actions"]))
-    return [_vue("resume", "Tableau de bord", "bi-speedometer2", "pilotage", html, actif=True)]
+    return [_vue("resume", T["vue_tableau_bord"], "bi-speedometer2", "pilotage", html, actif=True)]
 
 
 @brique
 def _b_application_proposee(ctx):
+    T = ctx["T"]
     modules = _section_modules_proposes(ctx["entites"], ctx["navigation"])
     moscow = _section_moscow(ctx["moscow"])
     if not (modules or moscow):
         return []
-    html = (_entete("Application sur-mesure proposée", "bi-window-stack",
+    html = (_entete(T["entete_app_proposee"], "bi-window-stack",
                     f"Les modules générés pour {ctx['nom']} et les fonctionnalités priorisées (MoSCoW).")
             + modules + moscow)
-    return [_vue("app", "Application proposée", "bi-window-stack", "pilotage", html)]
+    return [_vue("app", T["vue_app_proposee"], "bi-window-stack", "pilotage", html)]
 
 
 @brique
 def _b_outils_crud(ctx):
+    T = ctx["T"]
     vues = []
     for e in ctx["entites"]:
         thead = "".join(f"<th>{_s(c['label'])}</th>" for c in e["champs"])
@@ -1102,11 +1108,11 @@ def _b_outils_crud(ctx):
           <span class="badge bg-wp-light text-wp ms-2" id="cnt-{e['id']}">0</span></h4>
         <p class="text-muted mb-0">{_s(e['description'], '')} <span class="small note-stockage"></span></p>
       </div>
-      <button class="btn btn-wp" onclick="ajouter('{e['id']}')"><i class="bi bi-plus-lg me-1"></i>Ajouter</button>
+      <button class="btn btn-wp" onclick="ajouter('{e['id']}')"><i class="bi bi-plus-lg me-1"></i>{T['ajouter']}</button>
     </div>
     <div class="card"><div class="card-body p-0"><div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
-        <thead class="table-light"><tr>{thead}<th class="text-end">Actions</th></tr></thead>
+        <thead class="table-light"><tr>{thead}<th class="text-end">{T['actions']}</th></tr></thead>
         <tbody id="tb-{e['id']}"></tbody>
       </table>
     </div></div></div>"""
@@ -1129,8 +1135,9 @@ def _b_territoire(ctx):
                  f'<div class="col-md-6"><div class="card mb-4"><div class="card-header fw-bold"><i class="bi bi-calendar-event me-2"></i>Événements clés</div><div class="card-body">{_liste(ev)}</div></div></div>'
                  f'<div class="col-md-6"><div class="card mb-4"><div class="card-header fw-bold"><i class="bi bi-collection me-2"></i>Agrégats métier</div><div class="card-body">{_liste(ag)}</div></div></div>'
                  f'</div>')
-    html = _entete("Territoire de l'entreprise", "bi-map") + bc + sh + gl + extra
-    return [_vue("territoire", "Territoire", "bi-map", "analyse", html)]
+    T = ctx["T"]
+    html = _entete(T["entete_territoire"], "bi-map") + bc + sh + gl + extra
+    return [_vue("territoire", T["vue_territoire"], "bi-map", "analyse", html)]
 
 
 @brique
@@ -1139,8 +1146,9 @@ def _b_flux(ctx):
     proc = _section_processus(ctx["processus_cles"])
     if not (vsm or proc):
         return []
-    return [_vue("flux", "Flux", "bi-arrow-left-right", "analyse",
-                 _entete("Flux & Processus", "bi-arrow-left-right") + vsm + proc)]
+    T = ctx["T"]
+    return [_vue("flux", T["vue_flux"], "bi-arrow-left-right", "analyse",
+                 _entete(T["entete_flux"], "bi-arrow-left-right") + vsm + proc)]
 
 
 @brique
@@ -1148,8 +1156,9 @@ def _b_problemes(ctx):
     ish = _section_ishikawa(ctx["ishikawa"])
     if not ish:
         return []
-    return [_vue("problemes", "Problèmes", "bi-bug", "analyse",
-                 _entete("Analyse des problèmes", "bi-bug") + ish)]
+    T = ctx["T"]
+    return [_vue("problemes", T["vue_problemes"], "bi-bug", "analyse",
+                 _entete(T["entete_problemes"], "bi-bug") + ish)]
 
 
 @brique
@@ -1159,8 +1168,9 @@ def _b_priorites(ctx):
     chemin = _section_chemin_critique(ctx["chemin"])
     if not (swot or okrs or chemin):
         return []
-    return [_vue("priorites", "Priorités", "bi-flag", "analyse",
-                 _entete("Priorités & Roadmap", "bi-flag") + swot + okrs + chemin)]
+    T = ctx["T"]
+    return [_vue("priorites", T["vue_priorites"], "bi-flag", "analyse",
+                 _entete(T["entete_priorites"], "bi-flag") + swot + okrs + chemin)]
 
 
 # ── Auto-decouverte de briques externes (deposer un .py = nouvelle brique) ─────────
@@ -1188,15 +1198,17 @@ _charger_briques_externes()
 
 # ── Contexte partage fourni a chaque brique ──────────────────────────────────────
 
-def _construire_contexte(audit: dict, plan: dict) -> dict:
+def _construire_contexte(audit: dict, plan: dict, langue: str = "fr") -> dict:
     nom = _s(audit.get("nom_entreprise"), "Entreprise")
     territoire = _d(audit.get("territoire"))
     flux = _d(audit.get("flux"))
     problemes = _d(audit.get("problemes"))
     priorites = _d(audit.get("priorites"))
     ddd = _d(territoire.get("ddd"))
+    langue = normaliser_langue(langue)
+    T = textes(langue)
     return {
-        "audit": audit, "plan": plan, "nom": nom,
+        "audit": audit, "plan": plan, "nom": nom, "langue": langue, "T": T,
         "date_audit": _s(audit.get("date_audit"), "")[:10],
         "slug": "".join(c for c in nom.lower() if c.isalnum()) or "entreprise",
         "territoire": territoire, "flux": flux, "problemes": problemes, "priorites": priorites,
@@ -1220,8 +1232,8 @@ def _construire_contexte(audit: dict, plan: dict) -> dict:
         "actions": _l(plan.get("actions_immediates")),
         "secteur": plan.get("secteur", ""),
         "nom_app": plan.get("nom_app", nom + " — Dashboard"),
-        "sous_titre": plan.get("sous_titre", "Tableau de bord stratégique"),
-        "message": plan.get("message_introduction", "Bienvenue dans votre tableau de bord " + nom),
+        "sous_titre": plan.get("sous_titre", T["defaut_sous_titre"]),
+        "message": plan.get("message_introduction", T["defaut_message"] + " " + nom),
         "navigation": _l(plan.get("navigation")),
         "entites": _entites_normalisees(plan.get("entites")),
         "pareto_lignes": None, "pareto_base": None,
@@ -1239,13 +1251,16 @@ def entites_du_plan(plan: dict) -> list:
 
 
 def generer_html(audit: dict, plan: dict, app_id: str = "", api_base: str = "",
-                 oria: dict | None = None) -> str:
+                 oria: dict | None = None, langue: str = "fr") -> str:
     """Génère l'app. Si `app_id` et `api_base` sont fournis → mode hébergé (persistance
     serveur via la brique « donnees ») ; sinon → mode autonome (localStorage).
-    `oria` (optionnel) = config de la messagerie interne, lue par la brique_app messagerie."""
+    `oria` (optionnel) = config de la messagerie interne, lue par la brique_app messagerie.
+    `langue` = langue du châssis (libellés statiques) ; défaut/repli `fr`."""
     audit = _d(audit)
     plan = _d(plan)
-    ctx = _construire_contexte(audit, plan)
+    langue = normaliser_langue(langue)
+    ctx = _construire_contexte(audit, plan, langue)
+    T = ctx["T"]
     ctx["oria"] = oria
     ctx["pareto_lignes"], ctx["pareto_base"] = _pareto_compute(ctx["repartition_ca"])
 
@@ -1256,8 +1271,8 @@ def generer_html(audit: dict, plan: dict, app_id: str = "", api_base: str = "",
         except Exception as e:
             print("[gabarit] brique ignoree (" + getattr(construire, "__name__", "?") + "): " + str(e))
     if not vues:
-        vues = [_vue("resume", "Tableau de bord", "bi-speedometer2", "pilotage",
-                     _entete("Tableau de bord — " + ctx["nom"], "bi-speedometer2"), actif=True)]
+        vues = [_vue("resume", T["vue_tableau_bord"], "bi-speedometer2", "pilotage",
+                     _entete(T["entete_tableau_bord"] + ctx["nom"], "bi-speedometer2"), actif=True)]
 
     actif_id = next((v["id"] for v in vues if v.get("actif")), vues[0]["id"])
 
@@ -1266,15 +1281,17 @@ def generer_html(audit: dict, plan: dict, app_id: str = "", api_base: str = "",
         return (f'<li class="nav-item"><a class="nav-link {cls}" href="#" '
                 f'onclick="afficher(\'{v["id"]}\', this)"><i class="bi {v["icone"]}"></i> {_s(v["label"])}</a></li>')
 
+    cat_ordre = [("pilotage", T["cat_pilotage"]), ("outils", T["cat_outils"]),
+                 ("analyse", T["cat_analyse"])]
     sidebar = ""
-    cats_connues = set(c for c, _ in _CAT_ORDRE)
-    for cat, titre in _CAT_ORDRE:
+    cats_connues = set(c for c, _ in cat_ordre)
+    for cat, titre in cat_ordre:
         groupe = [v for v in vues if v["categorie"] == cat]
         if groupe:
             sidebar += f'<li class="nav-title">{titre}</li>' + "".join(_lien(v) for v in groupe)
     autres = [v for v in vues if v["categorie"] not in cats_connues]
     if autres:
-        sidebar += '<li class="nav-title">Extensions</li>' + "".join(_lien(v) for v in autres)
+        sidebar += f'<li class="nav-title">{T["cat_extensions"]}</li>' + "".join(_lien(v) for v in autres)
 
     sections = ""
     for v in vues:
@@ -1283,15 +1300,21 @@ def generer_html(audit: dict, plan: dict, app_id: str = "", api_base: str = "",
 
     script = (_SCRIPT.replace("__SLUG__", ctx["slug"])
               .replace("__ENTITES__", json.dumps(ctx["entites"], ensure_ascii=False))
+              .replace("__TEXTES__", json.dumps(textes_js(langue), ensure_ascii=False))
               .replace("__API_BASE__", api_base or "")
               .replace("__APP_ID__", app_id or ""))
 
     return (_SHELL
+            .replace("__LANG__", langue)
             .replace("__NOMAPP__", _s(ctx["nom_app"]))
             .replace("__COULEUR2__", ctx["couleur2"])
             .replace("__COULEUR__", ctx["couleur"])
             .replace("__SECTEUR__", _s(ctx["secteur"], ""))
             .replace("__DATE__", ctx["date_audit"])
+            .replace("__GENERE_PAR__", T["genere_par"])
+            .replace("__MODAL_NOUVEAU__", T["modal_nouveau"])
+            .replace("__ANNULER__", T["annuler"])
+            .replace("__ENREGISTRER__", T["enregistrer"])
             .replace("__SIDEBAR__", sidebar)
             .replace("__SECTIONS__", sections)
             .replace("__SCRIPT__", script))
@@ -1300,7 +1323,7 @@ def generer_html(audit: dict, plan: dict, app_id: str = "", api_base: str = "",
 # ── Coquille HTML (template a placeholders ; pas une f-string : accolades CSS litterales) ──
 
 _SHELL = """<!DOCTYPE html>
-<html lang="fr">
+<html lang="__LANG__">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1353,7 +1376,7 @@ _SHELL = """<!DOCTYPE html>
     </ul>
   </div>
   <div class="px-3 py-2 text-center" style="border-top:1px solid rgba(255,255,255,.2)">
-    <small style="color:rgba(255,255,255,.5);font-size:.7rem">Généré par Workplace<br>__DATE__</small>
+    <small style="color:rgba(255,255,255,.5);font-size:.7rem">__GENERE_PAR__<br>__DATE__</small>
   </div>
 </nav>
 
@@ -1364,12 +1387,12 @@ __SECTIONS__
 <div class="modal fade" id="formModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title" id="modalTitre">Nouveau</h5>
+      <div class="modal-header"><h5 class="modal-title" id="modalTitre">__MODAL_NOUVEAU__</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body" id="modalBody"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
-        <button type="button" id="btnEnregistrer" class="btn btn-wp" onclick="enregistrer()"><i class="bi bi-check-lg me-1"></i>Enregistrer</button>
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">__ANNULER__</button>
+        <button type="button" id="btnEnregistrer" class="btn btn-wp" onclick="enregistrer()"><i class="bi bi-check-lg me-1"></i>__ENREGISTRER__</button>
       </div>
     </div>
   </div>
