@@ -1,0 +1,9 @@
+# Brique ecoute (S42) — dépendances épinglées. Python 3.11 OBLIGATOIRE : onnxruntime
+# et numpy n'ont pas de wheels fiables en 3.14 (garde-fou mesuré au POC S41) → l'image
+# est python:3.11-slim.
+openwakeword==0.6.0
+onnxruntime==1.23.2
+numpy==2.4.6
+scipy==1.17.1
+fastapi==0.115.6
+uvicorn[standard]==0.34.0

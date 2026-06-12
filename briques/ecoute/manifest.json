@@ -1,0 +1,18 @@
+{
+  "nom": "ecoute",
+  "version": "0.1.0",
+  "description": "Détection de mot-clé « comme Siri » (openWakeWord, ONNX/CPU). Le navigateur streame le micro par WebSocket, la brique signale chaque réveil ; le Cœur capte alors la commande et l'envoie à l'assistant. POC prouvé S41, brique S42.",
+  "role": "ecoute",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/ecoute",
+  "port": 5800,
+  "url_sante": "http://host.docker.internal:5800/sante",
+  "depends_on": [],
+  "offre": [
+    "mot_cle_vocal",
+    "flux_micro_websocket"
+  ],
+  "besoin": [],
+  "taches": []
+}

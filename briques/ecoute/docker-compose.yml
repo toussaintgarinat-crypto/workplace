@@ -1,0 +1,24 @@
+services:
+  ecoute:
+    build: .
+    container_name: workplace_ecoute
+    image: workplace/ecoute:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique (non requis ici).
+      - path: ../../.env
+        required: false
+    ports:
+      - "5800:5800"
+    environment:
+      - PORT=5800
+      # Un modèle = un nom. Défaut : le hey_jarvis pré-entraîné prouvé au POC S41.
+      # Le palier payant S43 montera un modèle entraîné par marque (même variable).
+      - WAKEWORD_MODELE=hey_jarvis_v0.1
+      - WAKEWORD_SEUIL=0.5
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5800/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
