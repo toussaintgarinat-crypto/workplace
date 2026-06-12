@@ -10,7 +10,15 @@
     "close": "Cerrar",
     "error": "Error",
     "back": "← Volver",
-    "add": "Agregar"
+    "add": "Agregar",
+    "name": "Nombre",
+    "description": "Descripción",
+    "optional": "(opcional)",
+    "createArrow": "Crear →",
+    "working": "...",
+    "choose": "-- Elegir --",
+    "color": "Color",
+    "emoji": "Emoji"
   },
   "login": {
     "tagline": "Tu oficina digital",
@@ -75,5 +83,97 @@
     "encryptedE2EE": "Mensajes cifrados E2EE",
     "coinsTitle": "Monedas de miembros",
     "finished": "Terminado"
+  },
+  "createWorld": {
+    "title": "Crear una comunidad",
+    "emblem": "Emblema",
+    "nameLabel": "Nombre de la comunidad",
+    "namePlaceholder": "Ayuntamiento de Madrid, Concejo de Lyon...",
+    "descPlaceholder": "Describe tu comunidad..."
+  },
+  "createBuilding": {
+    "title": "Agregar un servicio municipal",
+    "typeLabel": "Tipo de servicio",
+    "maisonLabel": "Sede central",
+    "maisonDesc": "Sede principal, recepción, administración general",
+    "siteLabel": "Dirección",
+    "siteDesc": "Servicio temático: Finanzas, RR. HH., Urbanismo...",
+    "immeubleLabel": "Delegación",
+    "immeubleDesc": "Delegación de barrio o servicio local",
+    "maisonPlaceholder": "Sede principal",
+    "sitePlaceholder": "Dirección de finanzas",
+    "immeublePlaceholder": "Delegación norte",
+    "descPlaceholder": "Misión de este servicio..."
+  },
+  "createQuartier": {
+    "title": "Crear un distrito",
+    "nameLabel": "Nombre del distrito",
+    "namePlaceholder": "Holding A, Residencial, Tech...",
+    "descPlaceholder": "¿Para qué sirve este distrito?"
+  },
+  "createLink": {
+    "title": "🕸 Crear un vínculo",
+    "sourceLabel": "Comunidad origen (A)",
+    "typeLabel": "Tipo de relación",
+    "targetLabel": "Comunidad destino (B)",
+    "pctLabel": "Porcentaje",
+    "pctPlaceholder": "ej.: 51",
+    "filialeLabel": "Comunidad miembro",
+    "filialeDesc": "A posee B",
+    "partenaireLabel": "Socio",
+    "partenaireDesc": "Colaboración",
+    "clientLabel": "Contratante",
+    "clientDesc": "A es cliente de B",
+    "fournisseurLabel": "Proveedor",
+    "fournisseurDesc": "A es proveedor de B",
+    "associationLabel": "Agrupación / Mancomunidad",
+    "associationDesc": "Vínculo asociativo",
+    "errSelectBoth": "Selecciona las dos comunidades.",
+    "errDifferent": "Las dos comunidades deben ser diferentes.",
+    "errCreate": "Error al crear el vínculo.",
+    "submit": "Crear el vínculo"
+  },
+  "invite": {
+    "title": "Invitar a {{world}}",
+    "hint": "Comparte este enlace. Cualquiera con él podrá unirse a tu comunidad.",
+    "generating": "Generando...",
+    "copy": "Copiar",
+    "copied": "✓ ¡Copiado!",
+    "newLink": "Nuevo enlace"
+  },
+  "editBuilding": {
+    "title": "Editar el espacio"
+  },
+  "editQuartier": {
+    "title": "Editar el distrito"
+  },
+  "addRoom": {
+    "title": "Agregar una sala",
+    "subtitle": " en {{building}}",
+    "typeLabel": "Tipo de sala",
+    "texteLabel": "Texto",
+    "texteDesc": "Chat escrito en tiempo real",
+    "vocalLabel": "Voz",
+    "vocalDesc": "Llamada de voz/vídeo",
+    "mixteLabel": "Mixta",
+    "mixteDesc": "Chat + voz en la misma sala",
+    "iconLabel": "Icono",
+    "nameLabel": "Nombre de la sala",
+    "namePlaceholder": "Domótica, Archivos, Estudio...",
+    "floorLabel": "Planta",
+    "floorGround": "Planta baja",
+    "floorN": "Planta {{n}}",
+    "newFloor": "Nueva planta ({{n}})",
+    "accessLabel": "Restricción de acceso",
+    "libreLabel": "Libre",
+    "libreDesc": "Todo el mundo",
+    "cadenasLabel": "Bloqueada",
+    "cadenasDesc": "Visible pero bloqueada",
+    "cacheLabel": "Oculta",
+    "cacheDesc": "Invisible sin suscripción",
+    "subsLabel": "Suscripciones requeridas",
+    "subsHint": " (al menos una)",
+    "noSubs": "No hay ningún nivel de suscripción definido. Crea uno con el botón 💳 en la barra del mundo.",
+    "submit": "Agregar →"
   }
 }

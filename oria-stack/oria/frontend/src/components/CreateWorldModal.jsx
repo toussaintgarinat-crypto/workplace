@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const EMOJIS   = ['🏛','🏙','🌆','🏘','⚜️','🗺','📋','🎖','🏟','🌇','🏫','🗼']
 const COULEURS = ['var(--or-600)','var(--or-600)','#0d47a1','#1565c0','var(--vert)','#FEE75C','#E63946','#6c757d']
 
 export default function CreateWorldModal({ onCree, onFermer }) {
+  const { t } = useTranslation()
   const [nom, setNom]         = useState('')
   const [desc, setDesc]       = useState('')
   const [emoji, setEmoji]     = useState('🏛')
@@ -23,16 +25,16 @@ export default function CreateWorldModal({ onCree, onFermer }) {
   return (
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-titre">Créer une commune</h2>
+        <h2 className="modal-titre">{t('createWorld.title')}</h2>
         <form onSubmit={creer}>
-          <label>Emblème</label>
+          <label>{t('createWorld.emblem')}</label>
           <div className="emoji-picker">
             {EMOJIS.map(e => (
               <button key={e} type="button" className={`emoji-btn ${emoji === e ? 'actif' : ''}`}
                 onClick={() => setEmoji(e)}>{e}</button>
             ))}
           </div>
-          <label>Couleur</label>
+          <label>{t('common.color')}</label>
           <div className="couleur-picker">
             {COULEURS.map(c => (
               <button key={c} type="button"
@@ -42,16 +44,16 @@ export default function CreateWorldModal({ onCree, onFermer }) {
               />
             ))}
           </div>
-          <label>Nom de la commune</label>
+          <label>{t('createWorld.nameLabel')}</label>
           <input value={nom} onChange={e => setNom(e.target.value)}
-            placeholder="Mairie de Paris, Commune de Lyon..." autoFocus />
-          <label>Description <span className="optionnel">(optionnel)</span></label>
+            placeholder={t('createWorld.namePlaceholder')} autoFocus />
+          <label>{t('common.description')} <span className="optionnel">{t('common.optional')}</span></label>
           <input value={desc} onChange={e => setDesc(e.target.value)}
-            placeholder="Décrivez votre commune..." />
+            placeholder={t('createWorld.descPlaceholder')} />
           <div className="modal-actions">
-            <button type="button" className="btn-annuler" onClick={onFermer}>Annuler</button>
+            <button type="button" className="btn-annuler" onClick={onFermer}>{t('common.cancel')}</button>
             <button type="submit" className="btn-creer" disabled={chargement}>
-              {chargement ? '...' : 'Créer →'}
+              {chargement ? t('common.working') : t('common.createArrow')}
             </button>
           </div>
         </form>

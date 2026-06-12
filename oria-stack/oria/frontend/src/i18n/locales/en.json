@@ -10,7 +10,15 @@
     "close": "Close",
     "error": "Error",
     "back": "← Back",
-    "add": "Add"
+    "add": "Add",
+    "name": "Name",
+    "description": "Description",
+    "optional": "(optional)",
+    "createArrow": "Create →",
+    "working": "...",
+    "choose": "-- Choose --",
+    "color": "Color",
+    "emoji": "Emoji"
   },
   "login": {
     "tagline": "Your digital office",
@@ -75,5 +83,97 @@
     "encryptedE2EE": "E2EE encrypted messages",
     "coinsTitle": "Member coins",
     "finished": "Done"
+  },
+  "createWorld": {
+    "title": "Create a community",
+    "emblem": "Emblem",
+    "nameLabel": "Community name",
+    "namePlaceholder": "Paris City Hall, Lyon Council...",
+    "descPlaceholder": "Describe your community..."
+  },
+  "createBuilding": {
+    "title": "Add a municipal service",
+    "typeLabel": "Service type",
+    "maisonLabel": "Central hall",
+    "maisonDesc": "Main seat, reception, general administration",
+    "siteLabel": "Department",
+    "siteDesc": "Themed service: Finance, HR, Planning...",
+    "immeubleLabel": "Branch",
+    "immeubleDesc": "District branch or local office",
+    "maisonPlaceholder": "Main hall",
+    "sitePlaceholder": "Finance department",
+    "immeublePlaceholder": "North branch",
+    "descPlaceholder": "Mission of this service..."
+  },
+  "createQuartier": {
+    "title": "Create a district",
+    "nameLabel": "District name",
+    "namePlaceholder": "Holding A, Residential, Tech...",
+    "descPlaceholder": "What is this district for?"
+  },
+  "createLink": {
+    "title": "🕸 Create a link",
+    "sourceLabel": "Source community (A)",
+    "typeLabel": "Relationship type",
+    "targetLabel": "Target community (B)",
+    "pctLabel": "Percentage",
+    "pctPlaceholder": "e.g. 51",
+    "filialeLabel": "Member community",
+    "filialeDesc": "A owns B",
+    "partenaireLabel": "Partner",
+    "partenaireDesc": "Collaboration",
+    "clientLabel": "Contractor",
+    "clientDesc": "A is a client of B",
+    "fournisseurLabel": "Supplier",
+    "fournisseurDesc": "A is a supplier of B",
+    "associationLabel": "Grouping / Union",
+    "associationDesc": "Associative link",
+    "errSelectBoth": "Select both communities.",
+    "errDifferent": "The two communities must be different.",
+    "errCreate": "Error while creating the link.",
+    "submit": "Create the link"
+  },
+  "invite": {
+    "title": "Invite to {{world}}",
+    "hint": "Share this link. Anyone with it can join your community.",
+    "generating": "Generating...",
+    "copy": "Copy",
+    "copied": "✓ Copied!",
+    "newLink": "New link"
+  },
+  "editBuilding": {
+    "title": "Edit the space"
+  },
+  "editQuartier": {
+    "title": "Edit the district"
+  },
+  "addRoom": {
+    "title": "Add a room",
+    "subtitle": " in {{building}}",
+    "typeLabel": "Room type",
+    "texteLabel": "Text",
+    "texteDesc": "Real-time written chat",
+    "vocalLabel": "Voice",
+    "vocalDesc": "Voice/video call",
+    "mixteLabel": "Mixed",
+    "mixteDesc": "Chat + voice in the same room",
+    "iconLabel": "Icon",
+    "nameLabel": "Room name",
+    "namePlaceholder": "Home automation, Archives, Studio...",
+    "floorLabel": "Floor",
+    "floorGround": "Ground floor",
+    "floorN": "Floor {{n}}",
+    "newFloor": "New floor ({{n}})",
+    "accessLabel": "Access restriction",
+    "libreLabel": "Open",
+    "libreDesc": "Everyone",
+    "cadenasLabel": "Locked",
+    "cadenasDesc": "Visible but blocked",
+    "cacheLabel": "Hidden",
+    "cacheDesc": "Invisible without subscription",
+    "subsLabel": "Required subscriptions",
+    "subsHint": " (at least one)",
+    "noSubs": "No subscription tier defined. Create one via the 💳 button in the world bar.",
+    "submit": "Add →"
   }
 }

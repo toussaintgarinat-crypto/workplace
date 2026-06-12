@@ -10,7 +10,15 @@
     "close": "Fermer",
     "error": "Erreur",
     "back": "← Retour",
-    "add": "Ajouter"
+    "add": "Ajouter",
+    "name": "Nom",
+    "description": "Description",
+    "optional": "(optionnel)",
+    "createArrow": "Créer →",
+    "working": "...",
+    "choose": "-- Choisir --",
+    "color": "Couleur",
+    "emoji": "Emoji"
   },
   "login": {
     "tagline": "Ton bureau digital",
@@ -75,5 +83,97 @@
     "encryptedE2EE": "Messages chiffrés E2EE",
     "coinsTitle": "Coins des membres",
     "finished": "Terminé"
+  },
+  "createWorld": {
+    "title": "Créer une commune",
+    "emblem": "Emblème",
+    "nameLabel": "Nom de la commune",
+    "namePlaceholder": "Mairie de Paris, Commune de Lyon...",
+    "descPlaceholder": "Décrivez votre commune..."
+  },
+  "createBuilding": {
+    "title": "Ajouter un service municipal",
+    "typeLabel": "Type de service",
+    "maisonLabel": "Mairie centrale",
+    "maisonDesc": "Siège principal, accueil, administration générale",
+    "siteLabel": "Direction",
+    "siteDesc": "Service thématique : Finances, RH, Urbanisme...",
+    "immeubleLabel": "Antenne",
+    "immeubleDesc": "Antenne de quartier ou service déconcentré",
+    "maisonPlaceholder": "Mairie principale",
+    "sitePlaceholder": "Direction des finances",
+    "immeublePlaceholder": "Antenne nord",
+    "descPlaceholder": "Mission de ce service..."
+  },
+  "createQuartier": {
+    "title": "Créer un quartier",
+    "nameLabel": "Nom du quartier",
+    "namePlaceholder": "Holding A, Résidentiel, Tech...",
+    "descPlaceholder": "À quoi sert ce quartier ?"
+  },
+  "createLink": {
+    "title": "🕸 Créer un lien",
+    "sourceLabel": "Commune source (A)",
+    "typeLabel": "Type de relation",
+    "targetLabel": "Commune cible (B)",
+    "pctLabel": "Pourcentage",
+    "pctPlaceholder": "ex: 51",
+    "filialeLabel": "Commune membre",
+    "filialeDesc": "A possède B",
+    "partenaireLabel": "Partenaire",
+    "partenaireDesc": "Collaboration",
+    "clientLabel": "Contractant",
+    "clientDesc": "A est client de B",
+    "fournisseurLabel": "Prestataire",
+    "fournisseurDesc": "A est fournisseur de B",
+    "associationLabel": "EPCI / Groupement",
+    "associationDesc": "Lien associatif",
+    "errSelectBoth": "Sélectionne les deux communes.",
+    "errDifferent": "Les deux communes doivent être différentes.",
+    "errCreate": "Erreur lors de la création du lien.",
+    "submit": "Créer le lien"
+  },
+  "invite": {
+    "title": "Inviter dans {{world}}",
+    "hint": "Partage ce lien. Toute personne avec ce lien pourra rejoindre ta commune.",
+    "generating": "Génération...",
+    "copy": "Copier",
+    "copied": "✓ Copié !",
+    "newLink": "Nouveau lien"
+  },
+  "editBuilding": {
+    "title": "Modifier l'espace"
+  },
+  "editQuartier": {
+    "title": "Modifier le quartier"
+  },
+  "addRoom": {
+    "title": "Ajouter une pièce",
+    "subtitle": " dans {{building}}",
+    "typeLabel": "Type de pièce",
+    "texteLabel": "Texte",
+    "texteDesc": "Chat écrit en temps réel",
+    "vocalLabel": "Vocal",
+    "vocalDesc": "Appel voix/vidéo",
+    "mixteLabel": "Mixte",
+    "mixteDesc": "Chat + voix dans la même pièce",
+    "iconLabel": "Icône",
+    "nameLabel": "Nom de la pièce",
+    "namePlaceholder": "Domotique, Archives, Studio...",
+    "floorLabel": "Étage",
+    "floorGround": "RDC",
+    "floorN": "Étage {{n}}",
+    "newFloor": "Nouvel étage ({{n}})",
+    "accessLabel": "Restriction d'accès",
+    "libreLabel": "Libre",
+    "libreDesc": "Tout le monde",
+    "cadenasLabel": "Cadenas",
+    "cadenasDesc": "Visible mais bloqué",
+    "cacheLabel": "Caché",
+    "cacheDesc": "Invisible sans abonnement",
+    "subsLabel": "Abonnements requis",
+    "subsHint": " (au moins un)",
+    "noSubs": "Aucun tier d'abonnement défini. Créez-en via le bouton 💳 dans la barre du world.",
+    "submit": "Ajouter →"
   }
 }

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 export default function InviteModal({ world, onFermer }) {
+  const { t } = useTranslation()
   const [token, setToken]   = useState(null)
   const [copie, setCopie]   = useState(false)
   const [loading, setLoading] = useState(false)
@@ -26,24 +28,24 @@ export default function InviteModal({ world, onFermer }) {
   return (
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-titre">Inviter dans {world.emoji} {world.nom}</h2>
+        <h2 className="modal-titre">{t('invite.title', { world: `${world.emoji} ${world.nom}` })}</h2>
         <p style={{ color: 'var(--text-mut)', fontSize: 13, marginBottom: 20 }}>
-          Partage ce lien. Toute personne avec ce lien pourra rejoindre ta commune.
+          {t('invite.hint')}
         </p>
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-mut)' }}>Génération...</div>
+          <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-mut)' }}>{t('invite.generating')}</div>
         ) : (
           <div className="invite-link-box">
             <span className="invite-link-text">{lien}</span>
             <button className="btn-copier" onClick={copier}>
-              {copie ? '✓ Copié !' : 'Copier'}
+              {copie ? t('invite.copied') : t('invite.copy')}
             </button>
           </div>
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-annuler" onClick={onFermer}>Fermer</button>
+          <button type="button" className="btn-annuler" onClick={onFermer}>{t('common.close')}</button>
           <button type="button" className="btn-creer" onClick={generer} disabled={loading}>
-            Nouveau lien
+            {t('invite.newLink')}
           </button>
         </div>
       </div>
