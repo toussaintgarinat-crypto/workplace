@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const TAGS_SUGGESTIONS = ['IA', 'créatif', 'éducation', 'travail', 'art', 'tech', 'communauté', 'jeux', 'musique', 'science']
 
 export default function DiscoveryPage({ moi, onJoinWorld }) {
+  const { t } = useTranslation()
   const [worlds, setWorlds]           = useState([])
   const [loading, setLoading]         = useState(true)
   const [search, setSearch]           = useState('')
@@ -36,7 +38,7 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
     const data = await api.post(`/worlds/${worldId}/rejoindre`, { user_id: moi.id })
     setJoinLoading(null)
     if (data) {
-      showToast('✅ Monde rejoint !')
+      showToast(t('discovery.joined'))
       onJoinWorld?.()
     }
   }
@@ -50,7 +52,7 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
     } else {
       await api.post(`/social/follow/${ownerId}`)
       setFollowingSet(prev => new Set([...prev, ownerId]))
-      showToast('✅ Suivi !')
+      showToast(t('discovery.followed'))
     }
     setFollowLoading(null)
   }
@@ -66,12 +68,12 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
 
       {/* Hero */}
       <div className="discovery-hero">
-        <h1>🌍 Explorer les Mondes</h1>
-        <p>Rejoins des espaces créés par la communauté. Rencontre des agents IA, collabore, découvre.</p>
+        <h1>{t('discovery.heroTitle')}</h1>
+        <p>{t('discovery.heroSubtitle')}</p>
         <div className="discovery-search-bar">
           <input
             type="text"
-            placeholder="Rechercher un monde…"
+            placeholder={t('discovery.searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -84,13 +86,13 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
         <button
           className={`tag-pill ${!activeTag ? 'active' : ''}`}
           onClick={() => setActiveTag(null)}
-        >Tous</button>
-        {TAGS_SUGGESTIONS.map(t => (
+        >{t('discovery.all')}</button>
+        {TAGS_SUGGESTIONS.map(tag => (
           <button
-            key={t}
-            className={`tag-pill ${activeTag === t ? 'active' : ''}`}
-            onClick={() => setActiveTag(t === activeTag ? null : t)}
-          >{t}</button>
+            key={tag}
+            className={`tag-pill ${activeTag === tag ? 'active' : ''}`}
+            onClick={() => setActiveTag(tag === activeTag ? null : tag)}
+          >{tag}</button>
         ))}
       </div>
 
@@ -98,13 +100,13 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
       {loading ? (
         <div className="discovery-loading">
           <div className="spinner"/>
-          <p>Chargement des mondes…</p>
+          <p>{t('discovery.loading')}</p>
         </div>
       ) : worlds.length === 0 ? (
         <div className="discovery-empty">
           <span>🌌</span>
-          <p>Aucun monde public trouvé{search ? ` pour "${search}"` : ''}.</p>
-          <small>Crée le tien et rends-le public !</small>
+          <p>{search ? t('discovery.emptyTitleSearch', { q: search }) : t('discovery.emptyTitle')}</p>
+          <small>{t('discovery.emptyHint')}</small>
         </div>
       ) : (
         <div className="discovery-grid">
@@ -127,6 +129,7 @@ export default function DiscoveryPage({ moi, onJoinWorld }) {
 }
 
 function WorldCard({ world, moi, onJoin, loading, isFollowing, onToggleFollow, followLoading }) {
+  const { t } = useTranslation()
   const isOwner = moi?.id === world.owner_id
 
   return (
@@ -135,13 +138,13 @@ function WorldCard({ world, moi, onJoin, loading, isFollowing, onToggleFollow, f
       <div className="wc-banner" style={{ background: world.couleur }}>
         <span className="wc-emoji">{world.emoji}</span>
         {world.agent_count > 0 && (
-          <span className="wc-ai-badge">🤖 {world.agent_count} agent{world.agent_count > 1 ? 's' : ''}</span>
+          <span className="wc-ai-badge">{t('discovery.agentCount', { count: world.agent_count })}</span>
         )}
       </div>
 
       <div className="wc-body">
         <h3 className="wc-nom">{world.nom}</h3>
-        <p className="wc-desc">{world.description || 'Aucune description.'}</p>
+        <p className="wc-desc">{world.description || t('discovery.noDesc')}</p>
 
         {/* Tags */}
         {world.tags?.length > 0 && (
@@ -168,9 +171,9 @@ function WorldCard({ world, moi, onJoin, loading, isFollowing, onToggleFollow, f
               className={`btn-follow-owner ${isFollowing ? 'following' : ''}`}
               onClick={e => { e.stopPropagation(); onToggleFollow() }}
               disabled={followLoading}
-              title={isFollowing ? 'Ne plus suivre' : 'Suivre'}
+              title={isFollowing ? t('discovery.unfollow') : t('discovery.follow')}
             >
-              {followLoading ? '⏳' : isFollowing ? '✓ Suivi' : '＋ Suivre'}
+              {followLoading ? '⏳' : isFollowing ? t('discovery.following') : t('discovery.followBtn')}
             </button>
           )}
         </div>
@@ -182,11 +185,11 @@ function WorldCard({ world, moi, onJoin, loading, isFollowing, onToggleFollow, f
             onClick={onJoin}
             disabled={loading}
           >
-            {loading ? '⏳ Rejoindre…' : '🚀 Rejoindre'}
+            {loading ? t('discovery.joining') : t('discovery.join')}
           </button>
         )}
         {isOwner && (
-          <div className="wc-owner-badge">✨ Ton monde</div>
+          <div className="wc-owner-badge">{t('discovery.yourWorld')}</div>
         )}
       </div>
     </div>
