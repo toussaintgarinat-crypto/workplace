@@ -491,5 +491,41 @@
     "exportData": "📤 Exportar mis datos",
     "deleteAccount": "🗑 Eliminar mi cuenta",
     "confirmDelete": "¿Eliminar definitivamente tu cuenta? Esta acción es irreversible."
+  },
+  "documents": {
+    "titleSuffix": " — Documentos",
+    "add": "Agregar",
+    "addTitle": "Agregar un documento",
+    "empty": "Ningún documento",
+    "emptyHintWorld": "Agrega archivos compartidos para esta comunidad",
+    "emptyHintBuilding": "Agrega archivos compartidos para este servicio",
+    "unitB": "B",
+    "unitKB": "KB",
+    "unitMB": "MB"
+  },
+  "projects": {
+    "title": "📁 Proyectos — {{world}}",
+    "new": "+ Nuevo proyecto",
+    "all": "Todos",
+    "active": "🟢 Activos",
+    "closed": "🔒 Cerrados",
+    "namePlaceholder": "Nombre del proyecto *",
+    "descPlaceholder": "Descripción (opcional)",
+    "create": "Crear",
+    "loading": "Cargando…",
+    "emptyClosed": "Ningún proyecto cerrado",
+    "empty": "Ningún proyecto — ¡crea el primero!",
+    "selectWorld": "Selecciona una comunidad",
+    "confirmClose": "¿Cerrar el proyecto «{{name}}»? Todas sus salas pasarán a solo lectura.",
+    "confirmDelete": "¿Eliminar el proyecto «{{name}}»? Las salas no se eliminarán.",
+    "statusDone": "Terminado",
+    "statusActive": "Activo",
+    "rooms_one": "{{count}} sala",
+    "rooms_other": "{{count}} salas",
+    "noRoom": "Ninguna sala asignada",
+    "roomClosed": "🔒 cerrada",
+    "close": "🔒 Cerrar el proyecto",
+    "reopen": "🔓 Reabrir",
+    "closedOn": "Cerrado el {{date}}"
   }
 }

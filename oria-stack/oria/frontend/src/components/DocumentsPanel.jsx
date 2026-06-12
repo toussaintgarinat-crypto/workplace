@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -20,10 +21,10 @@ function icone(mime) {
   return '📎'
 }
 
-function taille(bytes) {
-  if (bytes < 1024) return `${bytes} o`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+function taille(bytes, t) {
+  if (bytes < 1024) return `${bytes} ${t('documents.unitB')}`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ${t('documents.unitKB')}`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('documents.unitMB')}`
 }
 
 /**
@@ -35,6 +36,7 @@ function taille(bytes) {
  * @param {function} onFermer
  */
 export default function DocumentsPanel({ scope, scopeId, scopeNom, moi, onFermer }) {
+  const { t } = useTranslation()
   const [fichiers, setFichiers] = useState([])
   const [chargement, setChargement] = useState(false)
   const fileRef = useRef(null)
@@ -73,7 +75,7 @@ export default function DocumentsPanel({ scope, scopeId, scopeNom, moi, onFermer
   return (
     <div className="documents-panel">
       <div className="documents-panel-header">
-        <span className="documents-panel-titre">{label} {scopeNom} — Documents</span>
+        <span className="documents-panel-titre">{label} {scopeNom}{t('documents.titleSuffix')}</span>
         <button className="btn-quitter-room" onClick={onFermer}>✕</button>
       </div>
 
@@ -82,9 +84,9 @@ export default function DocumentsPanel({ scope, scopeId, scopeNom, moi, onFermer
           className="btn-upload-doc"
           onClick={() => fileRef.current?.click()}
           disabled={chargement}
-          title="Ajouter un document"
+          title={t('documents.addTitle')}
         >
-          {chargement ? '⏳' : '＋'} Ajouter
+          {chargement ? '⏳' : '＋'} {t('documents.add')}
         </button>
         <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={uploader} />
       </div>
@@ -93,8 +95,8 @@ export default function DocumentsPanel({ scope, scopeId, scopeNom, moi, onFermer
         {fichiers.length === 0 && (
           <div className="documents-vide">
             <span>📂</span>
-            <p>Aucun document</p>
-            <p className="documents-vide-hint">Ajoute des fichiers partagés pour ce {scope === 'world' ? 'commune' : 'service'}</p>
+            <p>{t('documents.empty')}</p>
+            <p className="documents-vide-hint">{scope === 'world' ? t('documents.emptyHintWorld') : t('documents.emptyHintBuilding')}</p>
           </div>
         )}
         {fichiers.map(f => (
@@ -111,14 +113,14 @@ export default function DocumentsPanel({ scope, scopeId, scopeNom, moi, onFermer
                 {f.nom}
               </a>
               <span className="document-meta">
-                {taille(f.taille)} · {f.uploader_nom} · {f.created_at?.slice(0, 10)}
+                {taille(f.taille, t)} · {f.uploader_nom} · {f.created_at?.slice(0, 10)}
               </span>
             </div>
             {f.uploaded_by === moi.id && (
               <button
                 className="btn-suppr-doc"
                 onClick={() => supprimer(f.id)}
-                title="Supprimer"
+                title={t('common.delete')}
               >✕</button>
             )}
           </div>

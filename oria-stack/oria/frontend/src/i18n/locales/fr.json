@@ -491,5 +491,41 @@
     "exportData": "📤 Exporter mes données",
     "deleteAccount": "🗑 Supprimer mon compte",
     "confirmDelete": "Supprimer définitivement votre compte ? Cette action est irréversible."
+  },
+  "documents": {
+    "titleSuffix": " — Documents",
+    "add": "Ajouter",
+    "addTitle": "Ajouter un document",
+    "empty": "Aucun document",
+    "emptyHintWorld": "Ajoute des fichiers partagés pour cette commune",
+    "emptyHintBuilding": "Ajoute des fichiers partagés pour ce service",
+    "unitB": "o",
+    "unitKB": "Ko",
+    "unitMB": "Mo"
+  },
+  "projects": {
+    "title": "📁 Projets — {{world}}",
+    "new": "+ Nouveau projet",
+    "all": "Tous",
+    "active": "🟢 Actifs",
+    "closed": "🔒 Fermés",
+    "namePlaceholder": "Nom du projet *",
+    "descPlaceholder": "Description (optionnelle)",
+    "create": "Créer",
+    "loading": "Chargement…",
+    "emptyClosed": "Aucun projet fermé",
+    "empty": "Aucun projet — crée le premier !",
+    "selectWorld": "Sélectionne une commune",
+    "confirmClose": "Fermer le projet « {{name}} » ? Toutes ses rooms passeront en lecture seule.",
+    "confirmDelete": "Supprimer le projet « {{name}} » ? Les rooms ne seront pas supprimées.",
+    "statusDone": "Terminé",
+    "statusActive": "Actif",
+    "rooms_one": "{{count}} room",
+    "rooms_other": "{{count}} rooms",
+    "noRoom": "Aucune room assignée",
+    "roomClosed": "🔒 fermée",
+    "close": "🔒 Fermer le projet",
+    "reopen": "🔓 Rouvrir",
+    "closedOn": "Fermé le {{date}}"
   }
 }

@@ -491,5 +491,41 @@
     "exportData": "📤 Export my data",
     "deleteAccount": "🗑 Delete my account",
     "confirmDelete": "Permanently delete your account? This action is irreversible."
+  },
+  "documents": {
+    "titleSuffix": " — Documents",
+    "add": "Add",
+    "addTitle": "Add a document",
+    "empty": "No document",
+    "emptyHintWorld": "Add shared files for this community",
+    "emptyHintBuilding": "Add shared files for this service",
+    "unitB": "B",
+    "unitKB": "KB",
+    "unitMB": "MB"
+  },
+  "projects": {
+    "title": "📁 Projects — {{world}}",
+    "new": "+ New project",
+    "all": "All",
+    "active": "🟢 Active",
+    "closed": "🔒 Closed",
+    "namePlaceholder": "Project name *",
+    "descPlaceholder": "Description (optional)",
+    "create": "Create",
+    "loading": "Loading…",
+    "emptyClosed": "No closed project",
+    "empty": "No project — create the first one!",
+    "selectWorld": "Select a community",
+    "confirmClose": "Close the project « {{name}} »? All its rooms will become read-only.",
+    "confirmDelete": "Delete the project « {{name}} »? The rooms will not be deleted.",
+    "statusDone": "Done",
+    "statusActive": "Active",
+    "rooms_one": "{{count}} room",
+    "rooms_other": "{{count}} rooms",
+    "noRoom": "No assigned room",
+    "roomClosed": "🔒 closed",
+    "close": "🔒 Close the project",
+    "reopen": "🔓 Reopen",
+    "closedOn": "Closed on {{date}}"
   }
 }
