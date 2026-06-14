@@ -1,0 +1,6 @@
+# S41 POC openWakeWord — dépendances épinglées (Python 3.11).
+# onnxruntime/numpy n'ont pas de wheels fiables pour Python 3.14 → on fige 3.11.
+openwakeword==0.6.0
+onnxruntime==1.23.2
+numpy==2.4.6
+scipy==1.17.1

@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 import { formatBytes } from '@workspace/shared-ui/utils'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const VOICE_LOCALE = { fr: 'fr-FR', en: 'en-US', es: 'es-ES' }
 
 export default function JardinPanel({ moi }) {
+  const { t, i18n } = useTranslation()
   const [agent, setAgent]           = useState(null)
   const [messages, setMessages]     = useState([])
   const [input, setInput]           = useState('')
@@ -32,7 +35,7 @@ export default function JardinPanel({ moi }) {
       setAgent(data)
       setMessages([{
         role: 'assistant',
-        content: `Bonjour ${moi?.nom || ''} ! Je suis ton assistant personnel. Tu peux me parler, m'envoyer des documents ou faire des recherches dans ta mémoire.`,
+        content: t('jardin.greeting', { nom: moi?.nom || '' }),
         ts: new Date().toISOString(),
       }])
     }
@@ -96,7 +99,7 @@ export default function JardinPanel({ moi }) {
       }
     } catch (e) {
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: '[Erreur de connexion à Forge]' } : m
+        m.id === assistantId ? { ...m, content: t('jardin.connError') } : m
       ))
     } finally {
       setLoading(false)
@@ -123,7 +126,7 @@ export default function JardinPanel({ moi }) {
         setFiles(prev => [{ id: doc.id, nom: doc.nom, type_mime: doc.type_mime, taille: doc.taille, has_md: !!doc.content_md, created_at: doc.created_at }, ...prev])
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `J'ai reçu et mémorisé **${doc.nom}**.\n\n${doc.content_md ? 'Contenu extrait :\n\n' + doc.content_md : ''}`,
+          content: t('jardin.received', { nom: doc.nom }) + (doc.content_md ? '\n\n' + t('jardin.extractedLabel') + '\n\n' + doc.content_md : ''),
           ts: new Date().toISOString(),
         }])
       }
@@ -170,7 +173,7 @@ export default function JardinPanel({ moi }) {
       return
     }
     const rec = new SR()
-    rec.lang = 'fr-FR'
+    rec.lang = VOICE_LOCALE[i18n.language] || 'fr-FR'
     rec.interimResults = false
     rec.onresult = e => setInput(prev => prev ? prev + ' ' + e.results[0][0].transcript : e.results[0][0].transcript)
     rec.onend = () => setIsListening(false)
@@ -183,7 +186,7 @@ export default function JardinPanel({ moi }) {
 
   if (!agent) return (
     <div className="jardin-panel">
-      <div className="jardin-loading">Chargement du Jardin Secret…</div>
+      <div className="jardin-loading">{t('jardin.loading')}</div>
     </div>
   )
 
@@ -194,15 +197,15 @@ export default function JardinPanel({ moi }) {
       <div className="jardin-header">
         <span className="jardin-header-icon">🌿</span>
         <div className="jardin-header-info">
-          <span className="jardin-header-title">Mon Jardin Secret</span>
+          <span className="jardin-header-title">{t('jardin.title')}</span>
           <span className="jardin-header-sub">{agent.nom} · {agent.forge_provider} / {agent.forge_model || '…'}</span>
         </div>
         <div className="jardin-header-tabs">
-          <button className={`jardin-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 Chat</button>
-          <button className={`jardin-tab ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => setActiveTab('docs')}>📁 Documents {files.length > 0 && <span className="jardin-badge">{files.length}</span>}</button>
-          <button className={`jardin-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>🔍 Mémoire</button>
+          <button className={`jardin-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>{t('jardin.chat')}</button>
+          <button className={`jardin-tab ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => setActiveTab('docs')}>{t('jardin.documents')} {files.length > 0 && <span className="jardin-badge">{files.length}</span>}</button>
+          <button className={`jardin-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>{t('jardin.memory')}</button>
         </div>
-        <button className="jardin-config-btn" onClick={() => setShowConfig(true)} title="Configurer l'assistant">⚙</button>
+        <button className="jardin-config-btn" onClick={() => setShowConfig(true)} title={t('jardin.configTooltip')}>⚙</button>
       </div>
 
       {/* Corps */}
@@ -228,7 +231,7 @@ export default function JardinPanel({ moi }) {
               <button
                 className="jardin-upload-btn"
                 onClick={() => fileInputRef.current?.click()}
-                title="Joindre un fichier"
+                title={t('jardin.attachFile')}
                 disabled={uploading}
               >
                 {uploading ? '⏳' : '📎'}
@@ -244,14 +247,14 @@ export default function JardinPanel({ moi }) {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Écris quelque chose… (Entrée pour envoyer)"
+                placeholder={t('jardin.inputPlaceholder')}
                 rows={1}
                 disabled={loading}
               />
               <button
                 className={`jardin-mic-btn ${isListening ? 'listening' : ''}`}
                 onClick={toggleListening}
-                title="Microphone"
+                title={t('jardin.micTitle')}
               >🎤</button>
               <button
                 className="jardin-send-btn"
@@ -280,13 +283,13 @@ export default function JardinPanel({ moi }) {
                   onChange={e => { if (e.target.files[0]) handleUpload(e.target.files[0]) }}
                 />
                 <span>{uploading ? '⏳' : '+'}</span>
-                <span>{uploading ? 'Traitement…' : 'Ajouter un fichier'}</span>
+                <span>{uploading ? t('jardin.processing') : t('jardin.addFile')}</span>
               </button>
 
-              <div className="jardin-drop-hint">ou glisse-dépose ici</div>
+              <div className="jardin-drop-hint">{t('jardin.dropHint')}</div>
 
               {files.length === 0 ? (
-                <div className="jardin-docs-empty">Aucun document — envoie des PDF, images, audio…</div>
+                <div className="jardin-docs-empty">{t('jardin.noDocs')}</div>
               ) : (
                 <ul className="jardin-docs-list">
                   {files.map(f => (
@@ -298,7 +301,7 @@ export default function JardinPanel({ moi }) {
                       <span className="jardin-doc-icon">{docIcon(f.type_mime)}</span>
                       <div className="jardin-doc-info">
                         <span className="jardin-doc-nom">{f.nom}</span>
-                        <span className="jardin-doc-meta">{formatSize(f.taille)} · {formatDate(f.created_at)}</span>
+                        <span className="jardin-doc-meta">{formatSize(f.taille)} · {formatDate(f.created_at, i18n.language)}</span>
                       </div>
                       <a
                         href={`${BASE}${f.url}`}
@@ -306,12 +309,12 @@ export default function JardinPanel({ moi }) {
                         rel="noreferrer"
                         className="jardin-doc-open"
                         onClick={e => e.stopPropagation()}
-                        title="Ouvrir l'original"
+                        title={t('jardin.openOriginal')}
                       >↗</a>
                       <button
                         className="jardin-doc-del"
                         onClick={e => { e.stopPropagation(); deleteFile(f.id) }}
-                        title="Supprimer"
+                        title={t('common.delete')}
                       >✕</button>
                     </li>
                   ))}
@@ -326,12 +329,12 @@ export default function JardinPanel({ moi }) {
                     <span>{docIcon(selectedFile.type_mime)} {selectedFile.nom}</span>
                     <button className="jardin-doc-close" onClick={() => setSelectedFile(null)}>✕</button>
                   </div>
-                  <pre className="jardin-md-preview">{selectedFile.content_md || '(pas de contenu extrait)'}</pre>
+                  <pre className="jardin-md-preview">{selectedFile.content_md || t('jardin.noContent')}</pre>
                 </>
               ) : (
                 <div className="jardin-docs-placeholder">
                   <span>📄</span>
-                  <p>Clique sur un document pour voir son contenu extrait (Markdown)</p>
+                  <p>{t('jardin.docsPlaceholder')}</p>
                 </div>
               )}
             </div>
@@ -347,18 +350,18 @@ export default function JardinPanel({ moi }) {
                 value={searchQ}
                 onChange={e => setSearchQ(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && doSearch()}
-                placeholder="Cherche dans ta mémoire…"
+                placeholder={t('jardin.searchPlaceholder')}
               />
-              <button className="jardin-search-btn" onClick={doSearch}>Chercher</button>
+              <button className="jardin-search-btn" onClick={doSearch}>{t('jardin.searchBtn')}</button>
             </div>
             {searchResults === null && (
               <div className="jardin-search-hint">
                 <span>🧠</span>
-                <p>Recherche sémantique dans toute ta mémoire : conversations, documents, sessions IPCRA.</p>
+                <p>{t('jardin.searchHint')}</p>
               </div>
             )}
             {searchResults !== null && searchResults.length === 0 && (
-              <div className="jardin-search-empty">Aucun souvenir trouvé pour cette requête.</div>
+              <div className="jardin-search-empty">{t('jardin.searchEmpty')}</div>
             )}
             {searchResults?.length > 0 && (
               <ul className="jardin-search-results">
@@ -397,6 +400,7 @@ export default function JardinPanel({ moi }) {
 // ── Modal de configuration ─────────────────────────────────────────────────
 
 function AgentConfigModal({ agent, onSave, onClose }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({
     nom:           agent.nom,
     avatar_emoji:  agent.avatar_emoji,
@@ -415,46 +419,46 @@ function AgentConfigModal({ agent, onSave, onClose }) {
     <div className="jardin-modal-overlay" onClick={onClose}>
       <div className="jardin-modal" onClick={e => e.stopPropagation()}>
         <div className="jardin-modal-header">
-          <span>⚙ Configurer l'assistant</span>
+          <span>{t('jardin.configHeader')}</span>
           <button onClick={onClose}>✕</button>
         </div>
 
         <div className="jardin-modal-body">
           <div className="jardin-form-row">
-            <label>Nom</label>
+            <label>{t('jardin.name')}</label>
             <input value={form.nom} onChange={e => set('nom', e.target.value)} />
           </div>
           <div className="jardin-form-row">
-            <label>Emoji</label>
+            <label>{t('jardin.emoji')}</label>
             <input value={form.avatar_emoji} onChange={e => set('avatar_emoji', e.target.value)} style={{ width: 64 }} />
           </div>
           <div className="jardin-form-row">
-            <label>Provider</label>
+            <label>{t('jardin.provider')}</label>
             <select value={form.forge_provider} onChange={e => set('forge_provider', e.target.value)}>
               {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div className="jardin-form-row">
-            <label>Modèle</label>
-            <input value={form.forge_model} onChange={e => set('forge_model', e.target.value)} placeholder="ex: llama3.2, anthropic/claude-sonnet-4-6" />
+            <label>{t('jardin.model')}</label>
+            <input value={form.forge_model} onChange={e => set('forge_model', e.target.value)} placeholder={t('jardin.modelPlaceholder')} />
           </div>
           <div className="jardin-form-row">
-            <label>URL Forge</label>
+            <label>{t('jardin.forgeUrl')}</label>
             <input value={form.forge_url} onChange={e => set('forge_url', e.target.value)} placeholder="http://localhost:3001" />
           </div>
           <div className="jardin-form-row">
-            <label>Mot d'activation</label>
-            <input value={form.wake_word} onChange={e => set('wake_word', e.target.value)} placeholder="ex: jarvis, aria…" />
+            <label>{t('jardin.wakeWord')}</label>
+            <input value={form.wake_word} onChange={e => set('wake_word', e.target.value)} placeholder={t('jardin.wakeWordPlaceholder')} />
           </div>
           <div className="jardin-form-row col">
-            <label>Prompt système</label>
+            <label>{t('jardin.systemPrompt')}</label>
             <textarea value={form.system_prompt} onChange={e => set('system_prompt', e.target.value)} rows={5} />
           </div>
         </div>
 
         <div className="jardin-modal-footer">
-          <button className="jardin-btn-secondary" onClick={onClose}>Annuler</button>
-          <button className="jardin-btn-primary" onClick={() => onSave(form)}>Sauvegarder</button>
+          <button className="jardin-btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="jardin-btn-primary" onClick={() => onSave(form)}>{t('common.save')}</button>
         </div>
       </div>
     </div>
@@ -478,7 +482,7 @@ function docIcon(mime = '') {
 // formatSize remplacé par formatBytes (@workspace/shared-ui/utils) — sprint S98
 const formatSize = (b) => formatBytes(b)
 
-function formatDate(iso) {
+function formatDate(iso, locale = 'fr') {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  return new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short' })
 }

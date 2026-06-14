@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSharedZone } from '../hooks/useSharedZone';
 import { api } from '../services/api.js';
 
 // ── Zone editor — collaborative text via Yjs ─────────────────────
 
 function ZoneEditor({ zoneId }) {
+  const { t } = useTranslation();
   const { doc, connected } = useSharedZone(zoneId);
   const [text, setText]     = useState('');
   const yTextRef            = useRef(null);
@@ -45,12 +47,12 @@ function ZoneEditor({ zoneId }) {
         color: connected ? '#22c55e' : '#f59e0b',
         letterSpacing: '0.02em',
       }}>
-        {connected ? '● Synchronisé' : '○ Hors ligne — modifications sauvegardées localement'}
+        {connected ? t('sharedZones.synced') : t('sharedZones.offline')}
       </div>
       <textarea
         value={text}
         onChange={handleChange}
-        placeholder="Notes partagées… tout le monde dans cette zone peut écrire ici."
+        placeholder={t('sharedZones.notesPlaceholder')}
         style={{
           width: '100%',
           minHeight: 220,
@@ -73,6 +75,7 @@ function ZoneEditor({ zoneId }) {
 // ── Invite modal ─────────────────────────────────────────────────
 
 function InviteModal({ zoneId, onClose }) {
+  const { t } = useTranslation();
   const [userId,  setUserId]  = useState('');
   const [role,    setRole]    = useState('reader');
   const [loading, setLoading] = useState(false);
@@ -86,7 +89,7 @@ function InviteModal({ zoneId, onClose }) {
     if (res) {
       onClose();
     } else {
-      setError('Erreur lors de l\'invitation');
+      setError(t('sharedZones.inviteError'));
     }
   };
 
@@ -99,12 +102,12 @@ function InviteModal({ zoneId, onClose }) {
         background: '#1e293b', borderRadius: 10, padding: 24, minWidth: 320,
         border: '1px solid #334155',
       }}>
-        <h3 style={{ margin: '0 0 16px', color: '#f1f5f9' }}>Inviter un membre</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#f1f5f9' }}>{t('sharedZones.inviteMember')}</h3>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input
             value={userId}
             onChange={e => setUserId(e.target.value)}
-            placeholder="ID utilisateur"
+            placeholder={t('sharedZones.userIdPlaceholder')}
             required
             style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569',
               background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem' }}
@@ -115,20 +118,20 @@ function InviteModal({ zoneId, onClose }) {
             style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569',
               background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem' }}
           >
-            <option value="contributor">Contributeur (lit &amp; écrit)</option>
-            <option value="reader">Lecteur (lit uniquement)</option>
+            <option value="contributor">{t('sharedZones.contributor')}</option>
+            <option value="reader">{t('sharedZones.reader')}</option>
           </select>
           {error && <div style={{ color: '#f87171', fontSize: '0.8rem' }}>{error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button type="button" onClick={onClose}
               style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid #475569',
                 background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
-              Annuler
+              {t('common.cancel')}
             </button>
             <button type="submit" disabled={loading}
               style={{ padding: '7px 14px', borderRadius: 6, border: 'none',
                 background: '#6366f1', color: '#fff', cursor: 'pointer' }}>
-              {loading ? '…' : 'Inviter'}
+              {loading ? '…' : t('sharedZones.invite')}
             </button>
           </div>
         </form>
@@ -140,6 +143,7 @@ function InviteModal({ zoneId, onClose }) {
 // ── Main panel ───────────────────────────────────────────────────
 
 export default function SharedZonesPanel({ onFermer }) {
+  const { t } = useTranslation();
   const [zones,       setZones]      = useState([]);
   const [activeZone,  setActiveZone] = useState(null);
   const [showCreate,  setShowCreate] = useState(false);
@@ -156,7 +160,7 @@ export default function SharedZonesPanel({ onFermer }) {
       setZones(res);
       if (res.length > 0 && !activeZone) setActiveZone(res[0]);
     } else {
-      setError('Impossible de charger les zones');
+      setError(t('sharedZones.loadError'));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -172,12 +176,12 @@ export default function SharedZonesPanel({ onFermer }) {
       setNewZoneName('');
       setShowCreate(false);
     } else {
-      setError('Erreur création zone');
+      setError(t('sharedZones.createError'));
     }
   };
 
   const deleteZone = async (zoneId) => {
-    if (!confirm('Supprimer cette zone ? Cette action est irréversible.')) return;
+    if (!confirm(t('sharedZones.confirmDelete'))) return;
     const res = await api.del(`/shared-zones/${zoneId}`);
     if (res !== null || true) { // del retourne null sur 204 — on considère ça OK
       setZones(prev => prev.filter(z => z.id !== zoneId));
@@ -185,13 +189,13 @@ export default function SharedZonesPanel({ onFermer }) {
     }
   };
 
-  if (loading) return <div style={{ padding: 24, color: '#94a3b8' }}>Chargement…</div>;
+  if (loading) return <div style={{ padding: 24, color: '#94a3b8' }}>{t('sharedZones.loading')}</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', fontFamily: 'inherit' }}>
       {/* Header */}
       <div className="mairie-panel-header">
-        <div className="mairie-panel-title"><span>🔗</span><h2>Zones partagées</h2></div>
+        <div className="mairie-panel-title"><span>🔗</span><h2>{t('sharedZones.title')}</h2></div>
         {onFermer && (
           <div className="mairie-panel-actions">
             <button className="mairie-btn-close" onClick={onFermer}>✕</button>
@@ -228,14 +232,14 @@ export default function SharedZonesPanel({ onFermer }) {
                 autoFocus
                 value={newZoneName}
                 onChange={e => setNewZoneName(e.target.value)}
-                placeholder="Nom de la zone"
+                placeholder={t('sharedZones.zoneNamePlaceholder')}
                 style={{ padding: '5px 8px', borderRadius: 5, border: '1px solid var(--ink-700)',
                   background: 'var(--ink-850)', color: 'var(--text)', fontSize: '0.8rem' }}
               />
               <div style={{ display: 'flex', gap: 4 }}>
                 <button type="submit" style={{ flex: 1, padding: '4px', borderRadius: 4,
                   border: 'none', background: 'var(--or-500)', color: '#fff', cursor: 'pointer', fontSize: '0.8rem' }}>
-                  Créer
+                  {t('sharedZones.create')}
                 </button>
                 <button type="button" onClick={() => setShowCreate(false)}
                   style={{ flex: 1, padding: '4px', borderRadius: 4,
@@ -250,7 +254,7 @@ export default function SharedZonesPanel({ onFermer }) {
               onClick={() => setShowCreate(true)}
               style={{ textAlign: 'left', padding: '7px 12px', border: 'none', cursor: 'pointer',
                 background: 'transparent', color: 'var(--or-500)', fontSize: '0.8rem' }}>
-              + Nouvelle zone
+              {t('sharedZones.newZone')}
             </button>
           )}
         </div>
@@ -263,7 +267,7 @@ export default function SharedZonesPanel({ onFermer }) {
 
           {!activeZone ? (
             <div style={{ color: 'var(--text-mut)', textAlign: 'center', marginTop: 60 }}>
-              Sélectionne une zone ou crée-en une nouvelle
+              {t('sharedZones.selectZone')}
             </div>
           ) : (
             <>
@@ -277,13 +281,13 @@ export default function SharedZonesPanel({ onFermer }) {
                     onClick={() => setShowInvite(true)}
                     style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--ink-700)',
                       background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem' }}>
-                    Inviter
+                    {t('sharedZones.invite')}
                   </button>
                   <button
                     onClick={() => deleteZone(activeZone.id)}
                     style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--ink-700)',
                       background: 'transparent', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem' }}>
-                    Supprimer
+                    {t('common.delete')}
                   </button>
                 </div>
               </div>

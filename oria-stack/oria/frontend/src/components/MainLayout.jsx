@@ -382,21 +382,20 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
         {worldActif ? (
           <>
             <span className="main-welcome-emoji">{worldActif.emoji}</span>
-            <h2>{premiereVisite ? `Bienvenue dans ${worldActif.nom} ! 🎉` : worldActif.nom}</h2>
+            <h2>{premiereVisite ? t('main.welcome', { world: worldActif.nom }) : worldActif.nom}</h2>
             {premiereRoomDispo ? (
               <>
-                <p>{premiereVisite ? 'Ouvre ta première pièce pour commencer.' : t('main.selectRoom')}</p>
+                <p>{premiereVisite ? t('main.openFirstRoom') : t('main.selectRoom')}</p>
                 <button
                   className="btn-primary"
                   style={{ marginTop: 16 }}
                   onClick={() => entrerRoom(premiereRoomDispo.room, premiereRoomDispo.building)}
                 >
-                  ▶ Ouvrir « {premiereRoomDispo.room.nom} »
+                  {t('main.openRoom', { room: premiereRoomDispo.room.nom })}
                 </button>
               </>
             ) : premiereVisite ? (
-              <p>Ton monde est prêt ! Crée ton premier espace puis une pièce
-                 depuis le panneau de gauche&nbsp;←</p>
+              <p>{t('main.worldReady')}</p>
             ) : (
               <p>{t('main.selectRoom')}</p>
             )}
@@ -472,7 +471,7 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
 
       <Toast />
       <SyncStatus />
-      <LanguagePicker style={{ position: 'fixed', bottom: 12, left: 68, zIndex: 100 }} />
+      <LanguagePicker persist style={{ position: 'fixed', bottom: 12, left: 68, zIndex: 100 }} />
     </div>
   )
 }

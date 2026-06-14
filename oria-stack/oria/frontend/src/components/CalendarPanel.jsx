@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
-const MOIS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
-const JOURS_FR = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
-
 export default function CalendarPanel({ world, moi, onFermer }) {
+  const { t } = useTranslation()
+  const MOIS_FR = t('calendar.months', { returnObjects: true })
+  const JOURS_FR = t('calendar.days', { returnObjects: true })
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [mois, setMois] = useState(new Date().getMonth())
   const [conseils, setConseils] = useState([])
@@ -45,7 +46,7 @@ export default function CalendarPanel({ world, moi, onFermer }) {
     const dateStr = `${annee}-${String(mois + 1).padStart(2, '0')}-${String(jour).padStart(2, '0')}`
     const evts = []
     conseils.filter(c => c.date_conseil === dateStr).forEach(c =>
-      evts.push({ type: 'conseil', label: `🏛 Conseil ${c.heure}`, statut: c.statut })
+      evts.push({ type: 'conseil', label: t('calendar.conseilLabel', { heure: c.heure }), statut: c.statut })
     )
     arretes.filter(a => a.date_arrete === dateStr).forEach(a =>
       evts.push({ type: 'arrete', label: `📑 ${a.numero}` })
@@ -59,7 +60,7 @@ export default function CalendarPanel({ world, moi, onFermer }) {
   return (
     <div className="mairie-panel">
       <div className="mairie-panel-header">
-        <div className="mairie-panel-title"><span>📅</span><h2>Calendrier</h2></div>
+        <div className="mairie-panel-title"><span>📅</span><h2>{t('calendar.title')}</h2></div>
         <div className="mairie-panel-actions">
           <button className="mairie-btn-close" onClick={onFermer}>✕</button>
         </div>
@@ -70,7 +71,7 @@ export default function CalendarPanel({ world, moi, onFermer }) {
         <span className="calendar-mois-label">{MOIS_FR[mois]} {annee}</span>
         <button className="calendar-nav-btn" onClick={() => naviguer(1)}>▶</button>
         <button className="mairie-filter-btn" onClick={() => { setMois(new Date().getMonth()); setAnnee(new Date().getFullYear()) }}>
-          Aujourd'hui
+          {t('calendar.today')}
         </button>
       </div>
 
@@ -90,8 +91,8 @@ export default function CalendarPanel({ world, moi, onFermer }) {
       </div>
 
       <div className="calendar-legende">
-        <span className="calendar-evt calendar-evt-conseil">🏛 Conseil</span>
-        <span className="calendar-evt calendar-evt-arrete">📑 Arrêté</span>
+        <span className="calendar-evt calendar-evt-conseil">{t('calendar.legendConseil')}</span>
+        <span className="calendar-evt calendar-evt-arrete">{t('calendar.legendArrete')}</span>
       </div>
     </div>
   )

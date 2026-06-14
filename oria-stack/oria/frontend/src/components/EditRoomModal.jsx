@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const TYPES = [
-  { id: 'texte', emoji: '💬', label: 'Texte',  desc: 'Chat écrit' },
-  { id: 'vocal', emoji: '🔊', label: 'Vocal',  desc: 'Voix/vidéo' },
-  { id: 'mixte', emoji: '⚡', label: 'Mixte',  desc: 'Chat + voix' },
+  { id: 'texte', emoji: '💬' },
+  { id: 'vocal', emoji: '🔊' },
+  { id: 'mixte', emoji: '⚡' },
 ]
 const EMOJIS = ['💬','🔊','⚡','🏠','💼','🍳','🛋','📋','📊','🎮','🎨','🔬','📡','🌡','💡','🔧','📁','🎯','🌿','🚪']
 
 export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
+  const { t } = useTranslation()
   const [nom, setNom]                 = useState(room.nom)
   const [type, setType]               = useState(room.type)
   const [emoji, setEmoji]             = useState(room.emoji)
@@ -54,22 +56,22 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
   return (
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-titre">Modifier la pièce</h2>
+        <h2 className="modal-titre">{t('editRoom.title')}</h2>
         <form onSubmit={sauvegarder}>
-          <label>Type</label>
+          <label>{t('editRoom.typeLabel')}</label>
           <div className="type-picker">
-            {TYPES.map(t => (
-              <button key={t.id} type="button"
-                className={`type-btn ${type === t.id ? 'actif' : ''}`}
-                onClick={() => setType(t.id)}>
-                <span className="type-emoji">{t.emoji}</span>
-                <span className="type-label">{t.label}</span>
-                <span className="type-desc">{t.desc}</span>
+            {TYPES.map(ty => (
+              <button key={ty.id} type="button"
+                className={`type-btn ${type === ty.id ? 'actif' : ''}`}
+                onClick={() => setType(ty.id)}>
+                <span className="type-emoji">{ty.emoji}</span>
+                <span className="type-label">{t(`editRoom.${ty.id}Label`)}</span>
+                <span className="type-desc">{t(`editRoom.${ty.id}Desc`)}</span>
               </button>
             ))}
           </div>
 
-          <label>Icône</label>
+          <label>{t('editRoom.iconLabel')}</label>
           <div className="emoji-picker">
             {EMOJIS.map(e => (
               <button key={e} type="button"
@@ -78,23 +80,23 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
             ))}
           </div>
 
-          <label>Nom</label>
+          <label>{t('common.name')}</label>
           <input value={nom} onChange={e => setNom(e.target.value)} autoFocus required />
 
           {/* Restriction d'accès */}
-          <label style={{ marginTop: 12 }}>Restriction d'accès</label>
+          <label style={{ marginTop: 12 }}>{t('addRoom.accessLabel')}</label>
           <div className="type-picker" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             {[
-              { id: 'libre',   icon: '🔓', label: 'Libre',   desc: 'Tout le monde' },
-              { id: 'cadenas', icon: '🔒', label: 'Cadenas', desc: 'Visible mais bloqué' },
-              { id: 'cache',   icon: '👁️',  label: 'Caché',   desc: 'Invisible sans abonnement' },
+              { id: 'libre',   icon: '🔓' },
+              { id: 'cadenas', icon: '🔒' },
+              { id: 'cache',   icon: '👁️' },
             ].map(opt => (
               <button key={opt.id} type="button"
                 className={`type-btn ${acces === opt.id ? 'actif' : ''}`}
                 onClick={() => setAcces(opt.id)}>
                 <span className="type-emoji">{opt.icon}</span>
-                <span className="type-label">{opt.label}</span>
-                <span className="type-desc">{opt.desc}</span>
+                <span className="type-label">{t(`addRoom.${opt.id}Label`)}</span>
+                <span className="type-desc">{t(`addRoom.${opt.id}Desc`)}</span>
               </button>
             ))}
           </div>
@@ -102,12 +104,12 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
           {acces !== 'libre' && (
             <>
               <label style={{ marginTop: 10 }}>
-                Abonnements requis
-                <span style={{ color: 'var(--text-mut)', fontWeight: 400 }}> (au moins un)</span>
+                {t('addRoom.subsLabel')}
+                <span style={{ color: 'var(--text-mut)', fontWeight: 400 }}>{t('addRoom.subsHint')}</span>
               </label>
               {abonnements.length === 0 ? (
                 <p style={{ color: 'var(--text-mut)', fontSize: 13 }}>
-                  Aucun tier d'abonnement défini pour ce world.
+                  {t('editRoom.noSubs')}
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -133,7 +135,7 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
           )}
 
           {/* Room payante */}
-          <label style={{ marginTop: 14 }}>Accès payant</label>
+          <label style={{ marginTop: 14 }}>{t('editRoom.payAccess')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <button
               type="button"
@@ -145,27 +147,27 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
                 fontWeight: 600, fontSize: 13,
               }}
             >
-              {estPayante ? '💰 Activé' : '🔓 Désactivé'}
+              {estPayante ? t('editRoom.payOn') : t('editRoom.payOff')}
             </button>
             <span style={{ color: 'var(--text-mut)', fontSize: 12 }}>
-              Les membres devront payer pour accéder à cette room
+              {t('editRoom.payHint')}
             </span>
           </div>
 
           {estPayante && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ flex: 1, minWidth: 120 }}>
-                <label style={{ fontSize: 12 }}>Prix</label>
+                <label style={{ fontSize: 12 }}>{t('editRoom.priceLabel')}</label>
                 <input
                   type="number" min="0" step="0.01"
                   value={prixAcces}
                   onChange={e => setPrixAcces(e.target.value)}
-                  placeholder="Ex: 9.99"
+                  placeholder={t('editRoom.pricePlaceholder')}
                   style={{ width: '100%' }}
                 />
               </div>
               <div style={{ minWidth: 80 }}>
-                <label style={{ fontSize: 12 }}>Devise</label>
+                <label style={{ fontSize: 12 }}>{t('editRoom.currencyLabel')}</label>
                 <select
                   value={deviseAcces}
                   onChange={e => setDeviseAcces(e.target.value)}
@@ -178,11 +180,11 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
                 </select>
               </div>
               <div style={{ flex: 2, minWidth: 140 }}>
-                <label style={{ fontSize: 12 }}>Type de paiement</label>
+                <label style={{ fontSize: 12 }}>{t('editRoom.payTypeLabel')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[
-                    { id: 'unique',      label: '💳 Achat unique' },
-                    { id: 'abonnement',  label: '🔄 Mensuel' },
+                    { id: 'unique',      label: t('editRoom.payOnce') },
+                    { id: 'abonnement',  label: t('editRoom.payMonthly') },
                   ].map(opt => (
                     <button
                       key={opt.id} type="button"
@@ -202,9 +204,9 @@ export default function EditRoomModal({ room, worldId, onSave, onFermer }) {
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn-annuler" onClick={onFermer}>Annuler</button>
+            <button type="button" className="btn-annuler" onClick={onFermer}>{t('common.cancel')}</button>
             <button type="submit" className="btn-creer" disabled={loading}>
-              {loading ? '...' : 'Sauvegarder'}
+              {loading ? t('common.working') : t('common.save')}
             </button>
           </div>
         </form>

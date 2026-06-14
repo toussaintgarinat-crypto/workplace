@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
+  const { t } = useTranslation()
   const [projects, setProjects]   = useState([])
   const [creating, setCreating]   = useState(false)
   const [newName, setNewName]     = useState('')
@@ -39,7 +41,7 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
   }
 
   async function closeProject(p) {
-    if (!confirm(`Fermer le projet « ${p.name} » ? Toutes ses rooms passeront en lecture seule.`)) return
+    if (!confirm(t('projects.confirmClose', { name: p.name }))) return
     const updated = await api.post(`/projects/${p.id}/close`)
     if (updated) {
       setProjects(prev => prev.map(x => x.id === p.id ? updated : x))
@@ -56,7 +58,7 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
   }
 
   async function deleteProject(p) {
-    if (!confirm(`Supprimer le projet « ${p.name} » ? Les rooms ne seront pas supprimées.`)) return
+    if (!confirm(t('projects.confirmDelete', { name: p.name }))) return
     await api.del(`/projects/${p.id}`)
     setProjects(prev => prev.filter(x => x.id !== p.id))
   }
@@ -68,7 +70,7 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
   if (!world) return (
     <div style={{ padding: 32, color: '#aaa', textAlign: 'center' }}>
       <div style={{ fontSize: 40 }}>📁</div>
-      <p>Sélectionne une commune</p>
+      <p>{t('projects.selectWorld')}</p>
     </div>
   )
 
@@ -80,7 +82,7 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <h2 style={{ margin: 0, fontSize: 16, color: '#fff', fontWeight: 600 }}>
-          📁 Projets — {world.nom}
+          {t('projects.title', { world: world.nom })}
         </h2>
         {estProprietaire && (
           <button
@@ -90,14 +92,14 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
               borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 13,
             }}
           >
-            + Nouveau projet
+            {t('projects.new')}
           </button>
         )}
       </div>
 
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: 4, padding: '10px 20px', borderBottom: '1px solid #2d2e33' }}>
-        {[['all', 'Tous'], ['active', '🟢 Actifs'], ['closed', '🔒 Fermés']].map(([v, l]) => (
+        {[['all', t('projects.all')], ['active', t('projects.active')], ['closed', t('projects.closed')]].map(([v, l]) => (
           <button
             key={v}
             onClick={() => setFilter(v)}
@@ -120,31 +122,31 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
           <input
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            placeholder="Nom du projet *"
+            placeholder={t('projects.namePlaceholder')}
             autoFocus
             style={inputStyle}
           />
           <textarea
             value={newDesc}
             onChange={e => setNewDesc(e.target.value)}
-            placeholder="Description (optionnelle)"
+            placeholder={t('projects.descPlaceholder')}
             rows={2}
             style={{ ...inputStyle, resize: 'vertical', marginTop: 8 }}
           />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={createProject} style={btnPrimary}>Créer</button>
-            <button onClick={() => setCreating(false)} style={btnSecondary}>Annuler</button>
+            <button onClick={createProject} style={btnPrimary}>{t('projects.create')}</button>
+            <button onClick={() => setCreating(false)} style={btnSecondary}>{t('common.cancel')}</button>
           </div>
         </div>
       )}
 
       {/* List */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
-        {loading && <div style={{ color: '#aaa', padding: 24, textAlign: 'center' }}>Chargement…</div>}
+        {loading && <div style={{ color: '#aaa', padding: 24, textAlign: 'center' }}>{t('projects.loading')}</div>}
         {!loading && filtered.length === 0 && (
           <div style={{ color: '#aaa', padding: 24, textAlign: 'center' }}>
             <div style={{ fontSize: 36 }}>📂</div>
-            <p>{filter === 'closed' ? 'Aucun projet fermé' : 'Aucun projet — crée le premier !'}</p>
+            <p>{filter === 'closed' ? t('projects.emptyClosed') : t('projects.empty')}</p>
           </div>
         )}
         {filtered.map(p => (
@@ -165,6 +167,7 @@ export default function ProjectsPanel({ world, moi, onWorldMisAJour }) {
 }
 
 function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, onReopen, onDelete }) {
+  const { t, i18n } = useTranslation()
   const isClosed = project.status === 'closed'
 
   return (
@@ -191,7 +194,7 @@ function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, on
               background: isClosed ? '#3a3a3a' : '#3a4a6a',
               color: isClosed ? '#888' : '#8ab4f8',
             }}>
-              {isClosed ? 'Terminé' : 'Actif'}
+              {isClosed ? t('projects.statusDone') : t('projects.statusActive')}
             </span>
           </div>
           {project.description && (
@@ -199,7 +202,7 @@ function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, on
           )}
         </div>
         <span style={{ color: '#aaa', fontSize: 12 }}>
-          {project.room_count} room{project.room_count !== 1 ? 's' : ''}
+          {t('projects.rooms', { count: project.room_count })}
         </span>
         <span style={{ color: '#666', fontSize: 12 }}>{expanded ? '▲' : '▼'}</span>
       </div>
@@ -209,7 +212,7 @@ function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, on
         <div style={{ borderTop: '1px solid #3d3e43', padding: '10px 16px' }}>
           {/* Rooms list */}
           {project.rooms.length === 0 ? (
-            <p style={{ color: '#666', fontSize: 12, margin: '0 0 10px' }}>Aucune room assignée</p>
+            <p style={{ color: '#666', fontSize: 12, margin: '0 0 10px' }}>{t('projects.noRoom')}</p>
           ) : (
             <div style={{ marginBottom: 10 }}>
               {project.rooms.map(r => (
@@ -220,7 +223,7 @@ function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, on
                   <span>{r.emoji || '💬'}</span>
                   <span style={{ flex: 1 }}>{r.nom}</span>
                   {r.status === 'closed' && (
-                    <span style={{ fontSize: 11, color: '#888' }}>🔒 fermée</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>{t('projects.roomClosed')}</span>
                   )}
                 </div>
               ))}
@@ -232,22 +235,22 @@ function ProjectCard({ project, expanded, onToggle, estProprietaire, onClose, on
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {!isClosed ? (
                 <button onClick={onClose} style={btnDanger}>
-                  🔒 Fermer le projet
+                  {t('projects.close')}
                 </button>
               ) : (
                 <button onClick={onReopen} style={btnSecondary}>
-                  🔓 Rouvrir
+                  {t('projects.reopen')}
                 </button>
               )}
               <button onClick={onDelete} style={btnGhost}>
-                🗑 Supprimer
+                🗑 {t('common.delete')}
               </button>
             </div>
           )}
 
           {isClosed && project.closed_at && (
             <p style={{ color: '#666', fontSize: 11, margin: '8px 0 0' }}>
-              Fermé le {new Date(project.closed_at).toLocaleDateString('fr-FR')}
+              {t('projects.closedOn', { date: new Date(project.closed_at).toLocaleDateString(i18n.language) })}
             </p>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const MIME_ICON = (mime = '') => {
@@ -10,6 +11,7 @@ const MIME_ICON = (mime = '') => {
 }
 
 export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
+  const { t, i18n } = useTranslation()
   const [data,        setData]        = useState(null)
   const [mesDocs,     setMesDocs]     = useState([])
   const [onglet,      setOnglet]      = useState('deliberations')
@@ -51,10 +53,10 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
   }
 
   const ONGLETS = [
-    { key: 'deliberations', label: '📜 Délibérations', items: data?.deliberations || [] },
-    { key: 'arretes',       label: '📑 Arrêtés',       items: data?.arretes       || [] },
-    { key: 'autres',        label: '📁 Autres',         items: data?.autres        || [] },
-    { key: 'mes-docs',      label: '🔗 Mes partages',  items: mesDocs              },
+    { key: 'deliberations', label: t('reseauDocs.tabDeliberations'), items: data?.deliberations || [] },
+    { key: 'arretes',       label: t('reseauDocs.tabArretes'),       items: data?.arretes       || [] },
+    { key: 'autres',        label: t('reseauDocs.tabAutres'),         items: data?.autres        || [] },
+    { key: 'mes-docs',      label: t('reseauDocs.tabMyShares'),  items: mesDocs              },
   ]
 
   const ongletActif = ONGLETS.find(o => o.key === onglet)
@@ -62,7 +64,7 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
   return (
     <div className="mairie-panel">
       <div className="mairie-panel-header">
-        <div className="mairie-panel-title"><span>🏘</span><h2>Documents intercommunaux</h2></div>
+        <div className="mairie-panel-title"><span>🏘</span><h2>{t('reseauDocs.title')}</h2></div>
         <div className="mairie-panel-actions">
           <button className="mairie-btn-close" onClick={onFermer}>✕</button>
         </div>
@@ -71,7 +73,7 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
       {/* Communes liées */}
       {data && data.communes.length > 0 && (
         <div style={{ padding: '8px 16px 0', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-mut)' }}>Communes :</span>
+          <span style={{ fontSize: 11, color: 'var(--text-mut)' }}>{t('reseauDocs.communes')}</span>
           {data.communes.map(c => (
             <span key={c.id} style={{
               fontSize: 12, background: 'var(--ink-850)', borderRadius: 12,
@@ -86,9 +88,9 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
       {/* État vide — aucun world lié */}
       {data && data.communes.length === 0 && onglet !== 'mes-docs' && (
         <div className="mairie-empty" style={{ padding: 40 }}>
-          <p>Aucune commune liée au réseau intercommunal.</p>
+          <p>{t('reseauDocs.noCommunes')}</p>
           <p style={{ fontSize: 12, color: 'var(--text-mut)', marginTop: 8 }}>
-            Connectez des communes via la vue Intercommunalité.
+            {t('reseauDocs.noCommunesHint')}
           </p>
         </div>
       )}
@@ -117,15 +119,15 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
 
       <div className="mairie-list">
         {chargement && onglet !== 'mes-docs' && (
-          <div className="mairie-empty">Chargement…</div>
+          <div className="mairie-empty">{t('reseauDocs.loading')}</div>
         )}
 
         {/* Docs reçus du réseau */}
         {onglet !== 'mes-docs' && !chargement && ongletActif.items.length === 0 && (
           <div className="mairie-empty">
-            Aucun document partagé dans cette catégorie.<br />
+            {t('reseauDocs.emptyCategory')}<br />
             <span style={{ fontSize: 12, color: 'var(--text-mut)' }}>
-              Les communes partenaires peuvent partager leurs documents depuis leurs panneaux respectifs.
+              {t('reseauDocs.emptyCategoryHint')}
             </span>
           </div>
         )}
@@ -137,12 +139,12 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
                 {doc.commune?.emoji} {doc.commune?.nom}
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-mut)' }}>
-                {MIME_ICON(doc.type_mime)} {doc.type_mime?.split('/')[1]?.toUpperCase() || 'FICHIER'}
+                {MIME_ICON(doc.type_mime)} {doc.type_mime?.split('/')[1]?.toUpperCase() || t('reseauDocs.file')}
               </span>
             </div>
             <div className="mairie-card-titre">{doc.nom}</div>
             <div className="mairie-card-meta">
-              <span>📅 {new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
+              <span>📅 {new Date(doc.created_at).toLocaleDateString(i18n.language)}</span>
               <span style={{ color: 'var(--text-mut)', fontSize: 11 }}>{doc.nom_original}</span>
             </div>
           </div>
@@ -151,9 +153,9 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
         {/* Mes docs — gestion partage */}
         {onglet === 'mes-docs' && mesDocs.length === 0 && (
           <div className="mairie-empty">
-            Aucun document dans ce world.<br />
+            {t('reseauDocs.emptyMyDocs')}<br />
             <span style={{ fontSize: 12, color: 'var(--text-mut)' }}>
-              Uploadez des documents via le panneau Documents pour les partager.
+              {t('reseauDocs.emptyMyDocsHint')}
             </span>
           </div>
         )}
@@ -167,7 +169,7 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
                 {MIME_ICON(doc.type_mime)} {doc.nom}
               </div>
               <div className="mairie-card-meta">
-                <span>📅 {new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
+                <span>📅 {new Date(doc.created_at).toLocaleDateString(i18n.language)}</span>
               </div>
             </div>
             <button
@@ -186,7 +188,7 @@ export default function ReseauDocumentsPanel({ world, moi, onFermer }) {
                 transition: 'background 0.15s',
               }}
             >
-              {toggling === doc.id ? '…' : doc.partage_reseau ? '✓ Partagé' : 'Partager'}
+              {toggling === doc.id ? '…' : doc.partage_reseau ? t('reseauDocs.shared') : t('reseauDocs.share')}
             </button>
           </div>
         ))}

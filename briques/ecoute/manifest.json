@@ -1,0 +1,30 @@
+{
+  "nom": "ecoute",
+  "version": "0.2.0",
+  "description": "Mot-clé « comme Siri » (openWakeWord, ONNX/CPU) en flux WebSocket + paliers commerciaux : noms gratuits embarqués (catalogue) et noms de marque sur mesure (commande Stripe one-off + file d'entraînement pilotée par l'horloge). POC S41, brique S42, paliers S43.",
+  "role": "ecoute",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/ecoute",
+  "port": 5800,
+  "url_sante": "http://host.docker.internal:5800/sante",
+  "depends_on": [],
+  "offre": [
+    "mot_cle_vocal",
+    "flux_micro_websocket",
+    "catalogue_noms_gratuits",
+    "commande_nom_sur_mesure"
+  ],
+  "besoin": [],
+  "taches": [
+    {
+      "nom": "file-entrainement-wakeword",
+      "description": "Avance la file des noms de marque (payée→entraînement→livrée) et relance les commandes impayées.",
+      "methode": "POST",
+      "chemin": "/entrainement/traiter",
+      "cadence_heures": 0.25,
+      "idempotent": true,
+      "tolere_echec": true
+    }
+  ]
+}

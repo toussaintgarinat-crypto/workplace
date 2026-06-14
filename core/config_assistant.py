@@ -59,9 +59,12 @@ DEFAUT_SHADOW_CANDIDAT = os.getenv("SHADOW_CANDIDAT", "")
 DEFAUT_SHADOW_TAUX = float(os.getenv("SHADOW_TAUX", "0.05"))
 
 # Voix : fournisseur de parole temps réel. 'webspeech' = navigateur (défaut, 0 infra) ;
-# 'unmute' = serveur Kyutai Unmute (nécessite un GPU NVIDIA, cf. outils/unmute/).
+# 'unmute' = serveur Kyutai Unmute (nécessite un GPU NVIDIA, cf. outils/unmute/) ;
+# 'wakeword' = mot-clé « comme Siri » via la brique ecoute (S42, openWakeWord, CPU).
 DEFAUT_VOIX_PROVIDER = os.getenv("VOIX_PROVIDER", "webspeech")
 DEFAUT_UNMUTE_URL = os.getenv("UNMUTE_URL", "")
+# URL WebSocket de la brique ecoute (S42). Défaut = brique locale exposée sur 5800.
+DEFAUT_WAKEWORD_URL = os.getenv("WAKEWORD_URL", "ws://localhost:5800/ecoute")
 
 # Langue du Jarvis (S39) : langue de ses réponses (chat/briefing/résumé/classement)
 # ET de la voix (reco/synthèse). Préférence de l'utilisateur, réglable ⚙ Cerveau,
@@ -80,6 +83,7 @@ def charger() -> dict:
         "fallback_models": list(DEFAUT_FALLBACKS),
         "voix_provider": DEFAUT_VOIX_PROVIDER,
         "unmute_url": DEFAUT_UNMUTE_URL,
+        "wakeword_url": DEFAUT_WAKEWORD_URL,
         "persona": "default",
         "langue": DEFAUT_LANGUE,
         "routage_actif": DEFAUT_ROUTAGE_ACTIF,
@@ -101,6 +105,8 @@ def charger() -> dict:
             base["voix_provider"] = d.get("voix_provider") or base["voix_provider"]
             if d.get("unmute_url") is not None:
                 base["unmute_url"] = d.get("unmute_url")
+            if d.get("wakeword_url") is not None:
+                base["wakeword_url"] = d.get("wakeword_url")
             base["persona"] = d.get("persona") or base["persona"]
             base["langue"] = d.get("langue") or base["langue"]
             if d.get("routage_actif") is not None:
@@ -172,13 +178,17 @@ def definir_langue(langue: str | None) -> dict:
     return conf
 
 
-def definir_voix(provider: str | None, unmute_url: str | None = None) -> dict:
-    """Règle le fournisseur de voix ('webspeech'|'unmute') et l'URL du serveur Unmute."""
+def definir_voix(provider: str | None, unmute_url: str | None = None,
+                 wakeword_url: str | None = None) -> dict:
+    """Règle le fournisseur de voix ('webspeech'|'unmute'|'wakeword') et les URLs de
+    serveur (Unmute full-duplex, brique ecoute S42)."""
     conf = charger()
-    if provider in ("webspeech", "unmute"):
+    if provider in ("webspeech", "unmute", "wakeword"):
         conf["voix_provider"] = provider
     if unmute_url is not None:
         conf["unmute_url"] = unmute_url.strip()
+    if wakeword_url is not None:
+        conf["wakeword_url"] = wakeword_url.strip()
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import NotificationBell from './NotificationBell.jsx'
 
 export default function WorldSidebar({
@@ -6,6 +7,7 @@ export default function WorldSidebar({
   onDiscovery, onMyDocs, onMap, onAgents, onIPCRA, onFeed, onConductor,
   vueActive,
 }) {
+  const { t } = useTranslation()
   const jardin       = worlds.find(w => w.is_garden)
   const autresWorlds = worlds.filter(w => !w.is_garden)
 
@@ -20,10 +22,10 @@ export default function WorldSidebar({
           <button
             className={`world-btn garden-btn ${vueActive === 'jardin' ? 'actif' : ''}`}
             onClick={() => onSelectWorld(jardin.id)}
-            title="Mon Jardin Secret"
+            title={t('sidebar.garden')}
           >
             <span className="world-btn-emoji">🌿</span>
-            <span className="world-btn-tooltip">Mon Jardin Secret</span>
+            <span className="world-btn-tooltip">{t('sidebar.garden')}</span>
             <span className="garden-lock">🔒</span>
           </button>
           <div className="sidebar-divider" />
@@ -46,9 +48,9 @@ export default function WorldSidebar({
         ))}
       </div>
 
-      <button className="world-btn add" onClick={onCreerWorld} title="Créer un monde">
+      <button className="world-btn add" onClick={onCreerWorld} title={t('sidebar.createWorld')}>
         <span>＋</span>
-        <span className="world-btn-tooltip">Nouveau monde</span>
+        <span className="world-btn-tooltip">{t('sidebar.newWorld')}</span>
       </button>
 
       <div className="sidebar-divider" />
@@ -57,79 +59,79 @@ export default function WorldSidebar({
       <button
         className={`world-btn nav-btn ${vueActive === 'discovery' ? 'actif' : ''}`}
         onClick={onDiscovery}
-        title="Explorer"
+        title={t('sidebar.explore')}
       >
         <span>🔭</span>
-        <span className="world-btn-tooltip">Explorer les mondes</span>
+        <span className="world-btn-tooltip">{t('sidebar.exploreWorlds')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'feed' ? 'actif' : ''}`}
         onClick={onFeed}
-        title="Fil d'activité"
+        title={t('sidebar.feed')}
       >
         <span>🌊</span>
-        <span className="world-btn-tooltip">Fil d'activité</span>
+        <span className="world-btn-tooltip">{t('sidebar.feed')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'map' ? 'actif' : ''}`}
         onClick={onMap}
-        title="Carte 2D"
+        title={t('sidebar.map2d')}
       >
         <span>🗺</span>
-        <span className="world-btn-tooltip">Carte du monde</span>
+        <span className="world-btn-tooltip">{t('sidebar.worldMap')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'agents' ? 'actif' : ''}`}
         onClick={onAgents}
-        title="Agents IA"
+        title={t('sidebar.agentsAI')}
       >
         <span>🤖</span>
-        <span className="world-btn-tooltip">Agents IA</span>
+        <span className="world-btn-tooltip">{t('sidebar.agentsAI')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'mydocs' ? 'actif' : ''}`}
         onClick={onMyDocs}
-        title="Mes dossiers"
+        title={t('sidebar.myFolders')}
       >
         <span>📁</span>
-        <span className="world-btn-tooltip">Mes dossiers</span>
+        <span className="world-btn-tooltip">{t('sidebar.myFolders')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'ipcra' ? 'actif' : ''}`}
         onClick={onIPCRA}
-        title="IPCRA"
+        title={t('sidebar.ipcra')}
       >
         <span>🎯</span>
-        <span className="world-btn-tooltip">Sessions IPCRA</span>
+        <span className="world-btn-tooltip">{t('sidebar.ipcraSessions')}</span>
       </button>
 
       <button
         className={`world-btn nav-btn ${vueActive === 'conductor' ? 'actif' : ''}`}
         onClick={onConductor}
-        title="Conductor"
+        title={t('sidebar.conductor')}
       >
         <span>🎛</span>
-        <span className="world-btn-tooltip">Conductor</span>
+        <span className="world-btn-tooltip">{t('sidebar.conductor')}</span>
       </button>
 
       <button
         className={`world-btn network-btn ${vueActive === 'network' ? 'actif' : ''}`}
         onClick={onNetwork}
-        title="Réseau"
+        title={t('sidebar.network')}
       >
         <span>🏘</span>
-        <span className="world-btn-tooltip">Réseau</span>
+        <span className="world-btn-tooltip">{t('sidebar.network')}</span>
       </button>
 
       <div className="sidebar-bottom">
         <div className="sidebar-divider" />
         <NotificationBell />
-        <button className="moi-btn" onClick={onSettings} title="Paramètres">
+        <button className="moi-btn" onClick={onSettings} title={t('sidebar.settings')}>
           <span>{moi.avatar_emoji}</span>
         </button>
       </div>

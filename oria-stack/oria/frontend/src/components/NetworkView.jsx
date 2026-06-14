@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import ForceGraph2D from 'react-force-graph-2d'
 import { api } from '../services/api.js'
 import CreateLinkModal from './CreateLinkModal.jsx'
@@ -11,15 +12,11 @@ const TYPE_COLORS = {
   association: 'var(--rouge)',
 }
 
-const TYPE_LABELS = {
-  filiale:     'Commune membre',
-  partenaire:  'Partenaire',
-  client:      'Contractant',
-  fournisseur: 'Prestataire',
-  association: 'EPCI / Groupement',
-}
+const TYPE_KEYS = ['filiale', 'partenaire', 'client', 'fournisseur', 'association']
 
 export default function NetworkView({ moi, onOuvrirWorld }) {
+  const { t } = useTranslation()
+  const typeLabel = (k) => t(`createLink.${k}Label`)
   const [graphData, setGraphData]     = useState({ nodes: [], links: [] })
   const [vue, setVue]                 = useState('graph') // 'graph' | 'liste'
   const [showCreate, setShowCreate]   = useState(false)
@@ -139,19 +136,19 @@ export default function NetworkView({ moi, onOuvrirWorld }) {
   return (
     <div className="network-view">
       <div className="network-header">
-        <span className="network-titre">🕸 Intercommunalité</span>
+        <span className="network-titre">{t('network.title')}</span>
         <div className="network-actions">
-          <button className={`btn-vue ${vue === 'graph' ? 'actif' : ''}`} onClick={() => setVue('graph')}>Graphe</button>
-          <button className={`btn-vue ${vue === 'liste' ? 'actif' : ''}`} onClick={() => setVue('liste')}>Liste</button>
+          <button className={`btn-vue ${vue === 'graph' ? 'actif' : ''}`} onClick={() => setVue('graph')}>{t('network.graph')}</button>
+          <button className={`btn-vue ${vue === 'liste' ? 'actif' : ''}`} onClick={() => setVue('liste')}>{t('network.list')}</button>
           {vue === 'graph' && (
             <button className="btn-vue" onClick={() => {
               // Libérer tous les nœuds fixés et recentrer
               graphData.nodes.forEach(n => { n.fx = undefined; n.fy = undefined })
               graphRef.current?.d3ReheatSimulation()
               setTimeout(() => graphRef.current?.zoomToFit(500, 100), 1200)
-            }} title="Réinitialiser les positions">↺</button>
+            }} title={t('network.resetPos')}>↺</button>
           )}
-          <button className="btn-creer-lien" onClick={() => setShowCreate(true)}>+ Lien</button>
+          <button className="btn-creer-lien" onClick={() => setShowCreate(true)}>{t('network.addLink')}</button>
         </div>
       </div>
 
@@ -184,14 +181,14 @@ export default function NetworkView({ moi, onOuvrirWorld }) {
           {selectedNode && (
             <div className="network-node-tooltip">
               <span>{selectedNode.emoji} {selectedNode.nom}</span>
-              {!selectedNode.accessible && <span className="badge-prive">Privé</span>}
+              {!selectedNode.accessible && <span className="badge-prive">{t('network.private')}</span>}
             </div>
           )}
           <div className="network-legende">
-            {Object.entries(TYPE_LABELS).map(([k, v]) => (
+            {TYPE_KEYS.map(k => (
               <span key={k} className="legende-item">
                 <span className="legende-dot" style={{ background: TYPE_COLORS[k] }} />
-                {v}
+                {typeLabel(k)}
               </span>
             ))}
           </div>
@@ -201,7 +198,7 @@ export default function NetworkView({ moi, onOuvrirWorld }) {
       {vue === 'liste' && (
         <div className="network-liste">
           {graphData.links.length === 0 && (
-            <div className="network-vide">Aucun lien. Reliez des communes avec "+ Lien".</div>
+            <div className="network-vide">{t('network.emptyList')}</div>
           )}
           {graphData.links.map(lien => {
             const from = graphData.nodes.find(n => n.id === (lien.source?.id ?? lien.source))
@@ -212,7 +209,7 @@ export default function NetworkView({ moi, onOuvrirWorld }) {
                 <span className="lien-from">{from?.emoji} {from?.nom}</span>
                 <span className="lien-arrow">→</span>
                 <span className="lien-to">{to?.emoji} {to?.nom}</span>
-                <span className="lien-type" style={{ color: lien.color }}>{TYPE_LABELS[lien.type]}</span>
+                <span className="lien-type" style={{ color: lien.color }}>{typeLabel(lien.type)}</span>
                 {lien.pourcentage && <span className="lien-pct">{lien.pourcentage}%</span>}
                 <button className="btn-suppr-lien" onClick={() => supprimerLien(lien.id)}>✕</button>
               </div>
