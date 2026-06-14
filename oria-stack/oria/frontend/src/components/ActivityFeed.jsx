@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 import FollowButton from './FollowButton.jsx'
 import PublicProfileModal from './PublicProfileModal.jsx'
 
 export default function ActivityFeed({ moi, onOuvrirWorld }) {
+  const { t } = useTranslation()
   const [onglet, setOnglet]       = useState('feed')
   const [feed, setFeed]           = useState([])
   const [following, setFollowing] = useState([])
@@ -41,28 +43,28 @@ export default function ActivityFeed({ moi, onOuvrirWorld }) {
   return (
     <div className="activity-feed">
       <div className="feed-header">
-        <h2>🌊 Fil d'activité</h2>
+        <h2>{t('feed.title')}</h2>
         <div className="feed-tabs">
           <button className={`feed-tab${onglet === 'feed' ? ' actif' : ''}`} onClick={() => setOnglet('feed')}>
-            Feed
+            {t('feed.tabFeed')}
           </button>
           <button className={`feed-tab${onglet === 'following' ? ' actif' : ''}`} onClick={() => setOnglet('following')}>
-            Tu suis {following.length > 0 && <span className="feed-tab-count">{following.length}</span>}
+            {t('feed.tabFollowing')} {following.length > 0 && <span className="feed-tab-count">{following.length}</span>}
           </button>
           <button className={`feed-tab${onglet === 'followers' ? ' actif' : ''}`} onClick={() => setOnglet('followers')}>
-            Abonnés {followers.length > 0 && <span className="feed-tab-count">{followers.length}</span>}
+            {t('feed.tabFollowers')} {followers.length > 0 && <span className="feed-tab-count">{followers.length}</span>}
           </button>
         </div>
       </div>
 
       {onglet === 'feed' && (
         loading ? (
-          <div className="feed-loading"><div className="spinner" /><p>Chargement…</p></div>
+          <div className="feed-loading"><div className="spinner" /><p>{t('feed.loading')}</p></div>
         ) : feed.length === 0 ? (
           <div className="feed-empty">
             <span>🌱</span>
-            <p>Ton fil est vide pour l'instant.</p>
-            <small>Suis des utilisateurs pour voir leurs worlds publics ici.</small>
+            <p>{t('feed.emptyFeed')}</p>
+            <small>{t('feed.emptyFeedHint')}</small>
           </div>
         ) : (
           <div className="feed-items">
@@ -83,8 +85,8 @@ export default function ActivityFeed({ moi, onOuvrirWorld }) {
           {following.length === 0 ? (
             <div className="feed-empty">
               <span>👥</span>
-              <p>Tu ne suis personne pour l'instant.</p>
-              <small>Explore les mondes publics pour trouver des utilisateurs à suivre.</small>
+              <p>{t('feed.emptyFollowing')}</p>
+              <small>{t('feed.emptyFollowingHint')}</small>
             </div>
           ) : (
             following.map(u => (
@@ -105,7 +107,7 @@ export default function ActivityFeed({ moi, onOuvrirWorld }) {
           {followers.length === 0 ? (
             <div className="feed-empty">
               <span>👤</span>
-              <p>Personne ne te suit encore.</p>
+              <p>{t('feed.emptyFollowers')}</p>
             </div>
           ) : (
             followers.map(u => (
@@ -135,6 +137,7 @@ export default function ActivityFeed({ moi, onOuvrirWorld }) {
 }
 
 function FeedCard({ item, onOuvrirWorld, onOpenProfile }) {
+  const { t, i18n } = useTranslation()
   return (
     <div className="feed-card" onClick={() => onOuvrirWorld?.(item.world_id)}>
       <div className="feed-card-banner" style={{ background: item.world_couleur }}>
@@ -145,12 +148,12 @@ function FeedCard({ item, onOuvrirWorld, onOpenProfile }) {
           <button
             className="feed-owner-avatar-btn"
             onClick={e => { e.stopPropagation(); onOpenProfile(item.owner_id, item.owner_nom, item.owner_avatar) }}
-            title={`Voir le profil de ${item.owner_nom}`}
+            title={t('feed.viewProfile', { nom: item.owner_nom })}
           >
             {item.owner_avatar}
           </button>
           <span className="feed-card-owner-nom">{item.owner_nom}</span>
-          <span className="feed-card-date">{new Date(item.created_at).toLocaleDateString('fr')}</span>
+          <span className="feed-card-date">{new Date(item.created_at).toLocaleDateString(i18n.language)}</span>
         </div>
         <h4 className="feed-card-nom">{item.world_nom}</h4>
         {item.world_desc && <p className="feed-card-desc">{item.world_desc}</p>}

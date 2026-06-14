@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 import AppearanceSettings from './AppearanceSettings.jsx'
 
 const AVATARS = ['👤','🧑','👩','🧔','👨‍💻','👩‍💻','🧑‍🎨','👩‍🎤','🧑‍🚀','🦊','🐺','🐸']
 
 export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFermer }) {
+  const { t } = useTranslation()
   const [nom, setNom]         = useState(moi.nom)
   const [avatar, setAvatar]   = useState(moi.avatar_emoji)
   const [chargement, setChargement] = useState(false)
@@ -26,15 +28,15 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
 
   async function enable2fa() {
     const d = await api.post('/auth/2fa/enable', { code: totpCode })
-    if (d?.ok) { setTotpEnabled(true); setTotpUri(null); setTotpCode(''); setTotpMsg('2FA activé ✅') }
-    else setTotpMsg(d?.detail || 'Code incorrect')
+    if (d?.ok) { setTotpEnabled(true); setTotpUri(null); setTotpCode(''); setTotpMsg(t('settings.twoFaEnabled')) }
+    else setTotpMsg(d?.detail || t('settings.wrongCode'))
   }
 
   async function disable2fa() {
     if (!desactivePass) return
     const d = await api.post('/auth/2fa/disable', { password: desactivePass })
-    if (d?.ok) { setTotpEnabled(false); setDesactivePass(''); setTotpMsg('2FA désactivé') }
-    else setTotpMsg(d?.detail || 'Mot de passe incorrect')
+    if (d?.ok) { setTotpEnabled(false); setDesactivePass(''); setTotpMsg(t('settings.twoFaDisabled')) }
+    else setTotpMsg(d?.detail || t('settings.wrongPassword'))
   }
 
   async function exporterDonnees() {
@@ -52,7 +54,7 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
   }
 
   async function supprimerCompte() {
-    if (!confirm('Supprimer définitivement votre compte ? Cette action est irréversible.')) return
+    if (!confirm(t('settings.confirmDelete'))) return
     const r = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/me`, {
       method: 'DELETE',
       credentials: 'include',
@@ -78,12 +80,12 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Paramètres</h2>
+          <h2>{t('settings.title')}</h2>
           <button className="modal-close" onClick={onFermer}>✕</button>
         </div>
 
         <form onSubmit={sauvegarder} className="modal-body">
-          <label className="modal-label">Avatar</label>
+          <label className="modal-label">{t('settings.avatar')}</label>
           <div className="avatar-grid">
             {AVATARS.map(a => (
               <button
@@ -94,7 +96,7 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
             ))}
           </div>
 
-          <label className="modal-label" style={{ marginTop: 16 }}>Nom affiché</label>
+          <label className="modal-label" style={{ marginTop: 16 }}>{t('settings.displayName')}</label>
           <input
             className="modal-input"
             value={nom}
@@ -105,52 +107,52 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
 
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
             <button type="submit" className="btn-primary" disabled={chargement || !nom.trim()}>
-              {chargement ? 'Sauvegarde…' : 'Sauvegarder'}
+              {chargement ? t('settings.saving') : t('settings.save')}
             </button>
             <button type="button" className="btn-danger" onClick={onDeconnexion}>
-              Se déconnecter
+              {t('settings.logout')}
             </button>
           </div>
 
           {/* Apparence */}
           <div style={{ marginTop: 20, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 10px' }}>Apparence</p>
+            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 10px' }}>{t('settings.appearance')}</p>
             <AppearanceSettings />
           </div>
 
           {/* 2FA */}
           <div style={{ marginTop: 20, borderTop: '1px solid var(--ink-700)', paddingTop: 16 }}>
-            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 10px' }}>Double authentification (2FA)</p>
-            {totpEnabled === null && <p style={{ fontSize: 12, color: 'var(--text-mut)' }}>Chargement…</p>}
+            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 10px' }}>{t('settings.twoFa')}</p>
+            {totpEnabled === null && <p style={{ fontSize: 12, color: 'var(--text-mut)' }}>{t('settings.loading')}</p>}
             {totpEnabled === true && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <p style={{ fontSize: 12, color: 'var(--vert)', margin: 0 }}>🔐 2FA activé</p>
-                <input className="modal-input" type="password" placeholder="Mot de passe pour désactiver"
+                <p style={{ fontSize: 12, color: 'var(--vert)', margin: 0 }}>{t('settings.twoFaOn')}</p>
+                <input className="modal-input" type="password" placeholder={t('settings.disablePassPlaceholder')}
                   value={desactivePass} onChange={e => setDesactivePass(e.target.value)} />
                 <button type="button" className="btn-danger" onClick={disable2fa} style={{ fontSize: 12 }}>
-                  Désactiver la 2FA
+                  {t('settings.disable2fa')}
                 </button>
                 {totpMsg && <p style={{ fontSize: 12, color: 'var(--or-400)', margin: 0 }}>{totpMsg}</p>}
               </div>
             )}
             {totpEnabled === false && !totpUri && (
               <button type="button" className="btn-secondary" onClick={setup2fa}>
-                🔐 Activer la double authentification
+                {t('settings.enable2fa')}
               </button>
             )}
             {totpEnabled === false && totpUri && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <p style={{ fontSize: 12, color: 'var(--text)', margin: 0 }}>
-                  Scannez ce code avec Google Authenticator ou copiez la clé :
+                  {t('settings.scanHint')}
                 </p>
                 <code style={{ fontSize: 11, wordBreak: 'break-all', background: 'var(--ink-850)', padding: 8, borderRadius: 4, color: 'var(--text)' }}>
                   {totpSecret}
                 </code>
-                <input className="modal-input" type="text" placeholder="Code à 6 chiffres"
+                <input className="modal-input" type="text" placeholder={t('settings.sixDigit')}
                   value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   maxLength={6} style={{ letterSpacing: 4, textAlign: 'center' }} />
                 <button type="button" className="btn-primary" onClick={enable2fa} disabled={totpCode.length < 6}>
-                  Confirmer l'activation
+                  {t('settings.confirmActivation')}
                 </button>
                 {totpMsg && <p style={{ fontSize: 12, color: 'var(--rouge)', margin: 0 }}>{totpMsg}</p>}
               </div>
@@ -159,7 +161,7 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
 
           {/* Tour de découverte */}
           <div style={{ marginTop: 20, borderTop: '1px solid var(--ink-700)', paddingTop: 16 }}>
-            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>Onboarding</p>
+            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>{t('settings.onboarding')}</p>
             <button
               type="button"
               className="btn-secondary"
@@ -168,18 +170,18 @@ export default function SettingsModal({ moi, onSauvegarde, onDeconnexion, onFerm
                 window.location.reload()
               }}
             >
-              🧭 Refaire le tour de bienvenue
+              {t('settings.redoTour')}
             </button>
           </div>
 
           {/* RGPD */}
           <div style={{ marginTop: 20, borderTop: '1px solid var(--ink-700)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>Données personnelles (RGPD)</p>
+            <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>{t('settings.gdpr')}</p>
             <button type="button" className="btn-secondary" onClick={exporterDonnees}>
-              📤 Exporter mes données
+              {t('settings.exportData')}
             </button>
             <button type="button" className="btn-danger" onClick={supprimerCompte} style={{ fontSize: 12 }}>
-              🗑 Supprimer mon compte
+              {t('settings.deleteAccount')}
             </button>
           </div>
         </form>

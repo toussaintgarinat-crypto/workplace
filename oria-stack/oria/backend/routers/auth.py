@@ -143,6 +143,8 @@ class MiseAJourProfil(BaseModel):
     # S25 — thème d'apparence. Dict {accent, surface, text, tint} (les 3 premiers
     # = couleurs hex, tint = 0..100). Sanitisé côté serveur avant persistance.
     theme: Optional[dict] = None
+    # S40 — langue d'interface (code i18next). Sanitisée contre la liste blanche.
+    langue: Optional[str] = None
 
 
 # ─── Thème d'apparence (S25) ──────────────────────────────────────────────────
@@ -178,6 +180,21 @@ def _theme_to_dict(stored: Optional[str]) -> Optional[dict]:
         return None
 
 
+# ─── Langue d'interface (S40) ─────────────────────────────────────────────────
+
+# Liste blanche = exactement les locales livrées avec le front (i18n/locales/*.json).
+_LANGUES_OK = {"fr", "en", "es", "ar", "pt", "ja", "zh"}
+
+
+def _sanitize_langue(raw) -> Optional[str]:
+    """Valide un code langue contre la liste blanche. Renvoie None si inconnu
+    (on n'écrase alors pas la préférence existante) — repli honnête côté front."""
+    if not isinstance(raw, str):
+        return None
+    code = raw.strip().lower()
+    return code if code in _LANGUES_OK else None
+
+
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @router.get("/me")
@@ -193,6 +210,7 @@ def get_me(
             "is_public": db_user.is_public if db_user else True,
             "documents_partageables_par_defaut": db_user.documents_partageables_par_defaut if db_user else False,
             "theme": _theme_to_dict(db_user.theme if db_user else None),
+            "langue": (db_user.langue or None) if db_user else None,
             "setup_completed_at": (
                 db_user.setup_completed_at.isoformat()
                 if (db_user and db_user.setup_completed_at) else None
@@ -220,6 +238,7 @@ def update_profil(
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     nom_clean = data.nom.strip() if data.nom is not None else None
     theme_clean = _sanitize_theme(data.theme) if data.theme is not None else None
+    langue_clean = _sanitize_langue(data.langue) if data.langue is not None else None
     db_user = svc.update_profile(
         db_user,
         nom=nom_clean,
@@ -228,6 +247,7 @@ def update_profil(
         is_public=data.is_public,
         documents_partageables_par_defaut=data.documents_partageables_par_defaut,
         theme=theme_clean,
+        langue=langue_clean,
     )
     return {
         "user": {
@@ -235,6 +255,7 @@ def update_profil(
             "bio": db_user.bio or "", "is_public": db_user.is_public,
             "documents_partageables_par_defaut": db_user.documents_partageables_par_defaut,
             "theme": _theme_to_dict(db_user.theme),
+            "langue": db_user.langue or None,
             "setup_completed_at": (
                 db_user.setup_completed_at.isoformat() if db_user.setup_completed_at else None
             ),

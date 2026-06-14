@@ -1,0 +1,33 @@
+services:
+  ecoute:
+    build: .
+    container_name: workplace_ecoute
+    image: workplace/ecoute:0.2.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique (Stripe : STRIPE_SECRET_KEY,
+      # STRIPE_WEBHOOK_SECRET, STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL si palier payant).
+      - path: ../../.env
+        required: false
+    ports:
+      - "5800:5800"
+    environment:
+      - PORT=5800
+      # Un modèle = un nom. Défaut : le hey_jarvis pré-entraîné prouvé au POC S41.
+      # Le palier payant S43 livre des modèles sur mesure dans /data/modeles (volume).
+      - WAKEWORD_MODELE=hey_jarvis_v0.1
+      - WAKEWORD_SEUIL=0.5
+      - COMMANDES_DB=/data/ecoute.db
+      - MODELES_DIR=/data/modeles
+      # ENTRAINEUR_CMD : vrai job GPU d'entraînement par nom (absent en dev → stand-in honnête).
+    volumes:
+      - ecoute_data:/data   # commandes (SQLite) + modèles sur mesure livrés
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5800/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  ecoute_data:

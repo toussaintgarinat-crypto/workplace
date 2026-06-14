@@ -30,3 +30,6 @@ class User(Base):
     # S25 — thème d'apparence (design system « dark chaud & or »), persisté par
     # utilisateur. JSON sérialisé {accent, surface, text, tint}. Vide = défaut front.
     theme                           = Column(Text, default="")
+    # S40 — langue d'interface (i18next), persistée par utilisateur sur le même
+    # motif que le thème. Code BCP-47 court (fr/en/es/…). Vide = défaut front (fr).
+    langue                          = Column(String, default="")

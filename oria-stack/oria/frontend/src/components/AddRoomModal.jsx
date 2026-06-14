@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const TYPES = [
-  { id: 'texte',  emoji: '💬', label: 'Texte',  desc: 'Chat écrit en temps réel' },
-  { id: 'vocal',  emoji: '🔊', label: 'Vocal',  desc: 'Appel voix/vidéo' },
-  { id: 'mixte',  emoji: '⚡', label: 'Mixte',  desc: 'Chat + voix dans la même pièce' },
+  { id: 'texte',  emoji: '💬' },
+  { id: 'vocal',  emoji: '🔊' },
+  { id: 'mixte',  emoji: '⚡' },
 ]
 
 const EMOJIS = ['💬','🔊','⚡','🏠','💼','🍳','🛋','📋','📊','🎮','🎨','🔬','📡','🌡','💡','🔧','📁','🎯','🌿','🚪']
 
 export default function AddRoomModal({ building, worldId, onCree, onFermer }) {
+  const { t } = useTranslation()
   const [nom, setNom]                 = useState('')
   const [type, setType]               = useState('mixte')
   const [emoji, setEmoji]             = useState('💬')
@@ -56,26 +58,26 @@ export default function AddRoomModal({ building, worldId, onCree, onFermer }) {
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h2 className="modal-titre">
-          Ajouter une pièce
-          <span className="modal-sous-titre"> dans {building.emoji} {building.nom}</span>
+          {t('addRoom.title')}
+          <span className="modal-sous-titre">{t('addRoom.subtitle', { building: `${building.emoji} ${building.nom}` })}</span>
         </h2>
 
         <form onSubmit={creer}>
-          <label>Type de pièce</label>
+          <label>{t('addRoom.typeLabel')}</label>
           <div className="type-picker">
-            {TYPES.map(t => (
-              <button key={t.id} type="button"
-                className={`type-btn ${type === t.id ? 'actif' : ''}`}
-                onClick={() => { setType(t.id); setEmoji(t.emoji) }}
+            {TYPES.map(ty => (
+              <button key={ty.id} type="button"
+                className={`type-btn ${type === ty.id ? 'actif' : ''}`}
+                onClick={() => { setType(ty.id); setEmoji(ty.emoji) }}
               >
-                <span className="type-emoji">{t.emoji}</span>
-                <span className="type-label">{t.label}</span>
-                <span className="type-desc">{t.desc}</span>
+                <span className="type-emoji">{ty.emoji}</span>
+                <span className="type-label">{t(`addRoom.${ty.id}Label`)}</span>
+                <span className="type-desc">{t(`addRoom.${ty.id}Desc`)}</span>
               </button>
             ))}
           </div>
 
-          <label>Icône</label>
+          <label>{t('addRoom.iconLabel')}</label>
           <div className="emoji-picker">
             {EMOJIS.map(e => (
               <button key={e} type="button"
@@ -85,39 +87,39 @@ export default function AddRoomModal({ building, worldId, onCree, onFermer }) {
             ))}
           </div>
 
-          <label>Nom de la pièce</label>
+          <label>{t('addRoom.nameLabel')}</label>
           <input value={nom} onChange={e => setNom(e.target.value)}
-            placeholder="Domotique, Archives, Studio..." autoFocus required />
+            placeholder={t('addRoom.namePlaceholder')} autoFocus required />
 
           {building.type === 'immeuble' && (
             <>
-              <label>Étage</label>
+              <label>{t('addRoom.floorLabel')}</label>
               <select className="input-select" value={etage}
                 onChange={e => setEtage(Number(e.target.value))}>
                 {(etagesExistants?.length ? etagesExistants : [0]).map(n => (
-                  <option key={n} value={n}>{n === 0 ? 'RDC' : `Étage ${n}`}</option>
+                  <option key={n} value={n}>{n === 0 ? t('addRoom.floorGround') : t('addRoom.floorN', { n })}</option>
                 ))}
                 <option value={(etagesExistants?.at(-1) ?? 0) + 1}>
-                  Nouvel étage ({(etagesExistants?.at(-1) ?? 0) + 1})
+                  {t('addRoom.newFloor', { n: (etagesExistants?.at(-1) ?? 0) + 1 })}
                 </option>
               </select>
             </>
           )}
 
           {/* Restriction d'accès */}
-          <label style={{ marginTop: 12 }}>Restriction d'accès</label>
+          <label style={{ marginTop: 12 }}>{t('addRoom.accessLabel')}</label>
           <div className="type-picker" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             {[
-              { id: 'libre',   icon: '🔓', label: 'Libre',   desc: 'Tout le monde' },
-              { id: 'cadenas', icon: '🔒', label: 'Cadenas', desc: 'Visible mais bloqué' },
-              { id: 'cache',   icon: '👁️',  label: 'Caché',   desc: 'Invisible sans abonnement' },
+              { id: 'libre',   icon: '🔓' },
+              { id: 'cadenas', icon: '🔒' },
+              { id: 'cache',   icon: '👁️' },
             ].map(opt => (
               <button key={opt.id} type="button"
                 className={`type-btn ${acces === opt.id ? 'actif' : ''}`}
                 onClick={() => setAcces(opt.id)}>
                 <span className="type-emoji">{opt.icon}</span>
-                <span className="type-label">{opt.label}</span>
-                <span className="type-desc">{opt.desc}</span>
+                <span className="type-label">{t(`addRoom.${opt.id}Label`)}</span>
+                <span className="type-desc">{t(`addRoom.${opt.id}Desc`)}</span>
               </button>
             ))}
           </div>
@@ -125,12 +127,12 @@ export default function AddRoomModal({ building, worldId, onCree, onFermer }) {
           {acces !== 'libre' && (
             <>
               <label style={{ marginTop: 10 }}>
-                Abonnements requis
-                <span style={{ color: 'var(--text-mut)', fontWeight: 400 }}> (au moins un)</span>
+                {t('addRoom.subsLabel')}
+                <span style={{ color: 'var(--text-mut)', fontWeight: 400 }}>{t('addRoom.subsHint')}</span>
               </label>
               {abonnements.length === 0 ? (
                 <p style={{ color: 'var(--text-mut)', fontSize: 13 }}>
-                  Aucun tier d'abonnement défini. Créez-en via le bouton 💳 dans la barre du world.
+                  {t('addRoom.noSubs')}
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -156,9 +158,9 @@ export default function AddRoomModal({ building, worldId, onCree, onFermer }) {
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn-annuler" onClick={onFermer}>Annuler</button>
+            <button type="button" className="btn-annuler" onClick={onFermer}>{t('common.cancel')}</button>
             <button type="submit" className="btn-creer" disabled={loading}>
-              {loading ? '...' : 'Ajouter →'}
+              {loading ? t('common.working') : t('addRoom.submit')}
             </button>
           </div>
         </form>

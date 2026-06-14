@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 
-const PROVIDER_LABELS = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI-compatible',
-}
-
 export default function LLMConfigPanel({ world, moi, onFermer }) {
+  const { t } = useTranslation()
   const [presets, setPresets]       = useState([])
   const [config, setConfig]         = useState(null)
   const [form, setForm]             = useState({ provider: 'anthropic', base_url: '', api_key: '', model: '' })
@@ -43,7 +40,7 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
     setSauvegarde(true)
     const r = await api.put(`/llm-config/${world.id}`, form)
     setSauvegarde(false)
-    setMsg(r?.ok ? '✅ Configuration sauvegardée' : '❌ Erreur lors de la sauvegarde')
+    setMsg(r?.ok ? t('llmConfig.saved') : t('llmConfig.saveError'))
   }
 
   async function tester() {
@@ -59,23 +56,23 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
     })
     const d = await r.json().catch(() => null)
     setTesting(false)
-    setTestResult(d?.response || d?.detail || '❌ Erreur')
+    setTestResult(d?.response || d?.detail || t('llmConfig.testError'))
   }
 
   async function reinitialiser() {
-    if (!confirm('Réinitialiser la config sur les variables d\'environnement ?')) return
+    if (!confirm(t('llmConfig.confirmReset'))) return
     const r = await api.del(`/llm-config/${world.id}`)
-    if (r?.ok) setMsg('✅ Config réinitialisée')
+    if (r?.ok) setMsg(t('llmConfig.resetDone'))
   }
 
   if (!isAdmin) {
     return (
       <div className="mairie-panel">
         <div className="mairie-panel-header">
-          <div className="mairie-panel-title"><span>🤖</span><h2>Configuration IA</h2></div>
+          <div className="mairie-panel-title"><span>🤖</span><h2>{t('llmConfig.title')}</h2></div>
           <div className="mairie-panel-actions"><button className="mairie-btn-close" onClick={onFermer}>✕</button></div>
         </div>
-        <div className="mairie-empty">Réservé aux administrateurs.</div>
+        <div className="mairie-empty">{t('llmConfig.adminOnly')}</div>
       </div>
     )
   }
@@ -90,13 +87,13 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
       </div>
 
       <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
-        {chargement && <div className="mairie-empty">Chargement…</div>}
+        {chargement && <div className="mairie-empty">{t('llmConfig.loading')}</div>}
 
         {!chargement && (
           <>
             {/* Presets */}
             <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: 12, color: 'var(--text-mut)', margin: '0 0 10px' }}>Providers disponibles</p>
+              <p style={{ fontSize: 12, color: 'var(--text-mut)', margin: '0 0 10px' }}>{t('llmConfig.providers')}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {presets.map(p => (
                   <button
@@ -118,22 +115,22 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
             {/* Formulaire */}
             <form onSubmit={sauvegarder} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, color: 'var(--text)', display: 'block', marginBottom: 4 }}>Provider</label>
+                <label style={{ fontSize: 12, color: 'var(--text)', display: 'block', marginBottom: 4 }}>{t('llmConfig.provider')}</label>
                 <select
                   value={form.provider}
                   onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
                   style={{ width: '100%', background: 'var(--ink-850)', color: 'var(--text)', border: '1px solid var(--ink-650)', borderRadius: 6, padding: '8px 10px', fontSize: 13 }}
                 >
-                  <option value="anthropic">Anthropic (format natif)</option>
-                  <option value="openai">OpenAI-compatible (Ollama, LM Studio, Groq, Together, Mistral…)</option>
+                  <option value="anthropic">{t('llmConfig.providerAnthropic')}</option>
+                  <option value="openai">{t('llmConfig.providerOpenai')}</option>
                 </select>
               </div>
 
               {form.provider === 'openai' && (
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                    URL de base de l'API
-                    <span style={{ color: 'var(--text-mut)', fontWeight: 400, marginLeft: 6 }}>ex. http://localhost:11434/v1</span>
+                    {t('llmConfig.baseUrl')}
+                    <span style={{ color: 'var(--text-mut)', fontWeight: 400, marginLeft: 6 }}>{t('llmConfig.baseUrlHint')}</span>
                   </label>
                   <input
                     className="modal-input"
@@ -147,8 +144,8 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
 
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                  Modèle
-                  <span style={{ color: 'var(--text-mut)', fontWeight: 400, marginLeft: 6 }}>ex. llama3, mistral, gpt-4o</span>
+                  {t('llmConfig.model')}
+                  <span style={{ color: 'var(--text-mut)', fontWeight: 400, marginLeft: 6 }}>{t('llmConfig.modelHint')}</span>
                 </label>
                 <input
                   className="modal-input"
@@ -162,9 +159,9 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
 
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                  Clé API
+                  {t('llmConfig.apiKey')}
                   <span style={{ color: 'var(--text-mut)', fontWeight: 400, marginLeft: 6 }}>
-                    {form.provider === 'openai' && form.base_url?.includes('localhost') ? 'Optionnelle pour les modèles locaux' : 'Requise'}
+                    {form.provider === 'openai' && form.base_url?.includes('localhost') ? t('llmConfig.apiKeyOptional') : t('llmConfig.apiKeyRequired')}
                   </span>
                 </label>
                 <input
@@ -172,7 +169,7 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
                   type="password"
                   value={form.api_key}
                   onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))}
-                  placeholder={config?.api_key === '***' ? '(clé existante — laisser vide pour conserver)' : 'sk-…'}
+                  placeholder={config?.api_key === '***' ? t('llmConfig.apiKeyExisting') : 'sk-…'}
                   style={{ fontFamily: 'monospace', fontSize: 12 }}
                   autoComplete="off"
                 />
@@ -180,20 +177,20 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
 
               {config?.source === 'env' && (
                 <div style={{ fontSize: 11, color: 'var(--or-400)', background: 'var(--ink-850)', padding: '8px 12px', borderRadius: 6, borderLeft: '3px solid var(--or-400)' }}>
-                  ⚠️ Configuration active depuis les variables d'environnement. Sauvegarder pour surcharger par commune.
+                  {t('llmConfig.envWarning')}
                 </div>
               )}
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="submit" className="mairie-btn-primary" disabled={sauvegarde}>
-                  {sauvegarde ? 'Sauvegarde…' : '💾 Sauvegarder'}
+                  {sauvegarde ? t('llmConfig.saving') : t('llmConfig.save')}
                 </button>
                 <button type="button" className="mairie-btn-pdf" onClick={tester} disabled={testing}>
-                  {testing ? '⏳ Test…' : '🔌 Tester la connexion'}
+                  {testing ? t('llmConfig.testing') : t('llmConfig.test')}
                 </button>
                 {config?.source === 'db' && (
                   <button type="button" className="mairie-btn-close" onClick={reinitialiser} style={{ fontSize: 12 }}>
-                    🔄 Réinitialiser
+                    {t('llmConfig.reset')}
                   </button>
                 )}
               </div>
@@ -202,7 +199,7 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
 
               {testResult && (
                 <div style={{ background: 'var(--ink-850)', borderRadius: 6, padding: 12, borderLeft: '3px solid var(--vert)' }}>
-                  <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 6px' }}>Réponse du modèle :</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 6px' }}>{t('llmConfig.modelResponse')}</p>
                   <p style={{ fontSize: 12, color: 'var(--text)', margin: 0, whiteSpace: 'pre-wrap' }}>{testResult}</p>
                 </div>
               )}
@@ -210,7 +207,7 @@ export default function LLMConfigPanel({ world, moi, onFermer }) {
 
             {/* Aide */}
             <div style={{ marginTop: 24, borderTop: '1px solid var(--ink-700)', paddingTop: 16 }}>
-              <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>Exemples de configuration</p>
+              <p style={{ fontSize: 11, color: 'var(--text-mut)', margin: '0 0 8px' }}>{t('llmConfig.examplesTitle')}</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, color: 'var(--text-mut)', fontFamily: 'monospace' }}>
                 <span>Ollama local : provider=openai, url=http://localhost:11434/v1, model=llama3</span>
                 <span>LM Studio    : provider=openai, url=http://localhost:1234/v1, model=local-model</span>

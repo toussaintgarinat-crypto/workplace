@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 import BuildingCard from './BuildingCard.jsx'
 import CreateBuildingModal from './CreateBuildingModal.jsx'
@@ -10,6 +11,7 @@ import EditQuartierModal from './EditQuartierModal.jsx'
 import InviteModal from './InviteModal.jsx'
 
 export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorldMisAJour, onOuvrirMembers }) {
+  const { t } = useTranslation()
   const [creerBuilding, setCreerBuilding]     = useState(false)
   const [creerQuartier, setCreerQuartier]     = useState(false)
   const [quartierCible, setQuartierCible]     = useState(null)
@@ -33,19 +35,19 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
   }
 
   async function supprimerBuilding(building) {
-    if (!confirm(`Supprimer l'espace « ${building.nom} » ?`)) return
+    if (!confirm(t('worldView.confirmDelBuilding', { nom: building.nom }))) return
     await api.del(`/buildings/${building.id}`)
     onWorldMisAJour()
   }
 
   async function supprimerRoom(room) {
-    if (!confirm(`Supprimer la pièce « ${room.nom} » ?`)) return
+    if (!confirm(t('worldView.confirmDelRoom', { nom: room.nom }))) return
     await api.del(`/buildings/rooms/${room.id}`)
     onWorldMisAJour()
   }
 
   async function supprimerQuartier(quartier) {
-    if (!confirm(`Supprimer le quartier « ${quartier.nom} » et tous ses espaces ?`)) return
+    if (!confirm(t('worldView.confirmDelQuartier', { nom: quartier.nom }))) return
     await api.del(`/quartiers/${quartier.id}`)
     onWorldMisAJour()
   }
@@ -54,7 +56,7 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
     <div className="world-view vide">
       <div className="world-vide-msg">
         <span>🌍</span>
-        <p>Crée ton premier monde avec le <strong>＋</strong> à gauche</p>
+        <p>{t('worldView.emptyCreate')}</p>
       </div>
     </div>
   )
@@ -80,13 +82,13 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
           {estProprietaire && (
             <>
               <button className="btn-inviter" onClick={() => setShowInvite(true)}>
-                ✉ Inviter
+                {t('worldView.invite')}
               </button>
               <button className="btn-ajouter btn-secondary" onClick={() => setCreerQuartier(true)}>
-                🏘 Quartier
+                {t('worldView.quartier')}
               </button>
               <button className="btn-ajouter" onClick={() => ouvrirModalBuilding(null)}>
-                ＋ Espace
+                {t('worldView.space')}
               </button>
             </>
           )}
@@ -114,7 +116,7 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
               {estProprietaire && (
                 <button className="btn-add-building-inline" onClick={() => ouvrirModalBuilding(null)}>
                   <span>＋</span>
-                  <span>Ajouter un espace</span>
+                  <span>{t('worldView.addSpace')}</span>
                 </button>
               )}
             </div>
@@ -123,11 +125,11 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
 
         {buildingsLibres.length === 0 && quartiers.length === 0 && (
           <div className="buildings-vide">
-            <p>Aucun espace pour l'instant.</p>
+            <p>{t('worldView.emptyNoSpace')}</p>
             {estProprietaire && (
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button className="btn-ajouter" onClick={() => ouvrirModalBuilding(null)}>＋ Créer un espace</button>
-                <button className="btn-ajouter btn-secondary" onClick={() => setCreerQuartier(true)}>🏘 Créer un quartier</button>
+                <button className="btn-ajouter" onClick={() => ouvrirModalBuilding(null)}>{t('worldView.createSpace')}</button>
+                <button className="btn-ajouter btn-secondary" onClick={() => setCreerQuartier(true)}>{t('worldView.createQuartier')}</button>
               </div>
             )}
           </div>
@@ -146,9 +148,9 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
               </div>
               {estProprietaire && (
                 <div className="quartier-actions">
-                  <button className="btn-edit-quartier" onClick={() => setEditQuartier(q)} title="Modifier">✎</button>
-                  <button className="btn-del-quartier" onClick={() => supprimerQuartier(q)} title="Supprimer">✕</button>
-                  <button className="btn-ajouter btn-sm" onClick={() => ouvrirModalBuilding(q.id)}>＋ Espace</button>
+                  <button className="btn-edit-quartier" onClick={() => setEditQuartier(q)} title={t('common.edit')}>✎</button>
+                  <button className="btn-del-quartier" onClick={() => supprimerQuartier(q)} title={t('common.delete')}>✕</button>
+                  <button className="btn-ajouter btn-sm" onClick={() => ouvrirModalBuilding(q.id)}>{t('worldView.space')}</button>
                 </div>
               )}
             </div>
@@ -168,7 +170,7 @@ export default function WorldView({ world, moi, roomActive, onEntrerRoom, onWorl
                 />
               ))}
               {q.buildings.length === 0 && (
-                <p className="quartier-vide">Aucun espace dans ce quartier.</p>
+                <p className="quartier-vide">{t('worldView.emptyQuartier')}</p>
               )}
             </div>
           </section>

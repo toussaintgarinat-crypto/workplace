@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 export default function FollowButton({ userId, moiId, initialFollowing }) {
+  const { t } = useTranslation()
   const [following, setFollowing] = useState(initialFollowing ?? null)
   const [loading, setLoading]     = useState(initialFollowing === undefined || initialFollowing === null)
 
@@ -40,7 +42,7 @@ export default function FollowButton({ userId, moiId, initialFollowing }) {
       onClick={toggle}
       disabled={loading}
     >
-      {loading ? '…' : following ? '✓ Suivi' : '+ Suivre'}
+      {loading ? '…' : following ? t('follow.following') : t('follow.follow')}
     </button>
   )
 }

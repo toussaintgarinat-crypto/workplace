@@ -1,7 +1,9 @@
 import { useParticipants, useLocalParticipant, useTrackToggle, RoomAudioRenderer, ParticipantTile } from '@livekit/components-react'
 import { Track } from 'livekit-client'
+import { useTranslation } from 'react-i18next'
 
 export default function VocalSalon({ room, moi, onQuitter }) {
+  const { t } = useTranslation()
   const remoteParticipants = useParticipants()
   const { localParticipant } = useLocalParticipant()
 
@@ -41,7 +43,7 @@ export default function VocalSalon({ room, moi, onQuitter }) {
           {tousLesParticipants.map(p => {
             if (!p) return null
             const isLocal = p.sid === localParticipant?.sid
-            const nom = p.name || p.identity || 'Inconnu'
+            const nom = p.name || p.identity || t('vocal.unknown')
             const initiale = nom.charAt(0).toUpperCase()
             return (
               <div key={p.sid} className={`vocal-membre ${p.isSpeaking ? 'parle' : ''}`}>
@@ -52,11 +54,11 @@ export default function VocalSalon({ room, moi, onQuitter }) {
                   )}
                 </div>
                 <span className="vocal-membre-nom">
-                  {nom} {isLocal && <span className="vocal-vous">(vous)</span>}
+                  {nom} {isLocal && <span className="vocal-vous">{t('vocal.you')}</span>}
                 </span>
                 <div className="vocal-membre-icones">
-                  {p.isCameraEnabled && <span title="Caméra active">📹</span>}
-                  {!p.isMicrophoneEnabled && <span title="Micro coupé">🔇</span>}
+                  {p.isCameraEnabled && <span title={t('vocal.camActive')}>📹</span>}
+                  {!p.isMicrophoneEnabled && <span title={t('vocal.micOff')}>🔇</span>}
                 </div>
               </div>
             )
@@ -68,34 +70,34 @@ export default function VocalSalon({ room, moi, onQuitter }) {
       <div className="vocal-controls">
         <div className="vocal-controls-info">
           <span className="vocal-controls-room">{room.emoji} {room.nom}</span>
-          <span className="vocal-controls-status">Vocal connecté</span>
+          <span className="vocal-controls-status">{t('vocal.connected')}</span>
         </div>
         <div className="vocal-controls-btns">
           <button
             className={`vocal-btn ${micOn ? 'actif' : 'inactif'}`}
             onClick={toggleMic}
-            title={micOn ? 'Couper le micro' : 'Activer le micro'}
+            title={micOn ? t('vocal.muteMic') : t('vocal.unmuteMic')}
           >
             {micOn ? '🎤' : '🔇'}
-            <span>{micOn ? 'Micro' : 'Muet'}</span>
+            <span>{micOn ? t('vocal.micLabel') : t('vocal.muteLabel')}</span>
           </button>
 
           <button
             className={`vocal-btn ${camOn ? 'actif' : 'inactif'}`}
             onClick={toggleCam}
-            title={camOn ? 'Éteindre la caméra' : 'Activer la caméra'}
+            title={camOn ? t('vocal.camOff') : t('vocal.camOn')}
           >
             {camOn ? '📹' : '📷'}
-            <span>{camOn ? 'Caméra' : 'Caméra'}</span>
+            <span>{t('vocal.camLabel')}</span>
           </button>
 
           <button
             className="vocal-btn vocal-btn-quitter"
             onClick={onQuitter}
-            title="Quitter le salon"
+            title={t('vocal.quitSalon')}
           >
             📵
-            <span>Quitter</span>
+            <span>{t('vocal.quitLabel')}</span>
           </button>
         </div>
       </div>

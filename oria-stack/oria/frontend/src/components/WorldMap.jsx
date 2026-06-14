@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import AgentChatPanel from './AgentChatPanel.jsx'
 
 const TILE  = 48    // px par tile
@@ -50,6 +51,7 @@ function dist(ax, ay, bx, by) {
 }
 
 export default function WorldMap({ world, moi, buildings = [], agents = [], onEntrerBuilding }) {
+  const { t, i18n } = useTranslation()
   const canvasRef  = useRef(null)
   const stateRef   = useRef({
     player: { x: 1.5, y: 1.5 },
@@ -241,7 +243,7 @@ export default function WorldMap({ world, moi, buildings = [], agents = [], onEn
       if (isNear) {
         ctx.font = '11px sans-serif'
         ctx.fillStyle = '#e3f2fd'
-        ctx.fillText('Appuie sur E', px, py + r + 25)
+        ctx.fillText(t('map.pressE'), px, py + r + 25)
       }
     }
 
@@ -304,7 +306,7 @@ export default function WorldMap({ world, moi, buildings = [], agents = [], onEn
     }
     animRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(animRef.current)
-  }, [mapData])
+  }, [mapData, i18n.language])
 
   // ── Touche E pour ouvrir le chat ────────────────────────────
   useEffect(() => {
@@ -356,15 +358,15 @@ export default function WorldMap({ world, moi, buildings = [], agents = [], onEn
         <span className="worldmap-title">{world?.emoji} {world?.nom}</span>
         <span className="worldmap-hint">
           {nearAgent
-            ? `💬 ${nearAgent.nom} est proche — appuie sur E`
-            : '↑↓←→ ou WASD pour te déplacer'}
+            ? t('map.agentNear', { nom: nearAgent.nom })
+            : t('map.moveHint')}
         </span>
         {world?.owner_id === moi?.id && (
           <button
             className={`btn-map-edit ${editMode ? 'active' : ''}`}
             onClick={() => setEditMode(v => !v)}
           >
-            {editMode ? '✅ Terminé' : '✏️ Éditer carte'}
+            {editMode ? t('map.done') : t('map.editMap')}
           </button>
         )}
       </div>
@@ -381,9 +383,9 @@ export default function WorldMap({ world, moi, buildings = [], agents = [], onEn
 
         {/* Légende */}
         <div className="worldmap-legend">
-          <div className="legend-item"><span style={{background:'#7c4dff'}} className="legend-dot"/>Toi</div>
-          <div className="legend-item"><span style={{background:'#1a237e'}} className="legend-dot"/>Agent IA</div>
-          <div className="legend-item"><span style={{background:'var(--or-500)'}} className="legend-dot"/>Espace</div>
+          <div className="legend-item"><span style={{background:'#7c4dff'}} className="legend-dot"/>{t('map.you')}</div>
+          <div className="legend-item"><span style={{background:'#1a237e'}} className="legend-dot"/>{t('map.aiAgent')}</div>
+          <div className="legend-item"><span style={{background:'var(--or-500)'}} className="legend-dot"/>{t('map.space')}</div>
         </div>
       </div>
 

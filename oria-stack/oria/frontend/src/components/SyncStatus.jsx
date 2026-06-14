@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const RECONNECTING_STATES = new Set(['ERROR', 'RECONNECTING'])
 
 export default function SyncStatus() {
+  const { t } = useTranslation()
   const [status, setStatus] = useState(null) // null = pas encore de sync
 
   useEffect(() => {
@@ -16,7 +18,7 @@ export default function SyncStatus() {
   return (
     <div className="sync-status-banner">
       <span className="sync-spinner" />
-      Reconnexion au serveur de messagerie…
+      {t('sync.reconnecting')}
     </div>
   )
 }

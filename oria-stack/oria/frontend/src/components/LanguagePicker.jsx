@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '../services/api.js'
 
 const LANGUAGES = [
   { code: 'fr', label: 'Français', flag: '🇫🇷' },
@@ -11,7 +12,7 @@ const LANGUAGES = [
   { code: 'ja', label: '日本語',   flag: '🇯🇵' },
 ]
 
-export default function LanguagePicker({ style }) {
+export default function LanguagePicker({ style, persist = false }) {
   const { i18n } = useTranslation()
   const [open, setOpen] = useState(false)
 
@@ -20,6 +21,9 @@ export default function LanguagePicker({ style }) {
   function select(code) {
     i18n.changeLanguage(code)
     setOpen(false)
+    // S40 — quand on est authentifié, on persiste la préférence par compte
+    // (motif User.theme S25) : elle prime sur localStorage au prochain login.
+    if (persist) api.patch('/auth/me', { langue: code })
   }
 
   return (

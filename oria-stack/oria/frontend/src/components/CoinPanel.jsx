@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export default function CoinPanel({ room, moi }) {
+  const { t } = useTranslation()
   const [coins, setCoins]               = useState([])
   const [coinActif, setCoinActif]       = useState(null)
   const [dossiers, setDossiers]         = useState([])
@@ -129,12 +131,12 @@ export default function CoinPanel({ room, moi }) {
       }}>
         <div style={{ padding: '12px 14px 6px', fontSize: 12, color: 'var(--text-mut)', fontWeight: 700,
                       textTransform: 'uppercase', letterSpacing: 1 }}>
-          🏠 Coins membres
+          {t('coin.membersCoins')}
         </div>
 
         {coins.length === 0 && (
           <div style={{ padding: '8px 14px', color: 'var(--text-mut)', fontSize: 13 }}>
-            Aucun coin pour l'instant
+            {t('coin.empty')}
           </div>
         )}
 
@@ -160,7 +162,7 @@ export default function CoinPanel({ room, moi }) {
             </div>
             {c.est_mien && (
               <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--or-500)',
-                             fontWeight: 700 }}>MOI</span>
+                             fontWeight: 700 }}>{t('coin.me')}</span>
             )}
           </button>
         ))}
@@ -174,10 +176,10 @@ export default function CoinPanel({ room, moi }) {
                 background: 'var(--or-500)', color: 'white', cursor: 'pointer',
                 fontWeight: 600, fontSize: 13,
               }}
-            >+ Créer mon Coin</button>
+            >{t('coin.createMyCoin')}</button>
           ) : (
             <div style={{ fontSize: 12, color: 'var(--vert)', textAlign: 'center' }}>
-              ✓ Votre Coin est actif
+              {t('coin.active')}
             </div>
           )}
         </div>
@@ -188,7 +190,7 @@ export default function CoinPanel({ room, moi }) {
         <div style={{ flex: 1, display: 'flex', alignItems: 'center',
                       justifyContent: 'center', color: 'var(--text-mut)', flexDirection: 'column', gap: 8 }}>
           <span style={{ fontSize: 40 }}>🏠</span>
-          <span style={{ fontSize: 14 }}>Sélectionne un Coin pour le voir</span>
+          <span style={{ fontSize: 14 }}>{t('coin.selectCoin')}</span>
         </div>
       ) : (
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -202,21 +204,21 @@ export default function CoinPanel({ room, moi }) {
                           alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12, color: 'var(--text-mut)', fontWeight: 700,
                              textTransform: 'uppercase', letterSpacing: 1 }}>
-                📁 Dossiers
+                {t('coin.folders')}
               </span>
               {estProprietaireCoin && (
                 <button
                   onClick={() => setCreationDossier(true)}
                   style={{ background: 'none', border: 'none', color: 'var(--text)',
                            cursor: 'pointer', fontSize: 16, padding: 0 }}
-                  title="Nouveau dossier"
+                  title={t('coin.newFolderTooltip')}
                 >+</button>
               )}
             </div>
 
             {dossiers.length === 0 && (
               <div style={{ padding: '8px 14px', color: 'var(--text-mut)', fontSize: 13 }}>
-                {estProprietaireCoin ? 'Aucun dossier — clique + pour en créer' : 'Aucun dossier partagé'}
+                {estProprietaireCoin ? t('coin.noFolderOwner') : t('coin.noFolderShared')}
               </div>
             )}
 
@@ -238,14 +240,14 @@ export default function CoinPanel({ room, moi }) {
                     {d.nom}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-mut)' }}>
-                    {d.visibilite === 'prive' ? 'Privé' : 'Partagé'} · {d.nb_fichiers} fichier{d.nb_fichiers !== 1 ? 's' : ''}
+                    {d.visibilite === 'prive' ? t('coin.private') : t('coin.shared')} · {t('coin.files', { count: d.nb_fichiers })}
                   </div>
                 </div>
                 {estProprietaireCoin && (
                   <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => toggleVisibilite(d)}
-                      title={d.visibilite === 'prive' ? 'Rendre partagé' : 'Rendre privé'}
+                      title={d.visibilite === 'prive' ? t('coin.makeShared') : t('coin.makePrivate')}
                       style={{ background: 'none', border: 'none', cursor: 'pointer',
                                fontSize: 12, color: 'var(--text-mut)', padding: 2 }}
                     >{d.visibilite === 'prive' ? '👁' : '🔒'}</button>
@@ -253,7 +255,7 @@ export default function CoinPanel({ room, moi }) {
                       onClick={() => supprimerDossier(d.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer',
                                fontSize: 12, color: 'var(--rouge)', padding: 2 }}
-                      title="Supprimer"
+                      title={t('common.delete')}
                     >✕</button>
                   </div>
                 )}
@@ -268,7 +270,7 @@ export default function CoinPanel({ room, moi }) {
               <div style={{ flex: 1, display: 'flex', alignItems: 'center',
                             justifyContent: 'center', color: 'var(--text-mut)', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 30 }}>📁</span>
-                <span style={{ fontSize: 13 }}>Sélectionne un dossier</span>
+                <span style={{ fontSize: 13 }}>{t('coin.selectFolder')}</span>
               </div>
             ) : (
               <>
@@ -279,7 +281,7 @@ export default function CoinPanel({ room, moi }) {
                     <span style={{ marginLeft: 8, fontSize: 12,
                                    color: dossierActif.visibilite === 'prive' ? 'var(--or-400)' : 'var(--vert)',
                                    fontWeight: 400 }}>
-                      {dossierActif.visibilite === 'prive' ? 'Privé' : 'Partagé'}
+                      {dossierActif.visibilite === 'prive' ? t('coin.private') : t('coin.shared')}
                     </span>
                   </span>
                   {estProprietaireCoin && (
@@ -291,7 +293,7 @@ export default function CoinPanel({ room, moi }) {
                           background: 'var(--or-500)', color: 'white', cursor: 'pointer',
                           fontSize: 13, fontWeight: 600,
                         }}
-                      >📎 Ajouter</button>
+                      >{t('coin.add')}</button>
                       <input ref={fileRef} type="file" style={{ display: 'none' }}
                              onChange={uploaderFichier} />
                     </>
@@ -301,7 +303,7 @@ export default function CoinPanel({ room, moi }) {
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {fichiers.length === 0 && (
                     <div style={{ color: 'var(--text-mut)', fontSize: 13, padding: '12px 0' }}>
-                      {estProprietaireCoin ? 'Aucun fichier — clique « Ajouter » pour en uploader' : 'Aucun fichier'}
+                      {estProprietaireCoin ? t('coin.noFilesOwner') : t('coin.noFiles')}
                     </div>
                   )}
                   {fichiers.map(f => (
@@ -320,7 +322,7 @@ export default function CoinPanel({ room, moi }) {
                           {f.nom}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-mut)' }}>
-                          {Math.round(f.taille / 1024)} Ko
+                          {t('coin.sizeKo', { kb: Math.round(f.taille / 1024) })}
                         </div>
                       </div>
                       <a
@@ -355,21 +357,21 @@ export default function CoinPanel({ room, moi }) {
             background: 'var(--ink-800)', borderRadius: 12, padding: 24,
             width: 380, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
           }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color: '#fff', marginBottom: 16 }}>🏠 Créer mon Coin</h3>
+            <h3 style={{ color: '#fff', marginBottom: 16 }}>{t('coin.createCoinTitle')}</h3>
             <form onSubmit={creerCoin}>
-              <label style={{ color: 'var(--text)', fontSize: 13 }}>Nom de ton Coin</label>
+              <label style={{ color: 'var(--text)', fontSize: 13 }}>{t('coin.coinNameLabel')}</label>
               <input
                 value={titreNouv}
                 onChange={e => setTitreNouv(e.target.value)}
-                placeholder="Ex: Mon espace, Portfolio, Lab..."
+                placeholder={t('coin.coinNamePlaceholder')}
                 required autoFocus
                 style={{ width: '100%', marginBottom: 12 }}
               />
-              <label style={{ color: 'var(--text)', fontSize: 13 }}>Description (optionnel)</label>
+              <label style={{ color: 'var(--text)', fontSize: 13 }}>{t('coin.descOptional')}</label>
               <textarea
                 value={descNouv}
                 onChange={e => setDescNouv(e.target.value)}
-                placeholder="Dis quelques mots sur ton Coin..."
+                placeholder={t('coin.descPlaceholder')}
                 style={{
                   width: '100%', height: 80, background: 'var(--ink-850)', color: 'var(--text)',
                   border: '1px solid #3d3f45', borderRadius: 6, padding: 8,
@@ -380,12 +382,12 @@ export default function CoinPanel({ room, moi }) {
                 <button type="button" onClick={() => setCreationCoin(false)}
                   style={{ padding: '8px 16px', borderRadius: 8, border: 'none',
                            background: 'var(--ink-850)', color: 'var(--text)', cursor: 'pointer' }}>
-                  Annuler
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" disabled={loading}
                   style={{ padding: '8px 16px', borderRadius: 8, border: 'none',
                            background: 'var(--or-500)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                  {loading ? '...' : 'Créer'}
+                  {loading ? t('common.working') : t('coin.create')}
                 </button>
               </div>
             </form>
@@ -403,21 +405,21 @@ export default function CoinPanel({ room, moi }) {
             background: 'var(--ink-800)', borderRadius: 12, padding: 24,
             width: 340, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
           }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color: '#fff', marginBottom: 16 }}>📁 Nouveau dossier</h3>
+            <h3 style={{ color: '#fff', marginBottom: 16 }}>{t('coin.newFolderHeader')}</h3>
             <form onSubmit={creerDossier}>
-              <label style={{ color: 'var(--text)', fontSize: 13 }}>Nom du dossier</label>
+              <label style={{ color: 'var(--text)', fontSize: 13 }}>{t('coin.folderNameLabel')}</label>
               <input
                 value={nomDossier}
                 onChange={e => setNomDossier(e.target.value)}
-                placeholder="Ex: Ressources, Contrats, Photos..."
+                placeholder={t('coin.folderNamePlaceholder')}
                 required autoFocus
                 style={{ width: '100%', marginBottom: 12 }}
               />
-              <label style={{ color: 'var(--text)', fontSize: 13 }}>Visibilité</label>
+              <label style={{ color: 'var(--text)', fontSize: 13 }}>{t('coin.visibility')}</label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 {[
-                  { id: 'prive',   label: '🔒 Privé',  desc: 'Visible uniquement par toi' },
-                  { id: 'partage', label: '📂 Partagé', desc: 'Visible par tous les membres' },
+                  { id: 'prive',   label: t('coin.privLabel'),  desc: t('coin.privDesc') },
+                  { id: 'partage', label: t('coin.sharedLabel'), desc: t('coin.sharedDesc') },
                 ].map(opt => (
                   <button key={opt.id} type="button"
                     onClick={() => setVisiDossier(opt.id)}
@@ -437,12 +439,12 @@ export default function CoinPanel({ room, moi }) {
                 <button type="button" onClick={() => setCreationDossier(false)}
                   style={{ padding: '8px 16px', borderRadius: 8, border: 'none',
                            background: 'var(--ink-850)', color: 'var(--text)', cursor: 'pointer' }}>
-                  Annuler
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" disabled={loading}
                   style={{ padding: '8px 16px', borderRadius: 8, border: 'none',
                            background: 'var(--or-500)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                  {loading ? '...' : 'Créer'}
+                  {loading ? t('common.working') : t('coin.create')}
                 </button>
               </div>
             </form>

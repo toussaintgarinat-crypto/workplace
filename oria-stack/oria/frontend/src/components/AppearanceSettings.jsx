@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   getActiveTheme, saveActiveTheme, setVar, setTint,
   getProfiles, saveProfile, deleteProfile,
@@ -26,6 +27,7 @@ function Nuancier({ colors, value, onPick, cols = 12 }) {
 }
 
 export default function AppearanceSettings() {
+  const { t } = useTranslation()
   const initial = useMemo(getActiveTheme, [])
   const [accent, setAccent]   = useState(initial.accent)
   const [surface, setSurface] = useState(initial.surface)
@@ -67,7 +69,7 @@ export default function AppearanceSettings() {
     const f = e.target.files?.[0]
     if (!f) return
     try { applyProfile(await importThemeFromFile(f)) }
-    catch { alert('Fichier de thème invalide') }
+    catch { alert(t('appearance.invalidFile')) }
     e.target.value = ''
   }
 
@@ -79,14 +81,14 @@ export default function AppearanceSettings() {
       <div className="ap-block">
         <div className="ap-label">
           <span className="ap-cur"><i style={{ background: accent }} />{accent.toUpperCase()}</span>
-          <b>Accent</b>
-          <span>Boutons, liserés, badges, liens.</span>
+          <b>{t('appearance.accent')}</b>
+          <span>{t('appearance.accentDesc')}</span>
         </div>
         <Nuancier colors={STANDARD} value={accent} onPick={pickAccent} />
         <label className="ap-free">
           <span className="ring" />
           <input type="color" value={accent} onChange={e => pickAccent(e.target.value)} />
-          <em>Couleur sur-mesure</em>
+          <em>{t('appearance.custom')}</em>
         </label>
       </div>
 
@@ -94,17 +96,17 @@ export default function AppearanceSettings() {
       <div className="ap-block">
         <div className="ap-label">
           <span className="ap-cur"><i style={{ background: surface }} />{surface.toUpperCase()}</span>
-          <b>Ambiance (fonds)</b>
-          <span>Teinte du rail, des colonnes, des cartes.</span>
+          <b>{t('appearance.ambiance')}</b>
+          <span>{t('appearance.ambianceDesc')}</span>
         </div>
         <Nuancier colors={STANDARD} value={surface} onPick={pickSurface} />
         <label className="ap-free">
           <span className="ring" />
           <input type="color" value={surface} onChange={e => pickSurface(e.target.value)} />
-          <em>Couleur sur-mesure</em>
+          <em>{t('appearance.custom')}</em>
         </label>
         <div className="ap-tint">
-          <span>Intensité</span>
+          <span>{t('appearance.intensity')}</span>
           <input type="range" min="0" max="34" value={tint} onChange={e => pickTint(e.target.value)} />
           <span className="ap-tintval">{tint}%</span>
         </div>
@@ -114,35 +116,35 @@ export default function AppearanceSettings() {
       <div className="ap-block">
         <div className="ap-label">
           <span className="ap-cur"><i style={{ background: text }} />{text.toUpperCase()}</span>
-          <b>Texte</b>
-          <span>Nuancier fin — la hiérarchie reste lisible automatiquement.</span>
+          <b>{t('appearance.text')}</b>
+          <span>{t('appearance.textDesc')}</span>
         </div>
         <Nuancier colors={TEXTE} value={text} onPick={pickText} />
         <label className="ap-free">
           <span className="ring" />
           <input type="color" value={text} onChange={e => pickText(e.target.value)} />
-          <em>Couleur sur-mesure</em>
+          <em>{t('appearance.custom')}</em>
         </label>
       </div>
 
       {/* PROFILS */}
       <div className="ap-block ap-profiles">
         <div className="ap-label">
-          <b>Profil de réglages</b>
-          <span>Sauvegarde, exporte ou importe une combinaison complète.</span>
+          <b>{t('appearance.profile')}</b>
+          <span>{t('appearance.profileDesc')}</span>
         </div>
         <div className="ap-save">
           <input
             className="ap-pname"
-            placeholder="Nom du profil (ex. Atelier — chaleur)"
+            placeholder={t('appearance.namePlaceholder')}
             value={name}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSave() } }}
           />
-          <button type="button" className="ap-btn accent" onClick={onSave}>💾 Sauvegarder</button>
+          <button type="button" className="ap-btn accent" onClick={onSave}>{t('appearance.save')}</button>
         </div>
         <div className="ap-list">
-          {names.length === 0 && <div className="ap-empty">Aucun profil sauvegardé.</div>}
+          {names.length === 0 && <div className="ap-empty">{t('appearance.emptyProfiles')}</div>}
           {names.map(n => (
             <div key={n} className="ap-item">
               <span className="ap-mini">
@@ -152,15 +154,15 @@ export default function AppearanceSettings() {
               </span>
               <span className="ap-pn">{n}</span>
               <span className="ap-acts">
-                <button type="button" className="apply" onClick={() => applyProfile(profiles[n])}>Appliquer</button>
-                <button type="button" onClick={() => onDelete(n)}>Supprimer</button>
+                <button type="button" className="apply" onClick={() => applyProfile(profiles[n])}>{t('appearance.apply')}</button>
+                <button type="button" onClick={() => onDelete(n)}>{t('common.delete')}</button>
               </span>
             </div>
           ))}
         </div>
         <div className="ap-io">
-          <button type="button" className="ap-btn" onClick={() => exportTheme(theme)}>⤓ Exporter (.json)</button>
-          <button type="button" className="ap-btn" onClick={() => fileRef.current?.click()}>⤒ Importer</button>
+          <button type="button" className="ap-btn" onClick={() => exportTheme(theme)}>{t('appearance.export')}</button>
+          <button type="button" className="ap-btn" onClick={() => fileRef.current?.click()}>{t('appearance.import')}</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={onImport} />
         </div>
       </div>

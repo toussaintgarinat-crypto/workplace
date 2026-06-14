@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 import { formatBytes } from '@workspace/shared-ui/utils'
 
@@ -6,6 +7,7 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const ACCEPT = '.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.ppt,.pptx,.png,.jpg,.mp3,.mp4'
 
 export default function DocumentsManager({ moi, worldId }) {
+  const { t } = useTranslation()
   const [docs, setDocs]           = useState([])
   const [loading, setLoading]     = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -46,10 +48,10 @@ export default function DocumentsManager({ moi, worldId }) {
         })
         if (!r.ok) {
           const err = await r.json().catch(() => ({}))
-          window.dispatchEvent(new CustomEvent('oria:error', { detail: err.detail || `Erreur upload ${r.status}` }))
+          window.dispatchEvent(new CustomEvent('oria:error', { detail: err.detail || t('docsManager.uploadError', { status: r.status }) }))
         }
       } catch {
-        window.dispatchEvent(new CustomEvent('oria:error', { detail: 'Erreur upload' }))
+        window.dispatchEvent(new CustomEvent('oria:error', { detail: t('docsManager.uploadErrorGeneric') }))
       }
     }
 
@@ -66,7 +68,7 @@ export default function DocumentsManager({ moi, worldId }) {
   }
 
   async function deleteDoc(docId) {
-    if (!confirm('Supprimer ce document ?')) return
+    if (!confirm(t('docsManager.confirmDelete'))) return
     await api.del(`/documents/${docId}`)
     if (selected?.id === docId) setSelected(null)
     fetchDocs()
@@ -105,14 +107,14 @@ export default function DocumentsManager({ moi, worldId }) {
     <div className="documents-manager">
       {/* Header */}
       <div className="docs-header">
-        <h2>📁 Mes Dossiers</h2>
+        <h2>{t('docsManager.title')}</h2>
         <div className="docs-header-actions">
           <button
             className="btn-upload"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
           >
-            {uploading ? '⏳ Import…' : '⬆️ Importer'}
+            {uploading ? t('docsManager.importing') : t('docsManager.import')}
           </button>
           <input
             ref={fileRef}
@@ -126,37 +128,36 @@ export default function DocumentsManager({ moi, worldId }) {
       </div>
 
       <p className="docs-info">
-        Tes fichiers sont convertis en Markdown et indexés dans ta mémoire MemPalace.
-        Tes agents IA peuvent les consulter lors des conversations.
+        {t('docsManager.info')}
       </p>
 
       {/* Recherche mémoire */}
       <form className="docs-search" onSubmit={searchMemory}>
         <input
           type="text"
-          placeholder="Rechercher dans ta mémoire…"
+          placeholder={t('docsManager.searchPlaceholder')}
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
         <button type="submit" disabled={searching}>
-          {searching ? '⏳' : '🔍 Chercher'}
+          {searching ? '⏳' : t('docsManager.search')}
         </button>
       </form>
 
       {searchResults !== null && (
         <div className="docs-search-results">
           <div className="search-results-header">
-            <span>Résultats mémoire ({searchResults.length})</span>
+            <span>{t('docsManager.memResults', { count: searchResults.length })}</span>
             <button onClick={() => setSearchResults(null)}>✕</button>
           </div>
           {searchResults.length === 0 ? (
-            <p className="search-empty">Aucun résultat trouvé dans ta mémoire.</p>
+            <p className="search-empty">{t('docsManager.noResults')}</p>
           ) : (
             searchResults.map((r, i) => (
               <div key={i} className="search-result-item">
-                <div className="sr-source">{r.metadata?.doc_nom || 'Mémoire'}</div>
+                <div className="sr-source">{r.metadata?.doc_nom || t('docsManager.memorySource')}</div>
                 <div className="sr-text">{r.text?.slice(0, 300)}…</div>
-                <div className="sr-score">Score : {(r.score * 100).toFixed(0)}%</div>
+                <div className="sr-score">{t('docsManager.score', { pct: (r.score * 100).toFixed(0) })}</div>
               </div>
             ))
           )}
@@ -171,8 +172,8 @@ export default function DocumentsManager({ moi, worldId }) {
           ) : docs.length === 0 ? (
             <div className="docs-empty">
               <span>📂</span>
-              <p>Aucun document. Importe des fichiers pour commencer.</p>
-              <small>Formats : PDF, Word, Excel, PowerPoint, images, audio…</small>
+              <p>{t('docsManager.empty')}</p>
+              <small>{t('docsManager.formats')}</small>
             </div>
           ) : (
             docs.map(doc => (
@@ -194,7 +195,7 @@ export default function DocumentsManager({ moi, worldId }) {
                   {!doc.indexe_memory && doc.has_content && (
                     <button
                       className="doc-btn"
-                      title="Indexer dans MemPalace"
+                      title={t('docsManager.indexTitle')}
                       onClick={() => indexDoc(doc.id)}
                       disabled={indexing === doc.id}
                     >
@@ -203,7 +204,7 @@ export default function DocumentsManager({ moi, worldId }) {
                   )}
                   <button
                     className="doc-btn danger"
-                    title="Supprimer"
+                    title={t('common.delete')}
                     onClick={() => deleteDoc(doc.id)}
                   >🗑</button>
                 </div>
@@ -220,7 +221,7 @@ export default function DocumentsManager({ moi, worldId }) {
               <button onClick={() => setSelected(null)}>✕</button>
             </div>
             <div className="doc-preview-content">
-              <pre>{selected.content_md || 'Contenu non disponible.'}</pre>
+              <pre>{selected.content_md || t('docsManager.noContent')}</pre>
             </div>
           </div>
         )}

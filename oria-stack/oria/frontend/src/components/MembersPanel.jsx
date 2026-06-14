@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 import { useMatrixPresence } from '../hooks/useMatrixPresence.js'
 
 const ROLE_LABELS = { proprietaire: '👑 ', admin: '🛡 ', membre: '' }
 
 export default function MembersPanel({ world, moi, onFermer, onOuvrirDM, dmUnreadByMxid }) {
+  const { t } = useTranslation()
   const [membres, setMembres]         = useState([])
   const [abonnements, setAbonnements] = useState([])
   const [gererMembre, setGererMembre] = useState(null) // membre dont on gère les abonnements
@@ -33,13 +35,13 @@ export default function MembersPanel({ world, moi, onFermer, onOuvrirDM, dmUnrea
   return (
     <div className="members-panel">
       <div className="members-panel-header">
-        <span>Agents &amp; Élus — {membres.length}</span>
+        <span>{t('members.title')} — {membres.length}</span>
         <button className="btn-quitter-room" onClick={onFermer}>✕</button>
       </div>
       <div className="members-list">
         {enLigne.length > 0 && (
           <>
-            <p className="members-section-label">En ligne — {enLigne.length}</p>
+            <p className="members-section-label">{t('members.online')} — {enLigne.length}</p>
             {enLigne.map(m => (
               <MemberRow key={m.user_id} m={m} enligne presence={presence[m.user_id]} moi={moi}
                 onDM={onOuvrirDM} dmUnread={dmUnreadByMxid?.[m.matrix_user_id] || 0}
@@ -49,7 +51,7 @@ export default function MembersPanel({ world, moi, onFermer, onOuvrirDM, dmUnrea
         )}
         {horsLigne.length > 0 && (
           <>
-            <p className="members-section-label">Hors ligne — {horsLigne.length}</p>
+            <p className="members-section-label">{t('members.offline')} — {horsLigne.length}</p>
             {horsLigne.map(m => (
               <MemberRow key={m.user_id} m={m} enligne={false} moi={moi}
                 onDM={onOuvrirDM} dmUnread={dmUnreadByMxid?.[m.matrix_user_id] || 0}
@@ -72,6 +74,7 @@ export default function MembersPanel({ world, moi, onFermer, onOuvrirDM, dmUnrea
 }
 
 function MemberRow({ m, enligne, presence, moi, onDM, dmUnread, estProprietaire, onGererAbonnements }) {
+  const { t } = useTranslation()
   const isMoi = m.user_id === moi.id
   return (
     <div className={`member-item ${enligne ? '' : 'offline'}`}>
@@ -83,21 +86,21 @@ function MemberRow({ m, enligne, presence, moi, onDM, dmUnread, estProprietaire,
         <span className="member-nom">
           {ROLE_LABELS[m.role]}
           {m.nom}
-          {isMoi && <span style={{ color: 'var(--text-mut)', fontSize: 11 }}> (moi)</span>}
+          {isMoi && <span style={{ color: 'var(--text-mut)', fontSize: 11 }}>{t('members.me')}</span>}
         </span>
-        {presence?.room_id && <span className="member-location">Dans une pièce</span>}
+        {presence?.room_id && <span className="member-location">{t('members.inRoom')}</span>}
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
         {estProprietaire && !isMoi && (
           <button
             className="btn-dm"
             onClick={onGererAbonnements}
-            title="Gérer les abonnements"
+            title={t('members.manageSubs')}
             style={{ fontSize: 14 }}
           >🔑</button>
         )}
         {!isMoi && onDM && (
-          <button className="btn-dm" onClick={() => onDM(m)} title="Message privé" style={{ position: 'relative' }}>
+          <button className="btn-dm" onClick={() => onDM(m)} title={t('members.privateMsg')} style={{ position: 'relative' }}>
             ✉
             {dmUnread > 0 && (
               <span className="unread-badge" style={{ position: 'absolute', top: -4, right: -4 }}>
@@ -112,6 +115,7 @@ function MemberRow({ m, enligne, presence, moi, onDM, dmUnread, estProprietaire,
 }
 
 function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
+  const { t } = useTranslation()
   const [membresAbonnements, setMembresAbonnements] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -142,12 +146,12 @@ function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
         <h2 className="modal-titre">
-          Abonnements de {membre.avatar_emoji} {membre.nom}
+          {t('members.subsOf', { nom: `${membre.avatar_emoji} ${membre.nom}` })}
         </h2>
 
         {abonnements.length === 0 ? (
           <p style={{ color: 'var(--text-mut)', fontSize: 14 }}>
-            Aucun tier d'abonnement défini pour ce world.
+            {t('members.noTiers')}
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -162,7 +166,7 @@ function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, color: '#e3e5e8' }}>{a.nom}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-mut)' }}>
-                      {a.prix > 0 ? `${a.prix} ${a.devise}/mois` : 'Gratuit'}
+                      {a.prix > 0 ? t('members.perMonth', { prix: a.prix, devise: a.devise }) : t('members.free')}
                     </div>
                   </div>
                   {actif ? (
@@ -173,7 +177,7 @@ function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
                         background: 'var(--rouge)', color: 'white', border: 'none',
                         borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 13,
                       }}
-                    >Retirer</button>
+                    >{t('members.remove')}</button>
                   ) : (
                     <button
                       onClick={() => assigner(a.id)}
@@ -182,7 +186,7 @@ function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
                         background: 'var(--or-500)', color: 'white', border: 'none',
                         borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 13,
                       }}
-                    >Assigner</button>
+                    >{t('members.assign')}</button>
                   )}
                 </div>
               )
@@ -191,7 +195,7 @@ function GererAbonnementsModal({ world, membre, abonnements, onFermer }) {
         )}
 
         <div className="modal-actions" style={{ marginTop: 16 }}>
-          <button className="btn-creer" onClick={onFermer}>Fermer</button>
+          <button className="btn-creer" onClick={onFermer}>{t('common.close')}</button>
         </div>
       </div>
     </div>

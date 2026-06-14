@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const SECTION_ICONS = {}
 const SECTION_LABELS = {}
 
 export default function SearchPanel({ world, moi, onFermer, onNavigate }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -30,7 +32,7 @@ export default function SearchPanel({ world, moi, onFermer, onNavigate }) {
   return (
     <div className="mairie-panel">
       <div className="mairie-panel-header">
-        <div className="mairie-panel-title"><span>🔍</span><h2>Recherche</h2></div>
+        <div className="mairie-panel-title"><span>🔍</span><h2>{t('search.title')}</h2></div>
         <div className="mairie-panel-actions">
           <button className="mairie-btn-close" onClick={onFermer}>✕</button>
         </div>
@@ -42,7 +44,7 @@ export default function SearchPanel({ world, moi, onFermer, onNavigate }) {
           className="search-input"
           value={query}
           onChange={handleChange}
-          placeholder="Rechercher délibérations, arrêtés, agents, tickets..."
+          placeholder={t('search.placeholder')}
           autoFocus
         />
         {loading && <span className="search-spinner">⏳</span>}
@@ -50,7 +52,7 @@ export default function SearchPanel({ world, moi, onFermer, onNavigate }) {
 
       <div className="mairie-list">
         {query.length >= 2 && !loading && results?.total === 0 && (
-          <div className="mairie-empty">Aucun résultat pour « {query} »</div>
+          <div className="mairie-empty">{t('search.noResults', { query })}</div>
         )}
 
         {hasResults && Object.entries(results.results).map(([section, items]) => {

@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
 const EMOJIS   = ['🏘','🏙','🌆','🏛','🌇','🏗','🌃','🌉','🏬','🏭','🏦','🏯']
 const COULEURS = ['var(--or-500)','#E67E22','#3498DB','#9B59B6','#2ECC71','#E74C3C','#1ABC9C','#F39C12']
 
 export default function EditQuartierModal({ quartier, onSave, onFermer }) {
+  const { t } = useTranslation()
   const [nom, setNom]         = useState(quartier.nom)
   const [desc, setDesc]       = useState(quartier.description || '')
   const [emoji, setEmoji]     = useState(quartier.emoji)
@@ -22,9 +24,9 @@ export default function EditQuartierModal({ quartier, onSave, onFermer }) {
   return (
     <div className="modal-overlay" onClick={onFermer}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-titre">Modifier le quartier</h2>
+        <h2 className="modal-titre">{t('editQuartier.title')}</h2>
         <form onSubmit={sauvegarder}>
-          <label>Emoji</label>
+          <label>{t('common.emoji')}</label>
           <div className="emoji-picker">
             {EMOJIS.map(e => (
               <button key={e} type="button"
@@ -32,7 +34,7 @@ export default function EditQuartierModal({ quartier, onSave, onFermer }) {
                 onClick={() => setEmoji(e)}>{e}</button>
             ))}
           </div>
-          <label>Couleur</label>
+          <label>{t('common.color')}</label>
           <div className="couleur-picker">
             {COULEURS.map(c => (
               <button key={c} type="button"
@@ -40,14 +42,14 @@ export default function EditQuartierModal({ quartier, onSave, onFermer }) {
                 style={{ background: c }} onClick={() => setCouleur(c)} />
             ))}
           </div>
-          <label>Nom</label>
+          <label>{t('common.name')}</label>
           <input value={nom} onChange={e => setNom(e.target.value)} autoFocus required />
-          <label>Description <span className="optionnel">(optionnel)</span></label>
+          <label>{t('common.description')} <span className="optionnel">{t('common.optional')}</span></label>
           <input value={desc} onChange={e => setDesc(e.target.value)} />
           <div className="modal-actions">
-            <button type="button" className="btn-annuler" onClick={onFermer}>Annuler</button>
+            <button type="button" className="btn-annuler" onClick={onFermer}>{t('common.cancel')}</button>
             <button type="submit" className="btn-creer" disabled={loading}>
-              {loading ? '...' : 'Sauvegarder'}
+              {loading ? t('common.working') : t('common.save')}
             </button>
           </div>
         </form>

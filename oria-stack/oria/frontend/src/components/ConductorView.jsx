@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 
-const STATUS_CONFIG = {
-  idle:    { color: '#4caf50', label: 'Disponible',  dot: '🟢' },
-  working: { color: '#ff9800', label: 'En cours…',   dot: '🟡' },
-  error:   { color: 'var(--rouge)', label: 'Erreur',      dot: '🔴' },
+const STATUS_COLORS = {
+  idle:    '#4caf50',
+  working: '#ff9800',
+  error:   'var(--rouge)',
 }
 
 function AgentCard({ agent, onCall }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [msg, setMsg]           = useState('')
   const [loading, setLoading]   = useState(false)
-  const cfg = STATUS_CONFIG[agent.status] ?? STATUS_CONFIG.idle
+  const statusKey = STATUS_COLORS[agent.status] ? agent.status : 'idle'
+  const cfg = { color: STATUS_COLORS[statusKey], label: t(`conductor.${statusKey}`) }
 
   async function handleCall(e) {
     e.preventDefault()
@@ -56,15 +59,15 @@ function AgentCard({ agent, onCall }) {
           onClick={() => setExpanded(v => !v)}
           disabled={agent.status === 'working'}
         >
-          💬 Appeler
+          {t('conductor.call')}
         </button>
         {agent.room_id && (
           <button
             className="conductor-btn-room"
             onClick={() => {}}
-            title="Entrer dans la room"
+            title={t('conductor.enterRoom')}
           >
-            🚪 Room
+            {t('conductor.room')}
           </button>
         )}
         <a
@@ -72,9 +75,9 @@ function AgentCard({ agent, onCall }) {
           href={`${agent.forge_url || 'http://localhost:3000'}`}
           target="_blank"
           rel="noreferrer"
-          title="Ouvrir Forge"
+          title={t('conductor.openForge')}
         >
-          🔧 Forge
+          {t('conductor.forge')}
         </a>
       </div>
 
@@ -83,13 +86,13 @@ function AgentCard({ agent, onCall }) {
           <input
             autoFocus
             type="text"
-            placeholder={`Message pour l'agent ${agent.pole_type}…`}
+            placeholder={t('conductor.msgPlaceholder', { pole: agent.pole_type })}
             value={msg}
             onChange={e => setMsg(e.target.value)}
             disabled={loading}
           />
           <button type="submit" disabled={loading || !msg.trim()}>
-            {loading ? '…' : 'Envoyer'}
+            {loading ? '…' : t('conductor.send')}
           </button>
         </form>
       )}
@@ -98,6 +101,7 @@ function AgentCard({ agent, onCall }) {
 }
 
 export default function ConductorView({ moi }) {
+  const { t } = useTranslation()
   const [agents, setAgents]     = useState([])
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
@@ -147,13 +151,13 @@ export default function ConductorView({ moi }) {
   return (
     <div className="conductor-view">
       <div className="conductor-header">
-        <h2>🎛 Conductor</h2>
-        <p className="conductor-subtitle">Agents résidents pôle — présence temps réel</p>
+        <h2>{t('conductor.title')}</h2>
+        <p className="conductor-subtitle">{t('conductor.subtitle')}</p>
         <div className="conductor-status-bar">
           <span className="conductor-ws-dot" data-connected={connected} />
-          <span>{connected ? 'Connecté' : 'Reconnexion…'}</span>
+          <span>{connected ? t('conductor.connected') : t('conductor.reconnecting')}</span>
           <span className="conductor-summary">
-            {countByStatus.idle || 0} disponibles · {countByStatus.working || 0} actifs · {countByStatus.error || 0} erreurs
+            {t('conductor.summary', { idle: countByStatus.idle || 0, working: countByStatus.working || 0, error: countByStatus.error || 0 })}
           </span>
         </div>
       </div>
@@ -162,7 +166,7 @@ export default function ConductorView({ moi }) {
         {agents.length === 0 ? (
           <div className="conductor-empty">
             <span>🤖</span>
-            <p>Aucun agent résident configuré.</p>
+            <p>{t('conductor.empty')}</p>
           </div>
         ) : (
           agents.map(agent => (

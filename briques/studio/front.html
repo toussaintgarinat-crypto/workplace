@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio — atelier d'audio-séries</title>
+<style>
+  :root{
+    --bg:#15120f; --panel:#1d1a17; --panel2:#241f1a; --line:#3a342b;
+    --ink:#f3e9d2; --mut:#b9b09a; --accent:#C9A227; --accent2:#B5835A; --ok:#7bdc9a; --bad:#e0667a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1100px 560px at 85% -12%,#2a2015 0,var(--bg) 55%);
+       color:var(--ink);font-family:'Segoe UI',-apple-system,system-ui,sans-serif;min-height:100vh}
+  a{color:var(--accent)}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 90px}
+  header h1{font-family:Georgia,'Times New Roman',serif;font-weight:600;font-size:1.7rem;margin:0}
+  header h1 .dot{color:var(--accent)}
+  header p{color:var(--mut);margin:5px 0 0;font-size:.92rem}
+  nav{margin:12px 0 0;font-size:.8rem}
+  nav a{color:var(--mut);text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin-right:7px}
+  h2{font-size:.76rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin:0 0 12px}
+  h3{font-family:Georgia,serif;font-weight:600;margin:0 0 4px;font-size:1.05rem}
+  label{display:block;font-size:.74rem;color:var(--mut);margin:9px 0 4px}
+  input,textarea,select{width:100%;background:#100d0a;border:1px solid var(--line);border-radius:9px;
+    color:var(--ink);padding:9px 11px;font-size:.88rem;font-family:inherit}
+  textarea{resize:vertical;line-height:1.5}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+  button{cursor:pointer;border:none;border-radius:9px;padding:10px 16px;font-weight:600;font-size:.88rem;
+    background:linear-gradient(135deg,var(--accent),#a8861f);color:#1a1510}
+  button:disabled{opacity:.5;cursor:wait}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--accent)}
+  button.sm{padding:6px 11px;font-size:.78rem}
+  .err{color:var(--bad);font-size:.82rem;margin-top:8px;min-height:0}
+  .hint{font-size:.74rem;color:var(--mut);margin-top:6px;line-height:1.5}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .grid{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start;margin-top:22px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:10px}
+  .serie-item{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .serie-item:hover{border-color:var(--accent)}
+  .serie-item.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .serie-item .meta{font-size:.72rem;color:var(--mut)}
+  .pill{font-size:.7rem;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--mut)}
+  .opt{background:#100d0a;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px}
+  .opt h4{margin:0 0 4px;color:var(--accent2);font-size:.9rem}
+  .opt p{margin:0;font-size:.82rem;line-height:1.5;color:var(--ink)}
+  .recit{background:#100d0a;border:1px solid var(--line);border-radius:11px;padding:14px;
+         line-height:1.6;font-size:.86rem;white-space:pre-wrap;margin-top:10px;max-height:340px;overflow:auto}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+  .tab{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+       padding:8px 13px;font-weight:600;font-size:.82rem;color:var(--mut)}
+  .tab.on{color:#1a1510;background:linear-gradient(135deg,var(--accent),#a8861f);border-color:transparent}
+  .muted{color:var(--mut);font-size:.82rem}
+  .chip{font-size:.74rem;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:4px 11px;display:inline-block;margin:3px 4px 0 0}
+  .flag{font-size:.7rem;color:var(--ok);border:1px solid #2e5a3e;border-radius:20px;padding:2px 9px}
+  .flag.studio{color:var(--accent2);border-color:var(--accent2)}
+  audio{width:100%;margin-top:10px}
+  .ep-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .arbre{margin-left:14px;border-left:1px solid var(--line);padding-left:12px;margin-top:8px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#100d0a;
+    border:1px solid var(--accent);color:var(--ink);padding:11px 18px;border-radius:10px;
+    font-size:.85rem;z-index:999;display:none;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Studio<span class="dot">.</span> <span style="font-size:1rem;color:var(--mut)">atelier d'audio-séries</span></h1>
+    <p>Co-écris une série avec l'équipe créative (Showrunner, Scénariste, Script Doctor, Casting…), distribue des voix stables, produis l'audio multilingue, exporte le livre, cartographie l'arbre des choix. Brique autonome qui <b>compose</b> Personnages (5900), Images (5950) et Voix (5810).</p>
+    <nav>
+      <a href="/docs">API</a>
+      <a href="/sante">/santé</a>
+      <span class="pill" id="mode-auth">mode ouvert</span>
+    </nav>
+  </header>
+
+  <div class="grid">
+    <!-- ── Colonne gauche : séries ──────────────────────────── -->
+    <div>
+      <div class="panel">
+        <h2>Mes séries</h2>
+        <div id="liste-series"><p class="muted">Chargement…</p></div>
+      </div>
+      <div class="panel">
+        <h2>Nouvelle série</h2>
+        <label>Titre</label><input id="n-titre" placeholder="Les Gardiens du Phare">
+        <label>Idée / genre de départ (facultatif)</label>
+        <textarea id="n-idee" rows="2" placeholder="Un conte maritime où des enfants protègent un phare magique."></textarea>
+        <div class="row">
+          <div><label>Public cible</label><select id="n-cible"></select></div>
+          <div><label>Langue de travail</label><select id="n-langue"></select></div>
+        </div>
+        <button id="btn-creer" onclick="creerSerie()" style="width:100%;margin-top:14px">✨ Créer la série</button>
+        <div class="err" id="n-err"></div>
+      </div>
+    </div>
+
+    <!-- ── Colonne droite : la série ouverte ─────────────────── -->
+    <div id="zone-serie">
+      <div class="panel"><p class="muted">Choisis une série à gauche, ou crée-en une nouvelle.</p></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const md = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
+
+// Clé API facultative (vente brique seule). Vide = mode ouvert. Lue ?api_key= ou localStorage.
+const API_KEY = new URLSearchParams(location.search).get('api_key') || localStorage.getItem('studio_api_key') || '';
+const HDR = {'Content-Type':'application/json', ...(API_KEY ? {'X-API-Key': API_KEY} : {})};
+
+async function api(path, method='GET', body=null){
+  const r = await fetch(path, {method, headers:HDR, body: body!=null?JSON.stringify(body):null});
+  if(!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || ('HTTP '+r.status)); }
+  return r.status===204 ? null : r.json();
+}
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2600); }
+
+let CIBLES=[], LANGUES=[], serieCourante=null;
+const DIMENSIONS=[
+  {cle:'genre',    titre:'Genre',    emoji:'🎭', hint:'Le registre de la série.'},
+  {cle:'univers',  titre:'Univers',  emoji:'🗺️', hint:'Le monde, le décor.'},
+  {cle:'personnages',titre:'Personnages',emoji:'👥',hint:'Les figures centrales.'},
+  {cle:'intrigue', titre:'Intrigue', emoji:'🧩', hint:'Le fil narratif.'},
+  {cle:'choix',    titre:'Choix',    emoji:'🔀', hint:'Les embranchements de fin.'},
+];
+
+// ── Amorçage : réglages + équipe + liste ──────────────────
+async function init(){
+  try{
+    const s = await api('/sante');
+    if(s.auth==='cle_api') $('mode-auth').textContent='clé API requise';
+  }catch(e){}
+  try{
+    CIBLES = await api('/cibles');
+    LANGUES = await api('/langues');
+    $('n-cible').innerHTML = '<option value="">— public libre —</option>' +
+      CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
+    $('n-langue').innerHTML = LANGUES.map(l=>`<option value="${esc(l.code)}"${l.code==='fr'?' selected':''}>${esc(l.label)}</option>`).join('');
+  }catch(e){ $('n-err').textContent='⚠ '+e.message; }
+  chargerListe();
+}
+
+async function chargerListe(){
+  try{
+    const series = await api('/series');
+    if(!series.length){ $('liste-series').innerHTML = '<p class="muted">Aucune série pour l\'instant.</p>'; return; }
+    $('liste-series').innerHTML = series.map(s=>`
+      <div class="card serie-item ${serieCourante&&serieCourante.id===s.id?'on':''}" onclick="ouvrirSerie('${s.id}')">
+        <div><h3>${esc(s.titre)}</h3>
+          <div class="meta">${s.episodes} chapitre(s) · ${s.personnages} perso · ${s.tomes} tome(s) · ${esc((s.langue||'fr').toUpperCase())}</div></div>
+        <span class="pill">${s.briques}/5 bible</span>
+      </div>`).join('');
+  }catch(e){ $('liste-series').innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; }
+}
+
+async function creerSerie(){
+  const b=$('btn-creer'); $('n-err').textContent=''; b.disabled=true;
+  try{
+    const s = await api('/series','POST',{
+      titre: $('n-titre').value.trim() || null,
+      idee: $('n-idee').value.trim() || null,
+      cible: $('n-cible').value || null,
+      langue: $('n-langue').value || null,
+    });
+    $('n-titre').value=''; $('n-idee').value='';
+    await chargerListe(); ouvrirSerie(s.id); toast('Série créée 🎬');
+  }catch(e){ $('n-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; }
+}
+
+// ── Ouvrir une série : rendu complet ──────────────────────
+async function ouvrirSerie(id){
+  try{ serieCourante = await api('/series/'+id); }
+  catch(e){ toast('⚠ '+e.message); return; }
+  chargerListe();
+  renderSerie();
+}
+
+function S(){ return serieCourante; }
+async function refresh(){ serieCourante = await api('/series/'+S().id); renderSerie(); chargerListe(); }
+
+function renderSerie(){
+  const s = S();
+  const z = $('zone-serie');
+  z.innerHTML = `
+    <div class="panel">
+      <div class="ep-head">
+        <h2 style="margin:0">🎬 ${esc(s.titre)}</h2>
+        <div class="tabs" id="onglets">
+          ${['Bible','Distribution','Chapitres','Structure','Arbre'].map((t,i)=>
+            `<div class="tab ${i===0?'on':''}" onclick="vue('${t}')">${t}</div>`).join('')}
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div><label>Public cible</label><select id="s-cible" onchange="majCible()"></select></div>
+        <div><label>Langue de travail</label><select id="s-langue" onchange="majLangue()"></select></div>
+      </div>
+    </div>
+    <div id="vue-corps"></div>`;
+  $('s-cible').innerHTML = '<option value="">— public libre —</option>' +
+    CIBLES.map(c=>`<option value="${esc(c.cle)}"${s.cible===c.cle?' selected':''}>${esc(c.label)}</option>`).join('');
+  $('s-langue').innerHTML = LANGUES.map(l=>`<option value="${esc(l.code)}"${(s.langue||'fr')===l.code?' selected':''}>${esc(l.label)}</option>`).join('');
+  vue('Bible');
+}
+
+function vue(nom){
+  document.querySelectorAll('#onglets .tab').forEach(t=>t.classList.toggle('on', t.textContent===nom));
+  ({Bible:vueBible, Distribution:vueDistribution, Chapitres:vueChapitres,
+    Structure:vueStructure, Arbre:vueArbre})[nom]();
+}
+
+async function majCible(){ try{ await api(`/series/${S().id}/cible`,'POST',{cible:$('s-cible').value||null}); S().cible=$('s-cible').value||null; toast('Public mis à jour'); }catch(e){ toast('⚠ '+e.message);} }
+async function majLangue(){ try{ await api(`/series/${S().id}/langue`,'POST',{langue:$('s-langue').value}); S().langue=$('s-langue').value; toast('Langue mise à jour'); }catch(e){ toast('⚠ '+e.message);} }
+
+// ── Vue BIBLE : co-création dimension par dimension ────────
+function vueBible(){
+  const s=S(), bible=s.bible||{};
+  $('vue-corps').innerHTML = `
+    <div class="panel">
+      <h2>Co-création de la bible</h2>
+      <p class="hint">Un agent te <b>propose</b> 3 options par dimension ; tu <b>décides</b> (ou tu écris ta propre version). Ou laisse le Showrunner tout décider en mode express.</p>
+      <button class="ghost" onclick="express()" id="btn-express">⚡ Bible express (le Showrunner décide tout)</button>
+      <div id="bible-err" class="err"></div>
+      ${DIMENSIONS.map(d=>`
+        <div class="card">
+          <h3>${d.emoji} ${d.titre}</h3>
+          <div class="hint">${d.hint}</div>
+          ${bible[d.cle] ? `<div class="recit" style="max-height:none">${md(bible[d.cle])}</div>` : ''}
+          <label>Ton idée (facultatif)</label>
+          <textarea id="idee-${d.cle}" rows="2" placeholder="Une piste à intégrer…"></textarea>
+          <div class="row" style="margin-top:8px">
+            <button class="sm ghost" onclick="proposer('${d.cle}')" id="prop-${d.cle}">💡 Proposer</button>
+          </div>
+          <div id="opts-${d.cle}"></div>
+        </div>`).join('')}
+    </div>`;
+}
+
+async function proposer(cle){
+  const b=$('prop-'+cle); b.disabled=true; b.textContent='💡 …'; $('bible-err').textContent='';
+  try{
+    const r = await api(`/series/${S().id}/proposer`,'POST',{dimension:cle, mon_idee:$('idee-'+cle).value.trim()||null});
+    $('opts-'+cle).innerHTML = `<div class="hint">${esc(r.avatar||'')} ${esc(r.agent)} propose :</div>` +
+      r.options.map((o,i)=>`
+        <div class="opt"><h4>${esc(o.titre)}</h4><p>${md(o.description)}</p>
+          <button class="sm" style="margin-top:8px" onclick='decider(${JSON.stringify(cle)}, ${JSON.stringify(o.titre+" — "+o.description)})'>Choisir</button>
+        </div>`).join('');
+  }catch(e){ $('bible-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; b.textContent='💡 Proposer'; }
+}
+async function decider(cle, choix){
+  try{ await api(`/series/${S().id}/decider`,'POST',{dimension:cle, choix}); await refresh(); vue('Bible'); toast('Décidé ✓'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function express(){
+  const b=$('btn-express'); b.disabled=true; b.textContent='⚡ Le Showrunner écrit la bible…';
+  try{ await api(`/series/${S().id}/express`,'POST',{idee:$('n-idee')?.value||null}); await refresh(); vue('Chapitres'); toast('Bible + 1er chapitre prêts ⚡'); }
+  catch(e){ $('bible-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; b.textContent='⚡ Bible express (le Showrunner décide tout)'; }
+}
+
+// ── Vue DISTRIBUTION : personnages + voix ─────────────────
+async function vueDistribution(){
+  const s=S();
+  $('vue-corps').innerHTML = `<div class="panel"><h2>Distribution</h2>
+    <div class="row">
+      <input id="d-nom" placeholder="Nom d'un personnage" style="flex:3">
+      <button class="sm" onclick="ajouterPerso()">+ Ajouter</button>
+    </div>
+    <label>Une piste pour le Directeur de Casting (facultatif)</label>
+    <textarea id="d-idee" rows="2" placeholder="Un trio improbable, un mentor ambigu…"></textarea>
+    <button class="ghost" style="margin-top:8px" id="btn-cast" onclick="proposerDistribution()">🎭 Proposer une distribution</button>
+    <div class="err" id="d-err"></div>
+    <div id="d-props"></div>
+    <div id="d-liste" style="margin-top:14px"></div>
+  </div>`;
+  renderPersos();
+}
+function renderPersos(){
+  const persos = S().personnages||[];
+  $('d-liste').innerHTML = persos.length ? persos.map(p=>`
+    <div class="card">
+      <div class="ep-head"><h3>${esc(p.nom)} ${p.source?`<span class="flag studio">${esc(p.source)}</span>`:''}</h3>
+        <div><button class="sm ghost" onclick="portrait('${p.id}')">🖼️ Portrait</button>
+        <button class="sm ghost" onclick="supprimerPerso('${p.id}')">✕</button></div></div>
+      ${p.role?`<div class="muted">${esc(p.role)}</div>`:''}
+      ${p.description?`<p style="font-size:.84rem;margin:6px 0 0">${esc(p.description)}</p>`:''}
+      ${p.archetype?`<span class="chip">${esc(p.archetype)}</span>`:''}
+      ${p.portrait_url?`<img src="${esc(p.portrait_url)}" style="max-width:160px;border-radius:10px;margin-top:8px;display:block">`:''}
+    </div>`).join('') : '<p class="muted">Aucun personnage. Ajoute-en ou demande une distribution.</p>';
+}
+async function ajouterPerso(){
+  const nom=$('d-nom').value.trim(); if(!nom) return;
+  try{ await api(`/series/${S().id}/personnages`,'POST',{nom}); $('d-nom').value=''; await refresh(); vue('Distribution'); }
+  catch(e){ $('d-err').textContent='⚠ '+e.message; }
+}
+async function supprimerPerso(pid){
+  try{ await api(`/series/${S().id}/personnages/${pid}`,'DELETE'); await refresh(); vue('Distribution'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function proposerDistribution(){
+  const b=$('btn-cast'); b.disabled=true; b.textContent='🎭 …'; $('d-err').textContent='';
+  try{
+    const r = await api(`/series/${S().id}/personnages/proposer`,'POST',{mon_idee:$('d-idee').value.trim()||null});
+    $('d-props').innerHTML = `<div class="hint">${esc(r.avatar||'🎭')} ${esc(r.agent)} (${esc(r.source)}) propose :</div>` +
+      r.personnages.map((p,i)=>`<div class="opt"><h4>${esc(p.nom)}</h4>
+        <div class="muted">${esc(p.role||'')}</div><p>${esc(p.description||'')}</p>
+        <button class="sm" style="margin-top:8px" onclick='retenirPerso(${JSON.stringify(p)})'>+ Retenir</button></div>`).join('');
+  }catch(e){ $('d-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; b.textContent='🎭 Proposer une distribution'; }
+}
+async function retenirPerso(p){
+  try{ await api(`/series/${S().id}/personnages`,'POST',{nom:p.nom, role:p.role||null, description:p.description||null}); await refresh(); vue('Distribution'); toast('Ajouté à la distribution'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function portrait(pid){
+  toast('🖼️ Génération du portrait…');
+  try{ await api(`/series/${S().id}/personnages/${pid}/portrait`,'POST',{}); await refresh(); vue('Distribution'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+// ── Vue CHAPITRES : écrire + audio + couverture ───────────
+async function vueChapitres(){
+  const s=S();
+  let dec=null; try{ dec = await api(`/series/${s.id}/episodes`); }catch(e){}
+  const eps = s.episodes||[];
+  $('vue-corps').innerHTML = `<div class="panel"><h2>Chapitres</h2>
+    ${dec?`<p class="hint">Épisode d'écoute ≈ ${dec.cible_minutes||12} min → ~${dec.chapitres_par_episode||'?'} chapitres. ${eps.length} chapitre(s) écrit(s).</p>`:''}
+    <label>Direction pour le prochain chapitre (facultatif)</label>
+    <input id="ch-dir" placeholder="On suit l'antagoniste cette fois…">
+    <button style="margin-top:10px" id="btn-ep" onclick="ecrireChapitre()">✍️ Écrire le chapitre ${eps.length+1}</button>
+    <div class="err" id="ch-err"></div>
+    <div id="ch-liste" style="margin-top:14px">
+      ${eps.slice().reverse().map(ep=>renderEpisode(ep)).join('') || '<p class="muted">Aucun chapitre. Lance le premier !</p>'}
+    </div>
+  </div>`;
+}
+function renderEpisode(ep){
+  const langs = LANGUES.map(l=>`<option value="${l.code}">${esc(l.label)}</option>`).join('');
+  return `<div class="card" id="ep-${ep.n}">
+    <div class="ep-head"><h3>Chapitre ${ep.n} ${ep.fin_episode?'<span class="flag">fin d\'épisode</span>':''}</h3>
+      <span class="muted">${esc(ep.consigne||'')}</span></div>
+    <div class="recit">${md(ep.script_balise||ep.script_brut||'')}</div>
+    <div class="row" style="margin-top:10px;align-items:end">
+      <div style="flex:2"><label>Langue de l'audio</label><select id="lang-${ep.n}">${langs}</select></div>
+      <button class="sm" onclick="produireAudio(${ep.n})">🔊 Produire l'audio</button>
+      <button class="sm ghost" onclick="couverture(${ep.n})">🖼️ Couverture</button>
+    </div>
+    ${ep.audio_url?`<audio controls src="${esc(ep.audio_url)}"></audio>
+      <div class="hint">Casting : ${esc(JSON.stringify(ep.casting||{}))} <span class="flag ${ep.casting_source==='studio'?'studio':''}">${esc(ep.casting_source||'')}</span></div>`:''}
+    ${ep.cover_url?`<img src="${esc(ep.cover_url)}" style="max-width:200px;border-radius:10px;margin-top:8px;display:block">`:''}
+  </div>`;
+}
+async function ecrireChapitre(){
+  const b=$('btn-ep'); b.disabled=true; b.textContent='✍️ Le Scénariste écrit…'; $('ch-err').textContent='';
+  try{ await api(`/series/${S().id}/episode`,'POST',{branche:$('ch-dir').value.trim()||null}); await refresh(); vue('Chapitres'); toast('Chapitre écrit ✍️'); }
+  catch(e){ $('ch-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; }
+}
+async function produireAudio(n){
+  const sortie=$('lang-'+n).value; toast('🔊 Sonorisation…');
+  try{ await api(`/series/${S().id}/audio`,'POST',{n, langue_sortie:sortie}); await refresh(); vue('Chapitres'); toast('Audio prêt 🔊'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function couverture(n){
+  toast('🖼️ Couverture…');
+  try{ await api(`/series/${S().id}/episode/${n}/couverture`,'POST',{}); await refresh(); vue('Chapitres'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+// ── Vue STRUCTURE : cycles / tomes + export livre ─────────
+function vueStructure(){
+  const s=S(), cycles=s.cycles||[];
+  $('vue-corps').innerHTML = `<div class="panel"><h2>Structure du livre</h2>
+    <p class="hint">Série ▸ Cycles ▸ Tomes ▸ Chapitres. Tome actif = ${esc(s.tome_actif||'—')}.</p>
+    <div class="row"><input id="st-cycle" placeholder="Titre d'un nouveau cycle" style="flex:3">
+      <button class="sm" onclick="creerCycle()">+ Cycle</button></div>
+    <div class="err" id="st-err"></div>
+    <div style="margin-top:12px">${cycles.map(c=>`
+      <div class="card"><h3>📕 ${esc(c.titre)}</h3>
+        ${(c.tomes||[]).map(t=>`<div class="opt"><b>📗 ${esc(t.titre)}</b>
+          <span class="pill">${esc(t.statut||'')}</span>
+          ${s.tome_actif!==t.id?`<button class="sm ghost" style="margin-left:8px" onclick="tomeActif('${t.id}')">activer</button>`:'<span class="flag" style="margin-left:8px">actif</span>'}
+        </div>`).join('') || '<p class="muted">Aucun tome.</p>'}
+        <div class="row" style="margin-top:8px"><input id="tm-${c.id}" placeholder="Titre d'un tome" style="flex:3">
+          <button class="sm" onclick="creerTome('${c.id}')">+ Tome</button></div>
+      </div>`).join('')}</div>
+    <button class="ghost" style="margin-top:10px" onclick="voirLivre()">📖 Exporter le livre (texte sans son)</button>
+    <div id="livre-out"></div>
+  </div>`;
+}
+async function creerCycle(){ try{ await api(`/series/${S().id}/cycles`,'POST',{titre:$('st-cycle').value.trim()||null}); await refresh(); vue('Structure'); }catch(e){ $('st-err').textContent='⚠ '+e.message; } }
+async function creerTome(cid){ try{ await api(`/series/${S().id}/cycles/${cid}/tomes`,'POST',{titre:$('tm-'+cid).value.trim()||null}); await refresh(); vue('Structure'); }catch(e){ $('st-err').textContent='⚠ '+e.message; } }
+async function tomeActif(tid){ try{ await api(`/series/${S().id}/tome-actif`,'POST',{tome_id:tid}); await refresh(); vue('Structure'); }catch(e){ toast('⚠ '+e.message); } }
+async function voirLivre(){
+  try{ const l = await api(`/series/${S().id}/livre`);
+    $('livre-out').innerHTML = `<div class="recit" style="max-height:420px;margin-top:12px">${md(l.texte)}</div>
+      <p class="hint">${l.chapitres} chapitre(s) — format ${esc(l.format)}.</p>`;
+  }catch(e){ toast('⚠ '+e.message); }
+}
+
+// ── Vue ARBRE : cartographier + jouer + étendre ───────────
+function vueArbre(){
+  const s=S();
+  $('vue-corps').innerHTML = `<div class="panel"><h2>Arbre des choix</h2>
+    <p class="hint">Le Showrunner cartographie les embranchements. Joue un nœud (= grave un chapitre) ou étends une branche.</p>
+    <div class="row"><div><label>Profondeur</label><input id="ar-prof" type="number" value="3" min="1" max="4"></div>
+      <button class="sm" id="btn-arbre" onclick="cartographier()" style="align-self:end">🌳 Cartographier</button></div>
+    <div class="err" id="ar-err"></div>
+    <div id="ar-out" style="margin-top:12px">${s.arbre?renderNoeud(s.arbre):'<p class="muted">Aucun arbre.</p>'}</div>
+  </div>`;
+}
+function renderNoeud(n){
+  return `<div class="card"><div class="muted">niveau ${n.niveau}</div>
+    <p style="font-size:.85rem">${esc(n.synopsis||'')}</p>
+    <div>${(n.choix||[]).map(c=>`<button class="sm ghost" onclick='etendre("${n.id}", ${JSON.stringify(c)})'>↳ ${esc(c)}</button> `).join('')}</div>
+    <button class="sm" style="margin-top:8px" onclick="jouer('${n.id}')">🎬 Jouer ce nœud</button>
+    ${n.script?`<div class="recit">${md(n.script)}</div>`:''}
+    ${(n.enfants||[]).length?`<div class="arbre">${n.enfants.map(e=>renderNoeud(e.noeud)).join('')}</div>`:''}
+  </div>`;
+}
+async function cartographier(){
+  const b=$('btn-arbre'); b.disabled=true; b.textContent='🌳 …'; $('ar-err').textContent='';
+  try{ await api(`/series/${S().id}/arbre`,'POST',{profondeur:parseInt($('ar-prof').value)||3}); await refresh(); vue('Arbre'); }
+  catch(e){ $('ar-err').textContent='⚠ '+e.message; }
+  finally{ b.disabled=false; b.textContent='🌳 Cartographier'; }
+}
+async function jouer(nid){
+  toast('🎬 Le Scénariste écrit la scène…');
+  try{ await api(`/series/${S().id}/arbre/${nid}/jouer`,'POST',{}); await refresh(); vue('Arbre'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function etendre(nid, choix){
+  toast('↳ Projection de la branche…');
+  try{ await api(`/series/${S().id}/arbre/${nid}/etendre`,'POST',{choix}); await refresh(); vue('Arbre'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+// ── Synergie Personnages → Studio (postMessage) ───────────
+// Si l'atelier Personnages (autre iframe) pousse un personnage et qu'une série est
+// ouverte ici, on l'importe dans sa distribution. Composition, pas absorption.
+window.addEventListener('message', async e=>{
+  const d=e.data; if(!d || d.type!=='personnage:export' || !d.perso) return;
+  if(!serieCourante){ toast('Ouvre une série pour importer « '+(d.perso.nom||'')+' »'); return; }
+  try{
+    await api(`/series/${serieCourante.id}/personnages/importer`,'POST',{
+      nom:d.perso.nom, role:d.perso.role||null, description:d.perso.description||null,
+      archetype:d.perso.archetype||null, empreinte:d.perso.empreinte||[], source:d.perso.source||'personnages'});
+    await refresh(); vue('Distribution'); toast('« '+d.perso.nom+' » importé 📤');
+  }catch(err){ toast('⚠ import : '+err.message); }
+});
+
+init();
+</script>
+</body>
+</html>

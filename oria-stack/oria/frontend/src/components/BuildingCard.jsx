@@ -1,11 +1,11 @@
 import { useState } from 'react'
-
-const LABELS = { maison: '🏠 Maison', site: '🌐 Site', immeuble: '🏢 Immeuble' }
+import { useTranslation } from 'react-i18next'
 
 export default function BuildingCard({
   building, roomActiveId, onEntrerRoom, onAjouterRoom,
   onEditer, onSupprimer, onEditerRoom, onSupprimerRoom,
 }) {
+  const { t } = useTranslation()
   const { type, nom, emoji, couleur, rooms = [], description } = building
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -19,15 +19,15 @@ export default function BuildingCard({
         <div className="building-icon">{emoji}</div>
         <div className="building-info">
           <span className="building-nom">{nom}</span>
-          <span className="building-type-badge">{LABELS[type]}</span>
+          <span className="building-type-badge">{t(`building.${type}`)}</span>
         </div>
         {(onEditer || onSupprimer) && (
           <div className="building-menu-wrap">
             <button className="btn-building-menu" onClick={() => setMenuOpen(v => !v)}>⚙</button>
             {menuOpen && (
               <div className="building-menu" onClick={() => setMenuOpen(false)}>
-                {onEditer && <button onClick={onEditer}>✎ Modifier</button>}
-                {onSupprimer && <button className="danger" onClick={onSupprimer}>🗑 Supprimer</button>}
+                {onEditer && <button onClick={onEditer}>✎ {t('common.edit')}</button>}
+                {onSupprimer && <button className="danger" onClick={onSupprimer}>🗑 {t('common.delete')}</button>}
               </div>
             )}
           </div>
@@ -40,7 +40,7 @@ export default function BuildingCard({
         <div className="immeuble-etages">
           {etages.map(etage => (
             <div key={etage} className="immeuble-etage">
-              <span className="etage-label">{etage === 0 ? 'RDC' : `Étage ${etage}`}</span>
+              <span className="etage-label">{etage === 0 ? t('building.floorGround') : t('building.floorN', { n: etage })}</span>
               <div className="etage-rooms">
                 {rooms.filter(r => r.etage === etage).map(room => (
                   <RoomChip key={room.id} room={room} actif={roomActiveId === room.id}
@@ -68,7 +68,7 @@ export default function BuildingCard({
       {onAjouterRoom && (
         <div className="building-footer">
           <button className="btn-add-room" onClick={() => onAjouterRoom(building)}>
-            ＋ Ajouter une pièce
+            ＋ {t('building.addRoom')}
           </button>
         </div>
       )}
@@ -77,6 +77,7 @@ export default function BuildingCard({
 }
 
 function RoomChip({ room, actif, onClick, onEditer, onSupprimer }) {
+  const { t } = useTranslation()
   const icone = room.type === 'vocal' ? '🔊' : room.type === 'texte' ? '💬' : '⚡'
   return (
     <div className="room-chip-wrap">
@@ -87,8 +88,8 @@ function RoomChip({ room, actif, onClick, onEditer, onSupprimer }) {
       </button>
       {(onEditer || onSupprimer) && (
         <div className="room-chip-actions">
-          {onEditer && <button className="btn-room-edit" onClick={e => { e.stopPropagation(); onEditer() }} title="Modifier">✎</button>}
-          {onSupprimer && <button className="btn-room-del" onClick={e => { e.stopPropagation(); onSupprimer() }} title="Supprimer">✕</button>}
+          {onEditer && <button className="btn-room-edit" onClick={e => { e.stopPropagation(); onEditer() }} title={t('common.edit')}>✎</button>}
+          {onSupprimer && <button className="btn-room-del" onClick={e => { e.stopPropagation(); onSupprimer() }} title={t('common.delete')}>✕</button>}
         </div>
       )}
     </div>

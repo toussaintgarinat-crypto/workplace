@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../services/api.js'
 
-const CHOIX_LABELS = { pour: '✅ Pour', contre: '❌ Contre', abstention: '🔵 Abstention' }
+const CHOIX_KEYS = ['pour', 'contre', 'abstention']
 const CHOIX_COLORS = { pour: 'var(--vert)', contre: 'var(--rouge)', abstention: 'var(--or-500)' }
 
 export default function VotePanel({ conseil, world, moi, onFermer }) {
+  const { t } = useTranslation()
+  const CHOIX_LABELS = { pour: t('vote.pour'), contre: t('vote.contre'), abstention: t('vote.abstention') }
   const [votes, setVotes] = useState([])
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
@@ -44,7 +47,7 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
   }
 
   async function supprimerVote(voteId) {
-    if (!confirm('Supprimer ce vote ?')) return
+    if (!confirm(t('vote.confirmDelete'))) return
     await api.del(`/votes/${voteId}`)
     charger()
   }
@@ -54,7 +57,7 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
       <div className="mairie-panel-header">
         <div className="mairie-panel-title">
           <span>🗳️</span>
-          <h2>Votes — {conseil.date_conseil}</h2>
+          <h2>{t('vote.title', { date: conseil.date_conseil })}</h2>
         </div>
         <div className="mairie-panel-actions">
           <button className="mairie-btn-close" onClick={onFermer}>✕</button>
@@ -66,17 +69,17 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
           <input
             value={question}
             onChange={e => setQuestion(e.target.value)}
-            placeholder="Question soumise au vote..."
+            placeholder={t('vote.questionPlaceholder')}
             className="vote-question-input"
           />
           <button type="submit" className="mairie-btn-primary" disabled={loading || !question.trim()}>
-            🗳️ Lancer le vote
+            {t('vote.launch')}
           </button>
         </form>
       )}
 
       <div className="mairie-list">
-        {votes.length === 0 && <div className="mairie-empty">Aucun vote lancé</div>}
+        {votes.length === 0 && <div className="mairie-empty">{t('vote.empty')}</div>}
         {votes.map(v => {
           const total = v.total_votants || 0
           const monBulletin = v.bulletins?.find(b => b.user_nom === moi?.nom)
@@ -85,7 +88,7 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
               <div className="vote-card-header">
                 <span className="vote-question">{v.question}</span>
                 <span className={`vote-statut-badge ${v.statut}`}>
-                  {v.statut === 'ouvert' ? '🟢 Ouvert' : '🔴 Fermé'}
+                  {v.statut === 'ouvert' ? t('vote.open') : t('vote.closed')}
                 </span>
               </div>
 
@@ -103,7 +106,7 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
                     </div>
                   )
                 })}
-                <div className="vote-total">{total} votant{total > 1 ? 's' : ''}</div>
+                <div className="vote-total">{t('vote.voters', { count: total })}</div>
               </div>
 
               {/* Actions voter */}
@@ -111,8 +114,8 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
                 <div className="vote-actions">
                   {monBulletin ? (
                     <div className="vote-mon-choix">
-                      Mon vote : <strong style={{ color: CHOIX_COLORS[monBulletin.choix] }}>{CHOIX_LABELS[monBulletin.choix]}</strong>
-                      <span className="vote-change-hint"> (cliquer pour changer)</span>
+                      {t('vote.myVote')} <strong style={{ color: CHOIX_COLORS[monBulletin.choix] }}>{CHOIX_LABELS[monBulletin.choix]}</strong>
+                      <span className="vote-change-hint">{t('vote.changeHint')}</span>
                     </div>
                   ) : null}
                   <div className="vote-btns">
@@ -134,7 +137,7 @@ export default function VotePanel({ conseil, world, moi, onFermer }) {
                 <div className="vote-admin-btns">
                   {v.statut === 'ouvert' && (
                     <button className="mairie-btn-primary" onClick={() => fermerVote(v.id)} style={{ fontSize: 12 }}>
-                      🔴 Clore le vote
+                      {t('vote.close')}
                     </button>
                   )}
                   <button onClick={() => supprimerVote(v.id)} style={{ background: 'none', border: 'none', color: 'var(--text-mut)', cursor: 'pointer', fontSize: 13 }}>🗑</button>

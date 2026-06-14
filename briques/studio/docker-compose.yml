@@ -1,0 +1,43 @@
+services:
+  studio:
+    build: .
+    container_name: workplace_studio
+    image: workplace/studio:0.2.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique (GATEWAY_KEY pour le LLM).
+      - path: ../../.env
+        required: false
+    ports:
+      # Port 6060 (pas 6000 : 6000 = X11, bloqué par Chrome ⇒ iframe ERR_UNSAFE_PORT).
+      - "6060:6060"
+    environment:
+      - PORT=6060
+      # LLM par défaut : Gateway Workplace (cost-first). BYO key possible via GATEWAY_KEY.
+      - GATEWAY_URL=http://host.docker.internal:4001
+      - GATEWAY_MODEL=free/google/gemma-4-31b-it
+      # Briques composées (le studio les appelle ; replis honnêtes si absentes).
+      - VOIX_URL=http://host.docker.internal:5810
+      - IMAGES_URL=http://host.docker.internal:5950
+      - IMAGES_PUBLIC_URL=http://localhost:5950
+      # Personnages (5900) : distribution + casting vocal stable. Repli interne si absente.
+      - PERSONNAGES_URL=http://host.docker.internal:5900
+      - PERSONNAGES_KEY=
+      # Séries persistées en JSON dans un volume propre (plus de /app/uploads d'Oria).
+      - STUDIO_DIR=/data/ateliers
+      # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :
+      # à renseigner pour vendre la brique seule (auth).
+      - API_KEYS=
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
+    volumes:
+      - studio_data:/data    # séries persistées
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6060/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  studio_data:

@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, authHeaders } from '../services/api.js'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const VOICE_LOCALE = { fr: 'fr-FR', en: 'en-US', es: 'es-ES' }
 
 export default function AgentChatPanel({ agent, moi, onClose }) {
+  const { t, i18n } = useTranslation()
+  const voiceLang = VOICE_LOCALE[i18n.language] || 'fr-FR'
   const [messages, setMessages] = useState([
     {
       role: 'agent',
-      content: `Bonjour ! Je suis **${agent.nom}**. ${agent.description ? agent.description + ' ' : ''}Comment puis-je t'aider ?`,
+      content: t('agentChat.greeting', { nom: agent.nom, desc: agent.description ? agent.description + ' ' : '' }),
       timestamp: new Date().toISOString(),
     }
   ])
@@ -64,11 +68,11 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
     const plain = text.replace(/<[^>]+>/g, '').replace(/\*+/g, '').trim()
     if (!plain) return
     const utt = new SpeechSynthesisUtterance(plain)
-    utt.lang = 'fr-FR'
+    utt.lang = voiceLang
     utt.rate = 1.05
     const voices = window.speechSynthesis.getVoices()
-    const fr = voices.find(v => v.lang.startsWith('fr'))
-    if (fr) utt.voice = fr
+    const v = voices.find(vo => vo.lang.startsWith(i18n.language))
+    if (v) utt.voice = v
     utt.onstart = () => setIsSpeaking(true)
     utt.onend = () => {
       setIsSpeaking(false)
@@ -93,7 +97,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) return
     const rec = new SR()
-    rec.lang = 'fr-FR'
+    rec.lang = voiceLang
     rec.interimResults = false
     rec.onresult = e => {
       const text = e.results[0][0].transcript
@@ -119,7 +123,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
     if (!SR || !wakeWord) return
 
     const rec = new SR()
-    rec.lang = 'fr-FR'
+    rec.lang = voiceLang
     rec.continuous = true
     rec.interimResults = true
 
@@ -165,7 +169,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
     if (!SR) return
 
     const rec = new SR()
-    rec.lang = 'fr-FR'
+    rec.lang = voiceLang
     rec.continuous = false
     rec.interimResults = false
 
@@ -286,7 +290,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
         message: text,
         session_id: sessionId,
       })
-      const answer = data?.answer || '[Aucune réponse]'
+      const answer = data?.answer || t('agentChat.noAnswer')
       setMessages(prev => [...prev, {
         role: 'agent',
         content: answer,
@@ -320,7 +324,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
             <span className="agent-chat-avatar">{agent.avatar_emoji}</span>
             <div>
               <div className="agent-chat-nom">{agent.nom}</div>
-              <div className="agent-chat-desc">{agent.description || 'Agent IA'}</div>
+              <div className="agent-chat-desc">{agent.description || t('agentChat.aiAgent')}</div>
             </div>
           </div>
           <div className="agent-chat-actions">
@@ -328,17 +332,17 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
               <button
                 className={`tab-btn ${mode === 'chat' ? 'active' : ''}`}
                 onClick={() => setMode('chat')}
-              >💬 Chat</button>
+              >{t('agentChat.chat')}</button>
               {agent.use_ipcra && (
                 <button
                   className={`tab-btn ${mode === 'ipcra' ? 'active' : ''}`}
                   onClick={() => setMode('ipcra')}
-                >🎯 IPCRA</button>
+                >{t('agentChat.ipcra')}</button>
               )}
               <button
                 className={`tab-btn ${voiceEnabled ? 'active' : ''}`}
                 onClick={toggleVoice}
-                title={voiceEnabled ? 'Désactiver la lecture vocale' : 'Activer la lecture vocale'}
+                title={voiceEnabled ? t('agentChat.voiceOff') : t('agentChat.voiceOn')}
               >
                 {isSpeaking ? '🔊' : '🔈'}
               </button>
@@ -346,7 +350,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
                 <button
                   className={`tab-btn ${alwaysListening ? 'active wake-pulse' : ''}`}
                   onClick={toggleAlwaysListening}
-                  title={alwaysListening ? `En écoute — dis "${wakeWord}"` : `Activer l'écoute permanente (dire "${wakeWord}")`}
+                  title={alwaysListening ? t('agentChat.listeningTitle', { word: wakeWord }) : t('agentChat.enableListening', { word: wakeWord })}
                 >
                   {isActivated ? '⚡' : '👂'}
                 </button>
@@ -360,19 +364,19 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
         {alwaysListening && (
           <div className={`wake-indicator ${isActivated ? 'activated' : ''}`}>
             {isActivated
-              ? '⚡ Activé — parle maintenant…'
-              : `👂 En écoute · dis "${wakeWord}"`}
+              ? t('agentChat.activated')
+              : t('agentChat.listeningSay', { word: wakeWord })}
           </div>
         )}
 
         {/* Capacités badges */}
         <div className="agent-capabilities">
-          {agent.can_read_docs && <span className="cap-badge">📁 Dossiers</span>}
-          {agent.use_memory    && <span className="cap-badge">🧠 Mémoire</span>}
-          {agent.use_ipcra     && <span className="cap-badge">🎯 IPCRA</span>}
-          <span className="cap-badge forge">⚡ Forge</span>
-          {voiceEnabled && <span className="cap-badge voice">🔊 Voix</span>}
-          {alwaysListening && <span className="cap-badge wake">👂 Écoute</span>}
+          {agent.can_read_docs && <span className="cap-badge">{t('agentChat.capDocs')}</span>}
+          {agent.use_memory    && <span className="cap-badge">{t('agentChat.capMemory')}</span>}
+          {agent.use_ipcra     && <span className="cap-badge">{t('agentChat.capIpcra')}</span>}
+          <span className="cap-badge forge">{t('agentChat.capForge')}</span>
+          {voiceEnabled && <span className="cap-badge voice">{t('agentChat.capVoice')}</span>}
+          {alwaysListening && <span className="cap-badge wake">{t('agentChat.capListen')}</span>}
         </div>
 
         {/* Messages */}
@@ -412,7 +416,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
               onMouseUp={stopListening}
               onTouchStart={startListening}
               onTouchEnd={stopListening}
-              title="Maintenir pour parler"
+              title={t('agentChat.holdToTalk')}
               disabled={loading}
             >
               {isListening ? '🔴' : '🎤'}
@@ -422,7 +426,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={alwaysListening ? `En écoute… ou écris un message` : `Message ${agent.nom}…`}
+            placeholder={alwaysListening ? t('agentChat.listeningOrType') : t('agentChat.messagePlaceholder', { nom: agent.nom })}
             disabled={loading}
             autoFocus
           />

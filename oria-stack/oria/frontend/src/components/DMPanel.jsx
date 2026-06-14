@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useMatrixDM } from '../hooks/useMatrixDM.js'
 
 export default function DMPanel({ world, moi, destinataire, onFermer }) {
+  const { t } = useTranslation()
   const [texte, setTexte] = useState('')
   const bottomRef         = useRef(null)
 
@@ -24,13 +26,13 @@ export default function DMPanel({ world, moi, destinataire, onFermer }) {
       <div className="dm-panel-header">
         <span>
           {destinataire.avatar_emoji} {destinataire.nom}
-          {matrix.disponible && <span title="Chiffré Matrix" style={{ fontSize: 11, color: 'var(--vert)', marginLeft: 6 }}>🔒</span>}
+          {matrix.disponible && <span title={t('dm.encrypted')} style={{ fontSize: 11, color: 'var(--vert)', marginLeft: 6 }}>🔒</span>}
         </span>
         <button className="btn-quitter-room" onClick={onFermer}>✕</button>
       </div>
 
       {matrix.chargement && (
-        <div style={{ padding: 16, color: 'var(--text-mut)', fontSize: 13 }}>Connexion au canal sécurisé…</div>
+        <div style={{ padding: 16, color: 'var(--text-mut)', fontSize: 13 }}>{t('dm.connecting')}</div>
       )}
 
       <div className="dm-messages">
@@ -53,7 +55,7 @@ export default function DMPanel({ world, moi, destinataire, onFermer }) {
         <input
           value={texte}
           onChange={e => setTexte(e.target.value)}
-          placeholder={`Message à ${destinataire.nom}…`}
+          placeholder={t('dm.placeholder', { nom: destinataire.nom })}
           autoFocus
           disabled={matrix.chargement}
         />

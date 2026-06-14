@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import keycloak from '../keycloak'
 import { hydrateRemoteTheme } from '../theme/theme.js'
+import i18n from '../i18n/index.js'
 
 const AuthContext = createContext(null)
 
@@ -41,6 +42,11 @@ export function AuthProvider({ children }) {
       setUser(data.user)
       // S25 — le thème persisté côté serveur prime sur le cache local au login.
       if (data.user?.theme) hydrateRemoteTheme(data.user.theme)
+      // S40 — idem pour la langue : la préférence en base prime sur localStorage,
+      // donc l'interface est dans la bonne langue même après vidage du cache.
+      if (data.user?.langue && data.user.langue !== i18n.language) {
+        i18n.changeLanguage(data.user.langue)
+      }
       if (data.matrix_user_id) {
         setMatrixCreds({ userId: data.matrix_user_id, accessToken: data.matrix_access_token })
       }
