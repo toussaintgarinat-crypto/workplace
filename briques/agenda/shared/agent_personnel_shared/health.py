@@ -25,7 +25,7 @@ from agent_personnel_shared.health import HealthBuilder
 
 builder = HealthBuilder("assistant", version="2.0.0", metadata={"auth_enabled": True})
 await builder.check_redis(client)
-await builder.check_dep_http("mempalace", "http://mempalace:8100/health")
+await builder.check_dep_http("memoire", "http://memoire:5600/sante")
 return builder.build()
 ```
 

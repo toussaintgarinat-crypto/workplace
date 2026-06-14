@@ -73,8 +73,29 @@ les vrais process, la migration n'est pas « finie » pour les utilisateurs.
   borné ; Oria → `[]`/`False`). Pas de plantage si la brique tombe.
 
 ## Définition de fin (sprint bouclé)
-- [ ] Forge core + front + Oria backend tournent sur le nouveau code.
-- [ ] MemPalace (vue Forge) fonctionne sans `mp_token`, 100 % via `/api/memory*` (Playwright).
-- [ ] Aller-retour LIVE Oria et Forge à travers les **process déployés** (pas par exec).
-- [ ] Isolation par espace vérifiée LIVE.
-- [ ] Dette traitée ou explicitement reportée (table morte, espaces démo, shared lib).
+- [x] Forge core + front + Oria backend tournent sur le nouveau code.
+- [x] MemPalace (vue Forge) fonctionne sans `mp_token`, 100 % via `/api/memory*` (Playwright).
+- [x] Aller-retour LIVE Oria et Forge à travers les **process déployés** (pas par exec).
+- [x] Isolation par espace vérifiée LIVE.
+- [x] Dette traitée ou explicitement reportée (table morte, espaces démo, shared lib).
+
+## Réalisé (2026-06-14)
+- **Oria backend** recréé → `MEMOIRE_URL=http://host.docker.internal:5600` injecté ;
+  aller-retour LIVE via le process déployé (retenir + rappel, similarité 1.017),
+  espace `oria-user-<id>`.
+- **Forge core** : le conteneur servait du **code stale** (anciennes routes
+  `PUT /memory/{mid}`, pas de `/taxonomy`) malgré l'image à jour → `build` +
+  `--force-recreate` ont aligné le process. DoD prouvé : token réel realm oria
+  (`forge-service`) → `GET /v1/api/memory/taxonomy` = `{total, wings}` depuis la
+  brique ; cycle POST(201)→taxonomy(1)→search(0.96).
+- **Front Forge** rebuild (bundle sans `8100`/`mp_token`, utilise `/api/memory`) ;
+  Playwright (s19test) : MemPalace ouvre **sans `mp_token`**, onglets IPCRa, CRUD
+  complet (POST→search→DELETE) **100 % via `/v1/api/memory*`**, **0 requête vers
+  `:8100`** (statics inclus).
+- **Isolation inter-briques** prouvée LIVE via les deux process déployés : l'espace
+  Oria ne renvoie jamais le contenu Forge et réciproquement (vérif par contenu des
+  hits, pas par comptage — la recherche sémantique renvoie toujours les voisins).
+- **Dette** : table `memory_entries` (0 ligne, DDL sauvegardé) **DROP** ; espaces de
+  démo + données de preuve purgés (reste=0) ; réf docstring `mempalace:8100` →
+  `memoire:5600` dans la shared lib (Forge **et** agenda), 4 fichiers byte-compile OK
+  (`build/lib` = artefact gitignoré, régénéré au build).
