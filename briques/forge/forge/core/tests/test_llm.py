@@ -13,6 +13,8 @@ def test_gateway_model_passthrough_for_prefixed():
     assert gateway_model("gateway", "openai/gpt-4o") == "openai/gpt-4o"
     assert gateway_model("openrouter", "anthropic/claude-sonnet-4-6") == "anthropic/claude-sonnet-4-6"
     assert gateway_model("openai", "anthropic/claude") == "anthropic/claude"
+    # OpenCode Go : le préfixe `go/` est le model_name de la Gateway, jamais re-préfixé.
+    assert gateway_model("opencode", "go/deepseek-v4-pro") == "go/deepseek-v4-pro"
 
 
 def test_gateway_model_defaults(monkeypatch):

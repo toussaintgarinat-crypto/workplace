@@ -18,7 +18,7 @@ services:
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       TELEGRAM_HEALTH_PORT: ${TELEGRAM_HEALTH_PORT:-9090}
       ASSISTANT_URL: ${ASSISTANT_URL:-http://assistant}
-      MEMPALACE_URL: ${MEMPALACE_URL:-http://mempalace}
+      MEMOIRE_URL: ${MEMOIRE_URL:-http://memoire:5600}
       ORIA_URL: ${ORIA_URL:-http://oria}
       ONCALL_NAME: ${ONCALL_NAME:-Toussaint}
       RUNBOOKS_DIR: /app/runbooks

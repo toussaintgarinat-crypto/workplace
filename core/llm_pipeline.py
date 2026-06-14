@@ -71,8 +71,16 @@ class Resultat:
         return (self.message or {}).get("content") or ""
 
 
-def _est_gratuit(modele: str) -> bool:
-    return modele.startswith("free/") or modele.startswith("ollama/")
+def _sans_cout_marginal(modele: str) -> bool:
+    """Vrai si un appel à ce modèle ne coûte rien « au call ».
+
+    - `free/*` et `ollama/*` : gratuits (cloud free ou local).
+    - `go/*` : forfait OpenCode Go déjà payé (limite en $-équivalent, pas de
+      facturation par appel) → à coût marginal nul, donc jamais bloqué par le
+      garde-fou budget (qui ne vise que le payant au call) ni « shadowé ».
+    """
+    return (modele.startswith("free/") or modele.startswith("ollama/")
+            or modele.startswith("go/"))
 
 
 def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None) -> float:
@@ -84,7 +92,7 @@ def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None)
                 return valeur
         except (TypeError, ValueError):
             pass
-    if _est_gratuit(modele):
+    if _sans_cout_marginal(modele):
         return 0.0
     prix = PRIX_PAR_MTOK.get(modele)
     if not prix:
@@ -98,8 +106,8 @@ def _ordonner_selon_budget(modeles: list[str]) -> tuple[list[str], bool]:
     laisse l'ordre voulu par l'appelant. Renvoie (modeles, budget_force_gratuit)."""
     if journal_usage.peut_appeler_payant():
         return modeles, False
-    gratuits = [m for m in modeles if _est_gratuit(m)]
-    logger.warning("Budget LLM atteint : appels payants bloqués, repli gratuit (%s).",
+    gratuits = [m for m in modeles if _sans_cout_marginal(m)]
+    logger.warning("Budget LLM atteint : appels payants bloqués, repli sans coût (%s).",
                    ", ".join(gratuits) or "aucun")
     return gratuits, True
 
@@ -218,7 +226,7 @@ async def completer(
                 # [S138-4] shadow : sur une réponse texte, rejoue un candidat moins
                 # cher en tâche de fond (n'affecte ni la latence ni la réponse servie).
                 texte = message.get("content")
-                if texte and not message.get("tool_calls") and not _est_gratuit(modele) \
+                if texte and not message.get("tool_calls") and not _sans_cout_marginal(modele) \
                         and shadow.echantillonne(conf):
                     shadow.planifier(messages, conf, texte, modele, cout, etiquette)
                 return Resultat(message=message, modele_utilise=modele,

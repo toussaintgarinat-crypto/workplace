@@ -20,6 +20,7 @@
 **/*.egg-info
 **/venv
 **/.venv
+**/.venv-test
 
 # ── OS / éditeurs ──
 .DS_Store

@@ -91,6 +91,9 @@ from routers.admin import router as admin_router
 from routers.coins_router import router as coins_router
 from routers.calendar_router import router as calendar_router
 from routers.projects_router import router as projects_router
+# S54 — l'atelier (Studio audio-séries) est désormais la BRIQUE autonome studio (port 6060),
+# embarquée en iframe dans le Hub Créations. L'ancien `atelier_router` a été décommissionné ;
+# les séries existantes ont été migrées vers le volume de la brique (cf. briques/studio/migrer.py).
 
 # ── S99 — Versioning d'API + alias retro-compat ───────────────────────────
 # Chaque router est monte deux fois : sous /api/... (legacy, avec headers

@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
-import { api } from '../services/api.js'
 
 // Hub « Créations » — regroupe les outils créatifs de Workplace.
-// Deux familles de tuiles :
-//   • internes  → vue Oria existante (ex. Studio = AtelierPanel), ouverte via callback parent.
-//   • externes  → brique autonome (ex. personnages, port 5900) affichée en iframe DANS Oria.
-// Ajouter une brique créative = ajouter une tuile dans TUILES (extensible par design).
+// Toutes les tuiles sont désormais des BRIQUES autonomes (ex. Studio 6060, personnages 5900)
+// affichées en iframe DANS Oria. Ajouter une brique créative = ajouter une tuile dans TUILES
+// (extensible par design).
 
 // URL des briques externes : surchargée par env (déploiement), sinon localhost (usage perso).
 const URL_PERSONNAGES =
   import.meta.env.VITE_PERSONNAGES_URL || 'http://localhost:5900/atelier'
-// S53 : le Studio est désormais une BRIQUE autonome (port 6060), embarquée en iframe
-// comme Personnages/Images (l'ancienne vue interne AtelierPanel est décommissionnée en S54).
-// Port 6060 et pas 6000 : 6000 = X11, sur la liste des ports interdits de Chrome → l'iframe
-// échouerait en ERR_UNSAFE_PORT.
+// S53 : le Studio est une BRIQUE autonome (port 6060), embarquée en iframe comme
+// Personnages/Images. Port 6060 et pas 6000 : 6000 = X11, sur la liste des ports interdits
+// de Chrome → l'iframe échouerait en ERR_UNSAFE_PORT.
 const URL_STUDIO =
   import.meta.env.VITE_STUDIO_URL || 'http://localhost:6060/atelier'
+// S54 : la synergie Personnages→Studio (importer un perso dans une série) tape désormais
+// l'API de la brique studio directement, l'ancien `atelier_router` d'Oria étant décommissionné.
+const STUDIO_API =
+  import.meta.env.VITE_STUDIO_API || 'http://localhost:6060'
 
 const TUILES = [
   {
@@ -46,7 +47,7 @@ const TUILES = [
   },
 ]
 
-export default function CreationsHub({ world, onOpenStudio }) {
+export default function CreationsHub({ world }) {
   // Quand on ouvre une brique externe, on l'affiche en plein cadre (iframe) avec un retour.
   const [externe, setExterne] = useState(null) // { titre, url } | null
   // Synergie : un personnage poussé par l'iframe Personnages, en attente d'import dans une série.
@@ -68,30 +69,41 @@ export default function CreationsHub({ world, onOpenStudio }) {
   }, [])
 
   // Charge les séries du monde quand un personnage arrive (pour choisir la cible).
+  // → API de la brique studio (6060) en direct ; filtrée par monde côté brique.
   useEffect(() => {
     if (!recu || !world?.id) return
-    api.get(`/atelier/series?world_id=${world.id}`).then(r => {
-      const liste = Array.isArray(r) ? r : []
-      setSeries(liste)
-      setImportVers(liste[0]?.id || '')
-    })
+    fetch(`${STUDIO_API}/series?world_id=${world.id}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(r => {
+        const liste = Array.isArray(r) ? r : []
+        setSeries(liste)
+        setImportVers(liste[0]?.id || '')
+      })
+      .catch(() => { setSeries([]); setImportVers('') })
   }, [recu, world?.id])
 
   async function importer() {
     if (!importVers || !recu) return
     setImportEtat('en_cours')
-    const r = await api.post(`/atelier/series/${importVers}/personnages/importer`, {
-      nom: recu.nom, role: recu.role || null, description: recu.description || null,
-      archetype: recu.archetype || null, empreinte: recu.empreinte || [],
-      source: recu.source || 'personnages',
-    })
-    setImportEtat(r ? 'ok' : 'erreur')
-    if (r) setTimeout(() => setRecu(null), 1400)
+    try {
+      const resp = await fetch(`${STUDIO_API}/series/${importVers}/personnages/importer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nom: recu.nom, role: recu.role || null, description: recu.description || null,
+          archetype: recu.archetype || null, empreinte: recu.empreinte || [],
+          source: recu.source || 'personnages',
+        }),
+      })
+      setImportEtat(resp.ok ? 'ok' : 'erreur')
+      if (resp.ok) setTimeout(() => setRecu(null), 1400)
+    } catch {
+      setImportEtat('erreur')
+    }
   }
 
   function ouvrir(tuile) {
     if (tuile.type === 'bientot') return
-    if (tuile.type === 'interne') { onOpenStudio?.(); return }
     setExterne({ titre: tuile.titre, url: tuile.url })
   }
 

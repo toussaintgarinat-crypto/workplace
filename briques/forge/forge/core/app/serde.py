@@ -355,21 +355,6 @@ def kb_article(r) -> dict:
     }
 
 
-def memory_entry(r) -> dict:
-    return {
-        "id": _sid(r.id),
-        "userId": r.user_id,
-        "orgId": _sid(r.org_id),
-        "agentId": _sid(r.agent_id),
-        "cle": r.cle,
-        "valeur": r.valeur,
-        "type": r.type,
-        "ttl": iso(r.ttl),
-        "createdAt": iso(r.created_at),
-        "updatedAt": iso(r.updated_at),
-    }
-
-
 # ── S130 — Ventures & Audit ─────────────────────────────────────────────
 
 

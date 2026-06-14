@@ -21,7 +21,9 @@ async function _refreshToken() {
 
 // S99 — Versioning API. On prefixe /v1/api/* (canonique). Si on retire /v1/,
 // l'alias legacy renvoie des headers Deprecation/Sunset (date sunset 2026-11-23).
-async function request(path, options = {}) {
+// `silent` : ne déclenche PAS le toast d'erreur global (pour les appels best-effort
+// comme le bandeau « mode dégradé » qui renvoie 403 pour un compte non-admin).
+async function request(path, options = {}, { silent = false } = {}) {
   await _refreshToken()
   try {
     const r = await fetch(`${BASE}/v1/api${path}`, {
@@ -32,23 +34,25 @@ async function request(path, options = {}) {
     if (!r.ok) {
       let detail = `Erreur ${r.status}`
       try { const body = await r.json(); detail = body.detail || detail } catch {}
-      notifyError(detail)
+      if (!silent) notifyError(detail)
       return null
     }
     if (r.status === 204) return null
     return await r.json()
   } catch (e) {
-    if (e.name === 'TypeError') {
-      notifyError('Serveur inaccessible — vérifie ta connexion')
-    } else {
-      notifyError(e.message || 'Erreur inattendue')
+    if (!silent) {
+      if (e.name === 'TypeError') {
+        notifyError('Serveur inaccessible — vérifie ta connexion')
+      } else {
+        notifyError(e.message || 'Erreur inattendue')
+      }
     }
     return null
   }
 }
 
 export const api = {
-  get:   (path)        => request(path),
+  get:   (path, opts)  => request(path, {}, opts),
   post:  (path, body)  => request(path, { method: 'POST',  body: JSON.stringify(body) }),
   patch: (path, body)  => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
   del:   (path)        => request(path, { method: 'DELETE' }),

@@ -34,7 +34,7 @@ function AppInner() {
 
   return (
     <>
-      <DegradedBanner fetcher={() => api.get('/admin/degraded')} />
+      <DegradedBanner fetcher={() => api.get('/admin/degraded', { silent: true })} />
       <MainLayout moi={user} onMoiUpdate={refreshUser} onDeconnexion={logout} />
     </>
   )

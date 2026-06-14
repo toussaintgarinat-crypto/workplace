@@ -5,13 +5,72 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
-import httpx, json
+import os, httpx, json
 
 from models.agent import AgentDefinition
 from routers.auth import get_current_user
 from services.agents_service import AgentsService, get_agents_service
 
 router = APIRouter()
+
+# ── Pont direct Gateway Workplace (OpenAI-compatible) ────────────
+# Le port Python de Forge n'expose plus /api/agents/react/stream (il a /api/agents/run,
+# qui ignore le systemOverride). Pour qu'un agent réponde EN PERSONNAGE, on court-circuite
+# Forge quand forge_provider == "gateway" : appel direct de la Gateway LiteLLM avec le
+# system_prompt de l'agent. forge_url porte la base Gateway (ex http://host.docker.internal:4001).
+GATEWAY_KEY = os.getenv("GATEWAY_KEY") or os.getenv("LLM_API_KEY") or ""
+
+# Cascade GRATUITE (priorité coût Workplace) : on essaie d'abord le modèle de l'agent,
+# puis des modèles gratuits servis par la Gateway si l'un est rate-limité (429) ou KO.
+# Le payant n'arrive qu'en tout dernier recours.
+FREE_CASCADE = [
+    "free/google/gemma-4-31b-it",
+    "free/google/gemma-4-26b-a4b-it",
+    "free/qwen/qwen3-next-80b-a3b-instruct",
+    "free/moonshotai/kimi-k2.6",
+    "openai/gpt-4o-mini",  # repli payant ultime
+]
+
+
+def _is_gateway(agent) -> bool:
+    return (getattr(agent, "forge_provider", "") or "").lower() == "gateway"
+
+
+async def _gateway_answer(base: str, model: str, system: str, message: str) -> str:
+    candidats = []
+    for m in [model] + FREE_CASCADE:
+        if m and m not in candidats:
+            candidats.append(m)
+    url = f"{base.rstrip('/')}/v1/chat/completions"
+    dernier = "aucune tentative"
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        for m in candidats:
+            try:
+                r = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {GATEWAY_KEY}"},
+                    json={
+                        "model": m,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": message},
+                        ],
+                    },
+                )
+                if r.status_code == 200:
+                    return r.json()["choices"][0]["message"]["content"]
+                dernier = f"{m}: HTTP {r.status_code}"
+            except Exception as e:  # noqa: BLE001
+                dernier = f"{m}: {str(e)[:80]}"
+    raise RuntimeError(f"Cascade Gateway épuisée ({dernier})")
+
+
+async def _gateway_stream(base: str, model: str, system: str, message: str):
+    try:
+        content = await _gateway_answer(base, model, system, message)
+        yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)[:200]})}\n\n"
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -160,6 +219,13 @@ async def chat_with_agent(
     forge_url = agent.forge_url.rstrip("/")
     session_id = body.session_id or f"oria-{user['id']}-{agent_id}"
 
+    # Pont Gateway : réponse en personnage via la Gateway LLM, sans passer par Forge.
+    if _is_gateway(agent):
+        return StreamingResponse(
+            _gateway_stream(forge_url, agent.forge_model, full_system, body.message),
+            media_type="text/event-stream",
+        )
+
     payload = {
         "message": body.message,
         "sessionId": session_id,
@@ -210,6 +276,14 @@ async def chat_simple(
     full_system = agent.system_prompt + docs_context
     forge_url = agent.forge_url.rstrip("/")
     session_id = body.session_id or f"oria-{user['id']}-{agent_id}"
+
+    # Pont Gateway : réponse en personnage via la Gateway LLM, sans passer par Forge.
+    if _is_gateway(agent):
+        try:
+            content = await _gateway_answer(forge_url, agent.forge_model, full_system, body.message)
+            return {"answer": content, "steps": []}
+        except Exception as e:
+            return {"answer": f"[Erreur Gateway : {str(e)[:150]}]", "steps": []}
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:

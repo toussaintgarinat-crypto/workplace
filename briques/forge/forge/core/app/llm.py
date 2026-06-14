@@ -41,6 +41,14 @@ AVAILABLE_PROVIDERS = [
     {"id": "gateway", "label": "LiteLLM Gateway",
      "models": ["openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4-6",
                 "google/gemini-2.5-flash-preview", "ollama/llama3.2", "ollama/llama3.3"]},
+    # OpenCode Go — forfait « Go » via la Gateway (endpoint dédié /zen/go/v1, préfixe
+    # `go/` ; cf. briques/gateway/litellm_config.yaml). Modèles vérifiés le 2026-06-14.
+    {"id": "opencode", "label": "OpenCode Go",
+     "models": ["go/deepseek-v4-flash", "go/deepseek-v4-pro", "go/glm-5.1", "go/glm-5",
+                "go/kimi-k2.7-code", "go/kimi-k2.6", "go/kimi-k2.5",
+                "go/qwen3.7-plus", "go/qwen3.6-plus", "go/qwen3.5-plus",
+                "go/minimax-m3", "go/minimax-m2.7", "go/minimax-m2.5",
+                "go/mimo-v2.5-pro", "go/mimo-v2.5", "go/hy3-preview"]},
 ]
 
 
@@ -50,8 +58,9 @@ def gateway_model(provider: str | None, model: str | None) -> str:
 
     p = provider or settings.DEFAULT_LLM_PROVIDER
     m = model or settings.DEFAULT_LLM_MODEL
-    # 'gateway'/'openrouter' portent déjà un préfixe "vendor/model".
-    if p in ("gateway", "openrouter") or "/" in (m or ""):
+    # 'gateway'/'openrouter'/'opencode' portent déjà un préfixe "vendor/model"
+    # ('opencode' → préfixe `go/`, model_name tel quel dans la Gateway).
+    if p in ("gateway", "openrouter", "opencode") or "/" in (m or ""):
         return m
     return f"{p}/{m}"
 

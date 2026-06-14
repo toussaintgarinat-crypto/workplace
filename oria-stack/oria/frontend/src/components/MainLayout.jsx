@@ -33,6 +33,7 @@ import ActivityFeed from './ActivityFeed.jsx'
 import JardinPanel from './JardinPanel.jsx'
 import ConductorView from './ConductorView.jsx'
 import ProjectsPanel from './ProjectsPanel.jsx'
+import CreationsHub from './CreationsHub.jsx'
 
 export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
   const { t } = useTranslation()
@@ -113,7 +114,7 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
   const appliquerCible = useCallback(async (cible) => {
     if (!cible || !cible.kind) return
     // Vues globales (indépendantes d'un monde).
-    if (['feed', 'discovery', 'network', 'conductor', 'jardin', 'mydocs'].includes(cible.kind)) {
+    if (['feed', 'discovery', 'network', 'conductor', 'jardin', 'mydocs', 'creations'].includes(cible.kind)) {
       setVue({ kind: cible.kind })
       return
     }
@@ -289,6 +290,10 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
           api.get(`/agents/world/${worldActif.id}`).then(d => setWorldAgents(Array.isArray(d) ? d : []))
         }} />
       : <div className="need-world-msg"><span>🤖</span><p>{t('main.needWorld')}</p></div>
+  } else if (vue?.kind === 'creations') {
+    // S54 : le Studio est une brique autonome (6060) embarquée en iframe par le Hub —
+    // plus de vue interne 'atelier' (AtelierPanel décommissionné).
+    contenuPrincipal = <CreationsHub world={worldActif} />
   } else if (vue?.kind === 'ipcra') {
     contenuPrincipal = (
       <IPCRAPanel worldId={worldActif?.id} agents={worldAgents} />
@@ -428,6 +433,7 @@ export default function MainLayout({ moi, onMoiUpdate, onDeconnexion }) {
         onDiscovery={() => setVue({ kind: 'discovery' })}
         onMap={() => setVue({ kind: 'map' })}
         onAgents={() => setVue({ kind: 'agents' })}
+        onCreations={() => setVue({ kind: 'creations' })}
         onMyDocs={() => setVue({ kind: 'mydocs' })}
         onIPCRA={() => setVue({ kind: 'ipcra' })}
         onFeed={() => setVue({ kind: 'feed' })}

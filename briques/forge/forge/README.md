@@ -88,14 +88,16 @@ Les valeurs par défaut fonctionnent en local. **À changer en production.**
 | `MINIO_ROOT_PASSWORD` | Mot de passe admin MinIO | `forge_secret` — **à changer** |
 
 
-### Optionnelles — MemPalace
+### Optionnelles — Mémoire (brique Workplace)
 
-Pour enrichir le RAG Forge avec la mémoire MemPalace.
+Pour enrichir le RAG Forge et alimenter la vue MemPalace avec la **brique Mémoire**
+Workplace (contrat simple `retenir`/`rappeler`, sans token). Remplace l'ancien
+MemPalace externe (palace 8100), décommissionné.
 
-| Variable | Description | Comment l'obtenir |
+| Variable | Description | Exemple |
 |---|---|---|
-| `MEMPALACE_API_URL` | URL de l'API MemPalace | `http://localhost:8100` |
-| `MEMPALACE_API_TOKEN` | Token d'accès MemPalace | `POST /auth/service-token` sur MemPalace après démarrage |
+| `MEMOIRE_URL` | URL de la brique Mémoire (port 5600). Vide → mémoire désactivée. | `http://host.docker.internal:5600` |
+| `MEMOIRE_ESPACE` | Espace par défaut côté brique (vide = « Workplace »). La vue MemPalace isole en plus chaque org dans `forge-org-<id>`. | `Workplace` |
 
 
 ### Optionnelles — Recherche web
