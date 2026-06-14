@@ -1,7 +1,7 @@
 {
   "nom": "studio",
-  "version": "0.2.0",
-  "description": "Studio d'audio-séries co-créées : bible (Showrunner) → épisodes (Scénariste/Script Doctor) → audio (voix figées par personnage, multilingue avec traduction au rendu) → livre (Série/Cycle/Tome/Chapitre) → arbre des choix interactif. Équipe créative de 6 agents INTERNALISÉE (prompts figés, plus de couplage au monde Oria). Compose les briques personnages (5900), images (5950) et voix (5810) sans les absorber. Persistance JSON propre. Extrait du backend Oria en brique autonome (S51).",
+  "version": "0.3.0",
+  "description": "Studio d'audio-séries co-créées : bible (Showrunner) → épisodes (Scénariste/Script Doctor) → audio (voix figées par personnage, multilingue avec traduction au rendu) → livre (Série/Cycle/Tome/Chapitre) → arbre des choix interactif. Équipe créative de 6 agents INTERNALISÉE (prompts figés, plus de couplage au monde Oria). Compose les briques personnages (5900), images (5950), video (5970) et voix (5810) sans les absorber : portraits + couvertures (images), bande-annonce d'épisode + animation de portrait (video). Persistance JSON propre. Extrait du backend Oria en brique autonome (S51).",
   "role": "studio",
   "couche": "backend",
   "statut": "a_tester",
@@ -21,7 +21,9 @@
     "distribution_casting_stable",
     "journal_continuite",
     "agents_internalises",
-    "compose_personnages_images_voix",
+    "compose_personnages_images_video_voix",
+    "teaser_episode_video",
+    "animer_portrait_video",
     "front_studio"
   ],
   "besoin": [],

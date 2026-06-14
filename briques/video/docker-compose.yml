@@ -1,0 +1,42 @@
+services:
+  video:
+    build: .
+    container_name: workplace_video
+    image: workplace/video:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5970:5970"
+    environment:
+      # Moteur vidéo PROVIDER-AGNOSTIQUE. Aucune clé embarquée : on branche par env.
+      # Ordre de préférence (défaut : fal,replicate,luma,runway,gateway). VIDE = défaut.
+      - VIDEO_PROVIDERS=${VIDEO_PROVIDERS:-}
+      # Clés des fournisseurs hébergés (poser celles qu'on utilise ; les autres sont ignorés).
+      - FAL_KEY=${FAL_KEY:-}
+      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
+      - LUMAAI_API_KEY=${LUMAAI_API_KEY:-}
+      - RUNWAY_API_KEY=${RUNWAY_API_KEY:-}
+      # Gateway Workplace (zéro clé vidéo propre : réutilise la clé OpenRouter de la Gateway).
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      - GATEWAY_KEY=${GATEWAY_KEY:-}
+      # Modèles paramétrables (sinon défauts raisonnables, cf. fournisseurs.py).
+      - FAL_VIDEO_MODEL=${FAL_VIDEO_MODEL:-}
+      - REPLICATE_VIDEO_MODEL=${REPLICATE_VIDEO_MODEL:-}
+      - VIDEO_GATEWAY_MODEL=${VIDEO_GATEWAY_MODEL:-}
+      # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
+      - API_KEYS=
+      - VIDEOS_DIR=/data/videos
+    volumes:
+      - videos_data:/data/videos           # vidéos produites (MP4 rapatriés / placeholders)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5970/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  videos_data:

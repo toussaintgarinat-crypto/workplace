@@ -1,0 +1,21 @@
+{
+  "nom": "video",
+  "version": "0.1.0",
+  "description": "Moteur de génération vidéo en API, PROVIDER-AGNOSTIQUE (fal, Replicate, Luma, Runway, ou la Gateway Workplace), avec repli placeholder honnête (jamais de fausse vidéo). Primitif text→vidéo + deux synergies : bande-annonce d'épisode (texte/synopsis) et animation de portrait de personnage (image→vidéo). Produit autonome, miroir de la brique images. Composé par le Studio (S55) sans être absorbé.",
+  "role": "video",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/video",
+  "port": 5970,
+  "url_sante": "http://host.docker.internal:5970/sante",
+  "depends_on": [],
+  "offre": [
+    "generer_video",
+    "teaser_episode",
+    "animer_portrait",
+    "multi_fournisseurs",
+    "repli_placeholder_honnete"
+  ],
+  "besoin": [],
+  "taches": []
+}
