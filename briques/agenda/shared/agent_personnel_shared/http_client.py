@@ -25,16 +25,16 @@ Usage type :
 from agent_personnel_shared.http_client import S2SClient, S2SError
 
 client = S2SClient(
-    base_url="http://mempalace:8100",
+    base_url="http://memoire:5600",
     token=user_token,
-    service_name="mempalace",
+    service_name="memoire",
     timeout=5.0,
 )
 try:
     resp = await client.post("/v1/api/search", json={"query": q})
     data = resp.json()
 except S2SError as exc:
-    logger.warning("mempalace down: %s", exc)
+    logger.warning("memoire down: %s", exc)
     data = {"results": []}  # fallback gracieux
 ```
 """
@@ -130,7 +130,7 @@ class S2SClient:
     """Client httpx wrappé avec retry + circuit breaker pour appels inter-services.
 
     Paramètres :
-        base_url     : URL racine du service cible (ex: http://mempalace:8100)
+        base_url     : URL racine du service cible (ex: http://memoire:5600)
         token        : Bearer token optionnel (injecté dans Authorization)
         service_name : étiquette utilisée par le circuit breaker + logs
         timeout      : timeout httpx PAR TENTATIVE (3 tentatives max)
