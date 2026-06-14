@@ -1,0 +1,6 @@
+# Brique video — moteur de génération vidéo en API. Dépendances minces et épinglées.
+# Le moteur lourd (rendu) est DÉPORTÉ sur des fournisseurs hébergés (fal/Replicate/Luma/
+# Runway) ou la Gateway : la brique ne fait qu'orchestrer + rapatrier le MP4.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1

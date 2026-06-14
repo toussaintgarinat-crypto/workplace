@@ -19,6 +19,9 @@ services:
       - VOIX_URL=http://host.docker.internal:5810
       - IMAGES_URL=http://host.docker.internal:5950
       - IMAGES_PUBLIC_URL=http://localhost:5950
+      # Video (5970) : bande-annonce d'épisode + animation de portrait. Repli honnête si absente.
+      - VIDEO_URL=http://host.docker.internal:5970
+      - VIDEO_PUBLIC_URL=http://localhost:5970
       # Personnages (5900) : distribution + casting vocal stable. Repli interne si absente.
       - PERSONNAGES_URL=http://host.docker.internal:5900
       - PERSONNAGES_KEY=

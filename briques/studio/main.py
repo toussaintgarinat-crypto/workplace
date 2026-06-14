@@ -88,6 +88,7 @@ def sante():
             "langues": [c for c in S.LANGUES],
             "llm_defaut": agents.GATEWAY_MODEL,
             "compose": {"voix": S.VOIX_URL, "images": S.IMAGES_URL,
+                        "video": S.VIDEO_URL,
                         "personnages": composition.PERSONNAGES_URL,
                         "gateway": agents.GATEWAY_URL}}
 
@@ -378,6 +379,33 @@ async def portrait_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
     perso["portrait_placeholder"] = bool(res.get("place_holder"))
     S._save(serie)
     return {"portrait_url": res["url"], "place_holder": res.get("place_holder"),
+            "prompt_visuel": res.get("prompt_visuel"), "perso": perso}
+
+
+@app.post("/series/{serie_id}/personnages/{pid}/animer", tags=["distribution"])
+async def animer_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
+    """Connexion Personnages→video : ANIME le portrait d'un personnage (clip image→vidéo).
+
+    On part du portrait déjà produit (s'il existe) comme image de départ ; sinon text→vidéo
+    à partir de la fiche seule. Repli honnête si la brique video est injoignable/non branchée."""
+    serie = charger(serie_id)
+    perso = next((p for p in serie.get("personnages", []) if p["id"] == pid), None)
+    if not perso:
+        raise HTTPException(404, "Personnage introuvable")
+    res = await S._appeler_video("/animer", {
+        "fiche": {
+            "nom": perso.get("nom"), "role": perso.get("role"),
+            "description": perso.get("description"), "archetype": perso.get("archetype"),
+            "empreinte": perso.get("empreinte"),
+        },
+        "image_url": perso.get("portrait_url") or None,
+    })
+    if not res:
+        raise HTTPException(502, f"Brique video injoignable ({S.VIDEO_URL}).")
+    perso["clip_url"] = res["url"]
+    perso["clip_placeholder"] = bool(res.get("place_holder"))
+    S._save(serie)
+    return {"clip_url": res["url"], "place_holder": res.get("place_holder"),
             "prompt_visuel": res.get("prompt_visuel"), "perso": perso}
 
 
@@ -748,6 +776,31 @@ async def couverture_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)
     ep["cover_placeholder"] = bool(res.get("place_holder"))
     S._save(serie)
     return {"cover_url": res["url"], "place_holder": res.get("place_holder"),
+            "prompt_visuel": res.get("prompt_visuel"), "n": n}
+
+
+@app.post("/series/{serie_id}/episode/{n}/teaser", tags=["production"])
+async def teaser_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)):
+    """Connexion Studio→video : génère la BANDE-ANNONCE (clip teaser) d'un épisode.
+
+    Repli honnête si la brique video est injoignable/non branchée (placeholder annoncé)."""
+    serie = charger(serie_id)
+    ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
+    if not ep:
+        raise HTTPException(404, f"Chapitre {n} introuvable.")
+    synopsis = (ep.get("consigne") or "")
+    extrait = (ep.get("script_brut") or "")[:400]
+    res = await S._appeler_video("/teaser", {
+        "titre": f"{serie['titre']} — chapitre {n}",
+        "synopsis": f"{synopsis}. {extrait}".strip(". "),
+        "personnages": [{"nom": p.get("nom")} for p in (serie.get("personnages") or [])],
+    })
+    if not res:
+        raise HTTPException(502, f"Brique video injoignable ({S.VIDEO_URL}).")
+    ep["teaser_url"] = res["url"]
+    ep["teaser_placeholder"] = bool(res.get("place_holder"))
+    S._save(serie)
+    return {"teaser_url": res["url"], "place_holder": res.get("place_holder"),
             "prompt_visuel": res.get("prompt_visuel"), "n": n}
 
 

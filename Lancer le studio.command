@@ -2,6 +2,8 @@
 #
 # Lancer le studio — démarre UNIQUEMENT ce qu'il faut pour le Studio audio-séries :
 #   • gateway      (briques/gateway)        → fait répondre les 6 agents IA  (:4001)
+#   • brique images(briques/images)          → portraits & couvertures        (:5950)
+#   • brique video (briques/video)           → bande-annonce & animation       (:5970)
 #   • stack Oria   (oria-stack/oria)         → interface + atelier            (:3003 / :8000)
 #   • serveur voix (outils/studio-voix)      → produit l'audio say+ffmpeg     (:5810, sur l'hôte)
 #
@@ -69,6 +71,20 @@ else
     ok "en ligne (:5950) — mode placeholder tant que COMFY_URL n'est pas branché"
   else
     warn "ne répond pas (:5950) — la synergie images sera indisponible"
+  fi
+fi
+
+# ── 2ter. Brique video (bande-annonce d'épisode, animation de portrait) ──────
+titre "Brique video (génération vidéo)"
+if attendre "http://localhost:5970/sante" 1; then
+  ok "déjà en ligne (:5970)"
+else
+  info "démarrage…"
+  ( cd "$RACINE/briques/video" && docker compose up -d ) >/dev/null 2>&1
+  if attendre "http://localhost:5970/sante" 40; then
+    ok "en ligne (:5970) — mode placeholder tant qu'aucun fournisseur vidéo n'est branché"
+  else
+    warn "ne répond pas (:5970) — la synergie vidéo sera indisponible"
   fi
 fi
 

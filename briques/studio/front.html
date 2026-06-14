@@ -288,11 +288,13 @@ function renderPersos(){
     <div class="card">
       <div class="ep-head"><h3>${esc(p.nom)} ${p.source?`<span class="flag studio">${esc(p.source)}</span>`:''}</h3>
         <div><button class="sm ghost" onclick="portrait('${p.id}')">🖼️ Portrait</button>
+        <button class="sm ghost" onclick="animer('${p.id}')">🎬 Animer</button>
         <button class="sm ghost" onclick="supprimerPerso('${p.id}')">✕</button></div></div>
       ${p.role?`<div class="muted">${esc(p.role)}</div>`:''}
       ${p.description?`<p style="font-size:.84rem;margin:6px 0 0">${esc(p.description)}</p>`:''}
       ${p.archetype?`<span class="chip">${esc(p.archetype)}</span>`:''}
       ${p.portrait_url?`<img src="${esc(p.portrait_url)}" style="max-width:160px;border-radius:10px;margin-top:8px;display:block">`:''}
+      ${mediaVideo(p.clip_url)}
     </div>`).join('') : '<p class="muted">Aucun personnage. Ajoute-en ou demande une distribution.</p>';
 }
 async function ajouterPerso(){
@@ -324,6 +326,19 @@ async function portrait(pid){
   try{ await api(`/series/${S().id}/personnages/${pid}/portrait`,'POST',{}); await refresh(); vue('Distribution'); }
   catch(e){ toast('⚠ '+e.message); }
 }
+// Affiche une vidéo (.mp4/.webm) ou, pour le placeholder honnête (.svg), une vignette image.
+function mediaVideo(url){
+  if(!url) return '';
+  const u=esc(url);
+  return /\.(mp4|webm|mov)$/i.test(url)
+    ? `<video controls style="max-width:240px;border-radius:10px;margin-top:8px;display:block" src="${u}"></video>`
+    : `<img src="${u}" style="max-width:240px;border-radius:10px;margin-top:8px;display:block" title="placeholder honnête — moteur vidéo non branché">`;
+}
+async function animer(pid){
+  toast('🎬 Animation du portrait… (peut prendre un moment)');
+  try{ await api(`/series/${S().id}/personnages/${pid}/animer`,'POST',{}); await refresh(); vue('Distribution'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
 
 // ── Vue CHAPITRES : écrire + audio + couverture ───────────
 async function vueChapitres(){
@@ -351,10 +366,12 @@ function renderEpisode(ep){
       <div style="flex:2"><label>Langue de l'audio</label><select id="lang-${ep.n}">${langs}</select></div>
       <button class="sm" onclick="produireAudio(${ep.n})">🔊 Produire l'audio</button>
       <button class="sm ghost" onclick="couverture(${ep.n})">🖼️ Couverture</button>
+      <button class="sm ghost" onclick="teaser(${ep.n})">🎬 Bande-annonce</button>
     </div>
     ${ep.audio_url?`<audio controls src="${esc(ep.audio_url)}"></audio>
       <div class="hint">Casting : ${esc(JSON.stringify(ep.casting||{}))} <span class="flag ${ep.casting_source==='studio'?'studio':''}">${esc(ep.casting_source||'')}</span></div>`:''}
     ${ep.cover_url?`<img src="${esc(ep.cover_url)}" style="max-width:200px;border-radius:10px;margin-top:8px;display:block">`:''}
+    ${mediaVideo(ep.teaser_url)}
   </div>`;
 }
 async function ecrireChapitre(){
@@ -371,6 +388,11 @@ async function produireAudio(n){
 async function couverture(n){
   toast('🖼️ Couverture…');
   try{ await api(`/series/${S().id}/episode/${n}/couverture`,'POST',{}); await refresh(); vue('Chapitres'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function teaser(n){
+  toast('🎬 Bande-annonce… (peut prendre un moment)');
+  try{ await api(`/series/${S().id}/episode/${n}/teaser`,'POST',{}); await refresh(); vue('Chapitres'); }
   catch(e){ toast('⚠ '+e.message); }
 }
 

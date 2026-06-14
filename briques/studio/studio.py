@@ -45,6 +45,10 @@ VOIX_FALLBACK = ["Thomas", "Jacques", "Flo", "Eddy", "Grandpa", "Grandma"]
 IMAGES_URL = os.getenv("IMAGES_URL", "http://host.docker.internal:5950")
 IMAGES_PUBLIC = os.getenv("IMAGES_PUBLIC_URL", "http://localhost:5950")
 
+# Brique « video » (5970) : moteur vidéo (fal/Replicate/Luma/Runway/Gateway + repli honnête).
+VIDEO_URL = os.getenv("VIDEO_URL", "http://host.docker.internal:5970")
+VIDEO_PUBLIC = os.getenv("VIDEO_PUBLIC_URL", "http://localhost:5970")
+
 # Découpage en ÉPISODES d'écoute (~12 min) à partir des CHAPITRES.
 CIBLE_EPISODE_SECONDES = 12 * 60        # durée cible d'un épisode d'écoute
 CHAPITRES_PAR_EPISODE_DEFAUT = 4        # repli tant qu'aucun chapitre n'est sonorisé
@@ -619,6 +623,30 @@ async def _appeler_images(route: str, payload: dict) -> Optional[dict]:
             r.raise_for_status()
             data = r.json()
             data["url"] = _url_image_absolue(data.get("url", ""))
+            return data
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ── Pont vers la brique video (5970) ─────────────────────────────
+
+def _url_video_absolue(url: str) -> str:
+    """Rend une URL de vidéo affichable par le navigateur (préfixe la brique si relative)."""
+    if not url:
+        return ""
+    return url if url.startswith("http") else f"{VIDEO_PUBLIC.rstrip('/')}{url}"
+
+
+async def _appeler_video(route: str, payload: dict) -> Optional[dict]:
+    """Appelle la brique video ; renvoie son résultat (URL rendue absolue) ou None.
+
+    Le rendu vidéo est lent (jobs asynchrones côté fournisseurs) → timeout généreux."""
+    try:
+        async with httpx.AsyncClient(timeout=600) as c:
+            r = await c.post(f"{VIDEO_URL}{route}", json=payload)
+            r.raise_for_status()
+            data = r.json()
+            data["url"] = _url_video_absolue(data.get("url", ""))
             return data
     except Exception:  # noqa: BLE001
         return None
