@@ -175,7 +175,6 @@ class Organizations(Base):
     governor_usage: Mapped[list['GovernorUsage']] = relationship('GovernorUsage', back_populates='org')
     risk_logs: Mapped[list['RiskLogs']] = relationship('RiskLogs', back_populates='org')
     sessions: Mapped[list['Sessions']] = relationship('Sessions', back_populates='org')
-    memory_entries: Mapped[list['MemoryEntries']] = relationship('MemoryEntries', back_populates='org')
     rapports: Mapped[list['Rapports']] = relationship('Rapports', back_populates='org')
 
 
@@ -801,7 +800,6 @@ class AgentDefinitions(Base):
     agent_feedback: Mapped[list['AgentFeedback']] = relationship('AgentFeedback', back_populates='agent')
     agent_runs: Mapped[list['AgentRuns']] = relationship('AgentRuns', back_populates='agent')
     agent_scores: Mapped[list['AgentScores']] = relationship('AgentScores', back_populates='agent')
-    memory_entries: Mapped[list['MemoryEntries']] = relationship('MemoryEntries', back_populates='agent')
 
 
 class AuditMissions(Base):
@@ -1592,29 +1590,6 @@ class KeyResults(Base):
     unite: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'%'::text"))
 
     okr: Mapped['Okrs'] = relationship('Okrs', back_populates='key_results')
-
-
-class MemoryEntries(Base):
-    __tablename__ = 'memory_entries'
-    __table_args__ = (
-        ForeignKeyConstraint(['agent_id'], ['agent_definitions.id'], ondelete='SET NULL', name='memory_entries_agent_id_agent_definitions_id_fk'),
-        ForeignKeyConstraint(['org_id'], ['organizations.id'], ondelete='CASCADE', name='memory_entries_org_id_organizations_id_fk'),
-        PrimaryKeyConstraint('id', name='memory_entries_pkey')
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, server_default=text('gen_random_uuid()'))
-    user_id: Mapped[str] = mapped_column(Text, nullable=False)
-    cle: Mapped[str] = mapped_column(Text, nullable=False)
-    valeur: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text('now()'))
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text('now()'))
-    org_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid)
-    agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid)
-    type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'context'::text"))
-    ttl: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-
-    agent: Mapped[Optional['AgentDefinitions']] = relationship('AgentDefinitions', back_populates='memory_entries')
-    org: Mapped[Optional['Organizations']] = relationship('Organizations', back_populates='memory_entries')
 
 
 class Messages(Base):

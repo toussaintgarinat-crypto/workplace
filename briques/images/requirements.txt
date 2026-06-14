@@ -1,0 +1,5 @@
+# Brique images — moteur d'illustration en API. Dépendances minces et épinglées.
+# Le moteur lourd (génération) est DÉPORTÉ sur ComfyUI : la brique ne fait que l'orchestrer.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1

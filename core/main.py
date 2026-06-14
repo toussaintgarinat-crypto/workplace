@@ -14,6 +14,7 @@ import agenda
 import assistant
 import classer
 import config_assistant
+import identite
 import journal_usage
 import langue as langue_mod
 import personas
@@ -439,9 +440,41 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <button class="btn" id="btn-profil-save" onclick="sauverProfil()">Enregistrer</button>
       </div>
     </div>
+    <!-- Fiche d'identité structurée (S48) : 5 champs → dérivations + thème astral -->
+    <div class="panel" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <h3 style="margin:0;font-size:1rem">🪪 Te présenter — fiche d'identité</h3>
+        <span style="font-size:0.78rem;color:#64748b">Ces champs nourrissent l'assistant et débloquent ta « fiche cosmique ».</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px">
+        <label style="font-size:0.78rem;color:#94a3b8">Prénom(s)
+          <input id="id-prenoms" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="Toussaint Michel Rémi"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Nom
+          <input id="id-nom" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="Garinat"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Date de naissance
+          <input id="id-date" type="date" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Heure de naissance
+          <input id="id-heure" type="time" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Lieu de naissance
+          <input id="id-lieu" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="Toulouse"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Latitude
+          <input id="id-lat" type="number" step="0.0001" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="43.6045"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Longitude (est +)
+          <input id="id-lon" type="number" step="0.0001" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="1.4442"></label>
+        <label style="font-size:0.78rem;color:#94a3b8">Décalage UTC à la naissance
+          <input id="id-utc" type="number" step="0.5" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="2"></label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <button class="btn" id="btn-id-save" onclick="sauverIdentite()">Calculer & enregistrer</button>
+        <span id="id-etat" style="font-size:0.8rem;color:#64748b"></span>
+      </div>
+      <div id="id-derive" style="margin-top:16px"></div>
+    </div>
+
     <div class="panel">
+      <div style="font-size:0.82rem;color:#94a3b8;margin-bottom:8px">📝 Notes libres (Markdown) — nuances que les champs ne capturent pas.</div>
       <textarea id="profil-texte" spellcheck="false"
-        style="width:100%;min-height:62vh;box-sizing:border-box;padding:16px;border-radius:10px;
+        style="width:100%;min-height:42vh;box-sizing:border-box;padding:16px;border-radius:10px;
                border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px;line-height:1.55;
                font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical"
         placeholder="Chargement…"></textarea>
@@ -500,6 +533,101 @@ async function chargerProfil() {
   } catch (e) {
     etat.textContent = 'Erreur de chargement';
   }
+  chargerIdentite();
+}
+
+// ── Fiche d'identité (S48) : 5 champs → dérivations + thème astral ──────────────
+async function chargerIdentite() {
+  try {
+    const d = await fetch('/profil/identite').then(r => r.json());
+    const f = d.fiche || {};
+    const set = (id, v) => { document.getElementById(id).value = (v ?? ''); };
+    set('id-prenoms', f.prenoms); set('id-nom', f.nom); set('id-date', f.date_naissance);
+    set('id-heure', f.heure_naissance); set('id-lieu', f.lieu_naissance);
+    set('id-lat', f.latitude); set('id-lon', f.longitude); set('id-utc', f.utc_offset);
+    document.getElementById('id-etat').textContent =
+      d.modifie ? 'Fiche enregistrée' : 'Fiche par défaut — modifie et enregistre';
+    rendreDerive(d.derive || {});
+  } catch (e) { /* silencieux */ }
+}
+
+async function sauverIdentite() {
+  const btn = document.getElementById('btn-id-save');
+  const etat = document.getElementById('id-etat');
+  const val = id => document.getElementById(id).value.trim();
+  const corps = {
+    prenoms: val('id-prenoms'), nom: val('id-nom'), date_naissance: val('id-date'),
+    heure_naissance: val('id-heure'), lieu_naissance: val('id-lieu'),
+    latitude: val('id-lat'), longitude: val('id-lon'), utc_offset: val('id-utc'),
+  };
+  btn.classList.add('loading'); etat.textContent = 'Calcul…';
+  try {
+    const r = await fetch('/profil/identite', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corps)
+    }).then(r => r.json());
+    etat.textContent = r.ok ? '✔ Enregistré — l\\'assistant te connaît mieux' : 'Échec';
+    rendreDerive(r.derive || {});
+  } catch (e) {
+    etat.textContent = 'Erreur réseau';
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+function rendreDerive(d) {
+  const zone = document.getElementById('id-derive');
+  if (!d || !Object.keys(d).length) { zone.innerHTML = ''; return; }
+  const carte = (titre, corps) =>
+    '<div style="background:#0f1117;border:1px solid #2d3148;border-radius:10px;padding:12px">' +
+    '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:6px">' +
+    titre + '</div>' + corps + '</div>';
+  const cards = [];
+
+  if (d.age) cards.push(carte('Âge', '<b style="font-size:1.2rem">' + d.age.ans + ' ans</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + d.age.mois + ' mois, ' + d.age.jours + ' j' +
+    (d.jour_naissance ? ' · né(e) un ' + d.jour_naissance : '') + '</div>'));
+  if (d.anniversaire) cards.push(carte('Prochain anniversaire',
+    (d.anniversaire.dans_jours === 0 ? '<b>Aujourd\\'hui 🎉</b>' :
+      '<b>dans ' + d.anniversaire.dans_jours + ' j</b>') +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + d.anniversaire.date + ' · ' + d.anniversaire.ages + ' ans</div>'));
+  if (d.signe_solaire) cards.push(carte('Signe solaire',
+    '<b style="font-size:1.1rem">' + d.signe_solaire.symbole + ' ' + d.signe_solaire.nom + '</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">élément ' + d.signe_solaire.element + '</div>'));
+  if (d.signe_chinois) cards.push(carte('Astrologie chinoise',
+    '<b style="font-size:1.1rem">' + d.signe_chinois.emoji + ' ' + d.signe_chinois.animal + '</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + d.signe_chinois.element + ' · ' + d.signe_chinois.polarite + '</div>'));
+  if (d.theme_astral) { const t = d.theme_astral; cards.push(carte('Thème astral (calculé)',
+    '<div style="font-size:0.85rem;line-height:1.7">' +
+    '☉ Soleil : <b>' + t.soleil.signe + '</b> ' + t.soleil.degre + '°<br>' +
+    'AC Ascendant : <b>' + t.ascendant.signe + '</b> ' + t.ascendant.degre + '°<br>' +
+    'MC Milieu du Ciel : <b>' + t.milieu_du_ciel.signe + '</b></div>')); }
+  if (d.chemin_de_vie != null) cards.push(carte('Numérologie',
+    '<b style="font-size:1.2rem">chemin de vie ' + d.chemin_de_vie + '</b>' +
+    (d.numerologie_nom ? '<div style="font-size:0.8rem;color:#94a3b8">expression ' + d.numerologie_nom.expression +
+      ' · âme ' + d.numerologie_nom.ame + ' · personnalité ' + d.numerologie_nom.personnalite + '</div>' : '')));
+  if (d.biorythmes) { const b = d.biorythmes; const bar = (lbl, v) =>
+    '<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem"><span style="width:74px;color:#94a3b8">' + lbl +
+    '</span><span style="flex:1;height:6px;background:#1e2336;border-radius:3px;overflow:hidden">' +
+    '<span style="display:block;height:100%;width:' + Math.abs(v) + '%;background:' + (v >= 0 ? '#34d399' : '#f87171') + '"></span></span>' +
+    '<span style="width:38px;text-align:right">' + v + '%</span></div>';
+    cards.push(carte('Biorythmes du jour', bar('Physique', b.physique) + bar('Émotionnel', b.emotionnel) + bar('Intellectuel', b.intellectuel))); }
+  if (d.jours_vecus) cards.push(carte('Jours vécus',
+    '<b style="font-size:1.2rem">' + d.jours_vecus.jours.toLocaleString('fr-FR') + ' j</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">cap des ' + d.jours_vecus.prochain_jalon.toLocaleString('fr-FR') +
+    ' j dans ' + d.jours_vecus.dans_jours + ' j</div>'));
+  if (d.pierre_du_mois || d.generation) cards.push(carte('Repères',
+    '<div style="font-size:0.82rem;line-height:1.7">' +
+    (d.pierre_du_mois ? '💎 ' + d.pierre_du_mois + '<br>' : '') +
+    (d.fleur_du_mois ? '🌸 ' + d.fleur_du_mois + '<br>' : '') +
+    (d.saison ? '🍂 né(e) en ' + d.saison + '<br>' : '') +
+    (d.generation ? '👥 ' + d.generation : '') + '</div>'));
+
+  zone.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">' +
+    cards.join('') + '</div>' +
+    '<div style="font-size:0.72rem;color:#64748b;margin-top:10px">' +
+    'Astrologie & numérologie = divertissement (pas un fait). Lune et planètes à venir (calcul éphéméride).</div>';
 }
 async function sauverProfil() {
   const btn = document.getElementById('btn-profil-save');
@@ -1832,6 +1960,25 @@ async def profil_post(corps: dict):
     with open(PROFIL_PATH, "w", encoding="utf-8") as f:
         f.write(contenu)
     return {"ok": True, "taille": len(contenu)}
+
+
+# ── Fiche d'identité structurée + dérivations (S48 — « se présenter ») ──
+# « Se présenter » via 5 champs (prénoms, nom, date/heure/lieu de naissance) → l'assistant
+# en dérive plein d'infos (âge, anniversaire, signes, numérologie, mini-thème astral) ET
+# reçoit un digest compact dans son contexte. La fiche est À CÔTÉ du profil Markdown libre.
+@app.get("/profil/identite", tags=["profil"])
+async def identite_get():
+    """Fiche d'identité enregistrée + tout ce qu'on en dérive (calcul à la volée)."""
+    fiche = identite.charger_fiche()
+    return {"fiche": fiche, "derive": identite.deriver(fiche),
+            "modifie": identite.FICHE_PATH.exists()}
+
+
+@app.patch("/profil/identite", tags=["profil"])
+async def identite_patch(corps: dict):
+    """Met à jour la fiche (champs connus fusionnés) et renvoie les dérivations à jour."""
+    fiche = identite.enregistrer_fiche(corps or {})
+    return {"ok": True, "fiche": fiche, "derive": identite.deriver(fiche)}
 
 
 @app.get("/assistant/usage", tags=["assistant"])

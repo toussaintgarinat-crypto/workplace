@@ -185,37 +185,24 @@ export const llmConfigApi = {
   setGlobal:       (body)          => request('/api/llm-config/global', { method: 'PUT', body: JSON.stringify(body) }),
 }
 
-// ── MemPalace ────────────────────────────────────────────────
-const mpBase = () => localStorage.getItem('mp_url') || 'http://localhost:8100'
-
-async function mpRequest(path, options = {}) {
-  const t = localStorage.getItem('mp_token')
-  const res = await fetch(`${mpBase()}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(t ? { Authorization: `Bearer ${t}` } : {}),
-      ...options.headers,
-    },
-  })
-  if (!res.ok) return null
-  return res.json()
+// ── MemPalace → proxy vers la brique Mémoire Workplace (port 5600) ──────
+// Plus de palace externe (localhost:8100) ni de second login (mp_token) : on
+// passe par le backend Forge (`request()` porte déjà le JWT Keycloak + X-Org-ID,
+// donc l'isolation par org est gérée côté serveur). Best-effort : null si KO.
+async function mpSafe(p) {
+  try { return await p } catch { return null }
 }
 
 export const mempalaceApi = {
-  login: (username, password) =>
-    fetch(`${mpBase()}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ username, password }),
-    }).then(r => r.json()).catch(() => null),
-  status:      ()                    => mpRequest('/api/status'),
-  taxonomy:    ()                    => mpRequest('/api/taxonomy'),
-  drawers:     (wing, limit = 50)    => mpRequest(`/api/wings/${encodeURIComponent(wing)}/drawers?limit=${limit}`),
-  search:      (q, wing, n = 10)     => mpRequest('/api/search', { method: 'POST', body: JSON.stringify({ query: q, wing, n_results: n }) }),
-  addDrawer:   (content, wing, room = 'general', metadata = {}) =>
-    mpRequest('/api/drawers', { method: 'POST', body: JSON.stringify({ content, wing, room, metadata }) }),
-  deleteDrawer: id => mpRequest(`/api/drawers/${id}`, { method: 'DELETE' }),
+  taxonomy:  ()                 => mpSafe(request('/api/memory/taxonomy')),
+  list:      (wing, limite = 100) =>
+    mpSafe(request(`/api/memory?wing=${encodeURIComponent(wing)}&limite=${limite}`)),
+  search:    (q, wing, limite = 10) =>
+    mpSafe(request(`/api/memory/search?q=${encodeURIComponent(q)}`
+      + (wing ? `&wing=${encodeURIComponent(wing)}` : '') + `&limite=${limite}`)),
+  add:       (contenu, wing, room = 'general', metadata = {}) =>
+    mpSafe(request('/api/memory', { method: 'POST', body: JSON.stringify({ contenu, wing, room, metadata }) })),
+  remove:    (id) => mpSafe(request(`/api/memory/${encodeURIComponent(id)}`, { method: 'DELETE' })),
 }
 
 // ── NetBird ──────────────────────────────────────────────────

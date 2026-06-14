@@ -1,169 +1,150 @@
-"""
-Client MemPalace pour Oria — HTTP API (opt-in) avec fallback Python direct.
+"""Client Mémoire pour Oria — délègue à la brique Mémoire Workplace (port 5600).
 
-Mode HTTP  : définir MEMPALACE_API_URL + MEMPALACE_API_TOKEN
-             → appelle l'API FastAPI MemPalace (port 8100 par défaut)
-Mode local : si MEMPALACE_API_URL absent, utilise l'import Python direct (Qdrant local)
+Remplace l'ancien client MemPalace (palace externe ``localhost:8100`` + mode Qdrant
+local + ``mempalace.knowledge_graph``). Désormais **une seule voie** : le contrat
+HTTP simple de la brique Mémoire (``/retenir`` / ``/rappeler``), qui encapsule
+espaces, JWT et le projet Memory (graphe IPCRa / pgvector).
 
-Dégradation gracieuse dans les deux modes : retourne [] / False sans lever d'exception.
+Configuration : ``MEMOIRE_URL`` (ex. ``http://host.docker.internal:5600``). Vide →
+mémoire **désactivée** : toutes les fonctions dégradent en ``[]`` / ``False`` / ``0``
+sans jamais lever (comportement best-effort conservé).
+
+Cloisonnement : chaque utilisateur a son espace mémoire « oria-user-<id> » ; à
+défaut (pas d'``user_id``) l'espace solution de la brique. Tout ce qu'Oria écrit
+porte la location ``wing_user`` + une salle thématique (ipcra-sessions / documents /
+jardin-conversations) et un ``hall`` en métadonnée.
+
+⚠️ Graphe de connaissances (``create_branch`` / ``merge_branch`` /
+``check_contradictions``) : **no-ops honnêtes**. Ils l'étaient déjà en mode HTTP
+(le KG n'a jamais été exposé par l'API, cf. ancien commentaire « not yet in API »),
+et aucun router/worker ne les appelle (seuls les tests les patchent). La brique /
+Memory pourra les implémenter plus tard sur son graphe d'arêtes natif.
+
+Le nom du module reste ``mempalace_client`` pour ne pas toucher les 6 consommateurs
+(``documents``/``jardin``/``ipcra``/``shared_zones``/``jobs_worker``).
 """
 from __future__ import annotations
 
-import hashlib
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-# ── Config ────────────────────────────────────────────────────────────────────
-MEMPALACE_API_URL   = os.environ.get("MEMPALACE_API_URL", "").rstrip("/")
-MEMPALACE_API_TOKEN = os.environ.get("MEMPALACE_API_TOKEN", "")
+import httpx
 
-# Legacy — used when API URL is not set (Python direct mode)
-PALACE_PATH = os.environ.get(
-    "MEMPALACE_PALACE_PATH",
-    str(Path.home() / ".mempalace" / "palace"),
-)
-PALACE_BASE_PATH = os.environ.get(
-    "PALACE_BASE_PATH",
-    str(Path.home() / ".mempalace" / "palaces"),
-)
-COLLECTION_NAME      = "mempalace_drawers"
-SIMILARITY_THRESHOLD = 0.35
+from config import config
 
-_HTTP_ENABLED = bool(MEMPALACE_API_URL and MEMPALACE_API_TOKEN)
+# Le score de la brique (recherche hybride) est déjà rangé/limité côté Memory ;
+# on n'applique donc pas de coupe client agressive (l'ancien seuil cosinus 0.35
+# valait pour le mode Qdrant local, retiré). On expose le score tel quel.
+_TIMEOUT = 8.0
 
 
-# ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-def _headers() -> dict:
-    return {"Authorization": f"Bearer {MEMPALACE_API_TOKEN}", "Content-Type": "application/json"}
+def _base() -> str:
+    return config.MEMOIRE_URL
 
 
-def _http_search(query: str, n: int, wing: str | None) -> list[dict]:
+def _enabled() -> bool:
+    return bool(_base())
+
+
+def _espace(user_id: str | None) -> str | None:
+    """Espace mémoire par utilisateur (cloisonnement). None → espace solution brique."""
+    return f"oria-user-{user_id}" if user_id else None
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _retenir(contenu: str, *, titre: str, room: str, hall: str,
+             metadata: dict, user_id: str | None) -> bool:
+    """Écrit un souvenir via la brique. Best-effort → False si désactivée/KO."""
+    if not _enabled() or not (contenu or "").strip():
+        return False
+    corps: dict[str, Any] = {
+        "contenu": contenu,
+        "titre": titre,
+        "type": "input",          # tout ce qu'Oria capte est une entrée IPCRa
+        "wing": "wing_user",      # location.wing côté Memory
+        "room": room,
+        "hall": hall,
+        "metadata": metadata or {},
+    }
+    esp = _espace(user_id)
+    if esp:
+        corps["espace"] = esp
     try:
-        import httpx
-        payload: dict[str, Any] = {"query": query, "n_results": n}
-        if wing:
-            payload["wing"] = wing
-        r = httpx.post(
-            f"{MEMPALACE_API_URL}/api/search",
-            json=payload,
-            headers=_headers(),
-            timeout=8.0,
-        )
+        r = httpx.post(f"{_base()}/retenir", json=corps, timeout=_TIMEOUT)
+        return r.status_code < 400
+    except Exception:
+        return False
+
+
+def _chunk(content: str, taille: int = 800, maxi: int = 30) -> list[str]:
+    """Découpe par paragraphes en fenêtres ~`taille` caractères (parité historique)."""
+    paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for para in paragraphs:
+        if current_len + len(para) > taille and current:
+            chunks.append("\n\n".join(current))
+            current, current_len = [], 0
+        current.append(para)
+        current_len += len(para)
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks[:maxi]
+
+
+# ── API publique (signatures inchangées vs l'ancien client) ──────────────────
+
+def prefetch(query: str, n: int = 5, wing: str | None = None, user_id: str | None = None) -> list:
+    """Souvenirs pertinents pour `query` → [{text, wing, room, similarity}] ou [].
+
+    `wing` est accepté pour compatibilité mais n'est plus un filtre dur : la brique
+    range et limite déjà par pertinence (recherche hybride), et l'espace par
+    utilisateur cloisonne déjà les résultats. Best-effort → [] si indispo.
+    """
+    if not _enabled():
+        return []
+    try:
+        params: dict[str, Any] = {"q": query, "limite": n}
+        esp = _espace(user_id)
+        if esp:
+            params["espace"] = esp
+        r = httpx.get(f"{_base()}/rappeler", params=params, timeout=_TIMEOUT)
         if r.status_code != 200:
             return []
-        return r.json().get("results", [])
+        souvenirs = r.json().get("souvenirs", [])
     except Exception:
         return []
-
-
-def _http_add_drawer(content: str, wing: str, room: str, metadata: dict | None = None) -> bool:
-    try:
-        import httpx
-        r = httpx.post(
-            f"{MEMPALACE_API_URL}/api/drawers",
-            json={"content": content, "wing": wing, "room": room, "metadata": metadata or {}},
-            headers=_headers(),
-            timeout=8.0,
-        )
-        return r.status_code == 201
-    except Exception:
-        return False
-
-
-# ── Legacy Python-direct helpers ──────────────────────────────────────────────
-
-def _get_user_palace_path(user_id: str) -> str:
-    return str(Path(PALACE_BASE_PATH) / user_id)
-
-
-def _get_collection(palace_path: str | None = None, create: bool = False):
-    path = palace_path or PALACE_PATH
-    try:
-        from mempalace.storage import get_palace_storage
-        return get_palace_storage(path, create=create)
-    except Exception:
-        return None
-
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def prefetch(query: str, n: int = 5, wing: str = None, user_id: str = None) -> list:
-    """
-    Cherche les souvenirs pertinents pour la requête.
-    Retourne [{text, wing, room, similarity}] ou [] si inaccessible.
-    """
-    if _HTTP_ENABLED:
-        raw = _http_search(query, n, wing)
-        return [
-            {
-                "text":       r.get("content", ""),
-                "wing":       r.get("metadata", {}).get("wing", "?"),
-                "room":       r.get("metadata", {}).get("room", "?"),
-                "similarity": r.get("score", 0),
-            }
-            for r in raw
-            if r.get("score", 0) >= SIMILARITY_THRESHOLD
-        ]
-
-    # fallback: Python direct
-    path = _get_user_palace_path(user_id) if user_id else None
-    col  = _get_collection(path)
-    if not col:
-        return []
-    try:
-        kwargs: dict[str, Any] = {
-            "query_texts": [query],
-            "n_results":   min(n, col.count() or 1),
-            "include":     ["documents", "metadatas", "distances"],
+    return [
+        {
+            "text": s.get("extrait", ""),
+            "wing": "wing_user",
+            "room": s.get("type", "?"),
+            "similarity": round(s.get("score", 0) or 0, 3),
         }
-        if wing:
-            kwargs["where"] = {"wing": wing}
-        results = col.query(**kwargs)
-        hits = []
-        for doc, meta, dist in zip(
-            results["documents"][0],
-            results["metadatas"][0],
-            results["distances"][0],
-        ):
-            sim = round(1 - dist, 3)
-            if sim >= SIMILARITY_THRESHOLD:
-                hits.append({"text": doc, "wing": meta.get("wing", "?"), "room": meta.get("room", "?"), "similarity": sim})
-        return hits
-    except Exception:
-        return []
+        for s in souvenirs
+    ]
 
 
-def sync(content: str, session_id: str, phase: str, titre: str, user_id: str = None) -> bool:
-    """Persiste le contenu d'une catégorie IPCRA dans MemPalace."""
-    if not content.strip():
-        return False
-
-    metadata = {
-        "source_file":    f"ipcra/{session_id}/{phase}",
-        "date":           datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "added_by":       "oria-ipcra",
-        "session_titre":  titre,
-        "phase":          phase,
-        "hall":           "hall_events",
-    }
-
-    if _HTTP_ENABLED:
-        return _http_add_drawer(content, "wing_user", "ipcra-sessions", metadata)
-
-    path = _get_user_palace_path(user_id) if user_id else None
-    col  = _get_collection(path, create=True)
-    if not col:
-        return False
-    try:
-        uid       = hashlib.md5((content[:60] + datetime.now(timezone.utc).isoformat()).encode()).hexdigest()[:14]
-        drawer_id = f"ipcra_{session_id}_{phase}_{uid}"
-        col.add(ids=[drawer_id], documents=[content], metadatas=[{"wing": "wing_user", "room": "ipcra-sessions", **metadata}])
-        return True
-    except Exception:
-        return False
+def sync(content: str, session_id: str, phase: str, titre: str, user_id: str | None = None) -> bool:
+    """Persiste une catégorie IPCRa dans la mémoire de l'utilisateur."""
+    return _retenir(
+        content,
+        titre=(titre or phase or "session").strip(),
+        room="ipcra-sessions",
+        hall="hall_events",
+        metadata={
+            "source_file": f"ipcra/{session_id}/{phase}",
+            "date": _today(),
+            "added_by": "oria-ipcra",
+            "session_titre": titre,
+            "phase": phase,
+        },
+        user_id=user_id,
+    )
 
 
 def sync_document(
@@ -171,93 +152,47 @@ def sync_document(
     doc_id: str,
     doc_name: str,
     owner_id: str,
-    session_id: str = None,
-    session_titre: str = None,
-    user_id: str = None,
+    session_id: str | None = None,
+    session_titre: str | None = None,
+    user_id: str | None = None,
 ) -> int:
-    """Indexe un document par chunks dans MemPalace. Retourne le nombre de chunks ajoutés."""
-    if not content.strip():
+    """Indexe un document par chunks dans la mémoire. Retourne le nombre de chunks écrits."""
+    if not _enabled() or not content.strip():
         return 0
-
-    paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-    for para in paragraphs:
-        if current_len + len(para) > 800 and current:
-            chunks.append("\n\n".join(current))
-            current, current_len = [], 0
-        current.append(para)
-        current_len += len(para)
-    if current:
-        chunks.append("\n\n".join(current))
-
-    added     = 0
-    date_str  = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    chunks = _chunk(content)
     base_meta = {
         "source_file": doc_name,
-        "date":        date_str,
-        "added_by":    "oria-markitdown",
-        "doc_id":      doc_id,
-        "owner_id":    owner_id,
-        "hall":        "hall_facts",
+        "date": _today(),
+        "added_by": "oria-markitdown",
+        "doc_id": doc_id,
+        "owner_id": owner_id,
         **({"session_id": session_id} if session_id else {}),
         **({"session_titre": session_titre} if session_titre else {}),
     }
-
-    for i, chunk in enumerate(chunks[:30]):
+    # Le document appartient à `owner_id` ; on scope son espace mémoire dessus.
+    espace_user = user_id or owner_id
+    added = 0
+    for i, chunk in enumerate(chunks):
         meta = {**base_meta, "chunk_index": i}
-        if _HTTP_ENABLED:
-            if _http_add_drawer(chunk, "wing_user", "documents", meta):
-                added += 1
-        else:
-            path = _get_user_palace_path(user_id) if user_id else None
-            col  = _get_collection(path, create=True)
-            if not col:
-                break
-            try:
-                uid = hashlib.md5(f"{doc_id}_{i}_{chunk[:30]}".encode()).hexdigest()[:12]
-                col.add(
-                    ids=[f"doc_{doc_id}_chunk{i}_{uid}"],
-                    documents=[chunk],
-                    metadatas=[{"wing": "wing_user", "room": "documents", **meta}],
-                )
-                added += 1
-            except Exception:
-                pass
-
+        if _retenir(chunk, titre=f"{doc_name} ({i + 1})", room="documents",
+                    hall="hall_facts", metadata=meta, user_id=espace_user):
+            added += 1
     return added
 
 
 def sync_conversation_turn(user_message: str, assistant_response: str, user_id: str) -> bool:
-    """Persiste un échange Q/R dans le palace personnel."""
+    """Persiste un échange Q/R dans la mémoire personnelle de l'utilisateur."""
     content = f"Utilisateur : {user_message}"
     if assistant_response:
         content += f"\n\nAssistant : {assistant_response}"
-
-    metadata = {
-        "date":     datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "added_by": "oria-jardin",
-        "hall":     "hall_events",
-    }
-
-    if _HTTP_ENABLED:
-        return _http_add_drawer(content, "wing_user", "jardin-conversations", metadata)
-
-    path = _get_user_palace_path(user_id)
-    col  = _get_collection(path, create=True)
-    if not col:
-        return False
-    try:
-        uid = hashlib.md5((content[:60] + datetime.now(timezone.utc).isoformat()).encode()).hexdigest()[:14]
-        col.add(
-            ids=[f"conv_{user_id}_{uid}"],
-            documents=[content],
-            metadatas=[{"wing": "wing_user", "room": "jardin-conversations", **metadata}],
-        )
-        return True
-    except Exception:
-        return False
+    return _retenir(
+        content,
+        titre=user_message[:60] or "échange",
+        room="jardin-conversations",
+        hall="hall_events",
+        metadata={"date": _today(), "added_by": "oria-jardin"},
+        user_id=user_id,
+    )
 
 
 def format_context_block(hits: list) -> str:
@@ -266,54 +201,22 @@ def format_context_block(hits: list) -> str:
         return ""
     lines = []
     for h in hits:
-        snippet = h["text"][:450].strip()
-        if len(h["text"]) > 450:
+        snippet = (h.get("text") or "")[:450].strip()
+        if len(h.get("text") or "") > 450:
             snippet += "…"
-        lines.append(f"[{h['wing']}/{h['room']} · similarité {h['similarity']}]\n{snippet}")
-    return "\n\n## Mémoires pertinentes (MemPalace)\n" + "\n\n---\n\n".join(lines)
+        lines.append(f"[{h.get('wing', '?')}/{h.get('room', '?')} · similarité {h.get('similarity', 0)}]\n{snippet}")
+    return "\n\n## Mémoires pertinentes (Mémoire Workplace)\n" + "\n\n---\n\n".join(lines)
 
 
-# ── KnowledgeGraph — no-op when HTTP mode (not yet in API) ────────────────────
-
-def _get_kg():
-    if _HTTP_ENABLED:
-        return None
-    try:
-        from mempalace.knowledge_graph import KnowledgeGraph
-        return KnowledgeGraph()
-    except Exception:
-        return None
-
+# ── Graphe de connaissances — no-ops honnêtes (non exposé par la brique) ──────
 
 def create_branch(session_id: str) -> bool:
-    kg = _get_kg()
-    if not kg:
-        return False
-    try:
-        kg.create_branch(f"ipcra_{session_id}")
-        return True
-    except Exception:
-        return False
+    return False
 
 
 def merge_branch(session_id: str) -> dict:
-    kg = _get_kg()
-    if not kg:
-        return {"merged": 0, "conflicts": []}
-    try:
-        branch_name = f"ipcra_{session_id}"
-        conflicts   = kg.detect_contradictions(branch_name)
-        merged      = kg.merge_branch(branch_name)
-        return {"merged": merged, "conflicts": conflicts}
-    except Exception:
-        return {"merged": 0, "conflicts": []}
+    return {"merged": 0, "conflicts": []}
 
 
 def check_contradictions(session_id: str) -> list:
-    kg = _get_kg()
-    if not kg:
-        return []
-    try:
-        return kg.detect_contradictions(f"ipcra_{session_id}")
-    except Exception:
-        return []
+    return []

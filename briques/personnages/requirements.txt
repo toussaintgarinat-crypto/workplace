@@ -1,0 +1,5 @@
+# Brique personnages — distribution & casting en API. Dépendances minces et épinglées.
+# Aucune lib lourde : le moteur est du Python pur (stdlib), seul l'appel LLM sort.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1

@@ -201,6 +201,18 @@ def test_garde_fou_budget():
     assert not res.ok and "Budget" in res.erreur
 
 
+def test_go_a_cout_marginal_nul():
+    # Le forfait OpenCode Go (go/*) est facturé en $-équivalent, pas au call : il
+    # est donc à coût marginal nul (comme free/ et ollama/) et NE doit pas être
+    # jeté par le garde-fou budget, qui ne vise que le payant au call.
+    assert llm_pipeline._sans_cout_marginal("go/deepseek-v4-pro") is True
+    journal_usage.BUDGET_MOIS = 0.001
+    assert journal_usage.peut_appeler_payant() is False
+    mods, force = llm_pipeline._ordonner_selon_budget(
+        ["openai/gpt-4o", "go/deepseek-v4-pro", "free/x/y"])
+    assert mods == ["go/deepseek-v4-pro", "free/x/y"] and force is True
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):

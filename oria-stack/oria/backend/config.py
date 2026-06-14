@@ -117,6 +117,15 @@ class OriaConfig:
     def CALENDAR_SERVICE_TOKEN(self) -> str:
         return os.getenv("CALENDAR_SERVICE_TOKEN", "")
 
+    # ─── Mémoire (brique Workplace, port 5600) ───────────────────────────────
+    @property
+    def MEMOIRE_URL(self) -> str:
+        """Brique Mémoire Workplace (contrat retenir/rappeler). Vide → mémoire désactivée.
+
+        Ex. en stack Docker : http://host.docker.internal:5600. Remplace l'ancien
+        MEMPALACE_API_URL (palace externe 8100, décommissionné)."""
+        return os.getenv("MEMOIRE_URL", "").rstrip("/")
+
     # ─── Stockage ─────────────────────────────────────────────────────────────
     @property
     def DOCUMENTS_DIR(self) -> str:

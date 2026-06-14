@@ -10,9 +10,7 @@ const IPCRA = [
 ]
 
 export default function MemPalaceView() {
-  const [mpToken, setMpToken]         = useState(() => localStorage.getItem('mp_token'))
-  const [taxonomy, setTaxonomy]       = useState({})
-  const [totalCount, setTotalCount]   = useState(0)
+  const [taxonomy, setTaxonomy]       = useState({ total: 0, wings: {} })
   const [activeWing, setActiveWing]   = useState('input')
   const [drawers, setDrawers]         = useState([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -20,31 +18,26 @@ export default function MemPalaceView() {
   const [newContent, setNewContent]   = useState('')
   const [newRoom, setNewRoom]         = useState('general')
   const [loading, setLoading]         = useState(false)
-  const [loginForm, setLoginForm]     = useState({ username: '', password: '' })
-  const [loginError, setLoginError]   = useState('')
   const debounceRef                   = useRef(null)
 
-  useEffect(() => {
-    if (!mpToken) return
-    Promise.all([mempalaceApi.status(), mempalaceApi.taxonomy()])
-      .then(([s, t]) => {
-        if (!s) { handleDisconnect(); return }
-        setTotalCount(s.total || 0)
-        setTaxonomy(t || {})
-      })
-      .catch(() => handleDisconnect())
-  }, [mpToken])
+  const totalCount = taxonomy.total || 0
+
+  async function refreshTaxonomy() {
+    const t = await mempalaceApi.taxonomy()
+    if (t) setTaxonomy({ total: t.total || 0, wings: t.wings || {} })
+  }
+
+  useEffect(() => { refreshTaxonomy() }, [])
 
   useEffect(() => {
-    if (!mpToken) return
     setSearchResults(null)
     setSearchQuery('')
     loadDrawers(activeWing)
-  }, [activeWing, mpToken])
+  }, [activeWing])
 
   async function loadDrawers(wing) {
     setLoading(true)
-    const res = await mempalaceApi.drawers(wing)
+    const res = await mempalaceApi.list(wing)
     setLoading(false)
     setDrawers(Array.isArray(res) ? res : [])
   }
@@ -62,86 +55,36 @@ export default function MemPalaceView() {
 
   async function handleAddDrawer() {
     if (!newContent.trim()) return
-    const res = await mempalaceApi.addDrawer(newContent, activeWing, newRoom || 'general')
+    const res = await mempalaceApi.add(newContent, activeWing, newRoom || 'general')
     if (res) {
       setNewContent('')
       await loadDrawers(activeWing)
-      const t = await mempalaceApi.taxonomy()
-      if (t) setTaxonomy(t)
+      await refreshTaxonomy()
     }
   }
 
   async function handleDeleteDrawer(id) {
     if (!id) return
-    await mempalaceApi.deleteDrawer(id)
-    loadDrawers(activeWing)
-  }
-
-  async function handleLogin() {
-    setLoginError('')
-    const res = await mempalaceApi.login(loginForm.username, loginForm.password)
-    if (res?.access_token) {
-      localStorage.setItem('mp_token', res.access_token)
-      setMpToken(res.access_token)
-    } else {
-      setLoginError('Identifiants incorrects')
-    }
-  }
-
-  function handleDisconnect() {
-    localStorage.removeItem('mp_token')
-    setMpToken(null)
-    setTaxonomy({})
-    setDrawers([])
-    setTotalCount(0)
+    await mempalaceApi.remove(id)
+    await loadDrawers(activeWing)
+    await refreshTaxonomy()
   }
 
   function wingCount(key) {
-    const rooms = taxonomy[key]
-    if (!rooms) return 0
-    return Object.values(rooms).reduce((a, b) => a + b, 0)
+    return taxonomy.wings?.[key] || 0
   }
 
   function getItemId(item) {
     return item.id || item.metadata?.id
   }
 
+  // Contenu/room/date selon l'origine : liste (contenu) ou recherche (extrait).
+  function itemContent(item) { return item.contenu ?? item.content ?? item.extrait ?? '' }
+  function itemRoom(item)    { return item.room || item.metadata?.room }
+  function itemDate(item)    { return item.metadata?.added_at || item.metadata?.date }
+
   const activeCat  = IPCRA.find(c => c.key === activeWing)
   const displayList = searchResults ?? drawers
-
-  // ── Login screen ────────────────────────────────────────────
-  if (!mpToken) {
-    return (
-      <div style={s.page}>
-        <div style={s.connectCard}>
-          <div style={s.connectIcon}>🧠</div>
-          <h2 style={s.connectTitle}>MemPalace</h2>
-          <p style={s.connectSub}>Connectez-vous à votre palace pour accéder à votre mémoire IPCRA</p>
-          <input
-            style={s.input}
-            type="text"
-            placeholder="Nom d'utilisateur"
-            value={loginForm.username}
-            onChange={e => setLoginForm(f => ({ ...f, username: e.target.value }))}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-          />
-          <input
-            style={s.input}
-            type="password"
-            placeholder="Mot de passe"
-            value={loginForm.password}
-            onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-          />
-          {loginError && <p style={s.error}>{loginError}</p>}
-          <button style={s.loginBtn} onClick={handleLogin}>Se connecter</button>
-          <p style={s.connectHint}>
-            Palace : <code>{localStorage.getItem('mp_url') || 'http://localhost:8100'}</code>
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   // ── Main view ────────────────────────────────────────────────
   return (
@@ -152,9 +95,8 @@ export default function MemPalaceView() {
         <div style={s.headerLeft}>
           <span style={s.headerIcon}>🧠</span>
           <h1 style={s.headerTitle}>MemPalace</h1>
-          <span style={s.badge}>{totalCount} drawers</span>
+          <span style={s.badge}>{totalCount} souvenirs</span>
         </div>
-        <button style={s.disconnectBtn} onClick={handleDisconnect}>Déconnecter</button>
       </div>
 
       {/* Search */}
@@ -234,26 +176,28 @@ export default function MemPalaceView() {
         {loading && <div style={s.empty}>Chargement…</div>}
         {!loading && displayList.length === 0 && (
           <div style={s.empty}>
-            {searchResults !== null ? 'Aucun résultat' : `Aucun drawer dans ${activeCat?.label}`}
+            {searchResults !== null ? 'Aucun résultat' : `Aucun souvenir dans ${activeCat?.label}`}
           </div>
         )}
         {!loading && displayList.map((item, i) => {
           const id = getItemId(item)
+          const room = itemRoom(item)
+          const date = itemDate(item)
           return (
             <div key={id || i} style={s.card}>
               <div style={s.cardTop}>
                 <div style={s.chips}>
-                  {item.metadata?.room && item.metadata.room !== 'general' && (
-                    <span style={s.chip}>{item.metadata.room}</span>
+                  {room && room !== 'general' && (
+                    <span style={s.chip}>{room}</span>
                   )}
                   {item.score !== undefined && (
                     <span style={{ ...s.chip, background: '#10b981', color: '#fff' }}>
                       {Math.round(item.score * 100)}%
                     </span>
                   )}
-                  {item.metadata?.added_at && (
+                  {date && (
                     <span style={s.chipDate}>
-                      {new Date(item.metadata.added_at).toLocaleDateString('fr-FR')}
+                      {new Date(date).toLocaleDateString('fr-FR')}
                     </span>
                   )}
                 </div>
@@ -261,7 +205,7 @@ export default function MemPalaceView() {
                   <button style={s.deleteBtn} onClick={() => handleDeleteDrawer(id)} title="Supprimer">✕</button>
                 )}
               </div>
-              <p style={s.cardContent}>{item.content}</p>
+              <p style={s.cardContent}>{itemContent(item)}</p>
             </div>
           )
         })}

@@ -168,8 +168,9 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
-      - MEMPALACE_API_URL=${MEMPALACE_API_URL:-}
-      - MEMPALACE_API_TOKEN=${MEMPALACE_API_TOKEN:-}
+      # Mémoire : brique Workplace (port 5600). Vide → mémoire désactivée.
+      - MEMOIRE_URL=${MEMOIRE_URL:-}
+      - MEMOIRE_ESPACE=${MEMOIRE_ESPACE:-}
       # SMTP (S130) — email de confirmation suppression venture
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}

@@ -21,7 +21,8 @@ def test_inventaire_tables_user_id_non_vide_et_coherent():
     tables = rgpd_svc.tables_with_user_id()
     names = [t.name for t in tables]
     # Quelques tables data-bearing connues doivent y figurer.
-    for expected in ("sessions", "memory_entries", "rapports", "audit_logs"):
+    # (memory_entries retiré : la mémoire est passée à la brique Mémoire — cf. S-memoire.)
+    for expected in ("sessions", "rapports", "audit_logs"):
         assert expected in names, f"{expected} manquant de l'inventaire d'effacement"
     # Toutes ont bien une colonne user_id.
     assert all("user_id" in t.c for t in tables)

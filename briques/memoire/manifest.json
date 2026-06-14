@@ -1,7 +1,7 @@
 {
   "nom": "memoire",
-  "version": "0.1.0",
-  "description": "Mémoire de la solution — souvenirs en graphe (projet Memory : nœuds/arêtes, stages IPCRa, tiers, recherche hybride). Brique adaptatrice exposant un contrat simple retenir/rappeler.",
+  "version": "0.2.0",
+  "description": "Mémoire de la solution — souvenirs en graphe (projet Memory : nœuds/arêtes, stages IPCRa, tiers, recherche hybride). Brique adaptatrice exposant un contrat simple retenir/rappeler/taxonomy/supprimer (rangements wing/room natifs). Consommée par le Cœur, Forge et Oria.",
   "role": "memoire",
   "couche": "backend",
   "statut": "actif",
@@ -12,7 +12,9 @@
   "offre": [
     "retenir",
     "rappeler",
-    "lister_souvenirs"
+    "lister_souvenirs",
+    "taxonomy",
+    "supprimer"
   ],
   "besoin": []
 }

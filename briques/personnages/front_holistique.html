@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personnages — atelier holistique</title>
+<style>
+  :root{
+    --bg:#0e0c10; --panel:#17141b; --panel2:#1f1a24; --line:#332b3c;
+    --ink:#ece6f0; --mut:#9b8fa8; --accent:#e0a458; --accent2:#c2547a; --ok:#5fd0a0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#241a2e 0,var(--bg) 55%);
+       color:var(--ink);font-family:'Segoe UI',-apple-system,system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  header h1{font-family:Georgia,'Times New Roman',serif;font-weight:600;font-size:1.9rem;margin:0}
+  header h1 .dot{color:var(--accent)}
+  header p{color:var(--mut);margin:6px 0 0;font-size:.95rem}
+  nav{margin:14px 0 0;font-size:.82rem}
+  nav a{color:var(--mut);text-decoration:none;border:1px solid var(--line);border-radius:20px;
+        padding:5px 13px;margin-right:8px}
+  nav a.on{color:#1a1208;background:linear-gradient(135deg,var(--accent),#d4894a);border-color:transparent;font-weight:600}
+  .tabs{display:flex;gap:8px;margin:26px 0 0}
+  .tab{cursor:pointer;flex:1;text-align:center;background:var(--panel);border:1px solid var(--line);
+       border-radius:12px 12px 0 0;padding:13px;font-weight:600;font-size:.9rem;color:var(--mut)}
+  .tab.on{color:var(--accent);border-bottom-color:var(--bg);background:var(--panel)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:0 0 16px 16px;padding:22px}
+  h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin:0 0 14px}
+  label{display:block;font-size:.76rem;color:var(--mut);margin:10px 0 4px}
+  input,textarea,select{width:100%;background:#100d14;border:1px solid var(--line);border-radius:10px;
+    color:var(--ink);padding:10px 12px;font-size:.9rem;font-family:inherit}
+  textarea{resize:vertical;line-height:1.5}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+  button{cursor:pointer;border:none;border-radius:10px;padding:12px 18px;font-weight:600;font-size:.92rem;
+    background:linear-gradient(135deg,var(--accent),#d4894a);color:#1a1208;margin-top:16px;width:100%}
+  button:disabled{opacity:.5;cursor:wait}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--accent)}
+  .err{color:#f08aa0;font-size:.82rem;margin-top:10px}
+  .hint{font-size:.74rem;color:var(--mut);margin-top:8px;line-height:1.5}
+  a{color:var(--accent)}
+  /* Résultat */
+  .out{margin-top:22px;display:none}
+  .arche{font-family:Georgia,serif;font-size:1.6rem;font-weight:600;color:var(--accent)}
+  .sub{color:var(--mut);font-size:.86rem;margin-top:2px}
+  .stats{margin:20px 0}
+  .stat{display:flex;align-items:center;gap:12px;margin-bottom:9px}
+  .stat .nm{font-size:.8rem;width:108px;color:var(--ink);text-align:right}
+  .stat .bar{flex:1;height:11px;background:#100d14;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .stat .fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+  .stat .vv{font-size:.74rem;color:var(--mut);width:34px}
+  .stat.top .nm{color:var(--accent);font-weight:700}
+  .stat.low .fill{background:linear-gradient(90deg,#5a4a6a,#7a6a8a)}
+  .gem{display:flex;gap:12px;align-items:center;background:#10231c;border:1px solid #234a3a;
+       border-radius:14px;padding:14px 16px;margin:8px 0 18px}
+  .gem .ic{font-size:1.7rem}
+  .gem b{color:var(--ok)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{font-size:.76rem;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:5px 12px}
+  .chip b{color:var(--accent)}
+  .recit{background:#100d14;border:1px solid var(--line);border-radius:12px;padding:16px;
+         line-height:1.65;font-size:.9rem;white-space:pre-wrap;margin-top:14px}
+  .recit em{color:var(--mut)}
+  .pistes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  @media(max-width:560px){.pistes{grid-template-columns:1fr}}
+  .pcard{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .pcard .lbl{font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent2);margin-bottom:8px}
+  .pcard .big{font-family:Georgia,serif;font-size:1.15rem}
+  .pcard .small{font-size:.76rem;color:var(--mut);margin-top:3px}
+  .date{font-family:Georgia,serif;font-size:1.25rem;color:var(--accent)}
+  /* bulle d'aide */
+  .info{display:inline-block;cursor:help;color:var(--accent);border:1px solid var(--line);
+        border-radius:50%;width:16px;height:16px;line-height:14px;text-align:center;
+        font-size:.66rem;margin-left:6px;position:relative;vertical-align:middle}
+  .info .tip{display:none;position:absolute;left:-4px;top:160%;width:292px;background:#06040a;
+       border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:.74rem;
+       color:var(--ink);line-height:1.55;z-index:20;box-shadow:0 8px 28px rgba(0,0,0,.55);
+       white-space:normal;font-weight:400;text-transform:none;letter-spacing:0}
+  .info:hover .tip{display:block}
+  .info .tip b{color:var(--accent)}
+  /* empreinte expliquée */
+  .emp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  @media(max-width:560px){.emp{grid-template-columns:1fr}}
+  .ec{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .ec .ecl{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent2)}
+  .ec .ecv{font-family:Georgia,serif;font-size:.98rem;margin:2px 0}
+  .ec .ecv b{color:var(--accent)}
+  .ec .ecs{font-size:.76rem;color:var(--mut);line-height:1.45}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Atelier holistique<span class="dot">.</span></h1>
+    <p>Un moteur de personnages qui croise 10 traditions (numérologie, astro occidentale / chinoise / védique, égyptien, celte, amérindien, maya). Tout est <b>calculé</b> — l'interprétation reste du divertissement.</p>
+    <nav>
+      <a href="/" >🎬 Distribution &amp; casting</a>
+      <a href="/atelier" class="on">🔮 Atelier holistique</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+
+  <div class="tabs">
+    <div class="tab on" id="tab-desc" onclick="switchTab('desc')">🌱 Depuis une naissance</div>
+    <div class="tab" id="tab-mont" onclick="switchTab('mont')">🔮 Depuis un caractère</div>
+  </div>
+
+  <!-- DESCENDANT -->
+  <div class="panel" id="pan-desc">
+    <h2>Profil calculé à partir de l'état civil</h2>
+    <div class="row">
+      <div><label>Prénom(s)</label><input id="prenoms" value="Aria"></div>
+      <div><label>Nom</label><input id="nom" value="Solis"></div>
+    </div>
+    <div class="row">
+      <div><label>Date de naissance</label><input id="date" type="date" value="1990-09-05"></div>
+      <div><label>Heure (HH:MM)</label><input id="heure" value="14:30" placeholder="14:30"></div>
+    </div>
+    <label>Ville de naissance</label>
+    <div class="row" style="align-items:stretch">
+      <input id="ville" style="flex:3" value="Toulouse, France" placeholder="Toulouse, France"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();geocoder();}">
+      <button type="button" id="btn-geo" onclick="geocoder()" style="flex:1;margin-top:0;min-width:120px">📍 Localiser</button>
+    </div>
+    <div id="geo-info" class="hint"></div>
+    <details style="margin-top:6px">
+      <summary style="cursor:pointer;font-size:.74rem;color:var(--mut)">Coordonnées (remplies automatiquement, ajustables)</summary>
+      <div class="row" style="margin-top:8px">
+        <div><label>Latitude</label><input id="lat" value="43.6" placeholder="43.6"></div>
+        <div><label>Longitude (Est +)</label><input id="lon" value="1.44" placeholder="1.44"></div>
+        <div><label>Décalage UTC</label><input id="utc" value="2" placeholder="2"></div>
+      </div>
+    </details>
+    <div><label>Système de numérologie<span class="info">i<span class="tip">
+      <b>Pythagoricien</b> — chaque lettre est ramenée à un chiffre de 1 à 9 (A=1…I=9, puis J reprend à 1). C'est le système le plus répandu en numérologie occidentale moderne.<br><br>
+      <b>Classique (ordinal)</b> — chaque lettre vaut sa position dans l'alphabet (A=1 … Z=26), puis on réduit. Plus brut ; c'est celui du rapport de cadrage.<br><br>
+      Les deux réduisent ensuite à un chiffre (1–9), en gardant les nombres maîtres 11, 22, 33.</span></span></label>
+      <select id="sysnum"><option value="classique">Classique (A=1…Z=26)</option>
+      <option value="pythagoricien">Pythagoricien</option></select></div>
+    <div class="row" style="align-items:stretch">
+      <button id="btn-desc" onclick="portrait()" style="flex:3">✨ Générer le portrait</button>
+      <button id="btn-rand" class="ghost" type="button" onclick="aleatoire()" style="flex:1;min-width:130px"
+              title="Tire une date, une heure et un nom au hasard, puis génère">🎲 Aléatoire</button>
+    </div>
+    <div class="hint">Heure + coordonnées débloquent l'Ascendant, le signe lunaire et le rashi védique. Sans elles, le portrait reste calculé sur la date. <b>🎲 Aléatoire</b> = un personnage tiré au sort.</div>
+    <div id="desc-err" class="err"></div>
+
+    <div class="out" id="desc-out">
+      <div class="arche" id="o-arche"></div>
+      <div class="sub" id="o-sub"></div>
+      <div class="stats" id="o-stats"></div>
+      <div class="gem" id="o-gem"></div>
+      <div class="hint">Empreinte multi-culturelle — survole pour comprendre, chaque ligne est calculée :</div>
+      <div class="emp" id="o-chips"></div>
+      <div class="recit" id="o-recit"></div>
+      <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
+      <button type="button" id="btn-studio" onclick="envoyerStudio()" style="display:none;margin-top:14px"
+        title="Ajouter ce personnage à une série du Studio">📤 Envoyer au Studio</button>
+    </div>
+  </div>
+
+  <!-- MONTANT -->
+  <div class="panel" id="pan-mont" style="display:none">
+    <h2>Recherche inverse — décris un caractère</h2>
+    <label>Décris le personnage en quelques mots</label>
+    <textarea id="descr" rows="3">guerrier colérique mais profondément spirituel et solitaire</textarea>
+    <button id="btn-mont" onclick="inverse()">🔮 Trouver ses signes</button>
+    <div class="hint">Le moteur cherche les signes, nombres et traditions qui collent le mieux — puis propose une date plausible. Plusieurs dates conviennent (non-unicité assumée).</div>
+    <div id="mont-err" class="err"></div>
+
+    <div class="out" id="mont-out">
+      <div class="arche" id="m-arche"></div>
+      <div class="chips" id="m-cible" style="margin:8px 0 18px"></div>
+      <div class="pistes">
+        <div class="pcard"><div class="lbl">Signes occidentaux</div><div id="m-signes"></div></div>
+        <div class="pcard"><div class="lbl">Chemins / nombres</div><div id="m-nombres"></div></div>
+        <div class="pcard"><div class="lbl">Autres traditions</div><div id="m-autres"></div></div>
+        <div class="pcard"><div class="lbl">Une date qui matche</div><div class="date" id="m-date"></div>
+          <div class="small">parmi beaucoup d'autres possibles</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const $ = id => document.getElementById(id);
+
+function switchTab(t){
+  $('tab-desc').classList.toggle('on', t==='desc');
+  $('tab-mont').classList.toggle('on', t==='mont');
+  $('pan-desc').style.display = t==='desc'?'block':'none';
+  $('pan-mont').style.display = t==='mont'?'block':'none';
+}
+
+const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
+
+const PRENOMS=["Aria","Kael","Nora","Soren","Lina","Milo","Eva","Théo","Yuna","Dario","Inès",
+  "Rafael","Sasha","Noé","Léa","Adam","Maya","Ivan","Zoé","Hugo","Salma","Esteban","Nina","Tariq"];
+const NOMS=["Solis","Vance","Moreau","Okafor","Tanaka","Reyes","Volkov","Nahar","Dubois","Khan",
+  "Rossi","Bauer","Costa","Lindqvist","Diallo","Ferraro","Petit","Adeyemi"];
+const pick = a => a[Math.floor(Math.random()*a.length)];
+
+function aleatoire(){
+  // date entre 1950 et 2010, heure pleine au hasard, nom tiré au sort → puis génère
+  const start=Date.UTC(1950,0,1), end=Date.UTC(2010,11,31);
+  const d=new Date(start+Math.random()*(end-start));
+  $('date').value=d.toISOString().slice(0,10);
+  $('heure').value=String(Math.floor(Math.random()*24)).padStart(2,'0')+':'+
+                   String(Math.floor(Math.random()*60)).padStart(2,'0');
+  $('prenoms').value=pick(PRENOMS);
+  $('nom').value=pick(NOMS);
+  portrait();
+}
+
+async function geocoder(){
+  const v=$('ville').value.trim(), info=$('geo-info'), btn=$('btn-geo');
+  if(!v){ info.textContent='Indique une ville.'; return; }
+  btn.disabled=true; info.textContent='📍 Recherche…';
+  try{
+    const r=await fetch('/geo?ville='+encodeURIComponent(v));
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    const d=await r.json();
+    $('lat').value=d.latitude.toFixed(4); $('lon').value=d.longitude.toFixed(4);
+    info.innerHTML='📍 <b>'+esc(d.ville)+'</b> — coordonnées remplies. Vérifie le décalage UTC '+
+      '(France : +1 en hiver, +2 en heure d’été) pour un Ascendant exact.';
+  }catch(e){ info.textContent='⚠ '+e.message+' — tu peux saisir les coordonnées à la main.'; }
+  finally{ btn.disabled=false; }
+}
+
+async function portrait(){
+  const btn=$('btn-desc'), err=$('desc-err'); err.textContent='';
+  btn.disabled=true; btn.textContent='✨ Calcul des traditions…';
+  try{
+    const body={prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
+      heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
+      utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+    const r=await fetch('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    renderPortrait(await r.json());
+  }catch(e){ err.textContent='⚠ '+e.message; $('desc-out').style.display='none'; }
+  finally{ btn.disabled=false; btn.textContent='✨ Générer le portrait'; }
+}
+
+let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio
+
+// Envoie le personnage courant à l'app parente (Oria) si on est en iframe.
+// L'empreinte (valeurs + sens) part telle quelle : la brique images y repère les
+// éléments connus (feu, solaire, lunaire…) pour teinter le portrait illustré.
+function envoyerStudio(){
+  if(!_dernierPortrait) return;
+  const d=_dernierPortrait, p=d.portrait||{};
+  const nom=((($('prenoms').value||'').trim()+' '+($('nom').value||'').trim()).trim())||'Personnage';
+  const empreinte=(d.empreinte||[]).map(e=>[e.valeur,e.sens].filter(Boolean).join(' ')).filter(Boolean);
+  window.parent.postMessage({type:'personnage:export', perso:{
+    nom, role:'', description:(p.recit||'').replace(/\*\*/g,'').slice(0,400),
+    archetype:p.archetype||'', empreinte, source:'personnages'
+  }}, '*');
+  const b=$('btn-studio'); const ini=b.textContent;
+  b.textContent='✅ Envoyé'; b.disabled=true;
+  setTimeout(()=>{b.textContent=ini; b.disabled=false;}, 2500);
+}
+
+function renderPortrait(d){
+  _dernierPortrait=d;
+  const t=d.traditions, p=d.portrait;
+  $('o-arche').textContent = p.archetype;
+  $('o-sub').textContent = 'Forces : '+p.forces.join(' · ')+' — à travailler : '+p.faiblesse;
+  // stats triées décroissantes
+  const ents = Object.entries(p.stats).sort((a,b)=>b[1]-a[1]);
+  $('o-stats').innerHTML = ents.map(([k,v],i)=>{
+    const cls = i===0?'top':(k===p.faiblesse?'low':'');
+    return `<div class="stat ${cls}"><span class="nm">${esc(k)}</span>`+
+      `<span class="bar"><span class="fill" style="width:${v}%"></span></span>`+
+      `<span class="vv">${v}</span></div>`;
+  }).join('');
+  const g=p.pierre_equilibrage;
+  $('o-gem').innerHTML = `<span class="ic">💎</span><div>Cristal allié : <b>${esc(g.pierre)}</b> — `+
+    `${esc(g.vertu)} (compense ${esc(g.compense)}).</div>`;
+  // empreinte expliquée (label + valeur + sens), fournie par le backend
+  $('o-chips').innerHTML = (d.empreinte||[]).map(e=>
+    `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}</div>`+
+    `<div class="ecv"><b>${esc(e.valeur)}</b></div>`+
+    `<div class="ecs">${esc(e.sens)}</div></div>`).join('');
+  // recit (markdown gras → <b>)
+  $('o-recit').innerHTML = esc(p.recit).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/_(.+?)_/g,'<em>$1</em>');
+  // Bouton « Envoyer au Studio » : utile seulement dans l'iframe Oria (sinon inerte mais inoffensif).
+  $('btn-studio').style.display = (window.parent !== window) ? 'inline-block' : 'none';
+  $('desc-out').style.display='block';
+}
+
+async function inverse(){
+  const btn=$('btn-mont'), err=$('mont-err'); err.textContent='';
+  btn.disabled=true; btn.textContent='🔮 Recherche… (IA si besoin)';
+  try{
+    const r=await fetch('/holistique/recherche-inverse',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({description:$('descr').value, combien:3})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    renderInverse(await r.json());
+  }catch(e){ err.textContent='⚠ '+e.message; $('mont-out').style.display='none'; }
+  finally{ btn.disabled=false; btn.textContent='🔮 Trouver ses signes'; }
+}
+
+function renderInverse(d){
+  if(!d.signes || !d.signes.length){ $('mont-err').textContent='⚠ '+(d.note||'Aucun trait reconnu.');
+    $('mont-out').style.display='none'; return; }
+  $('m-arche').textContent = d.archetype;
+  const llmBadge = d.source_analyse==='llm'
+    ? `<span class="chip" style="border-color:#234a3a;color:var(--ok)">🤖 analysé par IA</span>` : '';
+  $('m-cible').innerHTML = llmBadge + Object.entries(d.cible).map(([k,v])=>
+    `<span class="chip"><b>${esc(k)}</b> ×${v}</span>`).join('');
+  $('m-signes').innerHTML = d.signes.map(s=>
+    `<div class="big">${esc(s.signe)}</div><div class="small">${esc(s.plage)} · ${esc(s.element)}</div>`).join('<div style="height:8px"></div>');
+  $('m-nombres').innerHTML = d.nombres.map(n=>
+    `<div class="big">${esc(n.nombre)}</div>`).join('<div style="height:8px"></div>') || '<div class="small">—</div>';
+  const a=d.autres_traditions||{};
+  $('m-autres').innerHTML = [['Égypte',a.egyptien],['Celte',a.celte],['Totem',a.amerindien],['Maya',a.maya]]
+    .filter(x=>x[1]).map(x=>`<div class="small"><b style="color:var(--accent)">${esc(x[0])}</b> · ${esc(x[1])}</div>`).join('');
+  $('m-date').textContent = d.exemple_date || '—';
+  $('mont-out').style.display='block';
+}
+</script>
+</body>
+</html>

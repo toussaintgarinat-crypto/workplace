@@ -4,7 +4,7 @@ import NotificationBell from './NotificationBell.jsx'
 export default function WorldSidebar({
   worlds, worldActifId, moi,
   onSelectWorld, onCreerWorld, onDeconnexion, onNetwork, onSettings,
-  onDiscovery, onMyDocs, onMap, onAgents, onIPCRA, onFeed, onConductor,
+  onDiscovery, onMyDocs, onMap, onAgents, onCreations, onIPCRA, onFeed, onConductor,
   vueActive,
 }) {
   const { t } = useTranslation()
@@ -90,6 +90,15 @@ export default function WorldSidebar({
       >
         <span>🤖</span>
         <span className="world-btn-tooltip">{t('sidebar.agentsAI')}</span>
+      </button>
+
+      <button
+        className={`world-btn nav-btn ${vueActive === 'creations' ? 'actif' : ''}`}
+        onClick={onCreations}
+        title="Créations (Studio, personnages, images…)"
+      >
+        <span>🎨</span>
+        <span className="world-btn-tooltip">Créations</span>
       </button>
 
       <button

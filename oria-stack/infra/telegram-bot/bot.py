@@ -5,7 +5,7 @@ Variables d'environnement requises :
   TELEGRAM_BOT_TOKEN          Token du bot BotFather
   TELEGRAM_ADMIN_CHAT_ID      Chat ID autorisé pour /drill et /silence
   ASSISTANT_URL               Base URL du service assistant (sans port)
-  MEMPALACE_URL               Base URL de MemPalace (sans port)
+  MEMOIRE_URL                 Base URL de la brique Mémoire (avec port, ex. http://memoire:5600)
   ORIA_URL                    Base URL d'Oria (sans port)
   ONCALL_NAME                 Nom de l'astreinte (défaut: Toussaint)
   RUNBOOKS_DIR                Répertoire des runbooks (défaut: /app/runbooks)
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 ASSISTANT_URL = os.getenv("ASSISTANT_URL", "http://localhost")
-MEMPALACE_URL = os.getenv("MEMPALACE_URL", "http://localhost")
+MEMOIRE_URL = os.getenv("MEMOIRE_URL", "http://localhost:5600")
 ORIA_URL = os.getenv("ORIA_URL", "http://localhost")
 ONCALL_NAME = os.getenv("ONCALL_NAME", "Toussaint")
 RUNBOOKS_DIR = Path(os.getenv("RUNBOOKS_DIR", "/app/runbooks"))
@@ -50,7 +50,7 @@ LAST_UPDATE_TS: float = 0.0  # 0 = aucun update reçu pour l'instant
 
 SERVICES = [
     ("assistant", f"{ASSISTANT_URL}:8000/health"),
-    ("mempalace", f"{MEMPALACE_URL}:8100/health"),
+    ("memoire", f"{MEMOIRE_URL}/sante"),
     ("oria", f"{ORIA_URL}:8200/health"),
     ("qdrant", "http://localhost:6334/"),
     ("minio", "http://localhost:9100/minio/health/live"),
@@ -176,9 +176,9 @@ async def cmd_degraded(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     _log_command(update, "degraded")
     await update.message.reply_text("⏳ Récupération du mode dégradé…")
 
+    # La brique memoire n'expose pas /admin/degraded (contrat simple) → non listée ici.
     targets = [
         ("assistant", f"{ASSISTANT_URL}:8000/admin/degraded"),
-        ("mempalace", f"{MEMPALACE_URL}:8100/admin/degraded"),
         ("oria", f"{ORIA_URL}:8200/admin/degraded"),
     ]
 

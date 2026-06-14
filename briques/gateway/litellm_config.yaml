@@ -142,6 +142,93 @@ model_list:
       # context: 256000
   # AUTO-FREE-MODELS-END
 
+  # --- OpenCode Go ------------------------------------------------------------
+  # Abonnement « Go » (forfait en $-équivalent, distinct du crédit « Zen balance »).
+  # ⚠️ Endpoint DÉDIÉ /zen/go/v1 : le simple /zen/v1 facture le solde Zen → 401 si
+  # vide. Préfixe `go/` (et NON `free/`) : ces modèles consomment le forfait, donc le
+  # routeur économe (routage.py) ne les choisit pas automatiquement. Clé dans .env
+  # (OPENCODE_ZEN_API_KEY). Liste vérifiée via /zen/go/v1/models le 2026-06-14.
+  - model_name: go/deepseek-v4-flash
+    litellm_params:
+      model: openai/deepseek-v4-flash
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/deepseek-v4-pro
+    litellm_params:
+      model: openai/deepseek-v4-pro
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/glm-5.1
+    litellm_params:
+      model: openai/glm-5.1
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/glm-5
+    litellm_params:
+      model: openai/glm-5
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/kimi-k2.7-code
+    litellm_params:
+      model: openai/kimi-k2.7-code
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/kimi-k2.6
+    litellm_params:
+      model: openai/kimi-k2.6
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/kimi-k2.5
+    litellm_params:
+      model: openai/kimi-k2.5
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/qwen3.7-plus
+    litellm_params:
+      model: openai/qwen3.7-plus
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/qwen3.6-plus
+    litellm_params:
+      model: openai/qwen3.6-plus
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/qwen3.5-plus
+    litellm_params:
+      model: openai/qwen3.5-plus
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/minimax-m3
+    litellm_params:
+      model: openai/minimax-m3
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/minimax-m2.7
+    litellm_params:
+      model: openai/minimax-m2.7
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/minimax-m2.5
+    litellm_params:
+      model: openai/minimax-m2.5
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/mimo-v2.5-pro
+    litellm_params:
+      model: openai/mimo-v2.5-pro
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/mimo-v2.5
+    litellm_params:
+      model: openai/mimo-v2.5
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+  - model_name: go/hy3-preview
+    litellm_params:
+      model: openai/hy3-preview
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+      api_base: https://opencode.ai/zen/go/v1
+
   # Ollama local — OLLAMA_URL = IP du serveur Ollama (NetBird, LAN, ou localhost)
   # Ces entrées sont ignorées si OLLAMA_URL est vide
   - model_name: ollama/llama3.2

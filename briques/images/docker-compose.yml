@@ -1,0 +1,36 @@
+services:
+  images:
+    build: .
+    container_name: workplace_images
+    image: workplace/images:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5950:5950"
+    environment:
+      # Moteur d'images. On garde les DEUX options ouvertes : COMFY_URL accepte une LISTE
+      # d'URLs ComfyUI séparées par virgule, essayées dans l'ORDRE (1re joignable gagne).
+      #   • GPU distant (rapide)  : http://mon-gpu.exemple:8188
+      #   • ComfyUI local (ce Mac, lent) : http://host.docker.internal:8188
+      # Exemple « distant d'abord, local en repli » :
+      #   COMFY_URL=http://mon-gpu.exemple:8188,http://host.docker.internal:8188
+      # VIDE = mode placeholder honnête (aucune fausse image).
+      - COMFY_URL=${COMFY_URL:-}
+      - COMFY_CKPT=${COMFY_CKPT:-sd_xl_base_1.0.safetensors}
+      # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo).
+      - API_KEYS=
+      - IMAGES_DIR=/data/images
+    volumes:
+      - images_data:/data/images           # images produites (PNG rapatriés / placeholders)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5950/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  images_data:

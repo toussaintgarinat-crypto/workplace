@@ -129,6 +129,14 @@ services:
       MATRIX_HS_TOKEN: ${MATRIX_HS_TOKEN:?Définir MATRIX_HS_TOKEN dans .env (openssl rand -hex 32)}
       FORGE_TOKEN: ${FORGE_TOKEN:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Clé de la Gateway LLM Workplace — utilisée par le pont agents (forge_provider="gateway").
+      GATEWAY_KEY: ${GATEWAY_KEY:-}
+      # Mémoire : brique Workplace (port 5600 sur l'hôte). Vide → mémoire désactivée.
+      # Remplace l'ancien MemPalace (palace 8100 + Qdrant local), décommissionné.
+      MEMOIRE_URL: ${MEMOIRE_URL:-http://host.docker.internal:5600}
+    # host.docker.internal résout l'hôte (où tourne la brique 5600) ; explicite pour Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -143,7 +151,12 @@ services:
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    # --reload : le code backend est monté (./backend:/app), donc les modifs sont
+    # rechargées à chaud en dev (plus besoin de `docker compose restart backend`).
+    # --reload : recharge à chaud (code monté). --timeout-graceful-shutdown borne
+    # l'attente de fermeture des requêtes en cours (les longs appels LLM), sinon un
+    # rechargement peut geler le backend tant qu'une requête n'est pas finie.
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app --timeout-graceful-shutdown 5
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
       interval: 10s

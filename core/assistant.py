@@ -24,6 +24,7 @@ import langue as langue_mod
 import llm_pipeline
 import outils
 import personas
+import identite
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,18 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     conf = config_assistant.charger()
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
                + "\n- " + langue_mod.consigne_reponse(conf.get("langue")))
-    historique = ([{"role": "system", "content": systeme},
-                   {"role": "system", "content": contexte_date}] + list(messages))
+    amorce = [{"role": "system", "content": systeme},
+              {"role": "system", "content": contexte_date}]
+    # Qui est l'utilisateur : digest COMPACT dérivé de sa fiche d'identité (S48) —
+    # prénom, âge, anniversaire, signes… Volontairement court (coût LLM, cf. S138) ;
+    # vide si aucune fiche. C'est ce qui fait enfin « parler » la page « se présenter ».
+    try:
+        digest = identite.resume_texte(identite.charger_fiche())
+    except Exception:  # noqa: BLE001 — l'identité ne doit jamais casser une conversation
+        digest = ""
+    if digest:
+        amorce.append({"role": "system", "content": digest})
+    historique = amorce + list(messages)
     # Ordre effectif : cascade auto (gratuits → repli payant) ou chaîne manuelle.
     modeles = await config_assistant.chaine_modeles(conf)
     if not modeles:  # garde-fou : ne jamais partir sans modèle

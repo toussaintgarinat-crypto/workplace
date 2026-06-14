@@ -69,9 +69,26 @@ distribution (voix figées), multilingue (traduction au rendu, replis honnêtes)
 images (URL absolue, repli si brique absente), **composition personnages (casting/distribution
 délégués à 5900, repli interne honnête, choix de `source`)**.
 
+## Migration depuis Oria (S54)
+
+L'ancien `atelier_router` d'Oria a été **décommissionné** (retiré du backend et du front ;
+le Studio n'existe plus que comme cette brique, embarquée en iframe par le Hub Créations).
+Les séries déjà écrites dans Oria — fichiers JSON du volume `uploads_data`, sous
+`/app/uploads/ateliers` — se reversent dans le volume de la brique avec `migrer.py` (schéma
+identique, simplement re-normalisé) :
+
+```bash
+# Le volume Oria monté en lecture seule, celui de la brique en écriture :
+docker run --rm \
+  -v oria_uploads_data:/oria-uploads:ro \
+  -v studio_data:/data \
+  briques-studio python migrer.py /oria-uploads/ateliers
+```
+
+La migration est **idempotente** et **non destructive** : une série déjà présente dans la
+brique est ignorée (passer `--ecraser` pour forcer), et rien n'est supprimé côté source.
+
 ## Hors-périmètre
 
-- Front servi par la brique + intégration iframe Oria → **S53**.
-- Migration des séries JSON existantes d'Oria + décommission de l'`atelier_router` → **S54**.
 - Partition des séries **par tenant** (la clé API identifie le créateur mais ne cloisonne
   pas encore le stockage).
