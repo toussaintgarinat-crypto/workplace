@@ -22,18 +22,28 @@ import outils  # noqa: E402
 NOMS = {o["function"]["name"] for o in outils.OUTILS}
 
 
-def test_les_six_outils_studio_declares():
+def test_outils_studio_declares():
     attendus = {
+        # incrément 1
         "studio_series_lister", "studio_serie_lire", "studio_personnages_lister",
         "studio_serie_creer", "studio_episode_produire", "studio_express",
+        # incrément 2 : bible fine, distribution/voix, audio
+        "studio_voix_lister", "studio_bible_proposer", "studio_distribution_proposer",
+        "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
     }
     assert attendus <= NOMS
 
 
 def test_actions_studio_gardees():
-    assert {"studio_serie_creer", "studio_episode_produire", "studio_express"} <= outils.OUTILS_ACTION
-    # Les lectures ne sont PAS gardées.
-    assert "studio_series_lister" not in outils.OUTILS_ACTION
+    gardees = {
+        "studio_serie_creer", "studio_episode_produire", "studio_express",
+        "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
+    }
+    assert gardees <= outils.OUTILS_ACTION
+    # Les lectures et les PROPOSITIONS (non destructives) ne sont PAS gardées.
+    for libre in ("studio_series_lister", "studio_voix_lister",
+                  "studio_bible_proposer", "studio_distribution_proposer"):
+        assert libre not in outils.OUTILS_ACTION
 
 
 # ── Helper _studio_appel ─────────────────────────────────────────────────────
