@@ -38,6 +38,17 @@ GENERATEUR_URL_PUBLIQUE = os.environ.get("GENERATEUR_URL_PUBLIQUE", "http://loca
 # elle-même (realm `oria`), pas dans le Cœur.
 FORGE_UI_URL = os.environ.get("FORGE_UI_URL", "http://localhost:3000")
 
+# URLs publiques des briques créatives (vues depuis le NAVIGATEUR), reprises par l'onglet
+# « Créations » du dashboard dans des iframes. Le Hub Créations a migré d'Oria vers le Cœur :
+# le Studio (brique autonome, port 6060) et l'atelier Personnages (port 5900) sont désormais
+# embarqués ici. Port 6060 et pas 6000 : 6000 = X11, banni par Chrome (ERR_UNSAFE_PORT).
+STUDIO_UI_URL = os.environ.get("STUDIO_UI_URL", "http://localhost:6060/atelier")
+PERSONNAGES_UI_URL = os.environ.get("PERSONNAGES_UI_URL", "http://localhost:5900/atelier")
+# « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
+# définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
+# ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
+STUDIO_KEY = os.environ.get("STUDIO_KEY", "")
+
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -201,6 +212,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .empty { color: #475569; font-size: 0.85rem; padding: 30px; text-align: center; }
   .btn.ghost { background: transparent; border: 1px solid #3d4468; color: #94a3b8; }
   .btn.ghost:hover { background: #1e2535; color: #e2e8f0; }
+  .creations-tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
+  .creation-tuile { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 22px; background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px; color: #e2e8f0; cursor: pointer; transition: border-color 0.2s, transform 0.12s; }
+  .creation-tuile:hover { border-color: #3d4468; transform: translateY(-2px); }
+  .creation-tuile.creation-bientot { opacity: 0.55; cursor: default; }
+  .creation-tuile.creation-bientot:hover { border-color: #2d3148; transform: none; }
+  .creation-emoji { font-size: 26px; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #1e2535; }
+  .creation-titre { font-size: 1.05rem; font-weight: 600; }
+  .creation-desc { font-size: 0.82rem; line-height: 1.5; color: #94a3b8; }
+  .creation-badge { font-size: 0.68rem; color: #7c83ff; border: 1px solid #3d4468; border-radius: 999px; padding: 2px 10px; }
+  .creation-badge-bientot { color: #94a3b8; }
   /* Cerveau de l'assistant */
   .cerveau { margin-bottom: 16px; }
   .cerveau h3 { display: flex; align-items: center; gap: 10px; }
@@ -225,6 +246,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="usine" onclick="switchVue('usine')">Usine à apps</button>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')">Assistant</button>
       <button class="tab" data-vue="forge" onclick="switchVue('forge')">Forge</button>
+      <button class="tab" data-vue="creations" onclick="switchVue('creations')">Créations</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
@@ -421,6 +443,51 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- VUE CRÉATIONS — Hub des briques créatives (Studio 6060, Personnages 5900), migré d'Oria -->
+  <div class="view" id="vue-creations">
+    <!-- Grille de tuiles (état par défaut) -->
+    <div id="creations-grille">
+      <div class="topbar">
+        <h2>Créations — les outils créatifs de Workplace, réunis ici</h2>
+      </div>
+      <div class="creations-tuiles">
+        <button class="creation-tuile" onclick="ouvrirCreation('__STUDIO_UI_URL__', 'Studio audio-séries')">
+          <span class="creation-emoji">🎬</span>
+          <span class="creation-titre">Studio audio-séries</span>
+          <span class="creation-desc">Écrire des séries, distribuer des voix, produire des épisodes audio.</span>
+          <span class="creation-badge">Brique · port 6060</span>
+        </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__PERSONNAGES_UI_URL__', 'Atelier de personnages')">
+          <span class="creation-emoji">🎭</span>
+          <span class="creation-titre">Atelier de personnages</span>
+          <span class="creation-desc">Générer un personnage holistique (numérologie, astro, traditions) ou retrouver les signes d'un caractère.</span>
+          <span class="creation-badge">Brique · port 5900</span>
+        </button>
+        <button class="creation-tuile creation-bientot" disabled>
+          <span class="creation-emoji">🖼️</span>
+          <span class="creation-titre">Images &amp; Vidéo</span>
+          <span class="creation-desc">Génération d'images et de vidéo — brique à venir.</span>
+          <span class="creation-badge creation-badge-bientot">Bientôt</span>
+        </button>
+      </div>
+    </div>
+    <!-- Cadre plein écran (au clic sur une tuile) -->
+    <div id="creations-cadre" style="display:none">
+      <div class="topbar">
+        <button class="btn ghost" onclick="retourCreations()">← Créations</button>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="creation-cadre-titre" style="font-size:0.85rem;color:#94a3b8"></span>
+          <a class="btn ghost" id="creation-open-tab" href="#" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:hidden">
+        <iframe id="creation-iframe" title="Création"
+          style="width:100%;height:78vh;border:0;display:block;background:#fff"
+          allow="clipboard-read; clipboard-write; microphone"></iframe>
+      </div>
+    </div>
+  </div>
+
   <div class="view" id="vue-agenda">
     <div class="topbar">
       <h2>Agenda — tes rendez-vous (l'assistant les gère en langage naturel)</h2>
@@ -509,6 +576,25 @@ function switchVue(v) {
   if (v === 'agenda') chargerAgenda();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
+}
+
+// ── Créations (Hub des briques créatives, migré d'Oria) ─────────────────────────
+// Chargement paresseux : on ne pose le src de l'iframe qu'au clic sur une tuile, pour
+// ne pas réveiller les briques tant que l'utilisateur n'ouvre pas un outil.
+function ouvrirCreation(url, titre) {
+  const f = document.getElementById('creation-iframe');
+  if (f) f.src = url;
+  document.getElementById('creation-cadre-titre').textContent = titre;
+  document.getElementById('creation-open-tab').href = url;
+  document.getElementById('creations-grille').style.display = 'none';
+  document.getElementById('creations-cadre').style.display = 'block';
+}
+function retourCreations() {
+  // On vide le src pour libérer la brique (et couper micro/audio éventuels).
+  const f = document.getElementById('creation-iframe');
+  if (f) f.src = 'about:blank';
+  document.getElementById('creations-cadre').style.display = 'none';
+  document.getElementById('creations-grille').style.display = 'block';
 }
 
 // ── Forge (SPA intégrée, S19) ───────────────────────────────────────────────────
@@ -1714,9 +1800,20 @@ async def briefing_dernier():
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)
 async def dashboard():
     """Interface visuelle du registre de briques."""
-    # __FORGE_UI_URL__ : injecté au service (pas figé dans le template) pour que
-    # l'iframe de l'onglet Forge pointe sur la bonne origine selon l'environnement.
-    return HTMLResponse(content=DASHBOARD_HTML.replace("__FORGE_UI_URL__", FORGE_UI_URL))
+    # __FORGE_UI_URL__ / __STUDIO_UI_URL__ / __PERSONNAGES_UI_URL__ : injectés au service
+    # (pas figés dans le template) pour que les iframes (Forge, Hub Créations) pointent sur
+    # la bonne origine selon l'environnement.
+    # Si un « compte Studio » (STUDIO_KEY) est configuré, on transporte la clé dans l'URL de
+    # l'iframe (?api_key=) pour que le front Studio s'authentifie. Cockpit mono-opérateur :
+    # la clé EST l'identité du propriétaire (même frontière de confiance que /dashboard).
+    studio_ui = STUDIO_UI_URL
+    if STUDIO_KEY:
+        sep = "&" if "?" in studio_ui else "?"
+        studio_ui = f"{studio_ui}{sep}api_key={STUDIO_KEY}"
+    return HTMLResponse(content=DASHBOARD_HTML
+        .replace("__FORGE_UI_URL__", FORGE_UI_URL)
+        .replace("__STUDIO_UI_URL__", studio_ui)
+        .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL))
 
 
 @app.get("/sante-globale", tags=["système"])

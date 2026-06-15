@@ -17,6 +17,7 @@ Familles :
 
 import asyncio
 import json
+import os
 import uuid
 
 import httpx
@@ -311,6 +312,49 @@ OUTILS: list[dict] = [
             "id": {"type": "string", "description": "Id de la facture (via forge_factures_lister)."},
             "confirme": {"type": "boolean"},
         }, ["id"])}},
+
+    # — STUDIO (brique audio-séries 6060 ; lecture + production gardée) —
+    {"type": "function", "function": {
+        "name": "studio_series_lister",
+        "description": "Liste les séries audio du Studio (titre, langue, nb de chapitres/personnages/tomes). À utiliser pour « mes séries », « qu'est-ce qu'il y a dans le studio ». Lecture seule (aucune confirmation).",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "studio_serie_lire",
+        "description": "Détail d'une série du Studio : bible (univers, personnages, intrigue…), épisodes produits, réglages. Récupère d'abord l'id via studio_series_lister. Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+        }, ["serie_id"])}},
+    {"type": "function", "function": {
+        "name": "studio_personnages_lister",
+        "description": "Liste la distribution (personnages + voix figées) d'une série du Studio. Récupère l'id via studio_series_lister. Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+        }, ["serie_id"])}},
+    {"type": "function", "function": {
+        "name": "studio_serie_creer",
+        "description": "Crée une nouvelle série audio dans le Studio. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "titre": {"type": "string", "description": "Titre de la série."},
+            "idee": {"type": "string", "description": "Idée / genre de départ (optionnel)."},
+            "langue": {"type": "string", "description": "Langue de travail (ex. fr, en, es). Défaut fr."},
+            "public_cible": {"type": "string", "description": "Public visé (optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["titre"])}},
+    {"type": "function", "function": {
+        "name": "studio_episode_produire",
+        "description": "Produit l'épisode SUIVANT d'une série (Scénariste + Script Doctor), à partir de la bible existante. Récupère l'id via studio_series_lister. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "confirme": {"type": "boolean"},
+        }, ["serie_id"])}},
+    {"type": "function", "function": {
+        "name": "studio_express",
+        "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. Idéal pour « fais-moi un épisode de telle série ». ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "idee": {"type": "string", "description": "Idée/orientation pour l'épisode (optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["serie_id"])}},
 ]
 
 OUTILS_ACTION = {
@@ -321,6 +365,7 @@ OUTILS_ACTION = {
     "forge_facture_creer", "forge_facture_statut", "forge_facture_transformer",
     "forge_crm_creer", "forge_crm_modifier", "forge_paiement_lien",
     "forge_relances_envoyer", "forge_facture_envoyer",
+    "studio_serie_creer", "studio_episode_produire", "studio_express",
 }
 
 
@@ -631,6 +676,47 @@ async def executer(nom: str, args: dict, registre) -> str:
                 return await _forge_appel(client, registre, "POST", f"/facturation/{fid}/envoyer",
                                           timeout=30)
 
+            # — STUDIO (audio-séries) —
+            if nom == "studio_series_lister":
+                return await _studio_appel(client, registre, "GET", "/series", timeout=15)
+
+            if nom == "studio_serie_lire":
+                sid = args.get("serie_id", "")
+                return await _studio_appel(client, registre, "GET", f"/series/{sid}", timeout=15)
+
+            if nom == "studio_personnages_lister":
+                sid = args.get("serie_id", "")
+                return await _studio_appel(client, registre, "GET", f"/series/{sid}/personnages",
+                                           timeout=15)
+
+            if nom == "studio_serie_creer":
+                if not args.get("confirme"):
+                    return _confirmation("créer une série dans le Studio", args.get("titre", ""))
+                charge = {"titre": args.get("titre", "")}
+                if args.get("idee"):
+                    charge["idee"] = args["idee"]
+                if args.get("langue"):
+                    charge["langue"] = args["langue"]
+                if args.get("public_cible"):
+                    charge["cible"] = args["public_cible"]   # nom de champ côté brique
+                return await _studio_appel(client, registre, "POST", "/series", charge=charge,
+                                           timeout=30)
+
+            if nom == "studio_episode_produire":
+                sid = args.get("serie_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("produire l'épisode suivant de la série", sid)
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/episode",
+                                           charge={}, timeout=120)
+
+            if nom == "studio_express":
+                sid = args.get("serie_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("produire un épisode express (bible auto) de la série", sid)
+                charge = {"idee": args["idee"]} if args.get("idee") else {}
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/express",
+                                           charge=charge, timeout=120)
+
             return f"Outil inconnu : {nom}"
 
     except ValueError as e:
@@ -720,6 +806,45 @@ async def _forge_appel(client: httpx.AsyncClient, registre, methode: str, chemin
         return json.dumps({"ok": False,
                            "message": f"Forge n'a pas pu traiter la demande (HTTP {r.status_code}) : {detail}"},
                           ensure_ascii=False)
+    return json.dumps(r.json(), ensure_ascii=False)
+
+
+async def _studio_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
+                        charge: dict | None = None, params: dict | None = None,
+                        timeout: float = 60) -> str:
+    """Appelle la brique Studio (audio-séries) et renvoie une chaîne pour le LLM.
+
+    S'authentifie avec le « compte Studio » = la clé de service `STUDIO_KEY` (en-tête
+    `X-API-Key`), si elle est configurée ; sinon la brique est en mode ouvert. Dégrade
+    proprement (jamais de stacktrace) : brique hors ligne, 401 ou erreur → message clair.
+    La production d'épisode appelle des LLM : timeout généreux par défaut.
+    """
+    base = _base(registre, "studio")
+    cle = os.environ.get("STUDIO_KEY", "").strip()
+    entetes = {"X-API-Key": cle} if cle else None
+    try:
+        r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
+                                  headers=entetes, timeout=timeout)
+    except httpx.HTTPError:
+        return json.dumps({"ok": False,
+                           "message": "La brique Studio est injoignable (hors ligne ou en démarrage)."},
+                          ensure_ascii=False)
+    if r.status_code == 401:
+        return json.dumps({"ok": False,
+                           "message": "Le Studio a refusé l'accès (clé de service absente ou invalide). "
+                                      "Vérifie que STUDIO_KEY est bien la même côté noyau et côté brique."},
+                          ensure_ascii=False)
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except Exception:  # noqa: BLE001
+            detail = r.text[:200]
+        return json.dumps({"ok": False,
+                           "message": f"Le Studio n'a pas pu traiter la demande (HTTP {r.status_code}) : {detail}"},
+                          ensure_ascii=False)
+    # 204 (suppression) ou corps vide → succès sans payload.
+    if r.status_code == 204 or not r.content:
+        return json.dumps({"ok": True}, ensure_ascii=False)
     return json.dumps(r.json(), ensure_ascii=False)
 
 
