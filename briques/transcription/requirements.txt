@@ -1,0 +1,11 @@
+# Brique transcription — dépendances minces et épinglées.
+# Le moteur SOUVERAIN local = faster-whisper (CPU/Metal). Les fournisseurs hébergés
+# (OpenAI/Deepgram/AssemblyAI/Gateway) ne demandent que httpx. La diarisation pyannote
+# est OPTIONNELLE (lourde, GPU conseillé) → non incluse par défaut : best-effort si présente.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-multipart==0.0.20
+faster-whisper==1.1.0
+requests==2.32.3
+
