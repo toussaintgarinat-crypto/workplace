@@ -1,33 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
-// Hub « Créations » — regroupe les outils créatifs de Workplace.
-// Toutes les tuiles sont désormais des BRIQUES autonomes (ex. Studio 6060, personnages 5900)
-// affichées en iframe DANS Oria. Ajouter une brique créative = ajouter une tuile dans TUILES
-// (extensible par design).
+// Hub « Créations » d'Oria — outils créatifs (briques autonomes) affichés en iframe.
+// Le Studio audio-séries a MIGRÉ d'Oria vers le dashboard du Cœur (onglet « Créations ») :
+// il n'apparaît donc plus ici. Ajouter une brique créative = ajouter une tuile dans TUILES.
 
 // URL des briques externes : surchargée par env (déploiement), sinon localhost (usage perso).
 const URL_PERSONNAGES =
   import.meta.env.VITE_PERSONNAGES_URL || 'http://localhost:5900/atelier'
-// S53 : le Studio est une BRIQUE autonome (port 6060), embarquée en iframe comme
-// Personnages/Images. Port 6060 et pas 6000 : 6000 = X11, sur la liste des ports interdits
-// de Chrome → l'iframe échouerait en ERR_UNSAFE_PORT.
-const URL_STUDIO =
-  import.meta.env.VITE_STUDIO_URL || 'http://localhost:6060/atelier'
-// S54 : la synergie Personnages→Studio (importer un perso dans une série) tape désormais
-// l'API de la brique studio directement, l'ancien `atelier_router` d'Oria étant décommissionné.
-const STUDIO_API =
-  import.meta.env.VITE_STUDIO_API || 'http://localhost:6060'
 
 const TUILES = [
-  {
-    id: 'studio',
-    emoji: '🎬',
-    titre: 'Studio audio-séries',
-    desc: 'Écrire des séries, distribuer des voix, produire des épisodes audio.',
-    type: 'externe',        // brique studio (6060) en iframe
-    url: URL_STUDIO,
-    accent: '#C9A227',
-  },
   {
     id: 'personnages',
     emoji: '🎭',
@@ -47,94 +28,14 @@ const TUILES = [
   },
 ]
 
-export default function CreationsHub({ world }) {
+export default function CreationsHub() {
   // Quand on ouvre une brique externe, on l'affiche en plein cadre (iframe) avec un retour.
   const [externe, setExterne] = useState(null) // { titre, url } | null
-  // Synergie : un personnage poussé par l'iframe Personnages, en attente d'import dans une série.
-  const [recu, setRecu] = useState(null)        // { nom, archetype, empreinte, … } | null
-  const [series, setSeries] = useState([])      // séries du monde (cibles d'import)
-  const [importVers, setImportVers] = useState('')
-  const [importEtat, setImportEtat] = useState('') // '' | 'en_cours' | 'ok' | 'erreur'
-
-  // Pont postMessage : l'atelier Personnages (iframe) envoie un personnage → on propose
-  // de l'importer comme rôle d'une série du Studio. On ne réagit qu'à NOTRE type de message.
-  useEffect(() => {
-    function onMessage(e) {
-      const d = e.data
-      if (!d || d.type !== 'personnage:export' || !d.perso) return
-      setRecu(d.perso); setImportEtat(''); setImportVers('')
-    }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [])
-
-  // Charge les séries du monde quand un personnage arrive (pour choisir la cible).
-  // → API de la brique studio (6060) en direct ; filtrée par monde côté brique.
-  useEffect(() => {
-    if (!recu || !world?.id) return
-    fetch(`${STUDIO_API}/series?world_id=${world.id}`)
-      .then(r => (r.ok ? r.json() : []))
-      .then(r => {
-        const liste = Array.isArray(r) ? r : []
-        setSeries(liste)
-        setImportVers(liste[0]?.id || '')
-      })
-      .catch(() => { setSeries([]); setImportVers('') })
-  }, [recu, world?.id])
-
-  async function importer() {
-    if (!importVers || !recu) return
-    setImportEtat('en_cours')
-    try {
-      const resp = await fetch(`${STUDIO_API}/series/${importVers}/personnages/importer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nom: recu.nom, role: recu.role || null, description: recu.description || null,
-          archetype: recu.archetype || null, empreinte: recu.empreinte || [],
-          source: recu.source || 'personnages',
-        }),
-      })
-      setImportEtat(resp.ok ? 'ok' : 'erreur')
-      if (resp.ok) setTimeout(() => setRecu(null), 1400)
-    } catch {
-      setImportEtat('erreur')
-    }
-  }
 
   function ouvrir(tuile) {
     if (tuile.type === 'bientot') return
     setExterne({ titre: tuile.titre, url: tuile.url })
   }
-
-  // Modale d'import (synergie Personnages → Studio), partagée par les deux vues.
-  const modalImport = recu && (
-    <div style={S.overlay} onClick={() => importEtat !== 'en_cours' && setRecu(null)}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={S.modalTitre}>📤 Importer « {recu.nom} » au Studio</h3>
-        {recu.archetype && <p style={S.modalSous}>Archétype : {recu.archetype}</p>}
-        {!world?.id ? (
-          <p style={S.modalSous}>Ouvre d'abord un monde pour choisir une série.</p>
-        ) : series.length === 0 ? (
-          <p style={S.modalSous}>Aucune série dans ce monde — crée-en une dans le Studio d'abord.</p>
-        ) : (
-          <>
-            <label style={S.modalSous}>Série cible :</label>
-            <select style={S.select} value={importVers} onChange={e => setImportVers(e.target.value)}>
-              {series.map(s => <option key={s.id} value={s.id}>{s.titre}</option>)}
-            </select>
-          </>
-        )}
-        {importEtat === 'ok' && <p style={{ ...S.modalSous, color: '#7bdc9a' }}>✅ Importé dans la distribution.</p>}
-        {importEtat === 'erreur' && <p style={{ ...S.modalSous, color: '#e0667a' }}>⚠ Échec de l'import — réessaie.</p>}
-        <div style={S.modalActions}>
-          <button style={S.btnGhost} disabled={importEtat === 'en_cours'} onClick={() => setRecu(null)}>Annuler</button>
-          <button style={S.btnPrim} disabled={!importVers || importEtat === 'en_cours' || importEtat === 'ok'}
-            onClick={importer}>{importEtat === 'en_cours' ? 'Import…' : 'Importer'}</button>
-        </div>
-      </div>
-    </div>
-  )
 
   if (externe) {
     return (
@@ -149,14 +50,12 @@ export default function CreationsHub({ world }) {
           src={externe.url}
           style={S.iframe}
         />
-        {modalImport}
       </div>
     )
   }
 
   return (
     <div style={S.page}>
-      {modalImport}
       <div style={S.entete}>
         <h1 style={S.h1}>🎨 Créations</h1>
         <p style={S.sous}>Les outils créatifs de Workplace, réunis ici.</p>
@@ -180,9 +79,7 @@ export default function CreationsHub({ world }) {
             <span style={S.tuileDesc}>{tuile.desc}</span>
             {tuile.type === 'bientot'
               ? <span style={S.badgeBientot}>Bientôt</span>
-              : tuile.type === 'externe'
-                ? <span style={S.badgeBrique}>Brique · port {new URL(tuile.url).port || '—'}</span>
-                : <span style={S.badgeInterne}>Intégré à Oria</span>}
+              : <span style={S.badgeBrique}>Brique · port {new URL(tuile.url).port || '—'}</span>}
           </button>
         ))}
       </div>
@@ -216,7 +113,6 @@ const S = {
   tuileTitre: { fontSize: 18, fontWeight: 600, fontFamily: 'Fraunces, serif' },
   tuileDesc: { fontSize: 13.5, lineHeight: 1.5, color: 'var(--texte-doux, #b9b09a)' },
   badgeBrique: { fontSize: 11, color: '#B5835A', border: '1px solid #B5835A55', borderRadius: 999, padding: '2px 10px' },
-  badgeInterne: { fontSize: 11, color: '#C9A227', border: '1px solid #C9A22755', borderRadius: 999, padding: '2px 10px' },
   badgeBientot: { fontSize: 11, color: '#9aa0a6', border: '1px solid #9aa0a655', borderRadius: 999, padding: '2px 10px' },
 
   frameWrap: { display: 'flex', flexDirection: 'column', height: '100%' },
@@ -232,30 +128,4 @@ const S = {
   frameTitre: { fontFamily: 'Fraunces, serif', fontSize: 16, color: 'var(--texte, #f3e9d2)' },
   lienExterne: { marginLeft: 'auto', fontSize: 13, color: 'var(--accent, #C9A227)', textDecoration: 'none' },
   iframe: { flex: 1, width: '100%', border: 'none', background: '#fff' },
-
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-  },
-  modal: {
-    background: 'var(--fond-2, #1d1a17)', border: '1px solid var(--bordure, #3a342b)',
-    borderRadius: 14, padding: 22, maxWidth: 440, width: '100%',
-    color: 'var(--texte, #f3e9d2)',
-  },
-  modalTitre: { margin: '0 0 6px', fontFamily: 'Fraunces, serif', fontSize: 19 },
-  modalSous: { margin: '8px 0 4px', fontSize: 13.5, color: 'var(--texte-doux, #b9b09a)' },
-  select: {
-    width: '100%', marginTop: 6, padding: '9px 10px', borderRadius: 8,
-    background: 'var(--fond, #15120f)', color: 'var(--texte, #f3e9d2)',
-    border: '1px solid var(--bordure, #3a342b)',
-  },
-  modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
-  btnGhost: {
-    background: 'transparent', border: '1px solid var(--bordure, #3a342b)',
-    color: 'var(--texte, #f3e9d2)', borderRadius: 8, padding: '8px 14px', cursor: 'pointer',
-  },
-  btnPrim: {
-    background: 'var(--accent, #C9A227)', border: 'none', color: '#1a1510',
-    borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600,
-  },
 }

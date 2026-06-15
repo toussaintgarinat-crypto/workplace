@@ -32,7 +32,12 @@ app = FastAPI(title="Studio — atelier d'audio-séries", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
+# `API_KEYS` = vente standalone (BYO). `STUDIO_KEY` = clé d'intégration Workplace, injectée par
+# le `.env` racine (le noyau et son iframe s'authentifient avec) — variable DÉDIÉE pour ne pas
+# activer l'auth des autres briques qui liraient un `API_KEYS` partagé.
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
+if os.getenv("STUDIO_KEY", "").strip():
+    API_KEYS.add(os.getenv("STUDIO_KEY").strip())
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),
