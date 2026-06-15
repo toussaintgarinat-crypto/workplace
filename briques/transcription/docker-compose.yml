@@ -1,0 +1,53 @@
+services:
+  transcription:
+    build: .
+    container_name: workplace_transcription
+    image: workplace/transcription:0.1.0    # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5980:5980"
+    environment:
+      # Moteur PROVIDER-AGNOSTIQUE, SOUVERAIN par défaut. Ordre (défaut :
+      # local,openai,deepgram,assemblyai,gateway). VIDE = défaut. Mets "local" pour 100 % souverain.
+      - TRANSCRIPTION_PROVIDERS=${TRANSCRIPTION_PROVIDERS:-}
+      # Moteur souverain local (Whisper). TRANSCRIPTION_LOCAL=0 pour le couper.
+      - TRANSCRIPTION_LOCAL=${TRANSCRIPTION_LOCAL:-1}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}          # tiny/base/small/medium/large-v3
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
+      # Diarisation souveraine (pyannote) : OPT-IN, lourde. Demande HF_TOKEN.
+      - DIARISATION_LOCAL=${DIARISATION_LOCAL:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+      # Fournisseurs hébergés (repli OPT-IN : pose seulement ceux que tu utilises).
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_TRANSCRIBE_MODEL=${OPENAI_TRANSCRIBE_MODEL:-}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-}
+      # Gateway Workplace (zéro clé propre : réutilise la clé posée côté Gateway).
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      - GATEWAY_KEY=${GATEWAY_KEY:-}
+      - TRANSCRIPTION_GATEWAY_MODEL=${TRANSCRIPTION_GATEWAY_MODEL:-}
+      # Synthèse des notes par l'économe gratuit (≈0 $), via la Gateway, comme le briefing S30.
+      - TRANSCRIPTION_RESUME_MODEL=${TRANSCRIPTION_RESUME_MODEL:-free/google/gemma-4-31b-it}
+      # Archivage des notes (pont consenti, opt-in). Destination par défaut : SOUVERAINE (memoire).
+      - NOTES_DESTINATION_DEFAUT=${NOTES_DESTINATION_DEFAUT:-memoire}
+      - MEMOIRE_URL=${MEMOIRE_URL:-http://host.docker.internal:5600}    # brique mémoire (5600)
+      # destination=dossier : écrit un .md ici. Monte un dossier synchronisé par ton drive
+      # (Google Drive/iCloud/Dropbox) sur /notes pour qu'il y atterrisse sans OAuth.
+      - NOTES_DOSSIER=${NOTES_DOSSIER:-/notes}
+      # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
+      - API_KEYS=
+    volumes:
+      # Pour destination=dossier : bind-monte ICI ton dossier synchronisé (drive au choix).
+      # Ex. - "${NOTES_DOSSIER_HOTE:-./notes_export}:/notes"
+      - "${NOTES_DOSSIER_HOTE:-./notes_export}:/notes"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5980/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

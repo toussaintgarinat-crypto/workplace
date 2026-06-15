@@ -1,0 +1,26 @@
+{
+  "nom": "transcription",
+  "version": "0.1.0",
+  "description": "Brique de transcription audio→texte en API, SOUVERAINE par défaut : moteur Whisper local (CPU/Metal) en tête, puis fournisseurs hébergés en repli optionnel (OpenAI, Deepgram, AssemblyAI, ou la Gateway Workplace). Diarisation (qui parle) quand le fournisseur la donne. Résumé + points d'action synthétisés par l'économe gratuit (≈0 $), comme le briefing S30. Repli honnête : jamais de fausse transcription. Inspiré de Notta/Otter, SANS aucun appel à un tiers imposé. Produit autonome, miroir des briques images/vidéo, composable par l'assistant et le Studio.",
+  "role": "transcription",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/transcription",
+  "port": 5980,
+  "url_sante": "http://host.docker.internal:5980/sante",
+  "depends_on": [],
+  "offre": [
+    "transcrire_audio",
+    "diariser_locuteurs",
+    "resumer_reunion",
+    "points_action",
+    "notes_audio_complet",
+    "archiver_notes_memoire",
+    "archiver_notes_dossier",
+    "souverain_par_defaut",
+    "multi_fournisseurs",
+    "repli_placeholder_honnete"
+  ],
+  "besoin": [],
+  "taches": []
+}
