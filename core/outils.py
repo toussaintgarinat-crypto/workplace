@@ -355,6 +355,56 @@ OUTILS: list[dict] = [
             "idee": {"type": "string", "description": "Idée/orientation pour l'épisode (optionnel)."},
             "confirme": {"type": "boolean"},
         }, ["serie_id"])}},
+    {"type": "function", "function": {
+        "name": "studio_voix_lister",
+        "description": "Liste les voix disponibles pour une langue (catalogue du serveur de voix). À utiliser avant de distribuer une voix à un personnage. Lecture seule (aucune confirmation).",
+        "parameters": _p({
+            "langue": {"type": "string", "description": "Code langue (fr, en, es…). Défaut fr."},
+        }, [])}},
+    {"type": "function", "function": {
+        "name": "studio_bible_proposer",
+        "description": "Co-création de la bible : un agent créatif PROPOSE des options pour une dimension (genre, univers, personnages, intrigue, choix) — ne fige RIEN. Utilise studio_bible_decider pour retenir une option. Génératif mais non destructif (aucune confirmation).",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"],
+                          "description": "Dimension de la bible à explorer."},
+            "mon_idee": {"type": "string", "description": "Piste/contrainte de l'utilisateur à intégrer (optionnel)."},
+        }, ["serie_id", "dimension"])}},
+    {"type": "function", "function": {
+        "name": "studio_distribution_proposer",
+        "description": "Le Directeur de Casting PROPOSE une distribution (personnages + voix) cohérente avec la bible — ne stocke RIEN. Pour créer réellement un rôle, utilise studio_perso_creer. Génératif non destructif (aucune confirmation).",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "combien": {"type": "integer", "description": "Nombre de rôles à proposer (2 à 8, défaut 4)."},
+            "mon_idee": {"type": "string", "description": "Piste de l'utilisateur à intégrer (optionnel)."},
+        }, ["serie_id"])}},
+    {"type": "function", "function": {
+        "name": "studio_bible_decider",
+        "description": "Fige (retient) le contenu d'une dimension de la bible. Utilise d'abord studio_bible_proposer pour explorer. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"]},
+            "choix": {"type": "string", "description": "Le contenu retenu pour cette dimension."},
+            "confirme": {"type": "boolean"},
+        }, ["serie_id", "dimension", "choix"])}},
+    {"type": "function", "function": {
+        "name": "studio_perso_creer",
+        "description": "Ajoute un personnage à la distribution d'une série. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "nom": {"type": "string", "description": "Nom du personnage."},
+            "role": {"type": "string", "description": "Rôle (protagoniste, antagoniste, secondaire…) (optionnel)."},
+            "description": {"type": "string", "description": "Description du personnage (optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["serie_id", "nom"])}},
+    {"type": "function", "function": {
+        "name": "studio_audio_produire",
+        "description": "Produit l'audio d'un épisode déjà écrit (voix figées par personnage). Sans numéro, prend le dernier épisode. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
+            "n": {"type": "integer", "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."},
+            "confirme": {"type": "boolean"},
+        }, ["serie_id"])}},
 ]
 
 OUTILS_ACTION = {
@@ -366,6 +416,7 @@ OUTILS_ACTION = {
     "forge_crm_creer", "forge_crm_modifier", "forge_paiement_lien",
     "forge_relances_envoyer", "forge_facture_envoyer",
     "studio_serie_creer", "studio_episode_produire", "studio_express",
+    "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
 }
 
 
@@ -716,6 +767,57 @@ async def executer(nom: str, args: dict, registre) -> str:
                 charge = {"idee": args["idee"]} if args.get("idee") else {}
                 return await _studio_appel(client, registre, "POST", f"/series/{sid}/express",
                                            charge=charge, timeout=120)
+
+            if nom == "studio_voix_lister":
+                return await _studio_appel(client, registre, "GET", "/voix",
+                                           params={"langue": args.get("langue", "fr")}, timeout=15)
+
+            if nom == "studio_bible_proposer":
+                sid = args.get("serie_id", "")
+                charge = {"dimension": args.get("dimension", "")}
+                if args.get("mon_idee"):
+                    charge["mon_idee"] = args["mon_idee"]
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/proposer",
+                                           charge=charge, timeout=60)
+
+            if nom == "studio_distribution_proposer":
+                sid = args.get("serie_id", "")
+                charge = {}
+                if args.get("combien"):
+                    charge["combien"] = args["combien"]
+                if args.get("mon_idee"):
+                    charge["mon_idee"] = args["mon_idee"]
+                return await _studio_appel(client, registre, "POST",
+                                           f"/series/{sid}/personnages/proposer",
+                                           charge=charge, timeout=60)
+
+            if nom == "studio_bible_decider":
+                sid = args.get("serie_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("figer une dimension de la bible", args.get("dimension", ""))
+                charge = {"dimension": args.get("dimension", ""), "choix": args.get("choix", "")}
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/decider",
+                                           charge=charge, timeout=30)
+
+            if nom == "studio_perso_creer":
+                sid = args.get("serie_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("ajouter un personnage à la distribution", args.get("nom", ""))
+                charge = {"nom": args.get("nom", "")}
+                if args.get("role"):
+                    charge["role"] = args["role"]
+                if args.get("description"):
+                    charge["description"] = args["description"]
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/personnages",
+                                           charge=charge, timeout=30)
+
+            if nom == "studio_audio_produire":
+                sid = args.get("serie_id", "")
+                if not args.get("confirme"):
+                    return _confirmation("produire l'audio de l'épisode", sid)
+                charge = {"n": args["n"]} if args.get("n") else {}
+                return await _studio_appel(client, registre, "POST", f"/series/{sid}/audio",
+                                           charge=charge, timeout=180)
 
             return f"Outil inconnu : {nom}"
 
