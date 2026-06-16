@@ -405,6 +405,45 @@ OUTILS: list[dict] = [
             "n": {"type": "integer", "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."},
             "confirme": {"type": "boolean"},
         }, ["serie_id"])}},
+
+    # — TRANSCRIPTION (brique audio→texte souveraine 5980 ; notes d'appel/réunion) —
+    {"type": "function", "function": {
+        "name": "transcription_etat",
+        "description": "État de la brique de transcription : moteur actif, s'il est souverain (Whisper local), si la synthèse de notes (économe gratuit) est dispo, destinations d'archivage. Lecture seule.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "transcription_depuis_url",
+        "description": "Transcrit un audio accessible par URL puis en produit des NOTES (résumé, points d'action, décisions, thèmes). Pour « transcris/résume cet enregistrement », « fais le compte-rendu de cet audio ». L'upload d'un fichier ou la capture d'un appel se font dans le front de la brique, pas ici. Lecture seule (ne range rien).",
+        "parameters": _p({
+            "url": {"type": "string", "description": "URL directe d'un fichier audio (mp3/m4a/wav/webm…)."},
+            "langue": {"type": "string", "description": "Langue de sortie des notes (fr, en, es…). Défaut : langue de l'audio."},
+            "diarisation": {"type": "boolean", "description": "Identifier les intervenants si le moteur le permet (optionnel)."},
+        }, ["url"])}},
+    {"type": "function", "function": {
+        "name": "transcription_resumer",
+        "description": "Transforme un TEXTE déjà transcrit (notes brutes, transcription collée) en notes structurées : résumé, points d'action, décisions, thèmes. Lecture seule.",
+        "parameters": _p({
+            "texte": {"type": "string", "description": "Le texte à synthétiser."},
+            "langue": {"type": "string", "description": "Langue de sortie (fr, en, es…) (optionnel)."},
+        }, ["texte"])}},
+    {"type": "function", "function": {
+        "name": "transcription_destinations",
+        "description": "Liste les destinations d'archivage des notes (mémoire souveraine, dossier/drive) et laquelle est par défaut. Lecture seule.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "transcription_archiver",
+        "description": "Range des notes (issues de transcription_depuis_url/transcription_resumer) dans la destination CHOISIE : « memoire » (souverain, défaut) ou « dossier » (fichier .md, ex. dossier synchronisé par un drive). ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "resume": {"type": "string", "description": "Le résumé / corps des notes."},
+            "titre": {"type": "string", "description": "Titre des notes (optionnel)."},
+            "points_action": {"type": "array", "items": {"type": "string"}, "description": "Points d'action (optionnel)."},
+            "decisions": {"type": "array", "items": {"type": "string"}, "description": "Décisions prises (optionnel)."},
+            "themes": {"type": "array", "items": {"type": "string"}, "description": "Thèmes/mots-clés (optionnel)."},
+            "destination": {"type": "string", "enum": ["memoire", "dossier"], "description": "Où ranger. Défaut : memoire (souverain)."},
+            "dossier": {"type": "string", "description": "Chemin du dossier si destination=dossier (sinon valeur par défaut de la brique)."},
+            "langue": {"type": "string", "description": "Langue des notes (optionnel)."},
+            "confirme": {"type": "boolean"},
+        }, ["resume"])}},
 ]
 
 OUTILS_ACTION = {
@@ -417,6 +456,7 @@ OUTILS_ACTION = {
     "forge_relances_envoyer", "forge_facture_envoyer",
     "studio_serie_creer", "studio_episode_produire", "studio_express",
     "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
+    "transcription_archiver",
 }
 
 
@@ -819,6 +859,48 @@ async def executer(nom: str, args: dict, registre) -> str:
                 return await _studio_appel(client, registre, "POST", f"/series/{sid}/audio",
                                            charge=charge, timeout=180)
 
+            # — TRANSCRIPTION (notes d'appel/réunion) —
+            if nom == "transcription_etat":
+                return await _transcription_appel(client, registre, "GET", "/sante", timeout=15)
+
+            if nom == "transcription_destinations":
+                return await _transcription_appel(client, registre, "GET", "/destinations",
+                                                  timeout=15)
+
+            if nom == "transcription_depuis_url":
+                charge = {"url": args.get("url", ""), "langue": args.get("langue"),
+                          "diarisation": bool(args.get("diarisation"))}
+                trans = await _transcription_appel(client, registre, "POST", "/transcrire-url",
+                                                   charge=charge, timeout=300, brut=True)
+                if not isinstance(trans, dict) or trans.get("place_holder"):
+                    return json.dumps({"transcription": trans}, ensure_ascii=False)
+                notes = await _transcription_appel(
+                    client, registre, "POST", "/resumer",
+                    charge={"texte": trans.get("texte", ""), "langue": args.get("langue")},
+                    timeout=120, brut=True)
+                return json.dumps({"transcription": trans, "notes": notes}, ensure_ascii=False)
+
+            if nom == "transcription_resumer":
+                charge = {"texte": args.get("texte", ""), "langue": args.get("langue")}
+                return await _transcription_appel(client, registre, "POST", "/resumer",
+                                                  charge=charge, timeout=120)
+
+            if nom == "transcription_archiver":
+                dest = args.get("destination") or "memoire"
+                titre = args.get("titre") or "Notes"
+                if not args.get("confirme"):
+                    return _confirmation(f"ranger les notes ({dest})", titre)
+                charge = {
+                    "notes": {"resume": args.get("resume", ""),
+                              "points_action": args.get("points_action") or [],
+                              "decisions": args.get("decisions") or [],
+                              "themes": args.get("themes") or [], "source": "assistant"},
+                    "titre": args.get("titre"), "langue": args.get("langue"),
+                    "destination": dest, "dossier": args.get("dossier"),
+                }
+                return await _transcription_appel(client, registre, "POST", "/archiver",
+                                                  charge=charge, timeout=45)
+
             return f"Outil inconnu : {nom}"
 
     except ValueError as e:
@@ -948,6 +1030,37 @@ async def _studio_appel(client: httpx.AsyncClient, registre, methode: str, chemi
     if r.status_code == 204 or not r.content:
         return json.dumps({"ok": True}, ensure_ascii=False)
     return json.dumps(r.json(), ensure_ascii=False)
+
+
+async def _transcription_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
+                               charge: dict | None = None, params: dict | None = None,
+                               timeout: float = 60, brut: bool = False):
+    """Appelle la brique Transcription (5980). S'authentifie avec `TRANSCRIPTION_KEY`
+    (en-tête `X-API-Key`) si configurée ; sinon mode ouvert. Dégrade proprement (jamais de
+    stacktrace). `brut=True` renvoie le dict parsé (pour chaîner transcrire→résumer) ;
+    sinon une chaîne JSON pour le LLM. La transcription locale peut être lente : timeout large."""
+    base = _base(registre, "transcription")
+    cle = os.environ.get("TRANSCRIPTION_KEY", "").strip()
+    entetes = {"X-API-Key": cle} if cle else None
+    erreur = None
+    try:
+        r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
+                                  headers=entetes, timeout=timeout)
+        if r.status_code == 401:
+            erreur = {"ok": False, "message": "Transcription a refusé l'accès (TRANSCRIPTION_KEY)."}
+        elif r.status_code >= 400:
+            try:
+                detail = r.json().get("detail")
+            except Exception:  # noqa: BLE001
+                detail = r.text[:200]
+            erreur = {"ok": False, "message": f"Transcription HTTP {r.status_code} : {detail}"}
+        else:
+            data = r.json() if r.content else {"ok": True}
+            return data if brut else json.dumps(data, ensure_ascii=False)
+    except httpx.HTTPError:
+        erreur = {"ok": False,
+                  "message": "La brique Transcription est injoignable (hors ligne ou en démarrage)."}
+    return erreur if brut else json.dumps(erreur, ensure_ascii=False)
 
 
 async def _etat_briques(client: httpx.AsyncClient, registre) -> dict:
