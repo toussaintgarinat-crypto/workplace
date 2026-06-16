@@ -1,0 +1,32 @@
+services:
+  calcul:
+    build: .
+    container_name: workplace_calcul
+    image: workplace/calcul:0.1.0        # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5990:5990"
+    environment:
+      # Parc des nœuds de calcul, en JSON (liste). Aucun secret en dur ici : pose-le
+      # dans le .env racine. Exemple d'un nœud Mac via le mesh NetBird :
+      #   CALCUL_NOEUDS=[{"id":"muscle","nom":"Mac Studio",
+      #     "endpoint":"http://100.x.y.z:11434","mac_wol":"AA:BB:CC:DD:EE:FF",
+      #     "methode_reveil":["wol","wakeping"],"reveil_timeout_s":90}]
+      # VIDE = aucun nœud (la brique tourne, /noeuds renvoie une liste vide).
+      - CALCUL_NOEUDS=${CALCUL_NOEUDS:-}
+      # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
+      - API_KEYS=
+    # Wake-on-LAN par broadcast : depuis le réseau bridge Docker, le paquet n'atteint PAS
+    # le LAN physique. Pour un VRAI WoL en broadcast, décommente `network_mode: host`
+    # (Linux) — sinon, privilégie le wake-ping via le mesh (NetBird relaie l'hôte).
+    # network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5990/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

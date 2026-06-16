@@ -13,6 +13,7 @@ d'outil, fin. La boucle s'arrête dès que le modèle répond sans demander d'ou
 
 import json
 import logging
+import os
 from datetime import datetime
 from typing import AsyncIterator
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ import httpx
 import config_assistant
 import langue as langue_mod
 import llm_pipeline
+import muscle
 import outils
 import personas
 import identite
@@ -29,6 +31,11 @@ import identite
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 6
+
+# Streaming token-par-token (S60) : l'assistant émet le texte au fil de l'eau (feel
+# ChatGPT, utile en mobilité). Kill-switch d'env : STREAM_ACTIF=0 rétablit la réponse
+# en bloc (chemin `completer`), utile pour le debug.
+STREAM_ACTIF = os.getenv("STREAM_ACTIF", "1").lower() not in ("0", "false", "no")
 
 PROMPT_SYSTEME = (
     "Tu es l'assistant du Cœur de Workplace : un « Jarvis » de TOUTE la solution. "
@@ -119,22 +126,54 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         modeles = [conf.get("model") or config_assistant.DEFAUT_REPLI_PAYANT]
 
     async with httpx.AsyncClient(timeout=120) as client:
+        # Muscle déporté (brique calcul, roadmap S58) : opt-in. Si un nœud de calcul est
+        # DÉJÀ prêt, on le met en tête de la cascade ; sinon on déclenche un réveil EN FOND
+        # (la requête courante part en mode dégradé sur les gratuits ; le prochain message
+        # tombera sur un muscle chaud). Best-effort : calcul absent/muet → cascade inchangée.
+        if conf.get("muscle_actif"):
+            tete = await muscle.tete_de_cascade(client)
+            if tete:
+                modeles = [tete] + [m for m in modeles if m != tete]
+            else:
+                muscle.planifier_reveil()
+
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage
             # tokens/coût + journal. La logique d'outils reste ici, côté agent.
-            res = await llm_pipeline.completer(
-                historique, modeles=modeles, tools=outils.OUTILS,
-                tool_choice="auto", temperature=0.2, etiquette="chat",
-                conf=conf, client=client,
-            )
-            if not res.ok:
-                yield {"type": "erreur", "contenu": res.erreur or "Aucun modèle disponible."}
-                return
-            message = res.message
+            # S60 : en streaming, on émet le texte en `texte_delta` au fil de l'eau et on
+            # réassemble le message (avec ses tool_calls) pour piloter la boucle d'outils.
+            message = None
+            if STREAM_ACTIF:
+                erreur = None
+                async for evt in llm_pipeline.completer_flux(
+                        historique, modeles=modeles, tools=outils.OUTILS,
+                        tool_choice="auto", temperature=0.2, etiquette="chat",
+                        conf=conf, client=client):
+                    if evt["type"] == "delta":
+                        yield {"type": "texte_delta", "contenu": evt["contenu"]}
+                    elif evt["type"] == "fin":
+                        message = evt["message"]
+                    elif evt["type"] == "erreur":
+                        erreur = evt["erreur"]
+                if message is None:
+                    yield {"type": "erreur", "contenu": erreur or "Aucun modèle disponible."}
+                    return
+            else:
+                res = await llm_pipeline.completer(
+                    historique, modeles=modeles, tools=outils.OUTILS,
+                    tool_choice="auto", temperature=0.2, etiquette="chat",
+                    conf=conf, client=client,
+                )
+                if not res.ok:
+                    yield {"type": "erreur", "contenu": res.erreur or "Aucun modèle disponible."}
+                    return
+                message = res.message
 
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
-                yield {"type": "texte", "contenu": message.get("content") or ""}
+                # En streaming le texte a déjà été émis en deltas ; sinon on l'émet en bloc.
+                if not STREAM_ACTIF:
+                    yield {"type": "texte", "contenu": message.get("content") or ""}
                 yield {"type": "fin"}
                 return
 
