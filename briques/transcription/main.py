@@ -12,6 +12,7 @@ OpenAI / Deepgram / AssemblyAI / la Gateway en repli OPT-IN. Sans moteur, on ren
 HONNÊTE (texte vide, `place_holder: true`) — jamais de fausse transcription. La synthèse
 passe par l'« économe gratuit » (≈0 $) comme le briefing S30, repli heuristique honnête.
 """
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -19,7 +20,7 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 import destinations
@@ -79,6 +80,61 @@ def accueil():
     """Front en une page (vanilla) : capter un appel/mémo → notes → ranger. Parle à CETTE
     brique. Sert la démo autonome ET le contenu de l'iframe embarquée par le noyau."""
     return _FRONT.read_text(encoding="utf-8")
+
+
+# ── PWA : installable sur mobile (écran d'accueil), capture micro en haut-parleur ──
+_MANIFEST = {
+    "name": "Transcription — notes d'appel",
+    "short_name": "Notes d'appel",
+    "description": "Capter un appel ou un mémo, transcrire en local, ranger les notes.",
+    "start_url": "/atelier",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#120f18",
+    "theme_color": "#120f18",
+    "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml",
+               "purpose": "any maskable"}],
+}
+
+_SW = """// Service worker minimal : coque hors-ligne, API toujours réseau.
+const C = 'transcription-v1';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(C).then(c => c.addAll(['/atelier', '/icon.svg'])));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;                 // POST /notes, /archiver → réseau direct
+  if (r.mode === 'navigate') {                     // lancement de l'app → coque en repli
+    e.respondWith(fetch(r).catch(() => caches.match('/atelier')));
+  }
+});
+"""
+
+_ICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+         '<rect width="512" height="512" rx="96" fill="#120f18"/>'
+         '<rect x="216" y="120" width="80" height="170" rx="40" fill="#e7c66b"/>'
+         '<path d="M168 250a88 88 0 0 0 176 0" fill="none" stroke="#e7c66b" stroke-width="18" '
+         'stroke-linecap="round"/>'
+         '<line x1="256" y1="338" x2="256" y2="392" stroke="#e7c66b" stroke-width="18" '
+         'stroke-linecap="round"/></svg>')
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return Response(json.dumps(_MANIFEST), media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return Response(_SW, media_type="application/javascript")
+
+
+@app.get("/icon.svg", include_in_schema=False)
+def icone():
+    return Response(_ICON, media_type="image/svg+xml")
 
 
 @app.get("/sante", tags=["système"])

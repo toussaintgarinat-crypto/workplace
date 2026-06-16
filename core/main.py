@@ -44,6 +44,7 @@ FORGE_UI_URL = os.environ.get("FORGE_UI_URL", "http://localhost:3000")
 # embarqués ici. Port 6060 et pas 6000 : 6000 = X11, banni par Chrome (ERR_UNSAFE_PORT).
 STUDIO_UI_URL = os.environ.get("STUDIO_UI_URL", "http://localhost:6060/atelier")
 PERSONNAGES_UI_URL = os.environ.get("PERSONNAGES_UI_URL", "http://localhost:5900/atelier")
+TRANSCRIPTION_UI_URL = os.environ.get("TRANSCRIPTION_UI_URL", "http://localhost:5980/atelier")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
@@ -463,6 +464,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Générer un personnage holistique (numérologie, astro, traditions) ou retrouver les signes d'un caractère.</span>
           <span class="creation-badge">Brique · port 5900</span>
         </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__TRANSCRIPTION_UI_URL__', 'Transcription · notes d\'appel')">
+          <span class="creation-emoji">🎙️</span>
+          <span class="creation-titre">Transcription &amp; notes d'appel</span>
+          <span class="creation-desc">Capter un appel (façon Granola, sans bot) ou un mémo, transcrire en local, et ranger les notes en mémoire ou sur un drive.</span>
+          <span class="creation-badge">Brique · port 5980</span>
+        </button>
         <button class="creation-tuile creation-bientot" disabled>
           <span class="creation-emoji">🖼️</span>
           <span class="creation-titre">Images &amp; Vidéo</span>
@@ -483,7 +490,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="panel" style="padding:0;overflow:hidden">
         <iframe id="creation-iframe" title="Création"
           style="width:100%;height:78vh;border:0;display:block;background:#fff"
-          allow="clipboard-read; clipboard-write; microphone"></iframe>
+          allow="clipboard-read; clipboard-write; microphone; display-capture"></iframe>
       </div>
     </div>
   </div>
@@ -1813,7 +1820,8 @@ async def dashboard():
     return HTMLResponse(content=DASHBOARD_HTML
         .replace("__FORGE_UI_URL__", FORGE_UI_URL)
         .replace("__STUDIO_UI_URL__", studio_ui)
-        .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL))
+        .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
+        .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL))
 
 
 @app.get("/sante-globale", tags=["système"])
