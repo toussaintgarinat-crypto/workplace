@@ -16,14 +16,56 @@ def _paquet():
 
 
 def test_registre_et_defaut_souverain():
-    assert set(destinations.REGISTRE) == {"memoire", "dossier"}
+    assert set(destinations.REGISTRE) == {"memoire", "dossier", "gdrive"}
     assert destinations.defaut() == "memoire"          # souverain par défaut
 
 
 def test_destination_inconnue_pont_consenti():
-    out = _run(destinations.archiver(_paquet(), "gdrive"))
+    out = _run(destinations.archiver(_paquet(), "dropbox"))
     assert out["ok"] is False                          # jamais en silence
     assert "inconnue" in out["erreur"]
+
+
+def test_gdrive_non_configure(monkeypatch):
+    for v in ("GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"):
+        monkeypatch.delenv(v, raising=False)
+    out = _run(destinations.archiver(_paquet(), "gdrive"))
+    assert out["ok"] is False
+    assert "configuré" in out["erreur"].lower()        # échec rapide, sans réseau
+
+
+def test_gdrive_mock(monkeypatch):
+    monkeypatch.setenv("GDRIVE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GDRIVE_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("GDRIVE_REFRESH_TOKEN", "refresh")
+    monkeypatch.setenv("GDRIVE_FOLDER_ID", "folder123")
+    appels = []
+
+    class _Rep:
+        def __init__(self, data): self._d = data
+        def raise_for_status(self): ...
+        def json(self): return self._d
+
+    class _Client:
+        def __init__(self, *a, **k): ...
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): ...
+        async def post(self, url, **k):
+            appels.append((url, k))
+            if "oauth2" in url:
+                return _Rep({"access_token": "ya29.test"})
+            return _Rep({"id": "drive-1", "name": "notes.md",
+                         "webViewLink": "https://drive.google.com/file/d/drive-1"})
+
+    monkeypatch.setattr(destinations.httpx, "AsyncClient", _Client)
+    out = _run(destinations.archiver(_paquet(), "gdrive"))
+    assert out["ok"] is True and out["destination"] == "gdrive"
+    assert out["id"] == "drive-1" and "drive.google.com" in out["lien"]
+    # token échangé puis upload multipart vers l'endpoint Drive
+    assert any("oauth2.googleapis.com" in u for u, _ in appels)
+    upload = [k for u, k in appels if "upload/drive" in u][0]
+    assert upload["params"]["uploadType"] == "multipart"
+    assert "folder123" in upload["content"].decode("utf-8")    # dossier cible inséré
 
 
 def test_dossier_non_configure(monkeypatch):

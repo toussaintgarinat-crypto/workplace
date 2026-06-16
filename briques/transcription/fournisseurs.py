@@ -81,7 +81,12 @@ class Local:
         des locuteurs ont été posés, False sinon (lib absente / pas de HF_TOKEN / erreur)."""
         if os.getenv("DIARISATION_LOCAL", "") in ("", "0", "false", "no"):
             return False
-        if importlib.util.find_spec("pyannote.audio") is None or not os.getenv("HF_TOKEN"):
+        if not os.getenv("HF_TOKEN"):
+            return False
+        try:                       # find_spec LÈVE si le parent `pyannote` est absent
+            if importlib.util.find_spec("pyannote.audio") is None:
+                return False
+        except ModuleNotFoundError:
             return False
         try:
             from pyannote.audio import Pipeline

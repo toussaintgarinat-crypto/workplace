@@ -10,14 +10,15 @@ Destinations livrées :
   • dossier  — écrit un fichier .md dans un dossier au choix. Si ce dossier est synchronisé
                par Google Drive / iCloud / Dropbox (app de bureau), la note remonte toute
                seule sur le drive — « drive au choix » sans OAuth, universel et souverain.
-
-À venir (incrément séparé) : `gdrive` via l'API Google Drive (OAuth, pont Google S27/S35).
+  • gdrive   — l'API Google Drive directement (OAuth, refresh token). Upload du .md dans un
+               dossier Drive. Opt-in, configuré par variables d'env.
 
 Interface commune :
     nom            : identifiant court ;
     disponible()   : la destination est-elle configurée ? — sync, sans réseau ni I/O ;
     async deposer(paquet, **options) -> dict   # {ok, ...} ; LÈVE en cas d'échec réel.
 """
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -91,8 +92,66 @@ class Dossier:
                 "dossier": str(rep)}
 
 
+class GoogleDrive:
+    """API Google Drive directement (OAuth utilisateur, refresh token). Upload du .md des
+    notes dans un dossier Drive. Opt-in, configuré par env :
+      GDRIVE_CLIENT_ID, GDRIVE_CLIENT_SECRET, GDRIVE_REFRESH_TOKEN (obtenus une fois via le
+      consentement OAuth, scope drive.file), GDRIVE_FOLDER_ID (optionnel : dossier cible).
+    Le refresh token est échangé contre un access token à chaque dépôt (pas de stockage)."""
+    nom = "gdrive"
+
+    def _conf(self) -> dict:
+        return {k: os.getenv(f"GDRIVE_{k.upper()}", "") for k in
+                ("client_id", "client_secret", "refresh_token", "folder_id")}
+
+    def disponible(self) -> bool:
+        c = self._conf()
+        return bool(c["client_id"] and c["client_secret"] and c["refresh_token"])
+
+    async def _access_token(self, client: httpx.AsyncClient) -> str:
+        c = self._conf()
+        r = await client.post("https://oauth2.googleapis.com/token", data={
+            "client_id": c["client_id"], "client_secret": c["client_secret"],
+            "refresh_token": c["refresh_token"], "grant_type": "refresh_token"})
+        r.raise_for_status()
+        jeton = r.json().get("access_token")
+        if not jeton:
+            raise RuntimeError("Google n'a pas renvoyé d'access_token (refresh token invalide ?).")
+        return jeton
+
+    async def deposer(self, paquet: dict, *, dossier: Optional[str] = None, **_) -> dict:
+        if not self.disponible():
+            raise RuntimeError("Google Drive non configuré (GDRIVE_CLIENT_ID / CLIENT_SECRET / "
+                               "REFRESH_TOKEN). Voir le README.")
+        folder = (dossier or self._conf()["folder_id"]).strip()
+        nom_fichier = f"{paquet['date']}-{rendu.slug(paquet['titre'])}.md"
+        meta: dict = {"name": nom_fichier, "mimeType": "text/markdown"}
+        if folder:
+            meta["parents"] = [folder]
+        # Upload multipart/related : 1) métadonnées JSON, 2) le Markdown.
+        front = "----gdrive-notes-boundary"
+        corps = (
+            f"--{front}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{json.dumps(meta)}\r\n"
+            f"--{front}\r\nContent-Type: text/markdown\r\n\r\n"
+            f"{rendu.markdown(paquet)}\r\n--{front}--"
+        ).encode("utf-8")
+        async with httpx.AsyncClient(timeout=45) as client:
+            jeton = await self._access_token(client)
+            r = await client.post(
+                "https://www.googleapis.com/upload/drive/v3/files",
+                params={"uploadType": "multipart", "fields": "id,name,webViewLink"},
+                headers={"Authorization": f"Bearer {jeton}",
+                         "Content-Type": f"multipart/related; boundary={front}"},
+                content=corps)
+            r.raise_for_status()
+            rep = r.json()
+        return {"ok": True, "destination": "gdrive", "id": rep.get("id"),
+                "nom": rep.get("name"), "lien": rep.get("webViewLink"), "souverain": False}
+
+
 # ── Registre + défaut ───────────────────────────────────────────
-REGISTRE = {d.nom: d for d in (Memoire(), Dossier())}
+REGISTRE = {d.nom: d for d in (Memoire(), Dossier(), GoogleDrive())}
 
 # Souverain par défaut : la mémoire. Surchargé par NOTES_DESTINATION_DEFAUT.
 DEFAUT = os.getenv("NOTES_DESTINATION_DEFAUT", "memoire")
