@@ -2,8 +2,16 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Transcription — notes d'appel souveraines</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#120f18">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Notes d'appel">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
   :root{
     --bg:#120f18; --bg2:#1a1622; --pan:#221c2e; --bord:#39304f;
@@ -51,6 +59,12 @@
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--bord);border-top-color:var(--or);
        border-radius:50%;animation:tour .7s linear infinite;vertical-align:-2px}
   @keyframes tour{to{transform:rotate(360deg)}}
+  @media(max-width:560px){
+    .wrap{padding:18px 14px 50px}
+    .barre button{flex:1 1 44%}
+    #b-fichier{flex-basis:100%}
+    input[type=text]{flex-basis:100%}
+  }
 </style>
 </head>
 <body>
@@ -117,6 +131,20 @@
 <script>
 const $ = s => document.querySelector(s);
 let media, chunks = [], t0 = 0, tick = null, ac = null, dernier = null;
+
+// PWA : installable sur l'écran d'accueil (mobile) + coque hors-ligne.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+
+// Dégradation mobile : la capture d'onglet (getDisplayMedia) n'existe pas sur iOS Safari.
+// Là, on capte l'appel via le MICRO en haut-parleur — exactement comme Granola mobile.
+if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+  const b = $('#b-appel'); b.disabled = true; b.textContent = '🖥️ Capter l\'appel (ordi)';
+  b.title = 'Capture d\'onglet indisponible sur ce navigateur.';
+  $('#aide-appel').style.display = 'block';
+  $('#aide-appel').innerHTML = '<b>Sur mobile</b> : mets l\'appel sur <b>haut-parleur</b> et '+
+    'utilise <b>🎤 Mémo</b> — on capte les deux voix par le micro (comme Granola mobile). '+
+    'La capture d\'onglet (séparée) n\'existe que sur ordinateur.';
+}
 
 // — État de la brique (souveraineté + destinations) —
 fetch('/sante').then(r=>r.json()).then(d=>{
