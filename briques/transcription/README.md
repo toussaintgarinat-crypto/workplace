@@ -81,10 +81,35 @@ curl -F fichier=@reunion.m4a -F destination=dossier localhost:5980/notes
 Si la destination échoue (mémoire injoignable, dossier absent), la réponse porte
 `{"ok": false, "erreur": "..."}` — **les notes ne sont jamais perdues en silence**.
 
+## Front (capter un appel, façon Granola — sans bot)
+
+La brique sert un front en une page à **`/`** et **`/atelier`** (vanilla, thème dark+or,
+embarquable en iframe comme Studio/Personnages). Trois entrées :
+
+- **🖥️ Capter l'appel** — le navigateur demande de *partager* l'onglet/la fenêtre de la
+  réunion (Zoom/Meet/Teams web) ; coche « partager l'audio ». On **mixe cet audio (les
+  autres) avec ton micro (toi)** via Web Audio, on enregistre, on envoie à `/notes`. Aucun
+  bot ne rejoint l'appel — comme Granola. 100 % local côté capture.
+- **🎤 Mémo** — enregistre le micro seul (note vocale, réunion en présentiel sur haut-parleur).
+- **📁 Importer** — un fichier audio/vidéo existant.
+
+Puis : transcription + notes affichées, et bouton **Ranger** vers mémoire ou dossier/drive.
+
+> Limite assumée : capter *tout* le son système (toutes apps, hors navigateur) demande un
+> périphérique audio virtuel (BlackHole) ou un assistant natif — incrément ultérieur.
+
+## Assistant (le Jarvis pilote)
+
+Outils `transcription_*` côté noyau (`core/outils.py`) : `transcription_etat`,
+`transcription_depuis_url` (URL audio → transcription + notes), `transcription_resumer`
+(texte → notes), `transcription_destinations`, `transcription_archiver` (range les notes,
+action gardée par `confirme`). Auth de service optionnelle via `TRANSCRIPTION_KEY` (motif
+`STUDIO_KEY`). L'upload de fichier / la capture d'appel se font dans le front.
+
 ## Lancer
 
 ```bash
-docker compose up --build            # port 5980
+docker compose up --build            # port 5980, front sur http://localhost:5980/atelier
 curl localhost:5980/sante
 curl -F fichier=@reunion.m4a localhost:5980/notes
 ```

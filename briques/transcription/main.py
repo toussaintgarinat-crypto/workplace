@@ -13,6 +13,7 @@ HONNÊTE (texte vide, `place_holder: true`) — jamais de fausse transcription. 
 passe par l'« économe gratuit » (≈0 $) comme le briefing S30, repli heuristique honnête.
 """
 import os
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -69,11 +70,15 @@ class Archiver(BaseModel):
     espace:        Optional[str] = None           # pour destination=memoire
 
 
+_FRONT = Path(__file__).parent / "front.html"
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/atelier", response_class=HTMLResponse, include_in_schema=False)
 def accueil():
-    return ("<h1>🎙️ Brique transcription</h1><p>Audio→texte souverain (Whisper local en "
-            "tête, fournisseurs hébergés en repli) + notes de réunion (économe gratuit). "
-            "Voir <a href='/docs'>/docs</a>.</p>")
+    """Front en une page (vanilla) : capter un appel/mémo → notes → ranger. Parle à CETTE
+    brique. Sert la démo autonome ET le contenu de l'iframe embarquée par le noyau."""
+    return _FRONT.read_text(encoding="utf-8")
 
 
 @app.get("/sante", tags=["système"])

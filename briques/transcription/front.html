@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcription — notes d'appel souveraines</title>
+<style>
+  :root{
+    --bg:#120f18; --bg2:#1a1622; --pan:#221c2e; --bord:#39304f;
+    --txt:#ece7f5; --doux:#a99fc4; --or:#e7c66b; --or2:#cba94e;
+    --ok:#7fd6a0; --ko:#e88; --rec:#ef5a5a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(160deg,var(--bg),var(--bg2));color:var(--txt);
+       font-family:-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5}
+  .wrap{max-width:860px;margin:0 auto;padding:26px 20px 60px}
+  h1{font-size:1.5rem;margin:.2em 0;display:flex;gap:.4em;align-items:center}
+  h1 .em{font-size:1.3em}
+  .sous{color:var(--doux);margin:.2em 0 1.4em}
+  .pan{background:var(--pan);border:1px solid var(--bord);border-radius:14px;padding:18px 18px;margin:14px 0}
+  .pan h2{font-size:1rem;margin:0 0 12px;color:var(--or)}
+  .barre{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  button{cursor:pointer;border:1px solid var(--bord);background:#2c2440;color:var(--txt);
+         padding:10px 14px;border-radius:10px;font-size:.92rem;transition:.15s}
+  button:hover{border-color:var(--or2);color:#fff}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.or{background:linear-gradient(135deg,var(--or),var(--or2));color:#241c00;border:none;font-weight:600}
+  button.rec{background:var(--rec);border:none;color:#fff;animation:puls 1.2s infinite}
+  @keyframes puls{50%{opacity:.55}}
+  select,input[type=text]{background:#1c1728;color:var(--txt);border:1px solid var(--bord);
+         border-radius:9px;padding:9px 11px;font-size:.9rem}
+  input[type=text]{flex:1;min-width:180px}
+  label.opt{display:inline-flex;gap:6px;align-items:center;color:var(--doux);font-size:.88rem}
+  .etat{font-size:.85rem;color:var(--doux);margin-top:8px;min-height:1.2em}
+  .chrono{font-variant-numeric:tabular-nums;color:var(--or);font-weight:600}
+  .badge{font-size:.74rem;padding:2px 8px;border-radius:20px;border:1px solid var(--bord);color:var(--doux)}
+  .badge.ok{color:var(--ok);border-color:#2f6}
+  .res{display:none}
+  .res.on{display:block}
+  .notes h3{color:var(--or);font-size:.92rem;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+  .notes ul{margin:.2em 0;padding-left:1.2em}
+  .notes .resume{font-size:1.02rem}
+  .themes span{display:inline-block;background:#2c2440;border:1px solid var(--bord);
+       border-radius:20px;padding:2px 10px;margin:3px 4px 0 0;font-size:.82rem;color:var(--doux)}
+  .trans{white-space:pre-wrap;background:#15111e;border:1px solid var(--bord);border-radius:10px;
+       padding:12px;max-height:230px;overflow:auto;font-size:.88rem;color:var(--doux)}
+  .src{font-size:.78rem;color:var(--doux);font-style:italic}
+  .ko{color:var(--ko)}
+  .aide{font-size:.82rem;color:var(--doux);background:#1c1728;border-left:3px solid var(--or2);
+       border-radius:0 8px 8px 0;padding:10px 12px;margin-top:10px}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--bord);border-top-color:var(--or);
+       border-radius:50%;animation:tour .7s linear infinite;vertical-align:-2px}
+  @keyframes tour{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="em">🎙️</span> Transcription <span id="souv" class="badge">…</span></h1>
+  <p class="sous">Capte un appel ou un mémo, retranscris en local, et range les notes où tu veux —
+     sans bot, sans cloud imposé.</p>
+
+  <!-- CAPTURE -->
+  <div class="pan">
+    <h2>1 · Capter l'audio</h2>
+    <div class="barre">
+      <button id="b-appel" class="or">🖥️ Capter l'appel</button>
+      <button id="b-micro">🎤 Mémo (micro seul)</button>
+      <button id="b-stop" disabled>⏹ Arrêter</button>
+      <span class="chrono" id="chrono"></span>
+      <span style="flex:1"></span>
+      <button id="b-fichier">📁 Importer un fichier</button>
+      <input id="fichier" type="file" accept="audio/*,video/*" style="display:none">
+    </div>
+    <div class="barre" style="margin-top:12px">
+      <label class="opt">Langue
+        <select id="langue">
+          <option value="">auto</option><option value="fr">fr</option><option value="en">en</option>
+          <option value="es">es</option><option value="de">de</option><option value="it">it</option>
+          <option value="pt">pt</option><option value="ar">ar</option>
+        </select></label>
+      <label class="opt"><input type="checkbox" id="diar"> identifier les intervenants</label>
+    </div>
+    <div class="etat" id="etat"></div>
+    <div class="aide" id="aide-appel" style="display:none">
+      <b>Capter l'appel (façon Granola, sans bot)</b> : ton navigateur va te demander de
+      <i>partager</i> l'onglet/la fenêtre de la réunion — coche bien « <b>Partager l'audio de
+      l'onglet</b> ». On mixe cet audio (les autres) avec ton micro (toi). 100 % local.
+      <br>Pour capter <i>tout</i> le système (toutes apps), il faut un périphérique audio virtuel
+      (BlackHole) ou un assistant natif — prévu plus tard.
+    </div>
+  </div>
+
+  <!-- RÉSULTAT -->
+  <div class="pan res" id="res">
+    <h2>2 · Notes</h2>
+    <div class="notes" id="notes"></div>
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--doux)">Transcription complète</summary>
+      <div class="trans" id="trans"></div>
+    </details>
+
+    <h2 style="margin-top:20px">3 · Ranger les notes</h2>
+    <div class="barre">
+      <label class="opt">Destination
+        <select id="dest">
+          <option value="memoire">🧠 Mémoire (souverain)</option>
+          <option value="dossier">📂 Dossier / drive</option>
+        </select></label>
+      <input id="dossier" type="text" placeholder="Chemin du dossier (si dossier/drive)" style="display:none">
+      <input id="titre" type="text" placeholder="Titre des notes (optionnel)">
+      <button id="b-ranger" class="or">Ranger</button>
+    </div>
+    <div class="etat" id="etat-rangt"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let media, chunks = [], t0 = 0, tick = null, ac = null, dernier = null;
+
+// — État de la brique (souveraineté + destinations) —
+fetch('/sante').then(r=>r.json()).then(d=>{
+  const b = $('#souv');
+  if(d.souverain){ b.textContent='souverain · '+d.backend; b.classList.add('ok'); }
+  else { b.textContent = d.backend==='placeholder' ? 'aucun moteur' : d.backend; }
+}).catch(()=>{ $('#souv').textContent='hors ligne'; });
+fetch('/destinations').then(r=>r.json()).then(d=>{ if(d.defaut) $('#dest').value=d.defaut; }).catch(()=>{});
+
+$('#dest').onchange = e => { $('#dossier').style.display = e.target.value==='dossier'?'block':'none'; };
+$('#b-appel').onmouseenter = () => $('#aide-appel').style.display='block';
+
+function chrono(){ const s=Math.floor((Date.now()-t0)/1000); $('#chrono').textContent=
+  String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+
+async function demarrer(avecAppel){
+  try{
+    let flux;
+    const micro = await navigator.mediaDevices.getUserMedia({audio:true});
+    if(avecAppel){
+      $('#aide-appel').style.display='block';
+      const ecran = await navigator.mediaDevices.getDisplayMedia({video:true, audio:true});
+      const pistesAudio = ecran.getAudioTracks();
+      if(!pistesAudio.length){
+        $('#etat').innerHTML='<span class="ko">Aucun audio partagé. Recommence en cochant '+
+          '« Partager l\'audio de l\'onglet ».</span>';
+        ecran.getTracks().forEach(t=>t.stop()); micro.getTracks().forEach(t=>t.stop()); return;
+      }
+      // Mixage appel + micro via Web Audio
+      ac = new AudioContext(); const dst = ac.createMediaStreamDestination();
+      ac.createMediaStreamSource(new MediaStream(pistesAudio)).connect(dst);
+      ac.createMediaStreamSource(micro).connect(dst);
+      flux = dst.stream;
+      ecran.getVideoTracks()[0].onended = () => { if(media&&media.state!=='inactive') media.stop(); };
+      flux._sources = [ecran, micro];
+    } else { flux = micro; }
+
+    chunks = []; media = new MediaRecorder(flux);
+    media.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+    media.onstop = () => finir(flux);
+    media.start();
+    t0 = Date.now(); tick = setInterval(chrono, 500); chrono();
+    $('#b-appel').disabled=$('#b-micro').disabled=$('#b-fichier').disabled=true;
+    $('#b-stop').disabled=false; $('#b-stop').classList.add('rec');
+    $('#etat').textContent = avecAppel ? 'Capture de l\'appel en cours…' : 'Enregistrement du mémo…';
+  }catch(e){ $('#etat').innerHTML='<span class="ko">Capture refusée : '+e.message+'</span>'; }
+}
+
+function finir(flux){
+  clearInterval(tick); $('#chrono').textContent='';
+  (flux._sources||[flux]).forEach(s=>s.getTracks&&s.getTracks().forEach(t=>t.stop()));
+  if(ac){ ac.close(); ac=null; }
+  $('#b-stop').classList.remove('rec'); $('#b-stop').disabled=true;
+  $('#b-appel').disabled=$('#b-micro').disabled=$('#b-fichier').disabled=false;
+  const blob = new Blob(chunks, {type: chunks[0]?.type || 'audio/webm'});
+  envoyer(new File([blob], 'appel.webm', {type:blob.type}));
+}
+
+$('#b-appel').onclick = () => demarrer(true);
+$('#b-micro').onclick = () => demarrer(false);
+$('#b-stop').onclick  = () => { if(media&&media.state!=='inactive') media.stop(); };
+$('#b-fichier').onclick = () => $('#fichier').click();
+$('#fichier').onchange = e => { if(e.target.files[0]) envoyer(e.target.files[0]); };
+
+async function envoyer(file){
+  $('#etat').innerHTML = '<span class="spin"></span> Transcription en local + notes…';
+  $('#res').classList.remove('on');
+  const fd = new FormData();
+  fd.append('fichier', file);
+  if($('#langue').value) fd.append('langue', $('#langue').value);
+  if($('#diar').checked) fd.append('diarisation', 'true');
+  try{
+    const r = await fetch('/notes', {method:'POST', body:fd});
+    const d = await r.json();
+    dernier = d;
+    afficher(d); $('#etat').textContent='';
+  }catch(e){ $('#etat').innerHTML='<span class="ko">Échec : '+e.message+'</span>'; }
+}
+
+function afficher(d){
+  const t = d.transcription||{}, n = d.notes||{};
+  if(t.place_holder){
+    $('#notes').innerHTML = '<p class="ko">Aucun moteur de transcription configuré '+
+      '('+(t.note||'')+'). Active le Whisper local ou un fournisseur.</p>';
+  } else {
+    let h = '';
+    if(n.resume) h += '<p class="resume">'+esc(n.resume)+'</p>';
+    if((n.decisions||[]).length) h += '<h3>Décisions</h3><ul>'+n.decisions.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+    if((n.points_action||[]).length) h += '<h3>Points d\'action</h3><ul>'+n.points_action.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+    if((n.themes||[]).length) h += '<h3>Thèmes</h3><div class="themes">'+n.themes.map(x=>'<span>'+esc(x)+'</span>').join('')+'</div>';
+    h += '<p class="src">Transcription : '+esc(t.backend||'?')+(t.diarisation?' · intervenants identifiés':'')+
+         ' · notes : '+esc(n.source||'?')+(n.source==='heuristique'?' (résumé brut, Gateway absente)':'')+'</p>';
+    $('#notes').innerHTML = h;
+  }
+  $('#trans').textContent = t.texte || '(vide)';
+  $('#res').classList.add('on');
+}
+
+$('#b-ranger').onclick = async () => {
+  if(!dernier){ return; }
+  const dest = $('#dest').value;
+  const body = {notes: dernier.notes||{}, transcription: dernier.transcription||{},
+                destination: dest, titre: $('#titre').value||null,
+                langue: $('#langue').value||null};
+  if(dest==='dossier') body.dossier = $('#dossier').value||null;
+  $('#etat-rangt').innerHTML = '<span class="spin"></span> Rangement…';
+  try{
+    const r = await fetch('/archiver', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify(body)});
+    const d = await r.json();
+    if(d.ok) $('#etat-rangt').innerHTML = '<span style="color:var(--ok)">✓ Rangé dans '+esc(d.destination)+
+       (d.fichier?(' : '+esc(d.fichier)):'')+(d.souverain?' (souverain)':'')+'</span>';
+    else $('#etat-rangt').innerHTML = '<span class="ko">Échec : '+esc(d.erreur||'?')+'</span>';
+  }catch(e){ $('#etat-rangt').innerHTML='<span class="ko">Échec : '+e.message+'</span>'; }
+};
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+</script>
+</body>
+</html>
