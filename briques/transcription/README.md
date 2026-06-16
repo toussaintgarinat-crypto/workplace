@@ -95,8 +95,9 @@ embarquable en iframe comme Studio/Personnages). Trois entrées :
 
 Puis : transcription + notes affichées, et bouton **Ranger** vers mémoire ou dossier/drive.
 
-> Limite assumée : capter *tout* le son système (toutes apps, hors navigateur) demande un
-> périphérique audio virtuel (BlackHole) ou un assistant natif — incrément ultérieur.
+> Pour capter *tout* le son système (toutes apps, pas juste un onglet du navigateur — ex.
+> client Zoom natif), utilise le **capteur natif macOS** : `capteur-macos/` (ScreenCaptureKit,
+> sans pilote ni bot, façon Granola). Voir son README.
 
 ## Assistant (le Jarvis pilote)
 
