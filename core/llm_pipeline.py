@@ -18,6 +18,7 @@ toucher aux call-sites :
   * `# [S138-4]` shadow routing dans le governor (chantier 4)
 """
 
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -245,6 +246,157 @@ async def completer(
                                   tokens_out=0, cout_usd=0, trimmed_tokens=trimmed,
                                   erreur=erreur)
         return Resultat(erreur=erreur, trimmed_tokens=trimmed, modeles_essayes=essayes)
+    finally:
+        if proprietaire:
+            await client.aclose()
+
+
+async def completer_flux(
+    messages: list[dict],
+    *,
+    modeles: list[str],
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    etiquette: str = "chat",
+    trim_contexte: bool = True,
+    conf: dict | None = None,
+    timeout: float = 120,
+    client: httpx.AsyncClient | None = None,
+):
+    """Variante STREAMING de `completer()` (S60) : émet les tokens au fil de l'eau.
+
+    Générateur asynchrone d'événements :
+      • ``{"type":"delta","contenu": <fragment de texte>}``        (0..N fois) ;
+      • ``{"type":"fin","message": <message assemblé>, "resultat": Resultat}`` (succès) ;
+      • ``{"type":"erreur","erreur": <str>}``                       (aucun modèle).
+
+    Mêmes pré-traitements économes que `completer()` (résumé à froid, trimming, routage,
+    garde-fou budget) et même journalisation d'usage. La **bascule de modèle** n'a lieu que
+    TANT QU'AUCUN token n'a été émis : une fois le flux commencé, on ne le rejoue pas sur un
+    autre modèle (honnêteté — l'utilisateur a déjà vu du texte). Le cache sémantique est
+    sauté (chat à outils = effet de bord). Les `tool_calls` arrivent en fragments (par
+    `index`) qu'on réassemble avant de rendre le message final."""
+    conf = conf or {}
+    proprietaire = client is None
+    if proprietaire:
+        client = httpx.AsyncClient(timeout=timeout)
+    essayes: list[str] = []
+    derniere_erreur = None
+    try:
+        if conf.get("resume_actif"):
+            messages = await summarisation.condenser(client, messages, conf)
+        trimmed = 0
+        if trim_contexte:
+            messages, trimmed = trimming.trim(messages)
+        routed_to = complexite = None
+        if conf:
+            modeles, routed_to, complexite = routage.router(messages, modeles, conf, tools)
+
+        payload = {"messages": messages, "temperature": temperature,
+                   "stream": True, "stream_options": {"include_usage": True}}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        modeles_effectifs, budget_force_gratuit = _ordonner_selon_budget(modeles)
+        if not modeles_effectifs:
+            msg = "Budget LLM atteint et aucun modèle gratuit configuré."
+            journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
+                                       tokens_out=0, cout_usd=0, trimmed_tokens=trimmed, erreur=msg)
+            yield {"type": "erreur", "erreur": msg}
+            return
+
+        for modele in modeles_effectifs:
+            essayes.append(modele)
+            payload["model"] = modele
+            contenu = ""
+            tool_frags: dict = {}                 # index -> {id, name, args}
+            usage: dict = {}
+            emis = False
+            try:
+                async with client.stream(
+                    "POST", f"{GATEWAY_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {GATEWAY_KEY}"}, json=payload,
+                ) as r:
+                    if r.status_code >= 400:
+                        derniere_erreur = f"HTTP {r.status_code}"
+                        await r.aread()
+                        logger.warning("Gateway %s sur %s (flux) — modèle suivant",
+                                       r.status_code, modele)
+                        continue                  # rien émis → bascule honnête
+                    async for ligne in r.aiter_lines():
+                        if not ligne or not ligne.startswith("data:"):
+                            continue
+                        data = ligne[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except ValueError:
+                            continue
+                        if chunk.get("usage"):
+                            usage = chunk["usage"]
+                        choix = chunk.get("choices") or []
+                        if not choix:
+                            continue
+                        delta = choix[0].get("delta") or {}
+                        frag = delta.get("content")
+                        if frag:
+                            contenu += frag
+                            emis = True
+                            yield {"type": "delta", "contenu": frag}
+                        for tcd in delta.get("tool_calls") or []:
+                            i = tcd.get("index", 0)
+                            slot = tool_frags.setdefault(i, {"id": "", "name": "", "args": ""})
+                            if tcd.get("id"):
+                                slot["id"] = tcd["id"]
+                            fn = tcd.get("function") or {}
+                            if fn.get("name"):
+                                slot["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["args"] += fn["arguments"]
+                            emis = True
+            except httpx.HTTPError as e:
+                derniere_erreur = str(e)
+                if emis:                          # flux déjà commencé : pas de rejeu honnête
+                    yield {"type": "erreur", "erreur": f"Flux interrompu : {e}"}
+                    return
+                logger.warning("Gateway injoignable (%s) sur %s (flux) — modèle suivant", e, modele)
+                continue
+
+            # Flux terminé pour ce modèle → assembler le message complet.
+            message: dict = {"role": "assistant", "content": contenu or None}
+            if tool_frags:
+                message["tool_calls"] = [
+                    {"id": s["id"], "type": "function",
+                     "function": {"name": s["name"], "arguments": s["args"]}}
+                    for _, s in sorted(tool_frags.items())
+                ]
+            tokens_in = int(usage.get("prompt_tokens") or 0)
+            tokens_out = int(usage.get("completion_tokens") or 0)
+            cout = _cout(modele, tokens_in, tokens_out, None)
+            routed = routed_to if (routed_to and modele == routed_to) else None
+            journal_usage.enregistrer(
+                modele=modele, etiquette=etiquette, tokens_in=tokens_in,
+                tokens_out=tokens_out, cout_usd=cout, trimmed_tokens=trimmed,
+                routed_to=routed, complexite=complexite)
+            if contenu and not tool_frags and not _sans_cout_marginal(modele) \
+                    and shadow.echantillonne(conf):
+                shadow.planifier(messages, conf, contenu, modele, cout, etiquette)
+            res = Resultat(message=message, modele_utilise=modele, tokens_in=tokens_in,
+                           tokens_out=tokens_out, cout_usd=cout, trimmed_tokens=trimmed,
+                           routed_to=routed, complexite=complexite, modeles_essayes=essayes)
+            yield {"type": "fin", "message": message, "resultat": res}
+            return
+
+        erreur = f"Aucun modèle disponible ({derniere_erreur})."
+        journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
+                                  tokens_out=0, cout_usd=0, trimmed_tokens=trimmed, erreur=erreur)
+        yield {"type": "erreur", "erreur": erreur}
     finally:
         if proprietaire:
             await client.aclose()

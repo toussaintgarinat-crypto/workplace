@@ -1,0 +1,5 @@
+# Brique calcul — dépendances minces et épinglées. Aucune lib réseau lourde :
+# le réveil WoL passe par la socket UDP standard, la sonde par httpx.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
