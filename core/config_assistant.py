@@ -66,6 +66,20 @@ DEFAUT_UNMUTE_URL = os.getenv("UNMUTE_URL", "")
 # URL WebSocket de la brique ecoute (S42). Défaut = brique locale exposée sur 5800.
 DEFAUT_WAKEWORD_URL = os.getenv("WAKEWORD_URL", "ws://localhost:5800/ecoute")
 
+# Muscle déporté (roadmap « partage de puissance de calcul », brique calcul port 5990) :
+# si actif, le Cœur demande à calcul quel nœud de calcul distant est PRÊT et le met EN
+# TÊTE de la cascade ; sinon il déclenche un réveil EN FOND et sert la requête courante
+# en mode dégradé (gratuits). Désactivé par défaut (opt-in) → comportement inchangé.
+DEFAUT_MUSCLE_ACTIF = os.getenv("MUSCLE_ACTIF", "0").lower() not in ("0", "false", "no")
+
+# Repli souverain CPU sur le Cœur (S62) : dernier maillon de la cascade quand le Muscle
+# dort et que les gratuits échouent — un petit modèle 100 % local (modèle Gateway
+# `local/cpu` p.ex.). Vide = désactivé. `avant_payant` = souveraineté d'abord (on tente
+# le local AVANT d'envoyer les données au payant cloud).
+DEFAUT_REPLI_SOUVERAIN = os.getenv("REPLI_SOUVERAIN", "")
+DEFAUT_REPLI_SOUVERAIN_AVANT_PAYANT = \
+    os.getenv("REPLI_SOUVERAIN_AVANT_PAYANT", "1").lower() not in ("0", "false", "no")
+
 # Langue du Jarvis (S39) : langue de ses réponses (chat/briefing/résumé/classement)
 # ET de la voix (reco/synthèse). Préférence de l'utilisateur, réglable ⚙ Cerveau,
 # défaut `fr`. La normalisation/repli est dans `langue.py` (source de vérité).
@@ -96,6 +110,9 @@ def charger() -> dict:
         "cascade_auto": DEFAUT_CASCADE_AUTO,
         "repli_payant": DEFAUT_REPLI_PAYANT,
         "cascade_free_n": DEFAUT_CASCADE_FREE_N,
+        "muscle_actif": DEFAUT_MUSCLE_ACTIF,
+        "repli_souverain": DEFAUT_REPLI_SOUVERAIN,
+        "repli_souverain_avant_payant": DEFAUT_REPLI_SOUVERAIN_AVANT_PAYANT,
     }
     if CONFIG_PATH.exists():
         try:
@@ -129,6 +146,12 @@ def charger() -> dict:
                 base["repli_payant"] = d.get("repli_payant")
             if d.get("cascade_free_n") is not None:
                 base["cascade_free_n"] = int(d.get("cascade_free_n"))
+            if d.get("muscle_actif") is not None:
+                base["muscle_actif"] = bool(d.get("muscle_actif"))
+            if d.get("repli_souverain") is not None:
+                base["repli_souverain"] = d.get("repli_souverain")
+            if d.get("repli_souverain_avant_payant") is not None:
+                base["repli_souverain_avant_payant"] = bool(d.get("repli_souverain_avant_payant"))
         except Exception:
             pass
     return base
@@ -141,6 +164,29 @@ def definir_routage(actif: bool | None = None, modele_econome: str | None = None
         conf["routage_actif"] = bool(actif)
     if modele_econome is not None:
         conf["modele_econome"] = modele_econome.strip()
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
+
+
+def definir_muscle(actif: bool | None = None) -> dict:
+    """Active/désactive le recours au muscle déporté (brique calcul, roadmap S58)."""
+    conf = charger()
+    if actif is not None:
+        conf["muscle_actif"] = bool(actif)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
+
+
+def definir_repli_souverain(modele: str | None = None,
+                            avant_payant: bool | None = None) -> dict:
+    """Règle le repli souverain CPU (S62) : modèle Gateway local + position vs payant."""
+    conf = charger()
+    if modele is not None:
+        conf["repli_souverain"] = modele.strip()
+    if avant_payant is not None:
+        conf["repli_souverain_avant_payant"] = bool(avant_payant)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf
@@ -233,14 +279,27 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
     """
     conf = conf or charger()
     principal = (conf.get("model") or "").strip()
+    # Repli souverain CPU (S62) : dernier maillon LOCAL. Placé avant ou après le repli
+    # payant selon la préférence (souveraineté d'abord = avant le cloud).
+    souverain = (conf.get("repli_souverain") or "").strip()
+    souverain_avant = conf.get("repli_souverain_avant_payant", True)
 
     if not conf.get("cascade_auto"):
-        chaine = ([principal] if principal else []) + list(conf.get("fallback_models") or [])
+        # Mode manuel : le souverain est l'ultime filet, en toute fin de chaîne.
+        chaine = ([principal] if principal else []) + list(conf.get("fallback_models") or []) \
+            + ([souverain] if souverain else [])
     else:
         dispo = await lister_modeles()
         gratuits = [m for m in dispo if m.startswith("free/")][: conf.get("cascade_free_n", 3)]
         repli = (conf.get("repli_payant") or DEFAUT_REPLI_PAYANT).strip()
-        chaine = ([principal] if principal else []) + gratuits + ([repli] if repli else [])
+        queue = []
+        if souverain and souverain_avant:
+            queue += [souverain] + ([repli] if repli else [])
+        elif souverain:
+            queue += ([repli] if repli else []) + [souverain]
+        else:
+            queue += [repli] if repli else []
+        chaine = ([principal] if principal else []) + gratuits + queue
 
     # Dédup en conservant l'ordre ; on retire les vides.
     vu: set[str] = set()

@@ -1,0 +1,29 @@
+{
+  "nom": "calcul",
+  "version": "0.1.0",
+  "description": "Partage de puissance de calcul — réveille (Wake-on-LAN / wake-ping mesh) et sonde des nœuds de calcul distants servant un LLM (endpoint OpenAI-compatible). Ne calcule rien : pilote « le Muscle » pour le Cœur.",
+  "role": "calcul",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/calcul",
+  "port": 5990,
+  "url_sante": "http://host.docker.internal:5990/sante",
+  "depends_on": [],
+  "offre": [
+    "etat_noeud",
+    "reveiller_noeud",
+    "sonder_noeuds"
+  ],
+  "besoin": [],
+  "taches": [
+    {
+      "nom": "keepalive-noeuds",
+      "description": "Rafraîchit l'état (éveillé/endormi/injoignable) de tous les nœuds de calcul déclarés",
+      "methode": "POST",
+      "chemin": "/noeuds/sonder",
+      "cadence_heures": 0.25,
+      "idempotent": true,
+      "tolere_echec": true
+    }
+  ]
+}

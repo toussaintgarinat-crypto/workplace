@@ -265,6 +265,41 @@ model_list:
       timeout: 60
       num_retries: 0
 
+  # POOL DE MUSCLES (roadmap « partage de puissance de calcul », brique calcul + mesh
+  # NetBird). Quand on a PLUSIEURS machines de calcul (Mac/PC), chacune a SA propre
+  # entrée : c'est le `modele_gateway` que la brique calcul renvoie pour le nœud élu, et
+  # que le Cœur met en tête de cascade. Chaque api_base pointe l'adresse MESH de la
+  # machine (ex. http://100.x.y.z:11434/v1 via NetBird) — aucun port ouvert sur la box.
+  # Entrée inerte tant que MUSCLE_n_URL est vide. Ajouter local/muscle-3, -4… au besoin.
+  - model_name: local/muscle-1
+    litellm_params:
+      model: openai/local
+      api_base: os.environ/MUSCLE_1_URL
+      api_key: os.environ/LOCAL_API_KEY
+      timeout: 60
+      num_retries: 0
+  - model_name: local/muscle-2
+    litellm_params:
+      model: openai/local
+      api_base: os.environ/MUSCLE_2_URL
+      api_key: os.environ/LOCAL_API_KEY
+      timeout: 60
+      num_retries: 0
+
+  # REPLI SOUVERAIN sur le Cœur (S62) : petit modèle CPU tournant SUR la machine du Cœur
+  # (Proxmox), serveur OpenAI-compatible (llama.cpp/Ollama léger). C'est le DERNIER maillon
+  # SOUVERAIN de la cascade — quand le Muscle dort et que les gratuits échouent, on répond
+  # ici (lent mais 100 % local, aucune donnée ne sort) plutôt que de tomber sur le payant
+  # cloud. Inerte tant que LOCAL_CPU_URL est vide. Honnêteté : ce n'est PAS le gros modèle,
+  # le modèle réellement utilisé est journalisé tel quel.
+  - model_name: local/cpu
+    litellm_params:
+      model: openai/local
+      api_base: os.environ/LOCAL_CPU_URL
+      api_key: os.environ/LOCAL_API_KEY
+      timeout: 120
+      num_retries: 0
+
   # Embeddings locaux (Ollama all-MiniLM, 384 dims) — alimente la brique mémoire
   # (Memory, colonne Vector(384)). Local, gratuit, rapide même sur CPU.
   - model_name: embedding/all-minilm
