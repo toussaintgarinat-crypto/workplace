@@ -37,3 +37,15 @@ def test_local_desactivable_par_env(monkeypatch):
 def test_texte_de_segments():
     segs = [{"texte": "Bonjour"}, {"texte": " tout le monde "}, {"texte": ""}]
     assert f._texte_de_segments(segs) == "Bonjour tout le monde"
+
+
+def test_diarisation_desactivee_par_defaut():
+    # DIARISATION_LOCAL non mis (cf. conftest) → pas de diarisation, jamais d'invention.
+    assert f.REGISTRE["local"]._diariser("/tmp/x.wav", []) is False
+
+
+def test_diarisation_degrade_sans_token(monkeypatch):
+    # Activée mais sans HF_TOKEN (ou lib absente) → dégrade honnêtement à False.
+    monkeypatch.setenv("DIARISATION_LOCAL", "1")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    assert f.REGISTRE["local"]._diariser("/tmp/x.wav", [{"debut": 0, "fin": 1}]) is False

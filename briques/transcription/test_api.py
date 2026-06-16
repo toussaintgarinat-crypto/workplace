@@ -66,7 +66,7 @@ def test_destinations_catalogue():
     assert r.status_code == 200
     data = r.json()
     noms = [d["nom"] for d in data["destinations"]]
-    assert set(noms) == {"memoire", "dossier"}
+    assert set(noms) == {"memoire", "dossier", "gdrive"}
     assert data["defaut"] == "memoire"                 # souverain par défaut
 
 
@@ -82,7 +82,7 @@ def test_archiver_dossier(tmp_path):
 
 
 def test_archiver_destination_inconnue():
-    r = client.post("/archiver", json={"notes": {"resume": "x"}, "destination": "gdrive"})
+    r = client.post("/archiver", json={"notes": {"resume": "x"}, "destination": "dropbox"})
     assert r.status_code == 200                         # pont consenti : 200 mais ok=false
     assert r.json()["ok"] is False
 

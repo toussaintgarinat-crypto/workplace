@@ -1,0 +1,10 @@
+# Diarisation SOUVERAINE optionnelle (« qui parle ») — lourde, CPU/GPU, modèles via Hugging Face.
+# Non incluse par défaut (cf. requirements.txt) : la diarisation locale est best-effort.
+# Pour l'activer :
+#   1) pip install -r requirements-diarisation.txt
+#   2) accepter les conditions du modèle pyannote sur huggingface.co et créer un token
+#   3) lancer la brique avec DIARISATION_LOCAL=1 et HF_TOKEN=<ton_token>
+# Sans ces 3 conditions, la transcription locale rend diarisation:false (jamais d'invention).
+pyannote.audio==3.3.2
+torch>=2.2
+torchaudio>=2.2

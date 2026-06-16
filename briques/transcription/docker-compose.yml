@@ -38,6 +38,11 @@ services:
       # destination=dossier : écrit un .md ici. Monte un dossier synchronisé par ton drive
       # (Google Drive/iCloud/Dropbox) sur /notes pour qu'il y atterrisse sans OAuth.
       - NOTES_DOSSIER=${NOTES_DOSSIER:-/notes}
+      # destination=gdrive : API Google Drive (OAuth refresh token, scope drive.file). Opt-in.
+      - GDRIVE_CLIENT_ID=${GDRIVE_CLIENT_ID:-}
+      - GDRIVE_CLIENT_SECRET=${GDRIVE_CLIENT_SECRET:-}
+      - GDRIVE_REFRESH_TOKEN=${GDRIVE_REFRESH_TOKEN:-}
+      - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID:-}
       # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
       - API_KEYS=
     volumes:

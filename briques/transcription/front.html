@@ -119,8 +119,9 @@
         <select id="dest">
           <option value="memoire">🧠 Mémoire (souverain)</option>
           <option value="dossier">📂 Dossier / drive</option>
+          <option value="gdrive">▲ Google Drive (API)</option>
         </select></label>
-      <input id="dossier" type="text" placeholder="Chemin du dossier (si dossier/drive)" style="display:none">
+      <input id="dossier" type="text" placeholder="Chemin du dossier (ou ID dossier Google Drive)" style="display:none">
       <input id="titre" type="text" placeholder="Titre des notes (optionnel)">
       <button id="b-ranger" class="or">Ranger</button>
     </div>
@@ -154,7 +155,8 @@ fetch('/sante').then(r=>r.json()).then(d=>{
 }).catch(()=>{ $('#souv').textContent='hors ligne'; });
 fetch('/destinations').then(r=>r.json()).then(d=>{ if(d.defaut) $('#dest').value=d.defaut; }).catch(()=>{});
 
-$('#dest').onchange = e => { $('#dossier').style.display = e.target.value==='dossier'?'block':'none'; };
+$('#dest').onchange = e => { $('#dossier').style.display =
+  (e.target.value==='dossier'||e.target.value==='gdrive')?'block':'none'; };
 $('#b-appel').onmouseenter = () => $('#aide-appel').style.display='block';
 
 function chrono(){ const s=Math.floor((Date.now()-t0)/1000); $('#chrono').textContent=

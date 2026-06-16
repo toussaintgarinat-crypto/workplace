@@ -41,7 +41,7 @@ fausse transcription, jamais de texte inventé.
 ## Fournisseurs (ordre par défaut)
 
 1. **`local`** — Whisper (faster-whisper, CPU/Metal). **Souverain.** Diarisation pyannote
-   *best-effort* si installée + `HF_TOKEN`, sinon `diarisation: false` (honnête).
+   *best-effort* (voir ci-dessous), sinon `diarisation: false` (honnête).
 2. `openai` — `/audio/transcriptions` (whisper-1 / gpt-4o-transcribe). Pas de diarisation.
 3. `deepgram` — `/v1/listen?diarize=true` : segments **avec** locuteurs.
 4. `assemblyai` — `speaker_labels=true` : segments **avec** locuteurs.
@@ -67,7 +67,10 @@ Les notes peuvent être **déposées dans une destination au choix** — jamais 
 - **`dossier`** — écrit un `.md` dans un dossier au choix (`dossier=...` ou `NOTES_DOSSIER`).
   Pointe ce dossier vers un dossier **synchronisé par ton drive** (Google Drive / iCloud /
   Dropbox, app de bureau) → la note remonte sur le drive **sans OAuth ni API tierce**.
-- *(à venir, incrément séparé)* `gdrive` via l'API Google Drive (OAuth, pont Google S27/S35).
+- **`gdrive`** — l'**API Google Drive** directement (OAuth, refresh token). Configure
+  `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, `GDRIVE_REFRESH_TOKEN` (consentement une fois,
+  scope `drive.file`) et éventuellement `GDRIVE_FOLDER_ID` (dossier cible, ou param `dossier`).
+  La note `.md` est uploadée via `multipart/related`. Opt-in.
 
 ```bash
 # archiver des notes existantes dans la mémoire (souverain)
@@ -80,6 +83,20 @@ curl -F fichier=@reunion.m4a -F destination=dossier localhost:5980/notes
 
 Si la destination échoue (mémoire injoignable, dossier absent), la réponse porte
 `{"ok": false, "erreur": "..."}` — **les notes ne sont jamais perdues en silence**.
+
+## Diarisation souveraine (« qui parle ») — optionnelle
+
+En local, l'identification des intervenants est **best-effort** via **pyannote** (souverain,
+aucun envoi). Pour l'activer :
+
+```bash
+pip install -r requirements-diarisation.txt           # pyannote.audio + torch (lourd)
+# accepter les conditions du modèle pyannote sur huggingface.co, créer un token, puis :
+DIARISATION_LOCAL=1 HF_TOKEN=<token> docker compose up
+```
+
+Sans ces conditions (ou avec un fournisseur cloud qui ne diarise pas), la réponse porte
+`diarisation: false` — jamais de locuteurs inventés. Deepgram / AssemblyAI diarisent nativement.
 
 ## Front (capter un appel, façon Granola — sans bot)
 
