@@ -43,6 +43,13 @@ services:
       # Vide = modèle local/llm inerte. Clé factice acceptée par ces serveurs.
       - LOCAL_OPENAI_URL=${LOCAL_OPENAI_URL:-}
       - LOCAL_API_KEY=${LOCAL_API_KEY:-sk-local}
+      # Pool de muscles (brique calcul + mesh NetBird) : adresse MESH OpenAI-compatible
+      # de chaque machine de calcul. Vide = entrée local/muscle-n inerte. Cf. GUIDE-mesh-netbird.md.
+      - MUSCLE_1_URL=${MUSCLE_1_URL:-}
+      - MUSCLE_2_URL=${MUSCLE_2_URL:-}
+      # Repli souverain CPU sur le Cœur (modèle `local/cpu`) — serveur OpenAI-compatible
+      # local (llama.cpp/Ollama léger). Vide = inerte. Cf. REPLI_SOUVERAIN côté Cœur.
+      - LOCAL_CPU_URL=${LOCAL_CPU_URL:-}
     volumes:
       - ./litellm_config.yaml:/app/config.yaml:ro
     depends_on:

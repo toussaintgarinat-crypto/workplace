@@ -8,7 +8,7 @@ import json
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 import agenda
 import assistant
@@ -54,8 +54,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Workplace — Cœur</title>
+<!-- PWA « télécommande » (S61) : installable sur mobile, plein écran, zéro calcul local. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Workplace">
+<link rel="apple-touch-icon" href="/icon.svg">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
@@ -236,6 +243,26 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .cerveau-msg.ok { color: #4ade80; }
   .cerveau-msg.ko { color: #f87171; }
   .cerveau-msg.info { color: #94a3b8; }
+  /* ── Télécommande mobile (S61) : le dashboard devient une appli chat plein écran ── */
+  @supports (padding: env(safe-area-inset-bottom)) {
+    header { padding-top: calc(20px + env(safe-area-inset-top)); }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+  }
+  @media (max-width: 640px) {
+    header { padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top)); flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 1.05rem; }
+    main { padding: 16px; }
+    .topbar { flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .grid { grid-template-columns: 1fr; }      /* tuiles en colonne unique */
+    .tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Chat : occupe l'écran (la « télécommande »). dvh = hauteur réelle hors barre mobile. */
+    .chat { height: calc(100dvh - 150px); }
+    .bulle { max-width: 88%; font-size: 0.95rem; }
+    /* Inputs ≥ 16px : empêche le zoom auto d'iOS au focus. */
+    .chat-saisie input, .cerveau-row input, .cerveau-row select { font-size: 16px; }
+    .chat-saisie { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
+    #panel-cerveau { max-height: 70dvh; overflow-y: auto; }
+  }
 </style>
 </head>
 <body>
@@ -356,6 +383,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             Cascade auto — gratuits d'abord, repli payant
           </label>
           <div class="liv-sub" id="cascade-desc" style="margin-top:4px">Essaie les meilleurs modèles gratuits (auto-sélectionnés), puis bascule sur le payant si besoin. Choisir un modèle ci-dessus le met en tête (ex. IA locale, ou payant d'abord).</div>
+        </div>
+      </div>
+      <div class="cerveau-row" style="margin-top:10px">
+        <div class="field" style="flex:1">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="cerveau-muscle" onchange="enregistrerMuscle()" style="width:auto;min-width:0">
+            Muscle déporté — calcul LLM sur une autre machine (Mac/PC)
+          </label>
+          <div class="liv-sub" style="margin-top:4px">Si un nœud de calcul est prêt, il passe <b>en tête de la cascade</b> ; sinon il est réveillé en fond et la réponse part en mode dégradé (gratuits). Géré par la brique <b>calcul</b> (port 5990).</div>
+          <div class="liv-sub" id="muscle-noeuds" style="margin-top:6px">—</div>
         </div>
       </div>
       <div class="cerveau-row" style="margin-top:14px">
@@ -844,6 +881,10 @@ async function chargerCerveau(force) {
     // Case cascade + description de la chaîne réellement essayée.
     const cb = document.getElementById('cerveau-cascade');
     if (cb) cb.checked = !!c.cascade_auto;
+    // Muscle déporté (brique calcul) : toggle + état live des nœuds.
+    const cbM = document.getElementById('cerveau-muscle');
+    if (cbM) cbM.checked = !!c.muscle_actif;
+    majMuscleNoeuds();
     const chaine = c.chaine_effective || [];
     const desc = document.getElementById('cascade-desc');
     if (desc && chaine.length) desc.textContent = 'Ordre essayé : ' + chaine.join('  →  ');
@@ -983,6 +1024,32 @@ async function enregistrerCascade() {
     }).then(r => r.json());
     await chargerCerveau(true);
     cerveauMsg(actif ? '✔ Cascade auto activée (gratuits d\\'abord).' : '✔ Cascade désactivée (modèle + repli manuel).', 'ok');
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+}
+async function majMuscleNoeuds() {
+  const el = document.getElementById('muscle-noeuds');
+  if (!el) return;
+  try {
+    const m = await fetch('/assistant/muscle').then(r => r.json());
+    if (!m.brique_joignable) { el.textContent = '◌ Brique calcul injoignable (port 5990).'; return; }
+    const ns = m.noeuds || [];
+    if (!ns.length) { el.textContent = 'Aucun nœud déclaré (variable CALCUL_NOEUDS).'; return; }
+    const icone = e => e === 'eveille' ? '🟢' : e === 'endormi' ? '🌙' : e === 'injoignable' ? '🔴' : '⚪';
+    el.innerHTML = ns.map(n => icone(n.etat) + ' ' + (n.nom || n.id) + ' — ' + n.etat
+      + (n.modele_gateway ? ' <span style="opacity:.7">(' + n.modele_gateway + ')</span>' : '')).join('<br>');
+  } catch(e) { el.textContent = 'État des nœuds indisponible.'; }
+}
+async function enregistrerMuscle() {
+  const actif = document.getElementById('cerveau-muscle').checked;
+  cerveauMsg('Mise à jour du muscle déporté…', 'info');
+  try {
+    const r = await fetch('/assistant/muscle', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ actif })
+    }).then(r => r.json());
+    await majMuscleNoeuds();
+    cerveauMsg(r.muscle_actif ? '✔ Muscle déporté activé : un nœud prêt passe en tête de cascade.'
+                              : '✔ Muscle déporté désactivé (cascade habituelle).', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
 }
 async function enregistrerCle() {
@@ -1207,6 +1274,10 @@ async function envoyerMessage(e) {
         const evt = JSON.parse(m[1]);
         if (evt.type === 'outil') { ajouterOutil(evt.nom, evt.action, false); }
         else if (evt.type === 'resultat_outil') { if (evt.confirmation) ajouterOutil(evt.nom, true, true); }
+        else if (evt.type === 'texte_delta' && evt.contenu) {   // S60 : tokens au fil de l'eau
+          if (!bulleAssist) { tip.remove(); bulleAssist = ajouterBulle('assistant', ''); }
+          texteFinal += evt.contenu; bulleAssist.textContent = texteFinal; chatEcho();
+        }
         else if (evt.type === 'texte' && evt.contenu) {
           if (!bulleAssist) { tip.remove(); bulleAssist = ajouterBulle('assistant', ''); }
           texteFinal = evt.contenu; bulleAssist.textContent = evt.contenu; chatEcho();
@@ -1687,6 +1758,10 @@ setInterval(charger, 30000);
 setInterval(rafraichirPastilleRappels, 60000);
 // L'usine évolue vite (étapes async) : on rafraîchit toutes les 4 s quand la vue est ouverte.
 setInterval(() => { if (VUE === 'usine') chargerLivraisons(); }, 4000);
+// PWA « télécommande » (S61) : enregistre le service-worker (installable, coque hors-ligne).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>"""
@@ -1822,6 +1897,55 @@ async def dashboard():
         .replace("__STUDIO_UI_URL__", studio_ui)
         .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
         .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL))
+
+
+# ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────
+# Le téléphone n'est qu'une télécommande : zéro calcul/stockage lourd, juste l'UI de chat
+# (streaming S60) qui parle au Cœur. Motif éprouvé de la brique transcription.
+_PWA_MANIFEST = {
+    "name": "Workplace — Cœur", "short_name": "Workplace",
+    "description": "Télécommande de la solution : piloter, discuter, capter — depuis le mobile.",
+    "start_url": "/dashboard", "scope": "/", "display": "standalone",
+    "background_color": "#0f1117", "theme_color": "#0f1117",
+    "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml",
+               "purpose": "any maskable"}],
+}
+
+_PWA_SW = """// Service worker minimal : coque hors-ligne au lancement, API toujours réseau.
+const C = 'workplace-coeur-v1';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(C).then(c => c.addAll(['/dashboard', '/icon.svg'])));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;                 // POST /assistant/chat, etc. → réseau direct
+  if (r.mode === 'navigate') {                     // lancement de l'app → coque en repli si hors-ligne
+    e.respondWith(fetch(r).catch(() => caches.match('/dashboard')));
+  }
+});
+"""
+
+_PWA_ICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+             '<rect width="512" height="512" rx="96" fill="#0f1117"/>'
+             '<circle cx="256" cy="256" r="120" fill="none" stroke="#7c83ff" stroke-width="22"/>'
+             '<circle cx="256" cy="256" r="46" fill="#7c83ff"/></svg>')
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def pwa_manifest():
+    return Response(json.dumps(_PWA_MANIFEST), media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def pwa_service_worker():
+    return Response(_PWA_SW, media_type="application/javascript")
+
+
+@app.get("/icon.svg", include_in_schema=False)
+def pwa_icon():
+    return Response(_PWA_ICON, media_type="image/svg+xml")
 
 
 @app.get("/sante-globale", tags=["système"])
@@ -1993,7 +2117,27 @@ async def assistant_config_get():
         "repli_payant": conf["repli_payant"],
         "cascade_free_n": conf["cascade_free_n"],
         "chaine_effective": await config_assistant.chaine_modeles(conf),
+        # Muscle déporté (brique calcul, roadmap S58) : opt-in + état des nœuds.
+        "muscle_actif": conf["muscle_actif"],
+        # Repli souverain CPU sur le Cœur (S62) : dernier maillon local de la cascade.
+        "repli_souverain": conf["repli_souverain"],
+        "repli_souverain_avant_payant": conf["repli_souverain_avant_payant"],
     }
+
+
+@app.get("/assistant/muscle", tags=["assistant"])
+async def assistant_muscle_get():
+    """État du « Muscle » déporté : opt-in actif ? + nœuds de calcul connus (brique calcul)."""
+    import muscle
+    conf = config_assistant.charger()
+    return {"muscle_actif": conf["muscle_actif"], **await muscle.etat()}
+
+
+@app.post("/assistant/muscle", tags=["assistant"])
+async def assistant_muscle_post(corps: dict):
+    """Active/désactive le recours au muscle déporté. Corps : {"actif": bool}."""
+    conf = config_assistant.definir_muscle(corps.get("actif"))
+    return {"muscle_actif": conf["muscle_actif"]}
 
 
 @app.post("/assistant/routage", tags=["assistant"])
@@ -2014,13 +2158,20 @@ async def assistant_config_post(corps: dict):
     - "fallback_models"  : repli manuel (mode cascade_auto=false) ;
     - "cascade_auto"     : true = gratuits auto → repli payant ; false = [model]+fallbacks ;
     - "repli_payant"     : modèle payant final de la cascade ;
-    - "cascade_free_n"   : nombre de gratuits essayés avant le repli.
+    - "cascade_free_n"   : nombre de gratuits essayés avant le repli ;
+    - "repli_souverain"  : modèle CPU local, dernier maillon souverain (S62) ;
+    - "repli_souverain_avant_payant" : true = souveraineté d'abord (avant le payant cloud).
     """
     if any(k in corps for k in ("cascade_auto", "repli_payant", "cascade_free_n")):
         config_assistant.definir_cascade(
             actif=corps.get("cascade_auto"),
             repli=corps.get("repli_payant"),
             n=corps.get("cascade_free_n"),
+        )
+    if "repli_souverain" in corps or "repli_souverain_avant_payant" in corps:
+        config_assistant.definir_repli_souverain(
+            modele=corps.get("repli_souverain"),
+            avant_payant=corps.get("repli_souverain_avant_payant"),
         )
     if "model" in corps or "fallback_models" in corps:
         config_assistant.definir_modele(corps.get("model"), corps.get("fallback_models"))
