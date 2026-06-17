@@ -108,7 +108,10 @@ def creer_fiche(cle_api: str, nom: str, donnees: dict | None = None) -> dict:
     f = {"id": uuid.uuid4().hex, "nom": nom, "nom_naissance": nom, "archetype": archetype,
          "cree_le": datetime.now(timezone.utc).isoformat()}
     with _conn() as c:
-        c.execute("INSERT INTO fiches VALUES (?,?,?,?,?,?,?)",
+        # Colonnes NOMMÉES (pas positionnel) : sur une base migrée, ALTER ADD COLUMN
+        # nom_naissance se range en fin de table → l'ordre diffère d'une base neuve.
+        c.execute("""INSERT INTO fiches (id, cle_api, nom, nom_naissance, archetype, donnees, cree_le)
+                     VALUES (?,?,?,?,?,?,?)""",
                   (f["id"], cle_api, f["nom"], f["nom_naissance"], f["archetype"],
                    json.dumps(donnees, ensure_ascii=False), f["cree_le"]))
     return f
