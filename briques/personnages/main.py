@@ -25,7 +25,7 @@ import stockage
 import synthese
 import traditions
 
-app = FastAPI(title="Personnages — distribution & casting", version="0.4.0")
+app = FastAPI(title="Personnages — distribution & casting", version="0.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -106,6 +106,17 @@ class LectureApprofondie(FicheHolistique):
     """Même fiche que le portrait, + la langue de rédaction et un LLM BYO optionnel."""
     langue: str = "français"
     llm:    Optional[dict] = None
+
+
+class EnregistrerFiche(BaseModel):
+    """Snapshot d'une fiche cosmique à persister (opt-in). On envoie le résultat déjà
+    calculé pour ne pas dépendre d'un recalcul (la lecture IA notamment n'est pas déterministe)."""
+    nom:                 str = ""
+    contexte:            Optional[dict] = None   # état-civil saisi (prénoms, date, ville…)
+    traditions:          Optional[dict] = None
+    portrait:            Optional[dict] = None
+    empreinte:           Optional[list] = None
+    lecture_approfondie: Optional[str] = None
 
 
 # ── Front de démo (page d'accueil) ───────────────────────────────
@@ -248,6 +259,38 @@ async def holistique_recherche_inverse(body: RechercheInverse, _cle: str = Depen
     res = synthese.recherche_inverse(body.description, combien, cible=cible)
     res["source_analyse"] = source
     return res
+
+
+# ── STATEFUL : fiches cosmiques enregistrées (opt-in, cloisonnées par clé API) ─
+@app.post("/fiches", tags=["stateful", "holistique"])
+def enregistrer_fiche(body: EnregistrerFiche, cle: str = Depends(cle_api)):
+    """Enregistre une fiche cosmique générée. La génération reste STATELESS : on ne stocke
+    QUE sur action délibérée de l'utilisateur. Isolé par clé API (un tenant ne voit pas
+    les fiches d'un autre)."""
+    donnees = {"contexte": body.contexte or {}, "traditions": body.traditions or {},
+               "portrait": body.portrait or {}, "empreinte": body.empreinte or [],
+               "lecture_approfondie": body.lecture_approfondie or ""}
+    nom = body.nom.strip() or (body.contexte or {}).get("prenoms") or "Personnage"
+    return stockage.creer_fiche(cle, nom, donnees)
+
+
+@app.get("/fiches", tags=["stateful", "holistique"])
+def lister_fiches(cle: str = Depends(cle_api)):
+    return stockage.lister_fiches(cle)
+
+
+@app.get("/fiches/{fid}", tags=["stateful", "holistique"])
+def lire_fiche(fid: str, cle: str = Depends(cle_api)):
+    f = stockage.lire_fiche(cle, fid)
+    if not f:
+        raise HTTPException(404, "Fiche introuvable")
+    return f
+
+
+@app.delete("/fiches/{fid}", status_code=204, tags=["stateful", "holistique"])
+def supprimer_fiche(fid: str, cle: str = Depends(cle_api)):
+    if not stockage.supprimer_fiche(cle, fid):
+        raise HTTPException(404, "Fiche introuvable")
 
 
 # ── STATEFUL : distributions persistées (cloisonnées par clé API) ─

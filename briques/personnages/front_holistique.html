@@ -142,6 +142,10 @@
               title="Tire une date, une heure et un nom au hasard, puis génère">🎲 Aléatoire</button>
     </div>
     <div class="hint">Heure + coordonnées débloquent l'Ascendant, le signe lunaire et le rashi védique. Sans elles, le portrait reste calculé sur la date. <b>🎲 Aléatoire</b> = un personnage tiré au sort.</div>
+    <details id="mes-fiches" style="margin-top:12px" ontoggle="if(this.open) chargerFiches()">
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--accent)">💾 Mes personnages enregistrés</summary>
+      <div id="fiches-liste" class="hint" style="margin-top:8px">…</div>
+    </details>
     <div id="desc-err" class="err"></div>
 
     <div class="out" id="desc-out">
@@ -160,9 +164,11 @@
       <!-- Export : la fiche n'est jamais enregistrée côté brique. On la reconstitue
            ici, dans le navigateur, à partir du dernier portrait calculé. -->
       <div class="row" style="align-items:stretch">
-        <button type="button" onclick="exporterFiche()" style="flex:3"
+        <button type="button" id="btn-save" onclick="enregistrer()" style="flex:2"
+          title="Enregistrer ce personnage (récupérable plus tard)">💾 Enregistrer</button>
+        <button type="button" onclick="exporterFiche()" style="flex:2"
           title="Ouvre la fiche et propose l'enregistrement en PDF">📄 Exporter en PDF</button>
-        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:130px"
+        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:110px"
           title="Télécharger les données brutes (traditions + portrait + empreinte)">⤓ JSON</button>
       </div>
       <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
@@ -427,6 +433,78 @@ function exporterFiche(){
   }else{
     telecharger('fiche-cosmique-'+slug(nom)+'.html', html, 'text/html');
   }
+}
+
+// ── Persistance des personnages (opt-in, cloisonnée par clé API côté brique) ──
+async function enregistrer(){
+  if(!_dernierPortrait) return;
+  const btn=$('btn-save'), ini=btn.textContent; btn.disabled=true; btn.textContent='💾 Enregistrement…';
+  try{
+    const d=_dernierPortrait;
+    const body={nom:nomPersonne(), contexte:_dernierContexte, traditions:d.traditions,
+      portrait:d.portrait, empreinte:d.empreinte, lecture_approfondie:_lectureApprofondie||null};
+    const r=await fetch('/fiches',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    btn.textContent='✅ Enregistré';
+    if($('mes-fiches').open) chargerFiches();
+    setTimeout(()=>{btn.textContent=ini; btn.disabled=false;}, 2000);
+  }catch(e){ $('desc-err').textContent='⚠ '+e.message; btn.textContent=ini; btn.disabled=false; }
+}
+
+async function chargerFiches(){
+  const box=$('fiches-liste'); box.textContent='Chargement…';
+  try{
+    const r=await fetch('/fiches'); if(!r.ok) throw new Error('HTTP '+r.status);
+    const arr=await r.json();
+    if(!arr.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
+    box.innerHTML='';
+    arr.forEach(f=>{
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
+      const open=document.createElement('button'); open.className='ghost';
+      open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
+      open.textContent=(f.nom||'Personnage')+(f.archetype?' — '+f.archetype:'')+
+        '  ·  '+String(f.cree_le||'').slice(0,10);
+      open.onclick=()=>chargerFiche(f.id);
+      const del=document.createElement('button'); del.className='ghost';
+      del.style.cssText='margin:0;width:auto;padding:8px 12px;color:#f08aa0';
+      del.textContent='✕'; del.title='Supprimer ce personnage';
+      del.onclick=()=>supprimerFiche(f.id, row);
+      row.append(open, del); box.append(row);
+    });
+  }catch(e){ box.textContent='⚠ '+e.message; }
+}
+
+async function chargerFiche(id){
+  try{
+    const r=await fetch('/fiches/'+id); if(!r.ok) throw new Error('HTTP '+r.status);
+    const f=await r.json(), d=f.donnees||{};
+    const c=d.contexte||{};
+    $('prenoms').value=c.prenoms||''; $('nom').value=c.nom||'';
+    $('date').value=c.date||''; $('heure').value=c.heure||'';
+    if(c.ville) $('ville').value=c.ville;
+    renderPortrait({traditions:d.traditions||{}, portrait:d.portrait||{}, empreinte:d.empreinte||[]});
+    _dernierContexte=c;                       // après renderPortrait (qui ne le touche pas)
+    if(d.lecture_approfondie){
+      _lectureApprofondie=d.lecture_approfondie;
+      $('o-approf').innerHTML='<div class="hint" style="margin-bottom:8px;color:var(--ok)">'+
+        '🤖 Lecture approfondie (enregistrée)</div>'+mdToHtml(d.lecture_approfondie);
+      $('o-approf').style.display='block';
+    }
+    $('desc-out').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ $('desc-err').textContent='⚠ '+e.message; }
+}
+
+async function supprimerFiche(id, row){
+  if(!confirm('Supprimer définitivement ce personnage enregistré ?')) return;
+  try{
+    const r=await fetch('/fiches/'+id,{method:'DELETE'});
+    if(r.status!==204) throw new Error('HTTP '+r.status);
+    row.remove();
+    const box=$('fiches-liste');
+    if(!box.querySelector('div')) box.textContent="Aucun personnage enregistré pour l'instant.";
+  }catch(e){ alert('⚠ '+e.message); }
 }
 
 function renderPortrait(d){
