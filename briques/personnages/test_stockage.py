@@ -1,4 +1,6 @@
 """Tests de la couche stockage (SQLite, cloisonnement par clé API)."""
+import sqlite3
+
 import stockage as S
 
 
@@ -75,6 +77,25 @@ def test_fiche_renommer_garde_origine_et_donnees():
     relu = S.lire_fiche("cleA", f["id"])
     assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Lyssandre"
     assert relu["donnees"]["lecture_approfondie"] == "texte IA"   # données intactes
+
+
+def test_fiche_migration_ancien_schema_sans_nom_naissance(tmp_path, monkeypatch):
+    """Régression LIVE : sur une base d'AVANT nom_naissance, ALTER ajoute la colonne EN FIN
+    de table → l'ordre diffère d'une base neuve. L'INSERT doit nommer ses colonnes, sinon
+    les valeurs se décalent (donnees reçoit un timestamp → json.loads plante en lecture)."""
+    db = tmp_path / "ancienne.db"
+    raw = sqlite3.connect(db)               # schéma 6 colonnes, SANS nom_naissance
+    raw.execute("""CREATE TABLE fiches (id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT,
+                   archetype TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+    raw.commit(); raw.close()
+    monkeypatch.setattr(S, "DB_PATH", str(db))   # _conn() migrera cette base au prochain accès
+
+    f = S.creer_fiche("cleA", "Aria", {"portrait": {"archetype": "Le Sage"},
+                                       "lecture_approfondie": "texte"})
+    relu = S.lire_fiche("cleA", f["id"])         # ne doit PAS lever (donnees bien rangées)
+    assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Aria"
+    assert relu["donnees"]["lecture_approfondie"] == "texte"
+    assert relu["archetype"] == "Le Sage"
 
 
 def test_fiche_renommer_refuse_vide_et_cloisonne():

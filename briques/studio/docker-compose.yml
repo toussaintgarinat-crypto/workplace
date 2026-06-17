@@ -2,7 +2,7 @@ services:
   studio:
     build: .
     container_name: workplace_studio
-    image: workplace/studio:0.2.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/studio:0.4.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique (GATEWAY_KEY pour le LLM).
       - path: ../../.env
