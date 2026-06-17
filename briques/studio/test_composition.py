@@ -95,6 +95,37 @@ def test_proposer_distribution_repli_none_si_injoignable(monkeypatch):
     assert asyncio.run(C.proposer_distribution("p", "français", 4)) is None
 
 
+# ── fiches holistiques enregistrées : liste + lecture (succès + repli) ───
+def test_lister_fiches_holistiques_normalise(monkeypatch):
+    monkeypatch.setattr(C.httpx, "AsyncClient", _client_post([
+        {"id": "f1", "nom": "Aria", "nom_naissance": "Lyssandre", "archetype": "Le Sage",
+         "cree_le": "2026-06-17"},
+        {"nom": "sans id"},                       # sans id → filtré
+        "pas un dict",                            # ignoré
+    ]))
+    out = asyncio.run(C.lister_fiches_holistiques())
+    assert out == [{"id": "f1", "nom": "Aria", "nom_naissance": "Lyssandre",
+                    "archetype": "Le Sage", "cree_le": "2026-06-17"}]
+
+
+def test_lister_fiches_holistiques_repli_none_si_injoignable(monkeypatch):
+    monkeypatch.setattr(C.httpx, "AsyncClient", _client_post([], boom=True))
+    assert asyncio.run(C.lister_fiches_holistiques()) is None
+
+
+def test_lire_fiche_holistique_succes(monkeypatch):
+    monkeypatch.setattr(C.httpx, "AsyncClient", _client_post(
+        {"id": "f1", "nom": "Aria", "nom_naissance": "Lyssandre",
+         "donnees": {"portrait": {"archetype": "Le Sage"}}}))
+    f = asyncio.run(C.lire_fiche_holistique("f1"))
+    assert f["nom_naissance"] == "Lyssandre" and f["donnees"]["portrait"]["archetype"] == "Le Sage"
+
+
+def test_lire_fiche_holistique_repli_none_si_injoignable(monkeypatch):
+    monkeypatch.setattr(C.httpx, "AsyncClient", _client_post({}, boom=True))
+    assert asyncio.run(C.lire_fiche_holistique("f1")) is None
+
+
 # ── personnages_joignable ────────────────────────────────────────
 def test_joignable_vrai_si_service_personnages(monkeypatch):
     monkeypatch.setattr(C.httpx, "AsyncClient", _client_post({"service": "personnages"}))

@@ -28,7 +28,7 @@ import agents
 import composition
 import studio as S
 
-app = FastAPI(title="Studio — atelier d'audio-séries", version="0.2.0")
+app = FastAPI(title="Studio — atelier d'audio-séries", version="0.4.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -68,6 +68,32 @@ def _agent(mot: str):
         return agents.agent(mot)
     except KeyError as e:
         raise HTTPException(500, str(e))
+
+
+def _description_portrait(portrait: dict) -> str:
+    """Petite description de casting dérivée du portrait holistique (forces / à travailler)."""
+    forces = [str(f).strip() for f in (portrait.get("forces") or []) if str(f).strip()]
+    faiblesse = str(portrait.get("faiblesse") or "").strip()
+    bouts = []
+    if forces:
+        bouts.append("Forces : " + " · ".join(forces[:3]))
+    if faiblesse:
+        bouts.append("à travailler : " + faiblesse)
+    return " — ".join(bouts)
+
+
+def _empreinte_texte(empreinte: list) -> list:
+    """Aplati l'empreinte holistique ([{cle, valeur, sens}]) en lignes lisibles (max 20)."""
+    lignes = []
+    for e in empreinte or []:
+        if isinstance(e, dict):
+            cle, val = str(e.get("cle") or "").strip(), str(e.get("valeur") or "").strip()
+            ligne = f"{cle} : {val}" if cle and val else (cle or val)
+        else:
+            ligne = str(e).strip()
+        if ligne:
+            lignes.append(ligne)
+    return lignes[:20]
 
 
 # ── Front (servi PAR la brique : démo autonome + iframe Hub Oria) ─
@@ -151,10 +177,11 @@ class CreerPerso(BaseModel):
 
 
 class MajPerso(BaseModel):
-    nom:         Optional[str] = None
-    role:        Optional[str] = None
-    description: Optional[str] = None
-    voix:        Optional[dict] = None
+    nom:           Optional[str] = None
+    nom_naissance: Optional[str] = None   # nom cosmique d'origine (renommer = nom de scène)
+    role:          Optional[str] = None
+    description:   Optional[str] = None
+    voix:          Optional[dict] = None
 
 
 class ProposerDistribution(BaseModel):
@@ -163,12 +190,20 @@ class ProposerDistribution(BaseModel):
 
 
 class ImporterPerso(BaseModel):
-    nom:         str
-    role:        Optional[str] = None
-    description: Optional[str] = None
-    archetype:   Optional[str] = None
-    empreinte:   Optional[list] = None
-    source:      Optional[str] = "personnages"
+    nom:           str
+    nom_naissance: Optional[str] = None   # nom cosmique d'origine (figé si absent → = nom)
+    role:          Optional[str] = None
+    description:   Optional[str] = None
+    archetype:     Optional[str] = None
+    empreinte:     Optional[list] = None
+    source:        Optional[str] = "personnages"
+
+
+class ImporterFiche(BaseModel):
+    """Ajoute à la série un personnage ENREGISTRÉ dans l'atelier holistique (5900), en lui
+    donnant un nom de scène. Le Studio va chercher la fiche complète par son id."""
+    fiche_id: str
+    nom:      Optional[str] = None         # nom de scène ; défaut = nom de la fiche
 
 
 class CreerCycle(BaseModel):
@@ -333,8 +368,9 @@ def creer_perso(serie_id: str, body: CreerPerso, _cle: str = Depends(cle_api)):
         raise HTTPException(400, "Le personnage doit avoir un nom.")
     serie.setdefault("personnages", [])
     pid = S._next_id("p", {p["id"] for p in serie["personnages"]})
+    nom = body.nom.strip()
     perso = {
-        "id": pid, "nom": body.nom.strip(),
+        "id": pid, "nom": nom, "nom_naissance": nom,
         "role": (body.role or "").strip(),
         "description": (body.description or "").strip(),
         "voix": {k: v for k, v in (body.voix or {}).items() if v} if isinstance(body.voix, dict) else {},
@@ -346,20 +382,65 @@ def creer_perso(serie_id: str, body: CreerPerso, _cle: str = Depends(cle_api)):
 
 @app.post("/series/{serie_id}/personnages/importer", tags=["distribution"])
 def importer_perso(serie_id: str, body: ImporterPerso, _cle: str = Depends(cle_api)):
-    """Connexion Personnages→Studio : importe une fiche holistique comme rôle de distribution."""
+    """Connexion Personnages→Studio (push iframe) : importe une fiche holistique comme rôle.
+
+    Garde toujours les deux noms : `nom_naissance` (cosmique, figé) + `nom` (de scène)."""
     serie = charger(serie_id)
     if not (body.nom or "").strip():
         raise HTTPException(400, "Le personnage doit avoir un nom.")
     serie.setdefault("personnages", [])
     pid = S._next_id("p", {p["id"] for p in serie["personnages"]})
+    nom = body.nom.strip()
     perso = {
-        "id": pid, "nom": body.nom.strip(),
+        "id": pid, "nom": nom,
+        "nom_naissance": (body.nom_naissance or nom).strip(),
         "role": (body.role or "").strip(),
         "description": (body.description or "").strip(),
         "voix": {},
         "archetype": (body.archetype or "").strip(),
         "empreinte": [str(x) for x in (body.empreinte or [])][:20],
         "source": body.source or "personnages",
+    }
+    serie["personnages"].append(perso)
+    S._save(serie)
+    return perso
+
+
+@app.get("/personnages-holistiques", tags=["distribution"])
+async def personnages_holistiques(_cle: str = Depends(cle_api)):
+    """Liste « mes personnages créés » : les fiches ENREGISTRÉES dans l'atelier holistique
+    (brique 5900), pour les piocher dans la distribution. Repli honnête si la brique est
+    injoignable (`disponible: false` au lieu d'une erreur, pour ne pas casser la vue)."""
+    fiches = await composition.lister_fiches_holistiques()
+    if fiches is None:
+        return {"disponible": False, "fiches": [], "atelier": composition.PERSONNAGES_URL}
+    return {"disponible": True, "fiches": fiches}
+
+
+@app.post("/series/{serie_id}/personnages/importer-fiche", tags=["distribution"])
+async def importer_fiche(serie_id: str, body: ImporterFiche, _cle: str = Depends(cle_api)):
+    """Ajoute à la série un personnage créé dans l'atelier holistique, avec un nom de scène.
+
+    Le Studio va lire la fiche complète (5900) par son id ; on garde le nom cosmique
+    d'origine (`nom_naissance`) et on dérive archétype/empreinte/description du portrait."""
+    serie = charger(serie_id)
+    fiche = await composition.lire_fiche_holistique(body.fiche_id)
+    if not fiche:
+        raise HTTPException(502, "Fiche introuvable ou atelier Personnages injoignable.")
+    donnees = fiche.get("donnees") or {}
+    portrait = donnees.get("portrait") or {}
+    nom_naissance = (fiche.get("nom_naissance") or fiche.get("nom") or "Personnage").strip()
+    nom = (body.nom or "").strip() or (fiche.get("nom") or nom_naissance).strip()
+    serie.setdefault("personnages", [])
+    pid = S._next_id("p", {p["id"] for p in serie["personnages"]})
+    perso = {
+        "id": pid, "nom": nom, "nom_naissance": nom_naissance,
+        "role": "",
+        "description": _description_portrait(portrait),
+        "voix": {},
+        "archetype": (portrait.get("archetype") or "").strip(),
+        "empreinte": _empreinte_texte(donnees.get("empreinte") or []),
+        "source": "personnages",
     }
     serie["personnages"].append(perso)
     S._save(serie)
@@ -420,8 +501,12 @@ def maj_perso(serie_id: str, pid: str, body: MajPerso, _cle: str = Depends(cle_a
     perso = next((p for p in serie.get("personnages", []) if p["id"] == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
+    # Fige le nom d'origine avant un éventuel renommage (persos créés avant cette mémoire).
+    perso.setdefault("nom_naissance", perso.get("nom", ""))
     if body.nom is not None:
         perso["nom"] = body.nom.strip()
+    if body.nom_naissance is not None:
+        perso["nom_naissance"] = body.nom_naissance.strip()
     if body.role is not None:
         perso["role"] = body.role.strip()
     if body.description is not None:
