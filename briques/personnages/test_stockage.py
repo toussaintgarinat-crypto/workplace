@@ -57,3 +57,28 @@ def test_fiche_supprimer():
     assert S.supprimer_fiche("cleA", f["id"]) is True
     assert S.supprimer_fiche("cleA", f["id"]) is False
     assert S.lire_fiche("cleA", f["id"]) is None
+
+
+def test_fiche_garde_nom_naissance_a_la_creation():
+    f = S.creer_fiche("cleA", "Lyssandre", {"portrait": {"archetype": "Le Sage"}})
+    assert f["nom"] == f["nom_naissance"] == "Lyssandre"   # les deux à la création
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom_naissance"] == "Lyssandre"
+
+
+def test_fiche_renommer_garde_origine_et_donnees():
+    donnees = {"portrait": {"archetype": "Le Sage"}, "lecture_approfondie": "texte IA"}
+    f = S.creer_fiche("cleA", "Lyssandre", donnees)
+    out = S.renommer_fiche("cleA", f["id"], "  Aria  ")     # nom de scène (trim attendu)
+    assert out["nom"] == "Aria"                             # étiquette changée
+    assert out["nom_naissance"] == "Lyssandre"             # nom cosmique figé
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Lyssandre"
+    assert relu["donnees"]["lecture_approfondie"] == "texte IA"   # données intactes
+
+
+def test_fiche_renommer_refuse_vide_et_cloisonne():
+    f = S.creer_fiche("cleA", "Lyssandre", {})
+    assert S.renommer_fiche("cleA", f["id"], "   ") is None       # nom vide refusé
+    assert S.renommer_fiche("cleB", f["id"], "Aria") is None      # autre tenant : rien
+    assert S.lire_fiche("cleA", f["id"])["nom"] == "Lyssandre"    # inchangé

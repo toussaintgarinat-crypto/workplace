@@ -25,7 +25,7 @@ import stockage
 import synthese
 import traditions
 
-app = FastAPI(title="Personnages — distribution & casting", version="0.6.0")
+app = FastAPI(title="Personnages — distribution & casting", version="0.7.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -77,10 +77,11 @@ class MajDistribution(BaseModel):
 
 
 class Perso(BaseModel):
-    nom:         str
-    role:        Optional[str] = None
-    description: Optional[str] = None
-    voix:        Optional[dict] = None
+    nom:           str
+    nom_naissance: Optional[str] = None   # nom cosmique d'origine (figé si absent → = nom)
+    role:          Optional[str] = None
+    description:   Optional[str] = None
+    voix:          Optional[dict] = None
 
 
 class FicheHolistique(BaseModel):
@@ -106,6 +107,12 @@ class LectureApprofondie(FicheHolistique):
     """Même fiche que le portrait, + la langue de rédaction et un LLM BYO optionnel."""
     langue: str = "français"
     llm:    Optional[dict] = None
+
+
+class RenommerFiche(BaseModel):
+    """Nouveau nom AFFICHÉ d'une fiche (p.ex. nom de scène pour une série). Le nom
+    cosmique d'origine (nom_naissance) et les données restent intacts."""
+    nom: str
 
 
 class EnregistrerFiche(BaseModel):
@@ -287,6 +294,18 @@ def lire_fiche(fid: str, cle: str = Depends(cle_api)):
     return f
 
 
+@app.patch("/fiches/{fid}", tags=["stateful", "holistique"])
+def renommer_fiche(fid: str, body: RenommerFiche, cle: str = Depends(cle_api)):
+    """Renomme la fiche pour une série (nom de scène). Garde le nom cosmique d'origine
+    (nom_naissance) et toutes les données : seule l'étiquette affichée change."""
+    f = stockage.renommer_fiche(cle, fid, body.nom)
+    if not f:
+        if stockage.lire_fiche(cle, fid) is None:
+            raise HTTPException(404, "Fiche introuvable")
+        raise HTTPException(422, "Le nom ne peut pas être vide.")
+    return f
+
+
 @app.delete("/fiches/{fid}", status_code=204, tags=["stateful", "holistique"])
 def supprimer_fiche(fid: str, cle: str = Depends(cle_api)):
     if not stockage.supprimer_fiche(cle, fid):
@@ -346,7 +365,11 @@ def ajouter_perso(did: str, body: Perso, cle: str = Depends(cle_api)):
         raise HTTPException(404, "Distribution introuvable")
     persos = d["personnages"]
     pid = moteur.prochain_id("p", {p.get("id") for p in persos})
-    perso = {"id": pid, "nom": body.nom.strip(), "role": (body.role or "").strip(),
+    nom = body.nom.strip()
+    # nom_naissance = nom cosmique d'origine, figé une fois pour toutes. S'il n'est pas
+    # fourni (perso saisi à la main), il vaut le nom courant ; on garde toujours les deux.
+    perso = {"id": pid, "nom": nom, "nom_naissance": (body.nom_naissance or nom).strip(),
+             "role": (body.role or "").strip(),
              "description": (body.description or "").strip(),
              "voix": body.voix if isinstance(body.voix, dict) else {}}
     persos.append(perso)
@@ -362,7 +385,10 @@ def maj_perso(did: str, pid: str, body: dict, cle: str = Depends(cle_api)):
     perso = next((p for p in d["personnages"] if p.get("id") == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
-    for k in ("nom", "role", "description"):
+    # Avant de renommer pour la série, fige le nom d'origine s'il manquait encore
+    # (fiches créées avant cette mémoire) → on garde toujours les deux.
+    perso.setdefault("nom_naissance", perso.get("nom", ""))
+    for k in ("nom", "nom_naissance", "role", "description"):
         if k in body and body[k] is not None:
             perso[k] = str(body[k]).strip()
     if isinstance(body.get("voix"), dict):
