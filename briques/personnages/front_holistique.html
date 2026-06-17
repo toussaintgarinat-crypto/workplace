@@ -152,6 +152,14 @@
       <div class="hint">Empreinte multi-culturelle — survole pour comprendre, chaque ligne est calculée :</div>
       <div class="emp" id="o-chips"></div>
       <div class="recit" id="o-recit"></div>
+      <!-- Export : la fiche n'est jamais enregistrée côté brique. On la reconstitue
+           ici, dans le navigateur, à partir du dernier portrait calculé. -->
+      <div class="row" style="align-items:stretch">
+        <button type="button" onclick="exporterFiche()" style="flex:3"
+          title="Télécharger une fiche imprimable (ouvre puis Ctrl/Cmd+P → PDF)">📄 Exporter la fiche</button>
+        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:130px"
+          title="Télécharger les données brutes (traditions + portrait + empreinte)">⤓ JSON</button>
+      </div>
       <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
       <button type="button" id="btn-studio" onclick="envoyerStudio()" style="display:none;margin-top:14px"
         title="Ajouter ce personnage à une série du Studio">📤 Envoyer au Studio</button>
@@ -234,6 +242,8 @@ async function portrait(){
     const body={prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
       heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
       utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+    _dernierContexte={prenoms:body.prenoms, nom:body.nom, date:body.date_naissance,
+      heure:body.heure_naissance, ville:$('ville').value, systeme:body.systeme_numerologie};
     const r=await fetch('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
@@ -242,7 +252,8 @@ async function portrait(){
   finally{ btn.disabled=false; btn.textContent='✨ Générer le portrait'; }
 }
 
-let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio
+let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio / l'export
+let _dernierContexte=null;   // état-civil saisi au moment de la génération (pour la fiche)
 
 // Envoie le personnage courant à l'app parente (Oria) si on est en iframe.
 // L'empreinte (valeurs + sens) part telle quelle : la brique images y repère les
@@ -259,6 +270,107 @@ function envoyerStudio(){
   const b=$('btn-studio'); const ini=b.textContent;
   b.textContent='✅ Envoyé'; b.disabled=true;
   setTimeout(()=>{b.textContent=ini; b.disabled=false;}, 2500);
+}
+
+// ── Export (100 % navigateur : aucune fiche n'est stockée côté brique) ──
+const slug = s => ((s||'fiche').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)) || 'fiche';
+
+function telecharger(nomFichier, contenu, mime){
+  const blob = new Blob([contenu], {type: mime+';charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomFichier;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+function nomPersonne(){
+  const c=_dernierContexte||{};
+  return (((c.prenoms||'').trim()+' '+(c.nom||'').trim()).trim()) || 'Personne';
+}
+
+function telechargerJSON(){
+  if(!_dernierPortrait) return;
+  const data = {contexte:_dernierContexte, ...(_dernierPortrait)};
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.json',
+    JSON.stringify(data, null, 2), 'application/json');
+}
+
+// Reconstitue une fiche imprimable autonome à partir du dernier portrait calculé.
+function exporterFiche(){
+  if(!_dernierPortrait) return;
+  const d=_dernierPortrait, p=d.portrait||{}, c=_dernierContexte||{};
+  const nom = nomPersonne();
+  const etatCivil = [
+    c.date ? 'Né·e le '+esc(c.date) : '',
+    c.heure ? 'à '+esc(c.heure) : '',
+    c.ville ? '· '+esc(c.ville) : ''
+  ].filter(Boolean).join(' ');
+  const ents = Object.entries(p.stats||{}).sort((a,b)=>b[1]-a[1]);
+  const stats = ents.map(([k,v],i)=>{
+    const top = i===0, low = k===p.faiblesse;
+    const col = low ? '#7a6a8a' : 'linear-gradient(90deg,#c2547a,#e0a458)';
+    return `<div class="stat"><span class="nm"${top?' style="color:#e0a458;font-weight:700"':''}>${esc(k)}</span>`+
+      `<span class="bar"><span class="fill" style="width:${v}%;background:${col}"></span></span>`+
+      `<span class="vv">${v}</span></div>`;
+  }).join('');
+  const g=p.pierre_equilibrage||{};
+  const emp=(d.empreinte||[]).map(e=>
+    `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}</div>`+
+    `<div class="ecv"><b>${esc(e.valeur)}</b></div><div class="ecs">${esc(e.sens)}</div></div>`).join('');
+  const recit = esc(p.recit||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
+  const html =
+`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<title>Fiche cosmique — ${esc(nom)}</title>
+<style>
+  :root{--bg:#0e0c10;--panel:#17141b;--panel2:#1f1a24;--line:#332b3c;--ink:#ece6f0;
+        --mut:#9b8fa8;--accent:#e0a458;--accent2:#c2547a;--ok:#5fd0a0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Segoe UI',-apple-system,system-ui,sans-serif;line-height:1.6}
+  .sheet{max-width:760px;margin:0 auto;padding:40px 36px 60px}
+  h1{font-family:Georgia,serif;font-size:2rem;margin:0;color:var(--accent)}
+  .civ{color:var(--mut);font-size:.92rem;margin:6px 0 4px}
+  .arche{font-family:Georgia,serif;font-size:1.5rem;color:var(--accent);margin:22px 0 2px}
+  .sub{color:var(--mut);font-size:.9rem}
+  h2{font-size:.74rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent2);
+     margin:30px 0 12px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .stat{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .stat .nm{font-size:.82rem;width:120px;text-align:right}
+  .stat .bar{flex:1;height:11px;background:#100d14;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .stat .fill{height:100%}
+  .stat .vv{font-size:.76rem;color:var(--mut);width:34px}
+  .gem{display:flex;gap:12px;align-items:center;background:#10231c;border:1px solid #234a3a;
+       border-radius:14px;padding:14px 16px}
+  .gem b{color:var(--ok)}
+  .emp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .ec{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .ec .ecl{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent2)}
+  .ec .ecv{font-family:Georgia,serif;font-size:1rem;margin:2px 0}
+  .ec .ecv b{color:var(--accent)}
+  .ec .ecs{font-size:.78rem;color:var(--mut);line-height:1.45}
+  .recit{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:18px;white-space:pre-wrap;font-size:.92rem}
+  .recit em{color:var(--mut)}
+  .foot{margin-top:34px;color:var(--mut);font-size:.72rem;border-top:1px solid var(--line);padding-top:14px}
+  @media print{body{background:#fff;color:#222}
+    .sheet{max-width:100%}h1,.arche,.ec .ecv b{color:#8a5a14}
+    .recit,.ec,.gem{background:#faf7f2;border-color:#e3dccf}
+    .gem{background:#eef7f1}.foot{color:#888}}
+</style></head><body><div class="sheet">
+  <h1>${esc(nom)}</h1>
+  ${etatCivil?`<div class="civ">${etatCivil}</div>`:''}
+  <div class="arche">${esc(p.archetype||'')}</div>
+  <div class="sub">Forces : ${esc((p.forces||[]).join(' · '))}${p.faiblesse?' — à travailler : '+esc(p.faiblesse):''}</div>
+  ${stats?`<h2>Tempérament calculé</h2>${stats}`:''}
+  ${g.pierre?`<h2>Cristal allié</h2><div class="gem">💎&nbsp;<div>Cristal allié : <b>${esc(g.pierre)}</b> — ${esc(g.vertu||'')}${g.compense?' (compense '+esc(g.compense)+')':''}.</div></div>`:''}
+  ${emp?`<h2>Empreinte multi-culturelle</h2><div class="emp">${emp}</div>`:''}
+  ${recit?`<h2>Récit</h2><div class="recit">${recit}</div>`:''}
+  <div class="foot">Fiche cosmique générée par l'Atelier holistique · ${esc(c.systeme||'')} ·
+  les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.</div>
+</div></body></html>`;
+  telecharger('fiche-cosmique-'+slug(nom)+'.html', html, 'text/html');
 }
 
 function renderPortrait(d){
