@@ -167,8 +167,15 @@
         <button type="button" id="btn-save" onclick="enregistrer()" style="flex:2"
           title="Enregistrer ce personnage (récupérable plus tard)">💾 Enregistrer</button>
         <button type="button" onclick="exporterFiche()" style="flex:2"
-          title="Ouvre la fiche et propose l'enregistrement en PDF">📄 Exporter en PDF</button>
-        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:110px"
+          title="Ouvre la fiche mise en page et propose l'enregistrement en PDF">📄 Exporter en PDF</button>
+      </div>
+      <!-- Téléchargements directs (100 % navigateur, aucune fiche stockée côté brique). -->
+      <div class="row" style="align-items:stretch;margin-top:8px">
+        <button type="button" class="ghost" onclick="telechargerHTML()" style="flex:1;min-width:90px"
+          title="Télécharger la fiche mise en page, autonome (un seul fichier .html)">⤓ HTML</button>
+        <button type="button" class="ghost" onclick="telechargerMarkdown()" style="flex:1;min-width:90px"
+          title="Télécharger la fiche en Markdown (texte structuré, .md)">⤓ Markdown</button>
+        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:90px"
           title="Télécharger les données brutes (traditions + portrait + empreinte)">⤓ JSON</button>
       </div>
       <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
@@ -339,9 +346,9 @@ function telechargerJSON(){
     JSON.stringify(data, null, 2), 'application/json');
 }
 
-// Reconstitue une fiche imprimable autonome à partir du dernier portrait calculé.
-function exporterFiche(){
-  if(!_dernierPortrait) return;
+// Construit le HTML autonome (mise en page complète) de la fiche cosmique.
+// Partagé par l'export PDF (ouverture + impression) et le téléchargement .html.
+function ficheHtml(autoprint){
   const d=_dernierPortrait, p=d.portrait||{}, c=_dernierContexte||{};
   const nom = nomPersonne();
   const etatCivil = [
@@ -423,16 +430,73 @@ function exporterFiche(){
   <div class="foot">Fiche cosmique générée par l'Atelier holistique · ${esc(c.systeme||'')} ·
   les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.</div>
 </div>
-<script>addEventListener('load',function(){setTimeout(function(){window.print();},350);});<\/script>
+${autoprint?'<script>addEventListener("load",function(){setTimeout(function(){window.print();},350);});<\/script>':''}
 </body></html>`;
-  // Ouvre la fiche dans un onglet et propose l'impression / l'enregistrement PDF.
-  // Repli : si une fenêtre est bloquée (popup, sandbox iframe), on télécharge le HTML.
+  return html;
+}
+
+// Export PDF : ouvre la fiche mise en page dans un onglet et lance l'impression.
+// Repli : si une fenêtre est bloquée (popup, sandbox iframe), on télécharge le HTML.
+function exporterFiche(){
+  if(!_dernierPortrait) return;
+  const html = ficheHtml(true);
   const w = window.open('', '_blank');
   if(w && w.document){
     w.document.open(); w.document.write(html); w.document.close();
   }else{
-    telecharger('fiche-cosmique-'+slug(nom)+'.html', html, 'text/html');
+    telecharger('fiche-cosmique-'+slug(nomPersonne())+'.html', ficheHtml(false), 'text/html');
   }
+}
+
+// Télécharge la fiche mise en page comme fichier .html autonome (sans auto-impression).
+function telechargerHTML(){
+  if(!_dernierPortrait) return;
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.html', ficheHtml(false), 'text/html');
+}
+
+// Construit la fiche en Markdown à partir du dernier portrait calculé.
+function ficheMarkdown(){
+  const d=_dernierPortrait, p=d.portrait||{}, c=_dernierContexte||{};
+  const nom = nomPersonne();
+  const etatCivil = [
+    c.date ? 'Né·e le '+c.date : '',
+    c.heure ? 'à '+c.heure : '',
+    c.ville ? '· '+c.ville : ''
+  ].filter(Boolean).join(' ');
+  const L = ['# '+nom];
+  if(etatCivil) L.push('', '*'+etatCivil+'*');
+  if(p.archetype) L.push('', '## '+p.archetype);
+  const sub = [];
+  if((p.forces||[]).length) sub.push('**Forces** : '+(p.forces||[]).join(' · '));
+  if(p.faiblesse) sub.push('**À travailler** : '+p.faiblesse);
+  if(sub.length) L.push('', sub.join('  \n'));
+  const ents = Object.entries(p.stats||{}).sort((a,b)=>b[1]-a[1]);
+  if(ents.length){
+    L.push('', '## Tempérament calculé', '', '| Trait | Valeur |', '| --- | ---: |');
+    ents.forEach(([k,v])=>L.push('| '+k+' | '+v+' |'));
+  }
+  const g=p.pierre_equilibrage||{};
+  if(g.pierre){
+    L.push('', '## Cristal allié', '',
+      '💎 **'+g.pierre+'** — '+(g.vertu||'')+(g.compense?' (compense '+g.compense+')':'')+'.');
+  }
+  const emp=(d.empreinte||[]);
+  if(emp.length){
+    L.push('', '## Empreinte multi-culturelle', '');
+    emp.forEach(e=>L.push('- **'+e.cle+(e.role?' · '+e.role:'')+'** : '+e.valeur+
+      (e.sens?' — '+e.sens:'')));
+  }
+  if(p.recit){ L.push('', '## Lecture symbolique', '', p.recit); }
+  if(_lectureApprofondie){ L.push('', '## Lecture approfondie (IA)', '', _lectureApprofondie); }
+  L.push('', '---', '',
+    '*Fiche cosmique générée par l\'Atelier holistique'+(c.systeme?' · '+c.systeme:'')+
+    '. Les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.*');
+  return L.join('\n');
+}
+
+function telechargerMarkdown(){
+  if(!_dernierPortrait) return;
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.md', ficheMarkdown(), 'text/markdown');
 }
 
 // ── Persistance des personnages (opt-in, cloisonnée par clé API côté brique) ──
