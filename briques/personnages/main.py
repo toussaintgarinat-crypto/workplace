@@ -25,7 +25,7 @@ import stockage
 import synthese
 import traditions
 
-app = FastAPI(title="Personnages — distribution & casting", version="0.3.7")
+app = FastAPI(title="Personnages — distribution & casting", version="0.4.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -102,6 +102,12 @@ class RechercheInverse(BaseModel):
     llm:         Optional[dict] = None     # BYO/local pour le filet de secours : {base_url, cle, modele}
 
 
+class LectureApprofondie(FicheHolistique):
+    """Même fiche que le portrait, + la langue de rédaction et un LLM BYO optionnel."""
+    langue: str = "français"
+    llm:    Optional[dict] = None
+
+
 # ── Front de démo (page d'accueil) ───────────────────────────────
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def accueil():
@@ -174,6 +180,26 @@ def holistique_portrait(body: FicheHolistique, _cle: str = Depends(cle_api)):
     p = synthese.portrait(trad, nom=body.prenoms or body.nom)
     return {"traditions": trad, "portrait": p,
             "empreinte": significations.expliquer(trad)}
+
+
+@app.post("/holistique/lecture-approfondie", tags=["holistique"])
+async def holistique_lecture_approfondie(body: LectureApprofondie, _cle: str = Depends(cle_api)):
+    """Réécriture LITTÉRAIRE de la lecture symbolique par le LLM (modèle gratuit Gateway par
+    défaut, ou BYO). Bonus opt-in : le socle déterministe du portrait reste gratuit/instantané.
+    Repli HONNÊTE : si l'IA est indisponible, on renvoie le récit déterministe (`source=repli`)."""
+    fiche = {k: getattr(body, k) for k in FicheHolistique.model_fields}
+    trad = traditions.calculer(fiche)
+    if not trad.get("signe_solaire"):
+        raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
+    p = synthese.portrait(trad, nom=body.prenoms or body.nom)
+    emp = significations.expliquer(trad)
+    try:
+        texte = await llm.approfondir_lecture(p, emp, body.langue, body.llm)
+        if texte:
+            return {"lecture": texte, "source": "llm"}
+    except Exception:  # noqa: BLE001 — repli honnête : on retombe sur le déterministe
+        pass
+    return {"lecture": p["recit"], "source": "repli"}
 
 
 @app.get("/geo", tags=["holistique"])

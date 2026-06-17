@@ -113,6 +113,38 @@ async def cibler_via_llm(description: str, axes: list, llm: dict | None = None) 
     return out
 
 
+PROMPT_LECTURE = (
+    "Tu es un INTERPRÈTE SYMBOLIQUE. On te donne le profil DÉJÀ CALCULÉ d'une personne : "
+    "un archétype, des forces, un point faible avec sa pierre d'équilibrage, et une empreinte "
+    "multi-traditions (chaque élément vient avec son sens). Tu rédiges une lecture symbolique "
+    "fluide et évocatrice qui TISSE ces éléments entre eux et dégage un fil conducteur. "
+    "Règles STRICTES : n'invente AUCUN fait absent des données ; pas de prédiction, pas de "
+    "conseil médical/financier ; ton sobre et bienveillant. C'est du divertissement."
+)
+
+
+async def approfondir_lecture(portrait: dict, empreinte: list,
+                              langue: str = "français", llm: dict | None = None) -> str:
+    """Réécrit la lecture symbolique en version littéraire, à partir des SEULES données
+    calculées. Bonus opt-in (modèle gratuit Gateway par défaut, ou BYO). Repli HONNÊTE :
+    l'appelant retombe sur le récit déterministe si l'on renvoie une chaîne vide / si on lève."""
+    lignes = [f"- {e.get('cle')} : {e.get('valeur')} → {e.get('sens')}"
+              for e in (empreinte or []) if e.get("sens")]
+    pierre = portrait.get("pierre_equilibrage") or {}
+    tache = (
+        f"Rédige en {langue}, 4 à 6 courts paragraphes, sans liste à puces.\n"
+        f"Archétype : {portrait.get('archetype','')}\n"
+        f"Forces dominantes : {', '.join(portrait.get('forces', []))}\n"
+        f"Point à travailler : {portrait.get('faiblesse','')} "
+        f"(pierre d'équilibrage : {pierre.get('pierre','')} — {pierre.get('vertu','')})\n"
+        f"Empreinte multi-traditions (valeur → sens) :\n" + "\n".join(lignes) +
+        "\n\nTisse ces éléments en une lecture cohérente avec un fil conducteur. "
+        "N'invente aucun fait. Termine sans formule de politesse."
+    )
+    txt = await _completer(PROMPT_LECTURE, tache, llm)
+    return (txt or "").strip()
+
+
 async def proposer_distribution(premisse: str, langue: str = "français",
                                 combien: int = 4, deja: str = "",
                                 llm: dict | None = None) -> list:
