@@ -21,6 +21,13 @@ vendable seule).
 Studio retombe sur sa logique internalisée (S51) et l'indique (`source: "studio"` au lieu
 de `"personnages"`). Aucune production n'échoue parce qu'une brique sœur est absente.
 
+**Mes personnages créés** : dans la vue *Distribution*, `GET /personnages-holistiques`
+liste les fiches **enregistrées** dans l'atelier holistique (5900). `POST
+…/personnages/importer-fiche` en ajoute une à la série avec un **nom de scène** : le perso
+garde toujours son **nom d'origine** (`nom_naissance`, cosmique) + son archétype et son
+empreinte. Renommer un perso de la série (`PATCH …/personnages/{pid}`) ne touche jamais au
+nom d'origine — le même personnage peut donc porter un nom différent par série.
+
 ## Ce qui change vs Oria (le couplage coupé)
 
 | Couplage Oria | Dans la brique |

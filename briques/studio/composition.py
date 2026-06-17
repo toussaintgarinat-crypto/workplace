@@ -85,6 +85,44 @@ async def proposer_distribution(premisse: str, langue: str, combien: int,
             for p in persos if isinstance(p, dict) and (p.get("nom") or "").strip()]
 
 
+async def lister_fiches_holistiques() -> Optional[list]:
+    """Personnages ENREGISTRÉS dans l'atelier holistique (GET /fiches de la brique 5900).
+
+    Permet au Studio de proposer « mes personnages créés » à la sélection. Retourne
+    [{id, nom, nom_naissance, archetype, cree_le}] ou None si la brique est injoignable
+    (→ le Studio affiche un repli honnête, on ne casse pas la vue Distribution)."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{PERSONNAGES_URL}/fiches", headers=_headers())
+            r.raise_for_status()
+            fiches = r.json()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(fiches, list):
+        return None
+    return [{"id": f.get("id"), "nom": f.get("nom") or "Personnage",
+             "nom_naissance": f.get("nom_naissance") or f.get("nom") or "",
+             "archetype": f.get("archetype") or "", "cree_le": f.get("cree_le") or ""}
+            for f in fiches if isinstance(f, dict) and f.get("id")]
+
+
+async def lire_fiche_holistique(fiche_id: str) -> Optional[dict]:
+    """Lit une fiche enregistrée complète (GET /fiches/{id}) pour l'importer comme rôle.
+
+    Retourne le dict de la brique (nom, nom_naissance, archetype, donnees…) ou None si
+    injoignable/introuvable."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{PERSONNAGES_URL}/fiches/{fiche_id}", headers=_headers())
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            f = r.json()
+    except Exception:  # noqa: BLE001
+        return None
+    return f if isinstance(f, dict) and f.get("id") else None
+
+
 def fusionner_voix(serie: dict, personnages_enrichis: list) -> bool:
     """Recopie dans la série les voix figées renvoyées par la brique (stabilité inter-épisodes).
 
