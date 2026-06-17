@@ -444,6 +444,23 @@ OUTILS: list[dict] = [
             "langue": {"type": "string", "description": "Langue des notes (optionnel)."},
             "confirme": {"type": "boolean"},
         }, ["resume"])}},
+
+    # — PERSONNAGES (atelier holistique cosmique, brique 5900) —
+    {"type": "function", "function": {
+        "name": "personnage_creer_holistique",
+        "description": "Crée un personnage HOLISTIQUE (atelier cosmique, brique personnages) à partir d'infos de naissance DICTÉES : prénoms, date, et si possible heure et ville. Renvoie son portrait (archétype, forces, à travailler, pierre d'équilibrage) déduit de plusieurs traditions. Pour « crée-moi un personnage né le… à… », « génère une fiche cosmique pour… ». La simple génération ne stocke RIEN (aucune confirmation). Pour ENREGISTRER la fiche (enregistrer=true) ou l'AJOUTER à une série du Studio (serie_id), c'est une ACTION : confirme=true requis après accord. Récupère un serie_id via studio_series_lister.",
+        "parameters": _p({
+            "prenoms": {"type": "string", "description": "Prénom(s) du personnage."},
+            "nom": {"type": "string", "description": "Nom de famille (optionnel)."},
+            "date_naissance": {"type": "string", "description": "Date de naissance au format AAAA-MM-JJ."},
+            "heure_naissance": {"type": "string", "description": "Heure de naissance HH:MM (optionnel : affine ascendant / Lune)."},
+            "ville": {"type": "string", "description": "Ville de naissance (optionnel : géocodée pour l'astro). Ex. « Toulouse »."},
+            "utc_offset": {"type": "number", "description": "Décalage local→UTC à la naissance, en heures (optionnel ; ex. 2 pour l'heure d'été en France)."},
+            "enregistrer": {"type": "boolean", "description": "Enregistrer la fiche cosmique (récupérable plus tard). ACTION : confirme=true requis."},
+            "serie_id": {"type": "string", "description": "Ajouter le personnage à cette série du Studio (id via studio_series_lister). ACTION : confirme=true requis."},
+            "nom_scene": {"type": "string", "description": "Nom de scène à donner dans la série (optionnel : défaut = prénoms). Le nom cosmique d'origine est conservé."},
+            "confirme": {"type": "boolean"},
+        }, ["prenoms", "date_naissance"])}},
 ]
 
 OUTILS_ACTION = {
@@ -859,6 +876,10 @@ async def executer(nom: str, args: dict, registre) -> str:
                 return await _studio_appel(client, registre, "POST", f"/series/{sid}/audio",
                                            charge=charge, timeout=180)
 
+            # — PERSONNAGES (atelier holistique cosmique) —
+            if nom == "personnage_creer_holistique":
+                return await _personnage_holistique(client, registre, args)
+
             # — TRANSCRIPTION (notes d'appel/réunion) —
             if nom == "transcription_etat":
                 return await _transcription_appel(client, registre, "GET", "/sante", timeout=15)
@@ -1030,6 +1051,145 @@ async def _studio_appel(client: httpx.AsyncClient, registre, methode: str, chemi
     if r.status_code == 204 or not r.content:
         return json.dumps({"ok": True}, ensure_ascii=False)
     return json.dumps(r.json(), ensure_ascii=False)
+
+
+async def _personnages_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
+                             charge: dict | None = None, params: dict | None = None,
+                             timeout: float = 45, brut: bool = False):
+    """Appelle la brique Personnages (5900, atelier holistique). Auth via `PERSONNAGES_KEY`
+    (X-API-Key) si configurée ; sinon mode ouvert. Dégrade proprement (jamais de stacktrace).
+    `brut=True` renvoie le dict parsé (pour chaîner géo→portrait→fiche)."""
+    try:
+        base = _base(registre, "personnages")
+    except RuntimeError:
+        msg = {"ok": False, "message": "La brique Personnages (atelier cosmique) est absente du registre du noyau."}
+        return msg if brut else json.dumps(msg, ensure_ascii=False)
+    cle = os.environ.get("PERSONNAGES_KEY", "").strip()
+    entetes = {"X-API-Key": cle} if cle else None
+    erreur = None
+    try:
+        r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
+                                  headers=entetes, timeout=timeout)
+        if r.status_code == 401:
+            erreur = {"ok": False, "message": "Personnages a refusé l'accès (PERSONNAGES_KEY)."}
+        elif r.status_code >= 400:
+            try:
+                detail = r.json().get("detail")
+            except Exception:  # noqa: BLE001
+                detail = r.text[:200]
+            erreur = {"ok": False, "message": f"Personnages HTTP {r.status_code} : {detail}"}
+        else:
+            data = r.json() if r.content else {"ok": True}
+            return data if brut else json.dumps(data, ensure_ascii=False)
+    except httpx.HTTPError:
+        erreur = {"ok": False,
+                  "message": "La brique Personnages (atelier cosmique) est injoignable (hors ligne ou en démarrage)."}
+    return erreur if brut else json.dumps(erreur, ensure_ascii=False)
+
+
+def _empreinte_lignes(empreinte: list) -> list:
+    """Aplati l'empreinte holistique ([{cle, valeur, …}]) en lignes lisibles (max 20)."""
+    lignes = []
+    for e in empreinte or []:
+        if isinstance(e, dict):
+            cle, val = str(e.get("cle") or "").strip(), str(e.get("valeur") or "").strip()
+            ligne = f"{cle} : {val}" if cle and val else (cle or val)
+        else:
+            ligne = str(e).strip()
+        if ligne:
+            lignes.append(ligne)
+    return lignes[:20]
+
+
+async def _personnage_holistique(client: httpx.AsyncClient, registre, args: dict) -> str:
+    """Crée un personnage holistique (brique 5900) depuis des infos de naissance dictées.
+
+    Génération seule = non destructif (le portrait est déterministe, rien n'est stocké).
+    Avec `enregistrer`/`serie_id` = action gardée par `confirme` : on enregistre la fiche
+    et/ou on l'importe dans une série du Studio (nom de scène, nom cosmique d'origine gardé).
+    Dégrade proprement si une brique est injoignable."""
+    prenoms = (args.get("prenoms") or "").strip()
+    date_naissance = (args.get("date_naissance") or "").strip()
+    if not prenoms or not date_naissance:
+        return json.dumps({"ok": False,
+                           "message": "Il faut au moins des prénoms et une date de naissance (AAAA-MM-JJ)."},
+                          ensure_ascii=False)
+    enregistrer = bool(args.get("enregistrer"))
+    serie_id = (args.get("serie_id") or "").strip()
+    action = enregistrer or bool(serie_id)
+    if action and not args.get("confirme"):
+        cible = prenoms + (f" → série {serie_id}" if serie_id else " (enregistrer)")
+        return _confirmation("créer et ranger le personnage cosmique", cible)
+
+    nom_famille = (args.get("nom") or "").strip()
+    nom_complet = (prenoms + (" " + nom_famille if nom_famille else "")).strip()
+    ville = (args.get("ville") or "").strip()
+
+    # Géocodage de la ville (optionnel) → latitude / longitude EST-positive
+    latitude = longitude = None
+    ville_resolue = ville
+    if ville:
+        g = await _personnages_appel(client, registre, "GET", "/geo",
+                                     params={"ville": ville}, timeout=20, brut=True)
+        if isinstance(g, dict) and g.get("latitude") is not None:
+            latitude, longitude = g.get("latitude"), g.get("longitude")
+            ville_resolue = g.get("ville") or ville
+
+    # Portrait cosmique (déterministe — ne stocke rien)
+    fiche_in = {"prenoms": prenoms, "nom": nom_famille, "date_naissance": date_naissance,
+                "heure_naissance": args.get("heure_naissance") or None,
+                "latitude": latitude, "longitude": longitude,
+                "utc_offset": args.get("utc_offset")}
+    portrait = await _personnages_appel(client, registre, "POST", "/holistique/portrait",
+                                        charge=fiche_in, timeout=45, brut=True)
+    if not isinstance(portrait, dict) or not portrait.get("portrait"):
+        return json.dumps(portrait if isinstance(portrait, dict)
+                          else {"ok": False, "message": "Portrait indisponible."}, ensure_ascii=False)
+
+    p = portrait.get("portrait") or {}
+    resume = {"ok": True, "prenoms": prenoms, "nom": nom_famille or None,
+              "archetype": p.get("archetype"), "forces": p.get("forces"),
+              "a_travailler": p.get("faiblesse"),
+              "pierre": (p.get("pierre_equilibrage") or {}).get("pierre"),
+              "ville": ville_resolue or None}
+    if not action:
+        return json.dumps(resume, ensure_ascii=False)
+
+    # — Action confirmée : enregistrer et/ou importer dans une série du Studio —
+    fiche_id = None
+    if enregistrer:
+        contexte = {"prenoms": prenoms, "nom": nom_famille, "date": date_naissance,
+                    "heure": args.get("heure_naissance") or "", "ville": ville_resolue,
+                    "latitude": latitude, "longitude": longitude}
+        f = await _personnages_appel(client, registre, "POST", "/fiches", charge={
+            "nom": nom_complet, "contexte": contexte,
+            "traditions": portrait.get("traditions"), "portrait": p,
+            "empreinte": portrait.get("empreinte")}, timeout=30, brut=True)
+        if isinstance(f, dict) and f.get("id"):
+            resume["fiche_enregistree"] = fiche_id = f["id"]
+        else:
+            resume["enregistrement"] = f  # message d'échec honnête
+
+    if serie_id:
+        nom_scene = (args.get("nom_scene") or "").strip()
+        if fiche_id:   # fiche persistée → import par id (le Studio relit la fiche complète)
+            imp = await _studio_appel(client, registre, "POST",
+                                      f"/series/{serie_id}/personnages/importer-fiche",
+                                      charge={"fiche_id": fiche_id, "nom": nom_scene or None},
+                                      timeout=30)
+        else:          # pas enregistrée → push direct (nom d'origine + archétype + empreinte)
+            imp = await _studio_appel(client, registre, "POST",
+                                      f"/series/{serie_id}/personnages/importer",
+                                      charge={"nom": nom_scene or prenoms,
+                                              "nom_naissance": nom_complet,
+                                              "archetype": p.get("archetype"),
+                                              "empreinte": _empreinte_lignes(portrait.get("empreinte")),
+                                              "source": "personnages"}, timeout=30)
+        try:
+            resume["importe_dans_serie"] = json.loads(imp)
+        except (ValueError, TypeError):
+            resume["importe_dans_serie"] = imp
+    return json.dumps(resume, ensure_ascii=False)
 
 
 async def _transcription_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
