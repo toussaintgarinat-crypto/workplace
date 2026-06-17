@@ -2,7 +2,7 @@ services:
   personnages:
     build: .
     container_name: workplace_personnages
-    image: workplace/personnages:0.4.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/personnages:0.5.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique (GATEWAY_KEY pour le LLM
       # par défaut). En produit autonome vendu, fournir plutôt API_KEYS + LLM BYO.

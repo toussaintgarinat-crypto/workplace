@@ -24,6 +24,12 @@ def _conn() -> sqlite3.Connection:
         id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, titre TEXT, langue TEXT,
         premisse TEXT, personnages TEXT NOT NULL, cree_le TEXT)""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_cle ON distributions(cle_api)")
+    # Fiches cosmiques enregistrées (opt-in) : le portrait holistique reste STATELESS ;
+    # on ne stocke que sur action délibérée. `donnees` = snapshot complet (JSON).
+    c.execute("""CREATE TABLE IF NOT EXISTS fiches (
+        id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT, archetype TEXT,
+        donnees TEXT NOT NULL, cree_le TEXT)""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_fiche_cle ON fiches(cle_api)")
     return c
 
 
@@ -80,4 +86,42 @@ def maj(cle_api: str, did: str, champs: dict) -> dict | None:
 def supprimer(cle_api: str, did: str) -> bool:
     with _conn() as c:
         cur = c.execute("DELETE FROM distributions WHERE id=? AND cle_api=?", (did, cle_api))
+    return cur.rowcount > 0
+
+
+# ── Fiches cosmiques enregistrées (couche stateful du moteur holistique) ──
+def creer_fiche(cle_api: str, nom: str, donnees: dict | None = None) -> dict:
+    """Enregistre une fiche cosmique (snapshot complet). Renvoie le résumé (sans le blob)."""
+    donnees = donnees or {}
+    archetype = ((donnees.get("portrait") or {}).get("archetype")) or ""
+    f = {"id": uuid.uuid4().hex, "nom": nom or "Personnage", "archetype": archetype,
+         "cree_le": datetime.now(timezone.utc).isoformat()}
+    with _conn() as c:
+        c.execute("INSERT INTO fiches VALUES (?,?,?,?,?,?)",
+                  (f["id"], cle_api, f["nom"], f["archetype"],
+                   json.dumps(donnees, ensure_ascii=False), f["cree_le"]))
+    return f
+
+
+def lister_fiches(cle_api: str) -> list:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, nom, archetype, cree_le FROM fiches WHERE cle_api=? ORDER BY cree_le DESC",
+            (cle_api,)).fetchall()
+    return [{"id": r["id"], "nom": r["nom"], "archetype": r["archetype"],
+             "cree_le": r["cree_le"]} for r in rows]
+
+
+def lire_fiche(cle_api: str, fid: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM fiches WHERE id=? AND cle_api=?", (fid, cle_api)).fetchone()
+    if not r:
+        return None
+    return {"id": r["id"], "nom": r["nom"], "archetype": r["archetype"],
+            "donnees": json.loads(r["donnees"]), "cree_le": r["cree_le"]}
+
+
+def supprimer_fiche(cle_api: str, fid: str) -> bool:
+    with _conn() as c:
+        cur = c.execute("DELETE FROM fiches WHERE id=? AND cle_api=?", (fid, cle_api))
     return cur.rowcount > 0

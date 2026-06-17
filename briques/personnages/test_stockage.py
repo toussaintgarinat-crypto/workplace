@@ -32,3 +32,28 @@ def test_lister_resume_compte_les_persos():
     S.maj("cleC", d["id"], {"personnages": [{"nom": "A"}, {"nom": "B"}]})
     item = next(x for x in S.lister("cleC") if x["id"] == d["id"])
     assert item["personnages"] == 2
+
+
+# ── Fiches cosmiques enregistrées ────────────────────────────────
+def test_fiche_creer_lire_snapshot():
+    donnees = {"portrait": {"archetype": "Le Sage"}, "contexte": {"prenoms": "Aria"},
+               "empreinte": [{"cle": "Soleil"}], "lecture_approfondie": "texte IA"}
+    f = S.creer_fiche("cleA", "Aria Solis", donnees)
+    assert f["archetype"] == "Le Sage"           # résumé déduit du portrait
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom"] == "Aria Solis"
+    assert relu["donnees"]["lecture_approfondie"] == "texte IA"   # snapshot complet conservé
+    assert relu["donnees"]["empreinte"] == [{"cle": "Soleil"}]
+
+
+def test_fiche_cloisonnement_par_cle():
+    f = S.creer_fiche("cleA", "Privé", {"portrait": {"archetype": "X"}})
+    assert S.lire_fiche("cleB", f["id"]) is None
+    assert all(x["id"] != f["id"] for x in S.lister_fiches("cleB"))
+
+
+def test_fiche_supprimer():
+    f = S.creer_fiche("cleA", "Jetable", {})
+    assert S.supprimer_fiche("cleA", f["id"]) is True
+    assert S.supprimer_fiche("cleA", f["id"]) is False
+    assert S.lire_fiche("cleA", f["id"]) is None
