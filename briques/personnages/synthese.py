@@ -21,6 +21,7 @@ import re
 import unicodedata
 from datetime import date, timedelta
 
+import significations as SIG
 import traditions as T
 
 
@@ -289,43 +290,139 @@ def portrait(trad: dict, nom: str = "") -> dict:
     }
 
 
+# Élément d'un signe (pour la tonalité d'ouverture).
+_ELEMENT_PAR_SIGNE = {
+    "Bélier": "Feu", "Lion": "Feu", "Sagittaire": "Feu",
+    "Taureau": "Terre", "Vierge": "Terre", "Capricorne": "Terre",
+    "Gémeaux": "Air", "Balance": "Air", "Verseau": "Air",
+    "Cancer": "Eau", "Scorpion": "Eau", "Poissons": "Eau",
+}
+_ELEMENT_TON = {
+    "Feu": "une énergie ardente, tournée vers l'action et l'élan",
+    "Terre": "un tempérament concret, patient, attaché au réel",
+    "Air": "un esprit mobile, sociable, porté par les idées",
+    "Eau": "une nature sensible, intuitive, à fleur d'émotion",
+}
+
+
+def _element_dominant(trad: dict) -> str | None:
+    """Élément le plus présent sur Soleil / Lune / Ascendant / rashi + élément chinois."""
+    cumul: dict = {}
+    sol = (trad.get("signe_solaire") or {}).get("nom")
+    lun = (trad.get("signe_lunaire") or {}).get("signe")
+    asc = ((trad.get("theme_astral") or {}).get("ascendant") or {}).get("signe")
+    ved = (trad.get("vedique") or {}).get("rashi")
+    for s in (sol, lun, asc, ved):
+        el = _ELEMENT_PAR_SIGNE.get(s)
+        if el:
+            cumul[el] = cumul.get(el, 0) + 1
+    elc = (trad.get("signe_chinois") or {}).get("element")
+    if elc in _ELEMENT_TON:
+        cumul[elc] = cumul.get(elc, 0) + 1
+    if not cumul:
+        return None
+    # ex æquo départagé par l'élément solaire (l'identité de base)
+    sol_el = _ELEMENT_PAR_SIGNE.get(sol)
+    return max(cumul, key=lambda e: (cumul[e], e == sol_el))
+
+
+def _mots(sens: str) -> list:
+    return [m.strip() for m in (sens or "").replace(";", ",").split(",") if m.strip()]
+
+
+def _fil_rouge(empreinte: list) -> str | None:
+    """Repère les mots-clés portés par ≥2 SYMBOLES DISTINCTS — le motif central qui fait
+    une *lecture* plutôt qu'une liste. On compte par valeur (Bélier, Isis…) et non par
+    placement : un Soleil et un Ascendant sur le même signe ne comptent qu'une fois.
+    Renvoie une phrase, ou None si rien ne converge vraiment."""
+    porteurs: dict = {}     # mot_normalisé → {"mot": affichage, "valeurs": set, "cles": [..]}
+    for e in empreinte:
+        valeur = e.get("valeur", "")
+        for m in set(_mots(e.get("sens", ""))):
+            k = _sans_accents(m).lower()
+            d = porteurs.setdefault(k, {"mot": m, "valeurs": set(), "cles": []})
+            if valeur not in d["valeurs"]:     # même mot via 2 placements du même signe = 1 voix
+                d["valeurs"].add(valeur)
+                d["cles"].append(e.get("cle", ""))
+    recurrents = sorted([k for k, d in porteurs.items() if len(d["valeurs"]) >= 2],
+                        key=lambda k: (-len(porteurs[k]["valeurs"]), k))
+    if not recurrents:
+        return None
+    motifs = []
+    for k in recurrents[:2]:
+        d = porteurs[k]
+        cles_u = [c for c in dict.fromkeys(d["cles"]) if c][:3]
+        motifs.append(f"**{d['mot']}** ({' · '.join(cles_u)})")
+    return "Plusieurs traditions convergent vers le même motif : " + " ; ".join(motifs) + "."
+
+
 def _recit(arch, stats, forces, faiblesse, pierre, vertu, trad, nom) -> str:
-    """Petit portrait narratif (style « Le Stratège Solitaire » du rapport de cadrage)."""
-    qui = (nom.strip() + ", " if nom and nom.strip() else "Ce personnage ")
-    if nom and nom.strip():
-        qui = f"{nom.strip()} est **{arch}**. "
-    else:
-        qui = f"**{arch}**. "
+    """Lecture symbolique en sections, qui TISSE les sens calculés (significations) et
+    dégage un fil rouge, au lieu d'énumérer les sources. Reste du divertissement."""
+    sujet = nom.strip() if (nom and nom.strip()) else "Ce personnage"
+    emp = SIG.expliquer(trad)
+    par_cle = {e["cle"]: e for e in emp}
+    sections = []
+
+    # — Le noyau : archétype + élément dominant + Soleil / Lune / Ascendant —
+    el = _element_dominant(trad)
+    noyau = f"**Le noyau.** {sujet} est **{arch}**"
+    noyau += f", porté par {_ELEMENT_TON[el]}." if el else "."
+    sol = par_cle.get("Soleil")
+    if sol and sol.get("sens"):
+        noyau += f" Son Soleil en {sol['valeur']} en donne le grain : {sol['sens']}."
+    lun = par_cle.get("Lune")
+    if lun and lun.get("sens"):
+        noyau += f" Au-dedans, une Lune en {lun['valeur']} — {lun['sens']}."
+    asc = par_cle.get("Ascendant")
+    if asc and asc.get("sens"):
+        noyau += f" Au-dehors, un ascendant {asc['valeur']} : {asc['sens']}."
     forces_txt = ", ".join(f"{f} ({stats[f]})" for f in forces)
-    lignes = [
-        qui + f"Ses forces : {forces_txt}.",
-        f"Point à travailler : {faiblesse} ({stats[faiblesse]}) — "
-        f"pierre d'équilibrage suggérée : **{pierre}** ({vertu}).",
-    ]
-    repere = []
-    if trad.get("signe_solaire"):
-        s = trad["signe_solaire"]
-        asc = (trad.get("theme_astral") or {}).get("ascendant", {}).get("signe")
-        repere.append(f"{s['nom']} {s['symbole']}" + (f" ascendant {asc}" if asc else "")
-                      + f" ({s['element']})")
-    if trad.get("signe_chinois"):
-        c = trad["signe_chinois"]
-        repere.append(f"{c['animal']} de {c['element']}")
-    if trad.get("egyptien"):
-        repere.append(f"{trad['egyptien']} (Égypte)")
-    if trad.get("celte"):
-        repere.append(f"{trad['celte']} (celte)")
-    if trad.get("amerindien"):
-        repere.append(f"totem {trad['amerindien']}")
-    if isinstance(trad.get("chemin_de_vie"), int):
-        repere.append(f"chemin de vie {trad['chemin_de_vie']}")
-    if trad.get("maya"):
-        m = trad["maya"]
-        repere.append(f"Tzolkin {m['tonalite']} {m['glyphe']}")
-    if repere:
-        lignes.append("Sources : " + " · ".join(repere) + ".")
-    lignes.append("_Lecture symbolique — divertissement, pas un fait._")
-    return "\n".join(lignes)
+    noyau += f" Ses forces dominantes : {forces_txt}."
+    sections.append(noyau)
+
+    # — Le fil rouge : mots-clés récurrents entre traditions —
+    fr = _fil_rouge(emp)
+    if fr:
+        sections.append("**Le fil rouge.** " + fr)
+    else:
+        sections.append(f"**Le fil rouge.** Une dominante nette se détache : {forces[0]} "
+                        f"({stats[forces[0]]}), qui colore le reste du tempérament.")
+
+    # — Les autres voix : on fait parler 3 traditions de plus (par leur sens) —
+    voix = []
+    for cle, intro in (("Astrologie chinoise", "côté chinois"), ("Égypte", "en Égypte"),
+                       ("Celte", "côté celte"), ("Totem amérindien", "comme totem"),
+                       ("Maya (Tzolkin)", "dans le Tzolkin"), ("Nakshatra", "côté védique")):
+        e = par_cle.get(cle)
+        if e and e.get("sens"):
+            voix.append(f"{intro}, {e['valeur']} ({e['sens']})")
+        if len(voix) >= 3:
+            break
+    if voix:
+        phrase = " ; ".join(voix)
+        sections.append("**Les autres voix.** " + phrase[:1].upper() + phrase[1:] + ".")
+
+    # — L'ombre & le remède : faiblesse + pierre d'équilibrage —
+    sections.append(
+        f"**L'ombre & le remède.** Le point à travailler est {faiblesse} ({stats[faiblesse]}), "
+        f"là où l'énergie se fait rare. La gemmologie compensatoire propose **{pierre}** "
+        f"({vertu}) pour rouvrir cette porte.")
+
+    # — Le chemin des nombres : chemin de vie + expression du nom —
+    nums = []
+    cdv = par_cle.get("Chemin de vie")
+    if cdv and cdv.get("sens"):
+        nums.append(f"un chemin de vie {cdv['valeur']} — {cdv['sens']}")
+    expr = par_cle.get("Expression (nom)")
+    if expr and expr.get("sens"):
+        nums.append(f"une expression du nom en {expr['valeur']} — {expr['sens']}")
+    if nums:
+        phrase = " ; ".join(nums)
+        sections.append("**Le chemin des nombres.** " + phrase[:1].upper() + phrase[1:] + ".")
+
+    sections.append("_Lecture symbolique — divertissement, pas un fait._")
+    return "\n\n".join(sections)
 
 
 # ── MODE MONTANT : description → signes / nombres / date ──────────

@@ -152,11 +152,16 @@
       <div class="hint">Empreinte multi-culturelle — survole pour comprendre, chaque ligne est calculée :</div>
       <div class="emp" id="o-chips"></div>
       <div class="recit" id="o-recit"></div>
+      <!-- Approfondir : réécriture littéraire par l'IA gratuite, à la demande (opt-in). -->
+      <button type="button" id="btn-approf" class="ghost" onclick="approfondir()"
+        style="margin-top:12px" title="Réécriture littéraire par l'IA gratuite, à la demande">✨ Approfondir la lecture</button>
+      <div id="approf-err" class="err"></div>
+      <div class="recit" id="o-approf" style="display:none;margin-top:12px"></div>
       <!-- Export : la fiche n'est jamais enregistrée côté brique. On la reconstitue
            ici, dans le navigateur, à partir du dernier portrait calculé. -->
       <div class="row" style="align-items:stretch">
         <button type="button" onclick="exporterFiche()" style="flex:3"
-          title="Télécharger une fiche imprimable (ouvre puis Ctrl/Cmd+P → PDF)">📄 Exporter la fiche</button>
+          title="Ouvre la fiche et propose l'enregistrement en PDF">📄 Exporter en PDF</button>
         <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:130px"
           title="Télécharger les données brutes (traditions + portrait + empreinte)">⤓ JSON</button>
       </div>
@@ -235,13 +240,21 @@ async function geocoder(){
   finally{ btn.disabled=false; }
 }
 
+// Markdown léger → HTML (gras + italique), partagé par le récit et l'approfondissement.
+const mdToHtml = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
+
+// Corps de requête commun (portrait & lecture approfondie) — source unique.
+function corpsFiche(){
+  return {prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
+    heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
+    utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+}
+
 async function portrait(){
   const btn=$('btn-desc'), err=$('desc-err'); err.textContent='';
   btn.disabled=true; btn.textContent='✨ Calcul des traditions…';
   try{
-    const body={prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
-      heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
-      utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+    const body=corpsFiche();
     _dernierContexte={prenoms:body.prenoms, nom:body.nom, date:body.date_naissance,
       heure:body.heure_naissance, ville:$('ville').value, systeme:body.systeme_numerologie};
     const r=await fetch('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -254,6 +267,29 @@ async function portrait(){
 
 let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio / l'export
 let _dernierContexte=null;   // état-civil saisi au moment de la génération (pour la fiche)
+let _lectureApprofondie=null; // lecture réécrite par l'IA (si l'utilisateur l'a demandée)
+
+// Demande à l'IA gratuite une réécriture littéraire de la lecture symbolique (opt-in).
+// Repli honnête côté serveur : source='repli' = l'IA était indisponible, on a le déterministe.
+async function approfondir(){
+  if(!_dernierPortrait) return;
+  const btn=$('btn-approf'), err=$('approf-err'); err.textContent='';
+  const ini=btn.textContent; btn.disabled=true; btn.textContent='✨ Lecture en cours… (IA)';
+  try{
+    const r=await fetch('/holistique/lecture-approfondie',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...corpsFiche(), langue:'français'})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    const d=await r.json();
+    _lectureApprofondie = d.source==='llm' ? d.lecture : null;
+    const badge = d.source==='llm'
+      ? '<div class="hint" style="margin-bottom:8px;color:var(--ok)">🤖 Lecture approfondie par l\'IA</div>'
+      : '<div class="hint" style="margin-bottom:8px">↩ IA indisponible — voici la lecture de base (repli honnête).</div>';
+    $('o-approf').innerHTML = badge + mdToHtml(d.lecture);
+    $('o-approf').style.display='block';
+  }catch(e){ err.textContent='⚠ '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=ini; }
+}
 
 // Envoie le personnage courant à l'app parente (Oria) si on est en iframe.
 // L'empreinte (valeurs + sens) part telle quelle : la brique images y repère les
@@ -319,7 +355,8 @@ function exporterFiche(){
   const emp=(d.empreinte||[]).map(e=>
     `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}</div>`+
     `<div class="ecv"><b>${esc(e.valeur)}</b></div><div class="ecs">${esc(e.sens)}</div></div>`).join('');
-  const recit = esc(p.recit||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
+  const recit = mdToHtml(p.recit||'');
+  const approf = _lectureApprofondie ? mdToHtml(_lectureApprofondie) : '';
   const html =
 `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <title>Fiche cosmique — ${esc(nom)}</title>
@@ -354,11 +391,20 @@ function exporterFiche(){
          padding:18px;white-space:pre-wrap;font-size:.92rem}
   .recit em{color:var(--mut)}
   .foot{margin-top:34px;color:var(--mut);font-size:.72rem;border-top:1px solid var(--line);padding-top:14px}
+  .toolbar{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;
+    background:rgba(14,12,16,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+    padding:12px 24px;font-size:.82rem;color:var(--mut)}
+  .toolbar button{cursor:pointer;border:none;border-radius:9px;padding:9px 16px;font-weight:600;
+    font-size:.86rem;background:linear-gradient(135deg,var(--accent),#d4894a);color:#1a1208}
   @media print{body{background:#fff;color:#222}
+    .toolbar{display:none}
     .sheet{max-width:100%}h1,.arche,.ec .ecv b{color:#8a5a14}
     .recit,.ec,.gem{background:#faf7f2;border-color:#e3dccf}
     .gem{background:#eef7f1}.foot{color:#888}}
-</style></head><body><div class="sheet">
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+  <span>Dans la fenêtre d'impression, choisis « Enregistrer au format PDF ».</span></div>
+<div class="sheet">
   <h1>${esc(nom)}</h1>
   ${etatCivil?`<div class="civ">${etatCivil}</div>`:''}
   <div class="arche">${esc(p.archetype||'')}</div>
@@ -366,11 +412,21 @@ function exporterFiche(){
   ${stats?`<h2>Tempérament calculé</h2>${stats}`:''}
   ${g.pierre?`<h2>Cristal allié</h2><div class="gem">💎&nbsp;<div>Cristal allié : <b>${esc(g.pierre)}</b> — ${esc(g.vertu||'')}${g.compense?' (compense '+esc(g.compense)+')':''}.</div></div>`:''}
   ${emp?`<h2>Empreinte multi-culturelle</h2><div class="emp">${emp}</div>`:''}
-  ${recit?`<h2>Récit</h2><div class="recit">${recit}</div>`:''}
+  ${recit?`<h2>Lecture symbolique</h2><div class="recit">${recit}</div>`:''}
+  ${approf?`<h2>Lecture approfondie (IA)</h2><div class="recit">${approf}</div>`:''}
   <div class="foot">Fiche cosmique générée par l'Atelier holistique · ${esc(c.systeme||'')} ·
   les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.</div>
-</div></body></html>`;
-  telecharger('fiche-cosmique-'+slug(nom)+'.html', html, 'text/html');
+</div>
+<script>addEventListener('load',function(){setTimeout(function(){window.print();},350);});<\/script>
+</body></html>`;
+  // Ouvre la fiche dans un onglet et propose l'impression / l'enregistrement PDF.
+  // Repli : si une fenêtre est bloquée (popup, sandbox iframe), on télécharge le HTML.
+  const w = window.open('', '_blank');
+  if(w && w.document){
+    w.document.open(); w.document.write(html); w.document.close();
+  }else{
+    telecharger('fiche-cosmique-'+slug(nom)+'.html', html, 'text/html');
+  }
 }
 
 function renderPortrait(d){
@@ -395,8 +451,11 @@ function renderPortrait(d){
     `<div class="ecv"><b>${esc(e.valeur)}</b></div>`+
     `<div class="ecs">${esc(e.sens)}</div></div>`).join('');
   // recit (markdown gras → <b>)
-  $('o-recit').innerHTML = esc(p.recit).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
-    .replace(/_(.+?)_/g,'<em>$1</em>');
+  $('o-recit').innerHTML = mdToHtml(p.recit);
+  // remise à zéro de l'approfondissement IA pour ce nouveau portrait
+  _lectureApprofondie=null;
+  $('o-approf').style.display='none'; $('approf-err').textContent='';
+  $('btn-approf').style.display='inline-block';
   // Bouton « Envoyer au Studio » : utile seulement dans l'iframe Oria (sinon inerte mais inoffensif).
   $('btn-studio').style.display = (window.parent !== window) ? 'inline-block' : 'none';
   $('desc-out').style.display='block';
