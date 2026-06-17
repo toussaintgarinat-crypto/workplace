@@ -105,8 +105,21 @@ L'analyse est d'abord **lexicale** (champ lexical étoffé + similarité `diffli
 | GET/PATCH/DELETE | `/distributions/{id}` | lire / modifier / supprimer |
 | POST | `/distributions/{id}/proposer` | proposer des personnages cohérents (à ajouter) |
 | POST | `/distributions/{id}/personnages` | ajouter une fiche |
-| PATCH/DELETE | `/distributions/{id}/personnages/{pid}` | éditer / retirer |
+| PATCH/DELETE | `/distributions/{id}/personnages/{pid}` | éditer / **renommer** (alias de série) / retirer |
 | POST | `/distributions/{id}/casting` | caster un script + **persister les voix figées** |
+
+Renommage : chaque personnage garde son **nom d'origine** (`nom_naissance`, figé) en plus du
+nom affiché. Tu peux donc donner au même personnage cosmique un **nom de scène différent par
+série** sans perdre son identité ni ses voix.
+
+### Fiches cosmiques enregistrées (opt-in, cloisonnées par clé API)
+
+| Méthode | Chemin | Rôle |
+|---|---|---|
+| POST | `/fiches` | enregistrer une fiche générée (snapshot complet) |
+| GET | `/fiches` · `/fiches/{id}` | lister · lire |
+| PATCH | `/fiches/{id}` | **renommer** pour une série (garde `nom_naissance` + données) |
+| DELETE | `/fiches/{id}` | supprimer |
 
 ## Configuration (env)
 

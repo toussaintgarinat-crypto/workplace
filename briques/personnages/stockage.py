@@ -26,10 +26,17 @@ def _conn() -> sqlite3.Connection:
     c.execute("CREATE INDEX IF NOT EXISTS idx_cle ON distributions(cle_api)")
     # Fiches cosmiques enregistrées (opt-in) : le portrait holistique reste STATELESS ;
     # on ne stocke que sur action délibérée. `donnees` = snapshot complet (JSON).
+    # `nom` = nom affiché (renommable, p.ex. nom de scène d'une série) ; `nom_naissance`
+    # = nom cosmique d'origine, FIGÉ à la création (on garde toujours les deux).
     c.execute("""CREATE TABLE IF NOT EXISTS fiches (
-        id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT, archetype TEXT,
-        donnees TEXT NOT NULL, cree_le TEXT)""")
+        id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT, nom_naissance TEXT,
+        archetype TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_fiche_cle ON fiches(cle_api)")
+    # Migration douce : ajoute nom_naissance aux bases créées avant cette colonne.
+    cols = {r[1] for r in c.execute("PRAGMA table_info(fiches)")}
+    if "nom_naissance" not in cols:
+        c.execute("ALTER TABLE fiches ADD COLUMN nom_naissance TEXT")
+        c.execute("UPDATE fiches SET nom_naissance=nom WHERE nom_naissance IS NULL")
     return c
 
 
@@ -91,14 +98,18 @@ def supprimer(cle_api: str, did: str) -> bool:
 
 # ── Fiches cosmiques enregistrées (couche stateful du moteur holistique) ──
 def creer_fiche(cle_api: str, nom: str, donnees: dict | None = None) -> dict:
-    """Enregistre une fiche cosmique (snapshot complet). Renvoie le résumé (sans le blob)."""
+    """Enregistre une fiche cosmique (snapshot complet). Renvoie le résumé (sans le blob).
+
+    `nom_naissance` est figé sur le nom de création : même renommée plus tard pour une
+    série, la fiche garde la trace de son nom cosmique d'origine."""
     donnees = donnees or {}
     archetype = ((donnees.get("portrait") or {}).get("archetype")) or ""
-    f = {"id": uuid.uuid4().hex, "nom": nom or "Personnage", "archetype": archetype,
+    nom = nom or "Personnage"
+    f = {"id": uuid.uuid4().hex, "nom": nom, "nom_naissance": nom, "archetype": archetype,
          "cree_le": datetime.now(timezone.utc).isoformat()}
     with _conn() as c:
-        c.execute("INSERT INTO fiches VALUES (?,?,?,?,?,?)",
-                  (f["id"], cle_api, f["nom"], f["archetype"],
+        c.execute("INSERT INTO fiches VALUES (?,?,?,?,?,?,?)",
+                  (f["id"], cle_api, f["nom"], f["nom_naissance"], f["archetype"],
                    json.dumps(donnees, ensure_ascii=False), f["cree_le"]))
     return f
 
@@ -106,10 +117,10 @@ def creer_fiche(cle_api: str, nom: str, donnees: dict | None = None) -> dict:
 def lister_fiches(cle_api: str) -> list:
     with _conn() as c:
         rows = c.execute(
-            "SELECT id, nom, archetype, cree_le FROM fiches WHERE cle_api=? ORDER BY cree_le DESC",
-            (cle_api,)).fetchall()
-    return [{"id": r["id"], "nom": r["nom"], "archetype": r["archetype"],
-             "cree_le": r["cree_le"]} for r in rows]
+            "SELECT id, nom, nom_naissance, archetype, cree_le FROM fiches "
+            "WHERE cle_api=? ORDER BY cree_le DESC", (cle_api,)).fetchall()
+    return [{"id": r["id"], "nom": r["nom"], "nom_naissance": r["nom_naissance"],
+             "archetype": r["archetype"], "cree_le": r["cree_le"]} for r in rows]
 
 
 def lire_fiche(cle_api: str, fid: str) -> dict | None:
@@ -117,8 +128,24 @@ def lire_fiche(cle_api: str, fid: str) -> dict | None:
         r = c.execute("SELECT * FROM fiches WHERE id=? AND cle_api=?", (fid, cle_api)).fetchone()
     if not r:
         return None
-    return {"id": r["id"], "nom": r["nom"], "archetype": r["archetype"],
-            "donnees": json.loads(r["donnees"]), "cree_le": r["cree_le"]}
+    return {"id": r["id"], "nom": r["nom"], "nom_naissance": r["nom_naissance"],
+            "archetype": r["archetype"], "donnees": json.loads(r["donnees"]),
+            "cree_le": r["cree_le"]}
+
+
+def renommer_fiche(cle_api: str, fid: str, nom: str) -> dict | None:
+    """Change le nom AFFICHÉ d'une fiche (p.ex. nom de scène pour une série) sans toucher
+    au nom_naissance ni aux données cosmiques. Renvoie le résumé, ou None si introuvable."""
+    nom = (nom or "").strip()
+    if not nom:
+        return None
+    with _conn() as c:
+        cur = c.execute("UPDATE fiches SET nom=? WHERE id=? AND cle_api=?",
+                        (nom, fid, cle_api))
+        if cur.rowcount == 0:
+            return None
+    f = lire_fiche(cle_api, fid)
+    return {k: f[k] for k in ("id", "nom", "nom_naissance", "archetype", "cree_le")}
 
 
 def supprimer_fiche(cle_api: str, fid: str) -> bool:

@@ -1,6 +1,6 @@
 {
   "nom": "personnages",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Génération de personnages : distributions structurées (LLM) + casting vocal STABLE agnostique au TTS + moteur HOLISTIQUE multi-traditions (numérologie, astro occidentale/chinoise/védique, égyptien, celte, amérindien, maya Tzolkin) avec synthèse tags→stats→archétype→pierre d'équilibrage (descendant) et recherche inverse description→signes/date (montant). Produit autonome vendable seul : stateless ET stateful (cloisonné par clé API). LLM Gateway par défaut ou Bring-Your-Own-Key. Extrait du Studio Oria (S47), étendu en S49.",
   "role": "personnages",
   "couche": "backend",
@@ -19,7 +19,8 @@
     "traditions_multiples",
     "recherche_inverse_caractere",
     "front_demo_holistique",
-    "export_fiche_cosmique", "lecture_symbolique_approfondie", "fiches_persistees"
+    "export_fiche_cosmique", "lecture_symbolique_approfondie", "fiches_persistees",
+    "renommage_nom_de_serie"
   ],
   "besoin": [],
   "taches": []

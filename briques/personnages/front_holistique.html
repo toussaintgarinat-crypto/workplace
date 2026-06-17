@@ -528,14 +528,21 @@ async function chargerFiches(){
       row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
       const open=document.createElement('button'); open.className='ghost';
       open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
-      open.textContent=(f.nom||'Personnage')+(f.archetype?' — '+f.archetype:'')+
-        '  ·  '+String(f.cree_le||'').slice(0,10);
+      // nom de scène affiché ; si renommé, on rappelle le nom cosmique d'origine
+      const aka=(f.nom_naissance && f.nom_naissance!==f.nom)?'  (né·e '+f.nom_naissance+')':'';
+      open.innerHTML='<b>'+(f.nom||'Personnage')+'</b>'+
+        '<span style="opacity:.6">'+aka+'</span>'+
+        (f.archetype?' — '+f.archetype:'')+'  ·  '+String(f.cree_le||'').slice(0,10);
       open.onclick=()=>chargerFiche(f.id);
+      const ren=document.createElement('button'); ren.className='ghost';
+      ren.style.cssText='margin:0;width:auto;padding:8px 12px';
+      ren.textContent='✎'; ren.title='Renommer pour une série (garde le nom d’origine)';
+      ren.onclick=()=>renommerFiche(f.id, f.nom);
       const del=document.createElement('button'); del.className='ghost';
       del.style.cssText='margin:0;width:auto;padding:8px 12px;color:#f08aa0';
       del.textContent='✕'; del.title='Supprimer ce personnage';
       del.onclick=()=>supprimerFiche(f.id, row);
-      row.append(open, del); box.append(row);
+      row.append(open, ren, del); box.append(row);
     });
   }catch(e){ box.textContent='⚠ '+e.message; }
 }
@@ -558,6 +565,19 @@ async function chargerFiche(id){
     }
     $('desc-out').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(e){ $('desc-err').textContent='⚠ '+e.message; }
+}
+
+async function renommerFiche(id, nomActuel){
+  // Renomme la fiche pour une série (nom de scène). Le nom cosmique d'origine reste figé.
+  const nom=prompt('Nouveau nom pour cette série (le nom d’origine est conservé) :', nomActuel||'');
+  if(nom===null) return;                      // annulé
+  if(!nom.trim()){ alert('Le nom ne peut pas être vide.'); return; }
+  try{
+    const r=await fetch('/fiches/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nom})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    chargerFiches();                          // rafraîchit la liste (affiche « né·e … »)
+  }catch(e){ alert('⚠ '+e.message); }
 }
 
 async function supprimerFiche(id, row){
