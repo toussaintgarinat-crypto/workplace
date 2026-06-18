@@ -24,6 +24,7 @@ import httpx
 
 import agenda
 import catalogue
+import conscience
 import cycle_de_vie
 import orchestrateur
 
@@ -47,6 +48,13 @@ OUTILS: list[dict] = [
     {"type": "function", "function": {
         "name": "etat_briques",
         "description": "Liste les briques de la solution (ETL, Audit, Générateur, Données, Mémoire…) et leur santé.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "mes_capacites",
+        "description": "Décris-toi JUSTE : ta propre anatomie (tes organes/briques) et la "
+                       "liste exacte de tes outils. À appeler AVANT de répondre à « que sais-tu "
+                       "faire ? », « qui es-tu ? », « comment es-tu fait ? » — réponds depuis ce "
+                       "résultat, n'invente aucun organe ni pouvoir. Lecture seule.",
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "chercher_documents",
@@ -628,6 +636,14 @@ async def executer(nom: str, args: dict, registre) -> str:
 
             if nom == "etat_briques":
                 return json.dumps(await _etat_briques(client, registre), ensure_ascii=False)
+
+            if nom == "mes_capacites":
+                # Conscience de soi (S65) : on rend l'anatomie depuis la source de vérité
+                # (manifests + outils réellement actifs) — pas de confabulation.
+                return json.dumps(
+                    conscience.anatomie(registre, outils_pour(registre),
+                                        lambda n: est_action(n, registre)),
+                    ensure_ascii=False)
 
             if nom == "chercher_documents":
                 params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
