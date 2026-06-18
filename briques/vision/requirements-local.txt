@@ -1,0 +1,6 @@
+# Moteurs OCR souverains LOCAUX (gros) — installés dans l'image par défaut pour tenir la
+# promesse « souveraine par défaut ». Pour une image MINCE (cascade hébergée seule),
+# retirer la ligne `requirements-local.txt` du Dockerfile et poser une clé Mistral/Google.
+markitdown==0.1.1        # documents nés numériques → Markdown (PDF/Office/HTML/images)
+pytesseract==0.3.13      # OCR d'images scannées (nécessite le binaire tesseract — cf. Dockerfile)
+Pillow==11.1.0           # lecture/normalisation d'images pour Tesseract

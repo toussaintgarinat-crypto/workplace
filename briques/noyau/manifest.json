@@ -1,7 +1,7 @@
 {
   "nom": "noyau",
   "version": "1.0.0",
-  "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30) à l'horloge S29 — il n'est pas une brique séparée.",
+  "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30, pouls autonome S67) à l'horloge S29 — il n'est pas une brique séparée.",
   "role": "noyau",
   "couche": "backend",
   "statut": "actif",
@@ -18,6 +18,24 @@
       "methode": "POST",
       "chemin": "/briefing/executer",
       "cadence_heures": 24,
+      "idempotent": true,
+      "tolere_echec": true
+    },
+    {
+      "nom": "pouls-autonome",
+      "description": "Pouls autonome (S67) : l'horloge réveille le co-agent (lecture seule, borné par un budget quotidien de tokens) sur un objectif récurrent — point proactif + 3 priorités — déposé en rappel 🔔.",
+      "methode": "POST",
+      "chemin": "/pouls/battre",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "tolere_echec": true
+    },
+    {
+      "nom": "curation-hebdo",
+      "description": "Curator (S70, façon Hermes) : cycle hebdomadaire qui mesure la proprioception, propose un addendum de prompt (S69) + un brouillon de capacité manquante, et dépose un digest 🔔 à valider par l'humain. Propose, n'applique rien.",
+      "methode": "POST",
+      "chemin": "/curateur/cycle",
+      "cadence_heures": 168,
       "idempotent": true,
       "tolere_echec": true
     }

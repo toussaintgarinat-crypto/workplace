@@ -98,6 +98,15 @@ def agregat_jour(jour: str) -> dict:
     return _agreger(lignes)
 
 
+def tokens_jour_etiquette(jour: str, etiquette: str) -> int:
+    """Total de tokens (entrée + sortie) pour une `etiquette` un jour donné `AAAA-MM-JJ` (UTC).
+
+    Sert le **budget quotidien** du pouls autonome (S67) : borne le COÛT de la pensée
+    auto-déclenchée (l'horloge réveille le co-agent), indépendamment du chat manuel."""
+    return sum((l.get("tokens_in", 0) + l.get("tokens_out", 0)) for l in _lignes()
+               if (l.get("ts") or "").startswith(jour) and l.get("etiquette") == etiquette)
+
+
 def resume() -> dict:
     """Agrégats jour courant / mois courant / total + détail des budgets."""
     lignes = _lignes()

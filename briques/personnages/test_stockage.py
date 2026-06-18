@@ -1,4 +1,6 @@
 """Tests de la couche stockage (SQLite, cloisonnement par clé API)."""
+import sqlite3
+
 import stockage as S
 
 
@@ -32,3 +34,100 @@ def test_lister_resume_compte_les_persos():
     S.maj("cleC", d["id"], {"personnages": [{"nom": "A"}, {"nom": "B"}]})
     item = next(x for x in S.lister("cleC") if x["id"] == d["id"])
     assert item["personnages"] == 2
+
+
+# ── Fiches cosmiques enregistrées ────────────────────────────────
+def test_fiche_creer_lire_snapshot():
+    donnees = {"portrait": {"archetype": "Le Sage"}, "contexte": {"prenoms": "Aria"},
+               "empreinte": [{"cle": "Soleil"}], "lecture_approfondie": "texte IA"}
+    f = S.creer_fiche("cleA", "Aria Solis", donnees)
+    assert f["archetype"] == "Le Sage"           # résumé déduit du portrait
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom"] == "Aria Solis"
+    assert relu["donnees"]["lecture_approfondie"] == "texte IA"   # snapshot complet conservé
+    assert relu["donnees"]["empreinte"] == [{"cle": "Soleil"}]
+
+
+def test_fiche_cloisonnement_par_cle():
+    f = S.creer_fiche("cleA", "Privé", {"portrait": {"archetype": "X"}})
+    assert S.lire_fiche("cleB", f["id"]) is None
+    assert all(x["id"] != f["id"] for x in S.lister_fiches("cleB"))
+
+
+def test_fiche_supprimer():
+    f = S.creer_fiche("cleA", "Jetable", {})
+    assert S.supprimer_fiche("cleA", f["id"]) is True
+    assert S.supprimer_fiche("cleA", f["id"]) is False
+    assert S.lire_fiche("cleA", f["id"]) is None
+
+
+def test_fiche_garde_nom_naissance_a_la_creation():
+    f = S.creer_fiche("cleA", "Lyssandre", {"portrait": {"archetype": "Le Sage"}})
+    assert f["nom"] == f["nom_naissance"] == "Lyssandre"   # les deux à la création
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom_naissance"] == "Lyssandre"
+
+
+def test_fiche_renommer_garde_origine_et_donnees():
+    donnees = {"portrait": {"archetype": "Le Sage"}, "lecture_approfondie": "texte IA"}
+    f = S.creer_fiche("cleA", "Lyssandre", donnees)
+    out = S.renommer_fiche("cleA", f["id"], "  Aria  ")     # nom de scène (trim attendu)
+    assert out["nom"] == "Aria"                             # étiquette changée
+    assert out["nom_naissance"] == "Lyssandre"             # nom cosmique figé
+    relu = S.lire_fiche("cleA", f["id"])
+    assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Lyssandre"
+    assert relu["donnees"]["lecture_approfondie"] == "texte IA"   # données intactes
+
+
+def test_fiche_migration_ancien_schema_sans_nom_naissance(tmp_path, monkeypatch):
+    """Régression LIVE : sur une base d'AVANT nom_naissance, ALTER ajoute la colonne EN FIN
+    de table → l'ordre diffère d'une base neuve. L'INSERT doit nommer ses colonnes, sinon
+    les valeurs se décalent (donnees reçoit un timestamp → json.loads plante en lecture)."""
+    db = tmp_path / "ancienne.db"
+    raw = sqlite3.connect(db)               # schéma 6 colonnes, SANS nom_naissance
+    raw.execute("""CREATE TABLE fiches (id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT,
+                   archetype TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+    raw.commit(); raw.close()
+    monkeypatch.setattr(S, "DB_PATH", str(db))   # _conn() migrera cette base au prochain accès
+
+    f = S.creer_fiche("cleA", "Aria", {"portrait": {"archetype": "Le Sage"},
+                                       "lecture_approfondie": "texte"})
+    relu = S.lire_fiche("cleA", f["id"])         # ne doit PAS lever (donnees bien rangées)
+    assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Aria"
+    assert relu["donnees"]["lecture_approfondie"] == "texte"
+    assert relu["archetype"] == "Le Sage"
+
+
+def test_fiche_renommer_refuse_vide_et_cloisonne():
+    f = S.creer_fiche("cleA", "Lyssandre", {})
+    assert S.renommer_fiche("cleA", f["id"], "   ") is None       # nom vide refusé
+    assert S.renommer_fiche("cleB", f["id"], "Aria") is None      # autre tenant : rien
+    assert S.lire_fiche("cleA", f["id"])["nom"] == "Lyssandre"    # inchangé
+
+
+def test_fiche_categorie_creation_lecture_listage():
+    f = S.creer_fiche("cleA", "Maman", {}, categorie="  Famille  ")  # trim attendu
+    assert f["categorie"] == "Famille"
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == "Famille"
+    assert next(x for x in S.lister_fiches("cleA") if x["id"] == f["id"])["categorie"] == "Famille"
+
+
+def test_fiche_categorie_defaut_vide():
+    f = S.creer_fiche("cleA", "Inconnu", {})                          # pas de catégorie
+    assert f["categorie"] == "" and S.lire_fiche("cleA", f["id"])["categorie"] == ""
+
+
+def test_fiche_ranger_change_categorie_et_retire():
+    f = S.creer_fiche("cleA", "Collègue", {})
+    out = S.ranger_fiche("cleA", f["id"], "  Collègues  ")            # trim + rangement
+    assert out["categorie"] == "Collègues"
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == "Collègues"
+    assert S.ranger_fiche("cleA", f["id"], "")["categorie"] == ""     # vide = non rangé
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == ""
+
+
+def test_fiche_ranger_cloisonne_et_introuvable():
+    f = S.creer_fiche("cleA", "Privé", {})
+    assert S.ranger_fiche("cleB", f["id"], "Famille") is None         # autre tenant : rien
+    assert S.ranger_fiche("cleA", "inexistant", "Famille") is None    # id inconnu : rien
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == ""           # inchangé

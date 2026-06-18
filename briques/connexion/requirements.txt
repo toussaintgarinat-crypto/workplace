@@ -1,0 +1,7 @@
+# Brique connexion — dépendances minces et épinglées. Tout passe par HTTP (httpx) :
+# pas de SDK lourd par réseau. `cryptography` sert UNIQUEMENT à vérifier la signature
+# Ed25519 des interactions Discord (sinon non requis).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+cryptography==44.0.0

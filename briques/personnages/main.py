@@ -25,7 +25,7 @@ import stockage
 import synthese
 import traditions
 
-app = FastAPI(title="Personnages — distribution & casting", version="0.3.6")
+app = FastAPI(title="Personnages — distribution & casting", version="0.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -77,10 +77,11 @@ class MajDistribution(BaseModel):
 
 
 class Perso(BaseModel):
-    nom:         str
-    role:        Optional[str] = None
-    description: Optional[str] = None
-    voix:        Optional[dict] = None
+    nom:           str
+    nom_naissance: Optional[str] = None   # nom cosmique d'origine (figé si absent → = nom)
+    role:          Optional[str] = None
+    description:   Optional[str] = None
+    voix:          Optional[dict] = None
 
 
 class FicheHolistique(BaseModel):
@@ -100,6 +101,35 @@ class RechercheInverse(BaseModel):
     description: str = ""
     combien:     int = 3
     llm:         Optional[dict] = None     # BYO/local pour le filet de secours : {base_url, cle, modele}
+
+
+class LectureApprofondie(FicheHolistique):
+    """Même fiche que le portrait, + la langue de rédaction et un LLM BYO optionnel."""
+    langue: str = "français"
+    llm:    Optional[dict] = None
+
+
+class RenommerFiche(BaseModel):
+    """Nouveau nom AFFICHÉ d'une fiche (p.ex. nom de scène pour une série). Le nom
+    cosmique d'origine (nom_naissance) et les données restent intacts."""
+    nom: str
+
+
+class RangerFiche(BaseModel):
+    """Catégorie libre où ranger la fiche (« Famille », « Collègues »…). Vide = non rangé."""
+    categorie: str = ""
+
+
+class EnregistrerFiche(BaseModel):
+    """Snapshot d'une fiche cosmique à persister (opt-in). On envoie le résultat déjà
+    calculé pour ne pas dépendre d'un recalcul (la lecture IA notamment n'est pas déterministe)."""
+    nom:                 str = ""
+    categorie:           str = ""               # rangement libre choisi par l'utilisateur
+    contexte:            Optional[dict] = None   # état-civil saisi (prénoms, date, ville…)
+    traditions:          Optional[dict] = None
+    portrait:            Optional[dict] = None
+    empreinte:           Optional[list] = None
+    lecture_approfondie: Optional[str] = None
 
 
 # ── Front de démo (page d'accueil) ───────────────────────────────
@@ -176,6 +206,26 @@ def holistique_portrait(body: FicheHolistique, _cle: str = Depends(cle_api)):
             "empreinte": significations.expliquer(trad)}
 
 
+@app.post("/holistique/lecture-approfondie", tags=["holistique"])
+async def holistique_lecture_approfondie(body: LectureApprofondie, _cle: str = Depends(cle_api)):
+    """Réécriture LITTÉRAIRE de la lecture symbolique par le LLM (modèle gratuit Gateway par
+    défaut, ou BYO). Bonus opt-in : le socle déterministe du portrait reste gratuit/instantané.
+    Repli HONNÊTE : si l'IA est indisponible, on renvoie le récit déterministe (`source=repli`)."""
+    fiche = {k: getattr(body, k) for k in FicheHolistique.model_fields}
+    trad = traditions.calculer(fiche)
+    if not trad.get("signe_solaire"):
+        raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
+    p = synthese.portrait(trad, nom=body.prenoms or body.nom)
+    emp = significations.expliquer(trad)
+    try:
+        texte = await llm.approfondir_lecture(p, emp, body.langue, body.llm)
+        if texte:
+            return {"lecture": texte, "source": "llm"}
+    except Exception:  # noqa: BLE001 — repli honnête : on retombe sur le déterministe
+        pass
+    return {"lecture": p["recit"], "source": "repli"}
+
+
 @app.get("/geo", tags=["holistique"])
 async def geo(ville: str, _cle: str = Depends(cle_api)):
     """Géocode une ville → latitude / longitude (OpenStreetMap Nominatim, gratuit, sans clé).
@@ -222,6 +272,60 @@ async def holistique_recherche_inverse(body: RechercheInverse, _cle: str = Depen
     res = synthese.recherche_inverse(body.description, combien, cible=cible)
     res["source_analyse"] = source
     return res
+
+
+# ── STATEFUL : fiches cosmiques enregistrées (opt-in, cloisonnées par clé API) ─
+@app.post("/fiches", tags=["stateful", "holistique"])
+def enregistrer_fiche(body: EnregistrerFiche, cle: str = Depends(cle_api)):
+    """Enregistre une fiche cosmique générée. La génération reste STATELESS : on ne stocke
+    QUE sur action délibérée de l'utilisateur. Isolé par clé API (un tenant ne voit pas
+    les fiches d'un autre)."""
+    donnees = {"contexte": body.contexte or {}, "traditions": body.traditions or {},
+               "portrait": body.portrait or {}, "empreinte": body.empreinte or [],
+               "lecture_approfondie": body.lecture_approfondie or ""}
+    nom = body.nom.strip() or (body.contexte or {}).get("prenoms") or "Personnage"
+    return stockage.creer_fiche(cle, nom, donnees, categorie=body.categorie)
+
+
+@app.get("/fiches", tags=["stateful", "holistique"])
+def lister_fiches(cle: str = Depends(cle_api)):
+    return stockage.lister_fiches(cle)
+
+
+@app.get("/fiches/{fid}", tags=["stateful", "holistique"])
+def lire_fiche(fid: str, cle: str = Depends(cle_api)):
+    f = stockage.lire_fiche(cle, fid)
+    if not f:
+        raise HTTPException(404, "Fiche introuvable")
+    return f
+
+
+@app.patch("/fiches/{fid}", tags=["stateful", "holistique"])
+def renommer_fiche(fid: str, body: RenommerFiche, cle: str = Depends(cle_api)):
+    """Renomme la fiche pour une série (nom de scène). Garde le nom cosmique d'origine
+    (nom_naissance) et toutes les données : seule l'étiquette affichée change."""
+    f = stockage.renommer_fiche(cle, fid, body.nom)
+    if not f:
+        if stockage.lire_fiche(cle, fid) is None:
+            raise HTTPException(404, "Fiche introuvable")
+        raise HTTPException(422, "Le nom ne peut pas être vide.")
+    return f
+
+
+@app.patch("/fiches/{fid}/categorie", tags=["stateful", "holistique"])
+def ranger_fiche(fid: str, body: RangerFiche, cle: str = Depends(cle_api)):
+    """Range la fiche dans une catégorie libre (« Famille », « Collègues »…). Une catégorie
+    vide retire le rangement. Ne touche ni au nom ni aux données cosmiques."""
+    f = stockage.ranger_fiche(cle, fid, body.categorie)
+    if not f:
+        raise HTTPException(404, "Fiche introuvable")
+    return f
+
+
+@app.delete("/fiches/{fid}", status_code=204, tags=["stateful", "holistique"])
+def supprimer_fiche(fid: str, cle: str = Depends(cle_api)):
+    if not stockage.supprimer_fiche(cle, fid):
+        raise HTTPException(404, "Fiche introuvable")
 
 
 # ── STATEFUL : distributions persistées (cloisonnées par clé API) ─
@@ -277,7 +381,11 @@ def ajouter_perso(did: str, body: Perso, cle: str = Depends(cle_api)):
         raise HTTPException(404, "Distribution introuvable")
     persos = d["personnages"]
     pid = moteur.prochain_id("p", {p.get("id") for p in persos})
-    perso = {"id": pid, "nom": body.nom.strip(), "role": (body.role or "").strip(),
+    nom = body.nom.strip()
+    # nom_naissance = nom cosmique d'origine, figé une fois pour toutes. S'il n'est pas
+    # fourni (perso saisi à la main), il vaut le nom courant ; on garde toujours les deux.
+    perso = {"id": pid, "nom": nom, "nom_naissance": (body.nom_naissance or nom).strip(),
+             "role": (body.role or "").strip(),
              "description": (body.description or "").strip(),
              "voix": body.voix if isinstance(body.voix, dict) else {}}
     persos.append(perso)
@@ -293,7 +401,10 @@ def maj_perso(did: str, pid: str, body: dict, cle: str = Depends(cle_api)):
     perso = next((p for p in d["personnages"] if p.get("id") == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
-    for k in ("nom", "role", "description"):
+    # Avant de renommer pour la série, fige le nom d'origine s'il manquait encore
+    # (fiches créées avant cette mémoire) → on garde toujours les deux.
+    perso.setdefault("nom_naissance", perso.get("nom", ""))
+    for k in ("nom", "nom_naissance", "role", "description"):
         if k in body and body[k] is not None:
             perso[k] = str(body[k]).strip()
     if isinstance(body.get("voix"), dict):
