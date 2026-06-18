@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 import config_assistant
+import conscience
 import langue as langue_mod
 import llm_pipeline
 import muscle
@@ -119,15 +120,27 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         digest = ""
     if digest:
         amorce.append({"role": "system", "content": digest})
+
+    # Outils présentés au LLM : les outils en dur + les capacités découvertes dans les
+    # manifests (S64). Calculés une fois par tour (lecture en mémoire, bon marché).
+    outils_actifs = outils.outils_pour(registre)
+
+    # Conscience de soi (S65) : digest COMPACT de l'anatomie du Cœur (ses organes/briques
+    # + le nombre d'outils) injecté comme un repère, à la manière du digest d'identité. Il
+    # nomme le corps et RENVOIE à l'outil `mes_capacites` pour le détail → fin des
+    # confabulations sur « ce que je sais faire ». Best-effort : ne casse jamais un tour.
+    try:
+        corps = conscience.digest(registre, len(outils_actifs))
+    except Exception:  # noqa: BLE001 — la conscience de soi ne doit jamais casser une conversation
+        corps = ""
+    if corps:
+        amorce.append({"role": "system", "content": corps})
+
     historique = amorce + list(messages)
     # Ordre effectif : cascade auto (gratuits → repli payant) ou chaîne manuelle.
     modeles = await config_assistant.chaine_modeles(conf)
     if not modeles:  # garde-fou : ne jamais partir sans modèle
         modeles = [conf.get("model") or config_assistant.DEFAUT_REPLI_PAYANT]
-
-    # Outils présentés au LLM : les outils en dur + les capacités découvertes dans les
-    # manifests (S64). Calculés une fois par tour (lecture en mémoire, bon marché).
-    outils_actifs = outils.outils_pour(registre)
 
     async with httpx.AsyncClient(timeout=120) as client:
         # Muscle déporté (brique calcul, roadmap S58) : opt-in. Si un nœud de calcul est
