@@ -16,5 +16,54 @@
     "taxonomy",
     "supprimer"
   ],
-  "besoin": []
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "memoire_rappeler",
+      "description": "Cherche dans la mémoire de la solution (recherche hybride). 'espace' = 'solution' (usine, entreprises, projets) ou 'perso' (préférences/faits sur l'utilisateur). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/rappeler",
+      "params": {
+        "q": {"type": "string", "description": "Termes recherchés.", "requis": true},
+        "limite": {"type": "integer", "description": "Nombre max de souvenirs (défaut 8)."},
+        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+      },
+      "action": false
+    },
+    {
+      "nom": "memoire_lister_souvenirs",
+      "description": "Liste les souvenirs récents, filtrables par type / wing / room. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/souvenirs",
+      "params": {
+        "limite": {"type": "integer", "description": "Nombre max (défaut 20)."},
+        "type": {"type": "string", "description": "Filtre par type de souvenir."},
+        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+      },
+      "action": false
+    },
+    {
+      "nom": "memoire_taxonomy",
+      "description": "Comptes de souvenirs par type (pour les onglets/wings). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/taxonomy",
+      "params": {
+        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+      },
+      "action": false
+    },
+    {
+      "nom": "memoire_retenir",
+      "description": "Mémorise un fait durable. 'espace' = 'solution' (par défaut) ou 'perso' (faits sur l'utilisateur). ACTION : effet de bord, confirmer avant d'écrire.",
+      "methode": "POST",
+      "chemin": "/retenir",
+      "params": {
+        "contenu": {"type": "string", "description": "Le fait à mémoriser.", "requis": true},
+        "titre": {"type": "string", "description": "Titre court (sinon dérivé du contenu)."},
+        "type": {"type": "string", "description": "Type de souvenir (stage IPCRa)."},
+        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+      },
+      "action": true
+    }
+  ]
 }

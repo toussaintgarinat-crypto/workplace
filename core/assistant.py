@@ -125,6 +125,10 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     if not modeles:  # garde-fou : ne jamais partir sans modèle
         modeles = [conf.get("model") or config_assistant.DEFAUT_REPLI_PAYANT]
 
+    # Outils présentés au LLM : les outils en dur + les capacités découvertes dans les
+    # manifests (S64). Calculés une fois par tour (lecture en mémoire, bon marché).
+    outils_actifs = outils.outils_pour(registre)
+
     async with httpx.AsyncClient(timeout=120) as client:
         # Muscle déporté (brique calcul, roadmap S58) : opt-in. Si un nœud de calcul est
         # DÉJÀ prêt, on le met en tête de la cascade ; sinon on déclenche un réveil EN FOND
@@ -146,7 +150,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
             if STREAM_ACTIF:
                 erreur = None
                 async for evt in llm_pipeline.completer_flux(
-                        historique, modeles=modeles, tools=outils.OUTILS,
+                        historique, modeles=modeles, tools=outils_actifs,
                         tool_choice="auto", temperature=0.2, etiquette="chat",
                         conf=conf, client=client):
                     if evt["type"] == "delta":
@@ -160,7 +164,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                     return
             else:
                 res = await llm_pipeline.completer(
-                    historique, modeles=modeles, tools=outils.OUTILS,
+                    historique, modeles=modeles, tools=outils_actifs,
                     tool_choice="auto", temperature=0.2, etiquette="chat",
                     conf=conf, client=client,
                 )
@@ -190,7 +194,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                 except json.JSONDecodeError:
                     args = {}
                 yield {"type": "outil", "nom": nom, "args": args,
-                       "action": nom in outils.OUTILS_ACTION}
+                       "action": outils.est_action(nom, registre)}
                 resultat = await outils.executer(nom, args, registre)
                 confirmation = '"confirmation_requise": true' in resultat
                 yield {"type": "resultat_outil", "nom": nom,
