@@ -28,6 +28,7 @@ import muscle
 import outils
 import personas
 import identite
+import proprioception
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,12 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
             else:
                 muscle.planifier_reveil()
 
+        # Proprioception (S68) : on retiendra le dernier message utilisateur et les outils
+        # appelés pour, à la fin du tour, échantillonner l'échange à des fins d'auto-mesure.
+        question = next((m.get("content") for m in reversed(messages)
+                         if m.get("role") == "user"), "") or ""
+        outils_appeles: list[str] = []
+
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage
             # tokens/coût + journal. La logique d'outils reste ici, côté agent.
@@ -191,6 +198,16 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                 # En streaming le texte a déjà été émis en deltas ; sinon on l'émet en bloc.
                 if not STREAM_ACTIF:
                     yield {"type": "texte", "contenu": message.get("content") or ""}
+                # Proprioception (S68) : capture échantillonnée de l'échange (opt-in, jamais
+                # bloquante). `message.content` porte la réponse finale dans les deux chemins.
+                if proprioception.echantillonne(conf):
+                    try:
+                        proprioception.tracer(question, message.get("content") or "",
+                                              etiquette="chat",
+                                              modele=res.modele_utilise if not STREAM_ACTIF else None,
+                                              outils=outils_appeles)
+                    except Exception:  # noqa: BLE001 — l'auto-mesure ne casse jamais un tour
+                        pass
                 yield {"type": "fin"}
                 return
 
@@ -206,6 +223,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                     args = json.loads(tc["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                outils_appeles.append(nom)
                 yield {"type": "outil", "nom": nom, "args": args,
                        "action": outils.est_action(nom, registre)}
                 resultat = await outils.executer(nom, args, registre)
