@@ -57,6 +57,20 @@ OUTILS: list[dict] = [
                        "résultat, n'invente aucun organe ni pouvoir. Lecture seule.",
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
+        "name": "coagent_lancer",
+        "description": "Lance un CO-AGENT autonome (ton « lobe frontal ») pour mener un "
+                       "objectif MULTI-ÉTAPES en profondeur, sans repasser par l'utilisateur à "
+                       "chaque étape (ex. « fais le tour de toutes les entreprises et propose un "
+                       "plan », « croise les documents et l'agenda pour préparer la semaine »). Il "
+                       "travaille en LECTURE SEULE (il observe, il n'agit pas) et rend une "
+                       "SYNTHÈSE. Réserve-le aux tâches qui demandent plusieurs consultations "
+                       "enchaînées ; pour une question simple, réponds directement.",
+        "parameters": _p({
+            "objectif": {"type": "string", "description": "L'objectif précis à mener à terme, en une phrase claire."},
+            "budget_tokens": {"type": "integer", "description": "Plafond de tokens pour borner le coût (optionnel ; défaut raisonnable)."},
+            "max_etapes": {"type": "integer", "description": "Plafond d'étapes de réflexion (optionnel)."},
+        }, ["objectif"])}},
+    {"type": "function", "function": {
         "name": "chercher_documents",
         "description": "Cherche dans les documents ingérés (ETL) et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
         "parameters": _p({
@@ -644,6 +658,18 @@ async def executer(nom: str, args: dict, registre) -> str:
                     conscience.anatomie(registre, outils_pour(registre),
                                         lambda n: est_action(n, registre)),
                     ensure_ascii=False)
+
+            if nom == "coagent_lancer":
+                # Co-agent exécutif (S66) : boucle profonde autonome, bornée en tokens,
+                # lecture seule. Import LOCAL — coagent importe outils, on casse le cycle.
+                import coagent
+                # Client dédié (le client local est à 30 s : trop court pour des appels LLM
+                # profonds) ; coagent en ouvre un à 120 s s'il n'en reçoit pas.
+                cr = await coagent.executer_objectif(
+                    args.get("objectif", ""), registre,
+                    budget_tokens=args.get("budget_tokens"),
+                    max_etapes=args.get("max_etapes"))
+                return json.dumps(cr, ensure_ascii=False)
 
             if nom == "chercher_documents":
                 params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
