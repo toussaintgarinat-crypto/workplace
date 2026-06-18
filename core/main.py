@@ -25,6 +25,7 @@ import briefing
 import pouls
 import proprioception
 import amelioration
+import curateur
 import cycle_de_vie
 import orchestrateur
 import catalogue
@@ -2028,6 +2029,33 @@ async def amelioration_rejeter(id_: str):
 async def amelioration_desactiver():
     """Revient au prompt fondateur : aucun addendum actif (historique conservé)."""
     return amelioration.desactiver()
+
+
+# ── Curator (S70) : cycle hebdo proprioception → propositions → digest 🔔 ─────
+@app.post("/curateur/cycle", tags=["assistant"])
+async def curateur_cycle(forcer: bool = False):
+    """Un tour de curation (S70) : mesure → propose un addendum de prompt (S69) + un
+    brouillon de capacité manquante → dépose un digest en rappel 🔔. PROPOSE, n'applique
+    rien. Idempotent par jour ; déclenché par l'horloge (tâche `curation-hebdo`)."""
+    return await curateur.curer(registre, forcer=forcer)
+
+
+@app.get("/curateur/capacites", tags=["assistant"])
+async def curateur_capacites():
+    """Brouillons de capacités proposés (spécifications à implémenter, S70)."""
+    return curateur.lister_capacites()
+
+
+@app.post("/curateur/capacites/{id_}/retenir", tags=["assistant"])
+async def curateur_retenir(id_: str):
+    """Gate humain : retient un brouillon comme spéc à implémenter (n'active rien)."""
+    return curateur.retenir_capacite(id_)
+
+
+@app.post("/curateur/capacites/{id_}/rejeter", tags=["assistant"])
+async def curateur_rejeter(id_: str):
+    """Écarte un brouillon de capacité."""
+    return curateur.rejeter_capacite(id_)
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)

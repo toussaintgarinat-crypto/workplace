@@ -29,6 +29,15 @@
       "cadence_heures": 24,
       "idempotent": true,
       "tolere_echec": true
+    },
+    {
+      "nom": "curation-hebdo",
+      "description": "Curator (S70, façon Hermes) : cycle hebdomadaire qui mesure la proprioception, propose un addendum de prompt (S69) + un brouillon de capacité manquante, et dépose un digest 🔔 à valider par l'humain. Propose, n'applique rien.",
+      "methode": "POST",
+      "chemin": "/curateur/cycle",
+      "cadence_heures": 168,
+      "idempotent": true,
+      "tolere_echec": true
     }
   ]
 }

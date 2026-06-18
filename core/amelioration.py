@@ -133,11 +133,14 @@ async def _generer_addendum(client, dimension: str, flux: str, exemples: list[di
     return (texte or gabarit), bool(texte)
 
 
-async def proposer(conf: dict | None = None) -> dict:
+async def proposer(conf: dict | None = None, mesure: dict | None = None) -> dict:
     """Mesure la proprioception et, s'il existe un point faible côté PROMPT, propose un
-    addendum candidat (statut `propose`, INACTIF). Aucun effet sur les conversations."""
+    addendum candidat (statut `propose`, INACTIF). Aucun effet sur les conversations.
+
+    `mesure` : proprioception déjà calculée (réutilisée par le Curator S70 pour ne pas la
+    relancer) ; None → on la calcule."""
     conf = conf or config_assistant.charger()
-    mesure = await proprioception.mesurer(conf=conf)
+    mesure = mesure if mesure is not None else await proprioception.mesurer(conf=conf)
     cibles = [p for p in mesure.get("propositions", []) if p.get("cible_sprint") == "S69"]
     if not cibles:
         return {"statut": "rien_a_proposer",
