@@ -23,6 +23,7 @@ import proactif
 import horloge
 import briefing
 import pouls
+import proprioception
 import cycle_de_vie
 import orchestrateur
 import catalogue
@@ -1974,6 +1975,14 @@ async def pouls_dernier():
     """Dernier point autonome déposé (rappel de type `pouls`), s'il existe."""
     points = [r for r in proactif.lister(limite=60) if r.get("type") == "pouls"]
     return {"pouls": points[0] if points else None}
+
+
+@app.get("/proprioception", tags=["assistant"])
+async def proprioception_rapport(limite: int = 15):
+    """Proprioception (S68) : le Cœur mesure ses propres réponses échantillonnées (juge
+    LLM gratuit, repli heuristique honnête) et PROPOSE des cibles d'amélioration (S69
+    prompts / S70 capacités). Lecture seule : ne modifie ni prompts ni code."""
+    return await proprioception.mesurer(limite=limite)
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)
