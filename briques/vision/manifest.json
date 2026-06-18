@@ -1,0 +1,36 @@
+{
+  "nom": "vision",
+  "version": "0.1.0",
+  "description": "Brique OCR / lecture de documents en API (« les yeux » du Cœur), SOUVERAINE par défaut : cascade MarkItDown (documents nés numériques) → Tesseract (OCR d'images, local) en tête, puis fournisseurs hébergés en repli optionnel (Mistral OCR, Google Cloud Vision). Repli honnête : jamais de faux texte. Produit autonome, miroir des briques images/transcription, composable par l'assistant et le Studio.",
+  "role": "vision",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/vision",
+  "port": 5960,
+  "url_sante": "http://host.docker.internal:5960/sante",
+  "depends_on": [],
+  "offre": [
+    "extraire_texte_document",
+    "ocr_image",
+    "lire_pdf",
+    "souverain_par_defaut",
+    "multi_fournisseurs",
+    "repli_placeholder_honnete"
+  ],
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "vision_lire",
+      "description": "Lit un document ou une image (PDF, photo, scan, fichier Office) fourni par URL ou base64, et renvoie le texte extrait. « Les yeux » du Cœur : OCR souverain en local (MarkItDown/Tesseract) avec repli hébergé honnête. Lecture seule.",
+      "methode": "POST",
+      "chemin": "/lire",
+      "params": {
+        "url": {"type": "string", "description": "URL du document/image à lire."},
+        "contenu_base64": {"type": "string", "description": "Contenu du fichier en base64 (alternative à url)."},
+        "nom_fichier": {"type": "string", "description": "Nom de fichier (aide à deviner le format, ex. facture.pdf)."}
+      },
+      "action": false
+    }
+  ],
+  "taches": []
+}

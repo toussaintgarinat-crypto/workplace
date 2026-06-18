@@ -1,0 +1,12 @@
+# Brique vision — OCR / lecture de documents en API. Dépendances épinglées.
+# Le socle (API + cascade hébergée Mistral/Google) est mince ; les moteurs LOCAUX
+# souverains sont optionnels (gros), installés via le Dockerfile (markitdown, pytesseract).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-multipart==0.0.20
+
+# Moteurs souverains LOCAUX (optionnels). Décommenter pour l'OCR hors-ligne :
+#   markitdown[all]==0.1.1        # documents nés numériques → Markdown (PDF/Office/HTML)
+#   pytesseract==0.3.13           # OCR d'images (nécessite le binaire `tesseract` — cf. Dockerfile)
+#   Pillow==11.1.0                # lecture d'images pour Tesseract
