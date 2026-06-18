@@ -116,10 +116,14 @@ série** sans perdre son identité ni ses voix.
 
 | Méthode | Chemin | Rôle |
 |---|---|---|
-| POST | `/fiches` | enregistrer une fiche générée (snapshot complet) |
-| GET | `/fiches` · `/fiches/{id}` | lister · lire |
+| POST | `/fiches` | enregistrer une fiche générée (snapshot complet ; `categorie` libre optionnelle) |
+| GET | `/fiches` · `/fiches/{id}` | lister · lire (le listage expose `categorie` pour le regroupement) |
 | PATCH | `/fiches/{id}` | **renommer** pour une série (garde `nom_naissance` + données) |
+| PATCH | `/fiches/{id}/categorie` | **ranger** dans une catégorie libre (« Famille », « Collègues »… ; vide = non rangé) |
 | DELETE | `/fiches/{id}` | supprimer |
+
+La `categorie` est un texte libre choisi par l'utilisateur : le front groupe « Mes personnages
+enregistrés » par catégorie (anti-scroll quand il y en a beaucoup), « Non rangés » en dernier.
 
 ## Configuration (env)
 

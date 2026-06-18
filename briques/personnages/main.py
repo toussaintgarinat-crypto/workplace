@@ -25,7 +25,7 @@ import stockage
 import synthese
 import traditions
 
-app = FastAPI(title="Personnages — distribution & casting", version="0.7.1")
+app = FastAPI(title="Personnages — distribution & casting", version="0.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
@@ -115,10 +115,16 @@ class RenommerFiche(BaseModel):
     nom: str
 
 
+class RangerFiche(BaseModel):
+    """Catégorie libre où ranger la fiche (« Famille », « Collègues »…). Vide = non rangé."""
+    categorie: str = ""
+
+
 class EnregistrerFiche(BaseModel):
     """Snapshot d'une fiche cosmique à persister (opt-in). On envoie le résultat déjà
     calculé pour ne pas dépendre d'un recalcul (la lecture IA notamment n'est pas déterministe)."""
     nom:                 str = ""
+    categorie:           str = ""               # rangement libre choisi par l'utilisateur
     contexte:            Optional[dict] = None   # état-civil saisi (prénoms, date, ville…)
     traditions:          Optional[dict] = None
     portrait:            Optional[dict] = None
@@ -278,7 +284,7 @@ def enregistrer_fiche(body: EnregistrerFiche, cle: str = Depends(cle_api)):
                "portrait": body.portrait or {}, "empreinte": body.empreinte or [],
                "lecture_approfondie": body.lecture_approfondie or ""}
     nom = body.nom.strip() or (body.contexte or {}).get("prenoms") or "Personnage"
-    return stockage.creer_fiche(cle, nom, donnees)
+    return stockage.creer_fiche(cle, nom, donnees, categorie=body.categorie)
 
 
 @app.get("/fiches", tags=["stateful", "holistique"])
@@ -303,6 +309,16 @@ def renommer_fiche(fid: str, body: RenommerFiche, cle: str = Depends(cle_api)):
         if stockage.lire_fiche(cle, fid) is None:
             raise HTTPException(404, "Fiche introuvable")
         raise HTTPException(422, "Le nom ne peut pas être vide.")
+    return f
+
+
+@app.patch("/fiches/{fid}/categorie", tags=["stateful", "holistique"])
+def ranger_fiche(fid: str, body: RangerFiche, cle: str = Depends(cle_api)):
+    """Range la fiche dans une catégorie libre (« Famille », « Collègues »…). Une catégorie
+    vide retire le rangement. Ne touche ni au nom ni aux données cosmiques."""
+    f = stockage.ranger_fiche(cle, fid, body.categorie)
+    if not f:
+        raise HTTPException(404, "Fiche introuvable")
     return f
 
 

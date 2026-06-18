@@ -103,3 +103,31 @@ def test_fiche_renommer_refuse_vide_et_cloisonne():
     assert S.renommer_fiche("cleA", f["id"], "   ") is None       # nom vide refusé
     assert S.renommer_fiche("cleB", f["id"], "Aria") is None      # autre tenant : rien
     assert S.lire_fiche("cleA", f["id"])["nom"] == "Lyssandre"    # inchangé
+
+
+def test_fiche_categorie_creation_lecture_listage():
+    f = S.creer_fiche("cleA", "Maman", {}, categorie="  Famille  ")  # trim attendu
+    assert f["categorie"] == "Famille"
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == "Famille"
+    assert next(x for x in S.lister_fiches("cleA") if x["id"] == f["id"])["categorie"] == "Famille"
+
+
+def test_fiche_categorie_defaut_vide():
+    f = S.creer_fiche("cleA", "Inconnu", {})                          # pas de catégorie
+    assert f["categorie"] == "" and S.lire_fiche("cleA", f["id"])["categorie"] == ""
+
+
+def test_fiche_ranger_change_categorie_et_retire():
+    f = S.creer_fiche("cleA", "Collègue", {})
+    out = S.ranger_fiche("cleA", f["id"], "  Collègues  ")            # trim + rangement
+    assert out["categorie"] == "Collègues"
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == "Collègues"
+    assert S.ranger_fiche("cleA", f["id"], "")["categorie"] == ""     # vide = non rangé
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == ""
+
+
+def test_fiche_ranger_cloisonne_et_introuvable():
+    f = S.creer_fiche("cleA", "Privé", {})
+    assert S.ranger_fiche("cleB", f["id"], "Famille") is None         # autre tenant : rien
+    assert S.ranger_fiche("cleA", "inexistant", "Famille") is None    # id inconnu : rien
+    assert S.lire_fiche("cleA", f["id"])["categorie"] == ""           # inchangé

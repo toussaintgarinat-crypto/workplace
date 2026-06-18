@@ -119,6 +119,28 @@ def test_fiche_renommer_404_et_vide():
     assert client.patch(f"/fiches/{fid}", json={"nom": "  "}).status_code == 422
 
 
+# ── Stateful : ranger une fiche dans une catégorie libre (anti-scroll) ──
+def test_fiche_categorie_a_l_enregistrement():
+    fid = client.post("/fiches", json={"nom": "Maman", "categorie": "Famille"}).json()["id"]
+    assert client.get(f"/fiches/{fid}").json()["categorie"] == "Famille"
+    # exposée aussi dans le listage (sert au regroupement côté front)
+    assert next(x for x in client.get("/fiches").json() if x["id"] == fid)["categorie"] == "Famille"
+
+
+def test_fiche_ranger_via_api_et_retirer():
+    fid = client.post("/fiches", json={"nom": "Bob"}).json()["id"]
+    r = client.patch(f"/fiches/{fid}/categorie", json={"categorie": "Collègues"})
+    assert r.status_code == 200 and r.json()["categorie"] == "Collègues"
+    assert client.get(f"/fiches/{fid}").json()["categorie"] == "Collègues"
+    # catégorie vide = retire le rangement
+    assert client.patch(f"/fiches/{fid}/categorie", json={"categorie": ""}).json()["categorie"] == ""
+
+
+def test_fiche_ranger_404():
+    assert client.patch("/fiches/inexistant/categorie",
+                        json={"categorie": "Famille"}).status_code == 404
+
+
 # ── Holistique (S49) : descendant & montant, sans LLM ────────────
 def test_sante_expose_holistique():
     j = client.get("/sante").json()

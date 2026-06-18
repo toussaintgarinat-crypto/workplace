@@ -163,7 +163,12 @@
       <div class="recit" id="o-approf" style="display:none;margin-top:12px"></div>
       <!-- Export : la fiche n'est jamais enregistrée côté brique. On la reconstitue
            ici, dans le navigateur, à partir du dernier portrait calculé. -->
-      <div class="row" style="align-items:stretch">
+      <!-- Catégorie libre (« Famille », « Collègues »…) pour ranger ses personnages
+           et grouper la liste (anti-scroll). La datalist propose les catégories déjà créées. -->
+      <input id="categorie" list="categories-connues" placeholder="🗂 Catégorie (ex. Famille, Collègues) — facultatif"
+        style="margin-top:8px" title="Range ce personnage pour le retrouver groupé plus tard">
+      <datalist id="categories-connues"></datalist>
+      <div class="row" style="align-items:stretch;margin-top:8px">
         <button type="button" id="btn-save" onclick="enregistrer()" style="flex:2"
           title="Enregistrer ce personnage (récupérable plus tard)">💾 Enregistrer</button>
         <button type="button" onclick="exporterFiche()" style="flex:2"
@@ -224,10 +229,16 @@ const PRENOMS=["Aria","Kael","Nora","Soren","Lina","Milo","Eva","Théo","Yuna","
   "Rafael","Sasha","Noé","Léa","Adam","Maya","Ivan","Zoé","Hugo","Salma","Esteban","Nina","Tariq"];
 const NOMS=["Solis","Vance","Moreau","Okafor","Tanaka","Reyes","Volkov","Nahar","Dubois","Khan",
   "Rossi","Bauer","Costa","Lindqvist","Diallo","Ferraro","Petit","Adeyemi"];
+// Villes du monde, géocodables par /geo → l'aléatoire change aussi le lieu (donc l'Ascendant/la Lune).
+const VILLES=["Toulouse, France","Paris, France","Marseille, France","Lyon, France",
+  "Madrid, Espagne","Barcelone, Espagne","Lisbonne, Portugal","Rome, Italie","Berlin, Allemagne",
+  "Londres, Royaume-Uni","Dublin, Irlande","Athènes, Grèce","Le Caire, Égypte","Dakar, Sénégal",
+  "Casablanca, Maroc","Tokyo, Japon","Séoul, Corée du Sud","Bombay, Inde","Istanbul, Turquie",
+  "New York, États-Unis","Mexico, Mexique","São Paulo, Brésil","Buenos Aires, Argentine","Sydney, Australie"];
 const pick = a => a[Math.floor(Math.random()*a.length)];
 
-function aleatoire(){
-  // date entre 1950 et 2010, heure pleine au hasard, nom tiré au sort → puis génère
+async function aleatoire(){
+  // date entre 1950 et 2010, heure pleine au hasard, nom ET ville tirés au sort → puis génère
   const start=Date.UTC(1950,0,1), end=Date.UTC(2010,11,31);
   const d=new Date(start+Math.random()*(end-start));
   $('date').value=d.toISOString().slice(0,10);
@@ -235,6 +246,8 @@ function aleatoire(){
                    String(Math.floor(Math.random()*60)).padStart(2,'0');
   $('prenoms').value=pick(PRENOMS);
   $('nom').value=pick(NOMS);
+  $('ville').value=pick(VILLES);
+  await geocoder();        // remplit lat/lon de la nouvelle ville avant de générer (Ascendant/Lune)
   portrait();
 }
 
@@ -505,7 +518,8 @@ async function enregistrer(){
   const btn=$('btn-save'), ini=btn.textContent; btn.disabled=true; btn.textContent='💾 Enregistrement…';
   try{
     const d=_dernierPortrait;
-    const body={nom:nomPersonne(), contexte:_dernierContexte, traditions:d.traditions,
+    const body={nom:nomPersonne(), categorie:($('categorie').value||'').trim(),
+      contexte:_dernierContexte, traditions:d.traditions,
       portrait:d.portrait, empreinte:d.empreinte, lecture_approfondie:_lectureApprofondie||null};
     const r=await fetch('/fiches',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)});
@@ -523,28 +537,67 @@ async function chargerFiches(){
     const arr=await r.json();
     if(!arr.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
     box.innerHTML='';
-    arr.forEach(f=>{
-      const row=document.createElement('div');
-      row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
-      const open=document.createElement('button'); open.className='ghost';
-      open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
-      // nom de scène affiché ; si renommé, on rappelle le nom cosmique d'origine
-      const aka=(f.nom_naissance && f.nom_naissance!==f.nom)?'  (né·e '+f.nom_naissance+')':'';
-      open.innerHTML='<b>'+(f.nom||'Personnage')+'</b>'+
-        '<span style="opacity:.6">'+aka+'</span>'+
-        (f.archetype?' — '+f.archetype:'')+'  ·  '+String(f.cree_le||'').slice(0,10);
-      open.onclick=()=>chargerFiche(f.id);
-      const ren=document.createElement('button'); ren.className='ghost';
-      ren.style.cssText='margin:0;width:auto;padding:8px 12px';
-      ren.textContent='✎'; ren.title='Renommer pour une série (garde le nom d’origine)';
-      ren.onclick=()=>renommerFiche(f.id, f.nom);
-      const del=document.createElement('button'); del.className='ghost';
-      del.style.cssText='margin:0;width:auto;padding:8px 12px;color:#f08aa0';
-      del.textContent='✕'; del.title='Supprimer ce personnage';
-      del.onclick=()=>supprimerFiche(f.id, row);
-      row.append(open, ren, del); box.append(row);
+    // Regroupe par catégorie libre pour éviter un gros scroll quand il y en a beaucoup.
+    // Les catégories sont triées (alpha), « Non rangés » en dernier.
+    const groupes={};
+    arr.forEach(f=>{ const c=(f.categorie||'').trim(); (groupes[c]=groupes[c]||[]).push(f); });
+    majDatalistCategories(arr);
+    const nommees=Object.keys(groupes).filter(c=>c).sort((a,b)=>a.localeCompare(b,'fr'));
+    const ordre=nommees.concat(groupes[''] ? [''] : []);
+    ordre.forEach(cat=>{
+      const titre=document.createElement('div');
+      titre.style.cssText='margin:12px 0 4px;font-size:.78rem;font-weight:600;'+
+        'color:var(--accent);text-transform:uppercase;letter-spacing:.04em';
+      titre.textContent=(cat||'Non rangés')+'  ('+groupes[cat].length+')';
+      box.append(titre);
+      groupes[cat].forEach(f=>box.append(ligneFiche(f)));
     });
   }catch(e){ box.textContent='⚠ '+e.message; }
+}
+
+function ligneFiche(f){
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
+  const open=document.createElement('button'); open.className='ghost';
+  open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
+  // nom de scène affiché ; si renommé, on rappelle le nom cosmique d'origine
+  const aka=(f.nom_naissance && f.nom_naissance!==f.nom)?'  (né·e '+f.nom_naissance+')':'';
+  open.innerHTML='<b>'+(f.nom||'Personnage')+'</b>'+
+    '<span style="opacity:.6">'+aka+'</span>'+
+    (f.archetype?' — '+f.archetype:'')+'  ·  '+String(f.cree_le||'').slice(0,10);
+  open.onclick=()=>chargerFiche(f.id);
+  const rng=document.createElement('button'); rng.className='ghost';
+  rng.style.cssText='margin:0;width:auto;padding:8px 12px';
+  rng.textContent='🗂'; rng.title='Ranger dans une catégorie';
+  rng.onclick=()=>rangerFiche(f.id, f.categorie);
+  const ren=document.createElement('button'); ren.className='ghost';
+  ren.style.cssText='margin:0;width:auto;padding:8px 12px';
+  ren.textContent='✎'; ren.title='Renommer pour une série (garde le nom d’origine)';
+  ren.onclick=()=>renommerFiche(f.id, f.nom);
+  const del=document.createElement('button'); del.className='ghost';
+  del.style.cssText='margin:0;width:auto;padding:8px 12px;color:#f08aa0';
+  del.textContent='✕'; del.title='Supprimer ce personnage';
+  del.onclick=()=>supprimerFiche(f.id, row);
+  row.append(open, rng, ren, del);
+  return row;
+}
+
+function majDatalistCategories(arr){
+  // Alimente la datalist du champ de saisie avec les catégories déjà utilisées.
+  const cats=[...new Set(arr.map(f=>(f.categorie||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr'));
+  $('categories-connues').innerHTML=cats.map(c=>'<option value="'+c.replace(/"/g,'&quot;')+'">').join('');
+}
+
+async function rangerFiche(id, catActuelle){
+  const cat=prompt('Ranger dans quelle catégorie ? (ex. Famille, Collègues — vide pour retirer)', catActuelle||'');
+  if(cat===null) return;                        // annulé
+  try{
+    const r=await fetch('/fiches/'+id+'/categorie',{method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({categorie:cat})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    chargerFiches();                            // rafraîchit + regroupe
+  }catch(e){ alert('⚠ '+e.message); }
 }
 
 async function chargerFiche(id){
@@ -555,6 +608,7 @@ async function chargerFiche(id){
     $('prenoms').value=c.prenoms||''; $('nom').value=c.nom||'';
     $('date').value=c.date||''; $('heure').value=c.heure||'';
     if(c.ville) $('ville').value=c.ville;
+    $('categorie').value=f.categorie||'';
     renderPortrait({traditions:d.traditions||{}, portrait:d.portrait||{}, empreinte:d.empreinte||[]});
     _dernierContexte=c;                       // après renderPortrait (qui ne le touche pas)
     if(d.lecture_approfondie){
