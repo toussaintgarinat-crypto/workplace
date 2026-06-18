@@ -1,0 +1,43 @@
+services:
+  connexion:
+    build: .
+    container_name: workplace_connexion
+    image: workplace/connexion:0.1.0        # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5870:5870"
+    environment:
+      # Où joindre l'assistant du Cœur (flux SSE). host.docker.internal = l'hôte depuis le conteneur.
+      - NOYAU_ASSISTANT_URL=${NOYAU_ASSISTANT_URL:-http://host.docker.internal:5100}
+      # Sécurité : un inconnu ne traverse PAS tant qu'il n'est pas relié (mets 1 pour ouvrir en dev).
+      - CONNEXION_OUVERT=${CONNEXION_OUVERT:-0}
+      - CONNEXION_UTILISATEUR_DEFAUT=${CONNEXION_UTILISATEUR_DEFAUT:-}
+      - CONNEXION_HISTORIQUE_MAX=${CONNEXION_HISTORIQUE_MAX:-40}
+      - CONNEXION_RESEAUX=${CONNEXION_RESEAUX:-}
+      # ── Tokens des réseaux (aucun secret en dur : pose-les dans le .env racine) ──
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN:-}
+      - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID:-}
+      - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN:-}
+      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET:-}
+      - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # Clés API acceptées par CETTE brique (admin /envoyer, /correspondances). VIDE = ouvert (dev).
+      - API_KEYS=
+      - CONNEXION_DIR=/data/connexion
+    volumes:
+      - "connexion_data:/data/connexion"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5870/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  connexion_data:
