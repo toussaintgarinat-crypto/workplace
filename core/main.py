@@ -430,6 +430,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <input type="text" id="cerveau-unmute-url" placeholder="wss://mon-serveur-unmute/v1/realtime" autocomplete="off" style="margin-top:8px;display:none">
           <input type="text" id="cerveau-wakeword-url" placeholder="ws://localhost:5800/ecoute" autocomplete="off" style="margin-top:8px;display:none">
           <div class="liv-sub" style="margin-top:4px">Mot-clé : micro toujours à l'écoute, réveil par <b>« hey jarvis »</b> via la brique <b>ecoute</b> (S42, ton infra, sans Google). Unmute : serveur Kyutai (GPU). Web Speech marche sur ce Mac.</div>
+          <div id="voix-fin-bloc" style="margin-top:10px;display:none">
+            <label style="font-size:0.82rem">Fin de ma phrase</label>
+            <div style="display:flex;gap:16px;align-items:center;margin-top:4px;flex-wrap:wrap">
+              <label class="liv-sub" style="cursor:pointer"><input type="radio" name="voix-fin" value="appui" onchange="majVoixFin()"> J'appuie 🎤 pour terminer</label>
+              <label class="liv-sub" style="cursor:pointer"><input type="radio" name="voix-fin" value="silence" onchange="majVoixFin()"> Auto après silence</label>
+              <span id="voix-silence-champ" style="display:none" class="liv-sub">de <input type="number" id="cerveau-silence" min="1" max="15" step="0.5" style="width:62px"> s</span>
+            </div>
+            <div class="liv-sub" style="margin-top:4px">En mode <b>appui</b>, le micro t'écoute à travers tes pauses : ta phrase ne part qu'au prochain clic 🎤 (zéro coupure). En <b>auto</b>, elle part après ce délai de silence. Le mot-clé utilise toujours ce délai.</div>
+          </div>
         </div>
         <button class="btn" id="btn-voix-cfg" onclick="enregistrerVoix()">Enregistrer la voix</button>
       </div>
@@ -920,6 +929,13 @@ async function chargerCerveau(force) {
       selV.value = c.voix_provider || 'webspeech';
       document.getElementById('cerveau-unmute-url').value = c.unmute_url || '';
       document.getElementById('cerveau-wakeword-url').value = c.wakeword_url || '';
+      // Fin de parole : globals + contrôles (radio mode + délai de silence en secondes).
+      VOIX_FIN_MODE = c.voix_fin_mode === 'appui' ? 'appui' : 'silence';
+      VOIX_SILENCE_MS = c.voix_silence_ms || 5000;
+      const rFin = document.querySelector('input[name="voix-fin"][value="' + VOIX_FIN_MODE + '"]');
+      if (rFin) rFin.checked = true;
+      document.getElementById('cerveau-silence').value = (VOIX_SILENCE_MS / 1000);
+      majVoixFin();
       majVisibiliteUnmute();
       pill(document.getElementById('voix-statut'),
            c.voix_provider === 'webspeech' ? true : null,
@@ -936,6 +952,19 @@ function majVisibiliteUnmute() {
   const w = document.getElementById('cerveau-wakeword-url');
   if (sel && u) u.style.display = sel.value === 'unmute' ? 'block' : 'none';
   if (sel && w) w.style.display = sel.value === 'wakeword' ? 'block' : 'none';
+  // Fin de parole : pertinente pour le navigateur et le mot-clé (qui utilisent la reco
+  // navigateur) ; Unmute gère son propre full-duplex.
+  const fin = document.getElementById('voix-fin-bloc');
+  if (sel && fin) fin.style.display = sel.value === 'unmute' ? 'none' : 'block';
+}
+// Fin de parole : applique le mode choisi (effet immédiat) + montre le champ délai en 'silence'.
+function majVoixFin() {
+  const r = document.querySelector('input[name="voix-fin"]:checked');
+  VOIX_FIN_MODE = r ? r.value : 'silence';
+  const champ = document.getElementById('voix-silence-champ');
+  if (champ) champ.style.display = VOIX_FIN_MODE === 'silence' ? 'inline' : 'none';
+  const s = parseFloat(document.getElementById('cerveau-silence').value);
+  if (!isNaN(s)) VOIX_SILENCE_MS = Math.round(s * 1000);
 }
 async function enregistrerVoix() {
   const btn = document.getElementById('btn-voix-cfg');
@@ -944,20 +973,29 @@ async function enregistrerVoix() {
   const wakeword_url = document.getElementById('cerveau-wakeword-url').value.trim();
   if (provider === 'unmute' && !unmute_url) { cerveauMsg('Donne l\\'URL du serveur Unmute (wss://…/v1/realtime).', 'ko'); return; }
   if (provider === 'wakeword' && !wakeword_url) { cerveauMsg('Donne l\\'URL de la brique ecoute (ws://…/ecoute).', 'ko'); return; }
+  const finR = document.querySelector('input[name="voix-fin"]:checked');
+  const voix_fin_mode = finR ? finR.value : 'silence';
+  const sSil = parseFloat(document.getElementById('cerveau-silence').value);
+  const voix_silence_ms = isNaN(sSil) ? 5000 : Math.round(sSil * 1000);
   btn.classList.add('loading');
   try {
     const r = await fetch('/assistant/voix', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ voix_provider: provider, unmute_url, wakeword_url })
+      body: JSON.stringify({ voix_provider: provider, unmute_url, wakeword_url, voix_fin_mode, voix_silence_ms })
     }).then(r => r.json());
+    VOIX_FIN_MODE = r.voix_fin_mode || 'silence';
+    VOIX_SILENCE_MS = r.voix_silence_ms || 5000;
     construireVoix(r.voix_provider, r.unmute_url, r.wakeword_url);
     pill(document.getElementById('voix-statut'),
          r.voix_provider === 'webspeech' ? true : null,
          r.voix_provider === 'unmute' ? '● Unmute'
            : r.voix_provider === 'wakeword' ? '● mot-clé' : '● navigateur');
+    const fin = r.voix_fin_mode === 'silence'
+      ? 'fin auto après ' + (r.voix_silence_ms/1000) + ' s de silence'
+      : 'tu termines en recliquant 🎤';
     const msg = { unmute: '✔ Voix réglée sur Unmute (' + (r.unmute_url||'') + '). Lance la stack outils/unmute/ côté GPU.',
-                  wakeword: '✔ Mot-clé activé (' + (r.wakeword_url||'') + '). Lance la brique ecoute, puis 🎙 pour mettre le micro en veille.',
-                  webspeech: '✔ Voix réglée sur le navigateur (Web Speech).' };
+                  wakeword: '✔ Mot-clé activé (' + (r.wakeword_url||'') + ', ' + fin + '). Lance la brique ecoute, puis 🎙 pour mettre le micro en veille.',
+                  webspeech: '✔ Voix réglée sur le navigateur (Web Speech, ' + fin + ').' };
     cerveauMsg(msg[r.voix_provider] || msg.webspeech, 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
@@ -1314,11 +1352,27 @@ let WAKEWORD_URL = '';
 let VOIX_LOCALE = 'fr-FR';
 let LECTURE_VOCALE = localStorage.getItem('wp_lecture_vocale') === '1';
 let MICRO_ACTIF = false;
+// Fin du tour de parole en voix navigateur (réglés depuis ⚙ Cerveau, persistés serveur) :
+// 'silence' = envoi auto après VOIX_SILENCE_MS de silence (mains-libres, défaut 5 s) ;
+// 'appui' = micro à l'écoute à travers les pauses, envoi au prochain clic 🎤.
+let VOIX_FIN_MODE = 'silence';
+let VOIX_SILENCE_MS = 5000;
 
 // Fournisseur navigateur : reconnaissance (SpeechRecognition) + synthèse (speechSynthesis).
-function creerWebSpeech() {
+// opts.silenceForce = toujours finir au silence (capture du mot-clé, pas de second clic).
+function creerWebSpeech(opts) {
+  opts = opts || {};
   const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let reco = null, cbTexte = null;
+  let reco = null, cbTexte = null, minuteur = null, texteCourant = '', fini = false;
+  const mode = () => opts.silenceForce ? 'silence' : VOIX_FIN_MODE;
+  const delaiMs = () => Math.max(800, VOIX_SILENCE_MS || 5000);
+  // Livre le texte accumulé une seule fois (anti double-envoi : silence + arrêt + onend).
+  function livrer() {
+    clearTimeout(minuteur);
+    if (fini) return;
+    fini = true;
+    if (cbTexte) cbTexte(texteCourant.trim());
+  }
   return {
     supporteEcoute: !!Reco,
     supporteParole: 'speechSynthesis' in window,
@@ -1326,18 +1380,28 @@ function creerWebSpeech() {
       if (!Reco) { alert("La reconnaissance vocale n'est pas supportée par ce navigateur (essayez Chrome, Edge ou Safari)."); return false; }
       window.speechSynthesis && window.speechSynthesis.cancel();  // barge-in : on coupe la lecture
       reco = new Reco();
-      reco.lang = VOIX_LOCALE; reco.interimResults = true; reco.continuous = false;
+      // continuous = true : on N'écoute PAS jusqu'à la 1ʳᵉ pause (qui coupait la parole),
+      // c'est NOUS qui décidons de la fin (clic ou minuteur de silence).
+      reco.lang = VOIX_LOCALE; reco.interimResults = true; reco.continuous = true;
+      texteCourant = ''; fini = false;
       reco.onresult = (e) => {
-        const t = Array.from(e.results).map(r => r[0].transcript).join('');
-        document.getElementById('chat-input').value = t;
-        if (e.results[e.results.length - 1].isFinal && cbTexte) cbTexte(t.trim());
+        texteCourant = Array.from(e.results).map(r => r[0].transcript).join('');
+        document.getElementById('chat-input').value = texteCourant;
+        if (mode() === 'silence') {                 // on (re)arme le minuteur à chaque mot
+          clearTimeout(minuteur);
+          minuteur = setTimeout(livrer, delaiMs());
+        }
       };
       reco.onerror = () => arreterMicro();
       reco.onend = () => { if (MICRO_ACTIF) arreterMicro(); };
       reco.start();
       return true;
     },
-    arreter() { if (reco) { try { reco.stop(); } catch(e){} reco = null; } },
+    arreter() {
+      clearTimeout(minuteur);
+      if (reco) { try { reco.stop(); } catch(e){} reco = null; }
+      if (mode() === 'appui') livrer();             // appui = l'utilisateur termine son tour
+    },
     onTexte(cb) { cbTexte = cb; },
     parler(texte) {
       if (!('speechSynthesis' in window) || !texte) return;
@@ -1461,7 +1525,7 @@ function creerUnmute(url) {
 function creerWakeWord(url) {
   let ws = null, ctx = null, micFlux = null, proc = null, source = null;
   let enCapture = false;            // vrai pendant qu'on dicte la commande après réveil
-  const web = creerWebSpeech();     // réutilisé pour capter la commande + parler (TTS)
+  const web = creerWebSpeech({silenceForce: true});  // capte la commande (fin au silence) + TTS
 
   // Float32 [-1,1] → Int16 little-endian (le format attendu par openWakeWord).
   function versPCM16(f32) {
@@ -2106,6 +2170,8 @@ async def assistant_config_get():
         "voix_provider": conf["voix_provider"],
         "unmute_url": conf["unmute_url"],
         "wakeword_url": conf["wakeword_url"],
+        "voix_fin_mode": conf["voix_fin_mode"],
+        "voix_silence_ms": conf["voix_silence_ms"],
         "persona": conf["persona"],
         "personas": personas.catalogue(),
         "langue": conf["langue"],
@@ -2273,11 +2339,14 @@ async def assistant_voix_post(corps: dict):
     """Règle le fournisseur de voix et les URLs (effet au prochain chargement du front).
 
     Corps : {"voix_provider": "webspeech"|"unmute"|"wakeword",
-             "unmute_url": "wss://…"?, "wakeword_url": "ws://…/ecoute"?}."""
+             "unmute_url": "wss://…"?, "wakeword_url": "ws://…/ecoute"?,
+             "voix_fin_mode": "appui"|"silence"?, "voix_silence_ms": int?}."""
     conf = config_assistant.definir_voix(
-        corps.get("voix_provider"), corps.get("unmute_url"), corps.get("wakeword_url"))
+        corps.get("voix_provider"), corps.get("unmute_url"), corps.get("wakeword_url"),
+        corps.get("voix_fin_mode"), corps.get("voix_silence_ms"))
     return {"ok": True, "voix_provider": conf["voix_provider"],
-            "unmute_url": conf["unmute_url"], "wakeword_url": conf["wakeword_url"]}
+            "unmute_url": conf["unmute_url"], "wakeword_url": conf["wakeword_url"],
+            "voix_fin_mode": conf["voix_fin_mode"], "voix_silence_ms": conf["voix_silence_ms"]}
 
 
 @app.post("/assistant/cle-openrouter", tags=["assistant"])

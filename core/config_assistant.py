@@ -66,6 +66,15 @@ DEFAUT_UNMUTE_URL = os.getenv("UNMUTE_URL", "")
 # URL WebSocket de la brique ecoute (S42). Défaut = brique locale exposée sur 5800.
 DEFAUT_WAKEWORD_URL = os.getenv("WAKEWORD_URL", "ws://localhost:5800/ecoute")
 
+# Fin du tour de parole en voix navigateur (Web Speech). L'API navigateur coupe sur sa
+# détection de silence interne (~1,5 s, non réglable) → elle envoie dès la 1ʳᵉ pause.
+# On reprend la main : 'silence' = envoi auto après `voix_silence_ms` de vrai silence
+# (mains-libres, DÉFAUT à 5 s pour laisser le temps de finir/respirer) ; 'appui' = micro à
+# l'écoute à travers les pauses, la phrase ne part qu'au prochain clic 🎤 (push-to-talk,
+# zéro coupure). Le mot-clé (S42) force toujours 'silence' (pas de 2ᵉ clic après « hey jarvis »).
+DEFAUT_VOIX_FIN_MODE = os.getenv("VOIX_FIN_MODE", "silence")
+DEFAUT_VOIX_SILENCE_MS = int(os.getenv("VOIX_SILENCE_MS", "5000"))
+
 # Muscle déporté (roadmap « partage de puissance de calcul », brique calcul port 5990) :
 # si actif, le Cœur demande à calcul quel nœud de calcul distant est PRÊT et le met EN
 # TÊTE de la cascade ; sinon il déclenche un réveil EN FOND et sert la requête courante
@@ -98,6 +107,8 @@ def charger() -> dict:
         "voix_provider": DEFAUT_VOIX_PROVIDER,
         "unmute_url": DEFAUT_UNMUTE_URL,
         "wakeword_url": DEFAUT_WAKEWORD_URL,
+        "voix_fin_mode": DEFAUT_VOIX_FIN_MODE,
+        "voix_silence_ms": DEFAUT_VOIX_SILENCE_MS,
         "persona": "default",
         "langue": DEFAUT_LANGUE,
         "routage_actif": DEFAUT_ROUTAGE_ACTIF,
@@ -124,6 +135,10 @@ def charger() -> dict:
                 base["unmute_url"] = d.get("unmute_url")
             if d.get("wakeword_url") is not None:
                 base["wakeword_url"] = d.get("wakeword_url")
+            if d.get("voix_fin_mode") in ("appui", "silence"):
+                base["voix_fin_mode"] = d.get("voix_fin_mode")
+            if d.get("voix_silence_ms") is not None:
+                base["voix_silence_ms"] = int(d.get("voix_silence_ms"))
             base["persona"] = d.get("persona") or base["persona"]
             base["langue"] = d.get("langue") or base["langue"]
             if d.get("routage_actif") is not None:
@@ -225,9 +240,11 @@ def definir_langue(langue: str | None) -> dict:
 
 
 def definir_voix(provider: str | None, unmute_url: str | None = None,
-                 wakeword_url: str | None = None) -> dict:
-    """Règle le fournisseur de voix ('webspeech'|'unmute'|'wakeword') et les URLs de
-    serveur (Unmute full-duplex, brique ecoute S42)."""
+                 wakeword_url: str | None = None, fin_mode: str | None = None,
+                 silence_ms: int | None = None) -> dict:
+    """Règle le fournisseur de voix ('webspeech'|'unmute'|'wakeword'), les URLs de
+    serveur (Unmute full-duplex, brique ecoute S42) et la fin du tour de parole en voix
+    navigateur ('appui'|'silence' + délai de silence en ms, borné 0,5–15 s)."""
     conf = charger()
     if provider in ("webspeech", "unmute", "wakeword"):
         conf["voix_provider"] = provider
@@ -235,6 +252,13 @@ def definir_voix(provider: str | None, unmute_url: str | None = None,
         conf["unmute_url"] = unmute_url.strip()
     if wakeword_url is not None:
         conf["wakeword_url"] = wakeword_url.strip()
+    if fin_mode in ("appui", "silence"):
+        conf["voix_fin_mode"] = fin_mode
+    if silence_ms is not None:
+        try:
+            conf["voix_silence_ms"] = max(500, min(15000, int(silence_ms)))
+        except (TypeError, ValueError):
+            pass
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf
