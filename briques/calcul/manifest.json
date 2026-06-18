@@ -15,6 +15,26 @@
     "sonder_noeuds"
   ],
   "besoin": [],
+  "capacites": [
+    {
+      "nom": "calcul_lister_noeuds",
+      "description": "Liste les nœuds de calcul (« le Muscle ») déclarés et leur dernier état connu (éveillé/endormi/injoignable). Lecture seule, ne sonde pas.",
+      "methode": "GET",
+      "chemin": "/noeuds",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "calcul_etat_muscle",
+      "description": "Élit un nœud de calcul utilisable et renvoie le modèle Gateway à mettre en tête de cascade. Avec reveiller=true, en réveille un en dernier recours (ACTION : peut allumer une machine).",
+      "methode": "GET",
+      "chemin": "/muscle",
+      "params": {
+        "reveiller": {"type": "boolean", "description": "Réveiller un nœud endormi si aucun n'est prêt."}
+      },
+      "action": true
+    }
+  ],
   "taches": [
     {
       "nom": "keepalive-noeuds",

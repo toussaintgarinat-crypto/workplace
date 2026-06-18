@@ -23,6 +23,7 @@ import uuid
 import httpx
 
 import agenda
+import catalogue
 import cycle_de_vie
 import orchestrateur
 
@@ -504,6 +505,112 @@ def _espace_memoire(espace: str | None) -> str | None:
     return "Perso" if (espace or "").lower() == "perso" else None
 
 
+# ── Outils DYNAMIQUES : le système nerveux découvert (S64) ────────────────────
+# Les capacités déclarées dans les manifests (S63) deviennent de vrais outils du LLM,
+# routés ici sans une ligne de dispatch en dur. Garde-fous : un nom déjà servi par un
+# outil CÂBLÉ gagne toujours (zéro régression) ; liste blanche et kill-switch d'env
+# permettent de borner ce que le LLM voit (souveraineté du « plan de contrôle »).
+
+_NOMS_STATIQUES = {o["function"]["name"] for o in OUTILS}
+CAPACITES_DYNAMIQUES = os.getenv("CAPACITES_DYNAMIQUES", "1").lower() not in ("0", "false", "no")
+_ALLOWLIST = {s.strip() for s in os.getenv("CAPACITES_ALLOWLIST", "").split(",") if s.strip()}
+
+
+def _capacites_dynamiques(registre) -> dict:
+    """Capacités découvertes qui deviennent des outils dynamiques : ``{nom: cap}``.
+
+    N'expose JAMAIS un nom déjà câblé en dur (l'outil statique, plus riche, prime →
+    zéro régression), respecte une éventuelle liste blanche ``CAPACITES_ALLOWLIST``, et
+    s'éteint entièrement avec ``CAPACITES_DYNAMIQUES=0`` (repli honnête sur les seuls
+    outils en dur). En cas de doublon inter-briques, le premier découvert gagne."""
+    if not CAPACITES_DYNAMIQUES or registre is None:
+        return {}
+    out: dict = {}
+    for cap in catalogue.collecter_capacites(registre):
+        nom = cap["nom"]
+        if nom in _NOMS_STATIQUES or nom in out:
+            continue
+        if _ALLOWLIST and nom not in _ALLOWLIST:
+            continue
+        out[nom] = cap
+    return out
+
+
+def _spec_depuis_capacite(cap: dict) -> dict:
+    """Convertit une capacité du catalogue en spec function-calling OpenAI."""
+    props: dict = {}
+    requis: list = []
+    for nom_p, p in (cap.get("params") or {}).items():
+        props[nom_p] = {k: v for k, v in p.items() if k != "requis"}
+        if p.get("requis"):
+            requis.append(nom_p)
+    if cap.get("action"):
+        props.setdefault("confirme", {"type": "boolean",
+            "description": "Passer true UNIQUEMENT après accord explicite de l'utilisateur."})
+    return {"type": "function", "function": {
+        "name": cap["nom"], "description": cap.get("description", ""),
+        "parameters": _p(props, requis)}}
+
+
+def outils_pour(registre) -> list[dict]:
+    """Liste d'outils présentée au LLM : les outils en dur + les capacités dynamiques.
+
+    C'est la fin du contrat figé : ajouter `capacites` à un manifest suffit pour que
+    l'assistant voie un nouvel outil, sans toucher au Cœur."""
+    dyn = _capacites_dynamiques(registre)
+    return OUTILS + [_spec_depuis_capacite(c) for c in dyn.values()]
+
+
+def est_action(nom: str, registre) -> bool:
+    """Outil à effet de bord ? (pastille « action » + gate de confirmation côté UI)."""
+    if nom in OUTILS_ACTION:
+        return True
+    cap = _capacites_dynamiques(registre).get(nom)
+    return bool(cap and cap.get("action"))
+
+
+def _entetes_brique(brique: str) -> dict:
+    """Auth optionnelle : clé de service ``{BRIQUE}_KEY`` → en-tête X-API-Key (motif muscle.py)."""
+    cle = os.environ.get(f"{brique.upper()}_KEY")
+    return {"X-API-Key": cle} if cle else {}
+
+
+def _url_dynamique(cap: dict, args: dict) -> str:
+    """URL de la capacité, avec substitution des params de chemin ``{x}`` depuis les args."""
+    url = cap["url"]
+    if "{" in url:
+        for k, v in args.items():
+            url = url.replace("{" + k + "}", str(v))
+    return url
+
+
+async def _appel_dynamique(client, cap: dict, args: dict) -> str:
+    """Exécute une capacité découverte : gate de confirmation si action, puis appel HTTP.
+
+    GET → query params ; autres méthodes → corps JSON. Les params consommés par le chemin
+    ne sont pas renvoyés en double. Verdict honnête sur refus/injoignable."""
+    args = dict(args or {})
+    confirme = args.pop("confirme", None)
+    if cap.get("action") and not confirme:
+        return _confirmation(cap["nom"], cap["brique"])
+    url = _url_dynamique(cap, args)
+    charge = {k: v for k, v in args.items()
+              if v is not None and ("{" + k + "}") not in cap["chemin"]}
+    entetes = _entetes_brique(cap["brique"]) or None
+    if cap["methode"] == "GET":
+        r = await client.request("GET", url, params=charge, headers=entetes)
+    else:
+        r = await client.request(cap["methode"], url, json=charge, headers=entetes)
+    if r.status_code >= 400:
+        return json.dumps({"ok": False, "brique": cap["brique"],
+                           "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
+                          ensure_ascii=False)
+    try:
+        return json.dumps(r.json(), ensure_ascii=False)
+    except ValueError:
+        return (r.text or "")[:1000]
+
+
 # ── Répartiteur ──────────────────────────────────────────────────────────────
 
 async def executer(nom: str, args: dict, registre) -> str:
@@ -921,6 +1028,11 @@ async def executer(nom: str, args: dict, registre) -> str:
                 }
                 return await _transcription_appel(client, registre, "POST", "/archiver",
                                                   charge=charge, timeout=45)
+
+            # — CAPACITÉS DYNAMIQUES (S64) : routées par le catalogue des manifests —
+            cap = _capacites_dynamiques(registre).get(nom)
+            if cap:
+                return await _appel_dynamique(client, cap, args)
 
             return f"Outil inconnu : {nom}"
 

@@ -24,6 +24,7 @@ import horloge
 import briefing
 import cycle_de_vie
 import orchestrateur
+import catalogue
 from registre import Registre
 
 registre = Registre()
@@ -1890,6 +1891,21 @@ def recharger_briques():
     """Recharge tous les manifests sans redémarrer le cœur."""
     registre.charger()
     return {"statut": "ok", "briques_chargees": len(registre.briques)}
+
+
+@app.get("/capacites", tags=["briques"])
+def lister_capacites():
+    """Catalogue des capacités appelables découvertes dans les manifests (S63).
+
+    Le « schéma corporel » : ce que le Cœur sait faire en agrégeant le champ `capacites`
+    de chaque brique. Inspection seule — le câblage au LLM est le sujet de S64."""
+    cap = catalogue.collecter_capacites(registre)
+    return {
+        "total": len(cap),
+        "briques": sorted({c["brique"] for c in cap}),
+        "doublons": catalogue.doublons(cap),
+        "capacites": cap,
+    }
 
 
 @app.get("/briques/{nom}/sante", tags=["briques"])
