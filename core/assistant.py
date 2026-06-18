@@ -29,6 +29,7 @@ import outils
 import personas
 import identite
 import proprioception
+import amelioration
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +109,11 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     )
     # Modèle + persona lus à CHAUD (réglables depuis le front, cf. config_assistant).
     conf = config_assistant.charger()
+    # Addendum d'auto-amélioration (S69) : une consigne issue d'une proposition VALIDÉE
+    # puis APPLIQUÉE (gate humain). Vide tant que rien n'a été activé → prompt fondateur.
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
-               + "\n- " + langue_mod.consigne_reponse(conf.get("langue")))
+               + "\n- " + langue_mod.consigne_reponse(conf.get("langue"))
+               + amelioration.addendum_actif())
     amorce = [{"role": "system", "content": systeme},
               {"role": "system", "content": contexte_date}]
     # Qui est l'utilisateur : digest COMPACT dérivé de sa fiche d'identité (S48) —

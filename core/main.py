@@ -24,6 +24,7 @@ import horloge
 import briefing
 import pouls
 import proprioception
+import amelioration
 import cycle_de_vie
 import orchestrateur
 import catalogue
@@ -1983,6 +1984,50 @@ async def proprioception_rapport(limite: int = 15):
     LLM gratuit, repli heuristique honnête) et PROPOSE des cibles d'amélioration (S69
     prompts / S70 capacités). Lecture seule : ne modifie ni prompts ni code."""
     return await proprioception.mesurer(limite=limite)
+
+
+# ── Auto-amélioration des prompts (S69) : proposer → évaluer → gate humain ───
+@app.get("/amelioration", tags=["assistant"])
+async def amelioration_lister():
+    """Liste les propositions d'addendum de prompt + l'addendum actif (S69)."""
+    return amelioration.lister()
+
+
+@app.post("/amelioration/proposer", tags=["assistant"])
+async def amelioration_proposer():
+    """Propose un addendum de prompt à partir d'un point faible de la proprioception
+    (réflexion façon GEPA, repli template honnête). INACTIF tant que non validé."""
+    return await amelioration.proposer()
+
+
+@app.post("/amelioration/{id_}/evaluer", tags=["assistant"])
+async def amelioration_evaluer(id_: str):
+    """A/B honnête : rejoue des questions sous prompt actuel vs + addendum, note les deux."""
+    return await amelioration.evaluer(id_)
+
+
+@app.post("/amelioration/{id_}/valider", tags=["assistant"])
+async def amelioration_valider(id_: str):
+    """Gate humain — étape 1 : valide la proposition (ne l'active pas encore)."""
+    return amelioration.valider(id_)
+
+
+@app.post("/amelioration/{id_}/appliquer", tags=["assistant"])
+async def amelioration_appliquer(id_: str):
+    """Gate humain — étape 2 : active l'addendum (refusé si non validé). Réversible."""
+    return amelioration.appliquer(id_)
+
+
+@app.post("/amelioration/{id_}/rejeter", tags=["assistant"])
+async def amelioration_rejeter(id_: str):
+    """Écarte une proposition ; la désactive si elle était active."""
+    return amelioration.rejeter(id_)
+
+
+@app.post("/amelioration/desactiver", tags=["assistant"])
+async def amelioration_desactiver():
+    """Revient au prompt fondateur : aucun addendum actif (historique conservé)."""
+    return amelioration.desactiver()
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)
