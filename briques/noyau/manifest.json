@@ -1,7 +1,7 @@
 {
   "nom": "noyau",
   "version": "1.0.0",
-  "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30) à l'horloge S29 — il n'est pas une brique séparée.",
+  "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30, pouls autonome S67) à l'horloge S29 — il n'est pas une brique séparée.",
   "role": "noyau",
   "couche": "backend",
   "statut": "actif",
@@ -17,6 +17,15 @@
       "description": "Briefing du matin (RDV du jour, impayés J+7/15/30, pipeline CRM, coût LLM de la veille) synthétisé par l'économe local et déposé en rappel 🔔 (S30).",
       "methode": "POST",
       "chemin": "/briefing/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "tolere_echec": true
+    },
+    {
+      "nom": "pouls-autonome",
+      "description": "Pouls autonome (S67) : l'horloge réveille le co-agent (lecture seule, borné par un budget quotidien de tokens) sur un objectif récurrent — point proactif + 3 priorités — déposé en rappel 🔔.",
+      "methode": "POST",
+      "chemin": "/pouls/battre",
       "cadence_heures": 24,
       "idempotent": true,
       "tolere_echec": true
