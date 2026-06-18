@@ -25,6 +25,33 @@ def test_portrait_structure_complete():
     assert "divertissement" in p["recit"].lower()
 
 
+def test_recit_lecture_symbolique_enrichie():
+    """La lecture symbolique TISSE les sens (pas une simple liste de sources) et se
+    structure en sections, avec un fil rouge quand des traditions se recoupent."""
+    trad = T.calculer({"date_naissance": "1987-03-21", "heure_naissance": "08:15",
+                       "prenoms": "Camille", "nom": "Bernard",
+                       "latitude": 43.6, "longitude": 1.44, "utc_offset": 1})
+    recit = S.portrait(trad, nom="Camille Bernard")["recit"]
+    # sections attendues (en-têtes en gras)
+    for entete in ("**Le noyau.**", "**Le fil rouge.**", "**L'ombre & le remède.**",
+                   "**Le chemin des nombres.**"):
+        assert entete in recit, entete
+    # on tisse un SENS, pas seulement le nom du signe
+    assert "élan, courage" in recit            # mots-clés du Bélier (significations)
+    assert recit.count("\n\n") >= 4            # plusieurs sections séparées
+    assert len(recit) > 400                    # nettement plus riche que l'ancien récit
+
+
+def test_fil_rouge_motif_recurrent():
+    """Le fil rouge ne s'affiche que sur un mot-clé présent dans ≥2 traditions."""
+    trad = T.calculer({"date_naissance": "1987-03-21", "heure_naissance": "08:15",
+                       "latitude": 43.6, "longitude": 1.44, "utc_offset": 1})
+    emp = __import__("significations").expliquer(trad)
+    fr = S._fil_rouge(emp)
+    if fr is not None:                          # dépend des recoupements de la fiche
+        assert "convergent" in fr
+
+
 def test_pierre_compense_la_faiblesse():
     """La pierre d'équilibrage est choisie en SORTIE selon la stat la plus faible."""
     trad = T.calculer({"date_naissance": "1985-04-10"})

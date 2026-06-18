@@ -1,0 +1,180 @@
+"""Routeur d'outils dynamique — le système nerveux découvert (Sprint S64).
+
+Vérifie que les capacités déclarées dans les manifests (S63) deviennent de vrais
+outils du LLM, routés SANS dispatch en dur, avec les garde-fous : un nom déjà câblé
+en dur prime (zéro régression), les actions sont gardées par confirmation, la liste
+blanche et le kill-switch bornent ce que le LLM voit, et un outil inconnu reste inconnu.
+
+Autonome (asyncio.run, faux client httpx, faux registre) — motif du reste de core/.
+    $ cd core && python3 test_outils_dynamiques.py
+"""
+import asyncio
+import json
+import os
+
+import httpx
+
+import outils  # noqa: E402
+
+
+class _Registre:
+    def __init__(self, briques):
+        self.briques = briques
+
+
+def _registre():
+    # calcul expose 2 capacités neuves ; memoire en redéclare une DÉJÀ câblée en dur.
+    return _Registre({
+        "calcul": {"nom": "calcul", "port": 5990, "capacites": [
+            {"nom": "calcul_lister_noeuds", "description": "liste", "methode": "GET",
+             "chemin": "/noeuds", "params": {}, "action": False},
+            {"nom": "calcul_etat_muscle", "description": "élit", "methode": "GET",
+             "chemin": "/muscle",
+             "params": {"reveiller": {"type": "boolean"}}, "action": True},
+        ]},
+        "memoire": {"nom": "memoire", "port": 5600, "capacites": [
+            {"nom": "memoire_rappeler", "description": "doublon du statique",
+             "methode": "GET", "chemin": "/rappeler", "action": False},
+        ]},
+    })
+
+
+class _Resp:
+    def __init__(self, status=200, payload=None):
+        self.status_code = status
+        self._payload = payload if payload is not None else {}
+        self.text = ""
+
+    def json(self):
+        return self._payload
+
+
+class _Client:
+    def __init__(self, resp=None, boom=False):
+        self.resp = resp or _Resp()
+        self.boom = boom
+        self.dernier = {}
+
+    async def request(self, methode, url, json=None, params=None, headers=None, timeout=None):
+        self.dernier = {"methode": methode, "url": url, "json": json,
+                        "params": params, "headers": headers}
+        if self.boom:
+            raise httpx.ConnectError("injoignable")
+        return self.resp
+
+
+# ── Découverte & specs ────────────────────────────────────────────────────────
+
+def test_capacites_neuves_exposees_sans_les_doublons_statiques():
+    dyn = outils._capacites_dynamiques(_registre())
+    assert "calcul_lister_noeuds" in dyn and "calcul_etat_muscle" in dyn
+    # memoire_rappeler existe DÉJÀ en dur → jamais réexposé en dynamique (zéro régression).
+    assert "memoire_rappeler" not in dyn
+
+
+def test_outils_pour_fusionne_statiques_et_dynamiques():
+    base = {o["function"]["name"] for o in outils.OUTILS}
+    fusion = {o["function"]["name"] for o in outils.outils_pour(_registre())}
+    assert base <= fusion                                    # rien perdu
+    assert {"calcul_lister_noeuds", "calcul_etat_muscle"} <= fusion   # 2 nerfs neufs
+    assert len(fusion) == len(base) + 2
+
+
+def test_spec_action_ajoute_confirme_et_marque_requis():
+    spec = outils._spec_depuis_capacite({
+        "nom": "x", "description": "d", "methode": "POST", "chemin": "/x",
+        "params": {"a": {"type": "string", "requis": True}, "b": {"type": "integer"}},
+        "action": True})
+    p = spec["function"]["parameters"]
+    assert p["required"] == ["a"]
+    assert "requis" not in p["properties"]["a"]               # nettoyé du schéma
+    assert "confirme" in p["properties"]                      # gate exposé au modèle
+
+
+def test_est_action_distingue_lecture_et_action():
+    reg = _registre()
+    assert outils.est_action("calcul_etat_muscle", reg) is True
+    assert outils.est_action("calcul_lister_noeuds", reg) is False
+    assert outils.est_action("memoire_retenir", reg) is True   # statique inchangé
+
+
+# ── Routage HTTP ────────────────────────────────────────────────────────────
+
+def test_get_dynamique_route_vers_la_bonne_url():
+    cli = _Client(_Resp(200, {"noeuds": []}))
+    cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
+    out = asyncio.run(outils._appel_dynamique(cli, cap, {}))
+    assert cli.dernier["methode"] == "GET"
+    assert cli.dernier["url"] == "http://host.docker.internal:5990/noeuds"
+    assert json.loads(out) == {"noeuds": []}
+
+
+def test_action_dynamique_gardee_sans_confirme():
+    cli = _Client(_Resp(200, {"disponible": True}))
+    cap = outils._capacites_dynamiques(_registre())["calcul_etat_muscle"]
+    out = json.loads(asyncio.run(outils._appel_dynamique(cli, cap, {"reveiller": True})))
+    assert out["confirmation_requise"] is True
+    assert cli.dernier == {}                                  # AUCUN appel réseau émis
+
+
+def test_action_dynamique_executee_avec_confirme():
+    cli = _Client(_Resp(200, {"disponible": True}))
+    cap = outils._capacites_dynamiques(_registre())["calcul_etat_muscle"]
+    out = asyncio.run(outils._appel_dynamique(cli, cap, {"reveiller": True, "confirme": True}))
+    assert cli.dernier["methode"] == "GET"
+    assert cli.dernier["params"] == {"reveiller": True}        # confirme retiré de la charge
+    assert json.loads(out)["disponible"] is True
+
+
+def test_cle_de_service_envoyee_en_entete():
+    os.environ["CALCUL_KEY"] = "secret"
+    try:
+        cli = _Client(_Resp(200, {"ok": True}))
+        cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
+        asyncio.run(outils._appel_dynamique(cli, cap, {}))
+        assert cli.dernier["headers"] == {"X-API-Key": "secret"}
+    finally:
+        os.environ.pop("CALCUL_KEY", None)
+
+
+def test_refus_brique_message_honnete():
+    cli = _Client(_Resp(503, {}))
+    cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
+    out = json.loads(asyncio.run(outils._appel_dynamique(cli, cap, {})))
+    assert out["ok"] is False and "refusé" in out["message"].lower()
+
+
+# ── Garde-fous du plan de contrôle ────────────────────────────────────────────
+
+def test_kill_switch_eteint_les_dynamiques():
+    reg = _registre()
+    outils.CAPACITES_DYNAMIQUES = False
+    try:
+        assert outils._capacites_dynamiques(reg) == {}
+        noms = {o["function"]["name"] for o in outils.outils_pour(reg)}
+        assert "calcul_lister_noeuds" not in noms             # repli honnête : statiques seuls
+    finally:
+        outils.CAPACITES_DYNAMIQUES = True
+
+
+def test_liste_blanche_borne_ce_que_voit_le_llm():
+    reg = _registre()
+    outils._ALLOWLIST = {"calcul_lister_noeuds"}
+    try:
+        dyn = outils._capacites_dynamiques(reg)
+        assert set(dyn) == {"calcul_lister_noeuds"}           # l'autre est masqué
+    finally:
+        outils._ALLOWLIST = set()
+
+
+def test_executer_outil_inconnu_reste_inconnu():
+    out = asyncio.run(outils.executer("nexiste_pas", {}, _registre()))
+    assert "inconnu" in out.lower()
+
+
+if __name__ == "__main__":
+    for nom, fn in list(globals().items()):
+        if nom.startswith("test_") and callable(fn):
+            fn()
+            print(f"  ✓ {nom}")
+    print("\n✅ TOUS LES TESTS PASSENT")

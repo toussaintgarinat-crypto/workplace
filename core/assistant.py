@@ -21,12 +21,15 @@ from zoneinfo import ZoneInfo
 import httpx
 
 import config_assistant
+import conscience
 import langue as langue_mod
 import llm_pipeline
 import muscle
 import outils
 import personas
 import identite
+import proprioception
+import amelioration
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +109,11 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     )
     # Modèle + persona lus à CHAUD (réglables depuis le front, cf. config_assistant).
     conf = config_assistant.charger()
+    # Addendum d'auto-amélioration (S69) : une consigne issue d'une proposition VALIDÉE
+    # puis APPLIQUÉE (gate humain). Vide tant que rien n'a été activé → prompt fondateur.
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
-               + "\n- " + langue_mod.consigne_reponse(conf.get("langue")))
+               + "\n- " + langue_mod.consigne_reponse(conf.get("langue"))
+               + amelioration.addendum_actif())
     amorce = [{"role": "system", "content": systeme},
               {"role": "system", "content": contexte_date}]
     # Qui est l'utilisateur : digest COMPACT dérivé de sa fiche d'identité (S48) —
@@ -119,6 +125,22 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         digest = ""
     if digest:
         amorce.append({"role": "system", "content": digest})
+
+    # Outils présentés au LLM : les outils en dur + les capacités découvertes dans les
+    # manifests (S64). Calculés une fois par tour (lecture en mémoire, bon marché).
+    outils_actifs = outils.outils_pour(registre)
+
+    # Conscience de soi (S65) : digest COMPACT de l'anatomie du Cœur (ses organes/briques
+    # + le nombre d'outils) injecté comme un repère, à la manière du digest d'identité. Il
+    # nomme le corps et RENVOIE à l'outil `mes_capacites` pour le détail → fin des
+    # confabulations sur « ce que je sais faire ». Best-effort : ne casse jamais un tour.
+    try:
+        corps = conscience.digest(registre, len(outils_actifs))
+    except Exception:  # noqa: BLE001 — la conscience de soi ne doit jamais casser une conversation
+        corps = ""
+    if corps:
+        amorce.append({"role": "system", "content": corps})
+
     historique = amorce + list(messages)
     # Ordre effectif : cascade auto (gratuits → repli payant) ou chaîne manuelle.
     modeles = await config_assistant.chaine_modeles(conf)
@@ -137,6 +159,12 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
             else:
                 muscle.planifier_reveil()
 
+        # Proprioception (S68) : on retiendra le dernier message utilisateur et les outils
+        # appelés pour, à la fin du tour, échantillonner l'échange à des fins d'auto-mesure.
+        question = next((m.get("content") for m in reversed(messages)
+                         if m.get("role") == "user"), "") or ""
+        outils_appeles: list[str] = []
+
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage
             # tokens/coût + journal. La logique d'outils reste ici, côté agent.
@@ -146,7 +174,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
             if STREAM_ACTIF:
                 erreur = None
                 async for evt in llm_pipeline.completer_flux(
-                        historique, modeles=modeles, tools=outils.OUTILS,
+                        historique, modeles=modeles, tools=outils_actifs,
                         tool_choice="auto", temperature=0.2, etiquette="chat",
                         conf=conf, client=client):
                     if evt["type"] == "delta":
@@ -160,7 +188,7 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                     return
             else:
                 res = await llm_pipeline.completer(
-                    historique, modeles=modeles, tools=outils.OUTILS,
+                    historique, modeles=modeles, tools=outils_actifs,
                     tool_choice="auto", temperature=0.2, etiquette="chat",
                     conf=conf, client=client,
                 )
@@ -174,6 +202,16 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                 # En streaming le texte a déjà été émis en deltas ; sinon on l'émet en bloc.
                 if not STREAM_ACTIF:
                     yield {"type": "texte", "contenu": message.get("content") or ""}
+                # Proprioception (S68) : capture échantillonnée de l'échange (opt-in, jamais
+                # bloquante). `message.content` porte la réponse finale dans les deux chemins.
+                if proprioception.echantillonne(conf):
+                    try:
+                        proprioception.tracer(question, message.get("content") or "",
+                                              etiquette="chat",
+                                              modele=res.modele_utilise if not STREAM_ACTIF else None,
+                                              outils=outils_appeles)
+                    except Exception:  # noqa: BLE001 — l'auto-mesure ne casse jamais un tour
+                        pass
                 yield {"type": "fin"}
                 return
 
@@ -189,8 +227,9 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                     args = json.loads(tc["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                outils_appeles.append(nom)
                 yield {"type": "outil", "nom": nom, "args": args,
-                       "action": nom in outils.OUTILS_ACTION}
+                       "action": outils.est_action(nom, registre)}
                 resultat = await outils.executer(nom, args, registre)
                 confirmation = '"confirmation_requise": true' in resultat
                 yield {"type": "resultat_outil", "nom": nom,

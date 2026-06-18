@@ -1,0 +1,32 @@
+{
+  "nom": "connexion",
+  "version": "0.1.0",
+  "description": "Pont bidirectionnel entre les messageries du quotidien (Telegram, WhatsApp Cloud API, Discord, et plus tard SMS/email) et l'assistant du Cœur (POST :5100/assistant/chat, flux SSE, stateless). Provider-agnostique : un adaptateur branchable par réseau (modèle des fournisseurs de la brique images), repli HONNÊTE si un réseau n'est pas configuré (jamais simulé). Multi-utilisateur avec consentement (table de correspondance interlocuteur → utilisateur Workplace) et historique de conversation persisté par interlocuteur (l'assistant étant stateless). Telegram fonctionne sans URL publique (tirage getUpdates piloté par l'horloge).",
+  "role": "connexion",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/connexion",
+  "port": 5870,
+  "url_sante": "http://host.docker.internal:5870/sante",
+  "depends_on": [],
+  "offre": [
+    "relayer_messages",
+    "multi_reseaux",
+    "multi_utilisateur",
+    "consentement_liaison",
+    "historique_persistant",
+    "repli_honnete"
+  ],
+  "besoin": [],
+  "taches": [
+    {
+      "nom": "poll-telegram",
+      "description": "Tire les nouveaux messages Telegram (getUpdates) et les relaie à l'assistant",
+      "methode": "POST",
+      "chemin": "/sonder/telegram",
+      "cadence_heures": 0.05,
+      "idempotent": true,
+      "tolere_echec": true
+    }
+  ]
+}

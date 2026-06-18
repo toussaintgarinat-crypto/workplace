@@ -142,6 +142,10 @@
               title="Tire une date, une heure et un nom au hasard, puis génère">🎲 Aléatoire</button>
     </div>
     <div class="hint">Heure + coordonnées débloquent l'Ascendant, le signe lunaire et le rashi védique. Sans elles, le portrait reste calculé sur la date. <b>🎲 Aléatoire</b> = un personnage tiré au sort.</div>
+    <details id="mes-fiches" style="margin-top:12px" ontoggle="if(this.open) chargerFiches()">
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--accent)">💾 Mes personnages enregistrés</summary>
+      <div id="fiches-liste" class="hint" style="margin-top:8px">…</div>
+    </details>
     <div id="desc-err" class="err"></div>
 
     <div class="out" id="desc-out">
@@ -152,6 +156,33 @@
       <div class="hint">Empreinte multi-culturelle — survole pour comprendre, chaque ligne est calculée :</div>
       <div class="emp" id="o-chips"></div>
       <div class="recit" id="o-recit"></div>
+      <!-- Approfondir : réécriture littéraire par l'IA gratuite, à la demande (opt-in). -->
+      <button type="button" id="btn-approf" class="ghost" onclick="approfondir()"
+        style="margin-top:12px" title="Réécriture littéraire par l'IA gratuite, à la demande">✨ Approfondir la lecture</button>
+      <div id="approf-err" class="err"></div>
+      <div class="recit" id="o-approf" style="display:none;margin-top:12px"></div>
+      <!-- Export : la fiche n'est jamais enregistrée côté brique. On la reconstitue
+           ici, dans le navigateur, à partir du dernier portrait calculé. -->
+      <!-- Catégorie libre (« Famille », « Collègues »…) pour ranger ses personnages
+           et grouper la liste (anti-scroll). La datalist propose les catégories déjà créées. -->
+      <input id="categorie" list="categories-connues" placeholder="🗂 Catégorie (ex. Famille, Collègues) — facultatif"
+        style="margin-top:8px" title="Range ce personnage pour le retrouver groupé plus tard">
+      <datalist id="categories-connues"></datalist>
+      <div class="row" style="align-items:stretch;margin-top:8px">
+        <button type="button" id="btn-save" onclick="enregistrer()" style="flex:2"
+          title="Enregistrer ce personnage (récupérable plus tard)">💾 Enregistrer</button>
+        <button type="button" onclick="exporterFiche()" style="flex:2"
+          title="Ouvre la fiche mise en page et propose l'enregistrement en PDF">📄 Exporter en PDF</button>
+      </div>
+      <!-- Téléchargements directs (100 % navigateur, aucune fiche stockée côté brique). -->
+      <div class="row" style="align-items:stretch;margin-top:8px">
+        <button type="button" class="ghost" onclick="telechargerHTML()" style="flex:1;min-width:90px"
+          title="Télécharger la fiche mise en page, autonome (un seul fichier .html)">⤓ HTML</button>
+        <button type="button" class="ghost" onclick="telechargerMarkdown()" style="flex:1;min-width:90px"
+          title="Télécharger la fiche en Markdown (texte structuré, .md)">⤓ Markdown</button>
+        <button type="button" class="ghost" onclick="telechargerJSON()" style="flex:1;min-width:90px"
+          title="Télécharger les données brutes (traditions + portrait + empreinte)">⤓ JSON</button>
+      </div>
       <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
       <button type="button" id="btn-studio" onclick="envoyerStudio()" style="display:none;margin-top:14px"
         title="Ajouter ce personnage à une série du Studio">📤 Envoyer au Studio</button>
@@ -198,10 +229,16 @@ const PRENOMS=["Aria","Kael","Nora","Soren","Lina","Milo","Eva","Théo","Yuna","
   "Rafael","Sasha","Noé","Léa","Adam","Maya","Ivan","Zoé","Hugo","Salma","Esteban","Nina","Tariq"];
 const NOMS=["Solis","Vance","Moreau","Okafor","Tanaka","Reyes","Volkov","Nahar","Dubois","Khan",
   "Rossi","Bauer","Costa","Lindqvist","Diallo","Ferraro","Petit","Adeyemi"];
+// Villes du monde, géocodables par /geo → l'aléatoire change aussi le lieu (donc l'Ascendant/la Lune).
+const VILLES=["Toulouse, France","Paris, France","Marseille, France","Lyon, France",
+  "Madrid, Espagne","Barcelone, Espagne","Lisbonne, Portugal","Rome, Italie","Berlin, Allemagne",
+  "Londres, Royaume-Uni","Dublin, Irlande","Athènes, Grèce","Le Caire, Égypte","Dakar, Sénégal",
+  "Casablanca, Maroc","Tokyo, Japon","Séoul, Corée du Sud","Bombay, Inde","Istanbul, Turquie",
+  "New York, États-Unis","Mexico, Mexique","São Paulo, Brésil","Buenos Aires, Argentine","Sydney, Australie"];
 const pick = a => a[Math.floor(Math.random()*a.length)];
 
-function aleatoire(){
-  // date entre 1950 et 2010, heure pleine au hasard, nom tiré au sort → puis génère
+async function aleatoire(){
+  // date entre 1950 et 2010, heure pleine au hasard, nom ET ville tirés au sort → puis génère
   const start=Date.UTC(1950,0,1), end=Date.UTC(2010,11,31);
   const d=new Date(start+Math.random()*(end-start));
   $('date').value=d.toISOString().slice(0,10);
@@ -209,6 +246,8 @@ function aleatoire(){
                    String(Math.floor(Math.random()*60)).padStart(2,'0');
   $('prenoms').value=pick(PRENOMS);
   $('nom').value=pick(NOMS);
+  $('ville').value=pick(VILLES);
+  await geocoder();        // remplit lat/lon de la nouvelle ville avant de générer (Ascendant/Lune)
   portrait();
 }
 
@@ -227,13 +266,23 @@ async function geocoder(){
   finally{ btn.disabled=false; }
 }
 
+// Markdown léger → HTML (gras + italique), partagé par le récit et l'approfondissement.
+const mdToHtml = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
+
+// Corps de requête commun (portrait & lecture approfondie) — source unique.
+function corpsFiche(){
+  return {prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
+    heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
+    utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+}
+
 async function portrait(){
   const btn=$('btn-desc'), err=$('desc-err'); err.textContent='';
   btn.disabled=true; btn.textContent='✨ Calcul des traditions…';
   try{
-    const body={prenoms:$('prenoms').value, nom:$('nom').value, date_naissance:$('date').value,
-      heure_naissance:$('heure').value||null, latitude:num($('lat').value), longitude:num($('lon').value),
-      utc_offset:num($('utc').value), systeme_numerologie:$('sysnum').value};
+    const body=corpsFiche();
+    _dernierContexte={prenoms:body.prenoms, nom:body.nom, date:body.date_naissance,
+      heure:body.heure_naissance, ville:$('ville').value, systeme:body.systeme_numerologie};
     const r=await fetch('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
@@ -242,7 +291,31 @@ async function portrait(){
   finally{ btn.disabled=false; btn.textContent='✨ Générer le portrait'; }
 }
 
-let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio
+let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au Studio / l'export
+let _dernierContexte=null;   // état-civil saisi au moment de la génération (pour la fiche)
+let _lectureApprofondie=null; // lecture réécrite par l'IA (si l'utilisateur l'a demandée)
+
+// Demande à l'IA gratuite une réécriture littéraire de la lecture symbolique (opt-in).
+// Repli honnête côté serveur : source='repli' = l'IA était indisponible, on a le déterministe.
+async function approfondir(){
+  if(!_dernierPortrait) return;
+  const btn=$('btn-approf'), err=$('approf-err'); err.textContent='';
+  const ini=btn.textContent; btn.disabled=true; btn.textContent='✨ Lecture en cours… (IA)';
+  try{
+    const r=await fetch('/holistique/lecture-approfondie',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...corpsFiche(), langue:'français'})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    const d=await r.json();
+    _lectureApprofondie = d.source==='llm' ? d.lecture : null;
+    const badge = d.source==='llm'
+      ? '<div class="hint" style="margin-bottom:8px;color:var(--ok)">🤖 Lecture approfondie par l\'IA</div>'
+      : '<div class="hint" style="margin-bottom:8px">↩ IA indisponible — voici la lecture de base (repli honnête).</div>';
+    $('o-approf').innerHTML = badge + mdToHtml(d.lecture);
+    $('o-approf').style.display='block';
+  }catch(e){ err.textContent='⚠ '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=ini; }
+}
 
 // Envoie le personnage courant à l'app parente (Oria) si on est en iframe.
 // L'empreinte (valeurs + sens) part telle quelle : la brique images y repère les
@@ -259,6 +332,317 @@ function envoyerStudio(){
   const b=$('btn-studio'); const ini=b.textContent;
   b.textContent='✅ Envoyé'; b.disabled=true;
   setTimeout(()=>{b.textContent=ini; b.disabled=false;}, 2500);
+}
+
+// ── Export (100 % navigateur : aucune fiche n'est stockée côté brique) ──
+const slug = s => ((s||'fiche').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)) || 'fiche';
+
+function telecharger(nomFichier, contenu, mime){
+  const blob = new Blob([contenu], {type: mime+';charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomFichier;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+function nomPersonne(){
+  const c=_dernierContexte||{};
+  return (((c.prenoms||'').trim()+' '+(c.nom||'').trim()).trim()) || 'Personne';
+}
+
+function telechargerJSON(){
+  if(!_dernierPortrait) return;
+  const data = {contexte:_dernierContexte, ...(_dernierPortrait)};
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.json',
+    JSON.stringify(data, null, 2), 'application/json');
+}
+
+// Construit le HTML autonome (mise en page complète) de la fiche cosmique.
+// Partagé par l'export PDF (ouverture + impression) et le téléchargement .html.
+function ficheHtml(autoprint){
+  const d=_dernierPortrait, p=d.portrait||{}, c=_dernierContexte||{};
+  const nom = nomPersonne();
+  const etatCivil = [
+    c.date ? 'Né·e le '+esc(c.date) : '',
+    c.heure ? 'à '+esc(c.heure) : '',
+    c.ville ? '· '+esc(c.ville) : ''
+  ].filter(Boolean).join(' ');
+  const ents = Object.entries(p.stats||{}).sort((a,b)=>b[1]-a[1]);
+  const stats = ents.map(([k,v],i)=>{
+    const top = i===0, low = k===p.faiblesse;
+    const col = low ? '#7a6a8a' : 'linear-gradient(90deg,#c2547a,#e0a458)';
+    return `<div class="stat"><span class="nm"${top?' style="color:#e0a458;font-weight:700"':''}>${esc(k)}</span>`+
+      `<span class="bar"><span class="fill" style="width:${v}%;background:${col}"></span></span>`+
+      `<span class="vv">${v}</span></div>`;
+  }).join('');
+  const g=p.pierre_equilibrage||{};
+  const emp=(d.empreinte||[]).map(e=>
+    `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}</div>`+
+    `<div class="ecv"><b>${esc(e.valeur)}</b></div><div class="ecs">${esc(e.sens)}</div></div>`).join('');
+  const recit = mdToHtml(p.recit||'');
+  const approf = _lectureApprofondie ? mdToHtml(_lectureApprofondie) : '';
+  const html =
+`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<title>Fiche cosmique — ${esc(nom)}</title>
+<style>
+  :root{--bg:#0e0c10;--panel:#17141b;--panel2:#1f1a24;--line:#332b3c;--ink:#ece6f0;
+        --mut:#9b8fa8;--accent:#e0a458;--accent2:#c2547a;--ok:#5fd0a0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Segoe UI',-apple-system,system-ui,sans-serif;line-height:1.6}
+  .sheet{max-width:760px;margin:0 auto;padding:40px 36px 60px}
+  h1{font-family:Georgia,serif;font-size:2rem;margin:0;color:var(--accent)}
+  .civ{color:var(--mut);font-size:.92rem;margin:6px 0 4px}
+  .arche{font-family:Georgia,serif;font-size:1.5rem;color:var(--accent);margin:22px 0 2px}
+  .sub{color:var(--mut);font-size:.9rem}
+  h2{font-size:.74rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent2);
+     margin:30px 0 12px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .stat{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .stat .nm{font-size:.82rem;width:120px;text-align:right}
+  .stat .bar{flex:1;height:11px;background:#100d14;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .stat .fill{height:100%}
+  .stat .vv{font-size:.76rem;color:var(--mut);width:34px}
+  .gem{display:flex;gap:12px;align-items:center;background:#10231c;border:1px solid #234a3a;
+       border-radius:14px;padding:14px 16px}
+  .gem b{color:var(--ok)}
+  .emp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .ec{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .ec .ecl{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent2)}
+  .ec .ecv{font-family:Georgia,serif;font-size:1rem;margin:2px 0}
+  .ec .ecv b{color:var(--accent)}
+  .ec .ecs{font-size:.78rem;color:var(--mut);line-height:1.45}
+  .recit{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:18px;white-space:pre-wrap;font-size:.92rem}
+  .recit em{color:var(--mut)}
+  .foot{margin-top:34px;color:var(--mut);font-size:.72rem;border-top:1px solid var(--line);padding-top:14px}
+  .toolbar{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;
+    background:rgba(14,12,16,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+    padding:12px 24px;font-size:.82rem;color:var(--mut)}
+  .toolbar button{cursor:pointer;border:none;border-radius:9px;padding:9px 16px;font-weight:600;
+    font-size:.86rem;background:linear-gradient(135deg,var(--accent),#d4894a);color:#1a1208}
+  @media print{body{background:#fff;color:#222}
+    .toolbar{display:none}
+    .sheet{max-width:100%}h1,.arche,.ec .ecv b{color:#8a5a14}
+    .recit,.ec,.gem{background:#faf7f2;border-color:#e3dccf}
+    .gem{background:#eef7f1}.foot{color:#888}}
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+  <span>Dans la fenêtre d'impression, choisis « Enregistrer au format PDF ».</span></div>
+<div class="sheet">
+  <h1>${esc(nom)}</h1>
+  ${etatCivil?`<div class="civ">${etatCivil}</div>`:''}
+  <div class="arche">${esc(p.archetype||'')}</div>
+  <div class="sub">Forces : ${esc((p.forces||[]).join(' · '))}${p.faiblesse?' — à travailler : '+esc(p.faiblesse):''}</div>
+  ${stats?`<h2>Tempérament calculé</h2>${stats}`:''}
+  ${g.pierre?`<h2>Cristal allié</h2><div class="gem">💎&nbsp;<div>Cristal allié : <b>${esc(g.pierre)}</b> — ${esc(g.vertu||'')}${g.compense?' (compense '+esc(g.compense)+')':''}.</div></div>`:''}
+  ${emp?`<h2>Empreinte multi-culturelle</h2><div class="emp">${emp}</div>`:''}
+  ${recit?`<h2>Lecture symbolique</h2><div class="recit">${recit}</div>`:''}
+  ${approf?`<h2>Lecture approfondie (IA)</h2><div class="recit">${approf}</div>`:''}
+  <div class="foot">Fiche cosmique générée par l'Atelier holistique · ${esc(c.systeme||'')} ·
+  les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.</div>
+</div>
+${autoprint?'<script>addEventListener("load",function(){setTimeout(function(){window.print();},350);});<\/script>':''}
+</body></html>`;
+  return html;
+}
+
+// Export PDF : ouvre la fiche mise en page dans un onglet et lance l'impression.
+// Repli : si une fenêtre est bloquée (popup, sandbox iframe), on télécharge le HTML.
+function exporterFiche(){
+  if(!_dernierPortrait) return;
+  const html = ficheHtml(true);
+  const w = window.open('', '_blank');
+  if(w && w.document){
+    w.document.open(); w.document.write(html); w.document.close();
+  }else{
+    telecharger('fiche-cosmique-'+slug(nomPersonne())+'.html', ficheHtml(false), 'text/html');
+  }
+}
+
+// Télécharge la fiche mise en page comme fichier .html autonome (sans auto-impression).
+function telechargerHTML(){
+  if(!_dernierPortrait) return;
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.html', ficheHtml(false), 'text/html');
+}
+
+// Construit la fiche en Markdown à partir du dernier portrait calculé.
+function ficheMarkdown(){
+  const d=_dernierPortrait, p=d.portrait||{}, c=_dernierContexte||{};
+  const nom = nomPersonne();
+  const etatCivil = [
+    c.date ? 'Né·e le '+c.date : '',
+    c.heure ? 'à '+c.heure : '',
+    c.ville ? '· '+c.ville : ''
+  ].filter(Boolean).join(' ');
+  const L = ['# '+nom];
+  if(etatCivil) L.push('', '*'+etatCivil+'*');
+  if(p.archetype) L.push('', '## '+p.archetype);
+  const sub = [];
+  if((p.forces||[]).length) sub.push('**Forces** : '+(p.forces||[]).join(' · '));
+  if(p.faiblesse) sub.push('**À travailler** : '+p.faiblesse);
+  if(sub.length) L.push('', sub.join('  \n'));
+  const ents = Object.entries(p.stats||{}).sort((a,b)=>b[1]-a[1]);
+  if(ents.length){
+    L.push('', '## Tempérament calculé', '', '| Trait | Valeur |', '| --- | ---: |');
+    ents.forEach(([k,v])=>L.push('| '+k+' | '+v+' |'));
+  }
+  const g=p.pierre_equilibrage||{};
+  if(g.pierre){
+    L.push('', '## Cristal allié', '',
+      '💎 **'+g.pierre+'** — '+(g.vertu||'')+(g.compense?' (compense '+g.compense+')':'')+'.');
+  }
+  const emp=(d.empreinte||[]);
+  if(emp.length){
+    L.push('', '## Empreinte multi-culturelle', '');
+    emp.forEach(e=>L.push('- **'+e.cle+(e.role?' · '+e.role:'')+'** : '+e.valeur+
+      (e.sens?' — '+e.sens:'')));
+  }
+  if(p.recit){ L.push('', '## Lecture symbolique', '', p.recit); }
+  if(_lectureApprofondie){ L.push('', '## Lecture approfondie (IA)', '', _lectureApprofondie); }
+  L.push('', '---', '',
+    '*Fiche cosmique générée par l\'Atelier holistique'+(c.systeme?' · '+c.systeme:'')+
+    '. Les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.*');
+  return L.join('\n');
+}
+
+function telechargerMarkdown(){
+  if(!_dernierPortrait) return;
+  telecharger('fiche-cosmique-'+slug(nomPersonne())+'.md', ficheMarkdown(), 'text/markdown');
+}
+
+// ── Persistance des personnages (opt-in, cloisonnée par clé API côté brique) ──
+async function enregistrer(){
+  if(!_dernierPortrait) return;
+  const btn=$('btn-save'), ini=btn.textContent; btn.disabled=true; btn.textContent='💾 Enregistrement…';
+  try{
+    const d=_dernierPortrait;
+    const body={nom:nomPersonne(), categorie:($('categorie').value||'').trim(),
+      contexte:_dernierContexte, traditions:d.traditions,
+      portrait:d.portrait, empreinte:d.empreinte, lecture_approfondie:_lectureApprofondie||null};
+    const r=await fetch('/fiches',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    btn.textContent='✅ Enregistré';
+    if($('mes-fiches').open) chargerFiches();
+    setTimeout(()=>{btn.textContent=ini; btn.disabled=false;}, 2000);
+  }catch(e){ $('desc-err').textContent='⚠ '+e.message; btn.textContent=ini; btn.disabled=false; }
+}
+
+async function chargerFiches(){
+  const box=$('fiches-liste'); box.textContent='Chargement…';
+  try{
+    const r=await fetch('/fiches'); if(!r.ok) throw new Error('HTTP '+r.status);
+    const arr=await r.json();
+    if(!arr.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
+    box.innerHTML='';
+    // Regroupe par catégorie libre pour éviter un gros scroll quand il y en a beaucoup.
+    // Les catégories sont triées (alpha), « Non rangés » en dernier.
+    const groupes={};
+    arr.forEach(f=>{ const c=(f.categorie||'').trim(); (groupes[c]=groupes[c]||[]).push(f); });
+    majDatalistCategories(arr);
+    const nommees=Object.keys(groupes).filter(c=>c).sort((a,b)=>a.localeCompare(b,'fr'));
+    const ordre=nommees.concat(groupes[''] ? [''] : []);
+    ordre.forEach(cat=>{
+      const titre=document.createElement('div');
+      titre.style.cssText='margin:12px 0 4px;font-size:.78rem;font-weight:600;'+
+        'color:var(--accent);text-transform:uppercase;letter-spacing:.04em';
+      titre.textContent=(cat||'Non rangés')+'  ('+groupes[cat].length+')';
+      box.append(titre);
+      groupes[cat].forEach(f=>box.append(ligneFiche(f)));
+    });
+  }catch(e){ box.textContent='⚠ '+e.message; }
+}
+
+function ligneFiche(f){
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
+  const open=document.createElement('button'); open.className='ghost';
+  open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
+  // nom de scène affiché ; si renommé, on rappelle le nom cosmique d'origine
+  const aka=(f.nom_naissance && f.nom_naissance!==f.nom)?'  (né·e '+f.nom_naissance+')':'';
+  open.innerHTML='<b>'+(f.nom||'Personnage')+'</b>'+
+    '<span style="opacity:.6">'+aka+'</span>'+
+    (f.archetype?' — '+f.archetype:'')+'  ·  '+String(f.cree_le||'').slice(0,10);
+  open.onclick=()=>chargerFiche(f.id);
+  const rng=document.createElement('button'); rng.className='ghost';
+  rng.style.cssText='margin:0;width:auto;padding:8px 12px';
+  rng.textContent='🗂'; rng.title='Ranger dans une catégorie';
+  rng.onclick=()=>rangerFiche(f.id, f.categorie);
+  const ren=document.createElement('button'); ren.className='ghost';
+  ren.style.cssText='margin:0;width:auto;padding:8px 12px';
+  ren.textContent='✎'; ren.title='Renommer pour une série (garde le nom d’origine)';
+  ren.onclick=()=>renommerFiche(f.id, f.nom);
+  const del=document.createElement('button'); del.className='ghost';
+  del.style.cssText='margin:0;width:auto;padding:8px 12px;color:#f08aa0';
+  del.textContent='✕'; del.title='Supprimer ce personnage';
+  del.onclick=()=>supprimerFiche(f.id, row);
+  row.append(open, rng, ren, del);
+  return row;
+}
+
+function majDatalistCategories(arr){
+  // Alimente la datalist du champ de saisie avec les catégories déjà utilisées.
+  const cats=[...new Set(arr.map(f=>(f.categorie||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr'));
+  $('categories-connues').innerHTML=cats.map(c=>'<option value="'+c.replace(/"/g,'&quot;')+'">').join('');
+}
+
+async function rangerFiche(id, catActuelle){
+  const cat=prompt('Ranger dans quelle catégorie ? (ex. Famille, Collègues — vide pour retirer)', catActuelle||'');
+  if(cat===null) return;                        // annulé
+  try{
+    const r=await fetch('/fiches/'+id+'/categorie',{method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({categorie:cat})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    chargerFiches();                            // rafraîchit + regroupe
+  }catch(e){ alert('⚠ '+e.message); }
+}
+
+async function chargerFiche(id){
+  try{
+    const r=await fetch('/fiches/'+id); if(!r.ok) throw new Error('HTTP '+r.status);
+    const f=await r.json(), d=f.donnees||{};
+    const c=d.contexte||{};
+    $('prenoms').value=c.prenoms||''; $('nom').value=c.nom||'';
+    $('date').value=c.date||''; $('heure').value=c.heure||'';
+    if(c.ville) $('ville').value=c.ville;
+    $('categorie').value=f.categorie||'';
+    renderPortrait({traditions:d.traditions||{}, portrait:d.portrait||{}, empreinte:d.empreinte||[]});
+    _dernierContexte=c;                       // après renderPortrait (qui ne le touche pas)
+    if(d.lecture_approfondie){
+      _lectureApprofondie=d.lecture_approfondie;
+      $('o-approf').innerHTML='<div class="hint" style="margin-bottom:8px;color:var(--ok)">'+
+        '🤖 Lecture approfondie (enregistrée)</div>'+mdToHtml(d.lecture_approfondie);
+      $('o-approf').style.display='block';
+    }
+    $('desc-out').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ $('desc-err').textContent='⚠ '+e.message; }
+}
+
+async function renommerFiche(id, nomActuel){
+  // Renomme la fiche pour une série (nom de scène). Le nom cosmique d'origine reste figé.
+  const nom=prompt('Nouveau nom pour cette série (le nom d’origine est conservé) :', nomActuel||'');
+  if(nom===null) return;                      // annulé
+  if(!nom.trim()){ alert('Le nom ne peut pas être vide.'); return; }
+  try{
+    const r=await fetch('/fiches/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nom})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    chargerFiches();                          // rafraîchit la liste (affiche « né·e … »)
+  }catch(e){ alert('⚠ '+e.message); }
+}
+
+async function supprimerFiche(id, row){
+  if(!confirm('Supprimer définitivement ce personnage enregistré ?')) return;
+  try{
+    const r=await fetch('/fiches/'+id,{method:'DELETE'});
+    if(r.status!==204) throw new Error('HTTP '+r.status);
+    row.remove();
+    const box=$('fiches-liste');
+    if(!box.querySelector('div')) box.textContent="Aucun personnage enregistré pour l'instant.";
+  }catch(e){ alert('⚠ '+e.message); }
 }
 
 function renderPortrait(d){
@@ -283,8 +667,11 @@ function renderPortrait(d){
     `<div class="ecv"><b>${esc(e.valeur)}</b></div>`+
     `<div class="ecs">${esc(e.sens)}</div></div>`).join('');
   // recit (markdown gras → <b>)
-  $('o-recit').innerHTML = esc(p.recit).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
-    .replace(/_(.+?)_/g,'<em>$1</em>');
+  $('o-recit').innerHTML = mdToHtml(p.recit);
+  // remise à zéro de l'approfondissement IA pour ce nouveau portrait
+  _lectureApprofondie=null;
+  $('o-approf').style.display='none'; $('approf-err').textContent='';
+  $('btn-approf').style.display='inline-block';
   // Bouton « Envoyer au Studio » : utile seulement dans l'iframe Oria (sinon inerte mais inoffensif).
   $('btn-studio').style.display = (window.parent !== window) ? 'inline-block' : 'none';
   $('desc-out').style.display='block';

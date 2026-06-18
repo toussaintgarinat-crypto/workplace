@@ -81,6 +81,66 @@ def test_404_sur_distribution_inconnue():
     assert client.get("/distributions/inexistant").status_code == 404
 
 
+def test_renommer_perso_garde_nom_origine():
+    """Renommer un perso pour la série change le nom affiché mais fige le nom d'origine."""
+    did = client.post("/distributions", json={"titre": "Saga"}).json()["id"]
+    p = client.post(f"/distributions/{did}/personnages", json={"nom": "Lyssandre"}).json()
+    assert p["nom"] == p["nom_naissance"] == "Lyssandre"   # origine captée à l'ajout
+    maj = client.patch(f"/distributions/{did}/personnages/{p['id']}",
+                       json={"nom": "Aria"}).json()         # nom de scène
+    assert maj["nom"] == "Aria" and maj["nom_naissance"] == "Lyssandre"
+
+
+def test_ajout_perso_depuis_fiche_avec_alias():
+    """On peut ajouter un perso avec un nom de série distinct de son nom cosmique."""
+    did = client.post("/distributions", json={"titre": "Saga"}).json()["id"]
+    p = client.post(f"/distributions/{did}/personnages",
+                    json={"nom": "Aria", "nom_naissance": "Lyssandre"}).json()
+    assert p["nom"] == "Aria" and p["nom_naissance"] == "Lyssandre"
+
+
+# ── Stateful : renommer une fiche enregistrée (nom de scène) ──────
+def test_fiche_renommer_via_api():
+    fid = client.post("/fiches", json={"nom": "Lyssandre",
+                      "portrait": {"archetype": "Le Sage"}}).json()["id"]
+    r = client.patch(f"/fiches/{fid}", json={"nom": "Aria"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["nom"] == "Aria" and body["nom_naissance"] == "Lyssandre"
+    # relecture : données intactes, nom d'origine conservé
+    relu = client.get(f"/fiches/{fid}").json()
+    assert relu["nom"] == "Aria" and relu["nom_naissance"] == "Lyssandre"
+    assert relu["donnees"]["portrait"]["archetype"] == "Le Sage"
+
+
+def test_fiche_renommer_404_et_vide():
+    assert client.patch("/fiches/inexistant", json={"nom": "X"}).status_code == 404
+    fid = client.post("/fiches", json={"nom": "Lyssandre"}).json()["id"]
+    assert client.patch(f"/fiches/{fid}", json={"nom": "  "}).status_code == 422
+
+
+# ── Stateful : ranger une fiche dans une catégorie libre (anti-scroll) ──
+def test_fiche_categorie_a_l_enregistrement():
+    fid = client.post("/fiches", json={"nom": "Maman", "categorie": "Famille"}).json()["id"]
+    assert client.get(f"/fiches/{fid}").json()["categorie"] == "Famille"
+    # exposée aussi dans le listage (sert au regroupement côté front)
+    assert next(x for x in client.get("/fiches").json() if x["id"] == fid)["categorie"] == "Famille"
+
+
+def test_fiche_ranger_via_api_et_retirer():
+    fid = client.post("/fiches", json={"nom": "Bob"}).json()["id"]
+    r = client.patch(f"/fiches/{fid}/categorie", json={"categorie": "Collègues"})
+    assert r.status_code == 200 and r.json()["categorie"] == "Collègues"
+    assert client.get(f"/fiches/{fid}").json()["categorie"] == "Collègues"
+    # catégorie vide = retire le rangement
+    assert client.patch(f"/fiches/{fid}/categorie", json={"categorie": ""}).json()["categorie"] == ""
+
+
+def test_fiche_ranger_404():
+    assert client.patch("/fiches/inexistant/categorie",
+                        json={"categorie": "Famille"}).status_code == 404
+
+
 # ── Holistique (S49) : descendant & montant, sans LLM ────────────
 def test_sante_expose_holistique():
     j = client.get("/sante").json()

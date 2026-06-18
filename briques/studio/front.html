@@ -278,16 +278,43 @@ async function vueDistribution(){
     <button class="ghost" style="margin-top:8px" id="btn-cast" onclick="proposerDistribution()">🎭 Proposer une distribution</button>
     <div class="err" id="d-err"></div>
     <div id="d-props"></div>
+    <details id="d-holo" style="margin-top:14px" ontoggle="if(this.open) chargerMesPersonnages()">
+      <summary style="cursor:pointer">🌌 Mes personnages créés (atelier holistique)</summary>
+      <div class="hint" style="margin-top:6px">Pioche un personnage que tu as enregistré dans l'atelier et donne-lui un nom de scène. Son identité cosmique (nom d'origine, archétype, empreinte) le suit.</div>
+      <div id="d-holo-liste" style="margin-top:8px" class="muted">…</div>
+    </details>
     <div id="d-liste" style="margin-top:14px"></div>
   </div>`;
   renderPersos();
+}
+async function chargerMesPersonnages(){
+  const box=$('d-holo-liste'); box.textContent='Chargement…';
+  try{
+    const r=await api('/personnages-holistiques');
+    if(!r.disponible){ box.innerHTML='<span class="muted">Atelier Personnages injoignable pour l\'instant.</span>'; return; }
+    if(!r.fiches.length){ box.innerHTML='<span class="muted">Aucun personnage enregistré dans l\'atelier. Crée-en un et clique 💾 Enregistrer.</span>'; return; }
+    box.innerHTML = r.fiches.map(f=>`
+      <div class="row" style="align-items:center;gap:8px;margin:6px 0">
+        <div style="flex:2"><b>${esc(f.nom)}</b>${f.archetype?` <span class="muted">— ${esc(f.archetype)}</span>`:''}</div>
+        <input id="sc-${esc(f.id)}" placeholder="Nom de scène (facultatif)" style="flex:3" value="">
+        <button class="sm" onclick='importerFiche(${JSON.stringify(f.id)})'>+ Ajouter</button>
+      </div>`).join('');
+  }catch(e){ box.innerHTML='⚠ '+esc(e.message); }
+}
+async function importerFiche(fid){
+  const nom=($('sc-'+fid)?.value||'').trim();
+  try{
+    const p=await api(`/series/${S().id}/personnages/importer-fiche`,'POST',{fiche_id:fid, nom:nom||null});
+    await refresh(); vue('Distribution'); toast('« '+(p.nom||'')+' » ajouté 🌌');
+  }catch(e){ toast('⚠ '+e.message); }
 }
 function renderPersos(){
   const persos = S().personnages||[];
   $('d-liste').innerHTML = persos.length ? persos.map(p=>`
     <div class="card">
-      <div class="ep-head"><h3>${esc(p.nom)} ${p.source?`<span class="flag studio">${esc(p.source)}</span>`:''}</h3>
-        <div><button class="sm ghost" onclick="portrait('${p.id}')">🖼️ Portrait</button>
+      <div class="ep-head"><h3>${esc(p.nom)}${(p.nom_naissance && p.nom_naissance!==p.nom)?` <span class="muted" style="font-weight:400">(né·e ${esc(p.nom_naissance)})</span>`:''} ${p.source?`<span class="flag studio">${esc(p.source)}</span>`:''}</h3>
+        <div><button class="sm ghost" onclick="renommerPerso('${p.id}', ${JSON.stringify(p.nom)})" title="Renommer pour cette série (garde le nom d'origine)">✎</button>
+        <button class="sm ghost" onclick="portrait('${p.id}')">🖼️ Portrait</button>
         <button class="sm ghost" onclick="animer('${p.id}')">🎬 Animer</button>
         <button class="sm ghost" onclick="supprimerPerso('${p.id}')">✕</button></div></div>
       ${p.role?`<div class="muted">${esc(p.role)}</div>`:''}
@@ -304,6 +331,13 @@ async function ajouterPerso(){
 }
 async function supprimerPerso(pid){
   try{ await api(`/series/${S().id}/personnages/${pid}`,'DELETE'); await refresh(); vue('Distribution'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+async function renommerPerso(pid, nomActuel){
+  const nom=prompt('Nom de scène pour cette série (le nom d\'origine est conservé) :', nomActuel||'');
+  if(nom===null) return;
+  if(!nom.trim()){ toast('Le nom ne peut pas être vide.'); return; }
+  try{ await api(`/series/${S().id}/personnages/${pid}`,'PATCH',{nom}); await refresh(); vue('Distribution'); }
   catch(e){ toast('⚠ '+e.message); }
 }
 async function proposerDistribution(){

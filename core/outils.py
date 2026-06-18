@@ -23,6 +23,8 @@ import uuid
 import httpx
 
 import agenda
+import catalogue
+import conscience
 import cycle_de_vie
 import orchestrateur
 
@@ -47,6 +49,27 @@ OUTILS: list[dict] = [
         "name": "etat_briques",
         "description": "Liste les briques de la solution (ETL, Audit, Générateur, Données, Mémoire…) et leur santé.",
         "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "mes_capacites",
+        "description": "Décris-toi JUSTE : ta propre anatomie (tes organes/briques) et la "
+                       "liste exacte de tes outils. À appeler AVANT de répondre à « que sais-tu "
+                       "faire ? », « qui es-tu ? », « comment es-tu fait ? » — réponds depuis ce "
+                       "résultat, n'invente aucun organe ni pouvoir. Lecture seule.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "coagent_lancer",
+        "description": "Lance un CO-AGENT autonome (ton « lobe frontal ») pour mener un "
+                       "objectif MULTI-ÉTAPES en profondeur, sans repasser par l'utilisateur à "
+                       "chaque étape (ex. « fais le tour de toutes les entreprises et propose un "
+                       "plan », « croise les documents et l'agenda pour préparer la semaine »). Il "
+                       "travaille en LECTURE SEULE (il observe, il n'agit pas) et rend une "
+                       "SYNTHÈSE. Réserve-le aux tâches qui demandent plusieurs consultations "
+                       "enchaînées ; pour une question simple, réponds directement.",
+        "parameters": _p({
+            "objectif": {"type": "string", "description": "L'objectif précis à mener à terme, en une phrase claire."},
+            "budget_tokens": {"type": "integer", "description": "Plafond de tokens pour borner le coût (optionnel ; défaut raisonnable)."},
+            "max_etapes": {"type": "integer", "description": "Plafond d'étapes de réflexion (optionnel)."},
+        }, ["objectif"])}},
     {"type": "function", "function": {
         "name": "chercher_documents",
         "description": "Cherche dans les documents ingérés (ETL) et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
@@ -444,6 +467,23 @@ OUTILS: list[dict] = [
             "langue": {"type": "string", "description": "Langue des notes (optionnel)."},
             "confirme": {"type": "boolean"},
         }, ["resume"])}},
+
+    # — PERSONNAGES (atelier holistique cosmique, brique 5900) —
+    {"type": "function", "function": {
+        "name": "personnage_creer_holistique",
+        "description": "Crée un personnage HOLISTIQUE (atelier cosmique, brique personnages) à partir d'infos de naissance DICTÉES : prénoms, date, et si possible heure et ville. Renvoie son portrait (archétype, forces, à travailler, pierre d'équilibrage) déduit de plusieurs traditions. Pour « crée-moi un personnage né le… à… », « génère une fiche cosmique pour… ». La simple génération ne stocke RIEN (aucune confirmation). Pour ENREGISTRER la fiche (enregistrer=true) ou l'AJOUTER à une série du Studio (serie_id), c'est une ACTION : confirme=true requis après accord. Récupère un serie_id via studio_series_lister.",
+        "parameters": _p({
+            "prenoms": {"type": "string", "description": "Prénom(s) du personnage."},
+            "nom": {"type": "string", "description": "Nom de famille (optionnel)."},
+            "date_naissance": {"type": "string", "description": "Date de naissance au format AAAA-MM-JJ."},
+            "heure_naissance": {"type": "string", "description": "Heure de naissance HH:MM (optionnel : affine ascendant / Lune)."},
+            "ville": {"type": "string", "description": "Ville de naissance (optionnel : géocodée pour l'astro). Ex. « Toulouse »."},
+            "utc_offset": {"type": "number", "description": "Décalage local→UTC à la naissance, en heures (optionnel ; ex. 2 pour l'heure d'été en France)."},
+            "enregistrer": {"type": "boolean", "description": "Enregistrer la fiche cosmique (récupérable plus tard). ACTION : confirme=true requis."},
+            "serie_id": {"type": "string", "description": "Ajouter le personnage à cette série du Studio (id via studio_series_lister). ACTION : confirme=true requis."},
+            "nom_scene": {"type": "string", "description": "Nom de scène à donner dans la série (optionnel : défaut = prénoms). Le nom cosmique d'origine est conservé."},
+            "confirme": {"type": "boolean"},
+        }, ["prenoms", "date_naissance"])}},
 ]
 
 OUTILS_ACTION = {
@@ -487,6 +527,112 @@ def _espace_memoire(espace: str | None) -> str | None:
     return "Perso" if (espace or "").lower() == "perso" else None
 
 
+# ── Outils DYNAMIQUES : le système nerveux découvert (S64) ────────────────────
+# Les capacités déclarées dans les manifests (S63) deviennent de vrais outils du LLM,
+# routés ici sans une ligne de dispatch en dur. Garde-fous : un nom déjà servi par un
+# outil CÂBLÉ gagne toujours (zéro régression) ; liste blanche et kill-switch d'env
+# permettent de borner ce que le LLM voit (souveraineté du « plan de contrôle »).
+
+_NOMS_STATIQUES = {o["function"]["name"] for o in OUTILS}
+CAPACITES_DYNAMIQUES = os.getenv("CAPACITES_DYNAMIQUES", "1").lower() not in ("0", "false", "no")
+_ALLOWLIST = {s.strip() for s in os.getenv("CAPACITES_ALLOWLIST", "").split(",") if s.strip()}
+
+
+def _capacites_dynamiques(registre) -> dict:
+    """Capacités découvertes qui deviennent des outils dynamiques : ``{nom: cap}``.
+
+    N'expose JAMAIS un nom déjà câblé en dur (l'outil statique, plus riche, prime →
+    zéro régression), respecte une éventuelle liste blanche ``CAPACITES_ALLOWLIST``, et
+    s'éteint entièrement avec ``CAPACITES_DYNAMIQUES=0`` (repli honnête sur les seuls
+    outils en dur). En cas de doublon inter-briques, le premier découvert gagne."""
+    if not CAPACITES_DYNAMIQUES or registre is None:
+        return {}
+    out: dict = {}
+    for cap in catalogue.collecter_capacites(registre):
+        nom = cap["nom"]
+        if nom in _NOMS_STATIQUES or nom in out:
+            continue
+        if _ALLOWLIST and nom not in _ALLOWLIST:
+            continue
+        out[nom] = cap
+    return out
+
+
+def _spec_depuis_capacite(cap: dict) -> dict:
+    """Convertit une capacité du catalogue en spec function-calling OpenAI."""
+    props: dict = {}
+    requis: list = []
+    for nom_p, p in (cap.get("params") or {}).items():
+        props[nom_p] = {k: v for k, v in p.items() if k != "requis"}
+        if p.get("requis"):
+            requis.append(nom_p)
+    if cap.get("action"):
+        props.setdefault("confirme", {"type": "boolean",
+            "description": "Passer true UNIQUEMENT après accord explicite de l'utilisateur."})
+    return {"type": "function", "function": {
+        "name": cap["nom"], "description": cap.get("description", ""),
+        "parameters": _p(props, requis)}}
+
+
+def outils_pour(registre) -> list[dict]:
+    """Liste d'outils présentée au LLM : les outils en dur + les capacités dynamiques.
+
+    C'est la fin du contrat figé : ajouter `capacites` à un manifest suffit pour que
+    l'assistant voie un nouvel outil, sans toucher au Cœur."""
+    dyn = _capacites_dynamiques(registre)
+    return OUTILS + [_spec_depuis_capacite(c) for c in dyn.values()]
+
+
+def est_action(nom: str, registre) -> bool:
+    """Outil à effet de bord ? (pastille « action » + gate de confirmation côté UI)."""
+    if nom in OUTILS_ACTION:
+        return True
+    cap = _capacites_dynamiques(registre).get(nom)
+    return bool(cap and cap.get("action"))
+
+
+def _entetes_brique(brique: str) -> dict:
+    """Auth optionnelle : clé de service ``{BRIQUE}_KEY`` → en-tête X-API-Key (motif muscle.py)."""
+    cle = os.environ.get(f"{brique.upper()}_KEY")
+    return {"X-API-Key": cle} if cle else {}
+
+
+def _url_dynamique(cap: dict, args: dict) -> str:
+    """URL de la capacité, avec substitution des params de chemin ``{x}`` depuis les args."""
+    url = cap["url"]
+    if "{" in url:
+        for k, v in args.items():
+            url = url.replace("{" + k + "}", str(v))
+    return url
+
+
+async def _appel_dynamique(client, cap: dict, args: dict) -> str:
+    """Exécute une capacité découverte : gate de confirmation si action, puis appel HTTP.
+
+    GET → query params ; autres méthodes → corps JSON. Les params consommés par le chemin
+    ne sont pas renvoyés en double. Verdict honnête sur refus/injoignable."""
+    args = dict(args or {})
+    confirme = args.pop("confirme", None)
+    if cap.get("action") and not confirme:
+        return _confirmation(cap["nom"], cap["brique"])
+    url = _url_dynamique(cap, args)
+    charge = {k: v for k, v in args.items()
+              if v is not None and ("{" + k + "}") not in cap["chemin"]}
+    entetes = _entetes_brique(cap["brique"]) or None
+    if cap["methode"] == "GET":
+        r = await client.request("GET", url, params=charge, headers=entetes)
+    else:
+        r = await client.request(cap["methode"], url, json=charge, headers=entetes)
+    if r.status_code >= 400:
+        return json.dumps({"ok": False, "brique": cap["brique"],
+                           "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
+                          ensure_ascii=False)
+    try:
+        return json.dumps(r.json(), ensure_ascii=False)
+    except ValueError:
+        return (r.text or "")[:1000]
+
+
 # ── Répartiteur ──────────────────────────────────────────────────────────────
 
 async def executer(nom: str, args: dict, registre) -> str:
@@ -504,6 +650,26 @@ async def executer(nom: str, args: dict, registre) -> str:
 
             if nom == "etat_briques":
                 return json.dumps(await _etat_briques(client, registre), ensure_ascii=False)
+
+            if nom == "mes_capacites":
+                # Conscience de soi (S65) : on rend l'anatomie depuis la source de vérité
+                # (manifests + outils réellement actifs) — pas de confabulation.
+                return json.dumps(
+                    conscience.anatomie(registre, outils_pour(registre),
+                                        lambda n: est_action(n, registre)),
+                    ensure_ascii=False)
+
+            if nom == "coagent_lancer":
+                # Co-agent exécutif (S66) : boucle profonde autonome, bornée en tokens,
+                # lecture seule. Import LOCAL — coagent importe outils, on casse le cycle.
+                import coagent
+                # Client dédié (le client local est à 30 s : trop court pour des appels LLM
+                # profonds) ; coagent en ouvre un à 120 s s'il n'en reçoit pas.
+                cr = await coagent.executer_objectif(
+                    args.get("objectif", ""), registre,
+                    budget_tokens=args.get("budget_tokens"),
+                    max_etapes=args.get("max_etapes"))
+                return json.dumps(cr, ensure_ascii=False)
 
             if nom == "chercher_documents":
                 params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
@@ -859,6 +1025,10 @@ async def executer(nom: str, args: dict, registre) -> str:
                 return await _studio_appel(client, registre, "POST", f"/series/{sid}/audio",
                                            charge=charge, timeout=180)
 
+            # — PERSONNAGES (atelier holistique cosmique) —
+            if nom == "personnage_creer_holistique":
+                return await _personnage_holistique(client, registre, args)
+
             # — TRANSCRIPTION (notes d'appel/réunion) —
             if nom == "transcription_etat":
                 return await _transcription_appel(client, registre, "GET", "/sante", timeout=15)
@@ -900,6 +1070,11 @@ async def executer(nom: str, args: dict, registre) -> str:
                 }
                 return await _transcription_appel(client, registre, "POST", "/archiver",
                                                   charge=charge, timeout=45)
+
+            # — CAPACITÉS DYNAMIQUES (S64) : routées par le catalogue des manifests —
+            cap = _capacites_dynamiques(registre).get(nom)
+            if cap:
+                return await _appel_dynamique(client, cap, args)
 
             return f"Outil inconnu : {nom}"
 
@@ -1030,6 +1205,145 @@ async def _studio_appel(client: httpx.AsyncClient, registre, methode: str, chemi
     if r.status_code == 204 or not r.content:
         return json.dumps({"ok": True}, ensure_ascii=False)
     return json.dumps(r.json(), ensure_ascii=False)
+
+
+async def _personnages_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
+                             charge: dict | None = None, params: dict | None = None,
+                             timeout: float = 45, brut: bool = False):
+    """Appelle la brique Personnages (5900, atelier holistique). Auth via `PERSONNAGES_KEY`
+    (X-API-Key) si configurée ; sinon mode ouvert. Dégrade proprement (jamais de stacktrace).
+    `brut=True` renvoie le dict parsé (pour chaîner géo→portrait→fiche)."""
+    try:
+        base = _base(registre, "personnages")
+    except RuntimeError:
+        msg = {"ok": False, "message": "La brique Personnages (atelier cosmique) est absente du registre du noyau."}
+        return msg if brut else json.dumps(msg, ensure_ascii=False)
+    cle = os.environ.get("PERSONNAGES_KEY", "").strip()
+    entetes = {"X-API-Key": cle} if cle else None
+    erreur = None
+    try:
+        r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
+                                  headers=entetes, timeout=timeout)
+        if r.status_code == 401:
+            erreur = {"ok": False, "message": "Personnages a refusé l'accès (PERSONNAGES_KEY)."}
+        elif r.status_code >= 400:
+            try:
+                detail = r.json().get("detail")
+            except Exception:  # noqa: BLE001
+                detail = r.text[:200]
+            erreur = {"ok": False, "message": f"Personnages HTTP {r.status_code} : {detail}"}
+        else:
+            data = r.json() if r.content else {"ok": True}
+            return data if brut else json.dumps(data, ensure_ascii=False)
+    except httpx.HTTPError:
+        erreur = {"ok": False,
+                  "message": "La brique Personnages (atelier cosmique) est injoignable (hors ligne ou en démarrage)."}
+    return erreur if brut else json.dumps(erreur, ensure_ascii=False)
+
+
+def _empreinte_lignes(empreinte: list) -> list:
+    """Aplati l'empreinte holistique ([{cle, valeur, …}]) en lignes lisibles (max 20)."""
+    lignes = []
+    for e in empreinte or []:
+        if isinstance(e, dict):
+            cle, val = str(e.get("cle") or "").strip(), str(e.get("valeur") or "").strip()
+            ligne = f"{cle} : {val}" if cle and val else (cle or val)
+        else:
+            ligne = str(e).strip()
+        if ligne:
+            lignes.append(ligne)
+    return lignes[:20]
+
+
+async def _personnage_holistique(client: httpx.AsyncClient, registre, args: dict) -> str:
+    """Crée un personnage holistique (brique 5900) depuis des infos de naissance dictées.
+
+    Génération seule = non destructif (le portrait est déterministe, rien n'est stocké).
+    Avec `enregistrer`/`serie_id` = action gardée par `confirme` : on enregistre la fiche
+    et/ou on l'importe dans une série du Studio (nom de scène, nom cosmique d'origine gardé).
+    Dégrade proprement si une brique est injoignable."""
+    prenoms = (args.get("prenoms") or "").strip()
+    date_naissance = (args.get("date_naissance") or "").strip()
+    if not prenoms or not date_naissance:
+        return json.dumps({"ok": False,
+                           "message": "Il faut au moins des prénoms et une date de naissance (AAAA-MM-JJ)."},
+                          ensure_ascii=False)
+    enregistrer = bool(args.get("enregistrer"))
+    serie_id = (args.get("serie_id") or "").strip()
+    action = enregistrer or bool(serie_id)
+    if action and not args.get("confirme"):
+        cible = prenoms + (f" → série {serie_id}" if serie_id else " (enregistrer)")
+        return _confirmation("créer et ranger le personnage cosmique", cible)
+
+    nom_famille = (args.get("nom") or "").strip()
+    nom_complet = (prenoms + (" " + nom_famille if nom_famille else "")).strip()
+    ville = (args.get("ville") or "").strip()
+
+    # Géocodage de la ville (optionnel) → latitude / longitude EST-positive
+    latitude = longitude = None
+    ville_resolue = ville
+    if ville:
+        g = await _personnages_appel(client, registre, "GET", "/geo",
+                                     params={"ville": ville}, timeout=20, brut=True)
+        if isinstance(g, dict) and g.get("latitude") is not None:
+            latitude, longitude = g.get("latitude"), g.get("longitude")
+            ville_resolue = g.get("ville") or ville
+
+    # Portrait cosmique (déterministe — ne stocke rien)
+    fiche_in = {"prenoms": prenoms, "nom": nom_famille, "date_naissance": date_naissance,
+                "heure_naissance": args.get("heure_naissance") or None,
+                "latitude": latitude, "longitude": longitude,
+                "utc_offset": args.get("utc_offset")}
+    portrait = await _personnages_appel(client, registre, "POST", "/holistique/portrait",
+                                        charge=fiche_in, timeout=45, brut=True)
+    if not isinstance(portrait, dict) or not portrait.get("portrait"):
+        return json.dumps(portrait if isinstance(portrait, dict)
+                          else {"ok": False, "message": "Portrait indisponible."}, ensure_ascii=False)
+
+    p = portrait.get("portrait") or {}
+    resume = {"ok": True, "prenoms": prenoms, "nom": nom_famille or None,
+              "archetype": p.get("archetype"), "forces": p.get("forces"),
+              "a_travailler": p.get("faiblesse"),
+              "pierre": (p.get("pierre_equilibrage") or {}).get("pierre"),
+              "ville": ville_resolue or None}
+    if not action:
+        return json.dumps(resume, ensure_ascii=False)
+
+    # — Action confirmée : enregistrer et/ou importer dans une série du Studio —
+    fiche_id = None
+    if enregistrer:
+        contexte = {"prenoms": prenoms, "nom": nom_famille, "date": date_naissance,
+                    "heure": args.get("heure_naissance") or "", "ville": ville_resolue,
+                    "latitude": latitude, "longitude": longitude}
+        f = await _personnages_appel(client, registre, "POST", "/fiches", charge={
+            "nom": nom_complet, "contexte": contexte,
+            "traditions": portrait.get("traditions"), "portrait": p,
+            "empreinte": portrait.get("empreinte")}, timeout=30, brut=True)
+        if isinstance(f, dict) and f.get("id"):
+            resume["fiche_enregistree"] = fiche_id = f["id"]
+        else:
+            resume["enregistrement"] = f  # message d'échec honnête
+
+    if serie_id:
+        nom_scene = (args.get("nom_scene") or "").strip()
+        if fiche_id:   # fiche persistée → import par id (le Studio relit la fiche complète)
+            imp = await _studio_appel(client, registre, "POST",
+                                      f"/series/{serie_id}/personnages/importer-fiche",
+                                      charge={"fiche_id": fiche_id, "nom": nom_scene or None},
+                                      timeout=30)
+        else:          # pas enregistrée → push direct (nom d'origine + archétype + empreinte)
+            imp = await _studio_appel(client, registre, "POST",
+                                      f"/series/{serie_id}/personnages/importer",
+                                      charge={"nom": nom_scene or prenoms,
+                                              "nom_naissance": nom_complet,
+                                              "archetype": p.get("archetype"),
+                                              "empreinte": _empreinte_lignes(portrait.get("empreinte")),
+                                              "source": "personnages"}, timeout=30)
+        try:
+            resume["importe_dans_serie"] = json.loads(imp)
+        except (ValueError, TypeError):
+            resume["importe_dans_serie"] = imp
+    return json.dumps(resume, ensure_ascii=False)
 
 
 async def _transcription_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
