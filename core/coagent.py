@@ -107,7 +107,7 @@ def _resultat(*, ok, raison, objectif, synthese="", etapes=0, tokens=0, cout=0.0
 
 
 async def _synthese_finale(messages, modeles, conf, client, objectif, *,
-                           raison, etapes, tokens, cout, modele, appels) -> dict:
+                           raison, etapes, tokens, cout, modele, appels, etiquette) -> dict:
     """Demande une dernière synthèse SANS outils quand un plafond est atteint en cours de route.
 
     Un seul appel borné : on récupère une conclusion utile avec ce qui a déjà été collecté,
@@ -116,7 +116,7 @@ async def _synthese_finale(messages, modeles, conf, client, objectif, *,
         f"Plafond atteint ({raison}). Arrête d'appeler des outils et rends MAINTENANT ta "
         "synthèse (constats + recommandations) avec ce que tu as déjà recueilli."}]
     res = await llm_pipeline.completer(messages, modeles=modeles, tools=None,
-                                       etiquette="coagent", conf=conf, client=client)
+                                       etiquette=etiquette, conf=conf, client=client)
     if res.ok:
         tokens += res.tokens_in + res.tokens_out
         cout += res.cout_usd
@@ -132,11 +132,13 @@ async def _synthese_finale(messages, modeles, conf, client, objectif, *,
 
 async def executer_objectif(objectif: str, registre, *, budget_tokens: int | None = None,
                             max_etapes: int | None = None, conf: dict | None = None,
-                            client: httpx.AsyncClient | None = None) -> dict:
+                            client: httpx.AsyncClient | None = None,
+                            etiquette: str = "coagent") -> dict:
     """Mène un objectif en autonomie (boucle profonde lecture seule) et rend une synthèse.
 
     Bornée par `budget_tokens` (coût de la pensée) ET `max_etapes` (coupe-circuit). Le
-    co-agent ne peut qu'OBSERVER le corps ; toute action est recommandée, jamais exécutée."""
+    co-agent ne peut qu'OBSERVER le corps ; toute action est recommandée, jamais exécutée.
+    `etiquette` : catégorie du journal d'usage (« coagent » manuel, « pouls » autonome S67)."""
     objectif = (objectif or "").strip()
     if not objectif:
         return _resultat(ok=False, raison="erreur", objectif=objectif,
@@ -160,7 +162,7 @@ async def executer_objectif(objectif: str, registre, *, budget_tokens: int | Non
         for etape in range(1, max_e + 1):
             res = await llm_pipeline.completer(
                 messages, modeles=modeles, tools=trousse, tool_choice="auto",
-                temperature=0.2, etiquette="coagent", conf=conf, client=client)
+                temperature=0.2, etiquette=etiquette, conf=conf, client=client)
             if not res.ok:
                 return _resultat(ok=False, raison="erreur", objectif=objectif,
                                  etapes=etape - 1, tokens=tokens, cout=cout, modele=modele,
@@ -194,12 +196,14 @@ async def executer_objectif(objectif: str, registre, *, budget_tokens: int | Non
             if tokens >= budget:  # garde-fou COÛT : on s'arrête et on conclut dans le budget
                 return await _synthese_finale(
                     messages, modeles, conf, client, objectif, raison="budget",
-                    etapes=etape, tokens=tokens, cout=cout, modele=modele, appels=appels)
+                    etapes=etape, tokens=tokens, cout=cout, modele=modele, appels=appels,
+                    etiquette=etiquette)
 
         # Plafond d'étapes atteint sans conclusion spontanée : dernière synthèse forcée.
         return await _synthese_finale(
             messages, modeles, conf, client, objectif, raison="max_etapes",
-            etapes=max_e, tokens=tokens, cout=cout, modele=modele, appels=appels)
+            etapes=max_e, tokens=tokens, cout=cout, modele=modele, appels=appels,
+            etiquette=etiquette)
     finally:
         if proprietaire:
             await client.aclose()

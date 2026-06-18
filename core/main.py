@@ -22,6 +22,7 @@ import shadow
 import proactif
 import horloge
 import briefing
+import pouls
 import cycle_de_vie
 import orchestrateur
 import catalogue
@@ -1957,6 +1958,22 @@ async def briefing_dernier():
     """Dernier briefing déposé (rappel de type `briefing`), s'il existe."""
     briefings = [r for r in proactif.lister(limite=60) if r.get("type") == "briefing"]
     return {"briefing": briefings[0] if briefings else None}
+
+
+@app.post("/pouls/battre", tags=["assistant"])
+async def pouls_battre(forcer: bool = False):
+    """Fait battre le cœur (S67) : réveille le co-agent (S66) sur l'objectif récurrent,
+    en autonomie et lecture seule, puis dépose sa synthèse en rappel 🔔. Borné par le
+    budget quotidien de tokens. Idempotent par jour ; `forcer=true` rejoue. Déclenché
+    par l'horloge S29 via la tâche `pouls-autonome` du manifest `noyau`."""
+    return await pouls.battre(registre, forcer=forcer)
+
+
+@app.get("/pouls/dernier", tags=["assistant"])
+async def pouls_dernier():
+    """Dernier point autonome déposé (rappel de type `pouls`), s'il existe."""
+    points = [r for r in proactif.lister(limite=60) if r.get("type") == "pouls"]
+    return {"pouls": points[0] if points else None}
 
 
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)
