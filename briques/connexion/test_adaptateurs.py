@@ -43,6 +43,25 @@ def test_telegram_parser_sans_texte():
     assert A.Telegram().parser_entrant({"message": {"chat": {"id": 1}}}) == []
 
 
+def test_telegram_parser_vocal():
+    """Un message `voice` (sans texte) est porté comme média audio → transcription par le pont."""
+    upd = {"update_id": 8, "message": {
+        "chat": {"id": 42}, "from": {"first_name": "Garina"},
+        "voice": {"file_id": "AwAC123", "duration": 3, "mime_type": "audio/ogg"}}}
+    [e] = A.Telegram().parser_entrant(upd)
+    assert e.id_externe == "42" and e.nom == "Garina"
+    assert e.texte == "" and e.media_type == "audio"
+    assert e.media_id == "AwAC123" and e.media_nom == "voix.ogg"
+
+
+def test_telegram_parser_audio_fichier():
+    """Un fichier `audio` garde son extension d'origine (utile au moteur STT)."""
+    upd = {"message": {"chat": {"id": 7},
+                       "audio": {"file_id": "Aud9", "file_name": "memo.m4a"}}}
+    [e] = A.Telegram().parser_entrant(upd)
+    assert e.media_id == "Aud9" and e.media_type == "audio" and e.media_nom == "voix.m4a"
+
+
 def test_telegram_webhook_secret(monkeypatch):
     ad = A.Telegram()
     assert ad.verifier_webhook({}, b"") is True            # pas de secret → on n'exige rien

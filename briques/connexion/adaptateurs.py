@@ -35,6 +35,9 @@ class Entrant:
     id_externe: str            # de QUI / vers où répondre (chat_id, numéro, user/canal)
     texte: str
     nom: Optional[str] = None  # nom affiché de l'interlocuteur (si fourni)
+    media_id: Optional[str] = None    # identifiant de fichier média côté réseau (message vocal)
+    media_type: Optional[str] = None  # "audio" pour un message vocal (sinon None)
+    media_nom: Optional[str] = None   # nom de fichier suggéré (extension utile au moteur STT)
 
 
 class Adaptateur:
@@ -53,6 +56,16 @@ class Adaptateur:
         return []
 
     async def envoyer(self, id_externe: str, texte: str) -> bool:
+        raise NotImplementedError
+
+    async def telecharger_media(self, media_id: str) -> bytes:
+        """Récupère les octets d'un média (message vocal) à partir de son identifiant réseau.
+
+        Par défaut : non supporté (la plupart des réseaux n'exposent pas encore le vocal ici)."""
+        raise NotImplementedError
+
+    async def envoyer_audio(self, id_externe: str, audio: bytes, format: str = "ogg") -> bool:
+        """Envoie une réponse VOCALE (octets audio). Par défaut : non supporté."""
         raise NotImplementedError
 
 
@@ -88,13 +101,37 @@ class Telegram(Adaptateur):
 
     def parser_entrant(self, payload: dict) -> list:
         msg = (payload or {}).get("message") or (payload or {}).get("edited_message") or {}
-        texte = (msg.get("text") or "").strip()
         chat = msg.get("chat") or {}
-        if not texte or not chat.get("id"):
+        if not chat.get("id"):
             return []
         de = msg.get("from") or {}
         nom = de.get("first_name") or chat.get("title") or chat.get("username")
-        return [Entrant(self.nom, str(chat["id"]), texte, nom)]
+        texte = (msg.get("text") or "").strip()
+        if texte:
+            return [Entrant(self.nom, str(chat["id"]), texte, nom)]
+        # Pas de texte : message vocal (`voice`, Ogg/Opus) ou fichier audio (`audio`).
+        # On le porte vers le pont qui le transcrira (Whisper local) avant de relayer.
+        voix = msg.get("voice") or msg.get("audio")
+        if voix and voix.get("file_id"):
+            ext = "ogg" if msg.get("voice") else (
+                (voix.get("file_name") or "audio.mp3").rsplit(".", 1)[-1] or "mp3")
+            return [Entrant(self.nom, str(chat["id"]), "", nom,
+                            media_id=voix["file_id"], media_type="audio",
+                            media_nom=f"voix.{ext}")]
+        return []
+
+    async def telecharger_media(self, media_id: str) -> bytes:
+        """getFile → chemin → téléchargement des octets depuis l'API fichiers de Telegram."""
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.get(self._api("getFile"), params={"file_id": media_id})
+            r.raise_for_status()
+            chemin = (r.json().get("result") or {}).get("file_path")
+            if not chemin:
+                raise RuntimeError("Telegram getFile : aucun file_path renvoyé.")
+            url = f"https://api.telegram.org/file/bot{self._token()}/{chemin}"
+            f = await c.get(url)
+            f.raise_for_status()
+            return f.content
 
     async def recuperer(self) -> list:
         if not self.configure():
@@ -116,6 +153,19 @@ class Telegram(Adaptateur):
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.post(self._api("sendMessage"),
                              json={"chat_id": id_externe, "text": texte})
+            r.raise_for_status()
+        return True
+
+    async def envoyer_audio(self, id_externe: str, audio: bytes, format: str = "ogg") -> bool:
+        """Réponse vocale : `sendVoice` pour de l'Ogg/Opus (bulle vocale native), sinon
+        `sendAudio` (mp3/wav…). Telegram exige de l'Ogg/Opus pour la bulle vocale."""
+        if (format or "").lower() in ("ogg", "oga", "opus"):
+            methode, champ, nom = "sendVoice", "voice", "voix.ogg"
+        else:
+            methode, champ, nom = "sendAudio", "audio", f"voix.{format or 'mp3'}"
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(self._api(methode), data={"chat_id": id_externe},
+                             files={champ: (nom, audio, "application/octet-stream")})
             r.raise_for_status()
         return True
 

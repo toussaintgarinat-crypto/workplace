@@ -15,9 +15,14 @@
     "multi_utilisateur",
     "consentement_liaison",
     "historique_persistant",
+    "transcription_vocale",
+    "reponse_vocale",
     "repli_honnete"
   ],
-  "besoin": [],
+  "besoin": [
+    "transcription",
+    "voix"
+  ],
   "taches": [
     {
       "nom": "poll-telegram",
