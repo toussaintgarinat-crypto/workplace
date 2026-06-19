@@ -29,7 +29,7 @@ services:
       - STUDIO_DIR=/data/ateliers
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :
       # à renseigner pour vendre la brique seule (auth).
-      - API_KEYS=
+      - API_KEYS=${API_KEYS:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     volumes:

@@ -43,6 +43,24 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
+  # ── Modèles GÉNÉRATIFS (image / vidéo) ──────────────────────────────────────
+  # Utilisés par le fournisseur `gateway` des briques images (5950) et vidéo (5970).
+  # Sans ces entrées, mettre `gateway` en tête de IMAGE_PROVIDERS/VIDEO_PROVIDERS
+  # échouait (modèle inconnu de LiteLLM). Passent par OpenRouter (clé déjà posée),
+  # appelés via /chat/completions avec `modalities:["image"|"video","text"]`.
+  # Doivent rester alignés sur les défauts codés : briques/images/fournisseurs.py
+  # (IMAGE_GATEWAY_MODEL) et briques/video/fournisseurs.py (VIDEO_GATEWAY_MODEL).
+  - model_name: google/gemini-2.5-flash-image
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash-image
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+  - model_name: google/veo-3-fast
+    litellm_params:
+      model: openrouter/google/veo-3-fast
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
   # AUTO-FREE-MODELS-START — 2026-06-06 20:38 (12 modèles)
   - model_name: free/openrouter/owl-alpha
     litellm_params:

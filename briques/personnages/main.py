@@ -26,7 +26,12 @@ import synthese
 import traditions
 
 app = FastAPI(title="Personnages — distribution & casting", version="0.8.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
+# = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
+# assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
+# qu'une page web tierce ne puisse pas appeler cette brique depuis le navigateur.
+_cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}

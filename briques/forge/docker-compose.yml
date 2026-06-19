@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: forge/core/Dockerfile
-    image: workplace-forge-core:latest
+    image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     command: ["python", "-m", "scripts.init_db"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://forge:${FORGE_DB_PASSWORD:-forge_secret_change_this}@forge-db:5432/forge
@@ -64,7 +64,7 @@ services:
     build:
       context: .
       dockerfile: forge/core/Dockerfile
-    image: workplace-forge-core:latest
+    image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     ports:
       - "8600:8600"
     env_file:
@@ -193,7 +193,7 @@ services:
         VITE_KEYCLOAK_URL: ${FORGE_FRONTEND_KEYCLOAK_URL:-http://localhost:8081}
         VITE_KEYCLOAK_REALM: ${FORGE_FRONTEND_KEYCLOAK_REALM:-oria}
         VITE_KEYCLOAK_CLIENT_ID: ${FORGE_FRONTEND_KEYCLOAK_CLIENT_ID:-oria-app}
-    image: workplace-forge-frontend:latest
+    image: workplace-forge-frontend:${FORGE_FRONTEND_VERSION:-0.1.0}
     ports:
       - "${FORGE_FRONTEND_PORT:-3000}:80"
     depends_on:

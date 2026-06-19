@@ -1,7 +1,7 @@
 services:
   telegram-bot:
     build: .
-    image: telegram-bot:latest
+    image: telegram-bot:${TELEGRAM_BOT_VERSION:-0.1.0}
     container_name: telegram-bot
     restart: unless-stopped
     # Endpoint /health exposé en interne via aiohttp (Sprint 94)
