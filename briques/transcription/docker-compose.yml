@@ -44,7 +44,6 @@ services:
       - GDRIVE_REFRESH_TOKEN=${GDRIVE_REFRESH_TOKEN:-}
       - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID:-}
       # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
-      - API_KEYS=${API_KEYS:-}
     volumes:
       # Pour destination=dossier : bind-monte ICI ton dossier synchronisé (drive au choix).
       # Ex. - "${NOTES_DOSSIER_HOTE:-./notes_export}:/notes"

@@ -14,21 +14,15 @@ services:
       - NOYAU_ASSISTANT_URL=${NOYAU_ASSISTANT_URL:-http://host.docker.internal:5100}
       # Sécurité : un inconnu ne traverse PAS tant qu'il n'est pas relié (mets 1 pour ouvrir en dev).
       - CONNEXION_OUVERT=${CONNEXION_OUVERT:-0}
-      - CONNEXION_UTILISATEUR_DEFAUT=${CONNEXION_UTILISATEUR_DEFAUT:-}
       - CONNEXION_HISTORIQUE_MAX=${CONNEXION_HISTORIQUE_MAX:-40}
-      - CONNEXION_RESEAUX=${CONNEXION_RESEAUX:-}
-      # ── Tokens des réseaux (aucun secret en dur : pose-les dans le .env racine) ──
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
-      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN:-}
-      - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID:-}
-      - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN:-}
-      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET:-}
-      - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY:-}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # Clés API acceptées par CETTE brique (admin /envoyer, /correspondances). VIDE = ouvert (dev).
-      - API_KEYS=${API_KEYS:-}
       - CONNEXION_DIR=/data/connexion
+      # ⚠ Tokens des réseaux (TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WHATSAPP_*,
+      # DISCORD_*), identifiant par défaut, liste CONNEXION_RESEAUX et clés API_KEYS :
+      # à poser dans le .env RACINE — ils sont hérités via `env_file` ci-dessus.
+      # NE PAS les redéclarer ici : une ligne `VAR=${VAR:-}` s'interpole depuis le SHELL
+      # (pas l'env_file) et ÉCRASE donc la valeur du .env racine par du vide → la brique
+      # ne verrait jamais le token (c'était le bug « l'assistant ne répond pas sur
+      # Telegram »). Corrigé 2026-06-19.
     volumes:
       - "connexion_data:/data/connexion"
     restart: unless-stopped

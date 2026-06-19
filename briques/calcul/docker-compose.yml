@@ -18,7 +18,6 @@ services:
       # VIDE = aucun nœud (la brique tourne, /noeuds renvoie une liste vide).
       - CALCUL_NOEUDS=${CALCUL_NOEUDS:-}
       # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
-      - API_KEYS=${API_KEYS:-}
     # Wake-on-LAN par broadcast : depuis le réseau bridge Docker, le paquet n'atteint PAS
     # le LAN physique. Pour un VRAI WoL en broadcast, décommente `network_mode: host`
     # (Linux) — sinon, privilégie le wake-ping via le mesh (NetBird relaie l'hôte).
