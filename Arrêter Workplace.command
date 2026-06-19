@@ -25,10 +25,20 @@ if ! docker info >/dev/null 2>&1; then
   echo ""; read -r -p "Appuie sur Entrée pour fermer…" _; exit 0
 fi
 
-# Ordre inverse du démarrage : on coupe le Cœur d'abord.
+# Ordre inverse du démarrage : on coupe le pont puis le Cœur d'abord.
 DOSSIERS=(
+  "connexion|$RACINE/briques/connexion"
   "core|$RACINE/core"
   "oria|$RACINE/oria-stack/oria"
+  "studio|$RACINE/briques/studio"
+  "personnages|$RACINE/briques/personnages"
+  "video|$RACINE/briques/video"
+  "vision|$RACINE/briques/vision"
+  "images|$RACINE/briques/images"
+  "voix|$RACINE/briques/voix"
+  "transcription|$RACINE/briques/transcription"
+  "ecoute|$RACINE/briques/ecoute"
+  "calcul|$RACINE/briques/calcul"
   "agenda|$RACINE/briques/agenda"
   "generateur|$RACINE/briques/generateur"
   "audit|$RACINE/briques/audit"

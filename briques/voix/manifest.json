@@ -1,0 +1,21 @@
+{
+  "nom": "voix",
+  "version": "0.1.0",
+  "description": "Brique de synthèse vocale texte→audio (TTS) en API, SOUVERAINE par défaut : moteur Piper local (CPU) en tête, puis fournisseurs hébergés en repli optionnel (OpenAI, ElevenLabs, ou la Gateway Workplace). Miroir EXACT de la brique transcription (audio→texte), dans l'autre sens. Repli honnête : jamais de fausse voix. Produit autonome, composable par l'assistant et le pont messageries (connexion) pour répondre en vocal — boucle speech-to-speech.",
+  "role": "voix",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/voix",
+  "port": 5985,
+  "url_sante": "http://host.docker.internal:5985/sante",
+  "depends_on": [],
+  "offre": [
+    "synthetiser_voix",
+    "multi_voix",
+    "souverain_par_defaut",
+    "multi_fournisseurs",
+    "repli_placeholder_honnete"
+  ],
+  "besoin": [],
+  "taches": []
+}

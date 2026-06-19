@@ -45,6 +45,11 @@ services:
       - GATEWAY_ENV_PATH=/gateway/.env
       - GATEWAY_COMPOSE_PROJECT=gateway
       - ASSISTANT_CONFIG_PATH=/data/assistant_config.json
+      # Gateway MCP (POST /mcp) : point d'entrée unique pour des clients/agents tiers, mêmes
+      # outils que l'assistant (statiques + découverts par manifest) + co-agent planificateur.
+      # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — recommandé hors local
+      # car /mcp peut déclencher des ACTIONS (confirme=true reste néanmoins exigé par outil).
+      - MCP_ACTIF=${MCP_ACTIF:-1}
     volumes:
       - ../briques:/briques:ro
       - core_data:/data

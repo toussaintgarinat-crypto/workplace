@@ -12,6 +12,12 @@ services:
     environment:
       # Où joindre l'assistant du Cœur (flux SSE). host.docker.internal = l'hôte depuis le conteneur.
       - NOYAU_ASSISTANT_URL=${NOYAU_ASSISTANT_URL:-http://host.docker.internal:5100}
+      # Où transcrire les messages VOCAUX entrants (Whisper local souverain, brique transcription).
+      - TRANSCRIPTION_URL=${TRANSCRIPTION_URL:-http://host.docker.internal:5980}
+      # Où SYNTHÉTISER la réponse vocale (Piper local souverain, brique voix). Boucle speech-to-speech.
+      - VOIX_URL=${VOIX_URL:-http://host.docker.internal:5985}
+      # Répondre en vocal quand l'interlocuteur a parlé (1=oui). Mets 0 pour ne renvoyer que du texte.
+      - CONNEXION_TTS=${CONNEXION_TTS:-1}
       # Sécurité : un inconnu ne traverse PAS tant qu'il n'est pas relié (mets 1 pour ouvrir en dev).
       - CONNEXION_OUVERT=${CONNEXION_OUVERT:-0}
       - CONNEXION_HISTORIQUE_MAX=${CONNEXION_HISTORIQUE_MAX:-40}

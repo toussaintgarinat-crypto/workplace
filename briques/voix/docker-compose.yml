@@ -1,0 +1,34 @@
+services:
+  voix:
+    build: .
+    container_name: workplace_voix
+    image: workplace/voix:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "5985:5985"
+    environment:
+      # Ordre des moteurs (souverain Piper d'abord). Ex. "openai" ou "elevenlabs,openai".
+      - VOIX_PROVIDERS=${VOIX_PROVIDERS:-}
+      # Format audio par défaut (opus = conteneur Ogg, idéal message vocal Telegram).
+      - VOIX_FORMAT=${VOIX_FORMAT:-opus}
+      # Moteur SOUVERAIN Piper : chemin du modèle de voix .onnx (monté ci-dessous). Sans
+      # lui, Piper est « non disponible » et on retombe sur un hébergé / le placeholder.
+      - PIPER_VOICE=${PIPER_VOICE:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # ⚠ Clés des fournisseurs hébergés (OPENAI_API_KEY, ELEVENLABS_API_KEY, GATEWAY_KEY,
+      # GATEWAY_URL) et API_KEYS : à poser dans le .env RACINE — hérités via env_file.
+      # NE PAS les redéclarer ici en `VAR=${VAR:-}` (s'interpole depuis le SHELL et écrase
+      # la valeur du .env racine par du vide — cf. piège corrigé sur connexion 2026-06-19).
+    volumes:
+      # Modèles de voix Piper (.onnx + .onnx.json), en lecture seule. Pose-les dans ./voix-modeles.
+      - "${PIPER_VOICE_DIR:-./voix-modeles}:/voix-modeles:ro"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5985/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

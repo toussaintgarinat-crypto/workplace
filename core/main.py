@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 import json
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 import agenda
 import assistant
@@ -29,6 +29,7 @@ import curateur
 import cycle_de_vie
 import orchestrateur
 import catalogue
+import mcp as mcp_serveur
 from registre import Registre
 
 registre = Registre()
@@ -1895,6 +1896,34 @@ def recharger_briques():
     """Recharge tous les manifests sans redémarrer le cœur."""
     registre.charger()
     return {"statut": "ok", "briques_chargees": len(registre.briques)}
+
+
+@app.post("/mcp", tags=["mcp"])
+async def mcp_endpoint(request: Request):
+    """Gateway MCP (JSON-RPC 2.0) : point d'entrée unique pour des clients/agents tiers.
+
+    Expose les MÊMES outils que l'assistant (statiques + capacités découvertes par manifest)
+    et le co-agent planificateur (`coagent_lancer`). Auth par `MCP_KEY` si définie. Accepte un
+    message JSON-RPC ou un lot ; une notification (sans `id`) ne renvoie pas de corps (202)."""
+    if not mcp_serveur.actif():
+        raise HTTPException(404, "Serveur MCP désactivé (MCP_ACTIF=0).")
+    presentee = (request.headers.get("x-api-key")
+                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+                 or None)
+    if not mcp_serveur.cle_ok(presentee):
+        raise HTTPException(401, "Clé MCP manquante ou invalide (header X-API-Key).")
+    try:
+        corps = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "Corps JSON-RPC illisible.")
+    if isinstance(corps, list):                       # lot JSON-RPC
+        reps = [r for r in [await mcp_serveur.traiter(m, registre) for m in corps]
+                if r is not None]
+        return JSONResponse(reps) if reps else Response(status_code=202)
+    rep = await mcp_serveur.traiter(corps, registre)
+    if rep is None:                                   # notification → pas de corps
+        return Response(status_code=202)
+    return JSONResponse(rep)
 
 
 @app.get("/capacites", tags=["briques"])

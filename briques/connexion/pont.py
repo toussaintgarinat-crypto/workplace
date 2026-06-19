@@ -16,9 +16,13 @@ import adaptateurs
 import client_assistant
 import conversations
 import correspondance
+import voix
 
 _REPLI = ("Désolé, je n'arrive pas à joindre l'assistant pour l'instant. "
           "Réessaie dans un petit moment.")
+
+_REPLI_VOIX = ("🎤 J'ai bien reçu ton message vocal, mais je n'ai pas réussi à le transcrire "
+               "(moteur de transcription indisponible). Peux-tu réessayer ou m'écrire ?")
 
 
 def _accueil(reseau: str, corr: dict) -> str:
@@ -39,6 +43,44 @@ def _construire(reseau: str, entrant, corr: dict, historique: list) -> list:
             {"role": "user", "content": entrant.texte}]
 
 
+def _tts_actif() -> bool:
+    """Réponse vocale activée ? (env `CONNEXION_TTS`, défaut on)."""
+    return str(os.getenv("CONNEXION_TTS", "1")).strip().lower() in ("1", "true", "oui", "on")
+
+
+async def _vocaliser(ad, id_externe: str, texte: str, envoyer: bool) -> bool:
+    """Synthétise `texte` (brique voix) et l'envoie en vocal. Repli HONNÊTE : moteur TTS
+    indisponible (placeholder) ou réseau KO → on n'envoie rien de faux, le texte est déjà parti."""
+    if not (envoyer and ad.configure()):
+        return False
+    try:
+        res = await voix.synthetiser(texte)
+        if not res or not res.get("audio"):
+            return False
+        return await ad.envoyer_audio(id_externe, res["audio"], res.get("format") or "ogg")
+    except Exception:  # noqa: BLE001 — moteur/réseau/adaptateur sans vocal → repli honnête
+        return False
+
+
+async def _transcrire_vocal(reseau: str, ad, entrant, envoyer: bool) -> dict:
+    """Télécharge le vocal et le transcrit (Whisper local). Repli HONNÊTE si le moteur est
+    KO ou ne rend qu'un place_holder : on prévient l'interlocuteur, on ne relaie rien de faux."""
+    try:
+        audio = await ad.telecharger_media(entrant.media_id)
+        res = await voix.transcrire(audio, entrant.media_nom or "voix.ogg")
+        texte = (res.get("texte") or "").strip()
+        if texte and not res.get("place_holder"):
+            return {"ok": True, "texte": texte}
+    except Exception:  # noqa: BLE001 — réseau/moteur KO → repli honnête ci-dessous
+        pass
+    if envoyer and ad.configure():
+        try:
+            await ad.envoyer(entrant.id_externe, _REPLI_VOIX)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": False, "raison": "transcription_indisponible", "reponse": _REPLI_VOIX}
+
+
 async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
     """Traite un message entrant de bout en bout. Renvoie un compte-rendu (sans lever)."""
     ad = adaptateurs.obtenir(reseau)
@@ -55,6 +97,14 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
                 pass
         return {"ok": False, "raison": "non_autorise", "statut": corr["statut"],
                 "code": corr.get("code"), "accueil": accueil}
+
+    # Message vocal (autorisé) : transcrire AVANT de relayer (Whisper local souverain).
+    transcrit = None
+    if getattr(entrant, "media_type", None) == "audio" and not (entrant.texte or "").strip():
+        cr = await _transcrire_vocal(reseau, ad, entrant, envoyer)
+        if not cr["ok"]:
+            return cr
+        transcrit = entrant.texte = cr["texte"]
 
     historique = conversations.charger(reseau, entrant.id_externe)
     messages = _construire(reseau, entrant, corr, historique)
@@ -78,8 +128,14 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
         except Exception:  # noqa: BLE001
             envoye = False
 
+    # Boucle speech-to-speech : si l'interlocuteur a PARLÉ (message vocal transcrit), on
+    # répond AUSSI en vocal (le texte reste envoyé : il sert de transcription lisible).
+    vocalise = False
+    if transcrit is not None and not repli and _tts_actif():
+        vocalise = await _vocaliser(ad, entrant.id_externe, reponse, envoyer)
+
     return {"ok": True, "reponse": reponse, "utilisateur": corr.get("utilisateur"),
-            "repli": repli, "envoye": envoye}
+            "repli": repli, "envoye": envoye, "transcrit": transcrit, "vocalise": vocalise}
 
 
 async def sonder(reseau: str) -> dict:

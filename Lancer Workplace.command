@@ -56,8 +56,20 @@ BRIQUES=(
   "audit|$RACINE/briques/audit|http://localhost:5300/sante"
   "generateur|$RACINE/briques/generateur|http://localhost:5400/sante"
   "agenda|$RACINE/briques/agenda|http://localhost:8400/health"
+  # Briques médias & outils — autonomes, découvertes par le Cœur via leur manifest.
+  "calcul|$RACINE/briques/calcul|http://localhost:5990/sante"
+  "ecoute|$RACINE/briques/ecoute|http://localhost:5800/sante"
+  "transcription|$RACINE/briques/transcription|http://localhost:5980/sante"
+  "voix|$RACINE/briques/voix|http://localhost:5985/sante"
+  "images|$RACINE/briques/images|http://localhost:5950/sante"
+  "vision|$RACINE/briques/vision|http://localhost:5960/sante"
+  "video|$RACINE/briques/video|http://localhost:5970/sante"
+  "personnages|$RACINE/briques/personnages|http://localhost:5900/sante"
+  "studio|$RACINE/briques/studio|http://localhost:6060/sante"
   "oria|$RACINE/oria-stack/oria|"
   "core|$RACINE/core|http://localhost:5100/health"
+  # Pont messageries : APRÈS le Cœur (il appelle :5100) + transcription/voix (vocal).
+  "connexion|$RACINE/briques/connexion|http://localhost:5870/sante"
 )
 
 # Attend qu'une URL réponde (HTTP < 500). Renvoie 0 si OK avant le timeout.
