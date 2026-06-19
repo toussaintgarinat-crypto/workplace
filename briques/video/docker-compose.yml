@@ -26,7 +26,7 @@ services:
       - REPLICATE_VIDEO_MODEL=${REPLICATE_VIDEO_MODEL:-}
       - VIDEO_GATEWAY_MODEL=${VIDEO_GATEWAY_MODEL:-}
       # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
-      - API_KEYS=
+      - API_KEYS=${API_KEYS:-}
       - VIDEOS_DIR=/data/videos
     volumes:
       - videos_data:/data/videos           # vidéos produites (MP4 rapatriés / placeholders)

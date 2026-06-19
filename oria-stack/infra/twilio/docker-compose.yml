@@ -1,7 +1,7 @@
 services:
   escalation:
     build: .
-    image: escalation:latest
+    image: escalation:${ESCALATION_VERSION:-0.1.0}
     container_name: escalation
     restart: unless-stopped
     ports:

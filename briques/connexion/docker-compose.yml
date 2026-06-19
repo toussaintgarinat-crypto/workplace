@@ -27,7 +27,7 @@ services:
       - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       # Clés API acceptées par CETTE brique (admin /envoyer, /correspondances). VIDE = ouvert (dev).
-      - API_KEYS=
+      - API_KEYS=${API_KEYS:-}
       - CONNEXION_DIR=/data/connexion
     volumes:
       - "connexion_data:/data/connexion"

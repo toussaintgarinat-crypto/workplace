@@ -18,7 +18,7 @@ services:
       - GATEWAY_MODEL=free/google/gemma-4-31b-it
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :
       # à renseigner pour vendre (auth + cloisonnement par tenant).
-      - API_KEYS=
+      - API_KEYS=${API_KEYS:-}
       - PERSONNAGES_DB=/data/personnages.db
     volumes:
       - personnages_data:/data   # distributions persistées (couche stateful)
