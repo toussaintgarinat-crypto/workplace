@@ -48,13 +48,24 @@ def accumuler(evenements: list, *, verbeux: bool = False) -> str:
     return "".join(morceaux).strip()
 
 
-async def converser(messages: list, *, verbeux: bool = False, timeout: float = 120.0) -> str:
+async def converser(messages: list, *, verbeux: bool = False, timeout: float = 120.0,
+                    surface: str | None = None, interlocuteur: str | None = None,
+                    utilisateur: str | None = None) -> str:
     """Envoie l'historique à l'assistant et renvoie sa réponse texte (flux SSE consommé).
 
+    `surface`/`interlocuteur`/`utilisateur` alimentent la TRACE unifiée du Cœur (S78) : la
+    conversation de cette messagerie est journalisée côté cerveau comme celle du dashboard.
     Lève en cas d'événement `erreur` ou d'échec réseau — l'appelant gère le repli honnête."""
+    corps = {"messages": messages}
+    if surface:
+        corps["surface"] = surface
+    if interlocuteur:
+        corps["interlocuteur"] = interlocuteur
+    if utilisateur:
+        corps["utilisateur"] = utilisateur
     morceaux = []
     async with httpx.AsyncClient(timeout=timeout) as c:
-        async with c.stream("POST", url_chat(), json={"messages": messages}) as r:
+        async with c.stream("POST", url_chat(), json=corps) as r:
             r.raise_for_status()
             async for ligne in r.aiter_lines():
                 if not ligne or not ligne.startswith("data:"):

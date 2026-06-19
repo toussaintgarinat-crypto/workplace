@@ -45,6 +45,13 @@ def test_init_data_valide():
     assert d is not None and d["user"]["id"] == 70000042
 
 
+def test_init_data_avec_signature_et_query_id():
+    # Telegram récent ajoute query_id + signature ; `hash` couvre TOUS les champs sauf hash.
+    data = _signer(extra={"query_id": "AAHdF6IQAAAAAN0Xoh", "signature": "abc123def"})
+    d = miniapp.valider_init_data(data, TOKEN)
+    assert d is not None and d["user"]["id"] == 70000042
+
+
 def test_hash_falsifie_refuse():
     forge = _signer()[:-3] + "000"          # on abîme le hash
     assert miniapp.valider_init_data(forge, TOKEN) is None
@@ -119,3 +126,49 @@ def test_chat_refuse_sans_auth(monkeypatch):
 def test_page_servie():
     r = client.get("/miniapp")
     assert r.status_code == 200 and "telegram-web-app.js" in r.text
+
+
+# ── Session signée + reverse-proxy gardé (S79) ───────────────────────────────
+def test_session_roundtrip(monkeypatch):
+    monkeypatch.setenv("MINIAPP_SESSION_SECRET", "secret-de-test")
+    jeton = miniapp.creer_session({"id": 4242}, "perso")
+    charge = miniapp.verifier_session(jeton)
+    assert charge and charge["uid"] == "4242" and charge["utilisateur"] == "perso"
+
+
+def test_session_falsifiee(monkeypatch):
+    monkeypatch.setenv("MINIAPP_SESSION_SECRET", "secret-de-test")
+    jeton = miniapp.creer_session({"id": 4242}, "perso")
+    assert miniapp.verifier_session(jeton[:-2] + "00") is None
+    # signée avec un autre secret → refus
+    monkeypatch.setenv("MINIAPP_SESSION_SECRET", "autre-secret")
+    assert miniapp.verifier_session(jeton) is None
+
+
+def test_session_expiree(monkeypatch):
+    monkeypatch.setenv("MINIAPP_SESSION_SECRET", "secret-de-test")
+    jeton = miniapp.creer_session({"id": 4242}, "perso", duree_s=60)
+    futur = time.time() + 999                       # capturé AVANT le patch (sinon récursion)
+    monkeypatch.setattr(miniapp.time, "time", lambda: futur)
+    assert miniapp.verifier_session(jeton) is None
+
+
+def test_session_pose_cookie(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
+    monkeypatch.setenv("CONNEXION_OUVERT", "1")
+    monkeypatch.setenv("CONNEXION_UTILISATEUR_DEFAUT", "perso")
+    monkeypatch.delenv("TELEGRAM_MINIAPP_USERS", raising=False)
+    r = client.post("/miniapp/session", json={"init_data": _signer()})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert miniapp.COOKIE_SESSION in r.cookies
+
+
+def test_proxy_gate_get_redirige_sans_session():
+    # Un chemin non servi par la brique (dashboard du Cœur) sans cookie → redirige vers /miniapp.
+    r = client.get("/dashboard", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/miniapp"
+
+
+def test_proxy_gate_post_401_sans_session():
+    r = client.post("/assistant/chat", json={"messages": []}, follow_redirects=False)
+    assert r.status_code == 401

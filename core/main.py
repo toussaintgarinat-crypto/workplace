@@ -16,6 +16,7 @@ import classer
 import config_assistant
 import identite
 import journal_usage
+import journal_conversations
 import langue as langue_mod
 import personas
 import shadow
@@ -140,6 +141,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .actions button.primaire { background: #7c83ff; border-color: #7c83ff; color: #0f1117; font-weight: 600; }
   .actions button.primaire:hover { background: #9298ff; }
   .actions.fait { opacity: 0.45; pointer-events: none; }
+  .histo-grille { display: grid; grid-template-columns: 300px 1fr; gap: 16px; height: 70vh; }
+  .histo-fils { overflow-y: auto; padding: 8px; }
+  .histo-msgs { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .fil-item { padding: 10px 12px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
+  .fil-item:hover { background: #161922; }
+  .fil-item.actif { background: #1f2330; border-color: #7c83ff66; }
+  .fil-item .fil-titre { font-size: 0.86rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .fil-item .fil-apercu { font-size: 0.75rem; color: #94a3b8; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fil-badge { font-size: 0.66rem; padding: 1px 7px; border-radius: 999px; background: #2d3148; color: #cbd5e1; }
+  .fil-badge.telegram { background: #229ed91f; color: #4cc3f0; }
+  .fil-badge.web { background: #7c83ff1f; color: #9298ff; }
   .chat-saisie { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #2d3148; }
   .chat-saisie input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
   .chat-saisie input:focus { outline: none; border-color: #7c83ff; }
@@ -285,6 +297,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab active" data-vue="briques" onclick="switchVue('briques')">Registre de briques</button>
       <button class="tab" data-vue="usine" onclick="switchVue('usine')">Usine à apps</button>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')">Assistant</button>
+      <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
       <button class="tab" data-vue="forge" onclick="switchVue('forge')">Forge</button>
       <button class="tab" data-vue="creations" onclick="switchVue('creations')">Créations</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
@@ -482,6 +495,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <!-- VUE FORGE (SPA intégrée — S19) -->
+  <!-- VUE HISTORIQUE (S78) : trace unifiée de toutes les conversations (web + Telegram…) -->
+  <div class="view" id="vue-historique">
+    <div class="topbar">
+      <h2>Historique — toutes tes conversations, toutes surfaces (web, Telegram…)</h2>
+      <button class="btn" onclick="chargerHistorique()">↻ Rafraîchir</button>
+    </div>
+    <div class="histo-grille">
+      <div class="panel histo-fils" id="histo-fils"><span class="liv-sub">Chargement…</span></div>
+      <div class="panel histo-msgs" id="histo-msgs"><span class="liv-sub">Choisis une conversation à gauche.</span></div>
+    </div>
+  </div>
+
   <div class="view" id="vue-forge">
     <div class="topbar">
       <h2>Forge — agents IA, RAG, ventures (interface complète intégrée)</h2>
@@ -641,6 +666,49 @@ function switchVue(v) {
   if (v === 'agenda') chargerAgenda();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
+  if (v === 'historique') chargerHistorique();
+}
+
+// ── Historique unifié (S78) : la trace de toutes les surfaces, lue depuis le Cœur ──
+function diteSurface(s) { return s === 'telegram' ? '💬 Telegram' : s === 'web' ? '🖥 Web' : (s || '?'); }
+async function chargerHistorique() {
+  const box = document.getElementById('histo-fils');
+  box.innerHTML = '<span class="liv-sub">Chargement…</span>';
+  try {
+    const d = await fetch('/assistant/conversations').then(r => r.json());
+    const fils = d.fils || [];
+    if (!fils.length) { box.innerHTML = '<span class="liv-sub">Aucune conversation pour l\\'instant.</span>'; return; }
+    box.innerHTML = '';
+    fils.forEach(f => {
+      const el = document.createElement('div');
+      el.className = 'fil-item'; el.dataset.fil = f.fil;
+      const surf = (f.surface || 'web');
+      const qui = f.interlocuteur && f.interlocuteur !== 'dashboard' ? (' · ' + f.interlocuteur) : '';
+      el.innerHTML = '<div class="fil-titre"><span class="fil-badge ' + surf + '">' + diteSurface(surf)
+        + '</span><span>' + (f.nombre || 0) + ' msg' + qui + '</span></div>'
+        + '<div class="fil-apercu">' + (f.dernier || '') + '</div>';
+      el.onclick = () => ouvrirFil(f.fil, el);
+      box.appendChild(el);
+    });
+  } catch(e) { box.innerHTML = '<span class="liv-sub">Erreur : ' + e.message + '</span>'; }
+}
+async function ouvrirFil(fil, el) {
+  document.querySelectorAll('#histo-fils .fil-item').forEach(x => x.classList.toggle('actif', x === el));
+  const box = document.getElementById('histo-msgs');
+  box.innerHTML = '<span class="liv-sub">Chargement…</span>';
+  try {
+    const d = await fetch('/assistant/conversations?fil=' + encodeURIComponent(fil) + '&limite=200').then(r => r.json());
+    const msgs = d.messages || [];
+    box.innerHTML = '';
+    if (!msgs.length) { box.innerHTML = '<span class="liv-sub">Conversation vide.</span>'; return; }
+    msgs.forEach(m => {
+      const b = document.createElement('div');
+      b.className = 'bulle ' + (m.role === 'user' ? 'user' : 'assistant');
+      b.textContent = m.content || '';
+      box.appendChild(b);
+    });
+    box.scrollTop = box.scrollHeight;
+  } catch(e) { box.innerHTML = '<span class="liv-sub">Erreur : ' + e.message + '</span>'; }
 }
 
 // ── Créations (Hub des briques créatives, migré d'Oria) ─────────────────────────
@@ -2318,17 +2386,51 @@ async def assistant_chat(corps: dict):
     """Conversation avec l'assistant. Corps : {"messages": [{role, content}, …]}.
 
     Répond en `text/event-stream` : chaque ligne `data:` est un événement JSON
-    (texte, outil, resultat_outil, fin, erreur)."""
+    (texte, outil, resultat_outil, fin, erreur).
+
+    Champs optionnels pour la TRACE unifiée (S78) : `surface` (web/telegram/…),
+    `interlocuteur` (qui), `utilisateur` (compte). La conversation est journalisée côté
+    Cœur quelle que soit la surface — best-effort, jamais bloquant."""
     messages = corps.get("messages") or []
+    surface = corps.get("surface") or "web"
+    interlocuteur = corps.get("interlocuteur") or "dashboard"
+    utilisateur = corps.get("utilisateur")
+
+    # Trace : on enregistre le DERNIER message utilisateur avant de répondre.
+    dernier_user = next((m.get("content") for m in reversed(messages)
+                     if m.get("role") == "user"), None)
+    if dernier_user:
+        journal_conversations.enregistrer(surface, interlocuteur, "user", dernier_user,
+                                          utilisateur=utilisateur)
 
     async def flux():
+        final = ""
         try:
             async for evt in assistant.converser(messages, registre):
+                t = evt.get("type")
+                if t == "texte_delta":
+                    final += evt.get("contenu") or ""
+                elif t == "texte":
+                    final = evt.get("contenu") or ""
                 yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
         except Exception as e:  # noqa: BLE001
             yield f"data: {json.dumps({'type': 'erreur', 'contenu': str(e)}, ensure_ascii=False)}\n\n"
+        finally:
+            # Trace : on enregistre la réponse de l'assistant une fois le tour terminé.
+            if final.strip():
+                journal_conversations.enregistrer(surface, interlocuteur, "assistant", final,
+                                                  utilisateur=utilisateur)
 
     return StreamingResponse(flux(), media_type="text/event-stream")
+
+
+@app.get("/assistant/conversations", tags=["assistant"])
+async def assistant_conversations(fil: str | None = None, limite: int = 100):
+    """Trace UNIFIÉE des conversations (S78), toutes surfaces confondues. Sans `fil` :
+    la liste des fils (aperçu du dernier message). Avec `fil` : les messages de ce fil."""
+    if fil:
+        return {"fil": fil, "messages": journal_conversations.messages(fil, limite)}
+    return {"fils": journal_conversations.fils(limite)}
 
 
 @app.get("/assistant/config", tags=["assistant"])
