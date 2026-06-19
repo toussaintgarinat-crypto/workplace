@@ -1,8 +1,8 @@
 # Brique voix (TTS) — dépendances minces et épinglées.
-# Le moteur SOUVERAIN local = Piper (binaire `piper`, fourni par piper-tts, CPU). Les
-# fournisseurs hébergés (OpenAI/ElevenLabs/Gateway) ne demandent que httpx. Piper a besoin
-# d'un modèle de voix (.onnx) désigné par PIPER_VOICE — non embarqué (téléchargé une fois).
+# Le moteur SOUVERAIN local = Piper, fourni par le BINAIRE précompilé installé dans le
+# Dockerfile (auto-contenu : espeak-ng-data + libs) — pas un paquet pip (piper-phonemize
+# n'a pas de wheel hors x86). Les fournisseurs hébergés (OpenAI/ElevenLabs/Gateway) ne
+# demandent que httpx. Piper a besoin d'un modèle de voix (.onnx) désigné par PIPER_VOICE.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
-piper-tts==1.2.0

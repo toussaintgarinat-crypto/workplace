@@ -14,10 +14,11 @@ services:
       - VOIX_PROVIDERS=${VOIX_PROVIDERS:-}
       # Format audio par défaut (opus = conteneur Ogg, idéal message vocal Telegram).
       - VOIX_FORMAT=${VOIX_FORMAT:-opus}
-      # Moteur SOUVERAIN Piper : chemin du modèle de voix .onnx (monté ci-dessous). Sans
-      # lui, Piper est « non disponible » et on retombe sur un hébergé / le placeholder.
-      - PIPER_VOICE=${PIPER_VOICE:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # ⚠ PIPER_VOICE (chemin du modèle .onnx monté dans /voix-modeles) vient du .env RACINE
+      # via env_file. NE PAS le redéclarer ici en `PIPER_VOICE=${PIPER_VOICE:-}` : ça
+      # s'interpole depuis le SHELL (vide) et ÉCRASE la valeur du .env racine → Piper jamais
+      # détecté (piège env-shadow, cf. connexion 2026-06-19). Sans modèle, repli honnête.
       # ⚠ Clés des fournisseurs hébergés (OPENAI_API_KEY, ELEVENLABS_API_KEY, GATEWAY_KEY,
       # GATEWAY_URL) et API_KEYS : à poser dans le .env RACINE — hérités via env_file.
       # NE PAS les redéclarer ici en `VAR=${VAR:-}` (s'interpole depuis le SHELL et écrase
