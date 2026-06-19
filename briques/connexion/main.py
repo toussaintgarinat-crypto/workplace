@@ -19,8 +19,10 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
+                               RedirectResponse, StreamingResponse)
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 import adaptateurs
 import client_assistant
@@ -188,6 +190,21 @@ async def miniapp_auth(body: InitData, x_telegram_init_data: Optional[str] = Hea
     return miniapp.autoriser(_init_data(body.init_data, x_telegram_init_data))
 
 
+@app.post("/miniapp/session", tags=["miniapp"])
+async def miniapp_session(body: InitData, x_telegram_init_data: Optional[str] = Header(None)):
+    """Ouvre une SESSION pour la Mini App « app complète » (S79) : valide l'initData une
+    fois et, si autorisé, pose un cookie de session signé. Le reverse-proxy s'appuie ensuite
+    sur ce cookie pour servir tout le dashboard du Cœur (sans revalider à chaque requête)."""
+    auth = miniapp.autoriser(_init_data(body.init_data, x_telegram_init_data))
+    if not auth.get("ok"):
+        return JSONResponse(auth, status_code=200)
+    jeton = miniapp.creer_session(auth.get("user") or {}, auth.get("utilisateur"))
+    rep = JSONResponse({"ok": True, "nom": auth.get("nom")})
+    rep.set_cookie(miniapp.COOKIE_SESSION, jeton, max_age=86400, httponly=True,
+                   samesite="lax", secure=True, path="/")
+    return rep
+
+
 @app.post("/miniapp/chat", tags=["miniapp"])
 async def miniapp_chat(body: MiniChat, x_telegram_init_data: Optional[str] = Header(None)):
     """Relais gardé vers l'assistant du Cœur. Auth = `initData` revalidé à CHAQUE appel
@@ -202,12 +219,17 @@ async def miniapp_chat(body: MiniChat, x_telegram_init_data: Optional[str] = Hea
                 f"« {qui} »" + (f" (compte Workplace : {util})." if util else ".")
                 + " Réponds en texte clair et concis.")
     messages = [{"role": "system", "content": contexte}, *body.messages]
+    # Trace unifiée (S78) : la Mini App est une surface Telegram → même fil que le pont
+    # (clé telegram:<id>), pour que tout l'échange figure dans l'historique du Cœur.
+    uid = str((auth.get("user") or {}).get("id") or "miniapp")
+    corps_coeur = {"messages": messages, "surface": "telegram",
+                   "interlocuteur": uid, "utilisateur": util}
 
     async def flux():
         try:
             async with httpx.AsyncClient(timeout=120) as c:
                 async with c.stream("POST", client_assistant.url_chat(),
-                                    json={"messages": messages}) as r:
+                                    json=corps_coeur) as r:
                     async for chunk in r.aiter_raw():
                         yield chunk
         except Exception:  # noqa: BLE001 — Cœur injoignable → évènement d'erreur honnête
@@ -225,6 +247,43 @@ async def miniapp_page():
     if not page.exists():
         raise HTTPException(404, "Front Mini App absent.")
     return FileResponse(page, media_type="text/html")
+
+
+def _coeur_base() -> str:
+    """Racine interne du Cœur (jamais exposée directement) — même base que client_assistant."""
+    return os.getenv("NOYAU_ASSISTANT_URL", "http://host.docker.internal:5100").rstrip("/")
+
+
+async def _fermer(reponse, client) -> None:
+    await reponse.aclose()
+    await client.aclose()
+
+
+# ── Reverse-proxy GARDÉ (S79) : l'app Workplace COMPLÈTE dans la Mini App ────────
+# Tout chemin non servi par la brique est relayé au dashboard du Cœur INTERNE, à condition
+# de présenter un cookie de session valide (posé par /miniapp/session après un initData
+# vérifié). Le Cœur reste interne ; seul un utilisateur Telegram autorisé voit l'app.
+# Déclaré EN DERNIER : les routes spécifiques de la brique (sante, webhook, miniapp,
+# correspondances…) sont prioritaires. Streaming préservé (SSE du chat, boutons S76).
+@app.api_route("/{chemin:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+               include_in_schema=False)
+async def proxy_dashboard(chemin: str, request: Request):
+    if not miniapp.verifier_session(request.cookies.get(miniapp.COOKIE_SESSION)):
+        if request.method == "GET":
+            return RedirectResponse("/miniapp")           # pas de session → (ré)authentifier
+        raise HTTPException(401, "Session Mini App requise.")
+    url = f"{_coeur_base()}/{chemin}"
+    corps = await request.body()
+    entetes = {k: v for k, v in request.headers.items()
+               if k.lower() in ("content-type", "accept", "accept-language")}
+    client = httpx.AsyncClient(timeout=None)
+    req = client.build_request(request.method, url, params=dict(request.query_params),
+                               content=corps, headers=entetes)
+    r = await client.send(req, stream=True)
+    filtres = ("content-type", "cache-control", "content-disposition")
+    sortie = {k: v for k, v in r.headers.items() if k.lower() in filtres}
+    return StreamingResponse(r.aiter_raw(), status_code=r.status_code, headers=sortie,
+                             background=BackgroundTask(_fermer, r, client))
 
 
 if __name__ == "__main__":

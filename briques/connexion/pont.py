@@ -112,7 +112,9 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
     verbeux = str(os.getenv("CONNEXION_VERBEUX", "0")).strip() in ("1", "true", "oui")
     repli = False
     try:
-        reponse = await client_assistant.converser(messages, verbeux=verbeux)
+        reponse = await client_assistant.converser(
+            messages, verbeux=verbeux, surface=reseau,
+            interlocuteur=entrant.id_externe, utilisateur=corr.get("utilisateur"))
         if not reponse:
             reponse, repli = _REPLI, True
     except Exception:  # noqa: BLE001 — assistant KO → repli honnête, pas de fausse réponse

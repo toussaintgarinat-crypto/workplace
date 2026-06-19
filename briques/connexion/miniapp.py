@@ -15,6 +15,7 @@ vide → on s'en remet au consentement de `correspondance`. Aucun secret en dur,
 
 Référence : https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -25,6 +26,46 @@ from urllib.parse import parse_qsl
 import correspondance
 
 RESEAU = "telegram"
+COOKIE_SESSION = "mp_session"
+
+
+# ── Session signée (S79) : initData validé UNE fois → cookie court, vérifié ensuite ──
+# La Mini App ouvre l'app Workplace COMPLÈTE (le dashboard du Cœur) via un reverse-proxy
+# gardé. On ne revalide pas l'initData à chaque image/fetch : on valide une fois, on pose
+# un cookie de session SIGNÉ (HMAC), et le proxy ne laisse passer que les requêtes qui le
+# présentent. Secret dédié (MINIAPP_SESSION_SECRET) ou dérivé du token bot (stable).
+def _secret_session() -> bytes:
+    s = os.getenv("MINIAPP_SESSION_SECRET")
+    if s:
+        return s.encode()
+    return hashlib.sha256(b"miniapp-session:" + os.getenv("TELEGRAM_BOT_TOKEN", "").encode()).digest()
+
+
+def creer_session(user: dict, utilisateur: str | None, *, duree_s: int = 86400) -> str:
+    """Jeton de session signé : base64(charge) + '.' + HMAC. Charge = qui + expiration."""
+    charge = {"uid": str((user or {}).get("id") or ""), "utilisateur": utilisateur,
+              "exp": int(time.time()) + max(60, duree_s)}
+    brut = base64.urlsafe_b64encode(json.dumps(charge).encode()).decode().rstrip("=")
+    sig = hmac.new(_secret_session(), brut.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{brut}.{sig}"
+
+
+def verifier_session(jeton: str | None) -> dict | None:
+    """Renvoie la charge si le jeton est authentique ET non expiré, sinon None."""
+    if not jeton or "." not in jeton:
+        return None
+    brut, sig = jeton.rsplit(".", 1)
+    attendu = hmac.new(_secret_session(), brut.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, attendu):
+        return None
+    try:
+        pad = brut + "=" * (-len(brut) % 4)
+        charge = json.loads(base64.urlsafe_b64decode(pad.encode()))
+    except Exception:  # noqa: BLE001
+        return None
+    if float(charge.get("exp", 0)) < time.time():
+        return None
+    return charge
 
 
 def _allowlist() -> set[str]:
@@ -45,12 +86,20 @@ def valider_init_data(init_data: str, token: str, *, age_max_s: int = 86400) -> 
     recu = paires.pop("hash", None)
     if not recu:
         return None
-    # `signature` (validation par tiers) ne fait pas partie du data-check-string du bot.
-    paires.pop("signature", None)
-    chaine = "\n".join(f"{k}={paires[k]}" for k in sorted(paires))
     secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
-    calcule = hmac.new(secret, chaine.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(calcule, recu):
+
+    def _hash(champs: dict) -> str:
+        chaine = "\n".join(f"{k}={champs[k]}" for k in sorted(champs))
+        return hmac.new(secret, chaine.encode(), hashlib.sha256).hexdigest()
+
+    # Telegram calcule le hash sur TOUS les champs sauf `hash`. Les versions récentes
+    # ajoutent `signature` (validation tierce Ed25519) : il est INCLUS dans le
+    # data-check-string du bot. On tolère les deux variantes (avec / sans `signature`)
+    # pour rester robuste quelle que soit la version du client.
+    candidats = [paires]
+    if "signature" in paires:
+        candidats.append({k: v for k, v in paires.items() if k != "signature"})
+    if not any(hmac.compare_digest(_hash(c), recu) for c in candidats):
         return None
     # Fraîcheur : un initData rejoué indéfiniment serait un risque.
     try:
