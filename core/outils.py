@@ -71,6 +71,15 @@ OUTILS: list[dict] = [
             "max_etapes": {"type": "integer", "description": "Plafond d'étapes de réflexion (optionnel)."},
         }, ["objectif"])}},
     {"type": "function", "function": {
+        "name": "amelioration_etat",
+        "description": "Où en est ton AUTO-AMÉLIORATION (S69/S70). Renvoie l'addendum de "
+                       "prompt ACTIF, les propositions d'amélioration de prompt en attente "
+                       "(avec statut et id) et les brouillons de CAPACITÉS proposés par le "
+                       "Curator. À appeler avant « où en est ton amélioration ? », « as-tu "
+                       "des propositions à valider ? » et AVANT toute décision (pour "
+                       "récupérer les id). Lecture seule.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
         "name": "chercher_documents",
         "description": "Cherche dans les documents ingérés (ETL) et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
         "parameters": _p({
@@ -484,6 +493,48 @@ OUTILS: list[dict] = [
             "nom_scene": {"type": "string", "description": "Nom de scène à donner dans la série (optionnel : défaut = prénoms). Le nom cosmique d'origine est conservé."},
             "confirme": {"type": "boolean"},
         }, ["prenoms", "date_naissance"])}},
+    # — AUTO-AMÉLIORATION (S75) : piloter le cycle S68→S70 en conversation —
+    {"type": "function", "function": {
+        "name": "curateur_lancer",
+        "description": "Lance MAINTENANT un cycle de curation (normalement hebdomadaire) : "
+                       "tu te mesures (proprioception) puis tu PROPOSES — sans rien appliquer "
+                       "— une amélioration de ton prompt et un brouillon de capacité "
+                       "manquante, et tu déposes un digest 🔔. Pour « améliore-toi », « fais "
+                       "un tour de curation ». Coûte un peu de calcul. ACTION : confirme=true "
+                       "requis après accord.",
+        "parameters": _p({"confirme": {"type": "boolean"}}, [])}},
+    {"type": "function", "function": {
+        "name": "amelioration_evaluer",
+        "description": "A/B honnête sur une proposition d'amélioration de prompt : rejoue des "
+                       "questions avec/sans l'addendum et note les deux pour éclairer la "
+                       "décision. Récupère l'id via amelioration_etat. Coûte du calcul. "
+                       "ACTION : confirme=true requis après accord.",
+        "parameters": _p({"id": {"type": "string"}, "confirme": {"type": "boolean"}}, ["id"])}},
+    {"type": "function", "function": {
+        "name": "amelioration_decider",
+        "description": "Tranche sur une proposition d'amélioration de PROMPT (le gate humain). "
+                       "decision = 'valider' (approuve sans activer), 'appliquer' (active "
+                       "vraiment l'addendum → change ton comportement ; vaut "
+                       "validation+activation), 'rejeter' (écarte), 'desactiver' (revient au "
+                       "prompt fondateur, sans id). Récupère l'id via amelioration_etat. "
+                       "ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "decision": {"type": "string", "enum": ["valider", "appliquer", "rejeter", "desactiver"]},
+            "id": {"type": "string", "description": "id de la proposition (inutile pour desactiver)."},
+            "confirme": {"type": "boolean"},
+        }, ["decision"])}},
+    {"type": "function", "function": {
+        "name": "capacite_decider",
+        "description": "Tranche sur un BROUILLON de capacité proposé par le Curator. decision "
+                       "= 'retenir' (le garder comme SPÉCIFICATION à implémenter par une "
+                       "brique — ça n'active AUCUN outil, c'est honnête) ou 'rejeter'. "
+                       "Récupère l'id via amelioration_etat. ACTION : confirme=true requis "
+                       "après accord.",
+        "parameters": _p({
+            "decision": {"type": "string", "enum": ["retenir", "rejeter"]},
+            "id": {"type": "string"},
+            "confirme": {"type": "boolean"},
+        }, ["decision", "id"])}},
 ]
 
 OUTILS_ACTION = {
@@ -497,6 +548,7 @@ OUTILS_ACTION = {
     "studio_serie_creer", "studio_episode_produire", "studio_express",
     "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
     "transcription_archiver",
+    "curateur_lancer", "amelioration_evaluer", "amelioration_decider", "capacite_decider",
 }
 
 
@@ -670,6 +722,63 @@ async def executer(nom: str, args: dict, registre) -> str:
                     budget_tokens=args.get("budget_tokens"),
                     max_etapes=args.get("max_etapes"))
                 return json.dumps(cr, ensure_ascii=False)
+
+            # — AUTO-AMÉLIORATION pilotée en conversation (S75) —
+            # Le cycle S68→S70 (mesure → propose → gate humain) devient pilotable EN PARLANT
+            # (Telegram/chat). Le gate humain = la confirmation DANS la conversation
+            # (confirme=true) : on PROPOSE, et on n'APPLIQUE que sur accord. Une capacité
+            # retenue reste une SPÉC à implémenter — jamais auto-câblée (honnêteté S70).
+            # Import LOCAL : curateur importe outils → on casse le cycle.
+            if nom == "amelioration_etat":
+                import amelioration
+                import curateur
+                return json.dumps({
+                    "prompt": amelioration.lister(),
+                    "capacites_proposees": curateur.lister_capacites(),
+                }, ensure_ascii=False)
+
+            if nom == "curateur_lancer":
+                if not args.get("confirme"):
+                    return _confirmation("lancer un cycle de curation", "l'assistant lui-même")
+                import curateur
+                return json.dumps(await curateur.curer(registre, forcer=True), ensure_ascii=False)
+
+            if nom == "amelioration_evaluer":
+                if not args.get("confirme"):
+                    return _confirmation("évaluer (A/B) une proposition de prompt", args.get("id", "?"))
+                import amelioration
+                return json.dumps(await amelioration.evaluer(args.get("id", "")), ensure_ascii=False)
+
+            if nom == "amelioration_decider":
+                decision = (args.get("decision") or "").lower()
+                if decision not in ("valider", "appliquer", "rejeter", "desactiver"):
+                    return "decision doit valoir : valider, appliquer, rejeter ou desactiver."
+                cible = "prompt fondateur" if decision == "desactiver" else args.get("id", "?")
+                if not args.get("confirme"):
+                    return _confirmation(f"{decision} l'amélioration de prompt", cible)
+                import amelioration
+                if decision == "desactiver":
+                    return json.dumps(amelioration.desactiver(), ensure_ascii=False)
+                id_ = args.get("id", "")
+                if decision == "valider":
+                    return json.dumps(amelioration.valider(id_), ensure_ascii=False)
+                if decision == "rejeter":
+                    return json.dumps(amelioration.rejeter(id_), ensure_ascii=False)
+                # appliquer = gate en un geste depuis le chat : valider (si besoin) puis activer.
+                amelioration.valider(id_)
+                return json.dumps(amelioration.appliquer(id_), ensure_ascii=False)
+
+            if nom == "capacite_decider":
+                decision = (args.get("decision") or "").lower()
+                if decision not in ("retenir", "rejeter"):
+                    return "decision doit valoir : retenir ou rejeter."
+                if not args.get("confirme"):
+                    return _confirmation(f"{decision} le brouillon de capacité", args.get("id", "?"))
+                import curateur
+                id_ = args.get("id", "")
+                res = (curateur.retenir_capacite(id_) if decision == "retenir"
+                       else curateur.rejeter_capacite(id_))
+                return json.dumps(res, ensure_ascii=False)
 
             if nom == "chercher_documents":
                 params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")

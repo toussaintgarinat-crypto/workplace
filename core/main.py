@@ -134,6 +134,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .outil .pic { width: 7px; height: 7px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 6px #22d3ee88; }
   .outil.action .pic { background: #fb923c; box-shadow: 0 0 6px #fb923c88; }
   .outil.confirm .pic { background: #f59e0b; box-shadow: 0 0 6px #f59e0b88; }
+  .actions { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 4px; }
+  .actions button { font: inherit; font-size: 0.82rem; cursor: pointer; border-radius: 999px; padding: 7px 16px; border: 1px solid #7c83ff66; background: #1f2330; color: #e2e8f0; transition: background .15s, border-color .15s; }
+  .actions button:hover { background: #2a2f42; border-color: #7c83ff; }
+  .actions button.primaire { background: #7c83ff; border-color: #7c83ff; color: #0f1117; font-weight: 600; }
+  .actions button.primaire:hover { background: #9298ff; }
+  .actions.fait { opacity: 0.45; pointer-events: none; }
   .chat-saisie { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #2d3148; }
   .chat-saisie input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
   .chat-saisie input:focus { outline: none; border-color: #7c83ff; }
@@ -1282,6 +1288,28 @@ function ajouterOutil(nom, action, confirmation) {
   d.appendChild(span);
   fil.appendChild(d); chatEcho();
 }
+// Actions suggérées (S76) : boutons d'action génériques. Un tap = on injecte le message
+// `envoi` dans le chat (le LLM reprend la main) ; le gate humain n'est jamais court-circuité.
+function ajouterActions(actions) {
+  if (!actions || !actions.length) return;
+  const fil = document.getElementById('chat-fil');
+  const row = document.createElement('div');
+  row.className = 'actions';
+  actions.forEach((a, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    if (i === 0) b.className = 'primaire';
+    b.textContent = a.label;
+    b.onclick = () => { row.classList.add('fait'); taperAction(a.envoi); };
+    row.appendChild(b);
+  });
+  fil.appendChild(row); chatEcho();
+}
+function taperAction(envoi) {
+  const input = document.getElementById('chat-input');
+  input.value = envoi;
+  document.getElementById('chat-form').requestSubmit();
+}
 async function envoyerMessage(e) {
   e.preventDefault();
   const input = document.getElementById('chat-input');
@@ -1318,6 +1346,7 @@ async function envoyerMessage(e) {
         const evt = JSON.parse(m[1]);
         if (evt.type === 'outil') { ajouterOutil(evt.nom, evt.action, false); }
         else if (evt.type === 'resultat_outil') { if (evt.confirmation) ajouterOutil(evt.nom, true, true); }
+        else if (evt.type === 'actions') { ajouterActions(evt.actions); }
         else if (evt.type === 'texte_delta' && evt.contenu) {   // S60 : tokens au fil de l'eau
           if (!bulleAssist) { tip.remove(); bulleAssist = ajouterBulle('assistant', ''); }
           texteFinal += evt.contenu; bulleAssist.textContent = texteFinal; chatEcho();
