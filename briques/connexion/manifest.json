@@ -24,7 +24,7 @@
       "description": "Tire les nouveaux messages Telegram (getUpdates) et les relaie à l'assistant",
       "methode": "POST",
       "chemin": "/sonder/telegram",
-      "cadence_heures": 0.05,
+      "cadence_heures": 0.000833,
       "idempotent": true,
       "tolere_echec": true
     }
