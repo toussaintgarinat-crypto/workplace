@@ -25,7 +25,6 @@ services:
       # Taille max d'un fichier accepté (octets). Défaut 25 Mo.
       - VISION_MAX_OCTETS=${VISION_MAX_OCTETS:-26214400}
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo).
-      - API_KEYS=${API_KEYS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5960/sante')"]
