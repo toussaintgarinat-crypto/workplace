@@ -30,6 +30,7 @@ import personas
 import identite
 import proprioception
 import amelioration
+import suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,11 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                 confirmation = '"confirmation_requise": true' in resultat
                 yield {"type": "resultat_outil", "nom": nom,
                        "resultat": resultat, "confirmation": confirmation}
+                # Actions suggérées (S76) : boutons d'action génériques (web + Mini App).
+                # Le tap injecte un message ; il ne court-circuite jamais le gate humain.
+                sugg = suggestions.pour_resultat(nom, args, resultat, confirmation=confirmation)
+                if sugg:
+                    yield {"type": "actions", "actions": sugg}
                 historique.append({
                     "role": "tool",
                     "tool_call_id": tc.get("id", ""),

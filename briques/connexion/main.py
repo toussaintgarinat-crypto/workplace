@@ -13,16 +13,19 @@ multi-utilisateur avec consentement (correspondance.py), historique persisté pa
   • GET/POST/DELETE /correspondances : administration du mapping interlocuteur → utilisateur.
 """
 import os
+from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 import adaptateurs
 import client_assistant
 import correspondance
+import miniapp
 import pont
 
 app = FastAPI(title="Connexion — pont messageries ↔ assistant", version="0.1.0")
@@ -58,6 +61,15 @@ class Liaison(BaseModel):
     id_externe: Optional[str] = None
     utilisateur: str
     code: Optional[str] = None        # alternative : lier par code de liaison
+
+
+class InitData(BaseModel):
+    init_data: str
+
+
+class MiniChat(BaseModel):
+    messages: list
+    init_data: Optional[str] = None   # repli si l'en-tête n'est pas transmis
 
 
 @app.get("/sante", tags=["système"])
@@ -159,6 +171,60 @@ async def correspondances_lier(body: Liaison, _cle: str = Depends(cle_api)):
 async def correspondances_delier(reseau: str, id_externe: str, _cle: str = Depends(cle_api)):
     """Détache un interlocuteur (il repassera « en attente »)."""
     return {"ok": correspondance.delier(reseau, id_externe)}
+
+
+# ── Mini App Telegram (S77) : front public GARDÉ, le Cœur reste interne ──────────
+# La page est servie DANS Telegram ; elle s'authentifie par `initData` signé (HMAC du
+# token bot), résout l'utilisateur via le consentement (correspondance), puis dialogue
+# en relayant le flux SSE du Cœur TEL QUEL (les boutons d'action S76 passent au travers).
+def _init_data(corps: Optional[str], entete: Optional[str]) -> str:
+    return (entete or corps or "").strip()
+
+
+@app.post("/miniapp/auth", tags=["miniapp"])
+async def miniapp_auth(body: InitData, x_telegram_init_data: Optional[str] = Header(None)):
+    """Valide l'`initData` Telegram et dit si l'utilisateur est autorisé (sinon : code de
+    liaison à transmettre, comme l'accueil du pont). Stateless : rien n'est stocké ici."""
+    return miniapp.autoriser(_init_data(body.init_data, x_telegram_init_data))
+
+
+@app.post("/miniapp/chat", tags=["miniapp"])
+async def miniapp_chat(body: MiniChat, x_telegram_init_data: Optional[str] = Header(None)):
+    """Relais gardé vers l'assistant du Cœur. Auth = `initData` revalidé à CHAQUE appel
+    (stateless). On préfixe un message système « qui parle » (multi-utilisateur) puis on
+    proxifie le flux SSE du Cœur sans le dénaturer (deltas, outils, actions S76)."""
+    auth = miniapp.autoriser(_init_data(body.init_data, x_telegram_init_data))
+    if not auth.get("ok"):
+        raise HTTPException(401, auth.get("raison", "non autorisé"))
+    qui = auth.get("nom") or "un interlocuteur"
+    util = auth.get("utilisateur")
+    contexte = ("Tu es l'assistant de Workplace. Tu dialogues via la Mini App Telegram avec "
+                f"« {qui} »" + (f" (compte Workplace : {util})." if util else ".")
+                + " Réponds en texte clair et concis.")
+    messages = [{"role": "system", "content": contexte}, *body.messages]
+
+    async def flux():
+        try:
+            async with httpx.AsyncClient(timeout=120) as c:
+                async with c.stream("POST", client_assistant.url_chat(),
+                                    json={"messages": messages}) as r:
+                    async for chunk in r.aiter_raw():
+                        yield chunk
+        except Exception:  # noqa: BLE001 — Cœur injoignable → évènement d'erreur honnête
+            import json as _json
+            yield ("data: " + _json.dumps(
+                {"type": "erreur", "contenu": "Assistant injoignable."}) + "\n\n").encode()
+
+    return StreamingResponse(flux(), media_type="text/event-stream")
+
+
+@app.get("/miniapp", tags=["miniapp"], include_in_schema=False)
+async def miniapp_page():
+    """Sert la page de la Mini App (à pointer depuis le menu BotFather, en HTTPS public)."""
+    page = Path(__file__).parent / "front_miniapp.html"
+    if not page.exists():
+        raise HTTPException(404, "Front Mini App absent.")
+    return FileResponse(page, media_type="text/html")
 
 
 if __name__ == "__main__":
