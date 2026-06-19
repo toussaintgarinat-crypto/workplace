@@ -26,6 +26,26 @@ from typing import Optional
 
 import httpx
 
+_FMT_OPUS = {"opus", "ogg", "oga"}
+
+
+def _vers_opus(wav: bytes) -> Optional[bytes]:
+    """WAV → Ogg/Opus via ffmpeg (pour la bulle vocale Telegram `sendVoice`).
+
+    Renvoie les octets Ogg/Opus, ou None si ffmpeg est absent / échoue (repli HONNÊTE :
+    l'appelant garde alors le WAV, envoyé en fichier audio plutôt qu'en bulle vocale)."""
+    binaire = os.getenv("FFMPEG_BIN", "ffmpeg")
+    if not shutil.which(binaire):
+        return None
+    try:
+        p = subprocess.run(
+            [binaire, "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+             "-c:a", "libopus", "-f", "ogg", "pipe:1"],
+            input=wav, capture_output=True, timeout=int(os.getenv("FFMPEG_TIMEOUT_S", "60")))
+        return p.stdout if (p.returncode == 0 and p.stdout) else None
+    except Exception:  # noqa: BLE001 — ffmpeg KO → repli honnête (on garde le WAV)
+        return None
+
 
 # ── Moteur SOUVERAIN local : Piper ──────────────────────────────
 class Piper:
@@ -50,9 +70,10 @@ class Piper:
 
     async def synthetiser(self, texte, voix, langue, format) -> tuple[bytes, str]:
         # Piper est synchrone → on le sort de la boucle asyncio.
-        return await asyncio.to_thread(self._bloquant, texte, voix)
+        cible = (format or os.getenv("VOIX_FORMAT", "opus") or "").lower()
+        return await asyncio.to_thread(self._bloquant, texte, voix, cible)
 
-    def _bloquant(self, texte: str, voix: Optional[str]) -> tuple[bytes, str]:
+    def _bloquant(self, texte: str, voix: Optional[str], cible: str) -> tuple[bytes, str]:
         modele = self._voix(voix)
         if not modele or not os.path.exists(modele):
             raise RuntimeError("Modèle Piper introuvable (PIPER_VOICE).")
@@ -74,6 +95,12 @@ class Piper:
                 pass
         if not audio:
             raise RuntimeError("Piper n'a produit aucun audio.")
+        # Piper sort du WAV ; pour une bulle vocale Telegram on convertit en Ogg/Opus.
+        # Repli HONNÊTE : si ffmpeg manque, on garde le WAV (envoyé en fichier audio).
+        if cible in _FMT_OPUS:
+            opus = _vers_opus(audio)
+            if opus:
+                return opus, "ogg"
         return audio, "wav"
 
 

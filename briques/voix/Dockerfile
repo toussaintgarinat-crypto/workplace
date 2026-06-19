@@ -6,7 +6,8 @@ WORKDIR /app
 # incluses). Plus fiable que le pip `piper-tts` (dont la dépendance piper-phonemize n'a pas
 # de wheel hors x86). Téléchargé selon l'architecture de la cible (TARGETARCH).
 ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+# ffmpeg : conversion WAV (sortie Piper) → Ogg/Opus pour la bulle vocale Telegram (sendVoice).
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && case "${TARGETARCH:-amd64}" in \
          amd64) PARCH=x86_64 ;; \
