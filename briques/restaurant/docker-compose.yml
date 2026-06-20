@@ -23,15 +23,15 @@ services:
       # la brique exposée (tunnel/Proxmox) ; sinon déduite de la requête (≠ joignable
       # depuis un téléphone en localhost, attendu en dev).
       - RESTAURANT_PUBLIC_URL=${RESTAURANT_PUBLIC_URL:-}
-      # Clé de SERVICE : autorise le Cœur (capacités MCP) à piloter la carte sans le mot de
-      # passe d'un restaurateur. Hérité du .env racine. NON défini ⇒ chemin /service éteint
-      # (fail-closed). DOIT valoir la même chose côté Cœur (RESTAURANT_KEY) pour qu'il l'envoie.
-      - RESTAURANT_KEY=${RESTAURANT_KEY:-}
-      # Synergie « Assistant carte » (import OCR de l'ancienne carte) : brique vision + Gateway.
+      # NB : RESTAURANT_KEY (clé de service : pilotage carte par le Cœur/MCP) et GATEWAY_KEY
+      # NE sont PAS listés ici. Ils viennent du .env racine via env_file. Les redéclarer en
+      # `VAR=${VAR:-}` les écraserait par du VIDE (piège « env shadow » : l'interpolation ne
+      # lit pas l'env_file et le launcher ne source pas le .env) → /service éteint (503) et
+      # LLM non authentifié. RESTAURANT_KEY vide ⇒ chemin /service fail-closed.
+      # Synergie « Assistant carte » (import OCR) : URLs/modèle non secrets, absents du .env racine.
       - VISION_URL=${VISION_URL:-http://host.docker.internal:5960}
       - VISION_KEY=${VISION_KEY:-}
       - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
-      - GATEWAY_KEY=${GATEWAY_KEY:-}
       - GATEWAY_MODEL=${GATEWAY_MODEL:-free/google/gemma-4-31b-it}
     volumes:
       - restaurant_data:/data   # comptes, restaurants, menus, commandes, paiements
