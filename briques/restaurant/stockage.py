@@ -17,6 +17,7 @@ accès qu'à ce restaurant / cette table.
 """
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import sqlite3
@@ -66,6 +67,7 @@ def _conn() -> sqlite3.Connection:
             id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, nom TEXT,
             description TEXT, prix_cents INTEGER NOT NULL DEFAULT 0, photo TEXT,
             categorie TEXT DEFAULT '',
+            formats TEXT DEFAULT '[]',
             disponible INTEGER NOT NULL DEFAULT 1, plat_du_jour INTEGER NOT NULL DEFAULT 0,
             ordre INTEGER NOT NULL DEFAULT 0, cree_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_plat_resto ON plats(restaurant_id);
@@ -105,8 +107,13 @@ def _conn() -> sqlite3.Connection:
         c.execute("ALTER TABLE restaurants ADD COLUMN tva_taux REAL NOT NULL DEFAULT 10.0")
     if "session_courante" not in _colonnes("tables"):
         c.execute("ALTER TABLE tables ADD COLUMN session_courante INTEGER NOT NULL DEFAULT 1")
-    if "categorie" not in _colonnes("plats"):
+    pcol = _colonnes("plats")
+    if "categorie" not in pcol:
         c.execute("ALTER TABLE plats ADD COLUMN categorie TEXT DEFAULT ''")
+    if "formats" not in pcol:
+        # Formats/tailles d'un plat (ex. bière 25cl/50cl/1L/girafe) : JSON
+        # [{"taille": "...", "prix_cents": n}]. Vide = plat à prix unique (prix_cents).
+        c.execute("ALTER TABLE plats ADD COLUMN formats TEXT DEFAULT '[]'")
     if "session_id" not in _colonnes("commandes"):
         c.execute("ALTER TABLE commandes ADD COLUMN session_id INTEGER NOT NULL DEFAULT 1")
     pc = _colonnes("paiements")
@@ -286,17 +293,60 @@ def supprimer_table(compte_id: str, restaurant_id: str, table_id: str) -> bool:
 
 
 # ── Plats (la carte) ─────────────────────────────────────────────
+def _normaliser_formats(formats) -> list:
+    """Nettoie une liste de formats → [{taille:str, prix_cents:int>=0}], sans doublon de taille.
+
+    Tolère prix en euros (float) via la clé `prix` ; ignore les entrées sans taille. Vide = []
+    (= plat à prix unique). C'est la source de vérité du prix quand la liste est non vide."""
+    out, vues = [], set()
+    for f in formats or []:
+        if not isinstance(f, dict):
+            continue
+        taille = str(f.get("taille") or "").strip()
+        if not taille or taille.lower() in vues:
+            continue
+        if f.get("prix_cents") is not None:
+            try:
+                prix = max(0, int(f["prix_cents"]))
+            except (TypeError, ValueError):
+                continue
+        elif f.get("prix") is not None:
+            try:
+                prix = max(0, round(float(str(f["prix"]).replace(",", ".")) * 100))
+            except (TypeError, ValueError):
+                continue
+        else:
+            continue
+        vues.add(taille.lower())
+        out.append({"taille": taille[:40], "prix_cents": prix})
+    return out
+
+
+def _formats_de(r: sqlite3.Row) -> list:
+    if "formats" not in r.keys():
+        return []
+    try:
+        return _normaliser_formats(json.loads(r["formats"] or "[]"))
+    except (ValueError, TypeError):
+        return []
+
+
 def _plat_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nom": r["nom"], "description": r["description"],
             "prix_cents": r["prix_cents"], "photo": r["photo"],
             "categorie": (r["categorie"] or "") if "categorie" in r.keys() else "",
+            "formats": _formats_de(r),
             "disponible": bool(r["disponible"]), "plat_du_jour": bool(r["plat_du_jour"]),
             "ordre": r["ordre"]}
 
 
 def creer_plat(compte_id: str, restaurant_id: str, nom: str, description: str = "",
                prix_cents: int = 0, photo: str = "", plat_du_jour: bool = False,
-               categorie: str = "") -> dict | None:
+               categorie: str = "", formats=None) -> dict | None:
+    formats = _normaliser_formats(formats)
+    # Avec des formats, le prix de carte = « à partir de » (le moins cher).
+    if formats:
+        prix_cents = min(f["prix_cents"] for f in formats)
     with _conn() as c:
         if not _possede(c, compte_id, restaurant_id):
             return None
@@ -304,10 +354,11 @@ def creer_plat(compte_id: str, restaurant_id: str, nom: str, description: str = 
         ordre = (c.execute("SELECT COALESCE(MAX(ordre), 0) + 1 FROM plats WHERE restaurant_id=?",
                            (restaurant_id,)).fetchone()[0])
         c.execute("""INSERT INTO plats (id, restaurant_id, nom, description, prix_cents, photo,
-                     categorie, disponible, plat_du_jour, ordre, cree_le)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                     categorie, formats, disponible, plat_du_jour, ordre, cree_le)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (pid, restaurant_id, nom.strip() or "Plat", description.strip(),
                    max(0, int(prix_cents)), photo.strip(), (categorie or "").strip(),
+                   json.dumps(formats, ensure_ascii=False),
                    1, 1 if plat_du_jour else 0, ordre, _maintenant()))
         r = c.execute("SELECT * FROM plats WHERE id=?", (pid,)).fetchone()
     return _plat_dict(r)
@@ -355,9 +406,14 @@ def maj_plat(compte_id: str, restaurant_id: str, plat_id: str, champs: dict) -> 
             d["disponible"] = bool(champs["disponible"])
         if "plat_du_jour" in champs and champs["plat_du_jour"] is not None:
             d["plat_du_jour"] = bool(champs["plat_du_jour"])
+        if "formats" in champs and champs["formats"] is not None:
+            d["formats"] = _normaliser_formats(champs["formats"])
+            if d["formats"]:                       # prix de carte = « à partir de »
+                d["prix_cents"] = min(f["prix_cents"] for f in d["formats"])
         c.execute("""UPDATE plats SET nom=?, description=?, prix_cents=?, photo=?,
-                     categorie=?, disponible=?, plat_du_jour=? WHERE id=? AND restaurant_id=?""",
+                     categorie=?, formats=?, disponible=?, plat_du_jour=? WHERE id=? AND restaurant_id=?""",
                   (d["nom"], d["description"], d["prix_cents"], d["photo"], d["categorie"],
+                   json.dumps(d["formats"], ensure_ascii=False),
                    1 if d["disponible"] else 0, 1 if d["plat_du_jour"] else 0,
                    plat_id, restaurant_id))
     return d
@@ -373,10 +429,12 @@ def supprimer_plat(compte_id: str, restaurant_id: str, plat_id: str) -> bool:
 
 # ── Commandes (côté client : créées via le code de table) ────────
 def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list) -> dict | None:
-    """Crée une commande pour un convive. `plats` = [{plat_id, quantite}].
+    """Crée une commande pour un convive. `plats` = [{plat_id, quantite, format?}].
 
     Le prix de chaque ligne est un SNAPSHOT pris au moment de la commande : si le
-    restaurateur change le prix après coup, l'addition du convive ne bouge pas.
+    restaurateur change le prix après coup, l'addition du convive ne bouge pas. Si le plat a
+    des FORMATS (taille), `format` choisit lequel (défaut : le 1er) → le prix et le nom de la
+    ligne reflètent la taille (ex. « Carlsberg (50cl) »).
     Refuse les plats indisponibles / hors de ce restaurant (fail-closed)."""
     convive = (convive or "").strip() or "Convive"
     with _conn() as c:
@@ -389,8 +447,15 @@ def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list)
             if not r:
                 continue
             q = max(1, int(item.get("quantite", 1)))
-            lignes.append({"id": _id(), "plat_id": r["id"], "nom_plat": r["nom"],
-                           "prix_cents": r["prix_cents"], "quantite": q})
+            nom_plat, prix = r["nom"], r["prix_cents"]
+            formats = _formats_de(r)
+            if formats:                            # plat à formats → résoudre la taille choisie
+                voulu = str(item.get("format") or "").strip().lower()
+                choisi = next((f for f in formats if f["taille"].lower() == voulu), formats[0])
+                nom_plat = f'{r["nom"]} ({choisi["taille"]})'
+                prix = choisi["prix_cents"]
+            lignes.append({"id": _id(), "plat_id": r["id"], "nom_plat": nom_plat,
+                           "prix_cents": prix, "quantite": q})
         if not lignes:
             return None
         c.execute("INSERT INTO commandes (id, restaurant_id, table_id, session_id, convive, statut, cree_le) "

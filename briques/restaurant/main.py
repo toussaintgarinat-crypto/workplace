@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.4.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.5.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -145,6 +145,7 @@ class PlatEntree(BaseModel):
     photo: str = ""                    # URL ou data-URL (photo prise au téléphone)
     categorie: str = ""                # section de carte (Entrées, Plats, Boissons…)
     plat_du_jour: bool = False
+    formats: list = []                 # tailles : [{taille:"50cl", prix_cents:700}] (vide = prix unique)
 
 
 class MajPlat(BaseModel):
@@ -155,6 +156,7 @@ class MajPlat(BaseModel):
     categorie: Optional[str] = None
     disponible: Optional[bool] = None
     plat_du_jour: Optional[bool] = None
+    formats: Optional[list] = None     # remplace les tailles ; [] = repasser en prix unique
 
 
 class ImporterCarte(BaseModel):
@@ -199,7 +201,7 @@ class PayerPart(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.4.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.5.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -349,7 +351,8 @@ def qr_table(restaurant_id: str, table_id: str, request: Request,
 def creer_plat(restaurant_id: str, corps: PlatEntree, compte_id: str = Depends(compte_actuel)):
     _exige_resto(compte_id, restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
-                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie)
+                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie,
+                            corps.formats)
     if not p:
         raise HTTPException(404, "Restaurant introuvable.")
     return p
@@ -423,7 +426,8 @@ async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
         plat = stockage.creer_plat(
             compte_id, restaurant_id, str(p.get("nom")), str(p.get("description") or ""),
             int(p.get("prix_cents") or 0), str(p.get("photo") or ""),
-            bool(p.get("plat_du_jour")), str(p.get("categorie") or ""))
+            bool(p.get("plat_du_jour")), str(p.get("categorie") or ""),
+            p.get("formats") or [])
         if plat:
             crees.append(plat)
     if crees:
@@ -464,7 +468,8 @@ async def service_creer_plat(restaurant_id: str, corps: PlatEntree, _: bool = De
     """Ajoute un plat (action). Diffuse aux tables pour rafraîchir la carte."""
     compte_id = _compte_de_service(restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
-                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie)
+                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie,
+                            corps.formats)
     if not p:
         raise HTTPException(404, "Restaurant introuvable.")
     await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
