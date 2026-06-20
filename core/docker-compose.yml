@@ -50,10 +50,10 @@ services:
       # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — recommandé hors local
       # car /mcp peut déclencher des ACTIONS (confirme=true reste néanmoins exigé par outil).
       - MCP_ACTIF=${MCP_ACTIF:-1}
-      # Clé de service envoyée à la brique restaurant (X-API-Key) pour piloter la carte via
-      # ses capacités (restaurant_plat_ajouter…). DOIT valoir le RESTAURANT_KEY de la brique.
-      # Héritée du .env racine ; vide ⇒ la brique éteint son chemin /service (fail-closed).
-      - RESTAURANT_KEY=${RESTAURANT_KEY:-}
+      # NB : RESTAURANT_KEY (clé envoyée à la brique restaurant en X-API-Key pour piloter la
+      # carte via ses capacités) vient du .env racine via env_file — NE PAS la redéclarer en
+      # `RESTAURANT_KEY=${RESTAURANT_KEY:-}` : l'interpolation ne lit pas l'env_file → chaîne
+      # VIDE qui écrase la vraie valeur (piège « env shadow ») → la brique refuse (401).
     volumes:
       - ../briques:/briques:ro
       - core_data:/data
