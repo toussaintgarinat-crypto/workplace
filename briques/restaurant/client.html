@@ -33,6 +33,11 @@
   .tips button { flex:1; padding:9px; border-radius:9px; border:1px solid var(--bord); background:transparent; color:var(--doux); font-weight:700; cursor:pointer; }
   .tips button.on { color:var(--accent); border-color:var(--accent); }
   .badge-jour { display:inline-block; font-size:.66rem; font-weight:700; color:#0f1420; background:var(--accent); border-radius:6px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+  .formats { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  .fmt { display:flex; align-items:center; gap:10px; }
+  .fmt .fmt-t { min-width:74px; font-size:.9rem; }
+  .fmt .fmt-p { color:var(--accent); font-weight:700; font-size:.9rem; }
+  .fmt .pl { margin-left:auto; }
   .pl { margin-left:auto; display:flex; align-items:center; gap:10px; }
   .pl button { width:34px; height:34px; border-radius:9px; border:none; background:var(--accent2); color:#fff; font-size:1.2rem; cursor:pointer; }
   .pl .q { min-width:18px; text-align:center; font-weight:700; }
@@ -141,9 +146,23 @@ function rendre(){
 }
 
 function carteDuPlat(p){
-  const q = panier[p.id]?.q || 0;
   const jour = p.plat_du_jour ? `<span class="badge-jour">${lang==='fr'?'Plat du jour':'Today'}</span>` : '';
   const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
+  // Plat avec FORMATS (tailles) : une ligne d'ajout par taille.
+  if(p.formats && p.formats.length){
+    const lignes = p.formats.map((f,i)=>{
+      const key = p.id+'__'+i, q = panier[key]?.q || 0;
+      return `<div class="fmt"><span class="fmt-t">${esc(f.taille)}</span>
+        <span class="fmt-p">${euro(f.prix_cents)}</span>
+        <span class="pl">${q?`<button onclick="moins('${key}')">−</button><span class="q">${q}</span>`:''}
+        <button onclick="plusF('${p.id}',${i})">+</button></span></div>`;
+    }).join('');
+    return `<div class="plat" style="align-items:flex-start">${img}
+      <div style="flex:1"><div class="nom">${esc(p.nom)}${jour}</div>
+      ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
+      <div class="formats">${lignes}</div></div></div>`;
+  }
+  const q = panier[p.id]?.q || 0;
   return `<div class="plat">${img}
     <div><div class="nom">${esc(p.nom)}${jour}</div>
     ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
@@ -162,8 +181,10 @@ function vueCarte(){
     return titre + groupes[k].map(carteDuPlat).join('');
   }).join('');
 }
-window.plus = id => { const p=data.carte.find(x=>x.id===id); panier[id]={q:(panier[id]?.q||0)+1, nom:p.nom}; rendre(); };
-window.moins = id => { if(panier[id]){ panier[id].q--; if(panier[id].q<=0) delete panier[id]; } rendre(); };
+window.plus = id => { const p=data.carte.find(x=>x.id===id); panier[id]={plat_id:id, q:(panier[id]?.q||0)+1, nom:p.nom}; rendre(); };
+window.plusF = (id, i) => { const p=data.carte.find(x=>x.id===id); const f=p.formats[i]; const key=id+'__'+i;
+  panier[key]={plat_id:id, format:f.taille, q:(panier[key]?.q||0)+1, nom:p.nom+' ('+f.taille+')'}; rendre(); };
+window.moins = key => { if(panier[key]){ panier[key].q--; if(panier[key].q<=0) delete panier[key]; } rendre(); };
 
 function vueAddition(){
   return `<div id="addition-corps"><div class="vide">…</div></div>`;
@@ -214,7 +235,7 @@ $('#commander').onclick = async () => {
   commanderMaintenant();
 };
 async function commanderMaintenant(){
-  const plats = Object.entries(panier).map(([plat_id,v])=>({plat_id, quantite:v.q}));
+  const plats = Object.values(panier).map(v=>({plat_id:v.plat_id, quantite:v.q, format:v.format||''}));
   if(!plats.length) return;
   const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({convive:moi, plats})});

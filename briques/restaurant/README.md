@@ -68,6 +68,16 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## Formats / tailles (v0.5.0)
+
+Un plat peut avoir plusieurs **formats** (ex. bière **25cl / 50cl / 1L / girafe 2,5L**), chacun
+avec son prix. Le prix de carte affiché devient « **dès** X » (le moins cher). Côté **client**,
+chaque taille a sa ligne d'ajout ; à la commande, la **taille choisie** est envoyée et l'addition
+enregistre le **nom + prix du format** (snapshot, ex. « Carlsberg (50cl) — 7 € »). Sans formats,
+le plat reste à prix unique (comportement inchangé). Édition dans le back-office (bouton
+**Formats** : `25cl=3.50, 50cl=7, 1L=13, Girafe 2,5L=28` ; vider = repasser en prix unique) et via
+les capacités `restaurant_plat_ajouter/_modifier` (param `formats`). Stockés en JSON sur le plat.
+
 ## Multi-tenant (cloisonnement)
 
 `Compte → Restaurant(s) → Tables / Plats / Commandes / Paiements`. Toute lecture/écriture
