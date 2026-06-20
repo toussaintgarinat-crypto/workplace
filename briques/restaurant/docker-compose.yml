@@ -19,10 +19,11 @@ services:
       - RESTAURANT_ENV=${RESTAURANT_ENV:-}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      # URL publique vue par le smartphone du client (contenu des QR). À définir une fois
-      # la brique exposée (tunnel/Proxmox) ; sinon déduite de la requête (≠ joignable
-      # depuis un téléphone en localhost, attendu en dev).
-      - RESTAURANT_PUBLIC_URL=${RESTAURANT_PUBLIC_URL:-}
+      # URL publique vue par le smartphone du client (contenu des QR). NON listée ici :
+      # vient du .env racine via env_file (la redéclarer en `=${VAR:-}` l'écraserait par du
+      # vide — piège « env shadow »). Si absente, l'URL est déduite de la requête = localhost,
+      # donc INJOIGNABLE depuis un téléphone (attendu en dev pur). Pour une démo, mettre l'IP
+      # LAN du Mac (ex. http://192.168.1.101:6010) ou l'URL d'un tunnel HTTPS dans le .env racine.
       # NB : RESTAURANT_KEY (clé de service : pilotage carte par le Cœur/MCP) et GATEWAY_KEY
       # NE sont PAS listés ici. Ils viennent du .env racine via env_file. Les redéclarer en
       # `VAR=${VAR:-}` les écraserait par du VIDE (piège « env shadow » : l'interpolation ne
