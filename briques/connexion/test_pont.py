@@ -198,3 +198,32 @@ def test_sonder_reseau_non_configure():
     # email_sms n'est pas configuré → sondage honnête à vide, sans réseau.
     r = _run(pont.sonder("email_sms"))
     assert r == {"ok": True, "reseau": "email_sms", "traites": 0, "configure": False}
+
+
+# ── Envoi proactif (rappels d'agenda poussés par le Cœur) — S80 ──────────────
+
+def test_cibles_pour_ne_rend_que_les_lies():
+    K.lier("faux", "push1", "garina@push")
+    # Un interlocuteur en attente (non lié) ne doit pas être une cible.
+    K.resoudre("faux", "push-attente", "Inconnu")
+    cibles = K.cibles_pour("garina@push")
+    assert ("faux", "push1") in cibles
+    assert all(util_id != "push-attente" for _, util_id in cibles)
+
+
+def test_pousser_envoie_sur_le_reseau_lie(monkeypatch):
+    import main
+    faux = FauxAdaptateur()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    K.lier("faux", "push2", "garina@push2")
+    r = _run(main.pousser(main.Pousser(utilisateur="garina@push2", texte="🔔 Rappel : Dentiste"),
+                          _cle="public"))
+    assert r["ok"] is True and r["envoyes"] == 1
+    assert faux.envoyes == [("push2", "🔔 Rappel : Dentiste")]
+
+
+def test_pousser_repli_honnete_sans_cible(monkeypatch):
+    import main
+    r = _run(main.pousser(main.Pousser(utilisateur="personne@nulle-part", texte="x"),
+                          _cle="public"))
+    assert r == {"ok": True, "envoyes": 0, "cibles": 0, "detail": []}

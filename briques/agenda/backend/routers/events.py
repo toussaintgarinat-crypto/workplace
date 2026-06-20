@@ -53,6 +53,8 @@ async def create_event(
     if "title" not in data or "start_at" not in data or "end_at" not in data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="title, start_at, end_at required")
     data.pop("calendar_id", None)
+    if data.get("label_id") == "":  # chaîne vide = « aucune étiquette » explicite
+        data["label_id"] = None
     evt = Event(**data, calendar_id=cal_id, created_by=user["sub"])
     db.add(evt)
     await db.commit()
@@ -86,7 +88,10 @@ async def update_event(
     if not evt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
-    for k, v in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    if data.get("label_id") == "":  # chaîne vide = « aucune étiquette » explicite
+        data["label_id"] = None
+    for k, v in data.items():
         setattr(evt, k, v)
     await db.commit()
     await db.refresh(evt)

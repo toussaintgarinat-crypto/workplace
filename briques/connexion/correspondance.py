@@ -109,3 +109,17 @@ def delier(reseau: str, id_externe: str) -> bool:
 
 def lister() -> list:
     return list(table().values())
+
+
+def cibles_pour(utilisateur: str) -> list:
+    """Toutes les cibles (reseau, id_externe) rattachées à un utilisateur Workplace.
+
+    Sert l'envoi PROACTIF (rappels d'agenda poussés par le Cœur) : on retrouve où
+    joindre l'utilisateur sur ses messageries. Ne renvoie que les interlocuteurs
+    autorisés (statut « lie » ou « ouvert »). Liste vide = personne à joindre (repli
+    honnête côté appelant : aucun envoi, pas d'erreur)."""
+    cibles = []
+    for e in table().values():
+        if e.get("utilisateur") == utilisateur and e.get("statut") in ("lie", "ouvert"):
+            cibles.append((e.get("reseau"), e.get("id_externe")))
+    return cibles

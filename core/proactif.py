@@ -105,23 +105,98 @@ def marquer_vu(rappel_id: str) -> bool:
 
 # ── Vérifications ────────────────────────────────────────────────────────────
 
+# Fenêtre de balayage : assez large pour attraper un rappel « 1 semaine avant »
+# (le plus long preset). On ne lève le 🔔 que lorsque CHAQUE rappel devient dû.
+FENETRE_AGENDA_JOURS = 8
+
+
+def _delai_lisible(minutes: int) -> str:
+    """« 0 → à l'heure », « 30 → dans 30 min », « 60 → dans 1 h », « 1440 → dans 1 j »."""
+    if minutes <= 0:
+        return "maintenant"
+    if minutes < 60:
+        return f"dans {minutes} min"
+    if minutes < 1440:
+        h = minutes / 60
+        return f"dans {int(h)} h" if h == int(h) else f"dans {h:.1f} h"
+    j = minutes / 1440
+    return f"dans {int(j)} j" if j == int(j) else f"dans {j:.1f} j"
+
+
+def _rappels_dus(evt: dict, maintenant: datetime):
+    """Rappels d'un événement qui sont dus MAINTENANT (générateur de (minutes, debut)).
+
+    Un rappel `m` est dû si `maintenant >= debut - m` et que l'événement n'a pas encore
+    commencé (`maintenant <= debut`). Pur (aucune I/O) → testable directement.
+    """
+    rappels = evt.get("rappels") or []
+    debut_iso = evt.get("start_at") or ""
+    try:
+        debut = datetime.fromisoformat(debut_iso)
+    except (ValueError, TypeError):
+        return
+    # Comparaison naïve : la brique renvoie des datetimes sans fuseau (heure locale
+    # de saisie), `maintenant` est local lui aussi (datetime.now()).
+    if debut.tzinfo is not None:
+        debut = debut.replace(tzinfo=None)
+    for m in rappels:
+        try:
+            m = int(m)
+        except (ValueError, TypeError):
+            continue
+        fire_at = debut - timedelta(minutes=m)
+        if maintenant >= fire_at and maintenant <= debut:
+            yield m, debut
+
+
 async def _check_agenda(registre) -> int:
-    """Rendez-vous dans les 2 prochaines heures."""
+    """Lève un 🔔 (et un push messagerie) pour chaque rappel configuré devenu dû.
+
+    Les rappels sont configurés PAR ÉVÉNEMENT dans la brique agenda (liste de minutes
+    avant le début). Aucun rappel par défaut : un événement sans `rappels` ne sonne pas.
+    Dédoublonnage par (événement, minutes) → chaque rappel ne sonne qu'une fois.
+    """
     n = 0
     try:
         maintenant = datetime.now()
-        fin = maintenant + timedelta(hours=2)
+        fin = maintenant + timedelta(days=FENETRE_AGENDA_JOURS)
         evts = await agenda.lister_evenements(
             registre, maintenant.isoformat(), fin.isoformat())
         for e in evts:
+            titre_evt = e.get("title", "(sans titre)")
             heure = (e.get("start_at") or "")[11:16]
-            titre = f"Rendez-vous bientôt : {e.get('title','(sans titre)')}"
-            corps = f"À {heure}" + (f" — {e.get('location')}" if e.get("location") else "")
-            if _ajouter("agenda", titre, corps, f"agenda:{e.get('id')}"):
-                n += 1
+            lieu = f" — {e.get('location')}" if e.get("location") else ""
+            for m, _debut in _rappels_dus(e, maintenant):
+                titre = f"Rappel : {titre_evt}"
+                corps = f"{_delai_lisible(m).capitalize()} (à {heure}){lieu}"
+                if _ajouter("agenda", titre, corps, f"agenda:{e.get('id')}:{m}"):
+                    n += 1
+                    await _pousser_messagerie(registre, titre, corps)
     except Exception as ex:  # noqa: BLE001
         logger.warning("Proactif agenda : %s", ex)
     return n
+
+
+async def _pousser_messagerie(registre, titre: str, corps: str) -> None:
+    """Pousse un rappel vers les messageries de l'utilisateur (Telegram…) via le pont.
+
+    Best-effort : si la brique « connexion » est absente du registre ou injoignable, on
+    ignore silencieusement — le 🔔 du dashboard reste, lui, en place. Ne lève jamais.
+    """
+    try:
+        base = orchestrateur._brique_base(registre, "connexion")
+    except Exception:  # noqa: BLE001 — brique non déclarée → pas de push, c'est tout
+        return
+    entetes = {}
+    cle = os.getenv("CONNEXION_KEY", "")
+    if cle:
+        entetes["X-API-Key"] = cle
+    corps_push = {"utilisateur": agenda.USER_ID, "texte": f"🔔 {titre}\n{corps}"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{base}/pousser", json=corps_push, headers=entetes)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("Proactif push messagerie : %s", ex)
 
 
 async def _check_documents(registre) -> int:
