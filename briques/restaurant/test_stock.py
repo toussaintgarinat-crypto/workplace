@@ -61,7 +61,7 @@ def test_rupture_a_zero_retire_le_plat_et_refuse_la_commande():
     r = client.post(f"/t/{code}/commander",
                     json={"convive": "B", "plats": [{"plat_id": dessert["id"], "quantite": 2}]})
     assert r.status_code == 200
-    assert dessert["id"] in r.json()["commande"]["ruptures"]
+    assert dessert["id"] in r.json()["ruptures"]
 
     # Épuisé → hors carte client, et plus commandable (fail-closed → 400).
     assert not any(p["id"] == dessert["id"] for p in _carte(code))

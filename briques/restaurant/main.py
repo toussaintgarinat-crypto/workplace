@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.6.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.7.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -200,8 +200,9 @@ class Cloturer(BaseModel):
 
 
 class Commander(BaseModel):
-    convive: str
-    plats: list = []                   # [{plat_id, quantite}]
+    convive: str = ""                  # convive par défaut si une ligne n'en porte pas
+    # [{plat_id, quantite, format?, convive?, notes?}] — multi-convive « pour qui » par ligne (S81)
+    plats: list = []
 
 
 class PayerPart(BaseModel):
@@ -212,7 +213,7 @@ class PayerPart(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.6.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.7.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -599,21 +600,24 @@ def vue_client(code: str):
 @app.post("/t/{code}/commander")
 async def commander(code: str, corps: Commander):
     t = _table_par_code(code)
-    cmd = stockage.creer_commande(t["restaurant_id"], t["id"], corps.convive, corps.plats)
-    if not cmd:
+    # Un panier peut désormais mêler plusieurs convives (« pour qui » par ligne) → une
+    # commande par convive (groupage délégué au domaine pur).
+    res = stockage.creer_commandes(t["restaurant_id"], t["id"], corps.plats, corps.convive)
+    if not res:
         raise HTTPException(400, "Commande vide ou plats indisponibles.")
-    # Cuisine en direct + addition de la table à jour.
-    await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
-                             {"type": "nouvelle_commande", "table_numero": t["numero"],
-                              "table_id": t["id"], "commande": cmd})
+    # Cuisine en direct : une carte par convive (la file reste lisible par personne).
+    for cmd in res["commandes"]:
+        await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
+                                 {"type": "nouvelle_commande", "table_numero": t["numero"],
+                                  "table_id": t["id"], "commande": cmd})
     etat = stockage.etat_table(t["restaurant_id"], t["id"])
     await diffuseur.diffuser(diffuseur.canal_table(t["id"]), {"type": "commande", "etat": etat})
     # Stock épuisé par cette commande → la carte change pour TOUTES les tables : on diffuse
     # une rupture pour que les clients (et la cuisine) rafraîchissent leur carte en direct.
-    if cmd.get("ruptures"):
+    if res["ruptures"]:
         await _diffuser_carte_modifiee(t["restaurant_id"],
-                                       {"type": "rupture", "plats": cmd["ruptures"]})
-    return {"commande": cmd, "etat": etat}
+                                       {"type": "rupture", "plats": res["ruptures"]})
+    return {"commandes": res["commandes"], "ruptures": res["ruptures"], "etat": etat}
 
 
 @app.get("/t/{code}/addition")
