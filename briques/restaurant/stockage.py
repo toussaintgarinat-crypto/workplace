@@ -68,6 +68,7 @@ def _conn() -> sqlite3.Connection:
             description TEXT, prix_cents INTEGER NOT NULL DEFAULT 0, photo TEXT,
             categorie TEXT DEFAULT '',
             formats TEXT DEFAULT '[]',
+            stock INTEGER,
             disponible INTEGER NOT NULL DEFAULT 1, plat_du_jour INTEGER NOT NULL DEFAULT 0,
             ordre INTEGER NOT NULL DEFAULT 0, cree_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_plat_resto ON plats(restaurant_id);
@@ -114,6 +115,10 @@ def _conn() -> sqlite3.Connection:
         # Formats/tailles d'un plat (ex. bière 25cl/50cl/1L/girafe) : JSON
         # [{"taille": "...", "prix_cents": n}]. Vide = plat à prix unique (prix_cents).
         c.execute("ALTER TABLE plats ADD COLUMN formats TEXT DEFAULT '[]'")
+    if "stock" not in pcol:
+        # Stock optionnel : NULL = illimité (défaut) ; entier = unités restantes,
+        # décompté ATOMIQUEMENT à la commande (anti-survente) → rupture auto à 0.
+        c.execute("ALTER TABLE plats ADD COLUMN stock INTEGER")
     if "session_id" not in _colonnes("commandes"):
         c.execute("ALTER TABLE commandes ADD COLUMN session_id INTEGER NOT NULL DEFAULT 1")
     pc = _colonnes("paiements")
@@ -331,19 +336,32 @@ def _formats_de(r: sqlite3.Row) -> list:
         return []
 
 
+def _normaliser_stock(v):
+    """Stock d'un plat : None ou '' = illimité ; sinon entier borné à >= 0."""
+    if v is None or v == "":
+        return None
+    try:
+        return max(0, int(v))
+    except (TypeError, ValueError):
+        return None
+
+
 def _plat_dict(r: sqlite3.Row) -> dict:
+    stock = r["stock"] if "stock" in r.keys() else None
     return {"id": r["id"], "nom": r["nom"], "description": r["description"],
             "prix_cents": r["prix_cents"], "photo": r["photo"],
             "categorie": (r["categorie"] or "") if "categorie" in r.keys() else "",
             "formats": _formats_de(r),
+            "stock": stock, "epuise": stock is not None and stock <= 0,
             "disponible": bool(r["disponible"]), "plat_du_jour": bool(r["plat_du_jour"]),
             "ordre": r["ordre"]}
 
 
 def creer_plat(compte_id: str, restaurant_id: str, nom: str, description: str = "",
                prix_cents: int = 0, photo: str = "", plat_du_jour: bool = False,
-               categorie: str = "", formats=None) -> dict | None:
+               categorie: str = "", formats=None, stock=None) -> dict | None:
     formats = _normaliser_formats(formats)
+    stock = _normaliser_stock(stock)
     # Avec des formats, le prix de carte = « à partir de » (le moins cher).
     if formats:
         prix_cents = min(f["prix_cents"] for f in formats)
@@ -354,11 +372,11 @@ def creer_plat(compte_id: str, restaurant_id: str, nom: str, description: str = 
         ordre = (c.execute("SELECT COALESCE(MAX(ordre), 0) + 1 FROM plats WHERE restaurant_id=?",
                            (restaurant_id,)).fetchone()[0])
         c.execute("""INSERT INTO plats (id, restaurant_id, nom, description, prix_cents, photo,
-                     categorie, formats, disponible, plat_du_jour, ordre, cree_le)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     categorie, formats, stock, disponible, plat_du_jour, ordre, cree_le)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (pid, restaurant_id, nom.strip() or "Plat", description.strip(),
                    max(0, int(prix_cents)), photo.strip(), (categorie or "").strip(),
-                   json.dumps(formats, ensure_ascii=False),
+                   json.dumps(formats, ensure_ascii=False), stock,
                    1, 1 if plat_du_jour else 0, ordre, _maintenant()))
         r = c.execute("SELECT * FROM plats WHERE id=?", (pid,)).fetchone()
     return _plat_dict(r)
@@ -375,9 +393,12 @@ def lister_plats(compte_id: str, restaurant_id: str) -> list | None:
 
 
 def carte_publique(restaurant_id: str) -> list:
-    """Carte vue par le CLIENT : uniquement les plats DISPONIBLES (rupture = invisible)."""
+    """Carte vue par le CLIENT : uniquement les plats commandables. Un plat sort de la carte
+    s'il est marqué indisponible (bascule manuelle) OU si son stock est épuisé (= 0) ; le
+    stock NULL (illimité) ne filtre jamais."""
     with _conn() as c:
         rows = c.execute("SELECT * FROM plats WHERE restaurant_id=? AND disponible=1 "
+                         "AND (stock IS NULL OR stock > 0) "
                          "ORDER BY categorie, plat_du_jour DESC, ordre, cree_le",
                          (restaurant_id,)).fetchall()
     return [_plat_dict(r) for r in rows]
@@ -410,10 +431,14 @@ def maj_plat(compte_id: str, restaurant_id: str, plat_id: str, champs: dict) -> 
             d["formats"] = _normaliser_formats(champs["formats"])
             if d["formats"]:                       # prix de carte = « à partir de »
                 d["prix_cents"] = min(f["prix_cents"] for f in d["formats"])
+        # Stock : présent dans `champs` ⇒ on l'applique, y compris None (= réappro illimité).
+        if "stock" in champs:
+            d["stock"] = _normaliser_stock(champs["stock"])
+            d["epuise"] = d["stock"] is not None and d["stock"] <= 0
         c.execute("""UPDATE plats SET nom=?, description=?, prix_cents=?, photo=?,
-                     categorie=?, formats=?, disponible=?, plat_du_jour=? WHERE id=? AND restaurant_id=?""",
+                     categorie=?, formats=?, stock=?, disponible=?, plat_du_jour=? WHERE id=? AND restaurant_id=?""",
                   (d["nom"], d["description"], d["prix_cents"], d["photo"], d["categorie"],
-                   json.dumps(d["formats"], ensure_ascii=False),
+                   json.dumps(d["formats"], ensure_ascii=False), d["stock"],
                    1 if d["disponible"] else 0, 1 if d["plat_du_jour"] else 0,
                    plat_id, restaurant_id))
     return d
@@ -435,18 +460,35 @@ def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list)
     restaurateur change le prix après coup, l'addition du convive ne bouge pas. Si le plat a
     des FORMATS (taille), `format` choisit lequel (défaut : le 1er) → le prix et le nom de la
     ligne reflètent la taille (ex. « Carlsberg (50cl) »).
-    Refuse les plats indisponibles / hors de ce restaurant (fail-closed)."""
+    Refuse les plats indisponibles / hors de ce restaurant (fail-closed).
+
+    STOCK : chaque unité commandée est décomptée ATOMIQUEMENT (`UPDATE … SET stock=stock-q
+    WHERE stock>=q`) dans la même transaction → jamais de survente, même en commandes
+    simultanées. Une ligne dont le stock est insuffisant est ignorée (fail-closed). Le champ
+    `ruptures` de la valeur de retour liste les plats tombés à 0 (pour rafraîchir la carte)."""
     convive = (convive or "").strip() or "Convive"
     with _conn() as c:
         cmd_id = _id()
         session_id = _session_table(c, table_id)
         lignes = []
+        ruptures: list[str] = []
         for item in plats or []:
             r = c.execute("SELECT * FROM plats WHERE id=? AND restaurant_id=? AND disponible=1",
                           (item.get("plat_id"), restaurant_id)).fetchone()
             if not r:
                 continue
             q = max(1, int(item.get("quantite", 1)))
+            # Décompte atomique du stock (NULL = illimité, non décompté). rowcount==0 ⇒ stock
+            # insuffisant ⇒ on saute la ligne (anti-survente, fail-closed).
+            cur = c.execute(
+                "UPDATE plats SET stock = stock - ? "
+                "WHERE id=? AND restaurant_id=? AND (stock IS NULL OR stock >= ?)",
+                (q, r["id"], restaurant_id, q))
+            if cur.rowcount == 0:
+                continue
+            reste = c.execute("SELECT stock FROM plats WHERE id=?", (r["id"],)).fetchone()["stock"]
+            if reste is not None and reste <= 0 and r["id"] not in ruptures:
+                ruptures.append(r["id"])
             nom_plat, prix = r["nom"], r["prix_cents"]
             formats = _formats_de(r)
             if formats:                            # plat à formats → résoudre la taille choisie
@@ -465,7 +507,7 @@ def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list)
             c.execute("INSERT INTO lignes (id, commande_id, plat_id, nom_plat, prix_cents, quantite) "
                       "VALUES (?,?,?,?,?,?)",
                       (l["id"], cmd_id, l["plat_id"], l["nom_plat"], l["prix_cents"], l["quantite"]))
-    return {"id": cmd_id, "convive": convive, "statut": "en_cuisine",
+    return {"id": cmd_id, "convive": convive, "statut": "en_cuisine", "ruptures": ruptures,
             "lignes": lignes, "total_cents": sum(l["prix_cents"] * l["quantite"] for l in lignes)}
 
 

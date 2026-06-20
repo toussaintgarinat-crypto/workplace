@@ -26,6 +26,11 @@ class Diffuseur:
         async with self._verrou:
             self._abonnes[canal].add(ws)
 
+    async def abonner_aussi(self, canal: str, ws: WebSocket) -> None:
+        """Abonne un socket DÉJÀ accepté à un canal supplémentaire (pas de 2e accept())."""
+        async with self._verrou:
+            self._abonnes[canal].add(ws)
+
     async def desabonner(self, canal: str, ws: WebSocket) -> None:
         async with self._verrou:
             self._abonnes.get(canal, set()).discard(ws)
@@ -54,6 +59,12 @@ class Diffuseur:
     @staticmethod
     def canal_table(table_id: str) -> str:
         return f"table:{table_id}"
+
+    @staticmethod
+    def canal_carte(restaurant_id: str) -> str:
+        """Canal CARTE d'un resto → diffuse aux CLIENTS de toutes ses tables ouvertes les
+        changements de carte (rupture de stock, prix, dispo) pour qu'ils la rafraîchissent."""
+        return f"carte:{restaurant_id}"
 
 
 diffuseur = Diffuseur()

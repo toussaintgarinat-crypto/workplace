@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.5.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.6.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -104,6 +104,15 @@ def service_ok(x_api_key: Optional[str] = Header(None)) -> bool:
     return True
 
 
+# ── Diffusion d'un changement de carte ───────────────────────────
+async def _diffuser_carte_modifiee(restaurant_id: str, message: dict):
+    """Prévient à la fois la cuisine (tablette/écran staff) ET les clients des tables ouvertes
+    (canal CARTE du resto) qu'un plat a changé → ils rafraîchissent leur carte. Sert les
+    bascules dispo/prix, l'ajout en lot, et les RUPTURES de stock automatiques."""
+    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id), message)
+    await diffuseur.diffuser(diffuseur.canal_carte(restaurant_id), message)
+
+
 # ── Modèles ──────────────────────────────────────────────────────
 class Inscription(BaseModel):
     email: str
@@ -146,6 +155,7 @@ class PlatEntree(BaseModel):
     categorie: str = ""                # section de carte (Entrées, Plats, Boissons…)
     plat_du_jour: bool = False
     formats: list = []                 # tailles : [{taille:"50cl", prix_cents:700}] (vide = prix unique)
+    stock: Optional[int] = None        # unités restantes ; None = stock illimité (défaut)
 
 
 class MajPlat(BaseModel):
@@ -157,6 +167,7 @@ class MajPlat(BaseModel):
     disponible: Optional[bool] = None
     plat_du_jour: Optional[bool] = None
     formats: Optional[list] = None     # remplace les tailles ; [] = repasser en prix unique
+    stock: Optional[int] = None        # réappro : entier = unités ; null = repasser en illimité
 
 
 class ImporterCarte(BaseModel):
@@ -201,7 +212,7 @@ class PayerPart(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.5.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.6.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -352,7 +363,7 @@ def creer_plat(restaurant_id: str, corps: PlatEntree, compte_id: str = Depends(c
     _exige_resto(compte_id, restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
                             corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie,
-                            corps.formats)
+                            corps.formats, corps.stock)
     if not p:
         raise HTTPException(404, "Restaurant introuvable.")
     return p
@@ -371,10 +382,9 @@ async def maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
     p = stockage.maj_plat(compte_id, restaurant_id, plat_id, corps.model_dump(exclude_unset=True))
     if not p:
         raise HTTPException(404, "Plat introuvable.")
-    # Une bascule de dispo / un prix change la carte vue par les clients : on prévient
-    # les tables ouvertes de ce resto pour qu'elles rafraîchissent leur carte.
-    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
-                             {"type": "carte_modifiee", "plat": p})
+    # Une bascule de dispo / un prix / un stock change la carte vue par les clients : on
+    # prévient la cuisine ET les clients des tables ouvertes pour qu'ils rafraîchissent leur carte.
+    await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_modifiee", "plat": p})
     return p
 
 
@@ -427,12 +437,11 @@ async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
             compte_id, restaurant_id, str(p.get("nom")), str(p.get("description") or ""),
             int(p.get("prix_cents") or 0), str(p.get("photo") or ""),
             bool(p.get("plat_du_jour")), str(p.get("categorie") or ""),
-            p.get("formats") or [])
+            p.get("formats") or [], p.get("stock"))
         if plat:
             crees.append(plat)
     if crees:
-        await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
-                                 {"type": "carte_modifiee", "lot": len(crees)})
+        await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_modifiee", "lot": len(crees)})
     return {"ajoutes": len(crees), "plats": crees}
 
 
@@ -469,11 +478,10 @@ async def service_creer_plat(restaurant_id: str, corps: PlatEntree, _: bool = De
     compte_id = _compte_de_service(restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
                             corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie,
-                            corps.formats)
+                            corps.formats, corps.stock)
     if not p:
         raise HTTPException(404, "Restaurant introuvable.")
-    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
-                             {"type": "carte_modifiee", "plat": p})
+    await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_modifiee", "plat": p})
     return p
 
 
@@ -485,8 +493,7 @@ async def service_maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
     p = stockage.maj_plat(compte_id, restaurant_id, plat_id, corps.model_dump(exclude_unset=True))
     if not p:
         raise HTTPException(404, "Plat introuvable.")
-    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
-                             {"type": "carte_modifiee", "plat": p})
+    await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_modifiee", "plat": p})
     return p
 
 
@@ -601,6 +608,11 @@ async def commander(code: str, corps: Commander):
                               "table_id": t["id"], "commande": cmd})
     etat = stockage.etat_table(t["restaurant_id"], t["id"])
     await diffuseur.diffuser(diffuseur.canal_table(t["id"]), {"type": "commande", "etat": etat})
+    # Stock épuisé par cette commande → la carte change pour TOUTES les tables : on diffuse
+    # une rupture pour que les clients (et la cuisine) rafraîchissent leur carte en direct.
+    if cmd.get("ruptures"):
+        await _diffuser_carte_modifiee(t["restaurant_id"],
+                                       {"type": "rupture", "plats": cmd["ruptures"]})
     return {"commande": cmd, "etat": etat}
 
 
@@ -648,13 +660,18 @@ async def ws_cuisine(ws: WebSocket, restaurant_id: str, session: str = ""):
 
 @app.websocket("/ws/t/{code}")
 async def ws_table(ws: WebSocket, code: str):
-    """Canal d'une table (CLIENT) : ouvert via le code du QR (capability), sans compte."""
+    """Canal d'une table (CLIENT) : ouvert via le code du QR (capability), sans compte.
+
+    Abonné à DEUX canaux : sa table (addition en direct) ET la carte du resto (rupture de
+    stock / changement de carte qui touche toutes les tables ouvertes)."""
     t = stockage.table_par_code(code)
     if not t:
         await ws.close(code=4404)
         return
     canal = diffuseur.canal_table(t["id"])
+    canal_carte = diffuseur.canal_carte(t["restaurant_id"])
     await diffuseur.abonner(canal, ws)
+    await diffuseur.abonner_aussi(canal_carte, ws)
     try:
         while True:
             await ws.receive_text()
@@ -662,6 +679,7 @@ async def ws_table(ws: WebSocket, code: str):
         pass
     finally:
         await diffuseur.desabonner(canal, ws)
+        await diffuseur.desabonner(canal_carte, ws)
 
 
 # ── Fronts (servis par la brique) ────────────────────────────────

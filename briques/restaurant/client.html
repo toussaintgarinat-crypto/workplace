@@ -253,11 +253,26 @@ function majOnglets(){ document.querySelectorAll('.onglets button').forEach(b=>b
 
 function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-// Temps réel : à chaque évènement sur la table, on rafraîchit l'addition si visible.
+// Temps réel : sur un évènement de CARTE (rupture de stock, plat modifié), on recharge la
+// carte ; sinon (commande/paiement) on rafraîchit l'addition si elle est visible.
+async function rechargerCarte(){
+  const r = await fetch('/t/'+code);
+  if(!r.ok) return;
+  const d = await r.json();
+  data.carte = d.carte;
+  // Purge du panier les plats devenus indisponibles (épuisés / retirés).
+  const ids = new Set(d.carte.map(p=>p.id));
+  Object.keys(panier).forEach(k=>{ if(!ids.has(panier[k].plat_id)) delete panier[k]; });
+  rendre();
+}
 function brancherWS(){
   const proto = location.protocol==='https:'?'wss':'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws/t/${code}`);
-  ws.onmessage = () => { if(vueActive==='addition') chargerAddition(); };
+  ws.onmessage = (ev) => {
+    let m = {}; try { m = JSON.parse(ev.data); } catch(e){}
+    if(m.type==='rupture' || m.type==='carte_modifiee'){ rechargerCarte(); return; }
+    if(vueActive==='addition') chargerAddition();
+  };
   ws.onclose = () => setTimeout(brancherWS, 3000);
 }
 
