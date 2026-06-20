@@ -109,6 +109,42 @@ async def structurer(texte: str) -> list[dict]:
     return plats
 
 
+PROMPT_GENERER = (
+    "Tu es un chef-consultant qui CONÇOIT la carte d'un restaurant à partir d'un concept. "
+    "Tu proposes des plats cohérents, appétissants et réalistes, organisés par sections "
+    "(catégories : Entrées, Plats, Desserts, Boissons, Cocktails…). Prix réalistes pour le "
+    "marché français, en CENTIMES (ex. 12,50 € → 1250). Descriptions courtes et concrètes "
+    "(ingrédients clés). N'invente pas de prix absurdes ; reste fidèle au positionnement décrit."
+)
+
+
+async def generer(concept: str, sections: list | None = None, par_section: int = 6) -> dict:
+    """Concept de restaurant → carte structurée PROPOSÉE (ne persiste rien). Repli HONNÊTE : [].
+
+    `sections` (optionnel) impose les catégories voulues ; sinon le modèle les choisit.
+    `par_section` borne le nombre de plats par catégorie pour garder une carte raisonnable."""
+    if not (concept or "").strip():
+        return {"plats": [], "note": "Décris d'abord le concept du restaurant."}
+    par_section = max(2, min(int(par_section or 6), 12))
+    bloc_sections = (f"Sections imposées (utilise EXACTEMENT ces catégories) : "
+                     f"{', '.join(sections)}.\n" if sections else
+                     "Choisis 4 à 6 sections pertinentes.\n")
+    tache = (
+        f"Concept du restaurant :\n{concept.strip()[:2000]}\n\n{bloc_sections}"
+        f"Environ {par_section} plats par section.\n\n"
+        'Réponds UNIQUEMENT par un tableau JSON '
+        '[{"nom":"...","description":"...","prix_cents":0,"categorie":"..."}], '
+        "sans aucun texte autour."
+    )
+    try:
+        brut = await _completer(PROMPT_GENERER, tache)
+    except Exception as e:  # noqa: BLE001
+        return {"plats": [], "note": f"Génération LLM indisponible : {str(e)[:140]}"}
+    plats = [p for p in (_plat_propre(o) for o in (_extraire_json_liste(brut) or [])) if p]
+    return {"plats": plats,
+            "note": "" if plats else "Le modèle n'a pas renvoyé de carte exploitable."}
+
+
 async def importer(contenu_base64: str = "", url: str = "", nom_fichier: str = "") -> dict:
     """Pipeline complet : OCR (vision) → structuration (Gateway) → proposition.
 

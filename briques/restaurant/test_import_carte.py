@@ -66,6 +66,25 @@ def test_import_resto_d_autrui_404(monkeypatch):
     assert r.status_code == 404
 
 
+def test_generer_exige_concept():
+    session, resto = _resto()
+    r = client.post(f"/restaurants/{resto}/carte/generer", headers=_h(session), json={"concept": "  "})
+    assert r.status_code == 422
+
+
+def test_generer_propose_sans_persister(monkeypatch):
+    session, resto = _resto()
+    async def _gen(*_a, **_k):
+        return {"plats": [{"nom": "Mojito", "prix_cents": 900, "categorie": "Cocktails",
+                           "description": "rhum, menthe"}], "note": ""}
+    monkeypatch.setattr(carte_ia, "generer", _gen)
+    r = client.post(f"/restaurants/{resto}/carte/generer", headers=_h(session),
+                    json={"concept": "bar à cocktails", "par_section": 4})
+    assert r.status_code == 200 and r.json()["plats"][0]["nom"] == "Mojito"
+    # Génération = proposition : rien n'est écrit avant validation.
+    assert client.get(f"/restaurants/{resto}/plats", headers=_h(session)).json()["plats"] == []
+
+
 def test_ajout_en_lot():
     session, resto = _resto()
     plats = [{"nom": "Soupe", "prix_cents": 700, "categorie": "Entrées"},

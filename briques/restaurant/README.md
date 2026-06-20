@@ -38,19 +38,22 @@ scannant un QR code. Inspiré de Sunday / Skeat, mais souverain (rien ne sort ve
 Restent hors-code (pas de notre ressort) : **paiement réel** (Stripe Connect Express,
 incrément séparé) et **hébergement HTTPS** (Proxmox/cloud + domaine).
 
-## Assistant carte & pilotage par le Cœur (v0.3.0)
+## Assistant carte & pilotage par le Cœur (v0.4.0)
 
-Deux surfaces complémentaires pour **gérer la carte avec un assistant** — utile surtout à
-l'**onboarding d'un nouveau restaurant** (récupérer l'ancienne carte papier/PDF).
+Trois surfaces complémentaires pour **gérer la carte avec un assistant** — utile surtout à
+l'**onboarding d'un nouveau restaurant**.
 
-- **Assistant carte** (onglet du back-office) : le restaurateur **photographie / dépose**
-  son ancienne carte → la brique délègue l'**OCR** à la brique [`vision`](../vision) puis la
-  **structuration** (plats : nom / prix / catégorie) au LLM de la **Gateway** → propose une
-  carte **éditable**. Le restaurateur corrige, puis **« Ajoute à ma carte »** (création en
+- **Importer une ancienne carte** (onglet du back-office) : le restaurateur **photographie /
+  dépose** son ancienne carte → la brique délègue l'**OCR** à la brique [`vision`](../vision)
+  puis la **structuration** (plats : nom / prix / catégorie) au LLM de la **Gateway** → propose
+  une carte **éditable**. Le restaurateur corrige, puis **« Ajoute à ma carte »** (création en
   lot). Rien n'est écrit avant validation. Repli **honnête** : OCR illisible ou briques
   éteintes ⇒ proposition vide + la raison, jamais de plat inventé.
-  Endpoints (session restaurateur) : `POST /restaurants/{id}/carte/importer` (propose),
-  `POST /restaurants/{id}/plats/lot` (ajoute les plats validés).
+  Endpoints (session) : `POST /restaurants/{id}/carte/importer` (propose), `POST …/plats/lot`.
+- **Générer une carte** : pas d'ancienne carte ? Le restaurateur **décrit son concept**
+  (cuisine, ambiance, gamme de prix) → le LLM Gateway **génère une carte complète** structurée
+  par sections, prix réalistes en centimes → même flux éditable → ajout. Repli honnête (vide +
+  raison). Endpoint (session) : `POST /restaurants/{id}/carte/generer`.
 
 - **Carte pilotable par l'assistant / MCP** : le manifest déclare des `capacites`
   (`restaurant_carte_lister`, `restaurant_infos`, `restaurant_plat_ajouter / _modifier /

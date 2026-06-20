@@ -133,6 +133,9 @@ const T = {
   asst_proposes:"Plats proposés (corrigez avant d'ajouter)", asst_aucun:"Aucun plat n'a pu être extrait.",
   asst_ajouter_tout:"Ajouter ces plats à ma carte", asst_ajoutes:"plats ajoutés à votre carte ✓",
   asst_retirer:"Retirer", asst_backend:"Lu par",
+  gen_titre:"Générer une carte", gen_aide:"Décrivez le restaurant (cuisine, ambiance, gamme de prix). Je génère une carte complète que vous pourrez corriger avant de l'ajouter.",
+  gen_concept:"Concept du restaurant", gen_concept_ex:"Ex : restaurant-bar musical convivial, cuisine bistrot + tapas + burgers, cocktails, gamme moyenne",
+  gen_par_section:"Plats par section", gen_bouton:"Générer la carte", gen_encours:"Génération en cours…",
   dispo:"Disponible", jour:"Plat du jour", photo:"Photo", suppr:"Supprimer", carte_vide:"Aucun plat. Ajoutez votre premier plat.",
   ajouter_table:"Ajouter une table", num_table:"N° de table", tables_vide:"Aucune table.",
   ouvrir_cuisine:"Ouvrir l'écran cuisine ↗", choisir_table:"Choisissez une table",
@@ -162,6 +165,9 @@ const T = {
   asst_proposes:"Proposed dishes (review before adding)", asst_aucun:"No dish could be extracted.",
   asst_ajouter_tout:"Add these dishes to my menu", asst_ajoutes:"dishes added to your menu ✓",
   asst_retirer:"Remove", asst_backend:"Read by",
+  gen_titre:"Generate a menu", gen_aide:"Describe the restaurant (cuisine, vibe, price range). I generate a full menu you can edit before adding it.",
+  gen_concept:"Restaurant concept", gen_concept_ex:"E.g. friendly music bar-restaurant, bistro food + tapas + burgers, cocktails, mid-range",
+  gen_par_section:"Dishes per section", gen_bouton:"Generate the menu", gen_encours:"Generating…",
   dispo:"Available", jour:"Today's special", photo:"Photo", suppr:"Delete", carte_vide:"No dishes yet. Add your first one.",
   ajouter_table:"Add a table", num_table:"Table no.", tables_vide:"No tables yet.",
   ouvrir_cuisine:"Open kitchen screen ↗", choisir_table:"Pick a table",
@@ -352,11 +358,38 @@ function vueAssistant(){
       </div>
       <div id="asst-etat" style="margin-top:12px;color:var(--doux)"></div>
     </div>
+    <div class="carte" style="padding:18px;border:1px solid var(--bord);border-radius:14px;max-width:760px;margin-top:16px">
+      <div style="font-weight:700;margin-bottom:6px">✨ ${t('gen_titre')}</div>
+      <div style="color:var(--doux);font-size:.92rem;margin-bottom:14px">${t('gen_aide')}</div>
+      <label style="font-size:.9rem;color:var(--doux)">${t('gen_concept')}</label>
+      <textarea class="champ" id="gen-concept" rows="3" style="width:100%;margin:6px 0 12px" placeholder="${t('gen_concept_ex')}"></textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:.9rem;color:var(--doux)">${t('gen_par_section')}
+          <input class="champ" id="gen-n" type="number" min="2" max="12" value="6" style="width:70px;margin-left:6px"></label>
+        <button class="btn or" id="gen-go" onclick="genererCarte()">${t('gen_bouton')}</button>
+      </div>
+      <div id="gen-etat" style="margin-top:12px;color:var(--doux)"></div>
+    </div>
     <div id="asst-res" style="margin-top:18px"></div>`;
   $('#asst-f').onchange = e=>{ const f=e.target.files[0];
     $('#asst-nom').textContent = f? f.name : '';
     $('#asst-go').disabled = !f; };
 }
+window.genererCarte = async ()=>{
+  const concept = $('#gen-concept').value.trim(); if(!concept) return;
+  const n = parseInt($('#gen-n').value||'6',10);
+  $('#gen-go').disabled = true; $('#gen-etat').textContent = t('gen_encours'); $('#asst-res').innerHTML='';
+  let data;
+  try {
+    const r = await fetch(`/restaurants/${restoActif}/carte/generer`, {method:'POST', headers:H(),
+      body:JSON.stringify({concept, par_section:n})});
+    data = await r.json();
+  } catch(e){ data = {plats:[], note:String(e)}; }
+  $('#gen-etat').textContent = ''; $('#gen-go').disabled = false;
+  dernierImport = data || {};
+  propositions = (data.plats||[]).map(p=>({nom:p.nom||'', description:p.description||'', prix_cents:p.prix_cents||0, categorie:p.categorie||''}));
+  rendrePropositions();
+};
 window.lireAncienneCarte = async ()=>{
   const f = $('#asst-f').files[0]; if(!f) return;
   $('#asst-go').disabled = true; $('#asst-etat').textContent = t('asst_lecture'); $('#asst-res').innerHTML='';
