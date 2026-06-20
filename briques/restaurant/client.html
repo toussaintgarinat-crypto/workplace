@@ -138,6 +138,9 @@
 <!-- Fiche plat -->
 <div class="modal" id="modal-fiche" style="display:none"><div class="boite" id="fiche-corps"></div></div>
 
+<!-- Porte de session (S82 : démarrer / rejoindre la table par code) -->
+<div class="modal centre" id="modal-porte" style="display:none"><div class="boite" id="porte-corps"></div></div>
+
 <!-- Nom de convive -->
 <div class="modal centre" id="modal-nom" style="display:none">
   <div class="boite">
@@ -164,7 +167,10 @@ const T = {
         ma_part:"ma part", du:"Dû", paye:"Payé", reste:"Reste à payer", payer:"Payer",
         regle:"Réglé ✓", en_attente:"En attente", total_table:"Reste sur la table",
         demo:"Paiement de démonstration (aucun débit réel)", rien_addition:"Aucune commande pour l'instant.",
-        dont_tva:"dont TVA", pourboire:"Pourboire", sans:"Sans", des:"dès" },
+        dont_tva:"dont TVA", pourboire:"Pourboire", sans:"Sans", des:"dès",
+        porte_demarrer:"Démarrer la table", porte_demarrer_sous:"Vous êtes le premier ici. Démarrez la table : vous obtiendrez un code à partager avec votre tablée.",
+        porte_rejoindre:"Rejoindre la table", porte_rejoindre_sous:"Entrez le code à 4 chiffres affiché sur le téléphone qui a démarré la table.",
+        porte_partage:"Partagez ce code avec votre tablée :", porte_continuer:"Continuer", porte_code_faux:"Code incorrect.", porte_code:"Code à 4 chiffres" },
   en: { carte:"Menu", panier:"Cart", addition:"Bill", devise:"en-GB",
         rech:"Search a dish…", aucun_resultat:"No dish found.",
         carte_vide:"Menu loading…", plats:"item", platss:"items",
@@ -179,7 +185,10 @@ const T = {
         ma_part:"my share", du:"Due", paye:"Paid", reste:"Left to pay", payer:"Pay",
         regle:"Settled ✓", en_attente:"Pending", total_table:"Left on the table",
         demo:"Demo payment (no real charge)", rien_addition:"No orders yet.",
-        dont_tva:"incl. VAT", pourboire:"Tip", sans:"None", des:"from" }
+        dont_tva:"incl. VAT", pourboire:"Tip", sans:"None", des:"from",
+        porte_demarrer:"Start the table", porte_demarrer_sous:"You are the first here. Start the table: you'll get a code to share with your party.",
+        porte_rejoindre:"Join the table", porte_rejoindre_sous:"Enter the 4-digit code shown on the phone that started the table.",
+        porte_partage:"Share this code with your party:", porte_continuer:"Continue", porte_code_faux:"Wrong code.", porte_code:"4-digit code" }
 };
 let lang = localStorage.getItem('resto_lang') || 'fr';
 const code = location.pathname.split('/').filter(Boolean).pop();
@@ -197,9 +206,19 @@ if(!Array.isArray(convives) || !convives.length){
   convives = ancien ? [ancien] : [];
 }
 let conviveCourant = convives[0] || '';
+// Jeton d'ADHÉSION de session (S82) : prouve que cet appareil a rejoint la tablée (après
+// « Démarrer » ou « Rejoindre » avec le code). Lié au numéro de session → invalidé à la clôture.
+let jeton = localStorage.getItem('resto_jeton_'+code) || '';
 
 const $ = s => document.querySelector(s);
 const t = k => T[lang][k];
+// En-têtes des appels client : ajoute le jeton d'adhésion si on en a un (sinon ignoré côté
+// table ouverte). `json` = requête à corps JSON.
+function entetes(json){
+  const h = json ? {'Content-Type':'application/json'} : {};
+  if(jeton) h['X-Table-Session'] = jeton;
+  return h;
+}
 function euro(c){ return (c/100).toLocaleString(T[lang].devise, {style:'currency', currency:devise}); }
 function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function sauverConvives(){ localStorage.setItem('resto_convives_'+code, JSON.stringify(convives)); }
@@ -222,7 +241,65 @@ async function charger(){
   $('#resto').textContent = data.restaurant.nom || 'Restaurant';
   $('#sous').textContent = 'Table '+ (data.table.numero||'');
   appliquerLangue();
+  gererPorte();
 }
+
+// ── Porte de session (S82) ────────────────────────────────────────────────
+// Si le restaurant exige un code, l'appareil doit DÉMARRER (1er) ou REJOINDRE (avec le
+// code) la tablée avant de commander/régler. Table ouverte (défaut) → aucune porte.
+function porteNecessaire(){
+  if(!data || !data.session || !data.session.pin_requis) return false;
+  const sj = parseInt(localStorage.getItem('resto_sess_'+code)||'0', 10);
+  return !(jeton && sj === data.session.session_id);   // jeton manquant ou périmé (autre session)
+}
+function fermerPorte(){ $('#modal-porte').style.display='none'; }
+function memoriserJeton(j, sessionId){
+  jeton = j; localStorage.setItem('resto_jeton_'+code, j);
+  localStorage.setItem('resto_sess_'+code, String(sessionId));
+}
+function gererPorte(){
+  if(!data || !data.session) return;
+  if(!data.session.pin_requis){ jeton=''; localStorage.removeItem('resto_jeton_'+code); fermerPorte(); return; }
+  if(!porteNecessaire()){ fermerPorte(); return; }
+  ouvrirPorte();
+}
+function ouvrirPorte(){
+  const demarree = data.session.demarree;
+  const corps = demarree
+    ? `<h3>${t('porte_rejoindre')}</h3><p class="pdesc">${t('porte_rejoindre_sous')}</p>
+       <div class="err" id="porte-err" style="color:#fbbf24;min-height:18px;font-size:.85rem"></div>
+       <input id="porte-code" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="${t('porte_code')}" style="text-align:center;letter-spacing:.3em;font-size:1.3rem">
+       <button class="gros" id="porte-ok" style="margin-top:12px">${t('porte_rejoindre')}</button>`
+    : `<h3>${t('porte_demarrer')}</h3><p class="pdesc">${t('porte_demarrer_sous')}</p>
+       <button class="gros" id="porte-ok">${t('porte_demarrer')}</button>`;
+  $('#porte-corps').innerHTML = corps;
+  $('#modal-porte').style.display='flex';
+  $('#porte-ok').onclick = demarree ? rejoindreTable : demarrerTable;
+  if(demarree){ const i=$('#porte-code'); i.focus(); i.addEventListener('keydown', e=>{ if(e.key==='Enter') rejoindreTable(); }); }
+}
+async function demarrerTable(){
+  const r = await fetch('/t/'+code+'/demarrer', {method:'POST'});
+  if(!r.ok){ await charger(); return; }   // déjà démarrée entre-temps → bascule en « rejoindre »
+  const d = await r.json();
+  memoriserJeton(d.jeton, d.session_id);
+  if(data.session) data.session.demarree = true;   // l'état local suffit : pas de re-`charger` (il refermerait l'écran)
+  if(d.pin){
+    // Affiche le code à partager ; l'écran reste jusqu'à « Continuer ».
+    $('#porte-corps').innerHTML = `<h3>${t('porte_partage')}</h3>
+      <div style="text-align:center;font-size:2.6rem;font-weight:800;letter-spacing:.35em;color:var(--accent);margin:18px 0">${esc(d.pin)}</div>
+      <button class="gros" onclick="fermerPorte()">${t('porte_continuer')}</button>`;
+  } else { fermerPorte(); }
+}
+async function rejoindreTable(){
+  const code_pin = ($('#porte-code')?.value||'').trim();
+  const r = await fetch('/t/'+code+'/rejoindre', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin:code_pin})});
+  if(!r.ok){ const e=$('#porte-err'); if(e) e.textContent=t('porte_code_faux'); return; }
+  const d = await r.json();
+  memoriserJeton(d.jeton, d.session_id);
+  fermerPorte();
+}
+window.fermerPorte = fermerPorte;
 
 // Helpers carte ------------------------------------------------------------
 function prixAffiche(p){
@@ -394,14 +471,16 @@ window.renommerConvive = (ancien) => demanderNom(t('renommer'), t('qui_sous'), a
 $('#commander').onclick = async () => {
   if(!panier.length) return;
   const plats = panier.map(l=>({plat_id:l.plat_id, quantite:l.q, format:l.format, convive:l.convive, notes:l.notes}));
-  const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:{'Content-Type':'application/json'},
+  const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:entetes(true),
     body:JSON.stringify({convive:conviveCourant, plats})});
   if(r.ok){ panier=[]; vue='addition'; alert(t('commande_envoyee')); rendre(); }
+  else if(r.status===403){ await charger(); }   // session fermée/changée → re-rejoindre la table
 };
 
 // ── Vue ADDITION ──────────────────────────────────────────────────────────
 async function chargerAddition(){
-  const r = await fetch('/t/'+code+'/addition');
+  const r = await fetch('/t/'+code+'/addition', {headers:entetes(false)});
+  if(r.status===403){ gererPorte(); return; }   // code exigé et pas (encore) rejoint
   const e = await r.json();
   const corps = $('#addition-corps'); if(!corps) return;
   if(!e.convives.length){ corps.innerHTML = `<div class="vide">${t('rien_addition')}</div>`; return; }
@@ -432,7 +511,7 @@ async function chargerAddition(){
 window.setTip = p => { pourboirePct = p; chargerAddition(); };
 window.payer = async (convive, reste) => {
   const tip = Math.round((reste||0)*pourboirePct/100);
-  await fetch('/t/'+code+'/payer', {method:'POST', headers:{'Content-Type':'application/json'},
+  await fetch('/t/'+code+'/payer', {method:'POST', headers:entetes(true),
     body:JSON.stringify({convive, pourboire_cents:tip})});
   pourboirePct = 0; chargerAddition();
 };
@@ -474,6 +553,7 @@ function brancherWS(){
   ws.onmessage = (ev) => {
     let m = {}; try { m = JSON.parse(ev.data); } catch(e){}
     if(m.type==='rupture' || m.type==='carte_modifiee'){ rechargerCarte(); return; }
+    if(m.type==='session'){ charger(); return; }   // un autre appareil a démarré/clôturé la table
     if(vue==='addition') chargerAddition();
   };
   ws.onclose = () => setTimeout(brancherWS, 3000);

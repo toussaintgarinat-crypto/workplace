@@ -1,6 +1,6 @@
 {
   "nom": "restaurant",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et chacun paie SA part — addition partagée avec « reste à payer » live, paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
   "couche": "backend",
@@ -16,6 +16,7 @@
     "rupture_stock_temps_reel",
     "plat_du_jour",
     "tables_qr_codes",
+    "rejoindre_table_par_pin",
     "commande_par_convive",
     "file_cuisine_temps_reel",
     "addition_partagee",

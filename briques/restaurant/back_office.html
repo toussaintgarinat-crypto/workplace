@@ -154,6 +154,8 @@ const T = {
   reste_du_cloture:"Il reste à payer. Clôturer quand même (départ sans payer) ?",
   cloture_ok:"Table clôturée et remise à zéro ✓", ticket:"Ticket",
   reglages_resto:"Réglages du restaurant", taux_tva:"Taux de TVA (%)", enregistrer:"Enregistrer",
+  code_table:"Demander un code pour rejoindre une table",
+  code_table_aide:"Le 1er client « démarre » la table et obtient un code à 4 chiffres à partager ; les autres convives le saisissent pour rejoindre l'addition (protège la note des tables voisines).",
   securite:"Sécurité", changer_mdp:"Changer le mot de passe", ancien_mdp:"Mot de passe actuel",
   nouveau_mdp:"Nouveau mot de passe", mdp_change:"Mot de passe changé ✓ (autres appareils déconnectés)",
   mdp_faux:"Mot de passe actuel incorrect.", deco_partout:"Déconnecter tous les appareils",
@@ -189,6 +191,8 @@ const T = {
   reste_du_cloture:"There is still an amount due. Close anyway (left without paying)?",
   cloture_ok:"Table closed and reset ✓", ticket:"Receipt",
   reglages_resto:"Restaurant settings", taux_tva:"VAT rate (%)", enregistrer:"Save",
+  code_table:"Require a code to join a table",
+  code_table_aide:"The first guest “starts” the table and gets a 4-digit code to share; the others enter it to join the bill (keeps it safe from neighbouring tables).",
   securite:"Security", changer_mdp:"Change password", ancien_mdp:"Current password",
   nouveau_mdp:"New password", mdp_change:"Password changed ✓ (other devices signed out)",
   mdp_faux:"Current password incorrect.", deco_partout:"Sign out all devices",
@@ -573,8 +577,13 @@ function vueReglages(){
       <label class="liv-sub" style="font-size:.8rem;color:#94a3b8">${t('taux_tva')}</label>
       <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
         <input class="champ" id="r-tva" type="number" step="0.1" min="0" value="${r.tva_taux ?? 10}" style="max-width:140px;margin:0">
-        <button class="btn or" onclick="enregistrerResto()">${t('enregistrer')}</button>
       </div>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin-top:16px;cursor:pointer">
+        <input type="checkbox" id="r-pin" ${r.pin_requis ? 'checked' : ''} style="margin-top:3px;width:18px;height:18px">
+        <span><span style="font-weight:600">${t('code_table')}</span>
+          <span class="liv-sub" style="display:block;font-size:.78rem;color:#94a3b8;margin-top:3px">${t('code_table_aide')}</span></span>
+      </label>
+      <button class="btn or" onclick="enregistrerResto()" style="margin-top:14px">${t('enregistrer')}</button>
     </div>
     <div class="conv" style="max-width:520px;margin-top:14px">
       <h3 style="margin-top:0">${t('securite')}</h3>
@@ -587,7 +596,8 @@ function vueReglages(){
 }
 window.enregistrerResto = async ()=>{
   const tva = parseFloat($('#r-tva').value||'0');
-  await fetch(`/restaurants/${restoActif}`, {method:'PATCH', headers:H(), body:JSON.stringify({tva_taux:isNaN(tva)?0:tva})});
+  const pin_requis = $('#r-pin')?.checked || false;
+  await fetch(`/restaurants/${restoActif}`, {method:'PATCH', headers:H(), body:JSON.stringify({tva_taux:isNaN(tva)?0:tva, pin_requis})});
   await demarrer(); onglet='reglages'; appliquer();
 };
 window.changerMdp = async ()=>{

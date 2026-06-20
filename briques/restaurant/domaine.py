@@ -9,7 +9,12 @@ multi-convive (« pour qui » par ligne).
 """
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
+
+# Longueur du code partagé d'une tablée (PIN à 4 chiffres, façon code Wi-Fi : court à
+# dicter à voisin de table, jetable — il ne protège qu'une addition en cours).
+LONGUEUR_PIN = 4
 
 
 # ── Objet-valeur : Argent ────────────────────────────────────────
@@ -65,6 +70,37 @@ class Convive:
     def normaliser(cls, brut: str | None, defaut: str = "Convive") -> str:
         """Nettoie un nom de convive. Source unique de la règle (back + front s'alignent)."""
         return (brut or "").strip() or defaut
+
+
+# ── Agrégat racine : SessionDeTable ──────────────────────────────
+@dataclass(frozen=True)
+class SessionDeTable:
+    """La tablée qui partage UNE addition à un instant donné (agrégat racine du service
+    à table). Identité = (table, numéro de session) ; `numero` = compteur incrémenté à
+    chaque clôture → une nouvelle tablée = une nouvelle session, l'ancienne est archivée
+    en ticket. Plusieurs appareils peuvent partager la même session.
+
+    `code_pin` (optionnel) protège l'addition en cours : tant qu'il est posé, un appareil
+    doit le présenter pour REJOINDRE la table (commander / régler / voir l'addition).
+    `None` = table OUVERTE (défaut historique : tout scan du QR rejoint directement, aucun
+    code) — on ne casse pas l'existant, le PIN est un réglage opt-in du restaurateur."""
+
+    table_id: str
+    numero: int
+    code_pin: str | None = None
+
+    @property
+    def demarree(self) -> bool:
+        """Vrai si un 1er appareil a DÉMARRÉ la session (un PIN protège déjà l'addition)."""
+        return bool(self.code_pin)
+
+    def autorise(self, pin_saisi: str | None) -> bool:
+        """Un appareil peut rejoindre si la session n'exige aucun code (table ouverte) OU si
+        le PIN saisi correspond. Comparaison à temps constant (anti-timing). Fail-closed :
+        un PIN attendu mais vide/incorrect → refus."""
+        if not self.code_pin:
+            return True
+        return hmac.compare_digest(str(pin_saisi or ""), str(self.code_pin))
 
 
 # ── Service de domaine : groupage d'une commande multi-convive ───
