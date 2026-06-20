@@ -68,6 +68,21 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## Stock & rupture automatique (v0.6.0)
+
+Un plat peut porter un **stock** optionnel (unités restantes). `null` = **illimité** (défaut,
+comportement inchangé) ; un entier (ex. « Côte de bœuf : 6 ») est **décompté
+ATOMIQUEMENT** à chaque commande (`UPDATE … SET stock = stock - q WHERE stock >= q`), donc
+**jamais de survente** même en commandes simultanées. À **0**, le plat **disparaît
+automatiquement** de la carte client (et n'est plus commandable → `400`), et porte un badge
+**« Épuisé »** au back-office (il n'est pas supprimé : un **réapprovisionnement** le fait
+réapparaître). Réglé au back-office (bouton **Stock** : un nombre, ou vide = illimité) et via
+les capacités `restaurant_plat_ajouter/_modifier` (param `stock`).
+
+**Temps réel** : une rupture provoquée par une commande est **poussée à toutes les tables
+ouvertes** du resto (nouveau canal WebSocket `carte:{restaurant_id}` auquel chaque client
+s'abonne en plus de sa table) → la carte se rafraîchit en direct, sans recharger la page.
+
 ## Formats / tailles (v0.5.0)
 
 Un plat peut avoir plusieurs **formats** (ex. bière **25cl / 50cl / 1L / girafe 2,5L**), chacun

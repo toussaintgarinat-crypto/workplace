@@ -1,6 +1,6 @@
 {
   "nom": "restaurant",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et chacun paie SA part — addition partagée avec « reste à payer » live, paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
   "couche": "backend",
@@ -69,7 +69,8 @@
         "prix_cents": {"type": "integer", "description": "Prix en CENTIMES (ex. 12,50 € = 1250)."},
         "categorie": {"type": "string", "description": "Section de carte (Entrées, Plats, Boissons…)."},
         "plat_du_jour": {"type": "boolean", "description": "Mettre en avant comme plat du jour."},
-        "formats": {"type": "array", "description": "Tailles optionnelles : [{\"taille\":\"50cl\",\"prix_cents\":700}] (ex. bière 25cl/50cl/1L/girafe). Si fourni, le prix vient des formats."}
+        "formats": {"type": "array", "description": "Tailles optionnelles : [{\"taille\":\"50cl\",\"prix_cents\":700}] (ex. bière 25cl/50cl/1L/girafe). Si fourni, le prix vient des formats."},
+        "stock": {"type": "integer", "description": "Stock initial (unités restantes). Omettre ou null = stock illimité. À 0, le plat sort automatiquement de la carte client (rupture)."}
       },
       "action": true
     },
@@ -87,7 +88,8 @@
         "categorie": {"type": "string", "description": "Nouvelle catégorie (optionnel)."},
         "disponible": {"type": "boolean", "description": "Disponible (false = en rupture, invisible côté client)."},
         "plat_du_jour": {"type": "boolean", "description": "Plat du jour (optionnel)."},
-        "formats": {"type": "array", "description": "Remplace les tailles : [{\"taille\":\"50cl\",\"prix_cents\":700}]. Liste vide = repasser en prix unique."}
+        "formats": {"type": "array", "description": "Remplace les tailles : [{\"taille\":\"50cl\",\"prix_cents\":700}]. Liste vide = repasser en prix unique."},
+        "stock": {"type": "integer", "description": "Réapprovisionne le stock (unités restantes). null = repasser en stock illimité. À 0, le plat sort de la carte client."}
       },
       "action": true
     },

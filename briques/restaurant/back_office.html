@@ -48,6 +48,8 @@
   .plat .haut { display:flex; gap:12px; }
   .plat img { width:60px; height:60px; border-radius:10px; object-fit:cover; background:#0d1119; flex:none; }
   .plat .nom { font-weight:700; }
+  .badge-epuise { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    color:#fca5a5; border:1px solid #7f1d1d; background:#2a1416; border-radius:6px; padding:1px 6px; margin-left:8px; vertical-align:middle; }
   .plat .prix { color:var(--or); font-weight:800; cursor:pointer; }
   .plat .prix:hover { text-decoration:underline; }
   .plat .desc { color:var(--doux); font-size:.84rem; }
@@ -138,6 +140,8 @@ const T = {
   gen_par_section:"Plats par section", gen_bouton:"Générer la carte", gen_encours:"Génération en cours…",
   dispo:"Disponible", jour:"Plat du jour", photo:"Photo", suppr:"Supprimer", carte_vide:"Aucun plat. Ajoutez votre premier plat.",
   formats:"Formats", des:"dès", formats_aide:"Formats et prix (taille=prix, séparés par des virgules). Ex : 25cl=3.50, 50cl=7, 1L=13, Girafe 2,5L=28. Vider = prix unique.",
+  stock:"Stock", stock_illimite:"illimité", stock_epuise:"Épuisé", stock_restant:"restant(s)",
+  stock_aide:"Stock restant (nombre d'unités). Vider = stock illimité. À 0, le plat disparaît automatiquement de la carte client.",
   ajouter_table:"Ajouter une table", num_table:"N° de table", tables_vide:"Aucune table.",
   ouvrir_cuisine:"Ouvrir l'écran cuisine ↗", choisir_table:"Choisissez une table",
   du:"Dû", paye:"Payé", reste:"Reste à payer", regle:"Réglé ✓", attente:"En attente",
@@ -171,6 +175,8 @@ const T = {
   gen_par_section:"Dishes per section", gen_bouton:"Generate the menu", gen_encours:"Generating…",
   dispo:"Available", jour:"Today's special", photo:"Photo", suppr:"Delete", carte_vide:"No dishes yet. Add your first one.",
   formats:"Sizes", des:"from", formats_aide:"Sizes and prices (size=price, comma-separated). E.g. 25cl=3.50, 50cl=7, 1L=13, Giraffe 2.5L=28. Empty = single price.",
+  stock:"Stock", stock_illimite:"unlimited", stock_epuise:"Sold out", stock_restant:"left",
+  stock_aide:"Remaining stock (number of units). Empty = unlimited. At 0, the dish automatically disappears from the customer menu.",
   ajouter_table:"Add a table", num_table:"Table no.", tables_vide:"No tables yet.",
   ouvrir_cuisine:"Open kitchen screen ↗", choisir_table:"Pick a table",
   du:"Due", paye:"Paid", reste:"Left to pay", regle:"Settled ✓", attente:"Pending",
@@ -292,8 +298,11 @@ function plCarte(p){
     : `<div class="prix" onclick="editerPrix('${p.id}',${p.prix_cents})">${euro(p.prix_cents)}</div>`;
   const ligneFormats = aFormats
     ? `<div class="desc" style="color:var(--accent)">${p.formats.map(f=>esc(f.taille)+' '+euro(f.prix_cents)).join(' · ')}</div>` : '';
-  return `<div class="plat ${p.disponible?'':'indispo'}">
-    <div class="haut">${img}<div><div class="nom">${esc(p.nom)}</div>
+  const badgeEpuise = p.epuise ? `<span class="badge-epuise">${t('stock_epuise')}</span>` : '';
+  const libStock = p.stock===null||p.stock===undefined
+    ? t('stock') : (p.epuise ? t('stock_epuise') : `${t('stock')}: ${p.stock}`);
+  return `<div class="plat ${(p.disponible && !p.epuise)?'':'indispo'}">
+    <div class="haut">${img}<div><div class="nom">${esc(p.nom)}${badgeEpuise}</div>
     ${prixHaut}</div></div>
     ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
     ${ligneFormats}
@@ -302,6 +311,7 @@ function plCarte(p){
       <button class="bascule-pet jour ${p.plat_du_jour?'on':''}" onclick="bascule('${p.id}','plat_du_jour',${!p.plat_du_jour})">${t('jour')}</button>
       <button class="bascule-pet" onclick="editerCategorie('${p.id}','${esc(p.categorie||'')}')">${t('categorie')}: ${esc(p.categorie||'—')}</button>
       <button class="bascule-pet ${aFormats?'on':''}" onclick="editerFormats('${p.id}')">${t('formats')}</button>
+      <button class="bascule-pet ${(p.stock!==null&&p.stock!==undefined)?'on':''}" onclick="editerStock('${p.id}')">${libStock}</button>
     </div>
     <div class="pied">
       <label class="btn fant" style="text-align:center">${t('photo')}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo('${p.id}',this)"></label>
@@ -359,6 +369,17 @@ window.editerFormats = async (id)=>{
     return (taille && !isNaN(prix) && prix>=0) ? {taille, prix_cents:prix} : null;
   }).filter(Boolean);
   await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({formats})});
+  vueCarte();
+};
+window.editerStock = async (id)=>{
+  const plats = (await (await fetch(`/restaurants/${restoActif}/plats`, {headers:H()})).json()).plats;
+  const p = plats.find(x=>x.id===id); if(!p) return;
+  const actuel = (p.stock===null||p.stock===undefined) ? '' : String(p.stock);
+  const v = prompt(t('stock_aide'), actuel);
+  if(v===null) return;
+  const s = v.trim()==='' ? null : Math.max(0, parseInt(v.trim(), 10));
+  if(s!==null && isNaN(s)) return;
+  await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({stock:s})});
   vueCarte();
 };
 window.bascule = async (id, champ, val)=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({[champ]:val})}); vueCarte(); };
