@@ -23,6 +23,21 @@ scannant un QR code. Inspiré de Sunday / Skeat, mais souverain (rien ne sort ve
    incrément 1, marqué « démo »), ou **en espèces** validées par le restaurateur. La
    tablette et les clients voient le **« reste à payer »** bouger en direct.
 
+## Prêt pour la vente (v0.2.0)
+
+- **Clôture de table** : « Clôturer la table » archive un **ticket** et remet la table à
+  zéro → le groupe suivant repart vierge (les sessions sont cloisonnées). Refuse s'il
+  reste à payer, sauf `force` (départ assumé par le resto).
+- **TVA & ticket** : taux de TVA réglable par restaurant, **ventilation HT/TVA** sur
+  l'addition, **ticket imprimable**.
+- **Sécurité prod** : sessions **révocables** (changer le mot de passe ou « déconnecter
+  tous les appareils » invalide les anciens jetons), **anti-brute-force** sur les routes
+  d'auth, refus de démarrer en prod avec le secret de dev (`RESTAURANT_ENV=prod`).
+- **Confort** : **catégories** de carte (Entrées/Plats/Boissons…), **pourboire** optionnel.
+
+Restent hors-code (pas de notre ressort) : **paiement réel** (Stripe Connect Express,
+incrément séparé) et **hébergement HTTPS** (Proxmox/cloud + domaine).
+
 ## Multi-tenant (cloisonnement)
 
 `Compte → Restaurant(s) → Tables / Plats / Commandes / Paiements`. Toute lecture/écriture
@@ -42,18 +57,21 @@ montant est recalculé **côté serveur** (jamais soumis par le client). Incrém
 |---|---|---|
 | `RESTAURANT_DB` | chemin SQLite | `/data/restaurant.db` |
 | `RESTAURANT_SECRET` | signature des sessions (HMAC) | dev non secret — **à définir en prod** |
+| `RESTAURANT_ENV` | `prod` ⇒ refuse de démarrer avec le secret de dev | vide (dev) |
 | `RESTAURANT_SESSION_TTL` | durée de session (s) | `2592000` (30 j) |
+| `RESTAURANT_MAX_TENTATIVES` | tentatives d'auth par fenêtre de 5 min | `10` |
 | `RESTAURANT_PUBLIC_URL` | base d'URL des QR (vue du smartphone) | déduite de la requête |
 | `CORS_ORIGINS` | origines navigateur autorisées (CSV) | `*` |
 
 ## Tests
 
 ```bash
-python -m pytest -q   # auth, isolation multi-tenant, parcours complet, temps réel, QR
+python -m pytest -q   # auth, isolation multi-tenant, parcours, temps réel, QR,
+                      # clôture/TVA/sécurité/catégories/pourboire (test_vendable)
 ```
 
-## Limites de l'incrément 1 (assumées)
+## Limites assumées
 
-- Paiement **mock** (pas de Stripe Connect réel) ;
-- pas de pilotage par le Cœur (la brique est autonome, le branchement viendra) ;
+- Paiement **mock** → Stripe Connect Express dans une brique `paiements` séparée (incrément final) ;
+- pas encore de pilotage par le Cœur (la brique est autonome, le branchement viendra) ;
 - interface **FR / EN** (extension multilingue ultérieure).

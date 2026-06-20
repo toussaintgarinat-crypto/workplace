@@ -27,6 +27,11 @@
   .plat .nom { font-weight:600; }
   .plat .desc { color:var(--doux); font-size:.84rem; margin-top:2px; }
   .plat .prix { color:var(--accent); font-weight:700; margin-top:4px; }
+  .cat-titre { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--doux); margin:14px 4px 8px; }
+  .tva-ligne { display:flex; justify-content:space-between; color:var(--doux); font-size:.8rem; margin:2px 4px; }
+  .tips { display:flex; gap:8px; margin-top:10px; }
+  .tips button { flex:1; padding:9px; border-radius:9px; border:1px solid var(--bord); background:transparent; color:var(--doux); font-weight:700; cursor:pointer; }
+  .tips button.on { color:var(--accent); border-color:var(--accent); }
   .badge-jour { display:inline-block; font-size:.66rem; font-weight:700; color:#0f1420; background:var(--accent); border-radius:6px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
   .pl { margin-left:auto; display:flex; align-items:center; gap:10px; }
   .pl button { width:34px; height:34px; border-radius:9px; border:none; background:var(--accent2); color:#fff; font-size:1.2rem; cursor:pointer; }
@@ -84,18 +89,22 @@ const T = {
         valider:"Valider", ma_part:"Ma part", du:"dû", paye:"Payé", reste:"Reste à payer",
         payer:"Payer ma part", regle:"Réglé ✓", en_attente:"En attente",
         total_table:"Reste sur la table", demo:"Paiement de démonstration (aucun débit réel)",
-        rien_addition:"Aucune commande pour l'instant.", devise:"fr-FR" },
+        rien_addition:"Aucune commande pour l'instant.", devise:"fr-FR",
+        autres:"Autres", dont_tva:"dont TVA", pourboire:"Pourboire (optionnel)", merci:"Merci 🙏",
+        payer_avec:"Payer", sans:"Sans" },
   en: { carte:"Menu", addition:"The bill", panier:"Order", vide_panier:"Add some dishes",
         ajouter:"Add", commande_envoyee:"Order sent to the kitchen ✓",
         qui:"Who are you?", qui_sous:"First name or seat number (A, B, C…) for your dishes.",
         valider:"Confirm", ma_part:"My share", du:"due", paye:"Paid", reste:"Left to pay",
         payer:"Pay my share", regle:"Settled ✓", en_attente:"Pending",
         total_table:"Left on the table", demo:"Demo payment (no real charge)",
-        rien_addition:"No orders yet.", devise:"en-GB" }
+        rien_addition:"No orders yet.", devise:"en-GB",
+        autres:"Other", dont_tva:"incl. VAT", pourboire:"Tip (optional)", merci:"Thanks 🙏",
+        payer_avec:"Pay", sans:"None" }
 };
 let lang = localStorage.getItem('resto_lang') || 'fr';
 const code = location.pathname.split('/').filter(Boolean).pop();
-let data = null, panier = {}, moi = localStorage.getItem('resto_moi_'+code) || '', vueActive = 'carte', devise = 'EUR';
+let data = null, panier = {}, moi = localStorage.getItem('resto_moi_'+code) || '', vueActive = 'carte', devise = 'EUR', pourboirePct = 0;
 
 const $ = s => document.querySelector(s);
 const t = k => T[lang][k];
@@ -131,18 +140,26 @@ function rendre(){
   if(vueActive==='addition') chargerAddition();
 }
 
+function carteDuPlat(p){
+  const q = panier[p.id]?.q || 0;
+  const jour = p.plat_du_jour ? `<span class="badge-jour">${lang==='fr'?'Plat du jour':'Today'}</span>` : '';
+  const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
+  return `<div class="plat">${img}
+    <div><div class="nom">${esc(p.nom)}${jour}</div>
+    ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
+    <div class="prix">${euro(p.prix_cents)}</div></div>
+    <div class="pl">${q?`<button onclick="moins('${p.id}')">−</button><span class="q">${q}</span>`:''}
+    <button onclick="plus('${p.id}')">+</button></div></div>`;
+}
 function vueCarte(){
   if(!data.carte.length) return `<div class="vide">${t('vide_panier')}</div>`;
-  return data.carte.map(p=>{
-    const q = panier[p.id]?.q || 0;
-    const jour = p.plat_du_jour ? `<span class="badge-jour">${lang==='fr'?'Plat du jour':'Today'}</span>` : '';
-    const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
-    return `<div class="plat">${img}
-      <div><div class="nom">${esc(p.nom)}${jour}</div>
-      ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
-      <div class="prix">${euro(p.prix_cents)}</div></div>
-      <div class="pl">${q?`<button onclick="moins('${p.id}')">−</button><span class="q">${q}</span>`:''}
-      <button onclick="plus('${p.id}')">+</button></div></div>`;
+  // Regroupe par catégorie (sections de carte) en conservant l'ordre d'arrivée.
+  const groupes = {};
+  data.carte.forEach(p=>{ const k = (p.categorie||'').trim() || '§'; (groupes[k] ||= []).push(p); });
+  const cles = Object.keys(groupes);
+  return cles.map(k=>{
+    const titre = k==='§' ? '' : `<div class="cat-titre">${esc(k)}</div>`;
+    return titre + groupes[k].map(carteDuPlat).join('');
   }).join('');
 }
 window.plus = id => { const p=data.carte.find(x=>x.id===id); panier[id]={q:(panier[id]?.q||0)+1, nom:p.nom}; rendre(); };
@@ -161,15 +178,34 @@ async function chargerAddition(){
     const estMoi = c.convive===moi;
     const det = c.details.map(d=>`<div class="ligne"><span>${d.quantite}× ${esc(d.nom_plat)}</span><span>${euro(d.prix_cents*d.quantite)}</span></div>`).join('');
     const etat = c.regle ? `<span class="etat ok">${t('regle')}</span>` : `<span class="etat att">${t('en_attente')}</span>`;
-    const bouton = (estMoi && !c.regle) ? `<button class="gros" style="margin-top:12px" onclick="payer()">${t('payer')} · ${euro(c.reste_cents)}</button><div class="demo">${t('demo')}</div>` : '';
+    let bloc = '';
+    if(estMoi && !c.regle){
+      const opts = [0,5,10,15];
+      const tips = opts.map(p=>{
+        const cents = Math.round(c.reste_cents*p/100);
+        const lib = p===0 ? t('sans') : '+'+p+'%';
+        return `<button class="${pourboirePct===p?'on':''}" onclick="setTip(${p})">${lib}</button>`;
+      }).join('');
+      const tip = Math.round(c.reste_cents*pourboirePct/100);
+      bloc = `<div class="tips">${tips}</div>
+        <button class="gros" style="margin-top:10px" onclick="payer(${c.reste_cents})">${t('payer_avec')} · ${euro(c.reste_cents+tip)}</button>
+        <div class="demo">${t('demo')}</div>`;
+    }
     return `<div class="conv ${estMoi?'moi':''}"><div class="tete"><span>${esc(c.convive)}${estMoi?' · '+t('ma_part'):''}</span>${etat}</div>
       ${det}<div class="ligne" style="margin-top:8px;color:var(--texte);font-weight:700"><span>${t('du')}</span><span>${euro(c.du_cents)}</span></div>
-      ${bouton}</div>`;
-  }).join('') + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
+      ${c.pourboire_cents?`<div class="ligne"><span>${t('pourboire')}</span><span>${euro(c.pourboire_cents)}</span></div>`:''}
+      ${bloc}</div>`;
+  }).join('')
+  + (e.tva && e.tva.tva_cents ? `<div class="tva-ligne"><span>${t('dont_tva')} (${e.tva.tva_taux}%)</span><span>${euro(e.tva.tva_cents)}</span></div>` : '')
+  + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
 }
 
-window.payer = async () => {
-  await fetch('/t/'+code+'/payer', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({convive:moi})});
+window.setTip = p => { pourboirePct = p; chargerAddition(); };
+window.payer = async (reste) => {
+  const tip = Math.round((reste||0)*pourboirePct/100);
+  await fetch('/t/'+code+'/payer', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({convive:moi, pourboire_cents:tip})});
+  pourboirePct = 0;
   chargerAddition();
 };
 

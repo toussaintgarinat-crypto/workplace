@@ -31,7 +31,7 @@ import auth
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.1.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.2.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -40,17 +40,47 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 _ICI = Path(__file__).parent
 
 
+@app.on_event("startup")
+def _verifier_prod():
+    # Refuse de démarrer en prod avec le secret de dev (sessions forgeables).
+    auth.verifier_secret_pour_prod()
+
+
+# ── Anti-brute-force minimal (en mémoire) sur les routes d'auth ──
+import time as _time
+from collections import deque
+
+_TENTATIVES: dict[str, deque] = {}
+_MAX_TENTATIVES = int(os.getenv("RESTAURANT_MAX_TENTATIVES", "10"))   # par fenêtre
+_FENETRE = 300                                                       # 5 min
+
+
+def _anti_abus(cle: str):
+    """Limite les tentatives (login/inscription) par clé (email/IP) sur une fenêtre glissante."""
+    maintenant = _time.time()
+    d = _TENTATIVES.setdefault(cle, deque())
+    while d and d[0] < maintenant - _FENETRE:
+        d.popleft()
+    if len(d) >= _MAX_TENTATIVES:
+        raise HTTPException(429, "Trop de tentatives. Réessayez dans quelques minutes.")
+    d.append(maintenant)
+
+
 # ── Dépendance d'authentification (restaurateur) ─────────────────
 def compte_actuel(authorization: Optional[str] = Header(None),
                   x_session: Optional[str] = Header(None)) -> str:
     """Résout le compte connecté depuis le jeton de session (Bearer ou X-Session).
 
-    Fail-closed : pas de jeton valide → 401, aucune donnée ne sort."""
+    Vérifie la crypto/expiration PUIS que la VERSION du jeton correspond à celle du compte
+    en base : un changement de mot de passe ou « déconnexion partout » incrémente la version
+    et invalide tous les anciens jetons. Fail-closed : tout écart → 401."""
     jeton = (authorization or "").removeprefix("Bearer ").strip() or x_session
-    compte_id = auth.lire_session(jeton)
-    if not compte_id:
+    s = auth.lire_session(jeton)
+    if not s:
         raise HTTPException(401, "Session manquante ou invalide. Connectez-vous.")
-    return compte_id
+    if stockage.version_compte(s["compte_id"]) != s["version"]:
+        raise HTTPException(401, "Session révoquée. Reconnectez-vous.")
+    return s["compte_id"]
 
 
 # ── Modèles ──────────────────────────────────────────────────────
@@ -66,9 +96,21 @@ class Connexion(BaseModel):
     mot_de_passe: str
 
 
+class ChangerMotDePasse(BaseModel):
+    ancien: str
+    nouveau: str
+
+
 class CreerRestaurant(BaseModel):
     nom: str
     devise: str = "EUR"
+    tva_taux: float = 10.0
+
+
+class MajRestaurant(BaseModel):
+    nom: Optional[str] = None
+    devise: Optional[str] = None
+    tva_taux: Optional[float] = None
 
 
 class CreerTable(BaseModel):
@@ -80,6 +122,7 @@ class PlatEntree(BaseModel):
     description: str = ""
     prix_cents: int = 0
     photo: str = ""                    # URL ou data-URL (photo prise au téléphone)
+    categorie: str = ""                # section de carte (Entrées, Plats, Boissons…)
     plat_du_jour: bool = False
 
 
@@ -88,6 +131,7 @@ class MajPlat(BaseModel):
     description: Optional[str] = None
     prix_cents: Optional[int] = None
     photo: Optional[str] = None
+    categorie: Optional[str] = None
     disponible: Optional[bool] = None
     plat_du_jour: Optional[bool] = None
 
@@ -98,6 +142,11 @@ class StatutCommande(BaseModel):
 
 class PaiementEspeces(BaseModel):
     convive: str
+    pourboire_cents: int = 0
+
+
+class Cloturer(BaseModel):
+    force: bool = False                # clôturer malgré un reste dû (départ assumé par le resto)
 
 
 class Commander(BaseModel):
@@ -107,18 +156,20 @@ class Commander(BaseModel):
 
 class PayerPart(BaseModel):
     convive: str
+    pourboire_cents: int = 0
 
 
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.1.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.2.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
 @app.post("/auth/inscription")
 def inscription(corps: Inscription):
     email = corps.email.strip().lower()
+    _anti_abus("insc:" + email)
     if not email or not corps.mot_de_passe:
         raise HTTPException(400, "Email et mot de passe requis.")
     if len(corps.mot_de_passe) < 8:
@@ -130,16 +181,17 @@ def inscription(corps: Inscription):
     resto = None
     if corps.nom_restaurant.strip():
         resto = stockage.creer_restaurant(compte["id"], corps.nom_restaurant)
-    return {"compte": compte, "restaurant": resto, "session": auth.creer_session(compte["id"])}
+    return {"compte": compte, "restaurant": resto, "session": auth.creer_session(compte["id"], 1)}
 
 
 @app.post("/auth/connexion")
 def connexion(corps: Connexion):
+    _anti_abus("conn:" + corps.email.strip().lower())
     compte = stockage.compte_par_email(corps.email)
     if not compte or not auth.verifier_mot_de_passe(corps.mot_de_passe, compte["mot_de_passe"]):
         raise HTTPException(401, "Email ou mot de passe incorrect.")
     return {"compte": {"id": compte["id"], "email": compte["email"], "nom": compte["nom"]},
-            "session": auth.creer_session(compte["id"])}
+            "session": auth.creer_session(compte["id"], compte["jeton_version"])}
 
 
 @app.get("/auth/moi")
@@ -150,10 +202,38 @@ def moi(compte_id: str = Depends(compte_actuel)):
     return c
 
 
+@app.post("/auth/mot-de-passe")
+def changer_mot_de_passe(corps: ChangerMotDePasse, compte_id: str = Depends(compte_actuel)):
+    """Change le mot de passe (vérifie l'ancien) → révoque toutes les autres sessions.
+    Renvoie une nouvelle session valide pour l'appareil courant."""
+    if len(corps.nouveau) < 8:
+        raise HTTPException(400, "Nouveau mot de passe trop court (8 caractères minimum).")
+    hache = stockage._hash_compte(compte_id)
+    if not hache or not auth.verifier_mot_de_passe(corps.ancien, hache):
+        raise HTTPException(403, "Ancien mot de passe incorrect.")
+    version = stockage.changer_mot_de_passe(compte_id, auth.hacher_mot_de_passe(corps.nouveau))
+    return {"ok": True, "session": auth.creer_session(compte_id, version)}
+
+
+@app.post("/auth/deconnexion-partout")
+def deconnexion_partout(compte_id: str = Depends(compte_actuel)):
+    """Invalide toutes les sessions du compte (appareil perdu/volé). Renvoie une session neuve."""
+    version = stockage.deconnecter_partout(compte_id)
+    return {"ok": True, "session": auth.creer_session(compte_id, version)}
+
+
 # ── Restaurants ──────────────────────────────────────────────────
 @app.post("/restaurants")
 def creer_restaurant(corps: CreerRestaurant, compte_id: str = Depends(compte_actuel)):
-    return stockage.creer_restaurant(compte_id, corps.nom, corps.devise)
+    return stockage.creer_restaurant(compte_id, corps.nom, corps.devise, corps.tva_taux)
+
+
+@app.patch("/restaurants/{restaurant_id}")
+def maj_restaurant(restaurant_id: str, corps: MajRestaurant, compte_id: str = Depends(compte_actuel)):
+    r = stockage.maj_restaurant(compte_id, restaurant_id, corps.model_dump(exclude_unset=True))
+    if not r:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return r
 
 
 @app.get("/restaurants")
@@ -232,7 +312,7 @@ def qr_table(restaurant_id: str, table_id: str, request: Request,
 def creer_plat(restaurant_id: str, corps: PlatEntree, compte_id: str = Depends(compte_actuel)):
     _exige_resto(compte_id, restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
-                            corps.prix_cents, corps.photo, corps.plat_du_jour)
+                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie)
     if not p:
         raise HTTPException(404, "Restaurant introuvable.")
     return p
@@ -303,7 +383,8 @@ async def paiement_especes(restaurant_id: str, table_id: str, corps: PaiementEsp
     _exige_resto(compte_id, restaurant_id)
     if not any(t["id"] == table_id for t in (stockage.lister_tables(compte_id, restaurant_id) or [])):
         raise HTTPException(404, "Table introuvable.")
-    res = stockage.enregistrer_paiement(restaurant_id, table_id, corps.convive, "especes")
+    res = stockage.enregistrer_paiement(restaurant_id, table_id, corps.convive, "especes",
+                                        corps.pourboire_cents)
     if not res:
         raise HTTPException(400, "Rien à encaisser pour ce convive (déjà réglé ou inconnu).")
     etat = stockage.etat_table(restaurant_id, table_id)
@@ -311,6 +392,30 @@ async def paiement_especes(restaurant_id: str, table_id: str, corps: PaiementEsp
     await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
                              {"type": "paiement", "table_id": table_id, "etat": etat})
     return {"paiement": res, "etat": etat}
+
+
+@app.post("/restaurants/{restaurant_id}/tables/{table_id}/cloturer")
+async def cloturer_table(restaurant_id: str, table_id: str, corps: Cloturer,
+                         compte_id: str = Depends(compte_actuel)):
+    """Clôt la table : archive un ticket et la remet à zéro pour le groupe suivant.
+    Refuse s'il reste à payer (sauf `force`). C'est ce qui rend une table réutilisable."""
+    _exige_resto(compte_id, restaurant_id)
+    ticket = stockage.cloturer_table(compte_id, restaurant_id, table_id, corps.force)
+    if not ticket:
+        raise HTTPException(409, "Clôture impossible : table vide, inconnue, ou reste à payer "
+                                 "(utilisez force pour clôturer malgré tout).")
+    etat = stockage.etat_table(restaurant_id, table_id)   # nouvelle session → vierge
+    await diffuseur.diffuser(diffuseur.canal_table(table_id), {"type": "cloture", "etat": etat})
+    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
+                             {"type": "cloture", "table_id": table_id, "etat": etat})
+    return {"ticket": ticket, "etat": etat}
+
+
+@app.get("/restaurants/{restaurant_id}/tickets")
+def tickets(restaurant_id: str, limite: int = 50, compte_id: str = Depends(compte_actuel)):
+    """Historique des tickets archivés (clôtures) — compta du restaurateur."""
+    _exige_resto(compte_id, restaurant_id)
+    return {"tickets": stockage.lister_tickets(compte_id, restaurant_id, limite) or []}
 
 
 # ── CLIENT (public, via le code de table du QR) ──────────────────
@@ -355,7 +460,8 @@ def addition_client(code: str):
 async def payer(code: str, corps: PayerPart):
     """Le client règle SA part en ligne. Incrément 1 : paiement MOCK (démo, sans flux réel)."""
     t = _table_par_code(code)
-    res = stockage.enregistrer_paiement(t["restaurant_id"], t["id"], corps.convive, "mock")
+    res = stockage.enregistrer_paiement(t["restaurant_id"], t["id"], corps.convive, "mock",
+                                        corps.pourboire_cents)
     if not res:
         raise HTTPException(400, "Rien à payer pour ce convive (déjà réglé ou inconnu).")
     etat = stockage.etat_table(t["restaurant_id"], t["id"])
@@ -368,9 +474,11 @@ async def payer(code: str, corps: PayerPart):
 # ── WebSockets ───────────────────────────────────────────────────
 @app.websocket("/ws/cuisine/{restaurant_id}")
 async def ws_cuisine(ws: WebSocket, restaurant_id: str, session: str = ""):
-    """Canal cuisine/tablette (STAFF) : exige une session valide ET la propriété du resto."""
-    compte_id = auth.lire_session(session)
-    if not compte_id or not stockage.lire_restaurant(compte_id, restaurant_id):
+    """Canal cuisine/tablette (STAFF) : exige une session valide (version à jour) ET la
+    propriété du resto."""
+    s = auth.lire_session(session)
+    if (not s or stockage.version_compte(s["compte_id"]) != s["version"]
+            or not stockage.lire_restaurant(s["compte_id"], restaurant_id)):
         await ws.close(code=4401)        # 4401 = non autorisé (fail-closed)
         return
     canal = diffuseur.canal_cuisine(restaurant_id)
