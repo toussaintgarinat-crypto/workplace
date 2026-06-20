@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<!-- App CLIENT — ouverte par le QR de la table. Aucune connexion : le code de table
+     (dans l'URL) sert de capability. Carte → commande par convive → addition partagée →
+     paiement de SA part (mock honnête en incrément 1). Temps réel via WebSocket. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Commander à table</title>
+<style>
+  :root { --bg:#0f1420; --carte:#1a2030; --bord:#2a3346; --texte:#e8edf6; --doux:#94a3b8;
+          --accent:#ff8a5b; --accent2:#7c83ff; --ok:#34d399; --attente:#fbbf24; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--texte); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding-bottom:120px; }
+  header { padding:18px 18px 10px; position:sticky; top:0; background:linear-gradient(180deg,var(--bg) 70%,transparent); z-index:5; }
+  .resto { font-size:1.35rem; font-weight:700; }
+  .sous { color:var(--doux); font-size:.9rem; margin-top:2px; }
+  .lang { position:absolute; top:18px; right:18px; display:flex; gap:4px; }
+  .lang button { background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:8px; padding:4px 9px; font-size:.75rem; cursor:pointer; }
+  .lang button.on { color:var(--accent); border-color:var(--accent); }
+  .onglets { display:flex; gap:6px; padding:0 18px; margin-bottom:8px; }
+  .onglets button { flex:1; background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:10px; padding:10px; font-weight:600; cursor:pointer; }
+  .onglets button.on { color:#fff; background:var(--accent2); border-color:var(--accent2); }
+  main { padding:0 18px; }
+  .plat { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; margin-bottom:12px; display:flex; gap:12px; align-items:center; }
+  .plat img { width:64px; height:64px; border-radius:10px; object-fit:cover; flex:none; background:#0d1119; }
+  .plat .nom { font-weight:600; }
+  .plat .desc { color:var(--doux); font-size:.84rem; margin-top:2px; }
+  .plat .prix { color:var(--accent); font-weight:700; margin-top:4px; }
+  .badge-jour { display:inline-block; font-size:.66rem; font-weight:700; color:#0f1420; background:var(--accent); border-radius:6px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+  .pl { margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .pl button { width:34px; height:34px; border-radius:9px; border:none; background:var(--accent2); color:#fff; font-size:1.2rem; cursor:pointer; }
+  .pl .q { min-width:18px; text-align:center; font-weight:700; }
+  .panier { position:fixed; bottom:0; left:0; right:0; background:var(--carte); border-top:1px solid var(--bord); padding:14px 18px calc(14px + env(safe-area-inset-bottom)); }
+  .gros { width:100%; padding:15px; border:none; border-radius:12px; background:var(--accent); color:#0f1420; font-weight:800; font-size:1.05rem; cursor:pointer; }
+  .gros:disabled { opacity:.4; }
+  .conv { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .conv.moi { border-color:var(--accent); }
+  .conv .ligne { display:flex; justify-content:space-between; color:var(--doux); font-size:.88rem; margin-top:4px; }
+  .conv .tete { display:flex; justify-content:space-between; align-items:center; font-weight:700; }
+  .etat { font-size:.78rem; font-weight:700; padding:2px 8px; border-radius:6px; }
+  .etat.ok { color:var(--ok); background:rgba(52,211,153,.12); }
+  .etat.att { color:var(--attente); background:rgba(251,191,36,.12); }
+  .recap { display:flex; justify-content:space-between; font-size:1.1rem; font-weight:800; margin:16px 4px; }
+  .demo { font-size:.74rem; color:var(--attente); text-align:center; margin-top:8px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:24px; z-index:20; }
+  .modal .boite { background:var(--carte); border:1px solid var(--bord); border-radius:16px; padding:22px; width:100%; max-width:340px; }
+  .modal h3 { margin:0 0 6px; }
+  .modal p { color:var(--doux); font-size:.88rem; margin:0 0 16px; }
+  .modal input { width:100%; padding:13px; border-radius:11px; border:1px solid var(--bord); background:var(--bg); color:var(--texte); font-size:1rem; margin-bottom:12px; }
+  .vide { color:var(--doux); text-align:center; padding:40px 0; }
+</style>
+</head>
+<body>
+<div class="lang"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+<header>
+  <div class="resto" id="resto">…</div>
+  <div class="sous" id="sous"></div>
+</header>
+<div class="onglets">
+  <button id="ong-carte" class="on" data-t="carte"></button>
+  <button id="ong-addition" data-t="addition"></button>
+</div>
+<main id="vue"></main>
+
+<div class="panier" id="panier" style="display:none">
+  <button class="gros" id="commander"></button>
+</div>
+
+<div class="modal" id="modal-nom" style="display:none">
+  <div class="boite">
+    <h3 id="m-titre"></h3>
+    <p id="m-sous"></p>
+    <input id="m-nom" autocomplete="off">
+    <button class="gros" id="m-ok"></button>
+  </div>
+</div>
+
+<script>
+const T = {
+  fr: { carte:"Carte", addition:"L'addition", panier:"Commander", vide_panier:"Ajoutez des plats",
+        ajouter:"Ajouter", commande_envoyee:"Commande envoyée en cuisine ✓",
+        qui:"Qui êtes-vous ?", qui_sous:"Prénom ou numéro de siège (A, B, C…) pour vos plats.",
+        valider:"Valider", ma_part:"Ma part", du:"dû", paye:"Payé", reste:"Reste à payer",
+        payer:"Payer ma part", regle:"Réglé ✓", en_attente:"En attente",
+        total_table:"Reste sur la table", demo:"Paiement de démonstration (aucun débit réel)",
+        rien_addition:"Aucune commande pour l'instant.", devise:"fr-FR" },
+  en: { carte:"Menu", addition:"The bill", panier:"Order", vide_panier:"Add some dishes",
+        ajouter:"Add", commande_envoyee:"Order sent to the kitchen ✓",
+        qui:"Who are you?", qui_sous:"First name or seat number (A, B, C…) for your dishes.",
+        valider:"Confirm", ma_part:"My share", du:"due", paye:"Paid", reste:"Left to pay",
+        payer:"Pay my share", regle:"Settled ✓", en_attente:"Pending",
+        total_table:"Left on the table", demo:"Demo payment (no real charge)",
+        rien_addition:"No orders yet.", devise:"en-GB" }
+};
+let lang = localStorage.getItem('resto_lang') || 'fr';
+const code = location.pathname.split('/').filter(Boolean).pop();
+let data = null, panier = {}, moi = localStorage.getItem('resto_moi_'+code) || '', vueActive = 'carte', devise = 'EUR';
+
+const $ = s => document.querySelector(s);
+const t = k => T[lang][k];
+function euro(c){ return (c/100).toLocaleString(T[lang].devise, {style:'currency', currency:devise}); }
+
+function appliquerLangue(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on', b.dataset.l===lang));
+  $('#ong-carte').textContent = t('carte');
+  $('#ong-addition').textContent = t('addition');
+  $('#commander').textContent = t('panier');
+  $('#m-titre').textContent = t('qui');
+  $('#m-sous').textContent = t('qui_sous');
+  $('#m-ok').textContent = t('valider');
+  rendre();
+}
+document.querySelectorAll('.lang button').forEach(b=> b.onclick = ()=>{ lang=b.dataset.l; localStorage.setItem('resto_lang',lang); appliquerLangue(); });
+
+async function charger(){
+  const r = await fetch('/t/'+code);
+  if(!r.ok){ $('#resto').textContent = 'QR invalide'; return; }
+  data = await r.json();
+  devise = (data.restaurant.devise)||'EUR';
+  $('#resto').textContent = data.restaurant.nom || 'Restaurant';
+  $('#sous').textContent = 'Table '+ (data.table.numero||'');
+  appliquerLangue();
+}
+
+function rendre(){
+  if(!data) return;
+  $('#panier').style.display = (vueActive==='carte' && Object.keys(panier).length) ? 'block' : 'none';
+  $('#vue').innerHTML = vueActive==='carte' ? vueCarte() : vueAddition();
+  if(vueActive==='addition') chargerAddition();
+}
+
+function vueCarte(){
+  if(!data.carte.length) return `<div class="vide">${t('vide_panier')}</div>`;
+  return data.carte.map(p=>{
+    const q = panier[p.id]?.q || 0;
+    const jour = p.plat_du_jour ? `<span class="badge-jour">${lang==='fr'?'Plat du jour':'Today'}</span>` : '';
+    const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
+    return `<div class="plat">${img}
+      <div><div class="nom">${esc(p.nom)}${jour}</div>
+      ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
+      <div class="prix">${euro(p.prix_cents)}</div></div>
+      <div class="pl">${q?`<button onclick="moins('${p.id}')">−</button><span class="q">${q}</span>`:''}
+      <button onclick="plus('${p.id}')">+</button></div></div>`;
+  }).join('');
+}
+window.plus = id => { const p=data.carte.find(x=>x.id===id); panier[id]={q:(panier[id]?.q||0)+1, nom:p.nom}; rendre(); };
+window.moins = id => { if(panier[id]){ panier[id].q--; if(panier[id].q<=0) delete panier[id]; } rendre(); };
+
+function vueAddition(){
+  return `<div id="addition-corps"><div class="vide">…</div></div>`;
+}
+
+async function chargerAddition(){
+  const r = await fetch('/t/'+code+'/addition');
+  const e = await r.json();
+  const corps = $('#addition-corps'); if(!corps) return;
+  if(!e.convives.length){ corps.innerHTML = `<div class="vide">${t('rien_addition')}</div>`; return; }
+  corps.innerHTML = e.convives.map(c=>{
+    const estMoi = c.convive===moi;
+    const det = c.details.map(d=>`<div class="ligne"><span>${d.quantite}× ${esc(d.nom_plat)}</span><span>${euro(d.prix_cents*d.quantite)}</span></div>`).join('');
+    const etat = c.regle ? `<span class="etat ok">${t('regle')}</span>` : `<span class="etat att">${t('en_attente')}</span>`;
+    const bouton = (estMoi && !c.regle) ? `<button class="gros" style="margin-top:12px" onclick="payer()">${t('payer')} · ${euro(c.reste_cents)}</button><div class="demo">${t('demo')}</div>` : '';
+    return `<div class="conv ${estMoi?'moi':''}"><div class="tete"><span>${esc(c.convive)}${estMoi?' · '+t('ma_part'):''}</span>${etat}</div>
+      ${det}<div class="ligne" style="margin-top:8px;color:var(--texte);font-weight:700"><span>${t('du')}</span><span>${euro(c.du_cents)}</span></div>
+      ${bouton}</div>`;
+  }).join('') + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
+}
+
+window.payer = async () => {
+  await fetch('/t/'+code+'/payer', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({convive:moi})});
+  chargerAddition();
+};
+
+$('#commander').onclick = async () => {
+  if(!moi){ ouvrirNom(commanderMaintenant); return; }
+  commanderMaintenant();
+};
+async function commanderMaintenant(){
+  const plats = Object.entries(panier).map(([plat_id,v])=>({plat_id, quantite:v.q}));
+  if(!plats.length) return;
+  const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({convive:moi, plats})});
+  if(r.ok){ panier={}; vueActive='addition'; majOnglets(); alert(t('commande_envoyee')); rendre(); }
+}
+
+function ouvrirNom(apres){
+  $('#modal-nom').style.display='flex'; $('#m-nom').value=moi; $('#m-nom').focus();
+  $('#m-ok').onclick = ()=>{ const v=$('#m-nom').value.trim(); if(!v) return;
+    moi=v; localStorage.setItem('resto_moi_'+code, v); $('#modal-nom').style.display='none'; if(apres) apres(); };
+}
+
+document.querySelectorAll('.onglets button').forEach(b=> b.onclick = ()=>{ vueActive=b.dataset.t; majOnglets(); rendre(); });
+function majOnglets(){ document.querySelectorAll('.onglets button').forEach(b=>b.classList.toggle('on', b.dataset.t===vueActive)); }
+
+function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Temps réel : à chaque évènement sur la table, on rafraîchit l'addition si visible.
+function brancherWS(){
+  const proto = location.protocol==='https:'?'wss':'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/t/${code}`);
+  ws.onmessage = () => { if(vueActive==='addition') chargerAddition(); };
+  ws.onclose = () => setTimeout(brancherWS, 3000);
+}
+
+charger().then(brancherWS);
+</script>
+</body>
+</html>

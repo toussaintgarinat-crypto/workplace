@@ -1,0 +1,35 @@
+services:
+  restaurant:
+    build: .
+    container_name: workplace_restaurant
+    image: workplace/restaurant:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6010:6010"
+    environment:
+      - PORT=6010
+      - RESTAURANT_DB=/data/restaurant.db
+      # Secret de signature des sessions restaurateurs. À DÉFINIR pour vendre/exposer :
+      # hérité du .env racine (RESTAURANT_SECRET) ; défaut DEV non secret sinon.
+      - RESTAURANT_SECRET=${RESTAURANT_SECRET:-dev-restaurant-secret-NON-SECRET}
+      # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # URL publique vue par le smartphone du client (contenu des QR). À définir une fois
+      # la brique exposée (tunnel/Proxmox) ; sinon déduite de la requête (≠ joignable
+      # depuis un téléphone en localhost, attendu en dev).
+      - RESTAURANT_PUBLIC_URL=${RESTAURANT_PUBLIC_URL:-}
+    volumes:
+      - restaurant_data:/data   # comptes, restaurants, menus, commandes, paiements
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6010/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  restaurant_data:
