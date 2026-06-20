@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.3.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.4.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -163,6 +163,12 @@ class ImporterCarte(BaseModel):
     nom_fichier: str = ""              # aide l'OCR à deviner le format (ex. carte.pdf)
 
 
+class GenererCarte(BaseModel):
+    concept: str = ""                  # description du restaurant (cuisine, ambiance, gamme…)
+    sections: list = []                # catégories voulues (optionnel ; sinon le modèle choisit)
+    par_section: int = 6               # nb de plats par section (borné côté serveur)
+
+
 class PlatsEnLot(BaseModel):
     plats: list = []                   # [{nom, description, prix_cents, categorie, plat_du_jour}]
 
@@ -193,7 +199,7 @@ class PayerPart(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.3.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.4.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -390,6 +396,19 @@ async def importer_carte(restaurant_id: str, corps: ImporterCarte,
         raise HTTPException(422, "Fournir l'ancienne carte (contenu_base64 ou url).")
     return await carte_ia.importer(contenu_base64=corps.contenu_base64, url=corps.url,
                                    nom_fichier=corps.nom_fichier)
+
+
+@app.post("/restaurants/{restaurant_id}/carte/generer")
+async def generer_carte(restaurant_id: str, corps: GenererCarte,
+                        compte_id: str = Depends(compte_actuel)):
+    """GÉNÈRE une carte à partir d'un concept et PROPOSE des plats — ne PERSISTE rien.
+
+    Même flux que l'import (le restaurateur valide/corrige puis ajoute via /plats/lot), mais
+    sans document : la matière vient du LLM Gateway. Repli honnête : `plats` vide + `note`."""
+    _exige_resto(compte_id, restaurant_id)
+    if not corps.concept.strip():
+        raise HTTPException(422, "Décris le concept du restaurant à générer.")
+    return await carte_ia.generer(corps.concept, corps.sections or None, corps.par_section)
 
 
 @app.post("/restaurants/{restaurant_id}/plats/lot")
