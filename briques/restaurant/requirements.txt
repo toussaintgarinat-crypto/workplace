@@ -1,0 +1,9 @@
+# Brique restaurant — commande & paiement à table par QR. Dépendances minces et épinglées.
+# Tout le métier est en Python pur (stdlib : sqlite3, hashlib, hmac). Rien ne sort vers
+# un tiers (le paiement de l'incrément 1 est un mock local).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+# QR codes des tables, générés LOCALEMENT (souverain, aucun service tiers). Pur-Python,
+# sans Pillow ni dépendance native.
+segno==1.6.1

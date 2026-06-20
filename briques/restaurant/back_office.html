@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<!-- BACK-OFFICE restaurateur — connexion multi-tenant + gestion d'un ou plusieurs
+     restaurants : carte (prix/photo/dispo/plat du jour), tables & QR, écran cuisine,
+     tablette d'addition (reste à payer live + validation espèces). FR / EN. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaurant — back-office</title>
+<style>
+  :root { --bg:#0f1420; --carte:#1a2030; --bord:#2a3346; --texte:#e8edf6; --doux:#94a3b8;
+          --accent:#7c83ff; --or:#ff8a5b; --ok:#34d399; --att:#fbbf24; --rouge:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--texte); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  a { color:var(--accent); }
+  input, select, textarea { font:inherit; }
+  .champ { width:100%; padding:12px; border-radius:10px; border:1px solid var(--bord); background:var(--bg); color:var(--texte); margin-bottom:10px; }
+  .btn { padding:11px 16px; border:none; border-radius:10px; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; }
+  .btn.or { background:var(--or); color:#0f1420; }
+  .btn.fant { background:transparent; border:1px solid var(--bord); color:var(--doux); }
+  .btn.danger { background:transparent; border:1px solid var(--rouge); color:var(--rouge); }
+  .btn:disabled { opacity:.4; }
+  .lang { display:flex; gap:4px; }
+  .lang button { background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:8px; padding:5px 10px; cursor:pointer; }
+  .lang button.on { color:var(--or); border-color:var(--or); }
+
+  /* Connexion */
+  #connexion { max-width:380px; margin:8vh auto; padding:0 20px; }
+  #connexion h1 { font-size:1.6rem; }
+  #connexion .carte { background:var(--carte); border:1px solid var(--bord); border-radius:16px; padding:24px; }
+  .bascule { text-align:center; margin-top:14px; color:var(--doux); font-size:.9rem; }
+  .err { color:var(--rouge); font-size:.86rem; min-height:18px; margin-bottom:8px; }
+
+  /* App */
+  header { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--bord); flex-wrap:wrap; }
+  header .marque { font-weight:800; font-size:1.1rem; }
+  header select { background:var(--carte); border:1px solid var(--bord); color:var(--texte); border-radius:9px; padding:8px 10px; }
+  header .sp { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .onglets { display:flex; gap:4px; padding:10px 20px 0; flex-wrap:wrap; }
+  .onglets button { background:transparent; border:none; color:var(--doux); padding:8px 14px; border-radius:9px; font-weight:600; cursor:pointer; }
+  .onglets button.on { background:var(--carte); color:var(--accent); }
+  main { padding:20px; max-width:1000px; }
+  h2 { font-size:1.1rem; }
+  .grille { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+
+  .plat { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:8px; }
+  .plat.indispo { opacity:.55; }
+  .plat .haut { display:flex; gap:12px; }
+  .plat img { width:60px; height:60px; border-radius:10px; object-fit:cover; background:#0d1119; flex:none; }
+  .plat .nom { font-weight:700; }
+  .plat .prix { color:var(--or); font-weight:800; cursor:pointer; }
+  .plat .prix:hover { text-decoration:underline; }
+  .plat .desc { color:var(--doux); font-size:.84rem; }
+  .bascules { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  .bascule-pet { font-size:.78rem; padding:6px 10px; border-radius:8px; border:1px solid var(--bord); background:transparent; color:var(--doux); cursor:pointer; }
+  .bascule-pet.on { color:var(--ok); border-color:var(--ok); }
+  .bascule-pet.jour.on { color:var(--or); border-color:var(--or); }
+  .pied { display:flex; gap:8px; margin-top:auto; }
+  .pied label { flex:1; }
+
+  .table-c { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:16px; }
+  .table-c .num { font-size:1.3rem; font-weight:800; }
+  .qr { background:#fff; border-radius:10px; padding:8px; margin:10px 0; display:inline-block; }
+  .qr svg { display:block; width:160px; height:160px; }
+  .url { font-size:.74rem; color:var(--doux); word-break:break-all; }
+
+  .conv { background:var(--carte); border:1px solid var(--bord); border-radius:12px; padding:14px; margin-bottom:10px; }
+  .conv.regle { border-color:var(--ok); }
+  .conv .tete { display:flex; justify-content:space-between; align-items:center; }
+  .conv .nom { font-weight:700; }
+  .conv .det { color:var(--doux); font-size:.84rem; margin-top:4px; }
+  .pill { font-size:.74rem; font-weight:700; padding:3px 9px; border-radius:7px; }
+  .pill.ok { color:var(--ok); background:rgba(52,211,153,.12); }
+  .pill.att { color:var(--att); background:rgba(251,191,36,.12); }
+  .recap { display:flex; justify-content:space-between; font-size:1.25rem; font-weight:800; margin:14px 2px; }
+  .vide { color:var(--doux); padding:30px 0; }
+  .ligne-form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
+  .ligne-form > div { flex:1; min-width:120px; }
+  .ligne-form label { font-size:.8rem; color:var(--doux); display:block; margin-bottom:4px; }
+  .ligne-form .champ { margin-bottom:0; }
+</style>
+</head>
+<body>
+
+<!-- ÉCRAN CONNEXION -->
+<div id="connexion" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <h1 id="c-titre">Restaurant</h1>
+    <div class="lang"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+  </div>
+  <div class="carte">
+    <div class="err" id="c-err"></div>
+    <input class="champ" id="c-email" type="email" placeholder="email" autocomplete="username">
+    <input class="champ" id="c-mdp" type="password" placeholder="••••••••" autocomplete="current-password">
+    <input class="champ" id="c-resto" placeholder="" style="display:none">
+    <button class="btn or" id="c-action" style="width:100%"></button>
+    <div class="bascule" id="c-bascule"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+  <header>
+    <span class="marque" id="marque">🍽︎</span>
+    <select id="sel-resto" onchange="changerResto(this.value)"></select>
+    <button class="btn fant" id="b-new-resto" onclick="nouveauResto()"></button>
+    <div class="sp">
+      <div class="lang"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+      <button class="btn fant" id="b-deco" onclick="deconnexion()"></button>
+    </div>
+  </header>
+  <div class="onglets">
+    <button data-o="carte" class="on"></button>
+    <button data-o="tables"></button>
+    <button data-o="additions"></button>
+    <button data-o="cuisine"></button>
+  </div>
+  <main id="vue"></main>
+</div>
+
+<script>
+const T = {
+ fr: {
+  titre:"Restaurant", connexion:"Se connecter", inscription:"Créer un compte",
+  vers_inscription:"Pas de compte ? Créer un compte", vers_connexion:"Déjà un compte ? Se connecter",
+  nom_resto:"Nom du restaurant", deco:"Déconnexion", new_resto:"+ Restaurant",
+  o_carte:"Carte", o_tables:"Tables & QR", o_additions:"Additions", o_cuisine:"Cuisine",
+  ajouter_plat:"Ajouter un plat", nom:"Nom", desc:"Description", prix:"Prix (€)", ajouter:"Ajouter",
+  dispo:"Disponible", jour:"Plat du jour", photo:"Photo", suppr:"Supprimer", carte_vide:"Aucun plat. Ajoutez votre premier plat.",
+  ajouter_table:"Ajouter une table", num_table:"N° de table", tables_vide:"Aucune table.",
+  ouvrir_cuisine:"Ouvrir l'écran cuisine ↗", choisir_table:"Choisissez une table",
+  du:"Dû", paye:"Payé", reste:"Reste à payer", regle:"Réglé ✓", attente:"En attente",
+  paye_especes:"Payé en espèces", total_reste:"Reste sur la table", aucune_cmd:"Aucune commande sur cette table.",
+  prix_invalide:"Prix invalide", nouveau_prix:"Nouveau prix en euros :", err_co:"Email ou mot de passe incorrect.",
+  err_existe:"Un compte existe déjà avec cet email.", err_court:"Mot de passe : 8 caractères minimum.",
+  err_resto:"Donnez un nom de restaurant.", devise:"fr-FR"
+ },
+ en: {
+  titre:"Restaurant", connexion:"Sign in", inscription:"Create account",
+  vers_inscription:"No account? Create one", vers_connexion:"Have an account? Sign in",
+  nom_resto:"Restaurant name", deco:"Sign out", new_resto:"+ Restaurant",
+  o_carte:"Menu", o_tables:"Tables & QR", o_additions:"Bills", o_cuisine:"Kitchen",
+  ajouter_plat:"Add a dish", nom:"Name", desc:"Description", prix:"Price (€)", ajouter:"Add",
+  dispo:"Available", jour:"Today's special", photo:"Photo", suppr:"Delete", carte_vide:"No dishes yet. Add your first one.",
+  ajouter_table:"Add a table", num_table:"Table no.", tables_vide:"No tables yet.",
+  ouvrir_cuisine:"Open kitchen screen ↗", choisir_table:"Pick a table",
+  du:"Due", paye:"Paid", reste:"Left to pay", regle:"Settled ✓", attente:"Pending",
+  paye_especes:"Mark cash paid", total_reste:"Left on the table", aucune_cmd:"No orders on this table.",
+  prix_invalide:"Invalid price", nouveau_prix:"New price in euros:", err_co:"Wrong email or password.",
+  err_existe:"An account already exists with this email.", err_court:"Password: 8 characters minimum.",
+  err_resto:"Enter a restaurant name.", devise:"en-GB"
+ }
+};
+let lang = localStorage.getItem('resto_lang') || 'fr';
+let mode = 'connexion';            // connexion | inscription
+let session = localStorage.getItem('resto_session') || '';
+let restos = [], restoActif = localStorage.getItem('resto_actif') || '';
+let onglet = 'carte', devise = 'EUR', tableAddition = '', wsAdmin = null;
+
+const $ = s => document.querySelector(s);
+const t = k => T[lang][k];
+const H = () => ({'Content-Type':'application/json', Authorization:'Bearer '+session});
+function euro(c){ return (c/100).toLocaleString(T[lang].devise, {style:'currency', currency:devise}); }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+document.querySelectorAll('.lang button').forEach(b=> b.onclick = ()=>{ lang=b.dataset.l; localStorage.setItem('resto_lang',lang); appliquer(); });
+function appliquer(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on', b.dataset.l===lang));
+  // connexion
+  $('#c-titre').textContent = t('titre');
+  $('#c-action').textContent = mode==='connexion' ? t('connexion') : t('inscription');
+  $('#c-bascule').textContent = mode==='connexion' ? t('vers_inscription') : t('vers_connexion');
+  $('#c-resto').style.display = mode==='inscription' ? 'block' : 'none';
+  $('#c-resto').placeholder = t('nom_resto');
+  // app
+  $('#b-deco').textContent = t('deco');
+  $('#b-new-resto').textContent = t('new_resto');
+  const o = {carte:'o_carte', tables:'o_tables', additions:'o_additions', cuisine:'o_cuisine'};
+  document.querySelectorAll('.onglets button').forEach(b=>{ b.textContent=t(o[b.dataset.o]); b.classList.toggle('on', b.dataset.o===onglet); });
+  if(session) rendre();
+}
+
+// ── Connexion ────────────────────────────────────────────────
+$('#c-bascule').onclick = ()=>{ mode = mode==='connexion'?'inscription':'connexion'; $('#c-err').textContent=''; appliquer(); };
+$('#c-action').onclick = async ()=>{
+  $('#c-err').textContent='';
+  const email=$('#c-email').value.trim(), mdp=$('#c-mdp').value;
+  if(mode==='inscription'){
+    if(mdp.length<8){ $('#c-err').textContent=t('err_court'); return; }
+    const r = await fetch('/auth/inscription', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email, mot_de_passe:mdp, nom_restaurant:$('#c-resto').value.trim()})});
+    if(r.status===409){ $('#c-err').textContent=t('err_existe'); return; }
+    if(!r.ok){ $('#c-err').textContent=t('err_court'); return; }
+    finConnexion(await r.json());
+  } else {
+    const r = await fetch('/auth/connexion', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email, mot_de_passe:mdp})});
+    if(!r.ok){ $('#c-err').textContent=t('err_co'); return; }
+    finConnexion(await r.json());
+  }
+};
+function finConnexion(data){ session=data.session; localStorage.setItem('resto_session',session); demarrer(); }
+
+function deconnexion(){ session=''; localStorage.removeItem('resto_session'); localStorage.removeItem('resto_actif');
+  restoActif=''; if(wsAdmin) wsAdmin.close(); ecran(); }
+
+// ── Démarrage / restaurants ──────────────────────────────────
+async function demarrer(){
+  const r = await fetch('/restaurants', {headers:H()});
+  if(r.status===401){ deconnexion(); return; }
+  restos = (await r.json()).restaurants;
+  if(!restos.length){ await fetch('/restaurants', {method:'POST', headers:H(), body:JSON.stringify({nom:'Mon restaurant'})});
+    restos = (await (await fetch('/restaurants',{headers:H()})).json()).restaurants; }
+  if(!restos.find(x=>x.id===restoActif)) restoActif = restos[0].id;
+  localStorage.setItem('resto_actif', restoActif);
+  majSelecteur(); ecran(); brancherWS();
+}
+function majSelecteur(){
+  $('#sel-resto').innerHTML = restos.map(r=>`<option value="${r.id}" ${r.id===restoActif?'selected':''}>${esc(r.nom)}</option>`).join('');
+  const r = restos.find(x=>x.id===restoActif); devise = (r&&r.devise)||'EUR';
+}
+window.changerResto = id => { restoActif=id; localStorage.setItem('resto_actif',id); majSelecteur(); tableAddition=''; brancherWS(); rendre(); };
+async function nouveauResto(){
+  const nom = prompt(t('nom_resto')); if(!nom) return;
+  await fetch('/restaurants', {method:'POST', headers:H(), body:JSON.stringify({nom})});
+  demarrer();
+}
+
+function ecran(){
+  $('#connexion').style.display = session ? 'none' : 'block';
+  $('#app').style.display = session ? 'block' : 'none';
+  appliquer();
+}
+
+document.querySelectorAll('.onglets button').forEach(b=> b.onclick = ()=>{ onglet=b.dataset.o; appliquer(); });
+
+// ── Rendu des onglets ────────────────────────────────────────
+function rendre(){
+  if(onglet==='cuisine'){ window.open('/cuisine?resto='+restoActif, '_blank'); onglet='carte'; appliquer(); return; }
+  if(onglet==='carte') vueCarte();
+  else if(onglet==='tables') vueTables();
+  else if(onglet==='additions') vueAdditions();
+}
+
+// Carte
+async function vueCarte(){
+  const plats = (await (await fetch(`/restaurants/${restoActif}/plats`, {headers:H()})).json()).plats;
+  const form = `<div class="ligne-form">
+    <div><label>${t('nom')}</label><input class="champ" id="p-nom"></div>
+    <div><label>${t('prix')}</label><input class="champ" id="p-prix" type="number" step="0.01" min="0"></div>
+    <div style="flex:2"><label>${t('desc')}</label><input class="champ" id="p-desc"></div>
+    <button class="btn or" onclick="ajouterPlat()">${t('ajouter')}</button></div>`;
+  const cartes = plats.length ? `<div class="grille">`+plats.map(p=>{
+    const img = p.photo?`<img src="${p.photo}">`:`<img>`;
+    return `<div class="plat ${p.disponible?'':'indispo'}">
+      <div class="haut">${img}<div><div class="nom">${esc(p.nom)}</div>
+      <div class="prix" onclick="editerPrix('${p.id}',${p.prix_cents})">${euro(p.prix_cents)}</div></div></div>
+      ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
+      <div class="bascules">
+        <button class="bascule-pet ${p.disponible?'on':''}" onclick="bascule('${p.id}','disponible',${!p.disponible})">${t('dispo')}</button>
+        <button class="bascule-pet jour ${p.plat_du_jour?'on':''}" onclick="bascule('${p.id}','plat_du_jour',${!p.plat_du_jour})">${t('jour')}</button>
+      </div>
+      <div class="pied">
+        <label class="btn fant" style="text-align:center">${t('photo')}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="photo('${p.id}',this)"></label>
+        <button class="btn danger" onclick="supprPlat('${p.id}')">${t('suppr')}</button>
+      </div></div>`;
+  }).join('')+`</div>` : `<div class="vide">${t('carte_vide')}</div>`;
+  $('#vue').innerHTML = `<h2>${t('o_carte')}</h2>${form}${cartes}`;
+}
+window.ajouterPlat = async ()=>{
+  const nom=$('#p-nom').value.trim(); if(!nom) return;
+  const prix=Math.round(parseFloat($('#p-prix').value||'0')*100);
+  await fetch(`/restaurants/${restoActif}/plats`, {method:'POST', headers:H(),
+    body:JSON.stringify({nom, prix_cents:prix||0, description:$('#p-desc').value.trim()})});
+  vueCarte();
+};
+window.editerPrix = async (id, actuel)=>{
+  const v = prompt(t('nouveau_prix'), (actuel/100).toFixed(2)); if(v===null) return;
+  const c = Math.round(parseFloat(v.replace(',','.'))*100);
+  if(isNaN(c)||c<0){ alert(t('prix_invalide')); return; }
+  await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({prix_cents:c})});
+  vueCarte();
+};
+window.bascule = async (id, champ, val)=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({[champ]:val})}); vueCarte(); };
+window.supprPlat = async id=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'DELETE', headers:H()}); vueCarte(); };
+window.photo = (id, input)=>{ const f=input.files[0]; if(!f) return; const fr=new FileReader();
+  fr.onload = async ()=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({photo:fr.result})}); vueCarte(); };
+  fr.readAsDataURL(f); };
+
+// Tables & QR
+async function vueTables(){
+  const tables = (await (await fetch(`/restaurants/${restoActif}/tables`, {headers:H()})).json()).tables;
+  const form = `<div class="ligne-form"><div><label>${t('num_table')}</label><input class="champ" id="t-num"></div>
+    <button class="btn or" onclick="ajouterTable()">${t('ajouter')}</button></div>`;
+  const liste = tables.length ? `<div class="grille">`+tables.map(tb=>
+    `<div class="table-c"><div class="num">${t('num_table')} ${esc(tb.numero)}</div>
+      <div class="qr" id="qr-${tb.id}">…</div>
+      <div class="url">/carte/${tb.code}</div>
+      <div style="margin-top:10px"><button class="btn danger" onclick="supprTable('${tb.id}')">${t('suppr')}</button></div></div>`
+  ).join('')+`</div>` : `<div class="vide">${t('tables_vide')}</div>`;
+  $('#vue').innerHTML = `<h2>${t('o_tables')}</h2>${form}${liste}`;
+  // QR : l'endpoint exige l'auth → on fetch le SVG et on l'injecte (un <img> ne peut pas porter le Bearer).
+  for(const tb of tables){
+    const r = await fetch(`/restaurants/${restoActif}/tables/${tb.id}/qr.svg`, {headers:H()});
+    if(r.ok){ const el=document.getElementById('qr-'+tb.id); if(el) el.innerHTML = await r.text(); }
+  }
+}
+window.ajouterTable = async ()=>{ const num=$('#t-num').value.trim(); if(!num) return;
+  await fetch(`/restaurants/${restoActif}/tables`, {method:'POST', headers:H(), body:JSON.stringify({numero:num})}); vueTables(); };
+window.supprTable = async id=>{ await fetch(`/restaurants/${restoActif}/tables/${id}`, {method:'DELETE', headers:H()}); vueTables(); };
+
+// Additions (tablette)
+async function vueAdditions(){
+  const tables = (await (await fetch(`/restaurants/${restoActif}/tables`, {headers:H()})).json()).tables;
+  if(!tables.length){ $('#vue').innerHTML = `<h2>${t('o_additions')}</h2><div class="vide">${t('tables_vide')}</div>`; return; }
+  if(!tables.find(x=>x.id===tableAddition)) tableAddition = tables[0].id;
+  const opts = tables.map(tb=>`<option value="${tb.id}" ${tb.id===tableAddition?'selected':''}>${t('num_table')} ${esc(tb.numero)}</option>`).join('');
+  $('#vue').innerHTML = `<h2>${t('o_additions')}</h2>
+    <select class="champ" style="max-width:240px" onchange="tableAddition=this.value; chargerAddition()">${opts}</select>
+    <div id="addition"></div>`;
+  chargerAddition();
+}
+window.chargerAddition = async ()=>{
+  const cible = $('#addition'); if(!cible) return;
+  const e = await (await fetch(`/restaurants/${restoActif}/tables/${tableAddition}/addition`, {headers:H()})).json();
+  if(!e.convives.length){ cible.innerHTML = `<div class="vide">${t('aucune_cmd')}</div>`; return; }
+  cible.innerHTML = e.convives.map(c=>{
+    const det = c.details.map(d=>`${d.quantite}× ${esc(d.nom_plat)}`).join(', ');
+    const pill = c.regle ? `<span class="pill ok">${t('regle')}${c.moyen?(' · '+c.moyen):''}</span>` : `<span class="pill att">${t('attente')}</span>`;
+    const bouton = !c.regle ? `<button class="btn" style="margin-top:10px" onclick="especes('${esc(c.convive)}')">${t('paye_especes')} · ${euro(c.reste_cents)}</button>` : '';
+    return `<div class="conv ${c.regle?'regle':''}"><div class="tete"><span class="nom">${esc(c.convive)}</span>${pill}</div>
+      <div class="det">${det}</div>
+      <div class="tete" style="margin-top:8px"><span>${t('du')}: <b>${euro(c.du_cents)}</b></span><span>${t('reste')}: <b>${euro(c.reste_cents)}</b></span></div>
+      ${bouton}</div>`;
+  }).join('') + `<div class="recap"><span>${t('total_reste')}</span><span>${euro(e.reste_cents)}</span></div>`;
+};
+window.especes = async (convive)=>{
+  await fetch(`/restaurants/${restoActif}/tables/${tableAddition}/paiement-especes`, {method:'POST', headers:H(), body:JSON.stringify({convive})});
+  chargerAddition();
+};
+
+// Temps réel admin : nouvelle commande / paiement → rafraîchir l'addition ou la cuisine ouverte.
+function brancherWS(){
+  if(wsAdmin){ try{ wsAdmin.close(); }catch(e){} }
+  const proto = location.protocol==='https:'?'wss':'ws';
+  wsAdmin = new WebSocket(`${proto}://${location.host}/ws/cuisine/${restoActif}?session=${encodeURIComponent(session)}`);
+  wsAdmin.onmessage = ()=>{ if(onglet==='additions') chargerAddition(); };
+  wsAdmin.onclose = ()=> setTimeout(()=>{ if(session) brancherWS(); }, 3000);
+}
+
+// ── Boot ─────────────────────────────────────────────────────
+if(session) demarrer(); else ecran();
+</script>
+</body>
+</html>

@@ -52,6 +52,9 @@ FORGE_UI_URL = os.environ.get("FORGE_UI_URL", "http://localhost:3000")
 STUDIO_UI_URL = os.environ.get("STUDIO_UI_URL", "http://localhost:6060/atelier")
 PERSONNAGES_UI_URL = os.environ.get("PERSONNAGES_UI_URL", "http://localhost:5900/atelier")
 TRANSCRIPTION_UI_URL = os.environ.get("TRANSCRIPTION_UI_URL", "http://localhost:5980/atelier")
+# Brique « restaurant » (port 6010) : back-office restaurateur (commande & paiement à table
+# par QR, multi-tenant). Embarquée dans l'onglet « Atelier » comme les autres briques.
+RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
@@ -358,11 +361,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div style="display:flex;align-items:center;gap:16px">
     <div class="tabs">
       <button class="tab active" data-vue="briques" onclick="switchVue('briques')">Registre de briques</button>
-      <button class="tab" data-vue="usine" onclick="switchVue('usine')">Usine à apps</button>
+      <button class="tab" data-vue="atelier" onclick="switchVue('atelier')">Atelier</button>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')">Assistant</button>
       <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
-      <button class="tab" data-vue="forge" onclick="switchVue('forge')">Forge</button>
-      <button class="tab" data-vue="creations" onclick="switchVue('creations')">Créations</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
@@ -388,7 +389,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE USINE -->
   <div class="view" id="vue-usine">
     <div class="topbar">
-      <h2>Usine à applications — livrer une entreprise en une commande</h2>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
+        <h2>Usine à applications — livrer une entreprise en une commande</h2>
+      </div>
       <span id="usine-check"></span>
     </div>
     <div class="panel">
@@ -572,7 +576,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <div class="view" id="vue-forge">
     <div class="topbar">
-      <h2>Forge — agents IA, RAG, ventures (interface complète intégrée)</h2>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
+        <h2>Forge — agents IA, RAG, ventures (interface complète intégrée)</h2>
+      </div>
       <div style="display:flex;align-items:center;gap:12px">
         <span class="liv-sub">Connexion unique (realm Oria) — la première fois, l'écran de connexion s'ouvre dans Forge.</span>
         <a class="btn ghost" id="forge-open-tab" href="__FORGE_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
@@ -590,14 +597,33 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- VUE CRÉATIONS — Hub des briques créatives (Studio 6060, Personnages 5900), migré d'Oria -->
-  <div class="view" id="vue-creations">
+  <!-- VUE ATELIER — hub unique : Usine à apps, Forge, briques créatives (Studio, Personnages,
+       Transcription) et Restaurant, réunis pour ne pas multiplier les onglets du dashboard. -->
+  <div class="view" id="vue-atelier">
     <!-- Grille de tuiles (état par défaut) -->
     <div id="creations-grille">
       <div class="topbar">
-        <h2>Créations — les outils créatifs de Workplace, réunis ici</h2>
+        <h2>Atelier — fabriquer & gérer : apps, créations, restaurant</h2>
       </div>
       <div class="creations-tuiles">
+        <button class="creation-tuile" onclick="switchVue('usine')">
+          <span class="creation-emoji">🏭</span>
+          <span class="creation-titre">Usine à apps</span>
+          <span class="creation-desc">Livrer une entreprise complète (app + comptes + CRM) en une commande.</span>
+          <span class="creation-badge">Cœur</span>
+        </button>
+        <button class="creation-tuile" onclick="switchVue('forge')">
+          <span class="creation-emoji">⚒️</span>
+          <span class="creation-titre">Forge</span>
+          <span class="creation-desc">Agents IA, RAG, ventures — l'atelier technique complet (interface intégrée).</span>
+          <span class="creation-badge">Brique · port 3000</span>
+        </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__RESTAURANT_UI_URL__', 'Restaurant — commande & paiement à table')">
+          <span class="creation-emoji">🍽️</span>
+          <span class="creation-titre">Restaurant</span>
+          <span class="creation-desc">Commande & paiement à table par QR : carte, ruptures en direct, addition partagée, multi-restaurants.</span>
+          <span class="creation-badge">Brique · port 6010</span>
+        </button>
         <button class="creation-tuile" onclick="ouvrirCreation('__STUDIO_UI_URL__', 'Studio audio-séries')">
           <span class="creation-emoji">🎬</span>
           <span class="creation-titre">Studio audio-séries</span>
@@ -627,7 +653,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <!-- Cadre plein écran (au clic sur une tuile) -->
     <div id="creations-cadre" style="display:none">
       <div class="topbar">
-        <button class="btn ghost" onclick="retourCreations()">← Créations</button>
+        <button class="btn ghost" onclick="retourCreations()">← Atelier</button>
         <div style="display:flex;align-items:center;gap:12px">
           <span id="creation-cadre-titre" style="font-size:0.85rem;color:#94a3b8"></span>
           <a class="btn ghost" id="creation-open-tab" href="#" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
@@ -739,7 +765,9 @@ let VUE = 'briques';
 
 function switchVue(v) {
   VUE = v;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.vue === v));
+  // « Atelier » est un hub : les sous-vues Usine / Forge / hub gardent l'onglet Atelier actif.
+  const tabActive = ['atelier', 'usine', 'forge'].includes(v) ? 'atelier' : v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.vue === tabActive));
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === 'vue-' + v));
   if (v === 'usine') chargerLivraisons();
   if (v === 'assistant') {
@@ -2677,7 +2705,8 @@ async def dashboard():
         .replace("__FORGE_UI_URL__", FORGE_UI_URL)
         .replace("__STUDIO_UI_URL__", studio_ui)
         .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
-        .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL))
+        .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
+        .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL))
 
 
 # ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────

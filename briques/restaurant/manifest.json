@@ -1,0 +1,31 @@
+{
+  "nom": "restaurant",
+  "version": "0.1.0",
+  "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et chacun paie SA part — addition partagée avec « reste à payer » live, paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
+  "role": "restaurant",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/restaurant",
+  "port": 6010,
+  "url_sante": "http://host.docker.internal:6010/sante",
+  "depends_on": [],
+  "offre": [
+    "comptes_restaurateurs",
+    "multi_restaurants_cloisonnes",
+    "carte_menu_crud",
+    "rupture_stock_temps_reel",
+    "plat_du_jour",
+    "tables_qr_codes",
+    "commande_par_convive",
+    "file_cuisine_temps_reel",
+    "addition_partagee",
+    "paiement_part_mock",
+    "paiement_especes_comptoir",
+    "websocket_live",
+    "front_back_office",
+    "front_cuisine",
+    "front_client"
+  ],
+  "besoin": [],
+  "taches": []
+}

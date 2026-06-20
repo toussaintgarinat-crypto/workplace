@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!-- Écran CUISINE — file des commandes en direct. Ouvert depuis le back-office (la
+     session et le restaurant actif viennent du localStorage / de l'URL ?resto=).
+     Reçoit les nouvelles commandes en temps réel via WebSocket. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cuisine</title>
+<style>
+  :root { --bg:#0d1119; --carte:#161d2b; --bord:#2a3346; --texte:#e8edf6; --doux:#94a3b8;
+          --accent:#7c83ff; --ok:#34d399; --prete:#fbbf24; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--texte); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--bord); position:sticky; top:0; background:var(--bg); }
+  header h1 { font-size:1.15rem; margin:0; }
+  header .pastille { width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  header .pastille.off { background:#ef4444; box-shadow:none; }
+  .lang { margin-left:auto; display:flex; gap:4px; }
+  .lang button { background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:8px; padding:5px 10px; cursor:pointer; }
+  .lang button.on { color:var(--accent); border-color:var(--accent); }
+  .grille { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; padding:20px; }
+  .cmd { background:var(--carte); border:1px solid var(--bord); border-left:4px solid var(--accent); border-radius:14px; padding:16px; }
+  .cmd.prete { border-left-color:var(--prete); }
+  .cmd .tete { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .cmd .table { font-size:1.3rem; font-weight:800; }
+  .cmd .conv { color:var(--accent); font-weight:600; }
+  .cmd .heure { color:var(--doux); font-size:.78rem; }
+  .cmd ul { list-style:none; margin:0 0 14px; padding:0; }
+  .cmd li { padding:5px 0; border-bottom:1px solid rgba(255,255,255,.05); display:flex; gap:8px; }
+  .cmd li b { color:var(--accent); }
+  .actions { display:flex; gap:8px; }
+  .actions button { flex:1; padding:11px; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
+  .b-prete { background:var(--prete); color:#0d1119; }
+  .b-servie { background:var(--ok); color:#0d1119; }
+  .etiq { font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:6px; }
+  .etiq.prete { color:var(--prete); background:rgba(251,191,36,.14); }
+  .vide { color:var(--doux); text-align:center; padding:80px 20px; grid-column:1/-1; }
+</style>
+</head>
+<body>
+<header>
+  <span class="pastille off" id="pastille"></span>
+  <h1 id="titre">Cuisine</h1>
+  <div class="lang"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+</header>
+<div class="grille" id="grille"></div>
+
+<script>
+const T = {
+  fr: { titre:"Cuisine — commandes en direct", table:"Table", prete:"Prête", servie:"Servie",
+        en_cuisine:"En préparation", est_prete:"Prête à servir", vide:"Aucune commande en attente.",
+        pas_session:"Ouvrez l'écran cuisine depuis le back-office (session requise)." },
+  en: { titre:"Kitchen — live orders", table:"Table", prete:"Ready", servie:"Served",
+        en_cuisine:"Preparing", est_prete:"Ready to serve", vide:"No pending orders.",
+        pas_session:"Open the kitchen screen from the back-office (session required)." }
+};
+let lang = localStorage.getItem('resto_lang') || 'fr';
+const t = k => T[lang][k];
+const params = new URLSearchParams(location.search);
+const resto = params.get('resto') || localStorage.getItem('resto_actif') || '';
+const session = localStorage.getItem('resto_session') || '';
+const $ = s => document.querySelector(s);
+
+document.querySelectorAll('.lang button').forEach(b=> b.onclick = ()=>{ lang=b.dataset.l; localStorage.setItem('resto_lang',lang); appliquer(); });
+function appliquer(){ document.documentElement.lang=lang; $('#titre').textContent=t('titre');
+  document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on',b.dataset.l===lang)); charger(); }
+
+function heure(iso){ try{ return new Date(iso).toLocaleTimeString(lang==='fr'?'fr-FR':'en-GB',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function charger(){
+  if(!resto || !session){ $('#grille').innerHTML = `<div class="vide">${t('pas_session')}</div>`; return; }
+  const r = await fetch(`/restaurants/${resto}/cuisine`, {headers:{Authorization:'Bearer '+session}});
+  if(!r.ok){ $('#grille').innerHTML = `<div class="vide">${t('pas_session')}</div>`; return; }
+  rendre((await r.json()).commandes);
+}
+
+function rendre(cmds){
+  if(!cmds.length){ $('#grille').innerHTML = `<div class="vide">${t('vide')}</div>`; return; }
+  $('#grille').innerHTML = cmds.map(c=>{
+    const prete = c.statut==='prete';
+    const lignes = c.lignes.map(l=>`<li><b>${l.quantite}×</b> ${esc(l.nom_plat)}</li>`).join('');
+    const etiq = prete ? `<span class="etiq prete">${t('est_prete')}</span>` : '';
+    const actions = prete
+      ? `<button class="b-servie" onclick="statut('${c.id}','servie')">${t('servie')}</button>`
+      : `<button class="b-prete" onclick="statut('${c.id}','prete')">${t('prete')}</button>`;
+    return `<div class="cmd ${prete?'prete':''}">
+      <div class="tete"><span class="table">${t('table')} ${esc(c.table_numero)}</span><span class="heure">${heure(c.cree_le)}</span></div>
+      <div class="conv">${esc(c.convive)} ${etiq}</div>
+      <ul>${lignes}</ul>
+      <div class="actions">${actions}</div></div>`;
+  }).join('');
+}
+
+window.statut = async (id, statut) => {
+  await fetch(`/restaurants/${resto}/commandes/${id}/statut`, {method:'POST',
+    headers:{'Content-Type':'application/json', Authorization:'Bearer '+session}, body:JSON.stringify({statut})});
+  charger();
+};
+
+function brancherWS(){
+  if(!resto || !session) return;
+  const proto = location.protocol==='https:'?'wss':'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/cuisine/${resto}?session=${encodeURIComponent(session)}`);
+  ws.onopen = ()=> $('#pastille').classList.remove('off');
+  ws.onmessage = ()=> charger();   // toute évolution (commande/statut/paiement/carte) → refresh
+  ws.onclose = ()=>{ $('#pastille').classList.add('off'); setTimeout(brancherWS, 3000); };
+}
+
+appliquer(); brancherWS();
+</script>
+</body>
+</html>
