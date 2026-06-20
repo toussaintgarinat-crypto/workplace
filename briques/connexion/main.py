@@ -10,6 +10,7 @@ multi-utilisateur avec consentement (correspondance.py), historique persisté pa
   • POST /webhook/{reseau}       : réception signée d'un message → relais à l'assistant ;
   • POST /sonder/{reseau}        : tirage actif (Telegram getUpdates) — appelé par l'horloge S29 ;
   • POST /envoyer                : envoi sortant manuel (admin) ;
+  • POST /pousser                : envoi PROACTIF à un utilisateur (rappels d'agenda du Cœur) ;
   • GET/POST/DELETE /correspondances : administration du mapping interlocuteur → utilisateur.
 """
 import os
@@ -55,6 +56,11 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 class Envoi(BaseModel):
     reseau: str
     id_externe: str
+    texte: str
+
+
+class Pousser(BaseModel):
+    utilisateur: str
     texte: str
 
 
@@ -147,6 +153,29 @@ async def envoyer(body: Envoi, _cle: str = Depends(cle_api)):
         raise HTTPException(409, f"Réseau « {body.reseau} » non configuré.")
     ok = await ad.envoyer(body.id_externe, body.texte)
     return {"ok": bool(ok)}
+
+
+@app.post("/pousser", tags=["admin"])
+async def pousser(body: Pousser, _cle: str = Depends(cle_api)):
+    """Envoi PROACTIF vers un utilisateur (ses messageries liées) — rappels du Cœur.
+
+    Le Cœur ne connaît que l'utilisateur Workplace ; c'est le pont qui sait OÙ le
+    joindre (correspondance). On envoie sur chaque réseau lié ET configuré. Repli
+    honnête : aucune cible joignable ⇒ `envoyes: 0` (pas une erreur)."""
+    cibles = correspondance.cibles_pour(body.utilisateur)
+    envoyes, detail = 0, []
+    for reseau, id_externe in cibles:
+        ad = adaptateurs.obtenir(reseau)
+        if ad is None or not ad.configure():
+            detail.append({"reseau": reseau, "envoye": False, "raison": "non configuré"})
+            continue
+        try:
+            await ad.envoyer(id_externe, body.texte)
+            envoyes += 1
+            detail.append({"reseau": reseau, "envoye": True})
+        except Exception as ex:  # noqa: BLE001 — un réseau KO ne bloque pas les autres
+            detail.append({"reseau": reseau, "envoye": False, "raison": str(ex)})
+    return {"ok": True, "envoyes": envoyes, "cibles": len(cibles), "detail": detail}
 
 
 @app.get("/correspondances", tags=["admin"])

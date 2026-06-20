@@ -216,7 +216,17 @@ OUTILS: list[dict] = [
             "fin": {"type": "string", "description": "Date/heure de fin (ISO 8601). Si non précisée, mets +1h."},
             "lieu": {"type": "string"},
             "description": {"type": "string"},
+            "rappels": {"type": "array", "items": {"type": "integer"},
+                        "description": "Rappels = liste de MINUTES AVANT le début. Convertis le langage : « à l'heure »=0, « 10 min avant »=10, « 30 min avant »=30, « 1 h avant »=60, « la veille / 1 jour avant »=1440, « 1 semaine avant »=10080. Plusieurs possibles, ex. « 30 min avant et la veille »=[30,1440]. Omettre = aucun rappel."},
         }, ["titre", "debut", "fin"])}},
+    {"type": "function", "function": {
+        "name": "agenda_definir_rappels",
+        "description": "Définit/modifie les rappels d'un événement EXISTANT (effet immédiat, pas de confirmation). Retrouve d'abord l'event_id via agenda_consulter. Remplace la liste complète ; passe une liste VIDE [] pour retirer tous les rappels.",
+        "parameters": _p({
+            "event_id": {"type": "string"},
+            "rappels": {"type": "array", "items": {"type": "integer"},
+                        "description": "Liste de MINUTES AVANT le début (0=à l'heure, 10, 30, 60=1h, 1440=1j, 10080=1sem). Liste vide = aucun rappel."},
+        }, ["event_id", "rappels"])}},
     {"type": "function", "function": {
         "name": "agenda_deplacer_evenement",
         "description": "Replanifie un événement existant (nouvelles dates, effet immédiat). Retrouve d'abord son event_id via agenda_consulter.",
@@ -250,6 +260,35 @@ OUTILS: list[dict] = [
             "email": {"type": "string", "description": "Email de l'invité (optionnel, informatif)."},
             "confirme": {"type": "boolean"},
         }, ["calendar_id"])}},
+    {"type": "function", "function": {
+        "name": "timetree_etat",
+        "description": "État du pont TimeTree : connecté ? quel calendrier partagé est synchronisé ? À consulter avant de connecter ou synchroniser.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "timetree_connecter",
+        "description": "Connecte le compte TimeTree (lecture seule, NON OFFICIEL) pour rapatrier l'agenda partagé. Demande l'email et le mot de passe TimeTree. ASTUCE : il vaut mieux le faire depuis le dashboard que par message (le mot de passe transite dans la conversation). Renvoie la liste des calendriers ; ensuite, choisis-en un via timetree_choisir_calendrier. ACTION (manipule un secret) : confirme=true requis après accord.",
+        "parameters": _p({
+            "email": {"type": "string", "description": "Email du compte TimeTree."},
+            "password": {"type": "string", "description": "Mot de passe TimeTree."},
+            "calendar_id": {"type": "string", "description": "Id du calendrier partagé à synchroniser (optionnel ; sinon choisir après)."},
+            "confirme": {"type": "boolean"},
+        }, ["email", "password"])}},
+    {"type": "function", "function": {
+        "name": "timetree_choisir_calendrier",
+        "description": "Choisit le calendrier partagé TimeTree à synchroniser (via un id obtenu de timetree_connecter / timetree_etat).",
+        "parameters": _p({
+            "calendar_id": {"type": "string"},
+        }, ["calendar_id"])}},
+    {"type": "function", "function": {
+        "name": "timetree_synchroniser",
+        "description": "Lance une synchronisation TimeTree → Workplace (pull lecture seule de l'agenda partagé vers le calendrier « TimeTree »). Effet immédiat.",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "timetree_deconnecter",
+        "description": "Déconnecte TimeTree et purge les identifiants du coffre (révocation). ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "confirme": {"type": "boolean"},
+        }, [])}},
     {"type": "function", "function": {
         "name": "forge_rag_ingerer",
         "description": "Ingère un document dans la base RAG de Forge (vectorisation) pour pouvoir l'interroger ensuite. ACTION (écrit dans Forge) : confirme=true requis après accord.",
@@ -541,6 +580,7 @@ OUTILS_ACTION = {
     "livrer_entreprise", "decrocher_entreprise", "reprendre_entreprise",
     "ingerer_document", "classer_document", "creer_enregistrement", "memoire_retenir",
     "agenda_supprimer_evenement", "agenda_inviter",
+    "timetree_connecter", "timetree_deconnecter",
     "forge_rag_ingerer", "forge_lancer_agent",
     "forge_facture_creer", "forge_facture_statut", "forge_facture_transformer",
     "forge_crm_creer", "forge_crm_modifier", "forge_paiement_lien",
@@ -825,7 +865,8 @@ async def executer(nom: str, args: dict, registre) -> str:
                 evts = await agenda.lister_evenements(registre, args.get("debut"), args.get("fin"))
                 apercu = [{"event_id": e.get("id"), "titre": e.get("title"),
                            "debut": e.get("start_at"), "fin": e.get("end_at"),
-                           "lieu": e.get("location")} for e in evts]
+                           "lieu": e.get("location"), "rappels": e.get("rappels") or []}
+                          for e in evts]
                 return json.dumps({"evenements": apercu, "total": len(apercu)}, ensure_ascii=False)
 
             if nom == "agenda_lister":
@@ -923,9 +964,16 @@ async def executer(nom: str, args: dict, registre) -> str:
                 titre = args.get("titre") or "Événement"
                 evt = await agenda.creer_evenement(
                     registre, titre, args.get("debut", ""), args.get("fin", ""),
-                    args.get("lieu"), args.get("description"))
+                    args.get("lieu"), args.get("description"), args.get("rappels"))
                 return json.dumps({"cree": True, "event_id": evt.get("id"), "titre": evt.get("title"),
-                                   "debut": evt.get("start_at"), "fin": evt.get("end_at")}, ensure_ascii=False)
+                                   "debut": evt.get("start_at"), "fin": evt.get("end_at"),
+                                   "rappels": evt.get("rappels") or []}, ensure_ascii=False)
+
+            if nom == "agenda_definir_rappels":
+                evt = await agenda.definir_rappels(
+                    registre, args.get("event_id", ""), args.get("rappels") or [])
+                return json.dumps({"defini": True, "event_id": evt.get("id"),
+                                   "rappels": evt.get("rappels") or []}, ensure_ascii=False)
 
             if nom == "agenda_deplacer_evenement":
                 evt = await agenda.deplacer_evenement(
@@ -957,6 +1005,34 @@ async def executer(nom: str, args: dict, registre) -> str:
                                    "lien": inv.get("lien"), "token": inv.get("token"),
                                    "role": inv.get("role"), "expire_le": inv.get("expires_at")},
                                   ensure_ascii=False)
+
+            if nom == "timetree_etat":
+                return json.dumps(await agenda.timetree_etat(registre), ensure_ascii=False)
+
+            if nom == "timetree_connecter":
+                if not args.get("confirme"):
+                    return _confirmation("connecter le compte TimeTree", args.get("email", ""))
+                res = await agenda.timetree_connecter(
+                    registre, args.get("email", ""), args.get("password", ""),
+                    args.get("calendar_id"))
+                # On ne renvoie JAMAIS les identifiants ; juste l'état + les calendriers.
+                if not res.get("connected"):
+                    return json.dumps({"connected": False, "erreur": res.get("erreur")}, ensure_ascii=False)
+                return json.dumps({"connected": True, "calendriers": res.get("calendars", []),
+                                   "calendar_id": res.get("calendar_id")}, ensure_ascii=False)
+
+            if nom == "timetree_choisir_calendrier":
+                res = await agenda.timetree_choisir_calendrier(registre, args.get("calendar_id", ""))
+                return json.dumps({"choisi": True, **res}, ensure_ascii=False)
+
+            if nom == "timetree_synchroniser":
+                return json.dumps(await agenda.timetree_synchroniser(registre), ensure_ascii=False)
+
+            if nom == "timetree_deconnecter":
+                if not args.get("confirme"):
+                    return _confirmation("déconnecter TimeTree", "TimeTree")
+                ok = await agenda.timetree_deconnecter(registre)
+                return json.dumps({"deconnecte": ok}, ensure_ascii=False)
 
             if nom == "forge_rag_ingerer":
                 nom_doc = (args.get("nom") or "document").strip()

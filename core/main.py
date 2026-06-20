@@ -189,6 +189,66 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .agenda-heure { font-variant-numeric: tabular-nums; color: #94a3b8; font-size: 0.82rem; min-width: 92px; }
   .agenda-titre { color: #e2e8f0; font-weight: 600; font-size: 0.9rem; flex: 1; }
   .agenda-lieu { color: #64748b; font-size: 0.78rem; }
+  .agenda-cal { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+  .agenda-rappel { color: #7c83ff; font-size: 0.78rem; white-space: nowrap; }
+  .tt-panel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; background: #18203044; border: 1px solid #2d3148; border-radius: 8px; margin-bottom: 10px; font-size: 0.82rem; color: #94a3b8; }
+  .tt-dot { width: 9px; height: 9px; border-radius: 50%; background: #4CD2C0; display: inline-block; }
+  .tt-off { background: #64748b; }
+  .agenda-select { background: #1e2535; color: #94a3b8; border: 1px solid #2d3148; border-radius: 6px; font-size: 0.76rem; padding: 3px 6px; }
+  /* Calendrier façon TimeTree */
+  .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cal-nav { display: flex; align-items: center; gap: 8px; }
+  .cal-label { font-size: 1.05rem; font-weight: 700; color: #e2e8f0; margin-left: 6px; text-transform: capitalize; }
+  .cal-fleche { background: #1e2535; color: #e2e8f0; border: 1px solid #2d3148; border-radius: 8px; width: 32px; height: 32px; font-size: 1.1rem; cursor: pointer; }
+  .cal-fleche:hover { background: #2a3346; }
+  .cal-modes { display: flex; gap: 0; border: 1px solid #2d3148; border-radius: 8px; overflow: hidden; }
+  .cal-mode { background: #1e2535; color: #94a3b8; border: none; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; }
+  .cal-mode.active { background: #5865F2; color: #fff; }
+  /* Grille mensuelle */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #2d3148; border: 1px solid #2d3148; border-radius: 10px; overflow: hidden; }
+  .cal-dow { background: #161b27; color: #7c83ff; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; padding: 7px 0; }
+  .cal-cell { background: #141a26; min-height: 96px; padding: 4px 5px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; transition: background .12s; }
+  .cal-cell:hover { background: #1a2130; }
+  .cal-cell.autre { background: #10141d; }
+  .cal-cell.autre .cal-num { color: #475569; }
+  .cal-num { font-size: 0.76rem; color: #94a3b8; align-self: flex-start; font-variant-numeric: tabular-nums; }
+  .cal-cell.aujourdhui .cal-num { background: #5865F2; color: #fff; border-radius: 50%; width: 21px; height: 21px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .cal-chip { font-size: 0.72rem; color: #fff; border-radius: 4px; padding: 1px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; border-left: 3px solid rgba(0,0,0,.25); }
+  .cal-plus { font-size: 0.68rem; color: #64748b; padding-left: 2px; }
+  /* Vue semaine (colonnes par jour) */
+  .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .cal-wcol { background: #141a26; border: 1px solid #2d3148; border-radius: 10px; padding: 8px; min-height: 160px; }
+  .cal-wcol.aujourdhui { border-color: #5865F2; }
+  .cal-whead { font-size: 0.72rem; color: #94a3b8; font-weight: 700; text-align: center; margin-bottom: 8px; text-transform: capitalize; }
+  .cal-wevt { font-size: 0.74rem; color: #e2e8f0; background: #1e2535; border-left: 3px solid #5865F2; border-radius: 5px; padding: 4px 6px; margin-bottom: 5px; cursor: pointer; }
+  .cal-wevt .h { color: #94a3b8; font-variant-numeric: tabular-nums; margin-right: 4px; }
+  /* Modale événement : champs */
+  .ev-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+  .ev-row label { font-size: 0.74rem; color: #94a3b8; font-weight: 600; }
+  .ev-in { background: #141a26; color: #e2e8f0; border: 1px solid #2d3148; border-radius: 8px; padding: 8px 10px; font-size: 0.88rem; width: 100%; box-sizing: border-box; }
+  .ev-in:disabled { opacity: .55; cursor: not-allowed; }
+  .ev-2col { display: flex; gap: 10px; }
+  .ev-2col > div { flex: 1; }
+  .ev-palette { display: flex; gap: 7px; flex-wrap: wrap; }
+  .ev-swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .ev-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #5865F2; }
+  .ev-sec { border-top: 1px solid #2d3148; margin-top: 16px; padding-top: 14px; }
+  .ev-sec h4 { font-size: 0.82rem; color: #cbd5e1; margin: 0 0 8px; }
+  .ev-doc { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; padding: 5px 0; }
+  .ev-doc a { color: #7c83ff; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-doc .sup { color: #ef4444; cursor: pointer; background: none; border: none; }
+  .ev-comm { font-size: 0.82rem; color: #e2e8f0; background: #141a26; border-radius: 8px; padding: 7px 9px; margin-bottom: 6px; }
+  .ev-comm .meta { color: #64748b; font-size: 0.7rem; }
+  .ev-ro { font-size: 0.74rem; color: #f59e0b; background: #f59e0b18; border: 1px solid #f59e0b44; border-radius: 7px; padding: 6px 9px; margin-bottom: 12px; }
+  /* Étiquettes nommées : légende + mini-gestion */
+  .cal-legende { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cal-leg-titre { font-size: 0.74rem; color: #94a3b8; font-weight: 600; }
+  .cal-leg-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #cbd5e1; }
+  .cal-leg-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+  .etq-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .etq-row input[type=text] { flex: 1; background: #0f1117; color: #e2e8f0; border: 1px solid #2d3148; border-radius: 7px; padding: 7px 9px; font-size: 0.85rem; }
+  .etq-row input[type=color] { width: 32px; height: 32px; border: none; background: none; padding: 0; cursor: pointer; }
+  .etq-row .sup { color: #ef4444; cursor: pointer; background: none; border: none; font-size: 0.95rem; }
   /* Rappels proactifs */
   .pastille { background: #ef4444; color: #fff; border-radius: 10px; padding: 0 6px; font-size: 0.68rem; font-weight: 700; margin-left: 4px; }
   .rappel { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #2d3148; border-radius: 8px; margin-bottom: 8px; background: #1e2535; }
@@ -244,6 +304,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .empty { color: #475569; font-size: 0.85rem; padding: 30px; text-align: center; }
   .btn.ghost { background: transparent; border: 1px solid #3d4468; color: #94a3b8; }
   .btn.ghost:hover { background: #1e2535; color: #e2e8f0; }
+  .btn.danger { background: transparent; border: 1px solid #5a2d3a; color: #f87171; padding: 6px 12px; font-size: 0.8rem; }
+  .btn.danger:hover { background: #2a1820; color: #fca5a5; border-color: #842c3a; }
+  .liv-suppr { margin-top: 12px; }
   .creations-tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
   .creation-tuile { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 22px; background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px; color: #e2e8f0; cursor: pointer; transition: border-color 0.2s, transform 0.12s; }
   .creation-tuile:hover { border-color: #3d4468; transform: translateY(-2px); }
@@ -580,13 +643,33 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <div class="view" id="vue-agenda">
     <div class="topbar">
-      <h2>Agenda — tes rendez-vous (l'assistant les gère en langage naturel)</h2>
-      <button class="btn" id="btn-agenda-add" onclick="nouvelEvenementViaAssistant()">+ Nouveau rendez-vous</button>
+      <h2>Agenda</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="opacity:.85" onclick="ouvrirGestionEtiquettes()">🏷 Étiquettes</button>
+        <button class="btn" onclick="ouvrirModaleEvent(null, null)">+ Nouveau rendez-vous</button>
+      </div>
     </div>
     <div class="panel">
-      <div id="agenda-corps" class="agenda-corps"><span class="liv-sub">Chargement…</span></div>
+      <div id="g-panel" class="tt-panel" style="display:none"></div>
+      <div id="tt-panel" class="tt-panel" style="display:none"></div>
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="cal-fleche" onclick="calNav(-1)" title="Précédent">‹</button>
+          <button class="btn" onclick="calAujourdhui()">Aujourd'hui</button>
+          <button class="cal-fleche" onclick="calNav(1)" title="Suivant">›</button>
+          <span id="cal-label" class="cal-label"></span>
+        </div>
+        <div class="cal-modes">
+          <button class="cal-mode active" id="cal-mode-mois" onclick="calMode('mois')">Mois</button>
+          <button class="cal-mode" id="cal-mode-semaine" onclick="calMode('semaine')">Semaine</button>
+        </div>
+      </div>
+      <div id="cal-legende" class="cal-legende" style="display:none"></div>
+      <div id="cal-conteneur" class="cal-conteneur"><span class="liv-sub">Chargement…</span></div>
     </div>
   </div>
+  <div id="event-modal"></div>
+  <div id="label-modal"></div>
 
   <!-- VUE PROFIL -->
   <div class="view" id="vue-profil">
@@ -663,7 +746,7 @@ function switchVue(v) {
     setTimeout(() => document.getElementById('chat-input').focus(), 50);
     chargerCerveau(); majBoutonVoix(); brancherDragDrop(); chargerDossiers(); rafraichirPastilleRappels();
   }
-  if (v === 'agenda') chargerAgenda();
+  if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
   if (v === 'historique') chargerHistorique();
@@ -867,31 +950,405 @@ async function sauverProfil() {
 }
 
 // ── Agenda ──────────────────────────────────────────────────────────────────
-const JOURS = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
-const MOIS = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
-function fmtHeure(iso) { const d = new Date(iso); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
-function cleJour(iso) { const d = new Date(iso); return JOURS[d.getDay()]+' '+d.getDate()+' '+MOIS[d.getMonth()]; }
-async function chargerAgenda() {
-  const corps = document.getElementById('agenda-corps');
-  if (!corps) return;
-  const debut = new Date().toISOString();
+const JOURS_COURT = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const MOIS_COURT = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const COULEURS_PALETTE = ['#5865F2','#3B82F6','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#a855f7','#14b8a6','#64748b'];
+const RAPPEL_PRESETS = [[0,"à l'heure"],[10,"10 min"],[30,"30 min"],[60,"1 h"],[1440,"1 jour"],[10080,"1 sem"]];
+function libRappel(m){ if(m===0)return "à l'heure"; if(m<60)return m+" min"; if(m<1440)return (m/60)+" h"; if(m<10080)return (m/1440)+" j"; return (m/10080)+" sem"; }
+function fmtHeure(iso){ const d=new Date(iso); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function isoToLocal(iso){ if(!iso) return ''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
+function localToIso(v){ return v ? new Date(v).toISOString() : null; }
+function lundiDe(d){ const x=new Date(d); const j=(x.getDay()+6)%7; x.setDate(x.getDate()-j); x.setHours(0,0,0,0); return x; }
+function memeJour(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+function estImporte(ev){ return ev && (ev.calendrier==='TimeTree' || ev.calendrier==='Google'); }
+
+let calRef = new Date();
+let calModeActuel = 'mois';
+let CALENDARS = [];
+let EVENTS_CACHE = [];
+let modalCouleur = '#5865F2';
+let modalLabelId = '';        // étiquette nommée choisie dans la modale ('' = aucune)
+let newLabelCouleur = '#5865F2';  // couleur de l'étiquette en cours de création inline
+
+function calMode(m){ calModeActuel=m; const a=document.getElementById('cal-mode-mois'), b=document.getElementById('cal-mode-semaine'); if(a)a.classList.toggle('active',m==='mois'); if(b)b.classList.toggle('active',m==='semaine'); chargerAgenda(); }
+function calAujourdhui(){ calRef=new Date(); chargerAgenda(); }
+function calNav(dir){ if(calModeActuel==='mois'){ calRef.setMonth(calRef.getMonth()+dir); } else { calRef.setDate(calRef.getDate()+dir*7); } calRef=new Date(calRef); chargerAgenda(); }
+
+async function chargerAgenda(){
+  const cont=document.getElementById('cal-conteneur'); if(!cont) return;
+  if(!CALENDARS.length){ try{ CALENDARS=(await fetch('/agenda/calendriers').then(r=>r.json())).calendriers||[]; }catch(e){} }
+  let debut, fin, label;
+  if(calModeActuel==='mois'){
+    const first=new Date(calRef.getFullYear(),calRef.getMonth(),1);
+    debut=lundiDe(first); fin=new Date(debut); fin.setDate(fin.getDate()+42);
+    label=MOIS[calRef.getMonth()]+' '+calRef.getFullYear();
+  } else {
+    debut=lundiDe(calRef); fin=new Date(debut); fin.setDate(fin.getDate()+7);
+    const l=new Date(debut); l.setDate(l.getDate()+6);
+    label=debut.getDate()+' '+MOIS_COURT[debut.getMonth()]+' – '+l.getDate()+' '+MOIS_COURT[l.getMonth()]+' '+l.getFullYear();
+  }
+  const lab=document.getElementById('cal-label'); if(lab) lab.textContent=label;
+  cont.innerHTML='<span class="liv-sub">Chargement…</span>';
+  let evts=[];
+  try{ evts=(await fetch('/agenda/evenements?debut='+encodeURIComponent(debut.toISOString())+'&fin='+encodeURIComponent(fin.toISOString())).then(r=>r.json())).evenements||[]; }
+  catch(e){ cont.innerHTML='<span class="liv-sub">Agenda indisponible : '+e.message+'</span>'; return; }
+  EVENTS_CACHE=evts;
+  cont.innerHTML = calModeActuel==='mois' ? rendreMois(debut,evts) : rendreSemaine(debut,evts);
+  rendreLegende();
+}
+function rendreLegende(){
+  const box=document.getElementById('cal-legende'); if(!box) return;
+  const seen=new Map();
+  for(const e of EVENTS_CACHE){ if(e.etiquette && !seen.has(e.etiquette)) seen.set(e.etiquette, e.couleur||'#5865F2'); }
+  if(!seen.size){ box.innerHTML=''; box.style.display='none'; return; }
+  box.style.display='flex';
+  box.innerHTML = '<span class="cal-leg-titre">Étiquettes :</span>' + Array.from(seen.entries())
+    .map(([n,c])=>`<span class="cal-leg-chip"><span class="cal-leg-dot" style="background:${escAttr(c)}"></span>${escHtml(n)}</span>`).join('');
+}
+function eventsDuJour(evts,d){ return evts.filter(e=>memeJour(new Date(e.start_at),d)).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)); }
+function chipEvent(e){
+  const c=e.couleur||'#5865F2';
+  const heure=e.all_day?'':fmtHeure(e.start_at)+' ';
+  return `<div class="cal-chip" style="background:${escAttr(c)}" title="${escAttr((heure)+e.title)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)">${escHtml(heure)}${escHtml(e.title)}</div>`;
+}
+function rendreMois(debut,evts){
+  const today=new Date();
+  let h='<div class="cal-grid">';
+  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${j}</div>`;
+  for(let i=0;i<42;i++){
+    const d=new Date(debut); d.setDate(d.getDate()+i);
+    const autre=d.getMonth()!==calRef.getMonth();
+    const jevts=eventsDuJour(evts,d), max=3;
+    h+=`<div class="cal-cell${autre?' autre':''}${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<span class="cal-num">${d.getDate()}</span>`;
+    jevts.slice(0,max).forEach(e=>{ h+=chipEvent(e); });
+    if(jevts.length>max) h+=`<span class="cal-plus">+${jevts.length-max}</span>`;
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function rendreSemaine(debut,evts){
+  const today=new Date();
+  let h='<div class="cal-week">';
+  for(let i=0;i<7;i++){
+    const d=new Date(debut); d.setDate(d.getDate()+i);
+    h+=`<div class="cal-wcol${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<div class="cal-whead">${JOURS_COURT[i]} ${d.getDate()}</div>`;
+    eventsDuJour(evts,d).forEach(e=>{
+      const c=e.couleur||'#5865F2';
+      h+=`<div class="cal-wevt" style="border-left-color:${escAttr(c)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)"><span class="h">${e.all_day?'journée':fmtHeure(e.start_at)}</span>${escHtml(e.title)}</div>`;
+    });
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+
+// ── Modale événement (créer / éditer + documents + commentaires) ─────────────
+function fermerModale(){ const m=document.getElementById('event-modal'); if(m) m.innerHTML=''; }
+function choisirCouleur(c){ modalCouleur=c; document.querySelectorAll('#event-modal .ev-swatch').forEach(s=>s.classList.toggle('sel', s.dataset.c===c)); }
+function ouvrirModaleEvent(id, dateYMD){
+  const ev = id ? EVENTS_CACHE.find(e=>e.id===id) : null;
+  const ro = estImporte(ev);
+  // Dates par défaut (création) : 09:00–10:00 le jour cliqué, sinon prochaine heure pleine.
+  let dStart, dEnd;
+  if(ev){ dStart=isoToLocal(ev.start_at); dEnd=isoToLocal(ev.end_at); }
+  else if(dateYMD){ dStart=dateYMD+'T09:00'; dEnd=dateYMD+'T10:00'; }
+  else { const n=new Date(); n.setMinutes(0,0,0); n.setHours(n.getHours()+1); const e2=new Date(n); e2.setHours(e2.getHours()+1); dStart=isoToLocal(n.toISOString()); dEnd=isoToLocal(e2.toISOString()); }
+  modalCouleur = (ev && ev.color) || '#5865F2';
+  modalLabelId = (ev && ev.label_id) || '';
+  newLabelCouleur = '#5865F2';
+  const calOptions = CALENDARS.filter(c=>c.name!=='TimeTree'&&c.name!=='Google').map(c=>`<option value="${escAttr(c.id)}" ${ev&&ev.calendar_id===c.id?'selected':''}>${escHtml(c.name)}</option>`).join('');
+  const rappels = (ev&&ev.rappels)||[];
+  const checks = RAPPEL_PRESETS.map(([m,lib])=>`<label style="font-weight:400;display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:0.8rem"><input type="checkbox" class="ev-rap" value="${m}" ${rappels.includes(m)?'checked':''}> ${lib}</label>`).join('');
+  const swatches = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===modalCouleur?'sel':''}" data-c="${c}" style="background:${c}" onclick="choisirCouleur('${c}')"></span>`).join('');
+  const titre = ev ? (ro?'Événement (lecture seule)':'Modifier l\\'événement') : 'Nouveau rendez-vous';
+  const dis = ro ? 'disabled' : '';
+  let html = `<div class="modal-fond" onclick="if(event.target===this)fermerModale()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerModale()">✕</button>
+    <div class="modal-titre">${escHtml(titre)}</div>
+    ${ro?`<div class="ev-ro">⚠ Importé de ${escHtml(ev.calendrier)} — modifiable seulement dans ${escHtml(ev.calendrier)}. Ici tu peux ajouter rappels, documents et commentaires.</div>`:''}
+    <div class="ev-row"><label>Titre</label><input id="ev-titre" class="ev-in" ${dis} value="${ev?escAttr(ev.title):''}" placeholder="Titre du rendez-vous"></div>
+    <div class="ev-2col">
+      <div class="ev-row"><label>Début</label><input id="ev-debut" type="datetime-local" class="ev-in" ${dis} value="${dStart}"></div>
+      <div class="ev-row"><label>Fin</label><input id="ev-fin" type="datetime-local" class="ev-in" ${dis} value="${dEnd}"></div>
+    </div>
+    <div class="ev-row"><label><input type="checkbox" id="ev-allday" ${dis} ${ev&&ev.all_day?'checked':''}> Journée entière</label></div>`;
+  if(!ev || !ro){
+    const newPal = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===newLabelCouleur?'sel':''}" data-nc="${c}" style="background:${c}" onclick="choisirNewLabelCouleur('${c}')"></span>`).join('');
+    html += `<div class="ev-row"><label>Calendrier</label><select id="ev-cal" class="ev-in" ${dis} onchange="onCalChange()">${calOptions||'<option value="">Perso</option>'}</select></div>
+    <div class="ev-row"><label>🏷 Étiquette</label>
+      <select id="ev-label" class="ev-in" ${dis} onchange="onLabelChange()"><option value="">— chargement…</option></select>
+      <div id="ev-newlabel" style="display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <input id="ev-newlabel-nom" type="text" class="ev-in" style="max-width:200px" placeholder="Nom (ex. Famille)">
+        <div class="ev-palette">${newPal}</div>
+        <button class="btn" type="button" onclick="creerEtiquetteModale()">Créer</button>
+        <button class="btn" type="button" style="opacity:.6" onclick="annulerNewLabel()">Annuler</button>
+      </div>
+    </div>
+    <div class="ev-row" id="ev-couleur-row"><label>Couleur libre</label><div class="ev-palette">${swatches}</div></div>`;
+  }
+  html += `<div class="ev-row"><label>Lieu</label><input id="ev-lieu" class="ev-in" ${dis} value="${ev&&ev.location?escAttr(ev.location):''}" placeholder="Lieu (optionnel)"></div>
+    <div class="ev-row"><label>Notes</label><textarea id="ev-notes" class="ev-in" ${dis} rows="2" placeholder="Notes (optionnel)">${ev&&ev.description?escHtml(ev.description):''}</textarea></div>
+    <div class="ev-row"><label>🔔 Rappels</label><div>${checks}</div></div>
+    <div class="modal-actions">
+      ${ro?'':`<button class="btn" onclick="enregistrerEvent(${ev?`'${ev.id}'`:'null'})">${ev?'Enregistrer':'Créer'}</button>`}
+      ${ev?`<button class="btn" style="opacity:.7" onclick="majRappelsModale('${ev.id}')">Enregistrer les rappels</button>`:''}
+      ${ev&&!ro?`<button class="btn" style="background:#ef4444" onclick="supprimerEvent('${ev.id}')">Supprimer</button>`:''}
+    </div>`;
+  if(ev){
+    html += `<div class="ev-sec"><h4>📎 Documents</h4><div id="ev-docs"><span class="liv-sub">Chargement…</span></div>
+      <input type="file" id="ev-file" style="margin-top:8px;font-size:0.8rem">
+      <button class="btn" style="margin-left:8px" onclick="uploadDoc('${ev.id}')">Joindre</button></div>
+    <div class="ev-sec"><h4>💬 Commentaires</h4><div id="ev-comms"><span class="liv-sub">Chargement…</span></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="ev-comm-in" class="ev-in" placeholder="Ajouter un commentaire…"><button class="btn" onclick="ajouterComm('${ev.id}')">Envoyer</button></div></div>`;
+  }
+  html += `</div></div>`;
+  document.getElementById('event-modal').innerHTML = html;
+  if(document.getElementById('ev-label')) chargerEtiquettesModale();
+  if(ev){ chargerDocs(ev.id); chargerComm(ev.id); }
+}
+function currentCalId(){ const s=document.getElementById('ev-cal'); return s ? s.value : ''; }
+async function chargerEtiquettesModale(){
+  const cal=currentCalId(); const sel=document.getElementById('ev-label'); if(!sel) return;
+  let labels=[];
+  if(cal){ try{ labels=(await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes').then(r=>r.json())).etiquettes||[]; }catch(e){} }
+  if(modalLabelId && !labels.some(l=>l.id===modalLabelId)) modalLabelId='';  // étiquette d'un autre calendrier → on détache
+  sel.innerHTML = `<option value="">Aucune (couleur libre)</option>`
+    + labels.map(l=>`<option value="${escAttr(l.id)}" ${l.id===modalLabelId?'selected':''}>${escHtml(l.name)}</option>`).join('')
+    + `<option value="__new__">➕ Nouvelle étiquette…</option>`;
+  appliquerEtatLabel();
+}
+function onCalChange(){ modalLabelId=''; chargerEtiquettesModale(); }
+function onLabelChange(){
+  const sel=document.getElementById('ev-label'); const v=sel.value;
+  if(v==='__new__'){ const f=document.getElementById('ev-newlabel'); if(f) f.style.display='flex'; sel.value=modalLabelId||''; return; }
+  modalLabelId=v; appliquerEtatLabel();
+}
+function appliquerEtatLabel(){
+  // Quand une étiquette est choisie, sa couleur prime → on masque la palette libre.
+  const row=document.getElementById('ev-couleur-row'); if(row) row.style.display = modalLabelId ? 'none' : '';
+}
+function choisirNewLabelCouleur(c){ newLabelCouleur=c; document.querySelectorAll('#ev-newlabel .ev-swatch').forEach(s=>s.classList.toggle('sel', s.dataset.nc===c)); }
+function annulerNewLabel(){ const f=document.getElementById('ev-newlabel'); if(f) f.style.display='none'; }
+async function creerEtiquetteModale(){
+  const cal=currentCalId(); if(!cal){ alert("Choisis d'abord un calendrier."); return; }
+  const nom=(document.getElementById('ev-newlabel-nom').value||'').trim(); if(!nom){ alert('Donne un nom.'); return; }
+  try{
+    const l=await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:newLabelCouleur})}).then(r=>r.json());
+    if(l && l.id){ modalLabelId=l.id; annulerNewLabel(); document.getElementById('ev-newlabel-nom').value=''; await chargerEtiquettesModale(); }
+    else alert('Échec : '+((l&&l.detail)||'inconnu'));
+  }catch(e){ alert('Échec : '+e.message); }
+}
+
+// ── Mini-gestion des étiquettes (panneau depuis la toolbar) ──────────────────
+async function ouvrirGestionEtiquettes(){
+  if(!CALENDARS.length){ try{ CALENDARS=(await fetch('/agenda/calendriers').then(r=>r.json())).calendriers||[]; }catch(e){} }
+  const cals=CALENDARS.filter(c=>c.name!=='TimeTree'&&c.name!=='Google');
+  const opts=cals.map(c=>`<option value="${escAttr(c.id)}">${escHtml(c.name)}</option>`).join('')||'<option value="">Perso</option>';
+  const html=`<div class="modal-fond" onclick="if(event.target===this)fermerGestionEtq()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerGestionEtq()">✕</button>
+    <div class="modal-titre">🏷 Gérer les étiquettes</div>
+    <div class="ev-row"><label>Calendrier</label><select id="etq-cal" class="ev-in" onchange="chargerGestionEtq()">${opts}</select></div>
+    <div id="etq-liste"><span class="liv-sub">Chargement…</span></div>
+    <div class="ev-sec"><h4>Nouvelle étiquette</h4>
+      <div class="etq-row">
+        <input type="color" id="etq-new-col" value="#5865F2">
+        <input type="text" id="etq-new-nom" placeholder="Nom (ex. Famille)">
+        <button class="btn" onclick="ajouterGestionEtq()">Ajouter</button>
+      </div>
+    </div>
+  </div></div>`;
+  document.getElementById('label-modal').innerHTML=html;
+  chargerGestionEtq();
+}
+function fermerGestionEtq(){ const m=document.getElementById('label-modal'); if(m) m.innerHTML=''; }
+function gestionCalId(){ const s=document.getElementById('etq-cal'); return s?s.value:''; }
+async function chargerGestionEtq(){
+  const cal=gestionCalId(); const box=document.getElementById('etq-liste'); if(!box) return;
+  let labels=[];
+  if(cal){ try{ labels=(await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes').then(r=>r.json())).etiquettes||[]; }catch(e){} }
+  box.innerHTML = labels.length ? labels.map(l=>`<div class="etq-row">
+    <input type="color" value="${escAttr(l.color||'#5865F2')}" id="etq-col-${l.id}">
+    <input type="text" value="${escAttr(l.name)}" id="etq-nom-${l.id}">
+    <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="majGestionEtq('${l.id}')">💾</button>
+    <button class="sup" title="Supprimer" onclick="supprGestionEtq('${l.id}')">🗑</button>
+  </div>`).join('') : '<span class="liv-sub">Aucune étiquette pour ce calendrier.</span>';
+}
+async function majGestionEtq(id){
+  const nom=(document.getElementById('etq-nom-'+id).value||'').trim();
+  const col=document.getElementById('etq-col-'+id).value;
+  if(!nom){ alert('Le nom ne peut pas être vide.'); return; }
+  try{ await fetch('/agenda/etiquettes/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:col})}); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprGestionEtq(id){
+  if(!confirm("Supprimer cette étiquette ? Les événements concernés repasseront « sans étiquette ».")) return;
+  try{ await fetch('/agenda/etiquettes/'+encodeURIComponent(id),{method:'DELETE'}); chargerGestionEtq(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function ajouterGestionEtq(){
+  const cal=gestionCalId(); if(!cal){ alert('Choisis un calendrier.'); return; }
+  const nom=(document.getElementById('etq-new-nom').value||'').trim(); const col=document.getElementById('etq-new-col').value;
+  if(!nom){ alert('Donne un nom.'); return; }
+  try{ await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:col})}); document.getElementById('etq-new-nom').value=''; chargerGestionEtq(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+function rappelsCoches(){ return Array.from(document.querySelectorAll('#event-modal .ev-rap:checked')).map(c=>parseInt(c.value,10)); }
+function corpsEvent(){
+  const allday=document.getElementById('ev-allday').checked;
+  return {
+    title: document.getElementById('ev-titre').value.trim(),
+    start_at: localToIso(document.getElementById('ev-debut').value),
+    end_at: localToIso(document.getElementById('ev-fin').value),
+    location: document.getElementById('ev-lieu').value.trim() || null,
+    description: document.getElementById('ev-notes').value.trim() || null,
+    color: modalCouleur, label_id: modalLabelId || '', all_day: allday, rappels: rappelsCoches()
+  };
+}
+async function enregistrerEvent(id){
+  const corps=corpsEvent();
+  if(!corps.title){ alert('Donne un titre.'); return; }
+  if(!corps.start_at||!corps.end_at){ alert('Indique début et fin.'); return; }
+  try{
+    if(id){ await fetch('/agenda/evenements/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)}); }
+    else { const sel=document.getElementById('ev-cal'); corps.calendar_id=sel?sel.value:null; await fetch('/agenda/evenements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)}); }
+    fermerModale(); chargerAgenda();
+  }catch(e){ alert('Échec : '+e.message); }
+}
+async function majRappelsModale(id){
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/rappels',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({rappels:rappelsCoches()})}); fermerModale(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprimerEvent(id){
+  if(!confirm('Supprimer cet événement ?')) return;
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id),{method:'DELETE'}); fermerModale(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function chargerDocs(id){
+  const box=document.getElementById('ev-docs'); if(!box) return;
+  try{
+    const docs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/documents').then(r=>r.json())).documents||[];
+    box.innerHTML = docs.length ? docs.map(d=>`<div class="ev-doc"><a href="/agenda/documents/${encodeURIComponent(d.id)}" target="_blank">${escHtml(d.filename)}</a><span class="liv-sub">${Math.round((d.size_bytes||0)/1024)} Ko</span><button class="sup" onclick="supprDoc('${d.id}','${id}')">✕</button></div>`).join('') : '<span class="liv-sub">Aucun document.</span>';
+  }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
+}
+async function uploadDoc(id){
+  const f=document.getElementById('ev-file'); if(!f||!f.files.length){ alert('Choisis un fichier.'); return; }
+  const fd=new FormData(); fd.append('file', f.files[0]);
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/documents',{method:'POST',body:fd}); f.value=''; chargerDocs(id); }
+  catch(e){ alert('Échec upload : '+e.message); }
+}
+async function supprDoc(attId,id){ if(!confirm('Supprimer ce document ?'))return; try{ await fetch('/agenda/documents/'+encodeURIComponent(attId),{method:'DELETE'}); chargerDocs(id); }catch(e){} }
+async function chargerComm(id){
+  const box=document.getElementById('ev-comms'); if(!box) return;
+  try{
+    const cs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/commentaires').then(r=>r.json())).commentaires||[];
+    box.innerHTML = cs.length ? cs.map(c=>`<div class="ev-comm">${escHtml(c.content)}<div class="meta">${new Date(c.created_at).toLocaleString('fr-FR')} <button class="sup" style="border:none;background:none;color:#ef4444;cursor:pointer" onclick="supprComm('${c.id}','${id}')">supprimer</button></div></div>`).join('') : '<span class="liv-sub">Aucun commentaire.</span>';
+  }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
+}
+async function ajouterComm(id){
+  const inp=document.getElementById('ev-comm-in'); const v=inp.value.trim(); if(!v) return;
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/commentaires',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contenu:v})}); inp.value=''; chargerComm(id); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprComm(cId,id){ try{ await fetch('/agenda/commentaires/'+encodeURIComponent(cId),{method:'DELETE'}); chargerComm(id); }catch(e){} }
+
+// ── Pont Google Agenda (consenti, lecture seule, OAuth) ──────────────────────
+async function chargerGoogle() {
+  const p = document.getElementById('g-panel'); if (!p) return;
+  let st = {connected:false};
+  try { st = await fetch('/agenda/google/status').then(r=>r.json()); } catch(e) {}
+  p.style.display = 'flex';
+  if (st.connected) {
+    p.innerHTML = `<span class="tt-dot"></span> Google Agenda connecté — lecture seule, consenti
+      <button class="btn" onclick="gSync()">Synchroniser</button>
+      <button class="btn" style="opacity:.7" onclick="gDisconnect()">Déconnecter</button>
+      <span id="g-msg" class="liv-sub"></span>`;
+  } else {
+    p.innerHTML = `<span class="tt-dot tt-off"></span> Google Agenda non connecté — pull consenti, lecture seule
+      <button class="btn" onclick="gConnect()">Connecter Google</button>
+      <span id="g-msg" class="liv-sub"></span>`;
+  }
+}
+async function gConnect() {
+  const msg = document.getElementById('g-msg'); if (msg) msg.textContent = 'Ouverture du consentement Google…';
   try {
-    const r = await fetch('/agenda/evenements?debut=' + encodeURIComponent(debut));
-    const evts = (await r.json()).evenements || [];
-    if (!evts.length) { corps.innerHTML = '<span class="liv-sub">Aucun rendez-vous à venir. Demandez à l\\'assistant « ajoute un rendez-vous demain 14h ».</span>'; return; }
-    evts.sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
-    let html = '', jourCourant = null;
-    for (const e of evts) {
-      const j = cleJour(e.start_at);
-      if (j !== jourCourant) { jourCourant = j; html += `<div class="agenda-jour">${j}</div>`; }
-      html += `<div class="agenda-evt">
-        <span class="agenda-heure">${fmtHeure(e.start_at)}–${fmtHeure(e.end_at)}</span>
-        <span class="agenda-titre">${escHtml(e.title)}</span>
-        ${e.location ? `<span class="agenda-lieu">📍 ${escHtml(e.location)}</span>` : ''}
-      </div>`;
-    }
-    corps.innerHTML = html;
-  } catch(e) { corps.innerHTML = '<span class="liv-sub">Agenda indisponible : ' + e.message + '</span>'; }
+    const r = await fetch('/agenda/google/connect').then(r=>r.json());
+    if (!r.ok || !r.authorization_url) { if (msg) msg.textContent = 'Indisponible : ' + (r.erreur || 'pont Google non configuré'); return; }
+    window.open(r.authorization_url, '_blank');
+    if (msg) msg.textContent = 'Autorise dans l\\'onglet Google, puis reviens et clique « Synchroniser ».';
+  } catch(e) { if (msg) msg.textContent = 'Erreur : ' + e.message; }
+}
+async function gSync() {
+  const msg = document.getElementById('g-msg'); if (msg) msg.textContent = 'Synchronisation…';
+  try {
+    const r = await fetch('/agenda/google/sync', {method:'POST'}).then(r=>r.json());
+    if (msg) msg.textContent = (r.ok === false) ? ('Échec : ' + (r.erreur || '')) : `✓ ${r.created||0} ajout(s), ${r.updated||0} maj`;
+    chargerGoogle(); chargerAgenda();
+  } catch(e) { if (msg) msg.textContent = 'Erreur : ' + e.message; }
+}
+async function gDisconnect() {
+  if (!confirm('Déconnecter Google et oublier les jetons ?')) return;
+  try { await fetch('/agenda/google/disconnect', {method:'DELETE'}); } catch(e) {}
+  chargerGoogle(); chargerAgenda();
+}
+
+// ── Pont TimeTree (agenda partagé, lecture seule) ────────────────────────────
+async function chargerTimeTree() {
+  const p = document.getElementById('tt-panel'); if (!p) return;
+  let st = {connected:false};
+  try { st = await fetch('/agenda/timetree/status').then(r=>r.json()); } catch(e) {}
+  p.style.display = 'flex';
+  if (st.connected) {
+    const calTxt = st.calendar_id ? ` (calendrier ${escHtml(String(st.calendar_id))})` : ' — choisis un calendrier';
+    p.innerHTML = `<span class="tt-dot"></span> TimeTree connecté${calTxt}
+      <button class="btn" onclick="ttSync()">Synchroniser</button>
+      <button class="btn" style="opacity:.7" onclick="ttDisconnect()">Déconnecter</button>
+      <span id="tt-msg" class="liv-sub"></span>`;
+  } else {
+    p.innerHTML = `<span class="tt-dot tt-off"></span> TimeTree (agenda partagé) non connecté — lecture seule, non officiel
+      <input id="tt-email" placeholder="email TimeTree" class="agenda-select" style="min-width:150px">
+      <input id="tt-pass" type="password" placeholder="mot de passe" class="agenda-select" style="min-width:130px">
+      <button class="btn" onclick="ttConnect()">Connecter</button>
+      <span id="tt-msg" class="liv-sub"></span>`;
+  }
+}
+async function ttConnect() {
+  const email = document.getElementById('tt-email').value.trim();
+  const password = document.getElementById('tt-pass').value;
+  const msg = document.getElementById('tt-msg');
+  if (!email || !password) { msg.textContent = 'Email et mot de passe requis.'; return; }
+  msg.textContent = 'Connexion…';
+  try {
+    const r = await fetch('/agenda/timetree/connect', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password})}).then(r=>r.json());
+    if (!r.connected) { msg.textContent = 'Échec : ' + (r.erreur || 'identifiants invalides ?'); return; }
+    const cals = r.calendars || [];
+    if (!cals.length) { msg.textContent = 'Connecté, mais aucun calendrier trouvé.'; return; }
+    const liste = cals.map((c,i)=>`${i+1}. ${c.name}`).join('\\n');
+    const choix = prompt('Quel calendrier synchroniser ?\\n' + liste + '\\n\\nEntre le numéro :');
+    const idx = parseInt(choix, 10) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= cals.length) { chargerTimeTree(); return; }
+    await fetch('/agenda/timetree/select', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({calendar_id: cals[idx].id})});
+    await ttSync();
+    chargerTimeTree();
+  } catch(e) { msg.textContent = 'Erreur : ' + e.message; }
+}
+async function ttSync() {
+  const msg = document.getElementById('tt-msg'); if (msg) msg.textContent = 'Synchronisation…';
+  try {
+    const r = await fetch('/agenda/timetree/sync', {method:'POST'}).then(r=>r.json());
+    if (msg) msg.textContent = (r.ok === false) ? ('Échec : ' + (r.erreur || '')) : `✓ ${r.created||0} ajout(s), ${r.updated||0} maj`;
+    chargerAgenda();
+  } catch(e) { if (msg) msg.textContent = 'Erreur : ' + e.message; }
+}
+async function ttDisconnect() {
+  if (!confirm('Déconnecter TimeTree et oublier les identifiants ?')) return;
+  try { await fetch('/agenda/timetree/disconnect', {method:'DELETE'}); } catch(e) {}
+  chargerTimeTree(); chargerAgenda();
 }
 function nouvelEvenementViaAssistant() {
   switchVue('assistant');
@@ -1295,7 +1752,7 @@ function livraisonHTML(l) {
     .filter(Boolean).join(' · ');
   // Une entreprise « de côté » n'affiche pas les pastilles d'étapes (elle n'est plus en pipeline).
   const steps = l.statut === 'decrochee' ? '' : `<div class="steps">${etapes}</div>`;
-  return `<div class="liv-card">
+  return `<div class="liv-card" data-liv-id="${l.id}">
     <div class="liv-head">
       <div>
         <div class="liv-title">${l.nom_entreprise || 'Entreprise'}</div>
@@ -1305,6 +1762,7 @@ function livraisonHTML(l) {
     </div>
     ${steps}
     ${err}${links}
+    <div class="liv-suppr"><button class="btn danger" onclick="supprimerApp('${l.id}')">Supprimer</button></div>
   </div>`;
 }
 
@@ -1323,6 +1781,24 @@ async function reprendre(id) {
     if (!r.ok) throw new Error(await r.text());
     await chargerLivraisons();
   } catch(err) { alert('Échec de la reprise : ' + err.message); }
+}
+
+// Suppression définitive d'une app : gate par SAISIE du mot « SUPPRIMER » (anti-clic
+// accidentel, plus fort qu'un simple confirm). On lit le nom depuis la carte (pas
+// d'injection dans l'onclick).
+async function supprimerApp(id) {
+  const carte = document.querySelector('[data-liv-id="' + id + '"]');
+  const nom = carte ? carte.querySelector('.liv-title').textContent.trim() : 'cette app';
+  const saisie = prompt('Supprimer définitivement « ' + nom + ' » ?\\n\\n'
+    + 'Cette action retire l\\'app de l\\'usine et est IRRÉVERSIBLE.\\n'
+    + 'Pour confirmer, tape SUPPRIMER (en majuscules) :');
+  if (saisie === null) return;                       // annulé
+  if (saisie.trim() !== 'SUPPRIMER') { alert('Suppression annulée : le mot saisi ne correspond pas.'); return; }
+  try {
+    const r = await fetch('/usine/livraisons/' + id, { method: 'DELETE' });
+    if (!r.ok && r.status !== 204) throw new Error(await r.text());
+    await chargerLivraisons();
+  } catch(err) { alert('Échec de la suppression : ' + err.message); }
 }
 
 // ── Assistant ───────────────────────────────────────────────────────────────
@@ -2688,6 +3164,210 @@ async def agenda_evenements(debut: str | None = None, fin: str | None = None):
         return {"evenements": await agenda.lister_evenements(registre, debut, fin)}
     except Exception as e:  # noqa: BLE001
         return {"evenements": [], "detail": str(e)}
+
+
+@app.patch("/agenda/evenements/{event_id}/rappels", tags=["agenda"])
+async def agenda_definir_rappels(event_id: str, request: Request):
+    """Définit les rappels d'un événement (minutes avant le début) depuis le dashboard."""
+    try:
+        corps = await request.json()
+        rappels = [int(m) for m in (corps.get("rappels") or [])]
+        evt = await agenda.definir_rappels(registre, event_id, rappels)
+        return {"ok": True, "rappels": evt.get("rappels") or []}
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
+
+
+# ── Pont TimeTree (lecture seule, non officiel) — proxys pour le dashboard ────
+
+@app.get("/agenda/timetree/status", tags=["agenda"])
+async def agenda_timetree_status():
+    try:
+        return await agenda.timetree_etat(registre)
+    except Exception as e:  # noqa: BLE001
+        return {"connected": False, "detail": str(e)}
+
+
+@app.post("/agenda/timetree/connect", tags=["agenda"])
+async def agenda_timetree_connect(request: Request):
+    corps = await request.json()
+    return await agenda.timetree_connecter(
+        registre, corps.get("email", ""), corps.get("password", ""), corps.get("calendar_id"))
+
+
+@app.post("/agenda/timetree/select", tags=["agenda"])
+async def agenda_timetree_select(request: Request):
+    corps = await request.json()
+    try:
+        return await agenda.timetree_choisir_calendrier(registre, corps.get("calendar_id", ""))
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
+
+
+@app.post("/agenda/timetree/sync", tags=["agenda"])
+async def agenda_timetree_sync():
+    return await agenda.timetree_synchroniser(registre)
+
+
+@app.delete("/agenda/timetree/disconnect", tags=["agenda"])
+async def agenda_timetree_disconnect():
+    return {"disconnected": await agenda.timetree_deconnecter(registre)}
+
+
+# ── Pont Google Agenda (consenti, lecture seule, OAuth) — proxys dashboard ────
+
+@app.get("/agenda/google/status", tags=["agenda"])
+async def agenda_google_status():
+    try:
+        return await agenda.google_etat(registre)
+    except Exception as e:  # noqa: BLE001
+        return {"connected": False, "detail": str(e)}
+
+
+@app.get("/agenda/google/connect", tags=["agenda"])
+async def agenda_google_connect():
+    """URL de consentement Google à ouvrir côté navigateur (ou erreur si non configuré)."""
+    try:
+        return await agenda.google_url_consentement(registre)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "erreur": str(e)}
+
+
+@app.post("/agenda/google/sync", tags=["agenda"])
+async def agenda_google_sync(debut: str | None = None, fin: str | None = None):
+    return await agenda.google_synchroniser(registre, debut, fin)
+
+
+@app.delete("/agenda/google/disconnect", tags=["agenda"])
+async def agenda_google_disconnect():
+    return {"disconnected": await agenda.google_deconnecter(registre)}
+
+
+# ── Agenda « façon TimeTree » : calendriers, CRUD événements, documents, commentaires ──
+
+@app.get("/agenda/calendriers", tags=["agenda"])
+async def agenda_calendriers():
+    """Calendriers accessibles (perso + Google + TimeTree + partagés) pour la vue calendrier."""
+    try:
+        return {"calendriers": await agenda.lister_agendas(registre)}
+    except Exception as e:  # noqa: BLE001
+        return {"calendriers": [], "detail": str(e)}
+
+
+@app.post("/agenda/evenements", tags=["agenda"])
+async def agenda_creer(request: Request):
+    """Crée un événement (champs bruts brique : title, start_at, end_at, location,
+    description, color, all_day, rappels ; calendar_id facultatif)."""
+    corps = await request.json()
+    cal = corps.pop("calendar_id", None) or None
+    try:
+        return await agenda.creer_evenement_dans(registre, cal, corps)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.patch("/agenda/evenements/{event_id}", tags=["agenda"])
+async def agenda_modifier(event_id: str, request: Request):
+    """Met à jour un événement (PATCH partiel)."""
+    corps = await request.json()
+    try:
+        return await agenda.modifier_evenement(registre, event_id, corps)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.delete("/agenda/evenements/{event_id}", tags=["agenda"])
+async def agenda_supprimer(event_id: str):
+    return {"supprime": await agenda.supprimer_evenement(registre, event_id)}
+
+
+@app.get("/agenda/evenements/{event_id}/documents", tags=["agenda"])
+async def agenda_documents(event_id: str):
+    return {"documents": await agenda.lister_documents(registre, event_id)}
+
+
+@app.post("/agenda/evenements/{event_id}/documents", tags=["agenda"])
+async def agenda_document_upload(event_id: str, file: UploadFile = File(...)):
+    try:
+        octets = await file.read()
+        return await agenda.televerser_document(
+            registre, event_id, file.filename or "fichier", octets, file.content_type)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.get("/agenda/documents/{att_id}", tags=["agenda"])
+async def agenda_document_download(att_id: str):
+    octets, nom, mt = await agenda.telecharger_document(registre, att_id)
+    if octets is None:
+        return JSONResponse({"detail": "introuvable"}, status_code=404)
+    return Response(content=octets, media_type=mt,
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
+@app.delete("/agenda/documents/{att_id}", tags=["agenda"])
+async def agenda_document_delete(att_id: str):
+    return {"supprime": await agenda.supprimer_document(registre, att_id)}
+
+
+@app.get("/agenda/evenements/{event_id}/commentaires", tags=["agenda"])
+async def agenda_commentaires(event_id: str):
+    return {"commentaires": await agenda.lister_commentaires(registre, event_id)}
+
+
+@app.post("/agenda/evenements/{event_id}/commentaires", tags=["agenda"])
+async def agenda_commentaire_ajouter(event_id: str, request: Request):
+    corps = await request.json()
+    contenu = (corps.get("contenu") or corps.get("content") or "").strip()
+    if not contenu:
+        return JSONResponse({"detail": "commentaire vide"}, status_code=422)
+    try:
+        return await agenda.ajouter_commentaire(registre, event_id, contenu)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.delete("/agenda/commentaires/{comment_id}", tags=["agenda"])
+async def agenda_commentaire_supprimer(comment_id: str):
+    return {"supprime": await agenda.supprimer_commentaire(registre, comment_id)}
+
+
+# ── Étiquettes nommées (catégories) — proxys pour la vue calendrier ──────────
+
+@app.get("/agenda/calendriers/{calendar_id}/etiquettes", tags=["agenda"])
+async def agenda_etiquettes(calendar_id: str):
+    """Étiquettes nommées d'un calendrier (pour le sélecteur et la légende)."""
+    try:
+        return {"etiquettes": await agenda.lister_etiquettes(registre, calendar_id)}
+    except Exception as e:  # noqa: BLE001
+        return {"etiquettes": [], "detail": str(e)}
+
+
+@app.post("/agenda/calendriers/{calendar_id}/etiquettes", tags=["agenda"])
+async def agenda_etiquette_creer(calendar_id: str, request: Request):
+    corps = await request.json()
+    nom = (corps.get("name") or corps.get("nom") or "").strip()
+    if not nom:
+        return JSONResponse({"detail": "nom requis"}, status_code=422)
+    try:
+        return await agenda.creer_etiquette(registre, calendar_id, nom,
+                                            corps.get("color") or corps.get("couleur"))
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.patch("/agenda/etiquettes/{label_id}", tags=["agenda"])
+async def agenda_etiquette_modifier(label_id: str, request: Request):
+    corps = await request.json()
+    try:
+        return await agenda.modifier_etiquette(registre, label_id, corps)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@app.delete("/agenda/etiquettes/{label_id}", tags=["agenda"])
+async def agenda_etiquette_supprimer(label_id: str):
+    return {"supprime": await agenda.supprimer_etiquette(registre, label_id)}
 
 
 @app.get("/assistant/rappels", tags=["assistant"])

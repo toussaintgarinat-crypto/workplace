@@ -42,6 +42,29 @@ class CalendarWithRoleOut(CalendarOut):
     role: str  # "owner" | "editor" | "viewer"
 
 
+# ── Labels (étiquettes nommées / catégories) ──────────────────────────────────
+
+class LabelCreate(BaseModel):
+    name: str
+    color: str = "#5865F2"
+
+
+class LabelUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class LabelOut(BaseModel):
+    id: str
+    calendar_id: str
+    name: str
+    color: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ── Members ───────────────────────────────────────────────────────────────────
 
 class MemberAdd(BaseModel):
@@ -100,6 +123,34 @@ class InvitationOut(BaseModel):
 
 # ── Events ────────────────────────────────────────────────────────────────────
 
+# Rappels : liste de « minutes avant le début ». Plafond 4 semaines (40320 min),
+# maximum 5 rappels par événement (comme Google Agenda). On dédoublonne et on trie.
+RAPPEL_MAX_MINUTES = 40320
+RAPPELS_MAX_NB = 5
+
+
+def normaliser_rappels(v):
+    """Valide/normalise une liste de rappels (entiers ≥ 0, ≤ 4 sem, uniques, triés, ≤ 5).
+
+    `None` est laissé tel quel (champ non fourni au PATCH) ; une liste vide signifie
+    explicitement « aucun rappel ». Utilisé par les trois schémas via field_validator.
+    """
+    if v is None:
+        return v
+    if not isinstance(v, (list, tuple)):
+        raise ValueError("rappels doit être une liste de minutes (entiers)")
+    minutes = set()
+    for m in v:
+        if isinstance(m, bool) or not isinstance(m, int):
+            raise ValueError("chaque rappel doit être un nombre entier de minutes")
+        if m < 0 or m > RAPPEL_MAX_MINUTES:
+            raise ValueError(f"rappel hors bornes (0..{RAPPEL_MAX_MINUTES} minutes)")
+        minutes.add(m)
+    if len(minutes) > RAPPELS_MAX_NB:
+        raise ValueError(f"au plus {RAPPELS_MAX_NB} rappels par événement")
+    return sorted(minutes)
+
+
 class EventCreate(BaseModel):
     calendar_id: str
     title: str
@@ -108,8 +159,15 @@ class EventCreate(BaseModel):
     end_at: datetime
     location: Optional[str] = None
     color: Optional[str] = None
+    label_id: Optional[str] = None
     all_day: bool = False
     recurrence_rule: Optional[str] = None
+    rappels: Optional[list[int]] = None
+
+    @field_validator("rappels")
+    @classmethod
+    def _rappels(cls, v):
+        return normaliser_rappels(v)
 
 
 class EventUpdate(BaseModel):
@@ -119,9 +177,16 @@ class EventUpdate(BaseModel):
     end_at: Optional[datetime] = None
     location: Optional[str] = None
     color: Optional[str] = None
+    label_id: Optional[str] = None
     all_day: Optional[bool] = None
     recurrence_rule: Optional[str] = None
     calendar_id: Optional[str] = None
+    rappels: Optional[list[int]] = None
+
+    @field_validator("rappels")
+    @classmethod
+    def _rappels(cls, v):
+        return normaliser_rappels(v)
 
 
 class EventOut(BaseModel):
@@ -133,8 +198,10 @@ class EventOut(BaseModel):
     end_at: datetime
     location: Optional[str]
     color: Optional[str]
+    label_id: Optional[str] = None
     all_day: bool
     recurrence_rule: Optional[str]
+    rappels: list[int] = []
     created_by: str
     created_at: datetime
     updated_at: datetime

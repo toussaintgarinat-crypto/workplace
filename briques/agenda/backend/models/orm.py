@@ -1,4 +1,4 @@
-"""ORM SQLAlchemy 2.0 — 7 tables du service calendar."""
+"""ORM SQLAlchemy 2.0 — tables du service calendar (calendriers, étiquettes, événements…)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -41,6 +42,29 @@ class Calendar(Base):
     members: Mapped[list["CalendarMember"]] = relationship(back_populates="calendar", cascade="all, delete-orphan")
     invitations: Mapped[list["CalendarInvitation"]] = relationship(back_populates="calendar", cascade="all, delete-orphan")
     events: Mapped[list["Event"]] = relationship(back_populates="calendar", cascade="all, delete-orphan")
+    labels: Mapped[list["Label"]] = relationship(back_populates="calendar", cascade="all, delete-orphan")
+
+
+class Label(Base):
+    """Étiquette nommée réutilisable d'un calendrier (les *catégories* TimeTree).
+
+    Une étiquette = un nom + une couleur, propre à un calendrier. Un événement peut
+    porter une étiquette (`Event.label_id`) ; sa couleur d'affichage dérive alors du
+    label, sinon on retombe sur `Event.color` (couleur libre ponctuelle). On garde
+    donc les deux mécanismes (étiquette nommée OU couleur ad hoc)."""
+
+    __tablename__ = "labels"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    calendar_id: Mapped[str] = mapped_column(String(36), ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(20), nullable=False, default="#5865F2")
+    # Identifiant de l'étiquette chez la source externe (id du label TimeTree). Clé
+    # d'idempotence : une re-sync met à jour l'étiquette importée au lieu de la dupliquer.
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    calendar: Mapped["Calendar"] = relationship(back_populates="labels")
 
 
 class CalendarMember(Base):
@@ -86,8 +110,18 @@ class Event(Base):
     end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Étiquette nommée (catégorie) facultative. Si posée, la couleur d'affichage vient
+    # du label ; sinon repli sur `color`. ondelete=SET NULL : supprimer un label ne
+    # supprime pas les événements, il les laisse simplement « sans étiquette ».
+    label_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("labels.id", ondelete="SET NULL"), nullable=True, index=True)
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     recurrence_rule: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Rappels configurables : liste de « minutes avant le début » (ex. [10, 1440] =
+    # 10 min + 1 jour avant). Modèle commun à Google Agenda / Apple Calendar / VALARM.
+    # Le Cœur (proactif.py) déclenche le 🔔 + le push Telegram ; ici on ne stocke que
+    # la config. Liste vide = aucun rappel (pas de défaut imposé). JSON → portable
+    # SQLite (dev/tests) et Postgres (prod).
+    rappels: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     # Provenance de l'événement : "manuel" (saisi dans la brique) ou "google"
     # (rapatrié par le pont). Permet de ne jamais écraser le travail de l'user.

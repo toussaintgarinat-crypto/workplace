@@ -16,9 +16,11 @@ from routers.events import router as events_router
 from routers.google_sync import router as google_router
 from routers.health import router as health_router
 from routers.invitations import router as invitations_router
+from routers.labels import router as labels_router
 from routers.members import router as members_router
 from routers.participants import router as participants_router
 from routers.sse import router as sse_router
+from routers.timetree import router as timetree_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ setup_cors(app, settings.CORS_ORIGINS, default=["http://localhost:8300"])
 
 app.include_router(health_router)
 app.include_router(calendars_router)
+app.include_router(labels_router)
 app.include_router(events_router)
 app.include_router(members_router)
 app.include_router(invitations_router)
@@ -48,3 +51,4 @@ app.include_router(comments_router)
 app.include_router(attachments_router)
 app.include_router(sse_router)
 app.include_router(google_router)
+app.include_router(timetree_router)

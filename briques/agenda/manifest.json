@@ -27,6 +27,17 @@
       "entetes": {"X-User-Id": "perso"},
       "entete_token_env": "CALENDAR_SERVICE_TOKEN",
       "tolere_echec": true
+    },
+    {
+      "nom": "sync-timetree",
+      "description": "Pull one-way de l'agenda partagé TimeTree → calendrier « TimeTree » (lecture seule, non officiel, idempotent)",
+      "methode": "POST",
+      "chemin": "/timetree/sync",
+      "cadence_heures": 1,
+      "idempotent": true,
+      "entetes": {"X-User-Id": "perso"},
+      "entete_token_env": "CALENDAR_SERVICE_TOKEN",
+      "tolere_echec": true
     }
   ]
 }
