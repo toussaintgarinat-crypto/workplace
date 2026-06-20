@@ -2,7 +2,7 @@ services:
   restaurant:
     build: .
     container_name: workplace_restaurant
-    image: workplace/restaurant:0.1.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/restaurant:0.2.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique.
       - path: ../../.env
@@ -15,6 +15,8 @@ services:
       # Secret de signature des sessions restaurateurs. À DÉFINIR pour vendre/exposer :
       # hérité du .env racine (RESTAURANT_SECRET) ; défaut DEV non secret sinon.
       - RESTAURANT_SECRET=${RESTAURANT_SECRET:-dev-restaurant-secret-NON-SECRET}
+      # RESTAURANT_ENV=prod ⇒ refuse de démarrer avec le secret de dev (garde-fou).
+      - RESTAURANT_ENV=${RESTAURANT_ENV:-}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       # URL publique vue par le smartphone du client (contenu des QR). À définir une fois

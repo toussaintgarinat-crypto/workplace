@@ -21,7 +21,25 @@ import os
 import time
 
 # Secret de signature des sessions. Défaut DEV non secret : à surcharger en prod.
-_SECRET = os.getenv("RESTAURANT_SECRET", "dev-restaurant-secret-NON-SECRET").encode()
+_DEFAUT = "dev-restaurant-secret-NON-SECRET"
+_SECRET = os.getenv("RESTAURANT_SECRET", _DEFAUT).encode()
+
+
+def secret_est_par_defaut() -> bool:
+    """Vrai si on tourne encore avec le secret de dev (interdit en prod)."""
+    return _SECRET == _DEFAUT.encode()
+
+
+def verifier_secret_pour_prod() -> None:
+    """Refuse de démarrer en prod avec le secret de dev (fail-closed au boot).
+
+    Active uniquement si RESTAURANT_ENV=prod : en dev/démo on laisse le défaut pour
+    ne pas friction­ner. En prod, un secret faible = sessions forgeables → on bloque."""
+    if os.getenv("RESTAURANT_ENV", "").lower() == "prod" and secret_est_par_defaut():
+        raise RuntimeError(
+            "RESTAURANT_SECRET non défini en prod : refuse de démarrer (sessions "
+            "forgeables). Génère-en un : `openssl rand -hex 32`.")
+
 
 # Durée de vie d'une session (secondes). 30 jours par défaut.
 DUREE_SESSION = int(os.getenv("RESTAURANT_SESSION_TTL", str(30 * 24 * 3600)))
@@ -53,30 +71,35 @@ def _signer(message: bytes) -> str:
     return base64.urlsafe_b64encode(sig).decode().rstrip("=")
 
 
-def creer_session(compte_id: str) -> str:
-    """Émet un jeton de session signé pour un compte. Format « compte_id.exp.signature »."""
+def creer_session(compte_id: str, version: int = 1) -> str:
+    """Émet un jeton de session signé. Format « compte_id.version.exp.signature ».
+
+    `version` = numéro de révocation du compte : changer le mot de passe ou « se
+    déconnecter partout » l'incrémente côté base → tous les anciens jetons deviennent
+    invalides (cf. lire_session, validé contre la base dans main.compte_actuel)."""
     exp = int(time.time()) + DUREE_SESSION
-    corps = f"{compte_id}.{exp}".encode()
-    return f"{compte_id}.{exp}.{_signer(corps)}"
+    corps = f"{compte_id}.{version}.{exp}".encode()
+    return f"{compte_id}.{version}.{exp}.{_signer(corps)}"
 
 
-def lire_session(jeton: str | None) -> str | None:
-    """Valide un jeton de session et renvoie le compte_id, ou None si invalide/expiré.
+def lire_session(jeton: str | None) -> dict | None:
+    """Valide signature + expiration d'un jeton. Renvoie {compte_id, version} ou None.
 
-    Vérifie la signature (anti-falsification) PUIS l'expiration. Tout écart → None
-    (fail-closed) : aucune donnée ne fuit sur un jeton douteux."""
+    Ne vérifie QUE la cryptographie et l'expiration (stateless). La révocation (version
+    à jour) est vérifiée par l'appelant contre la base. Tout écart → None (fail-closed)."""
     if not jeton:
         return None
     try:
-        compte_id, exp_str, sig = jeton.rsplit(".", 2)
+        compte_id, version_str, exp_str, sig = jeton.rsplit(".", 3)
     except ValueError:
         return None
-    corps = f"{compte_id}.{exp_str}".encode()
+    corps = f"{compte_id}.{version_str}.{exp_str}".encode()
     if not hmac.compare_digest(sig, _signer(corps)):
         return None
     try:
         if int(exp_str) < int(time.time()):
             return None
+        version = int(version_str)
     except ValueError:
         return None
-    return compte_id or None
+    return {"compte_id": compte_id, "version": version} if compte_id else None
