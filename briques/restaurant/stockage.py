@@ -25,6 +25,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import domaine
+
 DB_PATH = os.getenv("RESTAURANT_DB", "/data/restaurant.db")
 
 
@@ -121,6 +123,9 @@ def _conn() -> sqlite3.Connection:
         c.execute("ALTER TABLE plats ADD COLUMN stock INTEGER")
     if "session_id" not in _colonnes("commandes"):
         c.execute("ALTER TABLE commandes ADD COLUMN session_id INTEGER NOT NULL DEFAULT 1")
+    if "notes" not in _colonnes("lignes"):
+        # Note libre par ligne (« sans oignon », « bien cuit ») saisie à la fiche plat (S81).
+        c.execute("ALTER TABLE lignes ADD COLUMN notes TEXT DEFAULT ''")
     pc = _colonnes("paiements")
     if "session_id" not in pc:
         c.execute("ALTER TABLE paiements ADD COLUMN session_id INTEGER NOT NULL DEFAULT 1")
@@ -453,67 +458,97 @@ def supprimer_plat(compte_id: str, restaurant_id: str, plat_id: str) -> bool:
 
 
 # ── Commandes (côté client : créées via le code de table) ────────
-def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list) -> dict | None:
-    """Crée une commande pour un convive. `plats` = [{plat_id, quantite, format?}].
+def _ligne_depuis_item(c: sqlite3.Connection, restaurant_id: str, item: dict,
+                       ruptures: list[str]) -> dict | None:
+    """Transforme un item de panier en LIGNE (snapshot prix+nom), en décomptant le stock
+    ATOMIQUEMENT. Retourne None si le plat est indisponible / hors resto / en rupture.
 
-    Le prix de chaque ligne est un SNAPSHOT pris au moment de la commande : si le
-    restaurateur change le prix après coup, l'addition du convive ne bouge pas. Si le plat a
-    des FORMATS (taille), `format` choisit lequel (défaut : le 1er) → le prix et le nom de la
-    ligne reflètent la taille (ex. « Carlsberg (50cl) »).
-    Refuse les plats indisponibles / hors de ce restaurant (fail-closed).
+    Décompte : `UPDATE … SET stock=stock-q WHERE stock>=q` ⇒ jamais de survente, même en
+    commandes simultanées (rowcount==0 ⇒ on saute la ligne, fail-closed). Les plats tombés
+    à 0 sont collectés dans `ruptures` (pour rafraîchir la carte de toutes les tables)."""
+    r = c.execute("SELECT * FROM plats WHERE id=? AND restaurant_id=? AND disponible=1",
+                  (item.get("plat_id"), restaurant_id)).fetchone()
+    if not r:
+        return None
+    q = max(1, int(item.get("quantite", 1)))
+    cur = c.execute(
+        "UPDATE plats SET stock = stock - ? "
+        "WHERE id=? AND restaurant_id=? AND (stock IS NULL OR stock >= ?)",
+        (q, r["id"], restaurant_id, q))
+    if cur.rowcount == 0:
+        return None
+    reste = c.execute("SELECT stock FROM plats WHERE id=?", (r["id"],)).fetchone()["stock"]
+    if reste is not None and reste <= 0 and r["id"] not in ruptures:
+        ruptures.append(r["id"])
+    nom_plat, prix = r["nom"], r["prix_cents"]
+    formats = _formats_de(r)
+    if formats:                                # plat à formats → résoudre la taille choisie
+        voulu = str(item.get("format") or "").strip().lower()
+        choisi = next((f for f in formats if f["taille"].lower() == voulu), formats[0])
+        nom_plat = f'{r["nom"]} ({choisi["taille"]})'
+        prix = choisi["prix_cents"]
+    return {"id": _id(), "plat_id": r["id"], "nom_plat": nom_plat, "prix_cents": prix,
+            "quantite": q, "notes": (item.get("notes") or "").strip()}
 
-    STOCK : chaque unité commandée est décomptée ATOMIQUEMENT (`UPDATE … SET stock=stock-q
-    WHERE stock>=q`) dans la même transaction → jamais de survente, même en commandes
-    simultanées. Une ligne dont le stock est insuffisant est ignorée (fail-closed). Le champ
-    `ruptures` de la valeur de retour liste les plats tombés à 0 (pour rafraîchir la carte)."""
-    convive = (convive or "").strip() or "Convive"
+
+def creer_commandes(restaurant_id: str, table_id: str, plats: list,
+                    convive_defaut: str = "") -> dict | None:
+    """Crée UNE commande PAR convive depuis un panier multi-convive (S81 « pour qui »).
+
+    `plats` = [{plat_id, quantite, format?, convive?, notes?}]. Chaque ligne peut porter son
+    propre `convive` (choisi à l'ajout sur le téléphone) ; sinon on retombe sur
+    `convive_defaut`. Le groupage par convive est délégué au domaine PUR
+    (`domaine.grouper_par_convive`), puis on matérialise une commande par groupe — la cuisine
+    et l'addition restent organisées par personne, comme avant.
+
+    Tout le lot est traité dans UNE SEULE transaction : le stock est décompté atomiquement
+    pour CHAQUE ligne (anti-survente, fail-closed), donc deux convives ne peuvent pas
+    sur-vendre le dernier plat. Retourne {commandes:[…], ruptures:[plat_id]} ou None si rien
+    n'a pu être commandé (panier vide / tout indisponible)."""
+    ruptures: list[str] = []
+    commandes: list[dict] = []
     with _conn() as c:
-        cmd_id = _id()
         session_id = _session_table(c, table_id)
-        lignes = []
-        ruptures: list[str] = []
-        for item in plats or []:
-            r = c.execute("SELECT * FROM plats WHERE id=? AND restaurant_id=? AND disponible=1",
-                          (item.get("plat_id"), restaurant_id)).fetchone()
-            if not r:
+        for convive, items in domaine.grouper_par_convive(plats, convive_defaut):
+            lignes = [l for it in items
+                      if (l := _ligne_depuis_item(c, restaurant_id, it, ruptures))]
+            if not lignes:
                 continue
-            q = max(1, int(item.get("quantite", 1)))
-            # Décompte atomique du stock (NULL = illimité, non décompté). rowcount==0 ⇒ stock
-            # insuffisant ⇒ on saute la ligne (anti-survente, fail-closed).
-            cur = c.execute(
-                "UPDATE plats SET stock = stock - ? "
-                "WHERE id=? AND restaurant_id=? AND (stock IS NULL OR stock >= ?)",
-                (q, r["id"], restaurant_id, q))
-            if cur.rowcount == 0:
-                continue
-            reste = c.execute("SELECT stock FROM plats WHERE id=?", (r["id"],)).fetchone()["stock"]
-            if reste is not None and reste <= 0 and r["id"] not in ruptures:
-                ruptures.append(r["id"])
-            nom_plat, prix = r["nom"], r["prix_cents"]
-            formats = _formats_de(r)
-            if formats:                            # plat à formats → résoudre la taille choisie
-                voulu = str(item.get("format") or "").strip().lower()
-                choisi = next((f for f in formats if f["taille"].lower() == voulu), formats[0])
-                nom_plat = f'{r["nom"]} ({choisi["taille"]})'
-                prix = choisi["prix_cents"]
-            lignes.append({"id": _id(), "plat_id": r["id"], "nom_plat": nom_plat,
-                           "prix_cents": prix, "quantite": q})
-        if not lignes:
-            return None
-        c.execute("INSERT INTO commandes (id, restaurant_id, table_id, session_id, convive, statut, cree_le) "
-                  "VALUES (?,?,?,?,?,?,?)",
-                  (cmd_id, restaurant_id, table_id, session_id, convive, "en_cuisine", _maintenant()))
-        for l in lignes:
-            c.execute("INSERT INTO lignes (id, commande_id, plat_id, nom_plat, prix_cents, quantite) "
-                      "VALUES (?,?,?,?,?,?)",
-                      (l["id"], cmd_id, l["plat_id"], l["nom_plat"], l["prix_cents"], l["quantite"]))
-    return {"id": cmd_id, "convive": convive, "statut": "en_cuisine", "ruptures": ruptures,
-            "lignes": lignes, "total_cents": sum(l["prix_cents"] * l["quantite"] for l in lignes)}
+            cmd_id = _id()
+            c.execute("INSERT INTO commandes (id, restaurant_id, table_id, session_id, convive, "
+                      "statut, cree_le) VALUES (?,?,?,?,?,?,?)",
+                      (cmd_id, restaurant_id, table_id, session_id, convive, "en_cuisine",
+                       _maintenant()))
+            for l in lignes:
+                c.execute("INSERT INTO lignes (id, commande_id, plat_id, nom_plat, prix_cents, "
+                          "quantite, notes) VALUES (?,?,?,?,?,?,?)",
+                          (l["id"], cmd_id, l["plat_id"], l["nom_plat"], l["prix_cents"],
+                           l["quantite"], l["notes"]))
+            commandes.append({"id": cmd_id, "convive": convive, "statut": "en_cuisine",
+                              "lignes": lignes,
+                              "total_cents": sum(l["prix_cents"] * l["quantite"] for l in lignes)})
+    if not commandes:
+        return None
+    return {"commandes": commandes, "ruptures": ruptures}
+
+
+def creer_commande(restaurant_id: str, table_id: str, convive: str, plats: list) -> dict | None:
+    """Crée une commande pour UN convive (compat : tout le panier sous le même convive).
+
+    Conserve l'API mono-convive d'avant S81. Délègue à `creer_commandes` (qui gère le
+    multi-convive « pour qui » par ligne). Retourne la commande créée enrichie de `ruptures`,
+    ou None si rien n'a pu être commandé."""
+    res = creer_commandes(restaurant_id, table_id, plats, convive)
+    if not res:
+        return None
+    cmd = res["commandes"][0]
+    cmd["ruptures"] = res["ruptures"]
+    return cmd
 
 
 def _lignes_de(c: sqlite3.Connection, cmd_id: str) -> list:
-    rows = c.execute("SELECT id, plat_id, nom_plat, prix_cents, quantite FROM lignes WHERE commande_id=?",
-                     (cmd_id,)).fetchall()
+    rows = c.execute("SELECT id, plat_id, nom_plat, prix_cents, quantite, notes "
+                     "FROM lignes WHERE commande_id=?", (cmd_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -581,7 +616,8 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
             for l in _lignes_de(c, cmd["id"]):
                 du[conv] = du.get(conv, 0) + l["prix_cents"] * l["quantite"]
                 details.setdefault(conv, []).append(
-                    {"nom_plat": l["nom_plat"], "prix_cents": l["prix_cents"], "quantite": l["quantite"]})
+                    {"nom_plat": l["nom_plat"], "prix_cents": l["prix_cents"],
+                     "quantite": l["quantite"], "notes": l.get("notes") or ""})
         paye: dict[str, int] = {}
         pourb: dict[str, int] = {}
         moyens: dict[str, str] = {}

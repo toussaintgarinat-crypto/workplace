@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <!-- App CLIENT — ouverte par le QR de la table. Aucune connexion : le code de table
-     (dans l'URL) sert de capability. Carte → commande par convive → addition partagée →
-     paiement de SA part (mock honnête en incrément 1). Temps réel via WebSocket. -->
+     (dans l'URL) sert de capability. UX multi-pages (S81) : Carte (accueil tuiles de
+     catégories + recherche → fiche plat) · Panier (récap par convive) · Addition.
+     MULTI-CONVIVE : plusieurs convives par appareil, « pour qui » choisi à chaque ajout
+     → fin du « tout sur une personne ». Paiement de SA part (mock honnête, incrément 1).
+     Temps réel via WebSocket. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -11,54 +14,105 @@
   :root { --bg:#0f1420; --carte:#1a2030; --bord:#2a3346; --texte:#e8edf6; --doux:#94a3b8;
           --accent:#ff8a5b; --accent2:#7c83ff; --ok:#34d399; --attente:#fbbf24; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; background:var(--bg); color:var(--texte); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding-bottom:120px; }
-  header { padding:18px 18px 10px; position:sticky; top:0; background:linear-gradient(180deg,var(--bg) 70%,transparent); z-index:5; }
-  .resto { font-size:1.35rem; font-weight:700; }
-  .sous { color:var(--doux); font-size:.9rem; margin-top:2px; }
-  .lang { position:absolute; top:18px; right:18px; display:flex; gap:4px; }
+  body { margin:0; background:var(--bg); color:var(--texte); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding-bottom:84px; }
+  header { padding:16px 18px 8px; position:sticky; top:0; background:linear-gradient(180deg,var(--bg) 78%,transparent); z-index:5; }
+  .resto { font-size:1.3rem; font-weight:700; }
+  .sous { color:var(--doux); font-size:.88rem; margin-top:2px; }
+  .lang { position:absolute; top:16px; right:18px; display:flex; gap:4px; }
   .lang button { background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:8px; padding:4px 9px; font-size:.75rem; cursor:pointer; }
   .lang button.on { color:var(--accent); border-color:var(--accent); }
-  .onglets { display:flex; gap:6px; padding:0 18px; margin-bottom:8px; }
-  .onglets button { flex:1; background:var(--carte); border:1px solid var(--bord); color:var(--doux); border-radius:10px; padding:10px; font-weight:600; cursor:pointer; }
-  .onglets button.on { color:#fff; background:var(--accent2); border-color:var(--accent2); }
   main { padding:0 18px; }
-  .plat { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; margin-bottom:12px; display:flex; gap:12px; align-items:center; }
-  .plat img { width:64px; height:64px; border-radius:10px; object-fit:cover; flex:none; background:#0d1119; }
+
+  /* Recherche */
+  .rech { position:relative; margin:4px 0 14px; }
+  .rech input { width:100%; padding:12px 14px 12px 40px; border-radius:12px; border:1px solid var(--bord); background:var(--carte); color:var(--texte); font-size:1rem; }
+  .rech::before { content:"🔎"; position:absolute; left:13px; top:50%; transform:translateY(-50%); font-size:.95rem; opacity:.7; }
+
+  /* Tuiles de catégories (accueil carte) */
+  .tuiles { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .tuile { background:var(--carte); border:1px solid var(--bord); border-radius:16px; padding:18px 14px; cursor:pointer; min-height:96px; display:flex; flex-direction:column; justify-content:space-between; transition:border-color .15s; }
+  .tuile:active { border-color:var(--accent2); }
+  .tuile .nom { font-weight:700; font-size:1.05rem; }
+  .tuile .cpt { color:var(--doux); font-size:.8rem; margin-top:6px; }
+
+  /* En-tête de page catégorie */
+  .barre-retour { display:flex; align-items:center; gap:10px; margin:2px 0 12px; }
+  .retour { background:var(--carte); border:1px solid var(--bord); color:var(--texte); border-radius:10px; padding:8px 12px; font-weight:700; cursor:pointer; }
+  .barre-retour .titre { font-weight:800; font-size:1.05rem; }
+
+  /* Lignes de plat (liste catégorie / recherche) */
+  .plat { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:13px; margin-bottom:11px; display:flex; gap:12px; align-items:center; cursor:pointer; }
+  .plat img { width:58px; height:58px; border-radius:10px; object-fit:cover; flex:none; background:#0d1119; }
   .plat .nom { font-weight:600; }
-  .plat .desc { color:var(--doux); font-size:.84rem; margin-top:2px; }
-  .plat .prix { color:var(--accent); font-weight:700; margin-top:4px; }
+  .plat .desc { color:var(--doux); font-size:.82rem; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .plat .prix { color:var(--accent); font-weight:700; margin-top:4px; font-size:.92rem; }
+  .chev { margin-left:auto; color:var(--doux); font-size:1.3rem; flex:none; }
+  .badge-jour { display:inline-block; font-size:.64rem; font-weight:700; color:#0f1420; background:var(--accent); border-radius:6px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
   .cat-titre { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--doux); margin:14px 4px 8px; }
+
+  /* Panier */
+  .conv { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .conv.moi { border-color:var(--accent); }
+  .conv .tete { display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:8px; }
+  .conv .tete .actions { display:flex; gap:6px; }
+  .conv .tete .actions button { background:transparent; border:1px solid var(--bord); color:var(--doux); border-radius:8px; padding:4px 8px; font-size:.75rem; cursor:pointer; }
+  .lp { display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--bord); }
+  .lp:first-of-type { border-top:none; }
+  .lp .info { flex:1; min-width:0; }
+  .lp .info .n { font-size:.92rem; }
+  .lp .info .note { color:var(--doux); font-size:.76rem; font-style:italic; margin-top:1px; }
+  .lp .pp { color:var(--accent); font-weight:700; font-size:.85rem; min-width:62px; text-align:right; }
+  .pl { display:flex; align-items:center; gap:8px; }
+  .pl button { width:32px; height:32px; border-radius:9px; border:none; background:var(--accent2); color:#fff; font-size:1.15rem; cursor:pointer; }
+  .pl .q { min-width:18px; text-align:center; font-weight:700; }
+  .conv .sst { display:flex; justify-content:space-between; margin-top:10px; font-weight:700; }
+  .ajout-conv { width:100%; padding:12px; border:1px dashed var(--bord); border-radius:12px; background:transparent; color:var(--doux); font-weight:700; cursor:pointer; margin-bottom:14px; }
+
+  /* Addition */
+  .conv .ligne { display:flex; justify-content:space-between; color:var(--doux); font-size:.88rem; margin-top:4px; }
+  .etat { font-size:.78rem; font-weight:700; padding:2px 8px; border-radius:6px; }
+  .etat.ok { color:var(--ok); background:rgba(52,211,153,.12); }
+  .etat.att { color:var(--attente); background:rgba(251,191,36,.12); }
   .tva-ligne { display:flex; justify-content:space-between; color:var(--doux); font-size:.8rem; margin:2px 4px; }
   .tips { display:flex; gap:8px; margin-top:10px; }
   .tips button { flex:1; padding:9px; border-radius:9px; border:1px solid var(--bord); background:transparent; color:var(--doux); font-weight:700; cursor:pointer; }
   .tips button.on { color:var(--accent); border-color:var(--accent); }
-  .badge-jour { display:inline-block; font-size:.66rem; font-weight:700; color:#0f1420; background:var(--accent); border-radius:6px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
-  .formats { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
-  .fmt { display:flex; align-items:center; gap:10px; }
-  .fmt .fmt-t { min-width:74px; font-size:.9rem; }
-  .fmt .fmt-p { color:var(--accent); font-weight:700; font-size:.9rem; }
-  .fmt .pl { margin-left:auto; }
-  .pl { margin-left:auto; display:flex; align-items:center; gap:10px; }
-  .pl button { width:34px; height:34px; border-radius:9px; border:none; background:var(--accent2); color:#fff; font-size:1.2rem; cursor:pointer; }
-  .pl .q { min-width:18px; text-align:center; font-weight:700; }
-  .panier { position:fixed; bottom:0; left:0; right:0; background:var(--carte); border-top:1px solid var(--bord); padding:14px 18px calc(14px + env(safe-area-inset-bottom)); }
-  .gros { width:100%; padding:15px; border:none; border-radius:12px; background:var(--accent); color:#0f1420; font-weight:800; font-size:1.05rem; cursor:pointer; }
-  .gros:disabled { opacity:.4; }
-  .conv { background:var(--carte); border:1px solid var(--bord); border-radius:14px; padding:14px; margin-bottom:12px; }
-  .conv.moi { border-color:var(--accent); }
-  .conv .ligne { display:flex; justify-content:space-between; color:var(--doux); font-size:.88rem; margin-top:4px; }
-  .conv .tete { display:flex; justify-content:space-between; align-items:center; font-weight:700; }
-  .etat { font-size:.78rem; font-weight:700; padding:2px 8px; border-radius:6px; }
-  .etat.ok { color:var(--ok); background:rgba(52,211,153,.12); }
-  .etat.att { color:var(--attente); background:rgba(251,191,36,.12); }
   .recap { display:flex; justify-content:space-between; font-size:1.1rem; font-weight:800; margin:16px 4px; }
   .demo { font-size:.74rem; color:var(--attente); text-align:center; margin-top:8px; }
-  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:24px; z-index:20; }
-  .modal .boite { background:var(--carte); border:1px solid var(--bord); border-radius:16px; padding:22px; width:100%; max-width:340px; }
+
+  .vide { color:var(--doux); text-align:center; padding:48px 12px; }
+  .gros { width:100%; padding:15px; border:none; border-radius:12px; background:var(--accent); color:#0f1420; font-weight:800; font-size:1.05rem; cursor:pointer; }
+  .gros:disabled { opacity:.4; }
+  /* Flotte JUSTE AU-DESSUS du bottom-nav (≈62px) — sinon le nav intercepte le clic. */
+  .barre-bas { position:fixed; bottom:calc(62px + env(safe-area-inset-bottom)); left:0; right:0; padding:10px 18px; z-index:9; }
+
+  /* Bottom-nav */
+  .nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--carte); border-top:1px solid var(--bord); padding-bottom:env(safe-area-inset-bottom); z-index:8; }
+  .nav button { flex:1; background:transparent; border:none; color:var(--doux); padding:9px 0 11px; font-size:.72rem; font-weight:700; cursor:pointer; position:relative; }
+  .nav button .ic { display:block; font-size:1.3rem; margin-bottom:2px; }
+  .nav button.on { color:var(--accent); }
+  .nav .pastille { position:absolute; top:4px; left:50%; margin-left:6px; background:var(--accent); color:#0f1420; font-size:.66rem; font-weight:800; border-radius:10px; min-width:17px; height:17px; line-height:17px; padding:0 4px; }
+
+  /* Modale (fiche plat + nom convive) */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.62); display:flex; align-items:flex-end; justify-content:center; z-index:20; }
+  .modal .boite { background:var(--carte); border:1px solid var(--bord); border-radius:18px 18px 0 0; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); width:100%; max-width:480px; max-height:90vh; overflow:auto; }
+  .modal.centre { align-items:center; padding:24px; }
+  .modal.centre .boite { border-radius:16px; max-width:340px; }
   .modal h3 { margin:0 0 6px; }
-  .modal p { color:var(--doux); font-size:.88rem; margin:0 0 16px; }
-  .modal input { width:100%; padding:13px; border-radius:11px; border:1px solid var(--bord); background:var(--bg); color:var(--texte); font-size:1rem; margin-bottom:12px; }
-  .vide { color:var(--doux); text-align:center; padding:40px 0; }
+  .modal .photo { width:100%; height:170px; object-fit:cover; border-radius:12px; background:#0d1119; margin-bottom:12px; }
+  .modal .pdesc { color:var(--doux); font-size:.9rem; margin:0 0 14px; }
+  .modal .label { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--doux); margin:14px 0 7px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { padding:9px 13px; border-radius:10px; border:1px solid var(--bord); background:transparent; color:var(--texte); cursor:pointer; font-weight:600; }
+  .chip.on { border-color:var(--accent); color:var(--accent); }
+  .chip .cp { color:var(--accent); font-weight:700; margin-left:6px; font-size:.85rem; }
+  .modal select, .modal input, .modal textarea { width:100%; padding:12px; border-radius:11px; border:1px solid var(--bord); background:var(--bg); color:var(--texte); font-size:1rem; font-family:inherit; }
+  .modal textarea { min-height:54px; resize:vertical; }
+  .qte { display:flex; align-items:center; gap:14px; }
+  .qte button { width:42px; height:42px; border-radius:11px; border:none; background:var(--accent2); color:#fff; font-size:1.4rem; cursor:pointer; }
+  .qte .v { font-size:1.3rem; font-weight:800; min-width:24px; text-align:center; }
+  .modal .pied { display:flex; gap:10px; margin-top:20px; }
+  .modal .pied .annul { flex:none; width:auto; padding:15px 18px; background:transparent; border:1px solid var(--bord); color:var(--doux); border-radius:12px; font-weight:700; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -67,67 +121,99 @@
   <div class="resto" id="resto">…</div>
   <div class="sous" id="sous"></div>
 </header>
-<div class="onglets">
-  <button id="ong-carte" class="on" data-t="carte"></button>
-  <button id="ong-addition" data-t="addition"></button>
-</div>
 <main id="vue"></main>
 
-<div class="panier" id="panier" style="display:none">
+<!-- Barre d'action contextuelle (bouton Commander dans le panier) -->
+<div class="barre-bas" id="barre-bas" style="display:none">
   <button class="gros" id="commander"></button>
 </div>
 
-<div class="modal" id="modal-nom" style="display:none">
+<!-- Bottom-nav -->
+<nav class="nav">
+  <button data-t="carte"><span class="ic">📖</span><span class="lib">Carte</span></button>
+  <button data-t="panier"><span class="ic">🛒</span><span class="lib">Panier</span><span class="pastille" id="pastille" style="display:none">0</span></button>
+  <button data-t="addition"><span class="ic">🧾</span><span class="lib">Addition</span></button>
+</nav>
+
+<!-- Fiche plat -->
+<div class="modal" id="modal-fiche" style="display:none"><div class="boite" id="fiche-corps"></div></div>
+
+<!-- Nom de convive -->
+<div class="modal centre" id="modal-nom" style="display:none">
   <div class="boite">
     <h3 id="m-titre"></h3>
-    <p id="m-sous"></p>
-    <input id="m-nom" autocomplete="off">
-    <button class="gros" id="m-ok"></button>
+    <p class="pdesc" id="m-sous"></p>
+    <input id="m-nom" autocomplete="off" maxlength="24">
+    <button class="gros" id="m-ok" style="margin-top:12px"></button>
   </div>
 </div>
 
 <script>
 const T = {
-  fr: { carte:"Carte", addition:"L'addition", panier:"Commander", vide_panier:"Ajoutez des plats",
-        ajouter:"Ajouter", commande_envoyee:"Commande envoyée en cuisine ✓",
-        qui:"Qui êtes-vous ?", qui_sous:"Prénom ou numéro de siège (A, B, C…) pour vos plats.",
-        valider:"Valider", ma_part:"Ma part", du:"dû", paye:"Payé", reste:"Reste à payer",
-        payer:"Payer ma part", regle:"Réglé ✓", en_attente:"En attente",
-        total_table:"Reste sur la table", demo:"Paiement de démonstration (aucun débit réel)",
-        rien_addition:"Aucune commande pour l'instant.", devise:"fr-FR",
-        autres:"Autres", dont_tva:"dont TVA", pourboire:"Pourboire (optionnel)", merci:"Merci 🙏",
-        payer_avec:"Payer", sans:"Sans" },
-  en: { carte:"Menu", addition:"The bill", panier:"Order", vide_panier:"Add some dishes",
-        ajouter:"Add", commande_envoyee:"Order sent to the kitchen ✓",
-        qui:"Who are you?", qui_sous:"First name or seat number (A, B, C…) for your dishes.",
-        valider:"Confirm", ma_part:"My share", du:"due", paye:"Paid", reste:"Left to pay",
-        payer:"Pay my share", regle:"Settled ✓", en_attente:"Pending",
-        total_table:"Left on the table", demo:"Demo payment (no real charge)",
-        rien_addition:"No orders yet.", devise:"en-GB",
-        autres:"Other", dont_tva:"incl. VAT", pourboire:"Tip (optional)", merci:"Thanks 🙏",
-        payer_avec:"Pay", sans:"None" }
+  fr: { carte:"Carte", panier:"Panier", addition:"Addition", devise:"fr-FR",
+        rech:"Rechercher un plat…", aucun_resultat:"Aucun plat trouvé.",
+        carte_vide:"La carte arrive…", plats:"plat", platss:"plats",
+        format:"Format", pour_qui:"Pour qui ?", qte:"Quantité", notes:"Note (optionnel)",
+        notes_ex:"ex. sans oignon, bien cuit…", ajouter_panier:"Ajouter au panier",
+        annuler:"Annuler", nouveau_convive:"+ Nouveau convive", plat_du_jour:"Plat du jour",
+        panier_vide:"Votre panier est vide. Ajoutez des plats depuis la carte.",
+        commander:"Envoyer en cuisine", sous_total:"Sous-total", ajouter_convive:"+ Ajouter un convive",
+        renommer:"Renommer", retirer:"Retirer", commande_envoyee:"Commande envoyée en cuisine ✓",
+        qui:"Qui êtes-vous ?", qui_sous:"Prénom ou place (A, B, C…) — c'est à ce nom que va l'addition.",
+        renommer_qui:"Nouveau nom", valider:"Valider",
+        ma_part:"ma part", du:"Dû", paye:"Payé", reste:"Reste à payer", payer:"Payer",
+        regle:"Réglé ✓", en_attente:"En attente", total_table:"Reste sur la table",
+        demo:"Paiement de démonstration (aucun débit réel)", rien_addition:"Aucune commande pour l'instant.",
+        dont_tva:"dont TVA", pourboire:"Pourboire", sans:"Sans", des:"dès" },
+  en: { carte:"Menu", panier:"Cart", addition:"Bill", devise:"en-GB",
+        rech:"Search a dish…", aucun_resultat:"No dish found.",
+        carte_vide:"Menu loading…", plats:"item", platss:"items",
+        format:"Size", pour_qui:"For whom?", qte:"Quantity", notes:"Note (optional)",
+        notes_ex:"e.g. no onion, well done…", ajouter_panier:"Add to cart",
+        annuler:"Cancel", nouveau_convive:"+ New guest", plat_du_jour:"Today",
+        panier_vide:"Your cart is empty. Add dishes from the menu.",
+        commander:"Send to kitchen", sous_total:"Subtotal", ajouter_convive:"+ Add a guest",
+        renommer:"Rename", retirer:"Remove", commande_envoyee:"Order sent to the kitchen ✓",
+        qui:"Who are you?", qui_sous:"First name or seat (A, B, C…) — the bill is split under this name.",
+        renommer_qui:"New name", valider:"Confirm",
+        ma_part:"my share", du:"Due", paye:"Paid", reste:"Left to pay", payer:"Pay",
+        regle:"Settled ✓", en_attente:"Pending", total_table:"Left on the table",
+        demo:"Demo payment (no real charge)", rien_addition:"No orders yet.",
+        dont_tva:"incl. VAT", pourboire:"Tip", sans:"None", des:"from" }
 };
 let lang = localStorage.getItem('resto_lang') || 'fr';
 const code = location.pathname.split('/').filter(Boolean).pop();
-let data = null, panier = {}, moi = localStorage.getItem('resto_moi_'+code) || '', vueActive = 'carte', devise = 'EUR', pourboirePct = 0;
+
+// État appareil ------------------------------------------------------------
+let data = null, devise = 'EUR', pourboirePct = 0;
+let vue = 'carte';                         // carte | panier | addition
+let ecran = 'accueil';                     // (vue carte) accueil | categorie
+let categorieActive = null, recherche = '';
+let panier = [];                           // {uid, plat_id, nom, prix_cents, format, q, convive, notes}
+// Convives présents SUR CET APPAREIL (ce téléphone peut en porter plusieurs).
+let convives = JSON.parse(localStorage.getItem('resto_convives_'+code) || 'null');
+if(!Array.isArray(convives) || !convives.length){
+  const ancien = localStorage.getItem('resto_moi_'+code);   // migration : ancien « moi » unique
+  convives = ancien ? [ancien] : [];
+}
+let conviveCourant = convives[0] || '';
 
 const $ = s => document.querySelector(s);
 const t = k => T[lang][k];
 function euro(c){ return (c/100).toLocaleString(T[lang].devise, {style:'currency', currency:devise}); }
+function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function sauverConvives(){ localStorage.setItem('resto_convives_'+code, JSON.stringify(convives)); }
 
+// Langue -------------------------------------------------------------------
 function appliquerLangue(){
   document.documentElement.lang = lang;
   document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on', b.dataset.l===lang));
-  $('#ong-carte').textContent = t('carte');
-  $('#ong-addition').textContent = t('addition');
-  $('#commander').textContent = t('panier');
-  $('#m-titre').textContent = t('qui');
-  $('#m-sous').textContent = t('qui_sous');
-  $('#m-ok').textContent = t('valider');
+  document.querySelectorAll('.nav button').forEach(b=> b.querySelector('.lib').textContent = t(b.dataset.t));
   rendre();
 }
 document.querySelectorAll('.lang button').forEach(b=> b.onclick = ()=>{ lang=b.dataset.l; localStorage.setItem('resto_lang',lang); appliquerLangue(); });
 
+// Chargement ---------------------------------------------------------------
 async function charger(){
   const r = await fetch('/t/'+code);
   if(!r.ok){ $('#resto').textContent = 'QR invalide'; return; }
@@ -138,81 +224,204 @@ async function charger(){
   appliquerLangue();
 }
 
+// Helpers carte ------------------------------------------------------------
+function prixAffiche(p){
+  if(p.formats && p.formats.length){
+    const min = Math.min(...p.formats.map(f=>f.prix_cents));
+    return t('des')+' '+euro(min);
+  }
+  return euro(p.prix_cents);
+}
+function categories(){
+  const m = new Map();
+  data.carte.forEach(p=>{ const k = (p.categorie||'').trim() || '§'; m.set(k, (m.get(k)||0)+1); });
+  return [...m.entries()];
+}
+
+// Rendu principal ----------------------------------------------------------
 function rendre(){
   if(!data) return;
-  $('#panier').style.display = (vueActive==='carte' && Object.keys(panier).length) ? 'block' : 'none';
-  $('#vue').innerHTML = vueActive==='carte' ? vueCarte() : vueAddition();
-  if(vueActive==='addition') chargerAddition();
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.t===vue));
+  const n = panier.reduce((s,l)=>s+l.q,0);
+  $('#pastille').style.display = n ? 'block' : 'none'; $('#pastille').textContent = n;
+  const barre = $('#barre-bas');
+  if(vue==='panier' && panier.length){ barre.style.display='block'; $('#commander').textContent = t('commander'); }
+  else barre.style.display='none';
+  if(vue==='carte') $('#vue').innerHTML = vueCarte();
+  else if(vue==='panier') $('#vue').innerHTML = vuePanier();
+  else { $('#vue').innerHTML = `<div id="addition-corps"><div class="vide">…</div></div>`; chargerAddition(); }
 }
 
-function carteDuPlat(p){
-  const jour = p.plat_du_jour ? `<span class="badge-jour">${lang==='fr'?'Plat du jour':'Today'}</span>` : '';
-  const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
-  // Plat avec FORMATS (tailles) : une ligne d'ajout par taille.
-  if(p.formats && p.formats.length){
-    const lignes = p.formats.map((f,i)=>{
-      const key = p.id+'__'+i, q = panier[key]?.q || 0;
-      return `<div class="fmt"><span class="fmt-t">${esc(f.taille)}</span>
-        <span class="fmt-p">${euro(f.prix_cents)}</span>
-        <span class="pl">${q?`<button onclick="moins('${key}')">−</button><span class="q">${q}</span>`:''}
-        <button onclick="plusF('${p.id}',${i})">+</button></span></div>`;
-    }).join('');
-    return `<div class="plat" style="align-items:flex-start">${img}
-      <div style="flex:1"><div class="nom">${esc(p.nom)}${jour}</div>
-      ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
-      <div class="formats">${lignes}</div></div></div>`;
-  }
-  const q = panier[p.id]?.q || 0;
-  return `<div class="plat">${img}
-    <div><div class="nom">${esc(p.nom)}${jour}</div>
-    ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
-    <div class="prix">${euro(p.prix_cents)}</div></div>
-    <div class="pl">${q?`<button onclick="moins('${p.id}')">−</button><span class="q">${q}</span>`:''}
-    <button onclick="plus('${p.id}')">+</button></div></div>`;
-}
+// ── Vue CARTE (accueil tuiles + recherche + page catégorie) ──────────────
 function vueCarte(){
-  if(!data.carte.length) return `<div class="vide">${t('vide_panier')}</div>`;
-  // Regroupe par catégorie (sections de carte) en conservant l'ordre d'arrivée.
-  const groupes = {};
-  data.carte.forEach(p=>{ const k = (p.categorie||'').trim() || '§'; (groupes[k] ||= []).push(p); });
-  const cles = Object.keys(groupes);
-  return cles.map(k=>{
-    const titre = k==='§' ? '' : `<div class="cat-titre">${esc(k)}</div>`;
-    return titre + groupes[k].map(carteDuPlat).join('');
+  if(!data.carte.length) return `<div class="vide">${t('carte_vide')}</div>`;
+  const rech = `<div class="rech"><input id="q" placeholder="${t('rech')}" value="${esc(recherche)}"></div>`;
+  // Recherche active → liste plate de tous les plats correspondants.
+  if(recherche.trim()){
+    const q = recherche.trim().toLowerCase();
+    const trouve = data.carte.filter(p=> (p.nom||'').toLowerCase().includes(q) || (p.description||'').toLowerCase().includes(q));
+    const liste = trouve.length ? trouve.map(ligneePlat).join('') : `<div class="vide">${t('aucun_resultat')}</div>`;
+    return rech + liste;
+  }
+  // Page d'une catégorie.
+  if(ecran==='categorie' && categorieActive!==null){
+    const plats = data.carte.filter(p=> ((p.categorie||'').trim()||'§')===categorieActive);
+    const titre = categorieActive==='§' ? t('carte') : categorieActive;
+    return rech + `<div class="barre-retour"><button class="retour" onclick="retourAccueil()">‹</button>
+      <span class="titre">${esc(titre)}</span></div>` + plats.map(ligneePlat).join('');
+  }
+  // Accueil : tuiles de catégories.
+  const tuiles = categories().map(([k,n])=>{
+    const nom = k==='§' ? t('carte') : k;
+    return `<div class="tuile" onclick="ouvrirCategorie('${encodeURIComponent(k)}')">
+      <div class="nom">${esc(nom)}</div><div class="cpt">${n} ${n>1?t('platss'):t('plats')}</div></div>`;
   }).join('');
+  return rech + `<div class="tuiles">${tuiles}</div>`;
 }
-window.plus = id => { const p=data.carte.find(x=>x.id===id); panier[id]={plat_id:id, q:(panier[id]?.q||0)+1, nom:p.nom}; rendre(); };
-window.plusF = (id, i) => { const p=data.carte.find(x=>x.id===id); const f=p.formats[i]; const key=id+'__'+i;
-  panier[key]={plat_id:id, format:f.taille, q:(panier[key]?.q||0)+1, nom:p.nom+' ('+f.taille+')'}; rendre(); };
-window.moins = key => { if(panier[key]){ panier[key].q--; if(panier[key].q<=0) delete panier[key]; } rendre(); };
+function ligneePlat(p){
+  const jour = p.plat_du_jour ? `<span class="badge-jour">${t('plat_du_jour')}</span>` : '';
+  const img = p.photo ? `<img src="${p.photo}" alt="">` : `<img alt="">`;
+  return `<div class="plat" onclick="ouvrirFiche('${p.id}')">${img}
+    <div style="flex:1;min-width:0"><div class="nom">${esc(p.nom)}${jour}</div>
+    ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
+    <div class="prix">${prixAffiche(p)}</div></div><div class="chev">›</div></div>`;
+}
+window.ouvrirCategorie = k => { categorieActive = decodeURIComponent(k); ecran='categorie'; rendre(); };
+window.retourAccueil = () => { ecran='accueil'; categorieActive=null; rendre(); };
 
-function vueAddition(){
-  return `<div id="addition-corps"><div class="vide">…</div></div>`;
+// ── Fiche plat (modale d'ajout) ──────────────────────────────────────────
+let fiche = null;   // {plat, formatIdx, q, convive, notes}
+window.ouvrirFiche = id => {
+  const p = data.carte.find(x=>x.id===id); if(!p) return;
+  fiche = { plat:p, formatIdx:0, q:1, convive:conviveCourant, notes:'' };
+  $('#modal-fiche').style.display='flex'; rendreFiche();
+};
+function fermerFiche(){ $('#modal-fiche').style.display='none'; fiche=null; }
+function rendreFiche(){
+  if(!fiche) return;
+  const p = fiche.plat;
+  const img = p.photo ? `<img class="photo" src="${p.photo}" alt="">` : '';
+  let blocFormats = '';
+  if(p.formats && p.formats.length){
+    blocFormats = `<div class="label">${t('format')}</div><div class="chips">` +
+      p.formats.map((f,i)=>`<button class="chip ${i===fiche.formatIdx?'on':''}" onclick="ficheFormat(${i})">${esc(f.taille)}<span class="cp">${euro(f.prix_cents)}</span></button>`).join('') +
+      `</div>`;
+  }
+  const opts = convives.map(c=>`<option value="${esc(c)}" ${c===fiche.convive?'selected':''}>${esc(c)}</option>`).join('');
+  const selConv = `<div class="label">${t('pour_qui')}</div>
+    <select id="f-conv" onchange="ficheConv(this.value)">${opts}<option value="__new__">${t('nouveau_convive')}</option></select>`;
+  $('#fiche-corps').innerHTML = `${img}<h3>${esc(p.nom)}</h3>
+    ${p.description?`<p class="pdesc">${esc(p.description)}</p>`:''}
+    ${blocFormats}
+    ${selConv}
+    <div class="label">${t('qte')}</div>
+    <div class="qte"><button onclick="ficheQ(-1)">−</button><span class="v">${fiche.q}</span><button onclick="ficheQ(1)">+</button></div>
+    <div class="label">${t('notes')}</div>
+    <textarea id="f-notes" placeholder="${t('notes_ex')}">${esc(fiche.notes)}</textarea>
+    <div class="pied"><button class="annul" onclick="fermerFiche()">${t('annuler')}</button>
+      <button class="gros" onclick="ajouterAuPanier()">${t('ajouter_panier')} · ${euro(prixFiche()*fiche.q)}</button></div>`;
+}
+function prixFiche(){
+  const p = fiche.plat;
+  if(p.formats && p.formats.length) return p.formats[fiche.formatIdx].prix_cents;
+  return p.prix_cents;
+}
+window.ficheFormat = i => { fiche.formatIdx=i; rendreFiche(); };
+window.ficheQ = d => { fiche.q = Math.max(1, fiche.q+d); rendreFiche(); };
+window.ficheConv = v => {
+  if(v==='__new__'){ demanderNom(t('qui'), t('qui_sous'), '', nom=>{ ajouterConvive(nom); fiche.convive=nom; rendreFiche(); }); return; }
+  fiche.convive = v;
+};
+function ajouterAuPanier(){
+  const notes = ($('#f-notes')?.value || '').trim();
+  let conv = fiche.convive || conviveCourant;
+  if(!conv){   // aucun convive encore : on demande le nom une fois
+    demanderNom(t('qui'), t('qui_sous'), '', nom=>{ ajouterConvive(nom); fiche.convive=nom; ajouterAuPanier(); });
+    return;
+  }
+  const p = fiche.plat;
+  const f = (p.formats && p.formats.length) ? p.formats[fiche.formatIdx] : null;
+  const nom = f ? `${p.nom} (${f.taille})` : p.nom;
+  // Fusionne avec une ligne identique (même plat+format+convive+note).
+  const cle = `${p.id}|${f?f.taille:''}|${conv}|${notes}`;
+  const exist = panier.find(l=>l.uid===cle);
+  if(exist) exist.q += fiche.q;
+  else panier.push({uid:cle, plat_id:p.id, nom, prix_cents:prixFiche(), format:f?f.taille:'', q:fiche.q, convive:conv, notes});
+  conviveCourant = conv;
+  fermerFiche(); rendre();
 }
 
+// ── Vue PANIER (récap par convive) ───────────────────────────────────────
+function vuePanier(){
+  if(!panier.length) return `<div class="vide">${t('panier_vide')}</div>`;
+  // Groupe par convive en conservant l'ordre.
+  const ordre = []; const grp = {};
+  panier.forEach(l=>{ if(!grp[l.convive]){ grp[l.convive]=[]; ordre.push(l.convive); } grp[l.convive].push(l); });
+  const blocs = ordre.map(conv=>{
+    const lignes = grp[conv].map(l=>`<div class="lp">
+      <div class="info"><div class="n">${esc(l.nom)}</div>${l.notes?`<div class="note">“${esc(l.notes)}”</div>`:''}</div>
+      <div class="pp">${euro(l.prix_cents*l.q)}</div>
+      <div class="pl"><button onclick="panierMoins('${l.uid}')">−</button><span class="q">${l.q}</span><button onclick="panierPlus('${l.uid}')">+</button></div>
+    </div>`).join('');
+    const st = grp[conv].reduce((s,l)=>s+l.prix_cents*l.q,0);
+    return `<div class="conv ${conv===conviveCourant?'moi':''}"><div class="tete"><span>${esc(conv)}</span>
+      <div class="actions"><button onclick="renommerConvive('${esc(conv)}')">${t('renommer')}</button></div></div>
+      ${lignes}<div class="sst"><span>${t('sous_total')}</span><span>${euro(st)}</span></div></div>`;
+  }).join('');
+  // Espace final : libère la zone couverte par la barre flottante « Envoyer en cuisine ».
+  return blocs + `<button class="ajout-conv" onclick="nouveauConvive()">${t('ajouter_convive')}</button>`
+    + `<div style="height:70px"></div>`;
+}
+window.panierPlus = uid => { const l=panier.find(x=>x.uid===uid); if(l){ l.q++; rendre(); } };
+window.panierMoins = uid => { const i=panier.findIndex(x=>x.uid===uid); if(i>=0){ panier[i].q--; if(panier[i].q<=0) panier.splice(i,1); rendre(); } };
+
+// ── Convives (gestion sur l'appareil) ────────────────────────────────────
+function ajouterConvive(nom){
+  nom = (nom||'').trim(); if(!nom) return;
+  if(!convives.includes(nom)) convives.push(nom);
+  conviveCourant = nom; sauverConvives();
+}
+window.nouveauConvive = () => demanderNom(t('qui'), t('qui_sous'), '', nom=>{ ajouterConvive(nom); rendre(); });
+window.renommerConvive = (ancien) => demanderNom(t('renommer'), t('qui_sous'), ancien, nv=>{
+  nv = (nv||'').trim(); if(!nv || nv===ancien) return;
+  const i = convives.indexOf(ancien); if(i>=0) convives[i]=nv; else convives.push(nv);
+  if(conviveCourant===ancien) conviveCourant=nv;
+  panier.forEach(l=>{ if(l.convive===ancien){ l.convive=nv; l.uid=`${l.plat_id}|${l.format}|${nv}|${l.notes}`; } });
+  sauverConvives(); rendre();
+});
+
+// ── Commander ─────────────────────────────────────────────────────────────
+$('#commander').onclick = async () => {
+  if(!panier.length) return;
+  const plats = panier.map(l=>({plat_id:l.plat_id, quantite:l.q, format:l.format, convive:l.convive, notes:l.notes}));
+  const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({convive:conviveCourant, plats})});
+  if(r.ok){ panier=[]; vue='addition'; alert(t('commande_envoyee')); rendre(); }
+};
+
+// ── Vue ADDITION ──────────────────────────────────────────────────────────
 async function chargerAddition(){
   const r = await fetch('/t/'+code+'/addition');
   const e = await r.json();
   const corps = $('#addition-corps'); if(!corps) return;
   if(!e.convives.length){ corps.innerHTML = `<div class="vide">${t('rien_addition')}</div>`; return; }
   corps.innerHTML = e.convives.map(c=>{
-    const estMoi = c.convive===moi;
-    const det = c.details.map(d=>`<div class="ligne"><span>${d.quantite}× ${esc(d.nom_plat)}</span><span>${euro(d.prix_cents*d.quantite)}</span></div>`).join('');
+    const aMoi = convives.includes(c.convive);   // ce convive est-il porté par cet appareil ?
+    const det = c.details.map(d=>`<div class="ligne"><span>${d.quantite}× ${esc(d.nom_plat)}${d.notes?` · “${esc(d.notes)}”`:''}</span><span>${euro(d.prix_cents*d.quantite)}</span></div>`).join('');
     const etat = c.regle ? `<span class="etat ok">${t('regle')}</span>` : `<span class="etat att">${t('en_attente')}</span>`;
     let bloc = '';
-    if(estMoi && !c.regle){
+    if(aMoi && !c.regle){
       const opts = [0,5,10,15];
       const tips = opts.map(p=>{
-        const cents = Math.round(c.reste_cents*p/100);
         const lib = p===0 ? t('sans') : '+'+p+'%';
         return `<button class="${pourboirePct===p?'on':''}" onclick="setTip(${p})">${lib}</button>`;
       }).join('');
       const tip = Math.round(c.reste_cents*pourboirePct/100);
       bloc = `<div class="tips">${tips}</div>
-        <button class="gros" style="margin-top:10px" onclick="payer(${c.reste_cents})">${t('payer_avec')} · ${euro(c.reste_cents+tip)}</button>
+        <button class="gros" style="margin-top:10px" onclick="payer('${esc(c.convive)}',${c.reste_cents})">${t('payer')} · ${euro(c.reste_cents+tip)}</button>
         <div class="demo">${t('demo')}</div>`;
     }
-    return `<div class="conv ${estMoi?'moi':''}"><div class="tete"><span>${esc(c.convive)}${estMoi?' · '+t('ma_part'):''}</span>${etat}</div>
+    return `<div class="conv ${aMoi?'moi':''}"><div class="tete"><span>${esc(c.convive)}${aMoi?' · '+t('ma_part'):''}</span>${etat}</div>
       ${det}<div class="ligne" style="margin-top:8px;color:var(--texte);font-weight:700"><span>${t('du')}</span><span>${euro(c.du_cents)}</span></div>
       ${c.pourboire_cents?`<div class="ligne"><span>${t('pourboire')}</span><span>${euro(c.pourboire_cents)}</span></div>`:''}
       ${bloc}</div>`;
@@ -220,49 +429,43 @@ async function chargerAddition(){
   + (e.tva && e.tva.tva_cents ? `<div class="tva-ligne"><span>${t('dont_tva')} (${e.tva.tva_taux}%)</span><span>${euro(e.tva.tva_cents)}</span></div>` : '')
   + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
 }
-
 window.setTip = p => { pourboirePct = p; chargerAddition(); };
-window.payer = async (reste) => {
+window.payer = async (convive, reste) => {
   const tip = Math.round((reste||0)*pourboirePct/100);
   await fetch('/t/'+code+'/payer', {method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({convive:moi, pourboire_cents:tip})});
-  pourboirePct = 0;
-  chargerAddition();
+    body:JSON.stringify({convive, pourboire_cents:tip})});
+  pourboirePct = 0; chargerAddition();
 };
 
-$('#commander').onclick = async () => {
-  if(!moi){ ouvrirNom(commanderMaintenant); return; }
-  commanderMaintenant();
+// ── Modale de nom (création / renommage d'un convive) ─────────────────────
+let _apresNom = null;
+function demanderNom(titre, sous, valeur, apres){
+  $('#m-titre').textContent = titre; $('#m-sous').textContent = sous;
+  $('#m-ok').textContent = t('valider'); $('#m-nom').value = valeur || '';
+  _apresNom = apres; $('#modal-nom').style.display='flex'; $('#m-nom').focus();
+}
+$('#m-ok').onclick = () => {
+  const v = $('#m-nom').value.trim(); if(!v) return;
+  $('#modal-nom').style.display='none';
+  const cb = _apresNom; _apresNom=null; if(cb) cb(v);
 };
-async function commanderMaintenant(){
-  const plats = Object.values(panier).map(v=>({plat_id:v.plat_id, quantite:v.q, format:v.format||''}));
-  if(!plats.length) return;
-  const r = await fetch('/t/'+code+'/commander', {method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({convive:moi, plats})});
-  if(r.ok){ panier={}; vueActive='addition'; majOnglets(); alert(t('commande_envoyee')); rendre(); }
-}
 
-function ouvrirNom(apres){
-  $('#modal-nom').style.display='flex'; $('#m-nom').value=moi; $('#m-nom').focus();
-  $('#m-ok').onclick = ()=>{ const v=$('#m-nom').value.trim(); if(!v) return;
-    moi=v; localStorage.setItem('resto_moi_'+code, v); $('#modal-nom').style.display='none'; if(apres) apres(); };
-}
+// ── Bottom-nav ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav button').forEach(b=> b.onclick = ()=>{
+  vue = b.dataset.t; if(vue==='carte'){ recherche=''; ecran='accueil'; categorieActive=null; }
+  rendre();
+});
 
-document.querySelectorAll('.onglets button').forEach(b=> b.onclick = ()=>{ vueActive=b.dataset.t; majOnglets(); rendre(); });
-function majOnglets(){ document.querySelectorAll('.onglets button').forEach(b=>b.classList.toggle('on', b.dataset.t===vueActive)); }
+// Recherche (délégation : l'input est recréé à chaque rendu).
+document.addEventListener('input', e=>{ if(e.target.id==='q'){ recherche = e.target.value; const pos = e.target.selectionStart;
+  rendre(); const q=$('#q'); if(q){ q.focus(); try{ q.setSelectionRange(pos,pos); }catch(_){} } } });
 
-function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-// Temps réel : sur un évènement de CARTE (rupture de stock, plat modifié), on recharge la
-// carte ; sinon (commande/paiement) on rafraîchit l'addition si elle est visible.
+// ── Temps réel ─────────────────────────────────────────────────────────────
 async function rechargerCarte(){
-  const r = await fetch('/t/'+code);
-  if(!r.ok) return;
-  const d = await r.json();
-  data.carte = d.carte;
-  // Purge du panier les plats devenus indisponibles (épuisés / retirés).
+  const r = await fetch('/t/'+code); if(!r.ok) return;
+  const d = await r.json(); data.carte = d.carte;
   const ids = new Set(d.carte.map(p=>p.id));
-  Object.keys(panier).forEach(k=>{ if(!ids.has(panier[k].plat_id)) delete panier[k]; });
+  panier = panier.filter(l=> ids.has(l.plat_id));   // purge les plats devenus indisponibles
   rendre();
 }
 function brancherWS(){
@@ -271,7 +474,7 @@ function brancherWS(){
   ws.onmessage = (ev) => {
     let m = {}; try { m = JSON.parse(ev.data); } catch(e){}
     if(m.type==='rupture' || m.type==='carte_modifiee'){ rechargerCarte(); return; }
-    if(vueActive==='addition') chargerAddition();
+    if(vue==='addition') chargerAddition();
   };
   ws.onclose = () => setTimeout(brancherWS, 3000);
 }

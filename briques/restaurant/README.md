@@ -68,6 +68,27 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## UX client multi-pages & multi-convive (v0.7.0)
+
+L'app client (ouverte par le QR) passe d'un long défilement à une **navigation multi-pages**
+avec un **bottom-nav** : **Carte · Panier · Addition**.
+
+- **Carte** : un **accueil en tuiles de catégories** + une **barre de recherche** (filtre tous
+  les plats) → une **page catégorie** → une **fiche plat** (photo, description, **format**,
+  **quantité**, **« pour qui ? »** et **note** libre par ligne).
+- **Multi-convive correct** : un même téléphone peut porter **plusieurs convives** (ex. Thomas
+  *et* Sarah). Le convive est choisi **à l'ajout** dans la fiche (« pour qui ? ») — fin du
+  « tout sur une seule personne ». Le **Panier** récapitule **par convive** (sous-total chacun,
+  notes, renommage), puis « Envoyer en cuisine » crée **une commande par convive** (la cuisine
+  et l'addition restent organisées par personne).
+- **Addition** : on règle la part de chaque convive porté par l'appareil (mock honnête).
+
+Côté **domaine** (DDD pragmatique, au fil de l'eau) : un module **`domaine.py` PUR** (0 I/O)
+pose l'objet-valeur **`Argent`** (centimes + devise), l'entité **`Convive`** (normalisation du
+nom, source unique back+front) et le **groupage par convive** d'un panier — testés en
+microsecondes (`test_domaine.py`). Une **note** par ligne est persistée (`lignes.notes`,
+migration douce) et remonte dans la file cuisine et l'addition.
+
 ## Stock & rupture automatique (v0.6.0)
 
 Un plat peut porter un **stock** optionnel (unités restantes). `null` = **illimité** (défaut,
