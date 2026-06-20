@@ -2,7 +2,7 @@ services:
   restaurant:
     build: .
     container_name: workplace_restaurant
-    image: workplace/restaurant:0.2.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/restaurant:0.3.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique.
       - path: ../../.env
@@ -23,6 +23,16 @@ services:
       # la brique exposée (tunnel/Proxmox) ; sinon déduite de la requête (≠ joignable
       # depuis un téléphone en localhost, attendu en dev).
       - RESTAURANT_PUBLIC_URL=${RESTAURANT_PUBLIC_URL:-}
+      # Clé de SERVICE : autorise le Cœur (capacités MCP) à piloter la carte sans le mot de
+      # passe d'un restaurateur. Hérité du .env racine. NON défini ⇒ chemin /service éteint
+      # (fail-closed). DOIT valoir la même chose côté Cœur (RESTAURANT_KEY) pour qu'il l'envoie.
+      - RESTAURANT_KEY=${RESTAURANT_KEY:-}
+      # Synergie « Assistant carte » (import OCR de l'ancienne carte) : brique vision + Gateway.
+      - VISION_URL=${VISION_URL:-http://host.docker.internal:5960}
+      - VISION_KEY=${VISION_KEY:-}
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      - GATEWAY_KEY=${GATEWAY_KEY:-}
+      - GATEWAY_MODEL=${GATEWAY_MODEL:-free/google/gemma-4-31b-it}
     volumes:
       - restaurant_data:/data   # comptes, restaurants, menus, commandes, paiements
     restart: unless-stopped

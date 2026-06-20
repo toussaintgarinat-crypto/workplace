@@ -28,10 +28,11 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 import auth
+import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.2.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.3.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -81,6 +82,26 @@ def compte_actuel(authorization: Optional[str] = Header(None),
     if stockage.version_compte(s["compte_id"]) != s["version"]:
         raise HTTPException(401, "Session révoquée. Reconnectez-vous.")
     return s["compte_id"]
+
+
+# ── Authentification de SERVICE (capacités du Cœur) ──────────────
+def service_ok(x_api_key: Optional[str] = Header(None)) -> bool:
+    """Garde le chemin `/service/...` piloté par le Cœur (capacités découvertes au manifest).
+
+    Le Cœur s'authentifie avec une CLÉ DE SERVICE (RESTAURANT_KEY → en-tête X-API-Key,
+    motif `_entetes_brique` du Cœur), pas avec le mot de passe d'un restaurateur. Fail-closed :
+    si RESTAURANT_KEY n'est pas défini, le chemin de service est ÉTEINT (503), pas ouvert.
+
+    Limite honnête (mono-utilisateur aujourd'hui) : qui détient cette clé peut viser
+    n'importe quel restaurant_id. L'isolation par restaurateur côté Cœur reste l'épopée
+    multi-tenant à venir ; ici on tient le cloisonnement EN BASE (chaque opération passe
+    par le compte propriétaire dérivé du restaurant_id)."""
+    attendue = os.getenv("RESTAURANT_KEY")
+    if not attendue:
+        raise HTTPException(503, "Chemin de service non configuré (RESTAURANT_KEY absent).")
+    if x_api_key != attendue:
+        raise HTTPException(401, "Clé de service invalide.")
+    return True
 
 
 # ── Modèles ──────────────────────────────────────────────────────
@@ -136,6 +157,16 @@ class MajPlat(BaseModel):
     plat_du_jour: Optional[bool] = None
 
 
+class ImporterCarte(BaseModel):
+    contenu_base64: str = ""           # l'ancienne carte (photo/PDF) en base64 (data-URI toléré)
+    url: str = ""                      # …ou par URL
+    nom_fichier: str = ""              # aide l'OCR à deviner le format (ex. carte.pdf)
+
+
+class PlatsEnLot(BaseModel):
+    plats: list = []                   # [{nom, description, prix_cents, categorie, plat_du_jour}]
+
+
 class StatutCommande(BaseModel):
     statut: str                        # en_cuisine | prete | servie
 
@@ -162,7 +193,7 @@ class PayerPart(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.2.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.3.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -340,6 +371,105 @@ async def maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
 
 @app.delete("/restaurants/{restaurant_id}/plats/{plat_id}")
 def supprimer_plat(restaurant_id: str, plat_id: str, compte_id: str = Depends(compte_actuel)):
+    if not stockage.supprimer_plat(compte_id, restaurant_id, plat_id):
+        raise HTTPException(404, "Plat introuvable.")
+    return {"supprime": True}
+
+
+# ── Assistant carte : importer l'ancienne carte (OCR → proposition) ──
+@app.post("/restaurants/{restaurant_id}/carte/importer")
+async def importer_carte(restaurant_id: str, corps: ImporterCarte,
+                         compte_id: str = Depends(compte_actuel)):
+    """Lit une ANCIENNE carte (photo/PDF) et PROPOSE des plats structurés — ne PERSISTE rien.
+
+    Synergie : OCR délégué à la brique « vision », structuration au LLM Gateway. Le
+    restaurateur valide/corrige le résultat, puis l'ajoute via /plats/lot. Repli honnête :
+    si l'OCR ne lit rien (ou les briques sont éteintes), `plats` est vide et `note` le dit."""
+    _exige_resto(compte_id, restaurant_id)
+    if not corps.contenu_base64 and not corps.url:
+        raise HTTPException(422, "Fournir l'ancienne carte (contenu_base64 ou url).")
+    return await carte_ia.importer(contenu_base64=corps.contenu_base64, url=corps.url,
+                                   nom_fichier=corps.nom_fichier)
+
+
+@app.post("/restaurants/{restaurant_id}/plats/lot")
+async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
+                            compte_id: str = Depends(compte_actuel)):
+    """Ajoute en une fois une liste de plats VALIDÉS (l'« Ajouter à ma carte » de l'import)."""
+    _exige_resto(compte_id, restaurant_id)
+    crees = []
+    for p in (corps.plats or []):
+        if not isinstance(p, dict) or not str(p.get("nom") or "").strip():
+            continue
+        plat = stockage.creer_plat(
+            compte_id, restaurant_id, str(p.get("nom")), str(p.get("description") or ""),
+            int(p.get("prix_cents") or 0), str(p.get("photo") or ""),
+            bool(p.get("plat_du_jour")), str(p.get("categorie") or ""))
+        if plat:
+            crees.append(plat)
+    if crees:
+        await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
+                                 {"type": "carte_modifiee", "lot": len(crees)})
+    return {"ajoutes": len(crees), "plats": crees}
+
+
+# ── Chemin de SERVICE : carte pilotée par le Cœur (capacités MCP) ──
+# Authentifié par clé de service (RESTAURANT_KEY), scoppé par restaurant_id. Le Cœur (et
+# tout client MCP via le Cœur) gère la carte à la voix / au chat sans le mot de passe du
+# restaurateur. Cloisonnement tenu en base : on dérive le compte propriétaire du resto.
+def _compte_de_service(restaurant_id: str) -> str:
+    compte_id = stockage.compte_du_restaurant(restaurant_id)
+    if not compte_id:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return compte_id
+
+
+@app.get("/service/restaurants/{restaurant_id}")
+def service_infos_resto(restaurant_id: str, _: bool = Depends(service_ok)):
+    """Infos d'un resto (nom, devise, TVA) — donne le contexte à l'assistant."""
+    r = stockage.restaurant_public(restaurant_id)
+    if not r:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return r
+
+
+@app.get("/service/restaurants/{restaurant_id}/plats")
+def service_lister_plats(restaurant_id: str, _: bool = Depends(service_ok)):
+    """Carte complète (vue restaurateur) — pour que l'assistant sache ce qui existe déjà."""
+    compte_id = _compte_de_service(restaurant_id)
+    return {"plats": stockage.lister_plats(compte_id, restaurant_id) or []}
+
+
+@app.post("/service/restaurants/{restaurant_id}/plats")
+async def service_creer_plat(restaurant_id: str, corps: PlatEntree, _: bool = Depends(service_ok)):
+    """Ajoute un plat (action). Diffuse aux tables pour rafraîchir la carte."""
+    compte_id = _compte_de_service(restaurant_id)
+    p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
+                            corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie)
+    if not p:
+        raise HTTPException(404, "Restaurant introuvable.")
+    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
+                             {"type": "carte_modifiee", "plat": p})
+    return p
+
+
+@app.patch("/service/restaurants/{restaurant_id}/plats/{plat_id}")
+async def service_maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
+                           _: bool = Depends(service_ok)):
+    """Modifie un plat (prix, dispo, plat du jour…) (action)."""
+    compte_id = _compte_de_service(restaurant_id)
+    p = stockage.maj_plat(compte_id, restaurant_id, plat_id, corps.model_dump(exclude_unset=True))
+    if not p:
+        raise HTTPException(404, "Plat introuvable.")
+    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
+                             {"type": "carte_modifiee", "plat": p})
+    return p
+
+
+@app.delete("/service/restaurants/{restaurant_id}/plats/{plat_id}")
+def service_supprimer_plat(restaurant_id: str, plat_id: str, _: bool = Depends(service_ok)):
+    """Supprime un plat (action)."""
+    compte_id = _compte_de_service(restaurant_id)
     if not stockage.supprimer_plat(compte_id, restaurant_id, plat_id):
         raise HTTPException(404, "Plat introuvable.")
     return {"supprime": True}

@@ -1,6 +1,6 @@
 {
   "nom": "restaurant",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et chacun paie SA part — addition partagée avec « reste à payer » live, paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
   "couche": "backend",
@@ -30,8 +30,75 @@
     "websocket_live",
     "front_back_office",
     "front_cuisine",
-    "front_client"
+    "front_client",
+    "import_carte_ocr",
+    "carte_pilotable_assistant"
   ],
   "besoin": [],
+  "capacites": [
+    {
+      "nom": "restaurant_carte_lister",
+      "description": "Liste la carte complète d'un restaurant (tous les plats, y compris indisponibles) : nom, prix en centimes, catégorie, disponibilité, plat du jour. Sert à savoir ce qui existe déjà avant d'ajouter/modifier. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/plats",
+      "params": {
+        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant à consulter."}
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_infos",
+      "description": "Donne le contexte d'un restaurant : nom, devise, taux de TVA. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}",
+      "params": {
+        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."}
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_plat_ajouter",
+      "description": "Ajoute un plat à la carte d'un restaurant. ACTION (modifie la carte vue par les clients) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/plats",
+      "params": {
+        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
+        "nom": {"type": "string", "description": "Nom du plat."},
+        "description": {"type": "string", "description": "Description (optionnel)."},
+        "prix_cents": {"type": "integer", "description": "Prix en CENTIMES (ex. 12,50 € = 1250)."},
+        "categorie": {"type": "string", "description": "Section de carte (Entrées, Plats, Boissons…)."},
+        "plat_du_jour": {"type": "boolean", "description": "Mettre en avant comme plat du jour."}
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_plat_modifier",
+      "description": "Modifie un plat existant (prix, description, catégorie, disponibilité/rupture, plat du jour). Récupère d'abord l'id via restaurant_carte_lister. ACTION : confirme=true requis.",
+      "methode": "PATCH",
+      "chemin": "/service/restaurants/{restaurant_id}/plats/{plat_id}",
+      "params": {
+        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
+        "plat_id": {"type": "string", "description": "Identifiant du plat à modifier."},
+        "nom": {"type": "string", "description": "Nouveau nom (optionnel)."},
+        "description": {"type": "string", "description": "Nouvelle description (optionnel)."},
+        "prix_cents": {"type": "integer", "description": "Nouveau prix en CENTIMES (optionnel)."},
+        "categorie": {"type": "string", "description": "Nouvelle catégorie (optionnel)."},
+        "disponible": {"type": "boolean", "description": "Disponible (false = en rupture, invisible côté client)."},
+        "plat_du_jour": {"type": "boolean", "description": "Plat du jour (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_plat_supprimer",
+      "description": "Supprime un plat de la carte. Récupère d'abord l'id via restaurant_carte_lister. ACTION irréversible : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/service/restaurants/{restaurant_id}/plats/{plat_id}",
+      "params": {
+        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
+        "plat_id": {"type": "string", "description": "Identifiant du plat à supprimer."}
+      },
+      "action": true
+    }
+  ],
   "taches": []
 }
