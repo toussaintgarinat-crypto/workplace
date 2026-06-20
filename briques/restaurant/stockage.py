@@ -43,6 +43,11 @@ def _code_table() -> str:
     return secrets.token_urlsafe(9)
 
 
+def _nouveau_pin() -> str:
+    """PIN à 4 chiffres (zéros de tête conservés) d'une session de table — court à dicter."""
+    return f"{secrets.randbelow(10 ** domaine.LONGUEUR_PIN):0{domaine.LONGUEUR_PIN}d}"
+
+
 def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
@@ -57,12 +62,14 @@ def _conn() -> sqlite3.Connection:
 
         CREATE TABLE IF NOT EXISTS restaurants (
             id TEXT PRIMARY KEY, compte_id TEXT NOT NULL, nom TEXT,
-            devise TEXT DEFAULT 'EUR', tva_taux REAL NOT NULL DEFAULT 10.0, cree_le TEXT);
+            devise TEXT DEFAULT 'EUR', tva_taux REAL NOT NULL DEFAULT 10.0,
+            pin_requis INTEGER NOT NULL DEFAULT 0, cree_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_resto_compte ON restaurants(compte_id);
 
         CREATE TABLE IF NOT EXISTS tables (
             id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, numero TEXT,
-            code TEXT NOT NULL UNIQUE, session_courante INTEGER NOT NULL DEFAULT 1, cree_le TEXT);
+            code TEXT NOT NULL UNIQUE, session_courante INTEGER NOT NULL DEFAULT 1,
+            code_pin TEXT, cree_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_table_resto ON tables(restaurant_id);
 
         CREATE TABLE IF NOT EXISTS plats (
@@ -108,8 +115,17 @@ def _conn() -> sqlite3.Connection:
         c.execute("ALTER TABLE comptes ADD COLUMN jeton_version INTEGER NOT NULL DEFAULT 1")
     if "tva_taux" not in _colonnes("restaurants"):
         c.execute("ALTER TABLE restaurants ADD COLUMN tva_taux REAL NOT NULL DEFAULT 10.0")
-    if "session_courante" not in _colonnes("tables"):
+    if "pin_requis" not in _colonnes("restaurants"):
+        # Réglage opt-in : exiger un code partagé pour rejoindre une table (S82). Défaut 0
+        # = table ouverte (comportement historique : tout scan du QR rejoint directement).
+        c.execute("ALTER TABLE restaurants ADD COLUMN pin_requis INTEGER NOT NULL DEFAULT 0")
+    tcol = _colonnes("tables")
+    if "session_courante" not in tcol:
         c.execute("ALTER TABLE tables ADD COLUMN session_courante INTEGER NOT NULL DEFAULT 1")
+    if "code_pin" not in tcol:
+        # PIN de la SESSION COURANTE (None = pas encore démarrée / table ouverte). Effacé à
+        # la clôture pour que le groupe suivant reparte vierge.
+        c.execute("ALTER TABLE tables ADD COLUMN code_pin TEXT")
     pcol = _colonnes("plats")
     if "categorie" not in pcol:
         c.execute("ALTER TABLE plats ADD COLUMN categorie TEXT DEFAULT ''")
@@ -209,20 +225,27 @@ def creer_restaurant(compte_id: str, nom: str, devise: str = "EUR", tva_taux: fl
             "tva_taux": max(0.0, float(tva_taux))}
 
 
+def _resto_dict(r: sqlite3.Row) -> dict:
+    d = dict(r)
+    if "pin_requis" in r.keys():
+        d["pin_requis"] = bool(r["pin_requis"])
+    return d
+
+
 def lister_restaurants(compte_id: str) -> list:
     with _conn() as c:
-        rows = c.execute("SELECT id, nom, devise, tva_taux, cree_le FROM restaurants WHERE compte_id=? "
-                         "ORDER BY cree_le", (compte_id,)).fetchall()
-    return [dict(r) for r in rows]
+        rows = c.execute("SELECT id, nom, devise, tva_taux, pin_requis, cree_le FROM restaurants "
+                         "WHERE compte_id=? ORDER BY cree_le", (compte_id,)).fetchall()
+    return [_resto_dict(r) for r in rows]
 
 
 def lire_restaurant(compte_id: str, restaurant_id: str) -> dict | None:
     with _conn() as c:
         if not _possede(c, compte_id, restaurant_id):
             return None
-        r = c.execute("SELECT id, nom, devise, tva_taux, cree_le FROM restaurants WHERE id=?",
-                      (restaurant_id,)).fetchone()
-    return dict(r) if r else None
+        r = c.execute("SELECT id, nom, devise, tva_taux, pin_requis, cree_le FROM restaurants "
+                      "WHERE id=?", (restaurant_id,)).fetchone()
+    return _resto_dict(r) if r else None
 
 
 def maj_restaurant(compte_id: str, restaurant_id: str, champs: dict) -> dict | None:
@@ -232,21 +255,24 @@ def maj_restaurant(compte_id: str, restaurant_id: str, champs: dict) -> dict | N
     nom = champs.get("nom")
     devise = champs.get("devise")
     tva = champs.get("tva_taux")
+    pin = champs.get("pin_requis")
     with _conn() as c:
-        c.execute("UPDATE restaurants SET nom=?, devise=?, tva_taux=? WHERE id=? AND compte_id=?",
+        c.execute("UPDATE restaurants SET nom=?, devise=?, tva_taux=?, pin_requis=? "
+                  "WHERE id=? AND compte_id=?",
                   (str(nom).strip() or r["nom"] if nom is not None else r["nom"],
                    (devise or r["devise"]) if devise is not None else r["devise"],
                    max(0.0, float(tva)) if tva is not None else r["tva_taux"],
+                   (1 if pin else 0) if pin is not None else (1 if r["pin_requis"] else 0),
                    restaurant_id, compte_id))
     return lire_restaurant(compte_id, restaurant_id)
 
 
 def restaurant_public(restaurant_id: str) -> dict | None:
-    """Infos publiques d'un resto (nom, devise, TVA) — sans compte, pour l'affichage client."""
+    """Infos publiques d'un resto (nom, devise, TVA, code requis) — sans compte, pour le client."""
     with _conn() as c:
-        r = c.execute("SELECT id, nom, devise, tva_taux FROM restaurants WHERE id=?",
+        r = c.execute("SELECT id, nom, devise, tva_taux, pin_requis FROM restaurants WHERE id=?",
                       (restaurant_id,)).fetchone()
-    return dict(r) if r else None
+    return _resto_dict(r) if r else None
 
 
 def compte_du_restaurant(restaurant_id: str) -> str | None:
@@ -292,6 +318,46 @@ def table_par_code(code: str) -> dict | None:
 def _session_table(c: sqlite3.Connection, table_id: str) -> int:
     r = c.execute("SELECT session_courante FROM tables WHERE id=?", (table_id,)).fetchone()
     return r["session_courante"] if r else 1
+
+
+def session_de_table(table_id: str) -> domaine.SessionDeTable | None:
+    """Charge l'agrégat `SessionDeTable` (numéro de session courante + PIN) — None si la
+    table n'existe pas. Source unique de l'état « démarrée / ouverte » pour la couche API."""
+    with _conn() as c:
+        r = c.execute("SELECT session_courante, code_pin FROM tables WHERE id=?",
+                      (table_id,)).fetchone()
+    if not r:
+        return None
+    return domaine.SessionDeTable(
+        table_id=table_id, numero=r["session_courante"],
+        code_pin=r["code_pin"] if "code_pin" in r.keys() else None)
+
+
+def demarrer_session(table_id: str) -> dict | None:
+    """DÉMARRE la session courante d'une table en posant un PIN (le 1er appareil « ouvre » la
+    tablée). Idempotent côté identité : si déjà démarrée, ne RÉVÈLE PAS le PIN (un 2e appareil
+    doit le REJOINDRE, pas le redécouvrir) → {nouveau:False}. Sinon génère+stocke le PIN et le
+    renvoie → {nouveau:True, pin}. None si la table n'existe pas."""
+    with _conn() as c:
+        r = c.execute("SELECT session_courante, code_pin FROM tables WHERE id=?",
+                      (table_id,)).fetchone()
+        if not r:
+            return None
+        if r["code_pin"]:
+            return {"nouveau": False, "session_id": r["session_courante"]}
+        pin = _nouveau_pin()
+        c.execute("UPDATE tables SET code_pin=? WHERE id=?", (pin, table_id))
+    return {"nouveau": True, "session_id": r["session_courante"], "pin": pin}
+
+
+def rejoindre_session(table_id: str, pin: str | None) -> dict | None:
+    """Vérifie le PIN pour REJOINDRE la session courante d'une table. Délègue la règle au
+    domaine pur (`SessionDeTable.autorise` : table ouverte ⇒ OK, sinon PIN à temps constant).
+    Renvoie {session_id} si autorisé, None sinon (fail-closed)."""
+    s = session_de_table(table_id)
+    if not s or not s.autorise(pin):
+        return None
+    return {"session_id": s.numero}
 
 
 def supprimer_table(compte_id: str, restaurant_id: str, table_id: str) -> bool:
@@ -711,5 +777,8 @@ def cloturer_table(compte_id: str, restaurant_id: str, table_id: str, force: boo
         # Les commandes de la session quittent la file cuisine, et la table repart vierge.
         c.execute("UPDATE commandes SET statut='servie' WHERE table_id=? AND session_id=?",
                   (table_id, t["session_courante"]))
-        c.execute("UPDATE tables SET session_courante=session_courante+1 WHERE id=?", (table_id,))
+        # Nouvelle session + PIN effacé : le groupe suivant repart d'une table « ouverte »
+        # (les anciens jetons d'adhésion, liés à l'ancien numéro, sont désormais invalides).
+        c.execute("UPDATE tables SET session_courante=session_courante+1, code_pin=NULL "
+                  "WHERE id=?", (table_id,))
     return ticket

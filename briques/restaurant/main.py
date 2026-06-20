@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.7.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.8.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -141,6 +141,7 @@ class MajRestaurant(BaseModel):
     nom: Optional[str] = None
     devise: Optional[str] = None
     tva_taux: Optional[float] = None
+    pin_requis: Optional[bool] = None     # exiger un code partagé pour rejoindre une table (S82)
 
 
 class CreerTable(BaseModel):
@@ -210,10 +211,14 @@ class PayerPart(BaseModel):
     pourboire_cents: int = 0
 
 
+class Rejoindre(BaseModel):
+    pin: str = ""                          # code à saisir pour rejoindre une table protégée
+
+
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.7.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.8.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -588,18 +593,75 @@ def _table_par_code(code: str) -> dict:
     return t
 
 
+def _exige_adhesion(table: dict, jeton: Optional[str]):
+    """Garde les actions client (commander / régler / voir l'addition) quand le restaurant
+    EXIGE un code (pin_requis). Dans ce cas, seule une requête portant un jeton d'adhésion
+    valide pour la SESSION COURANTE de CETTE table passe (fail-closed). Si le restaurant
+    n'exige pas de code (table ouverte, défaut historique) : aucun jeton requis — l'existant
+    n'est pas cassé."""
+    resto = stockage.restaurant_public(table["restaurant_id"]) or {}
+    if not resto.get("pin_requis"):
+        return
+    s = stockage.session_de_table(table["id"])
+    j = auth.lire_jeton_table(jeton)
+    if not s or not j or j["table_id"] != table["id"] or j["session_id"] != s.numero:
+        raise HTTPException(403, "Rejoignez la table avec le code pour continuer.")
+
+
 @app.get("/t/{code}")
 def vue_client(code: str):
-    """Tout ce qu'il faut au smartphone du client : resto, table, carte disponible."""
+    """Tout ce qu'il faut au smartphone du client : resto, table, carte disponible, et l'état
+    de session (faut-il un code, la table est-elle déjà démarrée) pour afficher la bonne porte."""
     t = _table_par_code(code)
     resto = stockage.restaurant_public(t["restaurant_id"]) or {}
+    s = stockage.session_de_table(t["id"])
     return {"restaurant": resto, "table": {"id": t["id"], "numero": t["numero"], "code": code},
-            "carte": stockage.carte_publique(t["restaurant_id"])}
+            "carte": stockage.carte_publique(t["restaurant_id"]),
+            "session": {"pin_requis": bool(resto.get("pin_requis")),
+                        "demarree": bool(s and s.demarree),
+                        "session_id": s.numero if s else 1}}
+
+
+@app.post("/t/{code}/demarrer")
+async def demarrer_table(code: str):
+    """Le 1er appareil DÉMARRE la tablée. Si le restaurant exige un code, on génère un PIN à
+    partager (affiché à l'écran) ; sinon la table est ouverte et on délivre directement le
+    jeton d'adhésion. 409 si la table est déjà démarrée (→ rejoindre avec le code)."""
+    t = _table_par_code(code)
+    resto = stockage.restaurant_public(t["restaurant_id"]) or {}
+    if not resto.get("pin_requis"):
+        s = stockage.session_de_table(t["id"])
+        return {"pin_requis": False, "session_id": s.numero,
+                "jeton": auth.creer_jeton_table(t["id"], s.numero)}
+    res = stockage.demarrer_session(t["id"])
+    if not res:
+        raise HTTPException(404, "Table inconnue (QR invalide).")
+    if not res["nouveau"]:
+        raise HTTPException(409, "Table déjà démarrée — rejoignez-la avec le code.")
+    # Prévient les autres appareils de la table : leur écran bascule « Démarrer » → « Rejoindre ».
+    await diffuseur.diffuser(diffuseur.canal_table(t["id"]), {"type": "session", "demarree": True})
+    return {"pin_requis": True, "session_id": res["session_id"], "pin": res["pin"],
+            "jeton": auth.creer_jeton_table(t["id"], res["session_id"])}
+
+
+@app.post("/t/{code}/rejoindre")
+def rejoindre_table(code: str, corps: Rejoindre):
+    """Un appareil supplémentaire REJOINT la tablée en saisissant le code. Anti-brute-force
+    par table (même fenêtre que l'auth). Renvoie le jeton d'adhésion, ou 403 (code incorrect)."""
+    t = _table_par_code(code)
+    _anti_abus("pin:" + t["id"])
+    res = stockage.rejoindre_session(t["id"], corps.pin)
+    if not res:
+        raise HTTPException(403, "Code incorrect.")
+    return {"session_id": res["session_id"],
+            "jeton": auth.creer_jeton_table(t["id"], res["session_id"])}
 
 
 @app.post("/t/{code}/commander")
-async def commander(code: str, corps: Commander):
+async def commander(code: str, corps: Commander,
+                    x_table_session: Optional[str] = Header(None)):
     t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
     # Un panier peut désormais mêler plusieurs convives (« pour qui » par ligne) → une
     # commande par convive (groupage délégué au domaine pur).
     res = stockage.creer_commandes(t["restaurant_id"], t["id"], corps.plats, corps.convive)
@@ -621,15 +683,17 @@ async def commander(code: str, corps: Commander):
 
 
 @app.get("/t/{code}/addition")
-def addition_client(code: str):
+def addition_client(code: str, x_table_session: Optional[str] = Header(None)):
     t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
     return stockage.etat_table(t["restaurant_id"], t["id"])
 
 
 @app.post("/t/{code}/payer")
-async def payer(code: str, corps: PayerPart):
+async def payer(code: str, corps: PayerPart, x_table_session: Optional[str] = Header(None)):
     """Le client règle SA part en ligne. Incrément 1 : paiement MOCK (démo, sans flux réel)."""
     t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
     res = stockage.enregistrer_paiement(t["restaurant_id"], t["id"], corps.convive, "mock",
                                         corps.pourboire_cents)
     if not res:

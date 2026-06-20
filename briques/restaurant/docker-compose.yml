@@ -2,7 +2,7 @@ services:
   restaurant:
     build: .
     container_name: workplace_restaurant
-    image: workplace/restaurant:0.7.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/restaurant:0.8.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique.
       - path: ../../.env

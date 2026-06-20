@@ -103,3 +103,37 @@ def lire_session(jeton: str | None) -> dict | None:
     except ValueError:
         return None
     return {"compte_id": compte_id, "version": version} if compte_id else None
+
+
+# ── Jetons d'ADHÉSION de table (côté CLIENT, ≠ compte restaurateur) ──
+def creer_jeton_table(table_id: str, session_id: int) -> str:
+    """Émet un jeton prouvant qu'un APPAREIL a rejoint la bonne tablée (après « Démarrer »
+    ou « Rejoindre » avec le PIN). Distinct du prénom du convive (un appareil peut en porter
+    plusieurs) et du jeton de compte restaurateur.
+
+    Lié à (table, numéro de session) : à la clôture, le numéro de session change en base →
+    tous les anciens jetons deviennent automatiquement invalides (la session est fermée,
+    le groupe suivant doit re-rejoindre). Format « t.table_id.session.exp.signature »."""
+    exp = int(time.time()) + DUREE_SESSION
+    corps = f"t.{table_id}.{session_id}.{exp}".encode()
+    return f"t.{table_id}.{session_id}.{exp}.{_signer(corps)}"
+
+
+def lire_jeton_table(jeton: str | None) -> dict | None:
+    """Valide un jeton d'adhésion de table → {table_id, session_id} ou None (fail-closed)."""
+    if not jeton or not jeton.startswith("t."):
+        return None
+    try:
+        prefixe, table_id, session_str, exp_str, sig = jeton.rsplit(".", 4)
+    except ValueError:
+        return None
+    corps = f"t.{table_id}.{session_str}.{exp_str}".encode()
+    if prefixe != "t" or not hmac.compare_digest(sig, _signer(corps)):
+        return None
+    try:
+        if int(exp_str) < int(time.time()):
+            return None
+        session_id = int(session_str)
+    except ValueError:
+        return None
+    return {"table_id": table_id, "session_id": session_id} if table_id else None

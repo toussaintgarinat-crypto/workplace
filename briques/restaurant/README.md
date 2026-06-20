@@ -68,6 +68,30 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## Rejoindre la table par code (v0.8.0)
+
+Réglage **opt-in** par restaurant (back-office → Réglages) : **« Demander un code pour
+rejoindre une table »**. Désactivé par défaut → la table reste **ouverte** (tout scan du QR
+commande directement, comportement historique inchangé).
+
+Une fois activé, l'app client présente une **porte** :
+
+- **Démarrer la table** (1er appareil) → génère un **code à 4 chiffres** affiché à l'écran,
+  à partager avec la tablée. L'appareil reçoit un **jeton d'adhésion de session**.
+- **Rejoindre** (appareils suivants) → saisir le code → jeton d'adhésion (fail-closed sur
+  un mauvais code, anti-brute-force par table).
+
+Le code **protège l'addition en cours** : commander, régler et consulter l'addition exigent
+le jeton. Plusieurs appareils partagent **la même session** (l'addition est commune). À la
+**clôture**, le numéro de session change et le code est effacé → les anciens jetons sont
+automatiquement **invalidés** (le groupe suivant repart d'une table vierge).
+
+Côté **domaine** : l'agrégat racine **`SessionDeTable`** (`domaine.py` pur) porte l'identité
+`(table, numéro)` + le `code_pin` optionnel et la règle d'autorisation (`autorise(pin)`,
+comparaison à temps constant). Le jeton d'adhésion est signé HMAC (`auth.creer_jeton_table`,
+lié à `(table, session)`, stateless comme les sessions restaurateur). Réglage exposé par
+`PATCH /restaurants/{id}` (`pin_requis`).
+
 ## UX client multi-pages & multi-convive (v0.7.0)
 
 L'app client (ouverte par le QR) passe d'un long défilement à une **navigation multi-pages**
