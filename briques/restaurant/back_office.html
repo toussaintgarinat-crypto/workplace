@@ -111,6 +111,7 @@
   </header>
   <div class="onglets">
     <button data-o="carte" class="on"></button>
+    <button data-o="assistant"></button>
     <button data-o="tables"></button>
     <button data-o="additions"></button>
     <button data-o="cuisine"></button>
@@ -125,8 +126,13 @@ const T = {
   titre:"Restaurant", connexion:"Se connecter", inscription:"Créer un compte",
   vers_inscription:"Pas de compte ? Créer un compte", vers_connexion:"Déjà un compte ? Se connecter",
   nom_resto:"Nom du restaurant", deco:"Déconnexion", new_resto:"+ Restaurant",
-  o_carte:"Carte", o_tables:"Tables & QR", o_additions:"Additions", o_cuisine:"Cuisine",
+  o_carte:"Carte", o_assistant:"Assistant carte", o_tables:"Tables & QR", o_additions:"Additions", o_cuisine:"Cuisine",
   ajouter_plat:"Ajouter un plat", nom:"Nom", desc:"Description", prix:"Prix (€)", ajouter:"Ajouter",
+  asst_titre:"Importer une ancienne carte", asst_aide:"Photographiez ou déposez l'ancienne carte (image ou PDF). Je la lis (OCR) et je vous propose les plats : vous corrigez, puis vous ajoutez à votre carte.",
+  asst_choisir:"Choisir une photo / un PDF", asst_lire:"Lire la carte", asst_lecture:"Lecture en cours…",
+  asst_proposes:"Plats proposés (corrigez avant d'ajouter)", asst_aucun:"Aucun plat n'a pu être extrait.",
+  asst_ajouter_tout:"Ajouter ces plats à ma carte", asst_ajoutes:"plats ajoutés à votre carte ✓",
+  asst_retirer:"Retirer", asst_backend:"Lu par",
   dispo:"Disponible", jour:"Plat du jour", photo:"Photo", suppr:"Supprimer", carte_vide:"Aucun plat. Ajoutez votre premier plat.",
   ajouter_table:"Ajouter une table", num_table:"N° de table", tables_vide:"Aucune table.",
   ouvrir_cuisine:"Ouvrir l'écran cuisine ↗", choisir_table:"Choisissez une table",
@@ -149,8 +155,13 @@ const T = {
   titre:"Restaurant", connexion:"Sign in", inscription:"Create account",
   vers_inscription:"No account? Create one", vers_connexion:"Have an account? Sign in",
   nom_resto:"Restaurant name", deco:"Sign out", new_resto:"+ Restaurant",
-  o_carte:"Menu", o_tables:"Tables & QR", o_additions:"Bills", o_cuisine:"Kitchen",
+  o_carte:"Menu", o_assistant:"Menu assistant", o_tables:"Tables & QR", o_additions:"Bills", o_cuisine:"Kitchen",
   ajouter_plat:"Add a dish", nom:"Name", desc:"Description", prix:"Price (€)", ajouter:"Add",
+  asst_titre:"Import an old menu", asst_aide:"Take a photo or drop the old menu (image or PDF). I read it (OCR) and propose the dishes: fix them, then add to your menu.",
+  asst_choisir:"Choose a photo / PDF", asst_lire:"Read the menu", asst_lecture:"Reading…",
+  asst_proposes:"Proposed dishes (review before adding)", asst_aucun:"No dish could be extracted.",
+  asst_ajouter_tout:"Add these dishes to my menu", asst_ajoutes:"dishes added to your menu ✓",
+  asst_retirer:"Remove", asst_backend:"Read by",
   dispo:"Available", jour:"Today's special", photo:"Photo", suppr:"Delete", carte_vide:"No dishes yet. Add your first one.",
   ajouter_table:"Add a table", num_table:"Table no.", tables_vide:"No tables yet.",
   ouvrir_cuisine:"Open kitchen screen ↗", choisir_table:"Pick a table",
@@ -195,7 +206,7 @@ function appliquer(){
   // app
   $('#b-deco').textContent = t('deco');
   $('#b-new-resto').textContent = t('new_resto');
-  const o = {carte:'o_carte', tables:'o_tables', additions:'o_additions', cuisine:'o_cuisine', reglages:'o_reglages'};
+  const o = {carte:'o_carte', assistant:'o_assistant', tables:'o_tables', additions:'o_additions', cuisine:'o_cuisine', reglages:'o_reglages'};
   document.querySelectorAll('.onglets button').forEach(b=>{ b.textContent=t(o[b.dataset.o]); b.classList.toggle('on', b.dataset.o===onglet); });
   if(session) rendre();
 }
@@ -258,6 +269,7 @@ document.querySelectorAll('.onglets button').forEach(b=> b.onclick = ()=>{ ongle
 function rendre(){
   if(onglet==='cuisine'){ window.open('/cuisine?resto='+restoActif, '_blank'); onglet='carte'; appliquer(); return; }
   if(onglet==='carte') vueCarte();
+  else if(onglet==='assistant') vueAssistant();
   else if(onglet==='tables') vueTables();
   else if(onglet==='additions') vueAdditions();
   else if(onglet==='reglages') vueReglages();
@@ -323,6 +335,71 @@ window.supprPlat = async id=>{ await fetch(`/restaurants/${restoActif}/plats/${i
 window.photo = (id, input)=>{ const f=input.files[0]; if(!f) return; const fr=new FileReader();
   fr.onload = async ()=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({photo:fr.result})}); vueCarte(); };
   fr.readAsDataURL(f); };
+
+// Assistant carte (importer l'ancienne carte : OCR → proposition éditable → ajout)
+let propositions = [];          // plats proposés par l'import, éditables avant ajout
+let dernierImport = {};         // métadonnées du dernier import (backend OCR, note)
+function vueAssistant(){
+  propositions = []; dernierImport = {};
+  $('#vue').innerHTML = `<h2>${t('o_assistant')}</h2>
+    <div class="carte" style="padding:18px;border:1px solid var(--bord);border-radius:14px;max-width:760px">
+      <div style="font-weight:700;margin-bottom:6px">${t('asst_titre')}</div>
+      <div style="color:var(--doux);font-size:.92rem;margin-bottom:14px">${t('asst_aide')}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label class="btn fant">${t('asst_choisir')}<input type="file" id="asst-f" accept="image/*,application/pdf" capture="environment" style="display:none"></label>
+        <span id="asst-nom" style="color:var(--doux);font-size:.9rem"></span>
+        <button class="btn or" id="asst-go" disabled onclick="lireAncienneCarte()">${t('asst_lire')}</button>
+      </div>
+      <div id="asst-etat" style="margin-top:12px;color:var(--doux)"></div>
+    </div>
+    <div id="asst-res" style="margin-top:18px"></div>`;
+  $('#asst-f').onchange = e=>{ const f=e.target.files[0];
+    $('#asst-nom').textContent = f? f.name : '';
+    $('#asst-go').disabled = !f; };
+}
+window.lireAncienneCarte = async ()=>{
+  const f = $('#asst-f').files[0]; if(!f) return;
+  $('#asst-go').disabled = true; $('#asst-etat').textContent = t('asst_lecture'); $('#asst-res').innerHTML='';
+  const b64 = await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(f); });
+  let data;
+  try {
+    const r = await fetch(`/restaurants/${restoActif}/carte/importer`, {method:'POST', headers:H(),
+      body:JSON.stringify({contenu_base64:b64, nom_fichier:f.name})});
+    data = await r.json();
+  } catch(e){ data = {plats:[], note:String(e)}; }
+  $('#asst-etat').textContent = '';
+  $('#asst-go').disabled = false;
+  dernierImport = data || {};
+  propositions = (data.plats||[]).map(p=>({nom:p.nom||'', description:p.description||'', prix_cents:p.prix_cents||0, categorie:p.categorie||''}));
+  rendrePropositions();
+};
+window.retirerProposition = i=>{ propositions.splice(i,1); rendrePropositions(); };
+function rendrePropositions(){
+  const res = $('#asst-res'); if(!res) return;
+  const data = dernierImport;
+  if(!propositions.length){
+    res.innerHTML = `<div class="vide">${t('asst_aucun')}${data && data.note?`<div style="margin-top:8px;font-size:.85rem">${esc(data.note)}</div>`:''}</div>`;
+    return;
+  }
+  const backend = data && data.ocr && data.ocr.backend ? `<div style="color:var(--doux);font-size:.85rem;margin-bottom:8px">${t('asst_backend')} : ${esc(data.ocr.backend)}</div>` : '';
+  const lignes = propositions.map((p,i)=>`<div class="ligne-form" style="align-items:flex-end">
+    <div style="flex:2"><label>${t('nom')}</label><input class="champ" value="${esc(p.nom)}" oninput="propositions[${i}].nom=this.value"></div>
+    <div><label>${t('prix')}</label><input class="champ" type="number" step="0.01" min="0" value="${(p.prix_cents/100).toFixed(2)}" oninput="propositions[${i}].prix_cents=Math.round(parseFloat(this.value||'0')*100)||0"></div>
+    <div><label>${t('categorie')}</label><input class="champ" value="${esc(p.categorie)}" oninput="propositions[${i}].categorie=this.value"></div>
+    <div style="flex:2"><label>${t('desc')}</label><input class="champ" value="${esc(p.description)}" oninput="propositions[${i}].description=this.value"></div>
+    <button class="btn danger" onclick="retirerProposition(${i})">${t('asst_retirer')}</button>
+  </div>`).join('');
+  res.innerHTML = `<h3 style="margin:6px 0 10px;color:#94a3b8">${t('asst_proposes')}</h3>${backend}${lignes}
+    <button class="btn or" style="margin-top:12px" onclick="ajouterPropositions()">${t('asst_ajouter_tout')}</button>`;
+}
+window.ajouterPropositions = async ()=>{
+  const plats = propositions.filter(p=>(p.nom||'').trim());
+  if(!plats.length) return;
+  const r = await fetch(`/restaurants/${restoActif}/plats/lot`, {method:'POST', headers:H(), body:JSON.stringify({plats})});
+  const d = await r.json();
+  alert((d.ajoutes||0)+' '+t('asst_ajoutes'));
+  onglet='carte'; appliquer();
+};
 
 // Tables & QR
 async function vueTables(){

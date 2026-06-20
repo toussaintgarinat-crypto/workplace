@@ -232,6 +232,18 @@ def restaurant_public(restaurant_id: str) -> dict | None:
     return dict(r) if r else None
 
 
+def compte_du_restaurant(restaurant_id: str) -> str | None:
+    """Le compte PROPRIÉTAIRE d'un restaurant (ou None s'il n'existe pas).
+
+    Sert le chemin de SERVICE (capacités du Cœur, clé de service) : on dérive le compte
+    depuis le seul restaurant_id pour réutiliser les fonctions cloisonnées par compte
+    sans que l'appelant ait à connaître le propriétaire. Le cloisonnement reste réel :
+    chaque écriture passe ensuite par `compte_id` exact via `_possede`."""
+    with _conn() as c:
+        r = c.execute("SELECT compte_id FROM restaurants WHERE id=?", (restaurant_id,)).fetchone()
+    return r["compte_id"] if r else None
+
+
 # ── Tables (+ QR) ────────────────────────────────────────────────
 def creer_table(compte_id: str, restaurant_id: str, numero: str) -> dict | None:
     with _conn() as c:

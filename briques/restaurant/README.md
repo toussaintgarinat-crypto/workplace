@@ -38,6 +38,33 @@ scannant un QR code. Inspiré de Sunday / Skeat, mais souverain (rien ne sort ve
 Restent hors-code (pas de notre ressort) : **paiement réel** (Stripe Connect Express,
 incrément séparé) et **hébergement HTTPS** (Proxmox/cloud + domaine).
 
+## Assistant carte & pilotage par le Cœur (v0.3.0)
+
+Deux surfaces complémentaires pour **gérer la carte avec un assistant** — utile surtout à
+l'**onboarding d'un nouveau restaurant** (récupérer l'ancienne carte papier/PDF).
+
+- **Assistant carte** (onglet du back-office) : le restaurateur **photographie / dépose**
+  son ancienne carte → la brique délègue l'**OCR** à la brique [`vision`](../vision) puis la
+  **structuration** (plats : nom / prix / catégorie) au LLM de la **Gateway** → propose une
+  carte **éditable**. Le restaurateur corrige, puis **« Ajoute à ma carte »** (création en
+  lot). Rien n'est écrit avant validation. Repli **honnête** : OCR illisible ou briques
+  éteintes ⇒ proposition vide + la raison, jamais de plat inventé.
+  Endpoints (session restaurateur) : `POST /restaurants/{id}/carte/importer` (propose),
+  `POST /restaurants/{id}/plats/lot` (ajoute les plats validés).
+
+- **Carte pilotable par l'assistant / MCP** : le manifest déclare des `capacites`
+  (`restaurant_carte_lister`, `restaurant_infos`, `restaurant_plat_ajouter / _modifier /
+  _supprimer`) → découvertes automatiquement par le Cœur (S63/S64) et exposées via son
+  Gateway MCP (S74). Le Jarvis (voix/chat) ou un client MCP peut donc **gérer la carte**
+  (« ajoute un tartare à 16,50 € au restaurant X »). Chemin de **service** `/service/...`
+  authentifié par clé `RESTAURANT_KEY` (en-tête `X-API-Key`), scoppé par `restaurant_id`.
+  **Fail-closed** : sans `RESTAURANT_KEY`, le chemin de service est **éteint** (503).
+
+> Limite honnête (mono-utilisateur aujourd'hui) : qui détient `RESTAURANT_KEY` peut viser
+> n'importe quel `restaurant_id` via le Cœur. Le cloisonnement reste tenu **en base** (chaque
+> opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
+> côté Cœur** relève de l'épopée multi-tenant à venir.
+
 ## Multi-tenant (cloisonnement)
 
 `Compte → Restaurant(s) → Tables / Plats / Commandes / Paiements`. Toute lecture/écriture
@@ -62,6 +89,9 @@ montant est recalculé **côté serveur** (jamais soumis par le client). Incrém
 | `RESTAURANT_MAX_TENTATIVES` | tentatives d'auth par fenêtre de 5 min | `10` |
 | `RESTAURANT_PUBLIC_URL` | base d'URL des QR (vue du smartphone) | déduite de la requête |
 | `CORS_ORIGINS` | origines navigateur autorisées (CSV) | `*` |
+| `RESTAURANT_KEY` | clé de service (pilotage carte par le Cœur/MCP) ; **vide ⇒ /service éteint** | vide |
+| `VISION_URL` / `VISION_KEY` | brique OCR pour l'import de carte | `…:5960` / vide |
+| `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` | LLM de structuration de la carte | Gateway / vide / modèle gratuit |
 
 ## Tests
 
@@ -73,5 +103,7 @@ python -m pytest -q   # auth, isolation multi-tenant, parcours, temps réel, QR,
 ## Limites assumées
 
 - Paiement **mock** → Stripe Connect Express dans une brique `paiements` séparée (incrément final) ;
-- pas encore de pilotage par le Cœur (la brique est autonome, le branchement viendra) ;
+- pilotage par le Cœur câblé via clé de service (mono-utilisateur) ; isolation par restaurateur
+  côté Cœur = épopée multi-tenant à venir ;
+- l'import de carte dépend de la brique `vision` (OCR) + Gateway (LLM) : sans elles, repli honnête ;
 - interface **FR / EN** (extension multilingue ultérieure).
