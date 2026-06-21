@@ -49,6 +49,14 @@ connexion est **vérifiée** par une synchro immédiate ; identifiants faux → 
 L'assistant voit alors une **boîte unifiée** ; on peut filtrer sur une adresse
 (`mail_lister` param `compte`).
 
+## Filtres : catégories intégrées + filtres personnalisés
+La barre de filtres propose les **catégories intégrées** (Tout, Non lus, 💶 Factures, 📅 RDV,
+👤 Perso, 🔔 Notifs, 📰 Newsletters, ✉️ Autres) **et tes filtres personnalisés**. Bouton
+**« + Filtre »** : crée un filtre sur mesure par **mots-clés** et/ou **expéditeur** (sous-chaîne).
+Pour **« les mails par entreprise »** : un filtre par société sur le **domaine d'expéditeur**
+(ex. `@acme.com`). Stockés par tenant, supprimables (✕ sur le chip). API : `GET/POST/DELETE
+/filtres` ; `GET /mail?filtre=<id>`.
+
 ## Répondre : préparer → valider → envoyer
 1. `mail_brouillon_repondre` prépare un brouillon (avec une consigne possible) — **non envoyé**.
 2. Tu le relis / l'ajustes (par le chat ou la section « Brouillons » du back-office).

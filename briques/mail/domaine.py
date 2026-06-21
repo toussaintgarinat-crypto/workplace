@@ -111,6 +111,22 @@ def score_importance(msg: dict, expediteurs_connus: set[str] | None = None) -> i
     return max(0, min(100, score))
 
 
+def correspond_filtre(msg: dict, mots: list[str] | None = None, expediteur: str = "") -> bool:
+    """Un message correspond-il à un filtre PERSONNALISÉ ? (logique pure, testable)
+
+    • `mots` : le message matche s'il contient AU MOINS UN des mots (dans sujet/extrait/expéditeur).
+    • `expediteur` : sous-chaîne devant figurer dans l'adresse de l'expéditeur (ex. « @banque.fr »).
+    Les deux contraintes se cumulent (ET). Un filtre vide (ni mots ni expéditeur) matche tout."""
+    foin = _foin(msg)
+    if mots:
+        if not any(m.strip().lower() in foin for m in mots if m.strip()):
+            return False
+    if expediteur:
+        if expediteur.strip().lower() not in str(msg.get("de") or "").lower():
+            return False
+    return True
+
+
 def enrichir(msg: dict, expediteurs_connus: set[str] | None = None) -> dict:
     """Copie du message + champs dérivés `categorie` et `score` (n'altère pas l'entrée)."""
     return {**msg, "categorie": categoriser(msg),
