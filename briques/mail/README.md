@@ -1,9 +1,10 @@
-# Brique `mail` — la boîte de réception de l'assistant (entrant, lecture seule)
+# Brique `mail` — la boîte de réception de l'assistant (entrant) + réponse sur validation
 
-> **v0.1.1 — lecture seule, multi-adresses.** Connecte **plusieurs boîtes** (perso, pro…) ; l'assistant
-> les voit en une **boîte unifiée** et peut **lister/filtrer (catégorie, compte, non-lus), lire,
-> résumer et trier** tes emails, et **préparer un brouillon de réponse** (jamais envoyé). L'envoi
-> (SMTP) viendra en v0.2.0.
+> **v0.2.0 — multi-adresses, lecture + réponse.** Connecte **plusieurs boîtes** (perso, pro…) ;
+> l'assistant les voit en une **boîte unifiée** et peut **lister/filtrer (catégorie, compte,
+> non-lus), lire, résumer et trier** tes emails, **préparer un brouillon de réponse**, puis
+> **l'envoyer une fois que tu l'as validé** (SMTP réel si la boîte est réelle ; envoi **simulé**
+> honnête sinon). La lecture IMAP reste strictement en lecture seule.
 
 Port **6030**. Multi-tenant (une boîte par clé API), provider-agnostique. Conçue comme les autres
 briques : noyau + briques, le Cœur découvre les capacités via `manifest.json` et les expose comme
@@ -41,14 +42,23 @@ connexion est **vérifiée** par une synchro immédiate ; identifiants faux → 
 L'assistant voit alors une **boîte unifiée** ; on peut filtrer sur une adresse
 (`mail_lister` param `compte`).
 
+## Répondre : préparer → valider → envoyer
+1. `mail_brouillon_repondre` prépare un brouillon (avec une consigne possible) — **non envoyé**.
+2. Tu le relis / l'ajustes (par le chat ou la section « Brouillons » du back-office).
+3. `mail_brouillon_envoyer` l'envoie **après ton accord explicite** (action gardée). L'envoi est
+   **réel** (SMTP) si le brouillon vient d'une boîte réelle ; sinon **simulé** (clairement étiqueté,
+   rien ne part). Pour le réel, renseigne le serveur SMTP à la connexion (deviné depuis l'hôte IMAP
+   sinon : `imap.gmail.com` → `smtp.gmail.com`, port 587 STARTTLS).
+
 ## Capacités exposées à l'assistant
 - `mail_lister` — la boîte unifiée triée par importance, filtrable (catégorie, **compte**, non-lus)
 - `mail_comptes_lister` — les adresses connectées (lecture)
 - `mail_lire` — le contenu complet d'un message (lecture)
 - `mail_resumer` — le point sur la boîte, priorisé (lecture)
 - `mail_trier` — la boîte rangée par catégorie (lecture)
-- `mail_brouillon_repondre` — prépare un brouillon **non envoyé** (action)
-- `mail_compte_connecter` — ajoute une boîte IMAP (action ; préférer le back-office)
+- `mail_brouillon_repondre` — prépare un brouillon de réponse (action)
+- `mail_brouillon_envoyer` — **envoie** un brouillon validé, réel ou simulé (action à effet réel)
+- `mail_compte_connecter` — ajoute une boîte IMAP/SMTP (action ; préférer le back-office)
 - `mail_compte_deconnecter` — retire une boîte (action)
 
 Tâche d'horloge : `sync-mail` (rafraîchit le cache toutes les heures, tolère l'échec).
@@ -59,5 +69,6 @@ cd briques/mail && python -m pytest -q   # offline : domaine, isolation, parcour
 ```
 
 ## Reste à prouver LIVE (honnêteté)
-Connecter un **vrai compte IMAP** (mot de passe d'app) via le back-office, puis lister/lire/résumer
-de vrais mails. (Étape externe : tes identifiants.)
+Connecter un **vrai compte IMAP/SMTP** (mot de passe d'app) via le back-office, puis
+lister/lire/résumer de vrais mails et **envoyer une vraie réponse** (un email part réellement).
+(Étape externe : tes identifiants.)
