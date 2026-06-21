@@ -1,0 +1,33 @@
+services:
+  mail:
+    build: .
+    container_name: workplace_mail
+    image: workplace/mail:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6030:6030"
+    environment:
+      - PORT=6030
+      - MAIL_DB=/data/mail.db
+      # Gateway pour le résumé/brouillon (repli honnête si absente). Hérités du .env racine ;
+      # ne PAS redéclarer en `=${VAR:-}` (piège « env shadow » : écraserait par du vide).
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # API_KEYS (CSV des tenants autorisés), MAIL_VAULT_SECRET (chiffrement du mdp IMAP),
+      # GATEWAY_URL/KEY/MODEL : ABSENTS du `environment` exprès — ils viennent du .env racine
+      # via env_file. Sans MAIL_VAULT_SECRET : connexion IMAP refusée (mock seul). API_KEYS vide :
+      # dev ouvert (tenant « public » unique).
+    volumes:
+      - mail_data:/data   # compte IMAP chiffré + cache des messages + brouillons
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6030/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mail_data:

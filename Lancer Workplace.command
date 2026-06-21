@@ -67,6 +67,7 @@ BRIQUES=(
   "personnages|$RACINE/briques/personnages|http://localhost:5900/sante"
   "studio|$RACINE/briques/studio|http://localhost:6060/sante"
   "restaurant|$RACINE/briques/restaurant|http://localhost:6010/sante"
+  "mail|$RACINE/briques/mail|http://localhost:6030/sante"
   "oria|$RACINE/oria-stack/oria|"
   "core|$RACINE/core|http://localhost:5100/health"
   # Pont messageries : APRÈS le Cœur (il appelle :5100) + transcription/voix (vocal).
