@@ -37,7 +37,16 @@ Nouveau en v0.4.0 (S89 — task trace activable, pour APPRENDRE en regardant) :
   • GET /chantiers/{id}/trace → flux SSE de la narration en temps réel (`suivre=false` = relire
     l'archive). Trace OFF → l'agent bosse en silence, flux vide.
 
-À venir : porte skills/MCP + caching, IDE code-server, outil Cœur `dev_demander`.
+Nouveau en v0.5.0 (S91 — création de skills + accroche MCP, branché sur la porte S90) :
+  • POST /skills (gate) → fabrique une skill « façon Claude Code » (dossier + SKILL.md avec
+    frontmatter name/description/allowed-tools/mcp) ; POST /skills/persona/{role} en raccourci
+    (personas BMAD Analyst/Architect/Dev/QA). GET /skills (descripteurs = niveau-0 de la porte),
+    GET /skills/{nom} (complet), GET /skills/{nom}/corps (instructions + MCP = ce que charge la
+    capacité `skill_<nom>` via `competence_charger`). DELETE /skills/{nom}.
+  • Le Cœur découvre `dev_skills_lister`/`dev_skill_charger`/`dev_skill_creer` (manifest) → on
+    liste puis on charge une skill À LA DEMANDE depuis l'assistant, sans code en dur.
+
+À venir : IDE code-server, outil Cœur `dev_demander`.
 """
 from __future__ import annotations
 
@@ -58,6 +67,7 @@ import domaine
 import git_atelier
 import plan as plan_mod
 import rebuild
+import skills_atelier
 import traceur
 
 DEV_DB = os.environ.get("DEV_DB", os.path.join(os.path.dirname(__file__), "chantiers.json"))
@@ -70,7 +80,7 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.4.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
@@ -349,6 +359,94 @@ def jeter(cid: str):
     return {"ok": True, "statut": ch.statut}
 
 
+# ── Skills (S91) : fabriquer des skills façon Claude Code + les exposer à la porte ──
+class SkillEntree(BaseModel):
+    name: str
+    description: str
+    corps: str = ""                       # les INSTRUCTIONS du workflow
+    outils_autorises: list[str] = []      # → frontmatter allowed-tools
+    mcp: list[str] = []                   # MCP accrochés
+    scripts: dict[str, str] = {}          # fichiers annexes optionnels (rel → contenu)
+    ecraser: bool = False
+    confirme: bool = False                # gate : écrire une skill = effet de bord (disque)
+
+
+@app.get("/skills", dependencies=[Depends(garde)])
+def skills_lister():
+    """Liste les skills (descripteurs SANS corps = le « niveau-0 » bon marché de la porte)."""
+    return {"skills": skills_atelier.lister()}
+
+
+@app.get("/skills/{nom}", dependencies=[Depends(garde)])
+def skills_voir(nom: str):
+    """Descripteur COMPLET d'une skill (frontmatter + corps + MCP accrochés)."""
+    sk = skills_atelier.lire(nom)
+    if not sk:
+        raise HTTPException(status_code=404, detail="skill introuvable")
+    return sk
+
+
+@app.get("/skills/{nom}/corps", dependencies=[Depends(garde)])
+def skills_corps(nom: str):
+    """Le CORPS d'une skill (instructions + MCP) — la cible de la capacité-porte (S90).
+
+    C'est ce que renvoie la capacité `skill_<nom>` une fois chargée via `competence_charger` :
+    les instructions à suivre et les MCP à utiliser. Lecture seule."""
+    sk = skills_atelier.lire(nom)
+    if not sk:
+        raise HTTPException(status_code=404, detail="skill introuvable")
+    return {"name": sk["name"], "instructions": sk["corps"],
+            "outils_autorises": sk["allowed-tools"], "mcp": sk["mcp"]}
+
+
+@app.post("/skills", dependencies=[Depends(garde)], status_code=201)
+def skills_creer(corps: SkillEntree):
+    """Fabrique une skill (gate `confirme=true` → 428) : valide le descripteur puis l'écrit.
+
+    422 si le descripteur est invalide ; 409 si la skill existe déjà (sauf `ecraser`)."""
+    if not corps.confirme:
+        raise HTTPException(status_code=428,
+                            detail="confirmation requise (confirme=true) : écrire une skill sur le disque")
+    meta = {"name": corps.name, "description": corps.description,
+            "allowed-tools": corps.outils_autorises, "mcp": corps.mcp}
+    try:
+        skill = skills_atelier.creer(meta, corps.corps, scripts=corps.scripts,
+                                     ecraser=corps.ecraser)
+    except skills_atelier.ErreurSkill as e:
+        # doublon → 409 ; descripteur invalide → 422 (deux refus métier distincts).
+        code = 409 if "existe déjà" in str(e) else 422
+        raise HTTPException(status_code=code, detail=str(e))
+    return {"ok": True, "skill": skill, "capacite": skills_atelier.capacite_pour(skill)}
+
+
+class PersonaEntree(BaseModel):
+    confirme: bool = False
+
+
+@app.post("/skills/persona/{role}", dependencies=[Depends(garde)], status_code=201)
+def skills_persona(role: str, corps: PersonaEntree = PersonaEntree()):
+    """Raccourci : fabrique une **persona BMAD** (analyst/architect/dev/qa) en une skill."""
+    if not corps.confirme:
+        raise HTTPException(status_code=428, detail="confirmation requise (confirme=true)")
+    try:
+        meta, texte = skills_atelier.persona_bmad(role)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    try:
+        skill = skills_atelier.creer(meta, texte, ecraser=True)  # une persona se régénère
+    except skills_atelier.ErreurSkill as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True, "skill": skill, "capacite": skills_atelier.capacite_pour(skill)}
+
+
+@app.delete("/skills/{nom}", dependencies=[Depends(garde)])
+def skills_supprimer(nom: str):
+    """Supprime une skill (son dossier). 404 si elle n'existe pas."""
+    if not skills_atelier.supprimer(nom):
+        raise HTTPException(status_code=404, detail="skill introuvable")
+    return {"ok": True, "supprimee": nom}
+
+
 @app.get("/", response_class=HTMLResponse)
 def accueil():
     """Page minimale (l'IDE code-server en iframe est l'incrément 6)."""
@@ -356,10 +454,11 @@ def accueil():
         "<!doctype html><meta charset=utf-8><title>Atelier dev</title>"
         "<body style='font-family:system-ui;max-width:42rem;margin:3rem auto;color:#222'>"
         "<h1>🛠️ Auto-atelier dev</h1>"
-        "<p>Brique souveraine (port 5950) — v0.4.0 (S89) : socle git + fusion contrôlée + "
-        "flux BMAD + <b>task trace</b>. Chaque chantier vit dans un <b>worktree jetable</b>, "
-        "jamais sur <code>main</code> ; double gate <i>valide le plan</i> puis <i>valide le "
-        "diff</i> ; trace ON → l'agent <b>raconte chaque pas en français</b> "
-        "(<code>GET /chantiers/{id}/trace</code> en direct).</p>"
-        "<p>Voir <code>/sante</code> et l'API <code>/chantiers</code>.</p></body>"
+        "<p>Brique souveraine (port 5950) — v0.5.0 (S91) : socle git + fusion contrôlée + "
+        "flux BMAD + <b>task trace</b> + <b>fabrique de skills</b>. Chaque chantier vit dans un "
+        "<b>worktree jetable</b>, jamais sur <code>main</code> ; double gate <i>valide le "
+        "plan</i> puis <i>valide le diff</i> ; trace ON → l'agent <b>raconte chaque pas en "
+        "français</b>. Nouveau : fabrique des <b>skills façon Claude Code</b> (MCP accrochés, "
+        "personas BMAD) exposées à la <b>porte</b> du Cœur.</p>"
+        "<p>Voir <code>/sante</code>, l'API <code>/chantiers</code> et <code>/skills</code>.</p></body>"
     )
