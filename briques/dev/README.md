@@ -19,6 +19,20 @@ L'agent ne travaille **jamais** dans le dépôt vivant. Pour chaque chantier :
 4. Soit on **fusionne** (gate humain, S87), soit on **jette** : `git worktree remove` →
    chantier effacé, prod intacte. Aucun `git push`, aucun déploiement automatique.
 
+## Le flux BMAD léger (S88 — le plan d'abord, opt-in)
+
+Reprend 3 idées de **BMAD** sans l'installer : un agent **« Architect »** par phase, le **plan
+AVANT le code**, et la **story qui porte le contexte**. Opt-in par chantier (`plan_requis:true`) ;
+sinon le flux direct de S86 reste intact.
+
+1. `POST /chantiers/{id}/planifier` — l'Architect conçoit un plan en **trois sections imposées** :
+   `## Mini-PRD` · `## Stories` · `## Domaine (DDD)` (le domaine pur d'abord). LLM Gateway, **repli
+   honnête local** si pas de LLM (`genere_par` dit toujours la vérité).
+2. `POST /chantiers/{id}/plan/valider` (`confirme=true`) — **1er gate** du double gate : valider
+   le plan **débloque** le codage. Tant que ce n'est pas fait, `lancer` répond `409`.
+3. Le plan validé est **injecté** à l'agent codeur (la story porte le contexte), puis on relit le
+   diff — **2e gate** — et on fusionne (S87).
+
 ## La fusion contrôlée (S87 — le seul geste qui touche `main`)
 
 Une fois le diff relu, on **confirme** : la branche est fusionnée dans `main` (`git merge
@@ -32,13 +46,15 @@ seule brique modifiée**, puis on jette le worktree. Garde-fous, par constructio
 - **Rebuild ciblé** : **simulé honnête** par défaut (commande `docker compose` journalisée, non
   exécutée) ; réel seulement si `DEV_REBUILD=1`.
 
-## API (v0.2.0)
+## API (v0.3.0)
 
 | Méthode | Chemin | Rôle |
 |---|---|---|
 | `GET`  | `/sante` | Vivant + filet présent + agents disponibles |
-| `POST` | `/chantiers` | Ouvre un worktree + branche neuve (`intention`, `brique_cible`, `agent`, `trace`, `sprint`) |
-| `POST` | `/chantiers/{id}/lancer` | L'agent code dans le worktree, commite |
+| `POST` | `/chantiers` | Ouvre un worktree + branche neuve (`intention`, `brique_cible`, `agent`, `trace`, `sprint`, `plan_requis`) |
+| `POST` | `/chantiers/{id}/planifier` | **BMAD** : l'Architect conçoit le plan (mini-PRD + stories + DDD) |
+| `POST` | `/chantiers/{id}/plan/valider` | **Gate de plan** (`confirme=true`) → débloque le codage |
+| `POST` | `/chantiers/{id}/lancer` | L'agent code dans le worktree, commite (verrouillé si plan requis non validé) |
 | `GET`  | `/chantiers/{id}/diff` | Le diff à relire (jamais déployé) |
 | `POST` | `/chantiers/{id}/fusionner` | **Gate** (`confirme=true`) → merge dans `main` + rebuild ciblé → jette |
 | `GET`  | `/chantiers` · `/chantiers/{id}` | Liste / détail |
@@ -55,18 +71,19 @@ mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
 - `DEV_KEY` — clé d'accès optionnelle (vide = atelier local ouvert)
 - `DEV_REBUILD` — `1` pour rebuild RÉELLEMENT la brique fusionnée (défaut : simulé honnête)
 - `DEV_BRIQUES_DEBLOQUEES` — CSV de briques sensibles autorisées à la fusion (au cas par cas)
+- `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` — LLM du plan BMAD (repli honnête local si absent)
 
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 26 tests : domaine pur + filet git + fusion contrôlée + parcours mock
+python3 -m pytest -q   # 36 tests : domaine + filet git + fusion + flux BMAD (plan) + parcours mock
 ```
 
 ## Feuille de route (sprints — détail dans `SPRINTS.md`)
 
 - **S86** ✅ Socle git (worktree + branche + diff, prouvé sans déploiement)
 - **S87** ✅ Fusion contrôlée + rebuild ciblé (ferme la boucle ; seul sprint qui touche `main`)
-- **S88** Flux **BMAD** léger : plan d'abord (mini-PRD + stories) + gate, règle **DDD**
+- **S88** ✅ Flux **BMAD** léger : plan d'abord (mini-PRD + stories + DDD) + gate de plan
 - **S89** **Task trace** activable (narration pas-à-pas, pédagogique)
 - **S90** La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
 - **S91** **Création de skills** + accroche **MCP** par la brique

@@ -1,7 +1,7 @@
 {
   "nom": "dev",
-  "version": "0.2.0",
-  "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). À venir : flux BMAD (plan d'abord), task trace activable, porte skills/MCP + prompt caching, IDE code-server, outil Cœur dev_demander.",
+  "version": "0.3.0",
+  "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). v0.3.0 = S88 (flux BMAD léger opt-in : l'Architect planifie AVANT de coder — mini-PRD + stories + note DDD via LLM, repli honnête local — double gate valide-le-plan puis valide-le-diff, codage verrouillé tant que le plan n'est pas validé, plan validé injecté à l'agent codeur). À venir : task trace activable, porte skills/MCP + prompt caching, IDE code-server, outil Cœur dev_demander.",
   "role": "dev",
   "couche": "backend",
   "statut": "a_tester",
@@ -20,7 +20,10 @@
     "gate_humain_avant_fusion",
     "fusion_controlee_merge_no_ff",
     "rebuild_cible_simule_ou_reel",
-    "garde_fou_briques_sensibles"
+    "garde_fou_briques_sensibles",
+    "flux_bmad_plan_d_abord",
+    "architect_plan_prd_stories_ddd",
+    "double_gate_plan_puis_diff"
   ],
   "besoin": [],
   "capacites": []

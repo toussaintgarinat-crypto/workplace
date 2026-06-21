@@ -59,10 +59,23 @@ appliqué puis `git revert` pour rollback.
 
 ---
 
-## S88 — Flux BMAD léger (plan d'abord + règle DDD)
+## S88 — Flux BMAD léger (plan d'abord + règle DDD) ✅ LIVRÉ + PROUVÉ LIVE (2026-06-21)
 
-**Objectif.** Reprendre 3 idées de BMAD (agents spécialisés par phase, **plan AVANT code**,
-story qui porte le contexte) sans installer BMAD. Le gate devient double : *valide le plan*
+**Livré.** Brique v0.3.0. État `planifie` ajouté à la machine (transitions `cree→planifie→en_cours`,
+replanification `planifie→planifie`) + champs `plan_requis`/`plan`/`plan_valide` et propriétés
+`peut_planifier`/`code_verrouille_par_plan` (domaine pur). `plan.py` = l'« Architect » conçoit un
+plan en **3 sections imposées** (`## Mini-PRD` / `## Stories` / `## Domaine (DDD)`) via la Gateway
+LLM, **repli honnête local** si pas de LLM (parsing markdown → `{prd, stories[], domaine, texte,
+genere_par}`). `POST /chantiers/{id}/planifier` (Architect, async) + `POST …/plan/valider`
+(`confirme=true` → 428 sinon, 1er gate du **double gate**) ; `lancer` **verrouillé 409** tant que
+plan requis non validé ; le plan validé est **injecté à l'agent codeur** (`GABARIT_PLAN` en tête de
+l'invite). `GABARIT_INVITE` enrichi : DOMAINE PUR (sans I/O) AVANT toute technique. Opt-in
+(`plan_requis`) → rétrocompat S86 totale. **+10 tests (36 au total)**. Preuve LIVE (uvicorn, vraie
+Gateway) : `lancer` 409 avant plan → `planifier` rend un **plan IA en FR** structuré → 409 encore →
+`valider` 428 sans confirme → valide → `lancer` OK, « Plan validé suivi » présent dans le diff.
+
+**Objectif (rappel).** Reprendre 3 idées de BMAD (agents spécialisés par phase, **plan AVANT
+code**, story qui porte le contexte) sans installer BMAD. Le gate devient double : *valide le plan*
 puis *valide le diff* — bien plus pédagogique.
 
 **Périmètre.**
@@ -172,7 +185,7 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 |---|---|---|
 | **S86** | Socle git | ✅ livré + prouvé LIVE |
 | **S87** | Fusion contrôlée + rebuild ciblé | ✅ livré (26 tests) |
-| **S88** | Flux BMAD léger (plan d'abord + DDD) | à faire |
+| **S88** | Flux BMAD léger (plan d'abord + DDD) | ✅ livré + prouvé LIVE (36 tests) |
 | **S89** | Task trace activable | à faire |
 | **S90** | Porte progressive (skills/MCP) + prompt caching | à faire |
 | **S91** | Création de skills + accroche MCP | à faire |

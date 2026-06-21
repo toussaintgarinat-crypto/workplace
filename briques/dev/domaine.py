@@ -4,10 +4,15 @@ L'agrégat central est le **Chantier** : une demande de modification d'une briqu
 par une **branche git dédiée** (jamais `main`). Son cycle de vie est une petite machine à
 états explicite — c'est ce qui garantit qu'on ne « déploie » jamais par accident :
 
-    cree → en_cours → revue → fusionne
-                         └────→ jete
+    cree → [planifie] → en_cours → revue → fusionne
+                                      └────→ jete
 
-Le langage est métier (Chantier, intention, brique cible, branche, sprint) plutôt que
+L'étape `planifie` (flux **BMAD léger**, S88) est OPT-IN : quand un chantier l'exige
+(`plan_requis`), l'agent « Architect » produit un plan (mini-PRD + stories + note de domaine
+DDD) AVANT toute ligne de code, et ce plan doit être validé (gate) pour débloquer le codage.
+Sans `plan_requis`, le flux historique `cree → en_cours` reste intact (rétrocompat).
+
+Le langage est métier (Chantier, intention, brique cible, branche, sprint, plan) plutôt que
 technique : on raisonne en story d'un sprint, pas en commande git. Le git réel vit dans
 `git_atelier.py` ; ici, rien que des règles pures et testables hors-ligne.
 """
@@ -18,21 +23,23 @@ import unicodedata
 from dataclasses import dataclass, field, asdict
 
 # ── États du chantier ─────────────────────────────────────────────────────────
-CREE = "cree"          # worktree + branche créés, rien fait encore
-EN_COURS = "en_cours"  # l'agent a travaillé (commits sur la branche)
-REVUE = "revue"        # diff prêt, en attente du gate humain
-FUSIONNE = "fusionne"  # validé → fusionné dans la base (incrément 4)
-JETE = "jete"          # worktree détruit, prod intacte
+CREE = "cree"            # worktree + branche créés, rien fait encore
+PLANIFIE = "planifie"    # plan BMAD produit, en attente de validation (S88, opt-in)
+EN_COURS = "en_cours"    # l'agent a travaillé (commits sur la branche)
+REVUE = "revue"          # diff prêt, en attente du gate humain
+FUSIONNE = "fusionne"    # validé → fusionné dans la base (S87)
+JETE = "jete"            # worktree détruit, prod intacte
 
-STATUTS = (CREE, EN_COURS, REVUE, FUSIONNE, JETE)
+STATUTS = (CREE, PLANIFIE, EN_COURS, REVUE, FUSIONNE, JETE)
 
 # Transitions autorisées. Tout le reste lève — on ne court-circuite jamais le gate.
 _TRANSITIONS = {
-    CREE:     {EN_COURS, JETE},
-    EN_COURS: {REVUE, EN_COURS, JETE},   # EN_COURS→EN_COURS : l'agent peut retravailler
+    CREE:     {PLANIFIE, EN_COURS, JETE},  # PLANIFIE = flux BMAD ; EN_COURS = flux direct
+    PLANIFIE: {PLANIFIE, EN_COURS, JETE},  # PLANIFIE→PLANIFIE : on peut replanifier
+    EN_COURS: {REVUE, EN_COURS, JETE},     # EN_COURS→EN_COURS : l'agent peut retravailler
     REVUE:    {FUSIONNE, EN_COURS, JETE},
-    FUSIONNE: set(),                     # terminal
-    JETE:     set(),                     # terminal
+    FUSIONNE: set(),                       # terminal
+    JETE:     set(),                       # terminal
 }
 
 # Branches que l'atelier refuse de toucher, par construction (le filet).
@@ -104,6 +111,10 @@ class Chantier:
     worktree: str = ""          # chemin de la copie de travail isolée
     resume: str = ""            # résumé du dernier passage de l'agent
     journal: list = field(default_factory=list)  # trace pas-à-pas si activée
+    # ── Flux BMAD léger (S88), opt-in ───────────────────────────────────────────
+    plan_requis: bool = False   # exiger un plan validé AVANT de coder (gate de plan)
+    plan: dict = field(default_factory=dict)  # mini-PRD + stories + note DDD (cf. plan.py)
+    plan_valide: bool = False   # le plan a passé le gate humain → le codage est débloqué
 
     def avancer(self, vers: str) -> None:
         """Change l'état en validant la transition (sinon lève)."""
@@ -111,13 +122,23 @@ class Chantier:
         self.statut = vers
 
     @property
+    def peut_planifier(self) -> bool:
+        """On ne (re)planifie qu'avant de coder : depuis `cree` ou `planifie`."""
+        return self.statut in (CREE, PLANIFIE)
+
+    @property
+    def code_verrouille_par_plan(self) -> bool:
+        """BMAD : tant qu'un plan requis n'est pas validé, le codage est verrouillé."""
+        return self.plan_requis and not self.plan_valide
+
+    @property
     def peut_lancer(self) -> bool:
-        """L'agent peut-il (re)travailler ? Seulement hors des états terminaux."""
-        return self.statut in (CREE, EN_COURS, REVUE)
+        """L'agent peut-il (re)travailler ? Hors états terminaux ET hors verrou de plan."""
+        return self.statut in (CREE, PLANIFIE, EN_COURS, REVUE) and not self.code_verrouille_par_plan
 
     @property
     def peut_fusionner(self) -> bool:
-        """La fusion n'est possible qu'après revue (gate humain), incrément 4."""
+        """La fusion n'est possible qu'après revue (gate humain), S87."""
         return self.statut == REVUE
 
     def to_dict(self) -> dict:
