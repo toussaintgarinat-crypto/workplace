@@ -2388,7 +2388,7 @@ function carteHTML(b, h) {
     <div class="card-header">
       <div>
         <div class="card-title">${b.nom}</div>
-        <div class="card-version">v${b.version}</div>
+        <div class="card-version">v${b.version}${b.port ? ` · <span class="port-pill" title="Port utilisé par la brique">:${b.port}</span>` : ''}</div>
       </div>
       <span class="role-badge role-${b.role}">${roleLabel}</span>
     </div>
@@ -2397,7 +2397,6 @@ function carteHTML(b, h) {
     ${deps  ? `<div class="section-label">Dépend de</div><div class="chips">${deps}</div>` : ''}
     <div class="card-footer" style="margin-top:14px">
       <span class="${statutClass}"><span class="dot"></span>${statutLabel}</span>
-      ${b.port ? `<span class="port-pill" title="Port utilisé par la brique">:${b.port}</span>` : ''}
       ${healthHTML}
     </div>
     <button class="btn ghost card-open" onclick="ouvrirBrique('${b.nom}')">Ouvrir ↗</button>
