@@ -58,6 +58,10 @@ RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/"
 # Brique « mail » (port 6030) : client mail (boîtes de réception unifiées + réponse sur
 # validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
 MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
+# Brique « dev » (auto-atelier, port 5950) : IDE web code-server monté sur le dépôt (S92),
+# embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
+# chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
+DEV_IDE_URL = os.environ.get("DEV_IDE_URL", "http://localhost:8744/")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
@@ -371,6 +375,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')">Mail</button>
+      <button class="tab" data-vue="dev" onclick="switchVue('dev')">Atelier dev</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -716,6 +721,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- VUE ATELIER DEV (S92) : IDE web code-server monté sur le dépôt -->
+  <div class="view" id="vue-dev">
+    <div class="topbar">
+      <h2>Atelier dev — l'IDE du dépôt</h2>
+      <a class="btn ghost" href="__DEV_IDE_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+    </div>
+    <p class="liv-sub" style="margin:0 0 12px">
+      Relis et édite le code (et le diff d'un chantier) ici. Pour <b>piloter l'atelier en
+      parlant</b> — ouvrir un chantier, planifier, coder, fusionner sur validation — demande-le
+      à l'<a href="#" onclick="switchVue('assistant');return false">Assistant</a> (« ajoute un
+      champ X à la brique mail ») : le gate se fait dans le chat.
+    </p>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <iframe id="dev-iframe" title="Atelier dev (code-server)"
+        style="width:100%;height:calc(100vh - 230px);min-height:520px;border:0;border-radius:12px"
+        allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+  </div>
+
   <!-- VUE PROFIL -->
   <div class="view" id="vue-profil">
     <div class="topbar">
@@ -795,6 +819,7 @@ function switchVue(v) {
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
+  if (v === 'dev') chargerDev();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
   if (v === 'historique') chargerHistorique();
@@ -880,6 +905,15 @@ function chargerMail() {
   if (mailCharge) return;
   const f = document.getElementById('mail-iframe');
   if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
+}
+
+// ── Atelier dev (S92) : IDE web code-server, chargé paresseusement au 1er affichage ──
+const DEV_IDE_URL = '__DEV_IDE_URL__';
+let devCharge = false;
+function chargerDev() {
+  if (devCharge) return;
+  const f = document.getElementById('dev-iframe');
+  if (f) { f.src = DEV_IDE_URL; devCharge = true; }
 }
 
 // ── Profil ────────────────────────────────────────────────────────────────────
@@ -2737,7 +2771,8 @@ async def dashboard():
         .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
         .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
         .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
-        .replace("__MAIL_UI_URL__", MAIL_UI_URL))
+        .replace("__MAIL_UI_URL__", MAIL_UI_URL)
+        .replace("__DEV_IDE_URL__", DEV_IDE_URL))
 
 
 # ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────

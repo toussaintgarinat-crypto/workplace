@@ -36,3 +36,6 @@ Thumbs.db
 # ── Données locales / livraisons client (contiennent des données clients réelles) ──
 # Les apps déjà livrées ne sont PAS versionnées (données privées clients).
 apps_exportees/
+
+# Worktrees jetables de lauto-atelier dev (S86+) quand il tourne en conteneur (S92).
+.dev-ateliers/

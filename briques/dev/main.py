@@ -1,4 +1,4 @@
-"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.4.0 — S89 : task trace activable.
+"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.6.0 — S92 : pilotage Cœur + IDE.
 
 Permet de modifier les briques de Workplace et d'ajouter des features DEPUIS l'assistant, avec
 le **filet git** comme garantie « ne casse pas la prod » : chaque chantier vit dans un
@@ -46,7 +46,18 @@ Nouveau en v0.5.0 (S91 — création de skills + accroche MCP, branché sur la p
   • Le Cœur découvre `dev_skills_lister`/`dev_skill_charger`/`dev_skill_creer` (manifest) → on
     liste puis on charge une skill À LA DEMANDE depuis l'assistant, sans code en dur.
 
-À venir : IDE code-server, outil Cœur `dev_demander`.
+Nouveau en v0.6.0 (S92 — pilotage du Cœur « à la voix » + IDE web, le sprint d'intégration) :
+  • POST /demander → l'ORCHESTRATEUR en un geste : ouvre un chantier puis fait le bon premier
+    pas. `plan_requis=true` → ouvre + PLANIFIE et s'arrête au gate du PLAN ; sinon → ouvre +
+    LANCE l'agent et s'arrête au gate du DIFF. JAMAIS de fusion auto : les deux gates restent
+    des actions confirmées à part. C'est l'outil que le Cœur appelle quand on parle à
+    l'assistant (« ajoute un champ X à la brique mail ») ; il renvoie la `prochaine_etape`.
+  • Le manifest expose la BOÎTE À OUTILS de pilotage découverte par le Cœur (organisme vivant
+    S63) : `dev_demander` (niveau-0) + `dev_chantiers`/`dev_diff`/`dev_plan_valider`/`dev_lancer`/
+    `dev_fusionner`/`dev_jeter` (niveau-1, chargées à la demande par la porte S90) → on pilote
+    tout le cycle plan→code→gate→fusion EN PARLANT, gate dans le chat (boutons S76).
+  • IDE web : un conteneur `code-server` monté sur le dépôt → onglet iframe « Atelier dev » au
+    dashboard du Cœur (cf. briques/dev/docker-compose.yml), avec la task trace S89 à côté.
 """
 from __future__ import annotations
 
@@ -80,7 +91,7 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.5.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.6.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
@@ -259,6 +270,39 @@ def lancer(cid: str):
         ch.avancer(domaine.REVUE)
     _ranger(ch)
     return ch.to_dict()
+
+
+@app.post("/demander", dependencies=[Depends(garde)], status_code=201)
+async def demander(corps: ChantierEntree):
+    """PILOTAGE EN UN GESTE (S92) : ouvre un chantier puis fait le bon PREMIER pas.
+
+    C'est l'outil que le Cœur appelle quand on lui parle (« ajoute un champ X à la brique
+    mail »). Selon le flux :
+      • `plan_requis=true`  → ouvre + PLANIFIE (l'Architect) → s'arrête au **gate du plan**
+        (relire, puis `dev_plan_valider` confirme=true, puis `dev_lancer`) ;
+      • `plan_requis=false` → ouvre + LANCE l'agent → s'arrête au **gate du diff**
+        (relire `dev_diff`, puis `dev_fusionner` confirme=true, sinon `dev_jeter`).
+    JAMAIS de fusion automatique : les deux gates restent des actions confirmées à part. On
+    réutilise tels quels `ouvrir`/`planifier`/`lancer` (mêmes gardes, mêmes états) et on
+    renvoie l'état + une `prochaine_etape` lisible pour guider l'assistant (et l'humain)."""
+    ch_dict = ouvrir(corps)            # toutes les gardes d'ouverture (422/400/409/503)
+    cid = ch_dict["id"]
+    if ch_dict.get("plan_requis"):
+        ch_dict = await planifier(cid, PlanEntree(lang=corps.lang))
+        prochaine = ("Relis le plan, puis valide-le (dev_plan_valider, confirme=true) "
+                     "avant de coder (dev_lancer).")
+    else:
+        ch_dict = lancer(cid)
+        prochaine = ("Relis le diff (dev_diff), puis fusionne sur validation "
+                     "(dev_fusionner, confirme=true) ou jette (dev_jeter).")
+    extra = {"prochaine_etape": prochaine}
+    ch = _chantier(cid)
+    if ch.statut == domaine.REVUE:     # diff prêt → on joint le résumé pour la revue au chat
+        try:
+            extra["diff_stats"] = git_atelier.resume_diff(ch.branche, ch.base)
+        except git_atelier.ErreurGit:
+            pass
+    return {**ch_dict, **extra}
 
 
 @app.get("/chantiers/{cid}/diff", dependencies=[Depends(garde)])
@@ -449,16 +493,18 @@ def skills_supprimer(nom: str):
 
 @app.get("/", response_class=HTMLResponse)
 def accueil():
-    """Page minimale (l'IDE code-server en iframe est l'incrément 6)."""
+    """Page minimale (l'IDE code-server est servi à part, en iframe au dashboard — S92)."""
     return (
         "<!doctype html><meta charset=utf-8><title>Atelier dev</title>"
         "<body style='font-family:system-ui;max-width:42rem;margin:3rem auto;color:#222'>"
         "<h1>🛠️ Auto-atelier dev</h1>"
-        "<p>Brique souveraine (port 5950) — v0.5.0 (S91) : socle git + fusion contrôlée + "
-        "flux BMAD + <b>task trace</b> + <b>fabrique de skills</b>. Chaque chantier vit dans un "
-        "<b>worktree jetable</b>, jamais sur <code>main</code> ; double gate <i>valide le "
-        "plan</i> puis <i>valide le diff</i> ; trace ON → l'agent <b>raconte chaque pas en "
-        "français</b>. Nouveau : fabrique des <b>skills façon Claude Code</b> (MCP accrochés, "
-        "personas BMAD) exposées à la <b>porte</b> du Cœur.</p>"
-        "<p>Voir <code>/sante</code>, l'API <code>/chantiers</code> et <code>/skills</code>.</p></body>"
+        "<p>Brique souveraine (port 5950) — v0.6.0 (S92) : socle git + fusion contrôlée + "
+        "flux BMAD + <b>task trace</b> + <b>fabrique de skills</b> + <b>pilotage par le Cœur</b>. "
+        "Chaque chantier vit dans un <b>worktree jetable</b>, jamais sur <code>main</code> ; "
+        "double gate <i>valide le plan</i> puis <i>valide le diff</i> ; trace ON → l'agent "
+        "<b>raconte chaque pas en français</b>. Nouveau : <code>POST /demander</code> = pilote "
+        "tout le cycle <b>en parlant à l'assistant</b> (ouvre → planifie/code → gate), et un "
+        "<b>IDE web</b> (code-server) en onglet « Atelier dev » du dashboard.</p>"
+        "<p>Voir <code>/sante</code>, l'API <code>/chantiers</code>, <code>/demander</code> et "
+        "<code>/skills</code>.</p></body>"
     )
