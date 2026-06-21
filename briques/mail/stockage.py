@@ -368,6 +368,19 @@ def lire_filtre(tenant: str, filtre_id: str) -> dict | None:
     return _filtre_dict(r) if r else None
 
 
+def resoudre_filtre(tenant: str, ref: str) -> dict | None:
+    """Retrouve un filtre par son ID ou, à défaut, par son NOM (insensible à la casse).
+    Permet à l'assistant de dire « le filtre Acme » sans connaître l'id technique."""
+    f = lire_filtre(tenant, ref)
+    if f:
+        return f
+    cible = (ref or "").strip().lower()
+    for f in lister_filtres(tenant):
+        if f["nom"].lower() == cible:
+            return f
+    return None
+
+
 def supprimer_filtre(tenant: str, filtre_id: str) -> bool:
     with _conn() as c:
         cur = c.execute("DELETE FROM filtres WHERE id=? AND tenant=?", (filtre_id, tenant))

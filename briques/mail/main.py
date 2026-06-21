@@ -205,7 +205,7 @@ def lister(non_lus: bool = False, categorie: str = "", compte: str = "", filtre:
     _assurer_cache(tenant)
     cat = domaine.normaliser_categorie(categorie) if categorie else ""
     if filtre:
-        f = stockage.lire_filtre(tenant, filtre)
+        f = stockage.resoudre_filtre(tenant, filtre)   # par id OU par nom (ex. « Acme »)
         if not f:
             raise HTTPException(404, "Filtre introuvable.")
         bruts = stockage.lister_messages(tenant, non_lus=non_lus, categorie=cat, compte=compte,
