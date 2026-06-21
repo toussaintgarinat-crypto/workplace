@@ -1,3 +1,7 @@
 # État runtime de l'atelier (créé au démarrage) — jamais versionné.
 chantiers.json
 chantiers.json.tmp
+
+# Skills fabriquées par l'atelier (S91) — contenu souverain généré, recréable. Le dossier
+# par défaut DEV_SKILLS_DIR vit ici ; on ne versionne pas les skills produites.
+skills/

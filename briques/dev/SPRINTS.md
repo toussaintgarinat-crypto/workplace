@@ -180,9 +180,38 @@ ajoute le corps. Mesure : sur 2 requêtes au préfixe identique, `cache_read_inp
 
 ---
 
-## S91 — Création de skills + accroche MCP par la brique
+## S91 — Création de skills + accroche MCP par la brique ✅ LIVRÉ + PROUVÉ LIVE (2026-06-21)
 
-**Objectif.** La brique `dev` **fabrique des skills façon Claude Code** (dossier + descripteur
+**Livré.** Brique v0.5.0. `skills_atelier.py` (domaine quasi pur + I/O fichier) : `valider` (slug,
+description bornée, `allowed-tools`/`mcp` en listes), `composer_skill_md`/`parser_skill_md`
+(frontmatter YAML minimal **clés Claude Code** `name`/`description`/`allowed-tools`/`mcp`, sans
+PyYAML — dépendances minces), `creer`/`lire`/`lister`/`supprimer` (refuse invalide → `ErreurSkill`,
+refuse doublon, garde-fou anti-évasion des scripts), `persona_bmad(role)` (personas prêtes
+**Analyst/Architect/Dev/QA**), et le **pont porte** `capacite_pour(skill)` → capacité de **niveau-1**
+(format `core/catalogue.py`) pointant `GET /skills/{nom}/corps`. Endpoints : `POST /skills` (gate
+`confirme=true` → 428, 422 invalide, 409 doublon), `POST /skills/persona/{role}`, `GET /skills`
+(descripteurs = niveau-0 sans corps), `GET /skills/{nom}`, `GET /skills/{nom}/corps` (instructions +
+MCP), `DELETE /skills/{nom}`. **Manifest** : 3 capacités **niveau-0** découvertes par le Cœur
+(`dev_skills_lister`, `dev_skill_charger`, `dev_skill_creer` = action) → lister/charger/créer une
+skill depuis l'assistant **sans toucher au Cœur**. Dossier `skills/` runtime gitignoré.
+
+**+15 tests** (`test_skills` 6 + `test_skills_porte` 4 + non-régression) → **brique 52 tests pytest
+verts**. `test_skills_porte` **importe le VRAI code S90 du Cœur** (`core/outils.py`+`catalogue.py`) :
+une skill → `capacite_pour` → niveau-1 → porte ON la **diffère** derrière `competence_charger` (qui
+la liste avec sa description) → `competence_charger` rend son schéma → une fois `chargees`, elle
+réapparaît appelable. **Preuve LIVE** (uvicorn, port 5951) : `/sante` v0.5.0 ; `POST /skills` sans
+confirme → **428** ; avec confirme → skill créée + `capacite.niveau=1` ; persona BMAD fabriquée ;
+`GET /skills` liste **sans corps** (niveau-0 bon marché) ; `GET /skills/revue-securite/corps` →
+instructions + `mcp=['github']` + `outils=['Read','Grep']`. Le Cœur **découvre** bien les 3 capacités
+du manifest (niveau-0, `dev_skill_charger` visible même porte ON, `dev_skill_creer` marquée action).
+
+**Note de cadrage.** Le couplage « rédigée dans un chantier → enregistrée au merge » (S87) est
+laissé à S92 (pilotage `dev_demander`) : ici la fabrique de skills est directe + gardée, et la porte
+niveau-1 par skill est **prouvée contre le vrai code S90** (la découverte DYNAMIQUE des skills comme
+capacités du Cœur — au-delà des 3 capacités statiques du manifest — viendra avec S92). C'est le 1er
+sprint qui produit des capacités `niveau:1` réelles → la porte S90 n'est plus seulement « armée ».
+
+**Objectif (rappel).** La brique `dev` **fabrique des skills façon Claude Code** (dossier + descripteur
 type SKILL.md) et y **accroche des MCP**, puis les enregistre dans la porte (S90) → découvrables
 + chargeables à la demande, sans code en dur.
 
@@ -230,5 +259,5 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 | **S88** | Flux BMAD léger (plan d'abord + DDD) | ✅ livré + prouvé LIVE (36 tests) |
 | **S89** | Task trace activable | ✅ livré + prouvé LIVE (42 tests) |
 | **S90** | Porte progressive (niveau-0/1) + prompt caching | ✅ livré + prouvé LIVE (cache 12×, 32 tests) |
-| **S91** | Création de skills + accroche MCP | à faire |
+| **S91** | Création de skills + accroche MCP | ✅ livré + prouvé LIVE (v0.5.0, 52 tests) |
 | **S92** | IDE code-server + pilotage Cœur `dev_demander` | à faire |
