@@ -103,6 +103,44 @@ class SessionDeTable:
         return hmac.compare_digest(str(pin_saisi or ""), str(self.code_pin))
 
 
+# ── Service de domaine : répartition flexible de l'addition (S83) ─
+def parts_egales(total_cents: int, parts: int) -> list[int]:
+    """Partage `total_cents` en `parts` PARTS ÉGALES, en centimes, somme EXACTE.
+
+    Le résidu (centimes non divisibles) est étalé sur les PREMIÈRES parts → personne
+    ne paie un centime de plus que nécessaire et le total tombe juste (jamais 3×3,33 €
+    pour 10 € qui laisserait 1 centime orphelin). Ex. 1000/3 → [334, 333, 333].
+    Pur, sans I/O. `parts` ≥ 1 (sinon 1 part = le tout) ; total négatif borné à 0."""
+    parts = max(1, int(parts))
+    total = max(0, int(total_cents))
+    base, residu = divmod(total, parts)
+    return [base + (1 if i < residu else 0) for i in range(parts)]
+
+
+def montant_a_encaisser(reste_global_cents: int, mode: str, *, du_convive_cents: int = 0,
+                        total_cents: int = 0, parts: int = 0, montant_cents: int = 0) -> int:
+    """Calcule, côté SERVEUR, le montant réellement encaissable pour un paiement, selon le
+    `mode` de répartition, TOUJOURS borné au reste GLOBAL de la table (anti-surpaiement :
+    on n'encaisse jamais plus que ce qui reste dû à la table, peu importe le mode).
+
+    - `part`  : la part propre du convive (« chacun ses plats », défaut historique).
+    - `egal`  : une part d'un partage égal du TOTAL en `parts` (la plus grosse part ;
+                le dernier payeur règle le reliquat, plus petit → somme exacte).
+    - `libre` : un montant arbitraire choisi par le payeur (« je mets 30 € »).
+
+    Retourne le montant borné (≥ 0). 0 → rien à encaisser (déjà soldé / saisie vide)."""
+    reste = max(0, int(reste_global_cents))
+    if reste <= 0:
+        return 0
+    if mode == "egal":
+        vise = parts_egales(total_cents, parts)[0] if parts else 0
+    elif mode == "libre":
+        vise = max(0, int(montant_cents))
+    else:  # "part" (défaut) — le reste dû propre au convive
+        vise = max(0, int(du_convive_cents))
+    return min(vise, reste)
+
+
 # ── Service de domaine : groupage d'une commande multi-convive ───
 def grouper_par_convive(plats: list | None, convive_defaut: str = "") -> list[tuple[str, list]]:
     """Range les lignes d'un panier PAR convive, en conservant l'ordre d'apparition.

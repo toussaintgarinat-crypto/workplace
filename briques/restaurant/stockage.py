@@ -696,8 +696,10 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
     convives = []
     for nom in sorted(set(du) | set(paye)):
         d, p = du.get(nom, 0), paye.get(nom, 0)
+        # « réglé » : plus rien dû ET au moins un mouvement (a consommé OU a contribué) — un
+        # contributeur (partage égal / montant libre, dû=0 mais payé>0) n'est PAS « en attente ».
         convives.append({"convive": nom, "du_cents": d, "paye_cents": p,
-                         "reste_cents": max(0, d - p), "regle": p >= d and d > 0,
+                         "reste_cents": max(0, d - p), "regle": p >= d and (d > 0 or p > 0),
                          "pourboire_cents": pourb.get(nom, 0),
                          "moyen": moyens.get(nom, ""), "details": details.get(nom, [])})
     total = sum(c2["du_cents"] for c2 in convives)
@@ -709,28 +711,39 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
 
 
 def enregistrer_paiement(restaurant_id: str, table_id: str, convive: str, moyen: str,
-                         pourboire_cents: int = 0) -> dict | None:
-    """Règle la PART d'un convive (son reste dû) par `moyen` (« mock » en ligne / « especes »),
-    avec un pourboire optionnel.
+                         pourboire_cents: int = 0, mode: str = "part",
+                         parts: int = 0, montant_cents: int = 0) -> dict | None:
+    """Encaisse un paiement par `moyen` (« mock » en ligne / « especes » au comptoir), avec un
+    pourboire optionnel, selon le `mode` de RÉPARTITION (S83) :
 
-    Idempotent par construction : on ne paie que le reste dû ; si tout est déjà réglé,
-    renvoie None (rien à encaisser). Le montant est recalculé serveur (jamais soumis
-    par le client) → un client ne peut pas « payer 0 » ni se sur-créditer. Le pourboire
-    est borné à >= 0 et n'entre pas dans le « reste dû » (c'est un extra)."""
+    - `part`  : règle le reste dû PROPRE au convive (« chacun ses plats », défaut historique) ;
+    - `egal`  : règle une part d'un partage ÉGAL du total en `parts` personnes (« on divise à 4 ») ;
+    - `libre` : règle un `montant_cents` ARBITRAIRE choisi par le payeur (« je mets 30 € »).
+
+    Quel que soit le mode, le montant est recalculé SERVEUR (jamais soumis par le client) et
+    TOUJOURS borné au reste GLOBAL de la table (`montant_a_encaisser`) → impossible de se
+    sur-créditer ni d'encaisser plus que ce que la table doit. Idempotent par construction :
+    si plus rien n'est dû (ou saisie vide), renvoie None. Le pourboire (≥ 0) reste un extra,
+    hors « reste dû ». `convive` = le PAYEUR (porte le paiement, pour le ticket)."""
     if moyen not in ("mock", "especes"):
         return None
+    convive = domaine.Convive.normaliser(convive)   # jamais de payeur anonyme « vide »
     pourboire_cents = max(0, int(pourboire_cents or 0))
     etat = etat_table(restaurant_id, table_id)
     part = next((c for c in etat["convives"] if c["convive"] == convive), None)
-    if not part or part["reste_cents"] <= 0:
+    a_encaisser = domaine.montant_a_encaisser(
+        etat["reste_cents"], mode,
+        du_convive_cents=(part["reste_cents"] if part else 0),
+        total_cents=etat["total_cents"], parts=parts, montant_cents=montant_cents)
+    if a_encaisser <= 0:
         return None
     with _conn() as c:
         session_id = _session_table(c, table_id)
         c.execute("INSERT INTO paiements (id, restaurant_id, table_id, session_id, convive, "
                   "montant_cents, pourboire_cents, moyen, regle_le) VALUES (?,?,?,?,?,?,?,?,?)",
-                  (_id(), restaurant_id, table_id, session_id, convive, part["reste_cents"],
+                  (_id(), restaurant_id, table_id, session_id, convive, a_encaisser,
                    pourboire_cents, moyen, _maintenant()))
-    return {"convive": convive, "montant_cents": part["reste_cents"],
+    return {"convive": convive, "montant_cents": a_encaisser, "mode": mode,
             "pourboire_cents": pourboire_cents, "moyen": moyen}
 
 

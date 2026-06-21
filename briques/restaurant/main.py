@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.8.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.9.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -194,6 +194,9 @@ class StatutCommande(BaseModel):
 class PaiementEspeces(BaseModel):
     convive: str
     pourboire_cents: int = 0
+    mode: str = "part"                 # part | egal | libre (S83 — répartition flexible)
+    parts: int = 0                     # nb de convives pour un partage égal
+    montant_cents: int = 0             # montant choisi pour un paiement libre
 
 
 class Cloturer(BaseModel):
@@ -209,6 +212,9 @@ class Commander(BaseModel):
 class PayerPart(BaseModel):
     convive: str
     pourboire_cents: int = 0
+    mode: str = "part"                 # part | egal | libre (S83 — répartition flexible)
+    parts: int = 0                     # nb de convives pour un partage égal
+    montant_cents: int = 0             # montant choisi pour un paiement libre
 
 
 class Rejoindre(BaseModel):
@@ -218,7 +224,7 @@ class Rejoindre(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.8.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.9.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -551,9 +557,10 @@ async def paiement_especes(restaurant_id: str, table_id: str, corps: PaiementEsp
     if not any(t["id"] == table_id for t in (stockage.lister_tables(compte_id, restaurant_id) or [])):
         raise HTTPException(404, "Table introuvable.")
     res = stockage.enregistrer_paiement(restaurant_id, table_id, corps.convive, "especes",
-                                        corps.pourboire_cents)
+                                        corps.pourboire_cents, corps.mode, corps.parts,
+                                        corps.montant_cents)
     if not res:
-        raise HTTPException(400, "Rien à encaisser pour ce convive (déjà réglé ou inconnu).")
+        raise HTTPException(400, "Rien à encaisser (déjà réglé, table soldée ou montant nul).")
     etat = stockage.etat_table(restaurant_id, table_id)
     await diffuseur.diffuser(diffuseur.canal_table(table_id), {"type": "paiement", "etat": etat})
     await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
@@ -691,13 +698,15 @@ def addition_client(code: str, x_table_session: Optional[str] = Header(None)):
 
 @app.post("/t/{code}/payer")
 async def payer(code: str, corps: PayerPart, x_table_session: Optional[str] = Header(None)):
-    """Le client règle SA part en ligne. Incrément 1 : paiement MOCK (démo, sans flux réel)."""
+    """Le client règle en ligne, selon la RÉPARTITION choisie (sa part / partage égal / montant
+    libre — S83). Incrément 1 : paiement MOCK (démo, sans flux réel). Montant borné serveur."""
     t = _table_par_code(code)
     _exige_adhesion(t, x_table_session)
     res = stockage.enregistrer_paiement(t["restaurant_id"], t["id"], corps.convive, "mock",
-                                        corps.pourboire_cents)
+                                        corps.pourboire_cents, corps.mode, corps.parts,
+                                        corps.montant_cents)
     if not res:
-        raise HTTPException(400, "Rien à payer pour ce convive (déjà réglé ou inconnu).")
+        raise HTTPException(400, "Rien à payer (déjà réglé, table soldée ou montant nul).")
     etat = stockage.etat_table(t["restaurant_id"], t["id"])
     await diffuseur.diffuser(diffuseur.canal_table(t["id"]), {"type": "paiement", "etat": etat})
     await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
