@@ -1,9 +1,13 @@
 """Persistance de la brique mail (SQLite). Tout est cloisonné par `tenant` (empreinte de la
-clé API) : un tenant ne voit JAMAIS le compte, le cache ni les brouillons d'un autre (fail-closed).
+clé API) : un tenant ne voit JAMAIS les comptes, le cache ni les brouillons d'un autre (fail-closed).
 
-Trois tables : `comptes` (un compte IMAP par tenant — mot de passe **chiffré au repos**),
-`messages` (cache de la dernière synchro, pour répondre vite sans rouvrir IMAP) et `brouillons`
-(réponses préparées, **jamais envoyées** en v0.1.0).
+Depuis la v0.1.1, un tenant peut connecter **plusieurs boîtes** (perso, pro…). Chaque message du
+cache porte son `compte_id` (+ le libellé `compte` = l'adresse), ce qui donne une **boîte unifiée**
+filtrable par compte.
+
+Trois tables : `comptes` (N comptes IMAP par tenant — mot de passe **chiffré au repos**),
+`messages` (cache de la dernière synchro, tagué par compte) et `brouillons` (réponses préparées,
+**jamais envoyées** en v0.1.x).
 
 Le mot de passe d'application est chiffré en **AES-GCM** (clé = SHA-256 de `MAIL_VAULT_SECRET`,
 nonce de 12 octets préfixé), même motif que `briques/agenda/.../vault.py`. Sans `MAIL_VAULT_SECRET`,
@@ -38,30 +42,61 @@ def _conn() -> sqlite3.Connection:
     return c
 
 
+def _colonnes(c: sqlite3.Connection, table: str) -> set[str]:
+    return {r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _table_existe(c: sqlite3.Connection, table: str) -> bool:
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                     (table,)).fetchone() is not None
+
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS comptes (
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, host TEXT NOT NULL, port INTEGER DEFAULT 993,
+    utilisateur TEXT NOT NULL, mdp_chiffre BLOB NOT NULL, dossier TEXT DEFAULT 'INBOX',
+    cree_le TEXT, UNIQUE(tenant, utilisateur));
+CREATE INDEX IF NOT EXISTS idx_comptes_tenant ON comptes(tenant);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, compte_id TEXT, compte TEXT, uid TEXT,
+    de TEXT, de_nom TEXT, sujet TEXT, date TEXT, extrait TEXT, corps TEXT,
+    lu INTEGER DEFAULT 0, dossier TEXT DEFAULT 'INBOX',
+    categorie TEXT, score INTEGER DEFAULT 0, source TEXT, recu_le TEXT);
+CREATE INDEX IF NOT EXISTS idx_msg_tenant ON messages(tenant);
+
+CREATE TABLE IF NOT EXISTS brouillons (
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, en_reponse_a TEXT,
+    a TEXT, sujet TEXT, corps TEXT, cree_le TEXT);
+CREATE INDEX IF NOT EXISTS idx_br_tenant ON brouillons(tenant);
+"""
+
+
 def init() -> None:
-    """Crée le schéma si besoin (idempotent)."""
+    """Crée le schéma si besoin (idempotent) + migre l'ancien schéma mono-compte (v0.1.0)."""
     os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
     with _conn() as c:
-        c.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS comptes (
-                tenant TEXT PRIMARY KEY, host TEXT NOT NULL, port INTEGER DEFAULT 993,
-                utilisateur TEXT NOT NULL, mdp_chiffre BLOB NOT NULL,
-                dossier TEXT DEFAULT 'INBOX', cree_le TEXT);
+        # Migration v0.1.0 → v0.1.1 : `comptes` avait `tenant` en clé primaire (un seul compte).
+        # On le renomme pour le recréer au nouveau schéma puis recopier les lignes avec un id.
+        legacy = _table_existe(c, "comptes") and "id" not in _colonnes(c, "comptes")
+        if legacy:
+            c.execute("ALTER TABLE comptes RENAME TO comptes_legacy")
 
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY, tenant TEXT NOT NULL, uid TEXT,
-                de TEXT, de_nom TEXT, sujet TEXT, date TEXT, extrait TEXT, corps TEXT,
-                lu INTEGER DEFAULT 0, dossier TEXT DEFAULT 'INBOX',
-                categorie TEXT, score INTEGER DEFAULT 0, source TEXT, recu_le TEXT);
-            CREATE INDEX IF NOT EXISTS idx_msg_tenant ON messages(tenant);
+        c.executescript(_SCHEMA)
 
-            CREATE TABLE IF NOT EXISTS brouillons (
-                id TEXT PRIMARY KEY, tenant TEXT NOT NULL, en_reponse_a TEXT,
-                a TEXT, sujet TEXT, corps TEXT, cree_le TEXT);
-            CREATE INDEX IF NOT EXISTS idx_br_tenant ON brouillons(tenant);
-            """
-        )
+        if legacy:
+            for r in c.execute("SELECT * FROM comptes_legacy").fetchall():
+                c.execute("INSERT OR IGNORE INTO comptes (id, tenant, host, port, utilisateur, "
+                          "mdp_chiffre, dossier, cree_le) VALUES (?,?,?,?,?,?,?,?)",
+                          (_id(), r["tenant"], r["host"], r["port"], r["utilisateur"],
+                           r["mdp_chiffre"], r["dossier"], r["cree_le"]))
+            c.execute("DROP TABLE comptes_legacy")
+
+        # Messages : ajoute les colonnes de tag par compte si elles manquent (DB v0.1.0).
+        cols_msg = _colonnes(c, "messages")
+        for col in ("compte_id", "compte"):
+            if col not in cols_msg:
+                c.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
 
 
 init()  # schéma prêt dès l'import (robuste même sous TestClient)
@@ -87,72 +122,106 @@ def _dechiffrer(blob: bytes) -> str:
     return aes.decrypt(blob[:12], blob[12:], None).decode()
 
 
-# ── Comptes IMAP (un par tenant) ─────────────────────────────────────────────
+# ── Comptes IMAP (plusieurs par tenant) ──────────────────────────────────────
+def _compte_dict(r: sqlite3.Row, *, avec_secret: bool = False) -> dict:
+    d = {"id": r["id"], "host": r["host"], "port": r["port"], "utilisateur": r["utilisateur"],
+         "dossier": r["dossier"], "cree_le": r["cree_le"]}
+    if avec_secret:
+        d["mot_de_passe"] = _dechiffrer(r["mdp_chiffre"])
+    return d
+
+
 def enregistrer_compte(tenant: str, host: str, utilisateur: str, mot_de_passe: str,
                        *, port: int = 993, dossier: str = "INBOX") -> dict:
-    """Crée/remplace le compte IMAP du tenant (mot de passe chiffré)."""
+    """Ajoute une boîte au tenant. Réenregistrer la MÊME adresse met à jour ses identifiants
+    (contrainte UNIQUE(tenant, utilisateur)) au lieu de créer un doublon."""
     with _conn() as c:
         c.execute(
-            "INSERT INTO comptes (tenant, host, port, utilisateur, mdp_chiffre, dossier, cree_le) "
-            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(tenant) DO UPDATE SET "
-            "host=excluded.host, port=excluded.port, utilisateur=excluded.utilisateur, "
-            "mdp_chiffre=excluded.mdp_chiffre, dossier=excluded.dossier",
-            (tenant, host, port, utilisateur, _chiffrer(mot_de_passe), dossier, _maintenant()))
-    return lire_compte(tenant) or {}
+            "INSERT INTO comptes (id, tenant, host, port, utilisateur, mdp_chiffre, dossier, cree_le) "
+            "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(tenant, utilisateur) DO UPDATE SET "
+            "host=excluded.host, port=excluded.port, mdp_chiffre=excluded.mdp_chiffre, "
+            "dossier=excluded.dossier",
+            (_id(), tenant, host, port, utilisateur, _chiffrer(mot_de_passe), dossier, _maintenant()))
+        r = c.execute("SELECT * FROM comptes WHERE tenant=? AND utilisateur=?",
+                      (tenant, utilisateur)).fetchone()
+    return _compte_dict(r)
 
 
-def lire_compte(tenant: str, *, avec_secret: bool = False) -> dict | None:
-    """Compte du tenant. Par défaut SANS le mot de passe (pour /config, l'UI). Avec
-    `avec_secret=True` (usage interne : connexion IMAP), le mot de passe est déchiffré."""
+def lister_comptes(tenant: str, *, avec_secret: bool = False) -> list[dict]:
+    """Comptes du tenant. Sans secret par défaut (UI/config) ; avec secret pour la synchro."""
     with _conn() as c:
-        r = c.execute("SELECT * FROM comptes WHERE tenant=?", (tenant,)).fetchone()
-    if not r:
-        return None
-    compte = {"host": r["host"], "port": r["port"], "utilisateur": r["utilisateur"],
-              "dossier": r["dossier"], "cree_le": r["cree_le"]}
-    if avec_secret:
-        compte["mot_de_passe"] = _dechiffrer(r["mdp_chiffre"])
-    return compte
+        rows = c.execute("SELECT * FROM comptes WHERE tenant=? ORDER BY cree_le", (tenant,)).fetchall()
+    return [_compte_dict(r, avec_secret=avec_secret) for r in rows]
 
 
-def supprimer_compte(tenant: str) -> None:
+def lire_compte(tenant: str, compte_id: str, *, avec_secret: bool = False) -> dict | None:
+    """Un compte précis du tenant (cloisonné : autre tenant → None)."""
     with _conn() as c:
-        c.execute("DELETE FROM comptes WHERE tenant=?", (tenant,))
+        r = c.execute("SELECT * FROM comptes WHERE tenant=? AND id=?",
+                      (tenant, compte_id)).fetchone()
+    return _compte_dict(r, avec_secret=avec_secret) if r else None
 
 
-# ── Cache des messages (dernière synchro) ────────────────────────────────────
+def supprimer_compte(tenant: str, compte_id: str) -> bool:
+    """Déconnecte une boîte (et purge ses messages cachés). Renvoie True si un compte a été retiré."""
+    with _conn() as c:
+        cur = c.execute("DELETE FROM comptes WHERE tenant=? AND id=?", (tenant, compte_id))
+        c.execute("DELETE FROM messages WHERE tenant=? AND compte_id=?", (tenant, compte_id))
+        return cur.rowcount > 0
+
+
+# ── Cache des messages (dernière synchro, boîte unifiée) ─────────────────────
+def _inserer(c: sqlite3.Connection, tenant: str, messages: list[dict], now: str) -> None:
+    for m in messages:
+        c.execute(
+            "INSERT INTO messages (id, tenant, compte_id, compte, uid, de, de_nom, sujet, date, "
+            "extrait, corps, lu, dossier, categorie, score, source, recu_le) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (_id(), tenant, m.get("compte_id"), m.get("compte", ""), str(m.get("id", "")),
+             m.get("de", ""), m.get("de_nom", ""), m.get("sujet", ""), m.get("date", ""),
+             m.get("extrait", ""), m.get("corps", ""), 1 if m.get("lu") else 0,
+             m.get("dossier", "INBOX"), m.get("categorie", ""), int(m.get("score", 0)),
+             m.get("source", ""), now))
+
+
 def remplacer_messages(tenant: str, messages: list[dict]) -> int:
-    """Remplace le cache du tenant par la liste fournie (déjà enrichie : categorie+score)."""
+    """Remplace TOUT le cache du tenant (toutes boîtes). Utilisé en mode mock / après purge."""
     now = _maintenant()
     with _conn() as c:
         c.execute("DELETE FROM messages WHERE tenant=?", (tenant,))
-        for m in messages:
-            c.execute(
-                "INSERT INTO messages (id, tenant, uid, de, de_nom, sujet, date, extrait, corps, "
-                "lu, dossier, categorie, score, source, recu_le) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (_id(), tenant, str(m.get("id", "")), m.get("de", ""), m.get("de_nom", ""),
-                 m.get("sujet", ""), m.get("date", ""), m.get("extrait", ""), m.get("corps", ""),
-                 1 if m.get("lu") else 0, m.get("dossier", "INBOX"), m.get("categorie", ""),
-                 int(m.get("score", 0)), m.get("source", ""), now))
+        _inserer(c, tenant, messages, now)
+    return len(messages)
+
+
+def remplacer_messages_compte(tenant: str, compte_id: str | None, messages: list[dict]) -> int:
+    """Remplace seulement la part de cache d'UNE boîte (les autres boîtes ne sont pas touchées :
+    si une boîte échoue à se synchroniser, son ancien cache est conservé)."""
+    now = _maintenant()
+    with _conn() as c:
+        if compte_id is None:
+            c.execute("DELETE FROM messages WHERE tenant=? AND compte_id IS NULL", (tenant,))
+        else:
+            c.execute("DELETE FROM messages WHERE tenant=? AND compte_id=?", (tenant, compte_id))
+        _inserer(c, tenant, messages, now)
     return len(messages)
 
 
 def _msg_dict(r: sqlite3.Row, *, avec_corps: bool = False) -> dict:
-    d = {"id": r["id"], "uid": r["uid"], "de": r["de"], "de_nom": r["de_nom"],
-         "sujet": r["sujet"], "date": r["date"], "extrait": r["extrait"], "lu": bool(r["lu"]),
-         "dossier": r["dossier"], "categorie": r["categorie"], "score": r["score"],
-         "source": r["source"]}
+    d = {"id": r["id"], "compte": r["compte"] or "", "uid": r["uid"], "de": r["de"],
+         "de_nom": r["de_nom"], "sujet": r["sujet"], "date": r["date"], "extrait": r["extrait"],
+         "lu": bool(r["lu"]), "dossier": r["dossier"], "categorie": r["categorie"],
+         "score": r["score"], "source": r["source"]}
     if avec_corps:
         d["corps"] = r["corps"]
     return d
 
 
-def lister_messages(tenant: str, *, non_lus: bool = False, categorie: str = "",
+def lister_messages(tenant: str, *, non_lus: bool = False, categorie: str = "", compte: str = "",
                     limite: int = 50) -> list[dict]:
-    """Cache du tenant, trié par score (importance) puis date décroissante.
+    """Boîte unifiée du tenant, triée par score (importance) puis date décroissante.
 
-    Filtres optionnels : `non_lus` (cumulable) et `categorie` (facture, rendez_vous, personnel,
-    notification, newsletter, autre) pour ne montrer qu'un type de mails."""
+    Filtres optionnels cumulables : `non_lus`, `categorie` (facture, rendez_vous, personnel,
+    notification, newsletter, autre) et `compte` (adresse exacte, ex. « perso@gmail.com »)."""
     sql = "SELECT * FROM messages WHERE tenant=?"
     args: list = [tenant]
     if non_lus:
@@ -160,6 +229,9 @@ def lister_messages(tenant: str, *, non_lus: bool = False, categorie: str = "",
     if categorie:
         sql += " AND categorie=?"
         args.append(categorie)
+    if compte:
+        sql += " AND compte=?"
+        args.append(compte)
     sql += " ORDER BY score DESC, date DESC LIMIT ?"
     args.append(limite)
     with _conn() as c:
@@ -183,7 +255,7 @@ def expediteurs_connus(tenant: str) -> set[str]:
     return {r["de"] for r in rows}
 
 
-# ── Brouillons (préparés, jamais envoyés en v0.1.0) ──────────────────────────
+# ── Brouillons (préparés, jamais envoyés en v0.1.x) ──────────────────────────
 def enregistrer_brouillon(tenant: str, *, en_reponse_a: str, a: str, sujet: str,
                           corps: str) -> dict:
     bid = _id()

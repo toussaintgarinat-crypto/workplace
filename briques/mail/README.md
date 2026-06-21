@@ -1,7 +1,9 @@
 # Brique `mail` — la boîte de réception de l'assistant (entrant, lecture seule)
 
-> **v0.1.0 — lecture seule.** L'assistant peut **lister, lire, résumer et trier** tes emails
-> reçus, et **préparer un brouillon de réponse** (jamais envoyé). L'envoi (SMTP) viendra en v0.2.0.
+> **v0.1.1 — lecture seule, multi-adresses.** Connecte **plusieurs boîtes** (perso, pro…) ; l'assistant
+> les voit en une **boîte unifiée** et peut **lister/filtrer (catégorie, compte, non-lus), lire,
+> résumer et trier** tes emails, et **préparer un brouillon de réponse** (jamais envoyé). L'envoi
+> (SMTP) viendra en v0.2.0.
 
 Port **6030**. Multi-tenant (une boîte par clé API), provider-agnostique. Conçue comme les autres
 briques : noyau + briques, le Cœur découvre les capacités via `manifest.json` et les expose comme
@@ -28,19 +30,26 @@ outils de l'assistant — **aucun code du Cœur à modifier**.
 | `API_KEYS` | CSV des clés autorisées (fail-closed). Vide = dev ouvert. |
 | `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` | pour le résumé/brouillon (repli si absent). |
 
-## Connecter une vraie boîte (IMAP, mot de passe d'application)
-Ouvre la page **http://localhost:6030/** (back-office) et renseigne serveur / utilisateur /
-**mot de passe d'application** (Gmail : Compte → Sécurité → Mots de passe des applications).
-On préfère cette page au chat (le chat journalise les messages). La connexion est **vérifiée** par
-une synchro immédiate ; en cas d'identifiants faux, rien n'est conservé.
+## Connecter ses boîtes (IMAP, mot de passe d'application) — plusieurs possibles
+Ouvre la page **http://localhost:6030/** (back-office) : elle liste tes boîtes connectées et permet
+d'en **ajouter plusieurs** (perso, pro…) ou d'en déconnecter une. Pour chaque boîte, renseigne
+serveur / utilisateur / **mot de passe d'application** (Gmail : Compte → Sécurité → Mots de passe
+des applications ; Outlook : `outlook.office365.com` ; iCloud : `imap.mail.me.com` ; Yahoo :
+`imap.mail.yahoo.com`). On préfère cette page au chat (le chat journalise les messages). Chaque
+connexion est **vérifiée** par une synchro immédiate ; identifiants faux → rien n'est conservé.
+
+L'assistant voit alors une **boîte unifiée** ; on peut filtrer sur une adresse
+(`mail_lister` param `compte`).
 
 ## Capacités exposées à l'assistant
-- `mail_lister` — la boîte triée par importance (lecture)
+- `mail_lister` — la boîte unifiée triée par importance, filtrable (catégorie, **compte**, non-lus)
+- `mail_comptes_lister` — les adresses connectées (lecture)
 - `mail_lire` — le contenu complet d'un message (lecture)
 - `mail_resumer` — le point sur la boîte, priorisé (lecture)
 - `mail_trier` — la boîte rangée par catégorie (lecture)
 - `mail_brouillon_repondre` — prépare un brouillon **non envoyé** (action)
-- `mail_compte_connecter` — connecte une boîte IMAP (action ; préférer le back-office)
+- `mail_compte_connecter` — ajoute une boîte IMAP (action ; préférer le back-office)
+- `mail_compte_deconnecter` — retire une boîte (action)
 
 Tâche d'horloge : `sync-mail` (rafraîchit le cache toutes les heures, tolère l'échec).
 
