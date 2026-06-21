@@ -106,6 +106,15 @@ def _conn() -> sqlite3.Connection:
             id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, table_id TEXT NOT NULL,
             session_id INTEGER NOT NULL, numero TEXT, donnees TEXT NOT NULL, cloture_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_ticket_resto ON tickets(restaurant_id);
+
+        -- Avis clients (note 1–5 + commentaire), laissés via le QR de table. Un avis par
+        -- (table, session, convive) : un convive corrige le sien sur une même visite (upsert).
+        CREATE TABLE IF NOT EXISTS avis (
+            id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, table_id TEXT NOT NULL,
+            session_id INTEGER NOT NULL, convive TEXT, note INTEGER NOT NULL,
+            commentaire TEXT DEFAULT '', cree_le TEXT);
+        CREATE INDEX IF NOT EXISTS idx_avis_resto ON avis(restaurant_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_avis_visite ON avis(table_id, session_id, convive);
         """
     )
     # Migrations douces (bases d'avant v0.2.0) : ajoute les colonnes manquantes.
@@ -795,3 +804,45 @@ def cloturer_table(compte_id: str, restaurant_id: str, table_id: str, force: boo
         c.execute("UPDATE tables SET session_courante=session_courante+1, code_pin=NULL "
                   "WHERE id=?", (table_id,))
     return ticket
+
+
+# ── Avis clients ─────────────────────────────────────────────────
+def enregistrer_avis(restaurant_id: str, table_id: str, convive: str, note,
+                     commentaire: str = "") -> dict | None:
+    """Enregistre l'avis d'un convive pour la SESSION COURANTE de sa table (note 1–5 +
+    commentaire optionnel). La note est validée par le domaine (`normaliser_note`) :
+    None/hors bornes → refus (renvoie None). **Un avis par (table, session, convive)** :
+    re-soumettre REMPLACE le sien (le client corrige son avis sur la même visite), jamais
+    de doublon. Le convive vide est normalisé (jamais d'avis anonyme « cassé »)."""
+    note = domaine.normaliser_note(note)
+    if note is None:
+        return None
+    convive = domaine.Convive.normaliser(convive)
+    commentaire = (commentaire or "").strip()[:1000]      # borne défensive
+    with _conn() as c:
+        session_id = _session_table(c, table_id)
+        # Upsert par visite : on remplace l'avis existant du convive pour cette session.
+        c.execute("DELETE FROM avis WHERE table_id=? AND session_id=? AND convive=?",
+                  (table_id, session_id, convive))
+        c.execute("INSERT INTO avis (id, restaurant_id, table_id, session_id, convive, note, "
+                  "commentaire, cree_le) VALUES (?,?,?,?,?,?,?,?)",
+                  (_id(), restaurant_id, table_id, session_id, convive, note,
+                   commentaire, _maintenant()))
+    return {"convive": convive, "note": note, "commentaire": commentaire}
+
+
+def resume_avis(compte_id: str, restaurant_id: str, limite: int = 50) -> dict | None:
+    """Synthèse des avis d'un restaurant pour son propriétaire (cloisonné fail-closed) :
+    moyenne (1 décimale), nombre total, et les derniers avis (récents d'abord). None si le
+    compte ne possède pas ce restaurant."""
+    with _conn() as c:
+        if not _possede(c, compte_id, restaurant_id):
+            return None
+        notes = [r["note"] for r in c.execute(
+            "SELECT note FROM avis WHERE restaurant_id=?", (restaurant_id,)).fetchall()]
+        rows = c.execute("SELECT convive, note, commentaire, cree_le FROM avis WHERE restaurant_id=? "
+                         "ORDER BY cree_le DESC LIMIT ?",
+                         (restaurant_id, max(1, int(limite)))).fetchall()
+    return {"moyenne": domaine.moyenne_notes(notes), "nombre": len(notes),
+            "avis": [{"convive": r["convive"], "note": r["note"],
+                      "commentaire": r["commentaire"] or "", "cree_le": r["cree_le"]} for r in rows]}

@@ -141,6 +141,32 @@ def montant_a_encaisser(reste_global_cents: int, mode: str, *, du_convive_cents:
     return min(vise, reste)
 
 
+# ── Objet-valeur : Note d'avis (1 à 5 étoiles) ───────────────────
+NOTE_MIN, NOTE_MAX = 1, 5
+
+
+def normaliser_note(brut) -> int | None:
+    """Valide une note d'avis : un entier **borné à 1–5 étoiles**. Source unique de la règle
+    (back + front s'alignent). Retourne None si la saisie n'est pas convertible (≠ « note 0 »
+    silencieuse) → l'appelant refuse explicitement. Un float (4.0) est accepté et tronqué."""
+    try:
+        n = int(brut)
+    except (TypeError, ValueError):
+        return None
+    if n < NOTE_MIN or n > NOTE_MAX:
+        return None
+    return n
+
+
+def moyenne_notes(notes: list[int] | None) -> float:
+    """Moyenne d'une liste de notes, arrondie à **une décimale** (ex. 4.3). Liste vide → 0.0
+    (pas de division par zéro, et « aucun avis » se lit comme 0). Pur, sans I/O."""
+    notes = [n for n in (notes or []) if n is not None]
+    if not notes:
+        return 0.0
+    return round(sum(notes) / len(notes), 1)
+
+
 # ── Service de domaine : groupage d'une commande multi-convive ───
 def grouper_par_convive(plats: list | None, convive_defaut: str = "") -> list[tuple[str, list]]:
     """Range les lignes d'un panier PAR convive, en conservant l'ordre d'apparition.

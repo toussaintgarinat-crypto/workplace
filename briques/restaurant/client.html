@@ -84,6 +84,11 @@
   .seg button.on { color:var(--accent); border-color:var(--accent); }
   .rond { width:32px; height:32px; border-radius:50%; border:1px solid var(--bord); background:transparent; color:var(--texte); font-weight:800; cursor:pointer; }
   .conv .ligne input { background:var(--fond); border:1px solid var(--bord); border-radius:8px; color:var(--texte); padding:6px 8px; }
+  .conv.avis .etoiles { display:flex; gap:4px; margin:8px 0; }
+  .conv.avis .etoile { background:none; border:none; font-size:2rem; line-height:1; color:var(--bord); cursor:pointer; padding:0; transition:color .1s; }
+  .conv.avis .etoile.on { color:#f5b301; }
+  .conv.avis textarea { width:100%; box-sizing:border-box; background:var(--fond); border:1px solid var(--bord); border-radius:8px; color:var(--texte); padding:8px; font:inherit; resize:vertical; }
+  .conv.avis .merci { color:var(--accent); font-weight:700; padding:6px 0; }
   .recap { display:flex; justify-content:space-between; font-size:1.1rem; font-weight:800; margin:16px 4px; }
   .demo { font-size:.74rem; color:var(--attente); text-align:center; margin-top:8px; }
 
@@ -178,6 +183,9 @@ const T = {
         repartir:"Partager autrement", repartir_sous:"Réglez ce qu'il reste sur la table comme vous voulez :",
         rep_egal:"Partage égal", rep_libre:"Montant libre", nb_convives:"À combien partagez-vous ?",
         une_part:"Une part", payer_libre:"Payer ce montant", montant_ex:"ex. 20",
+        votre_avis:"Votre avis", avis_sous:"Comment s'est passé votre repas ?",
+        commentaire_ex:"Un mot pour le chef (optionnel)…", envoyer_avis:"Envoyer mon avis",
+        avis_merci:"Merci pour votre avis ! 🙏",
         porte_demarrer:"Démarrer la table", porte_demarrer_sous:"Vous êtes le premier ici. Démarrez la table : vous obtiendrez un code à partager avec votre tablée.",
         porte_rejoindre:"Rejoindre la table", porte_rejoindre_sous:"Entrez le code à 4 chiffres affiché sur le téléphone qui a démarré la table.",
         porte_partage:"Partagez ce code avec votre tablée :", porte_continuer:"Continuer", porte_code_faux:"Code incorrect.", porte_code:"Code à 4 chiffres" },
@@ -199,6 +207,9 @@ const T = {
         repartir:"Split differently", repartir_sous:"Settle what's left on the table however you like:",
         rep_egal:"Split evenly", rep_libre:"Custom amount", nb_convives:"How many are splitting?",
         une_part:"One share", payer_libre:"Pay this amount", montant_ex:"e.g. 20",
+        votre_avis:"Your review", avis_sous:"How was your meal?",
+        commentaire_ex:"A word for the chef (optional)…", envoyer_avis:"Send my review",
+        avis_merci:"Thanks for your review! 🙏",
         porte_demarrer:"Start the table", porte_demarrer_sous:"You are the first here. Start the table: you'll get a code to share with your party.",
         porte_rejoindre:"Join the table", porte_rejoindre_sous:"Enter the 4-digit code shown on the phone that started the table.",
         porte_partage:"Share this code with your party:", porte_continuer:"Continue", porte_code_faux:"Wrong code.", porte_code:"4-digit code" }
@@ -209,6 +220,7 @@ const code = location.pathname.split('/').filter(Boolean).pop();
 // État appareil ------------------------------------------------------------
 let data = null, devise = 'EUR', pourboirePct = 0;
 let repMode = 'egal', repNb = 2;           // répartition flexible (S83) : egal | libre, nb de convives
+let avisNote = 0, avisEnvoye = false;      // avis client (S84) : note 1–5 + état d'envoi
 let vue = 'carte';                         // carte | panier | addition
 let ecran = 'accueil';                     // (vue carte) accueil | categorie
 let categorieActive = null, recherche = '';
@@ -521,8 +533,31 @@ async function chargerAddition(){
   }).join('')
   + (e.reste_cents > 0 ? panneauRepartition(e) : '')
   + (e.tva && e.tva.tva_cents ? `<div class="tva-ligne"><span>${t('dont_tva')} (${e.tva.tva_taux}%)</span><span>${euro(e.tva.tva_cents)}</span></div>` : '')
-  + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
+  + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`
+  + carteAvis();
 }
+
+// Avis client (S84) : note 1–5 étoiles + commentaire, déposé via le QR de la table.
+function carteAvis(){
+  if(avisEnvoye) return `<div class="conv avis"><div class="tete"><span>${t('votre_avis')}</span></div>
+    <div class="merci">${t('avis_merci')}</div></div>`;
+  const etoiles = [1,2,3,4,5].map(n=>
+    `<button class="etoile ${avisNote>=n?'on':''}" onclick="setNote(${n})" aria-label="${n}">★</button>`).join('');
+  return `<div class="conv avis"><div class="tete"><span>${t('votre_avis')}</span></div>
+    <div class="sous">${t('avis_sous')}</div>
+    <div class="etoiles">${etoiles}</div>
+    <textarea id="avis-com" rows="2" placeholder="${t('commentaire_ex')}"></textarea>
+    <button class="gros" style="margin-top:10px" ${avisNote?'':'disabled'} onclick="envoyerAvis()">${t('envoyer_avis')}</button></div>`;
+}
+window.setNote = n => { avisNote = n; chargerAddition(); };
+window.envoyerAvis = async () => {
+  if(!avisNote) return;
+  const commentaire = ($('#avis-com')||{}).value || '';
+  const convive = conviveCourant || convives[0] || '';
+  const r = await fetch('/t/'+code+'/avis', {method:'POST', headers:entetes(true),
+    body:JSON.stringify({convive, note:avisNote, commentaire})});
+  if(r.ok){ avisEnvoye = true; chargerAddition(); }
+};
 
 // Répartition flexible (S83) : régler le reste de la table autrement que « chacun ses plats ».
 function panneauRepartition(e){
