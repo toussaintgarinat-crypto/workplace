@@ -29,10 +29,11 @@ from pydantic import BaseModel
 
 import auth
 import carte_ia
+import souvenir
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.10.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.11.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -212,9 +213,13 @@ class Commander(BaseModel):
 class PayerPart(BaseModel):
     convive: str
     pourboire_cents: int = 0
-    mode: str = "part"                 # part | egal | libre (S83 — répartition flexible)
+    mode: str = "part"                 # part | egal | libre (S83) | tournee (S85 « je régale »)
     parts: int = 0                     # nb de convives pour un partage égal
     montant_cents: int = 0             # montant choisi pour un paiement libre
+
+
+class NommerTable(BaseModel):
+    nom: str = ""                          # surnom rigolo de la tablée (S85), vide = retirer
 
 
 class Rejoindre(BaseModel):
@@ -230,7 +235,7 @@ class AvisEntree(BaseModel):
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.10.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.11.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -546,6 +551,27 @@ async def changer_statut(restaurant_id: str, commande_id: str, corps: StatutComm
     return res
 
 
+@app.delete("/restaurants/{restaurant_id}/commandes/{commande_id}")
+async def annuler_commande(restaurant_id: str, commande_id: str,
+                           compte_id: str = Depends(compte_actuel)):
+    """Annule une commande déjà envoyée en cuisine (erreur/annulation) — RÉSERVÉ AU STAFF.
+
+    Retrait simple : la commande sort de la file cuisine ET de l'addition (stock non
+    recrédité, pas de trace conservée — choix produit). Diffuse aux écrans cuisine et à la
+    table pour qu'ils se rafraîchissent en direct."""
+    _exige_resto(compte_id, restaurant_id)
+    res = stockage.supprimer_commande(compte_id, restaurant_id, commande_id)
+    if not res:
+        raise HTTPException(404, "Commande introuvable.")
+    etat = stockage.etat_table(restaurant_id, res["table_id"])
+    await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
+                             {"type": "commande_supprimee", "commande_id": commande_id,
+                              "table_id": res["table_id"], "etat": etat})
+    await diffuseur.diffuser(diffuseur.canal_table(res["table_id"]),
+                             {"type": "commande_supprimee", "etat": etat})
+    return {"supprime": True, "etat": etat}
+
+
 # ── Tablette d'addition (vue restaurateur) ───────────────────────
 @app.get("/restaurants/{restaurant_id}/tables/{table_id}/addition")
 def addition_resto(restaurant_id: str, table_id: str, compte_id: str = Depends(compte_actuel)):
@@ -637,6 +663,7 @@ def vue_client(code: str):
     s = stockage.session_de_table(t["id"])
     return {"restaurant": resto, "table": {"id": t["id"], "numero": t["numero"], "code": code},
             "carte": stockage.carte_publique(t["restaurant_id"]),
+            "nom_session": stockage.nom_session_courant(t["id"]),
             "session": {"pin_requis": bool(resto.get("pin_requis")),
                         "demarree": bool(s and s.demarree),
                         "session_id": s.numero if s else 1}}
@@ -725,6 +752,40 @@ async def payer(code: str, corps: PayerPart, x_table_session: Optional[str] = He
     await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
                              {"type": "paiement", "table_id": t["id"], "etat": etat})
     return {"paiement": res, "etat": etat, "demo": True}
+
+
+@app.post("/t/{code}/nommer")
+async def nommer_tablee(code: str, corps: NommerTable,
+                        x_table_session: Optional[str] = Header(None)):
+    """Les convives donnent un nom RIGOLO à leur tablée (« Les Gloutons ») — S85. Souvenir
+    affiché côté client (pas imprimé sur le ticket fiscal). Nom vide = retirer le surnom.
+    Diffuse à la table pour que tous les appareils voient le nouveau nom en direct."""
+    t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
+    nom = stockage.nommer_session(t["id"], corps.nom)
+    if nom is None:
+        raise HTTPException(404, "Table inconnue (QR invalide).")
+    await diffuseur.diffuser(diffuseur.canal_table(t["id"]),
+                             {"type": "nom_session", "nom_session": nom})
+    return {"nom_session": nom}
+
+
+@app.get("/t/{code}/resume")
+async def resume_soiree(code: str, lang: str = "fr",
+                        x_table_session: Optional[str] = Header(None)):
+    """Petit SOUVENIR de fin de repas (surnom + plats partagés + total) — S85. Ton festif
+    délégué au LLM via la Gateway, repli FACTUEL local honnête si l'assistant est hors ligne
+    (`genere_par` dit toujours la vérité)."""
+    t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
+    resto = stockage.restaurant_public(t["restaurant_id"]) or {}
+    etat = stockage.etat_table(t["restaurant_id"], t["id"])
+    res = await souvenir.resumer(
+        restaurant_nom=resto.get("nom") or "le restaurant", table_numero=t["numero"],
+        nom_session=etat.get("nom_session") or "", convives=etat["convives"],
+        total_cents=etat["total_cents"], devise=resto.get("devise") or "EUR",
+        lang=(lang if lang in ("fr", "en", "es") else "fr"))
+    return res
 
 
 @app.post("/t/{code}/avis")

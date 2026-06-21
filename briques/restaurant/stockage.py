@@ -69,7 +69,7 @@ def _conn() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS tables (
             id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, numero TEXT,
             code TEXT NOT NULL UNIQUE, session_courante INTEGER NOT NULL DEFAULT 1,
-            code_pin TEXT, cree_le TEXT);
+            code_pin TEXT, nom_session TEXT, cree_le TEXT);
         CREATE INDEX IF NOT EXISTS idx_table_resto ON tables(restaurant_id);
 
         CREATE TABLE IF NOT EXISTS plats (
@@ -135,6 +135,11 @@ def _conn() -> sqlite3.Connection:
         # PIN de la SESSION COURANTE (None = pas encore démarrée / table ouverte). Effacé à
         # la clôture pour que le groupe suivant reparte vierge.
         c.execute("ALTER TABLE tables ADD COLUMN code_pin TEXT")
+    if "nom_session" not in tcol:
+        # Nom RIGOLO de la tablée en cours (« Les Gloutons »), choisi par les convives (S85).
+        # Souvenir affiché côté client ; None = table sans surnom. Effacé à la clôture comme
+        # le PIN → le groupe suivant repart vierge.
+        c.execute("ALTER TABLE tables ADD COLUMN nom_session TEXT")
     pcol = _colonnes("plats")
     if "categorie" not in pcol:
         c.execute("ALTER TABLE plats ADD COLUMN categorie TEXT DEFAULT ''")
@@ -367,6 +372,27 @@ def rejoindre_session(table_id: str, pin: str | None) -> dict | None:
     if not s or not s.autorise(pin):
         return None
     return {"session_id": s.numero}
+
+
+def nommer_session(table_id: str, nom: str) -> str | None:
+    """Donne (ou retire) un nom RIGOLO à la tablée en cours (« Les Gloutons ») — S85.
+
+    Le nom est borné (60 car.) ; un nom vide RETIRE le surnom (None en base). C'est un
+    souvenir de session, effacé à la clôture comme le PIN. Renvoie le nom normalisé tel
+    qu'enregistré (chaîne vide si retiré), ou None si la table n'existe pas."""
+    nom = (nom or "").strip()[:60]
+    with _conn() as c:
+        cur = c.execute("UPDATE tables SET nom_session=? WHERE id=?", (nom or None, table_id))
+        if cur.rowcount == 0:
+            return None
+    return nom
+
+
+def nom_session_courant(table_id: str) -> str:
+    """Surnom de la tablée en cours (chaîne vide si aucun / table inconnue)."""
+    with _conn() as c:
+        r = c.execute("SELECT nom_session FROM tables WHERE id=?", (table_id,)).fetchone()
+    return (r["nom_session"] or "") if r and "nom_session" in r.keys() else ""
 
 
 def supprimer_table(compte_id: str, restaurant_id: str, table_id: str) -> bool:
@@ -662,6 +688,26 @@ def maj_statut_commande(compte_id: str, restaurant_id: str, commande_id: str, st
     return {"id": r["id"], "statut": r["statut"], "convive": r["convive"], "table_id": r["table_id"]}
 
 
+def supprimer_commande(compte_id: str, restaurant_id: str, commande_id: str) -> dict | None:
+    """Annule une commande DÉJÀ envoyée en cuisine (erreur de saisie, annulation client) — S85.
+
+    Réservé au STAFF (cloisonné fail-closed par compte propriétaire). « Retrait simple de
+    l'addition » : la commande et ses lignes sont effacées → elles sortent de la file cuisine
+    ET de l'addition. Le stock N'EST PAS recrédité (choix produit assumé) et aucune trace
+    d'annulation n'est conservée. Renvoie {commande_id, table_id} (pour rafraîchir les écrans)
+    ou None si la commande est introuvable / hors du restaurant du compte."""
+    with _conn() as c:
+        if not _possede(c, compte_id, restaurant_id):
+            return None
+        r = c.execute("SELECT table_id FROM commandes WHERE id=? AND restaurant_id=?",
+                      (commande_id, restaurant_id)).fetchone()
+        if not r:
+            return None
+        c.execute("DELETE FROM lignes WHERE commande_id=?", (commande_id,))
+        c.execute("DELETE FROM commandes WHERE id=?", (commande_id,))
+    return {"commande_id": commande_id, "table_id": r["table_id"]}
+
+
 # ── Addition partagée (état d'une table) ─────────────────────────
 def _ventilation_tva(ttc_cents: int, taux: float) -> dict:
     """Décompose un montant TTC en HT + TVA (les prix de carte sont TTC, usage resto FR)."""
@@ -682,6 +728,8 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
         session_id = _session_table(c, table_id)
         tva_taux = (c.execute("SELECT tva_taux FROM restaurants WHERE id=?",
                               (restaurant_id,)).fetchone() or [10.0])[0]
+        _tr = c.execute("SELECT nom_session FROM tables WHERE id=?", (table_id,)).fetchone()
+        nom_session = (_tr["nom_session"] or "") if _tr and "nom_session" in _tr.keys() else ""
         cmds = c.execute("SELECT id, convive FROM commandes WHERE table_id=? AND restaurant_id=? "
                          "AND session_id=?", (table_id, restaurant_id, session_id)).fetchall()
         du: dict[str, int] = {}
@@ -715,6 +763,7 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
     regle = sum(c2["paye_cents"] for c2 in convives)
     pourboire = sum(c2["pourboire_cents"] for c2 in convives)
     return {"table_id": table_id, "session_id": session_id, "convives": convives,
+            "nom_session": nom_session,
             "total_cents": total, "paye_cents": regle, "reste_cents": max(0, total - regle),
             "pourboire_cents": pourboire, "tva": _ventilation_tva(total, tva_taux)}
 
@@ -799,10 +848,11 @@ def cloturer_table(compte_id: str, restaurant_id: str, table_id: str, force: boo
         # Les commandes de la session quittent la file cuisine, et la table repart vierge.
         c.execute("UPDATE commandes SET statut='servie' WHERE table_id=? AND session_id=?",
                   (table_id, t["session_courante"]))
-        # Nouvelle session + PIN effacé : le groupe suivant repart d'une table « ouverte »
-        # (les anciens jetons d'adhésion, liés à l'ancien numéro, sont désormais invalides).
-        c.execute("UPDATE tables SET session_courante=session_courante+1, code_pin=NULL "
-                  "WHERE id=?", (table_id,))
+        # Nouvelle session + PIN et surnom effacés : le groupe suivant repart d'une table
+        # « ouverte » et sans nom (les anciens jetons d'adhésion, liés à l'ancien numéro,
+        # sont désormais invalides).
+        c.execute("UPDATE tables SET session_courante=session_courante+1, code_pin=NULL, "
+                  "nom_session=NULL WHERE id=?", (table_id,))
     return ticket
 
 

@@ -69,6 +69,29 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## La soirée : surnom, tournée, souvenir & annulation (v0.11.0)
+
+Quatre touches pour rendre le service plus humain — trois côté convives, une côté cuisine.
+
+- **🏷️ Renommer la tablée** — les convives donnent un **surnom rigolo** à leur table
+  (« Les Gloutons », « La Joyeuse Marmite »…) depuis la page **Addition**. C'est un
+  **souvenir** affiché côté client (pas imprimé sur le ticket fiscal). Stocké sur la session
+  courante (`tables.nom_session`), **effacé à la clôture** comme le PIN → le groupe suivant
+  repart vierge. `POST /t/{code}/nommer` (nom vide = retirer), diffusé en direct à la table.
+- **🍻 Je paye ma tournée** — un convive règle **tout le reste de la table** d'un clic +
+  message festif. Nouveau `mode=tournee` de `domaine.montant_a_encaisser` (vise = reste global),
+  donc **toujours borné** au reste réel (anti-surpaiement inchangé). Passe par le même
+  `POST /t/{code}/payer`.
+- **📜 Souvenir de soirée** — en fin de repas, un petit récap (surnom + plats partagés + total).
+  Ton festif **délégué au LLM** via la Gateway (`souvenir.py`, modèle gratuit par défaut), avec
+  **repli FACTUEL local honnête** si l'assistant est hors ligne — `genere_par` dit toujours la
+  vérité (`ia` / `local`), **aucune anecdote inventée**. `GET /t/{code}/resume?lang=fr`.
+- **🗑️ Annuler une commande en cuisine** — le **staff** retire une commande déjà envoyée
+  (erreur de saisie, annulation client) depuis l'écran cuisine. **Retrait simple** : la commande
+  sort de la file **et** de l'addition (stock **non** recrédité, pas de trace — choix produit).
+  `DELETE /restaurants/{id}/commandes/{commande_id}`, **réservé au propriétaire** (404 sur le
+  resto d'autrui), diffusé aux écrans cuisine et à la table.
+
 ## Avis clients par QR (v0.10.0)
 
 Le client laisse un **avis** (note **1–5 ⭐ + commentaire** optionnel) directement depuis la page
@@ -201,7 +224,7 @@ montant est recalculé **côté serveur** (jamais soumis par le client). Incrém
 | `CORS_ORIGINS` | origines navigateur autorisées (CSV) | `*` |
 | `RESTAURANT_KEY` | clé de service (pilotage carte par le Cœur/MCP) ; **vide ⇒ /service éteint** | vide |
 | `VISION_URL` / `VISION_KEY` | brique OCR pour l'import de carte | `…:5960` / vide |
-| `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` | LLM de structuration de la carte | Gateway / vide / modèle gratuit |
+| `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` | LLM (structuration de carte + résumé de soirée) ; repli honnête si absent | Gateway / vide / modèle gratuit |
 
 ## Tests
 
