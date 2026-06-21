@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS brouillons (
     id TEXT PRIMARY KEY, tenant TEXT NOT NULL, en_reponse_a TEXT, compte_id TEXT, compte TEXT,
     a TEXT, sujet TEXT, corps TEXT, statut TEXT DEFAULT 'brouillon', cree_le TEXT, envoye_le TEXT);
 CREATE INDEX IF NOT EXISTS idx_br_tenant ON brouillons(tenant);
+
+CREATE TABLE IF NOT EXISTS filtres (
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, nom TEXT NOT NULL,
+    mots TEXT, expediteur TEXT, cree_le TEXT);
+CREATE INDEX IF NOT EXISTS idx_filtres_tenant ON filtres(tenant);
 """
 
 
@@ -328,3 +333,42 @@ def lister_brouillons(tenant: str) -> list[dict]:
         rows = c.execute("SELECT * FROM brouillons WHERE tenant=? ORDER BY cree_le DESC",
                          (tenant,)).fetchall()
     return [_brouillon_dict(r) for r in rows]
+
+
+# ── Filtres personnalisés (ex. un filtre par entreprise) ─────────────────────
+def _filtre_dict(r: sqlite3.Row) -> dict:
+    return {"id": r["id"], "nom": r["nom"],
+            "mots": [m for m in (r["mots"] or "").split(",") if m],
+            "expediteur": r["expediteur"] or "", "cree_le": r["cree_le"]}
+
+
+def enregistrer_filtre(tenant: str, *, nom: str, mots: list[str], expediteur: str = "") -> dict:
+    """Crée un filtre personnalisé (nom + mots-clés et/ou expéditeur). Pour « les mails par
+    entreprise » : un filtre par société, par domaine d'expéditeur (ex. « @acme.com »)."""
+    fid = _id()
+    with _conn() as c:
+        c.execute("INSERT INTO filtres (id, tenant, nom, mots, expediteur, cree_le) "
+                  "VALUES (?,?,?,?,?,?)",
+                  (fid, tenant, nom.strip(), ",".join(m.strip() for m in mots if m.strip()),
+                   expediteur.strip(), _maintenant()))
+        r = c.execute("SELECT * FROM filtres WHERE id=?", (fid,)).fetchone()
+    return _filtre_dict(r)
+
+
+def lister_filtres(tenant: str) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM filtres WHERE tenant=? ORDER BY cree_le", (tenant,)).fetchall()
+    return [_filtre_dict(r) for r in rows]
+
+
+def lire_filtre(tenant: str, filtre_id: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM filtres WHERE id=? AND tenant=?",
+                      (filtre_id, tenant)).fetchone()
+    return _filtre_dict(r) if r else None
+
+
+def supprimer_filtre(tenant: str, filtre_id: str) -> bool:
+    with _conn() as c:
+        cur = c.execute("DELETE FROM filtres WHERE id=? AND tenant=?", (filtre_id, tenant))
+        return cur.rowcount > 0

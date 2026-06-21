@@ -30,7 +30,7 @@ import fournisseurs
 import resume
 import stockage
 
-app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.2.1")
+app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.3.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -66,6 +66,12 @@ class CompteEntree(BaseModel):
 class EnvoiEntree(BaseModel):
     sujet: str | None = None   # override « validé » optionnel avant envoi
     corps: str | None = None
+
+
+class FiltreEntree(BaseModel):
+    nom: str
+    mots: list[str] = []
+    expediteur: str = ""
 
 
 class ResumerEntree(BaseModel):
@@ -121,7 +127,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.2.1"}
+    return {"ok": True, "brique": "mail", "version": "0.3.0"}
 
 
 @app.get("/config")
@@ -189,19 +195,54 @@ def sync(tenant: str = Depends(tenant_actuel)):
 
 # ── Lecture de la boîte unifiée ──────────────────────────────────────────────
 @app.get("/mail")
-def lister(non_lus: bool = False, categorie: str = "", compte: str = "", limite: int = 50,
-           tenant: str = Depends(tenant_actuel)):
+def lister(non_lus: bool = False, categorie: str = "", compte: str = "", filtre: str = "",
+           limite: int = 50, tenant: str = Depends(tenant_actuel)):
     """Liste la boîte UNIFIÉE (toutes adresses), triée par importance. Sync paresseuse au 1er appel.
 
-    Filtres optionnels : `categorie` (facture, rendez_vous, personnel, notification, newsletter =
-    pubs/promos, autre ; libellés humains tolérés) et `compte` (une adresse précise, ex.
-    « perso@gmail.com »)."""
+    Filtres optionnels : `categorie` (facture, rendez_vous, personnel, notification, newsletter,
+    autre ; libellés humains tolérés), `compte` (une adresse précise) et `filtre` (id d'un FILTRE
+    PERSONNALISÉ, ex. un filtre par entreprise) qui applique ses mots-clés/expéditeur."""
     _assurer_cache(tenant)
     cat = domaine.normaliser_categorie(categorie) if categorie else ""
+    if filtre:
+        f = stockage.lire_filtre(tenant, filtre)
+        if not f:
+            raise HTTPException(404, "Filtre introuvable.")
+        bruts = stockage.lister_messages(tenant, non_lus=non_lus, categorie=cat, compte=compte,
+                                         limite=500)
+        msgs = [m for m in bruts
+                if domaine.correspond_filtre(m, f["mots"], f["expediteur"])][:limite]
+        return {"messages": msgs, "total": len(msgs), "filtre": f["nom"], "compte": compte or None,
+                "non_lus": sum(1 for m in msgs if not m.get("lu"))}
     msgs = stockage.lister_messages(tenant, non_lus=non_lus, categorie=cat, compte=compte,
                                     limite=limite)
     return {"messages": msgs, "total": len(msgs), "categorie": cat or None, "compte": compte or None,
             "non_lus": sum(1 for m in msgs if not m.get("lu"))}
+
+
+# ── Filtres personnalisés (ex. un filtre par entreprise) ─────────────────────
+@app.get("/filtres")
+def lister_filtres(tenant: str = Depends(tenant_actuel)):
+    return {"filtres": stockage.lister_filtres(tenant)}
+
+
+@app.post("/filtres", status_code=201)
+def creer_filtre(corps: FiltreEntree, tenant: str = Depends(tenant_actuel)):
+    """Crée un filtre personnalisé : un nom + des mots-clés et/ou un expéditeur (sous-chaîne, ex.
+    un domaine « @acme.com » pour « les mails de l'entreprise Acme »)."""
+    if not corps.nom.strip():
+        raise HTTPException(400, "Donne un nom au filtre.")
+    if not (corps.mots or corps.expediteur.strip()):
+        raise HTTPException(400, "Un filtre a besoin d'au moins un mot-clé ou un expéditeur.")
+    return stockage.enregistrer_filtre(tenant, nom=corps.nom, mots=corps.mots,
+                                       expediteur=corps.expediteur)
+
+
+@app.delete("/filtres/{filtre_id}")
+def supprimer_filtre(filtre_id: str, tenant: str = Depends(tenant_actuel)):
+    if not stockage.supprimer_filtre(tenant, filtre_id):
+        raise HTTPException(404, "Filtre introuvable.")
+    return {"ok": True}
 
 
 @app.get("/mail/{message_id}")
@@ -323,6 +364,9 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
  .filtres{display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
  .chip{padding:4px 10px;border:1px solid var(--bd);border-radius:999px;background:#fff;cursor:pointer;font-size:.82rem;color:var(--mut)}
  .chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+ .chip.add{border-style:dashed;color:var(--ac);font-weight:600}
+ .xchip{margin-left:6px;opacity:.55;font-size:.7rem} .xchip:hover{opacity:1;color:#e11d48}
+ .hint{font-size:.78rem;color:var(--mut);margin:2px 0 0}
  .body{flex:1;display:grid;grid-template-columns:minmax(280px,360px) 1fr;min-height:0}
  .liste{border-right:1px solid var(--bd);overflow:auto}
  .it{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;gap:8px}
@@ -388,9 +432,28 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
   </div>
 </div>
 
+<div class=modal id=mFiltre>
+  <div class=card>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>Nouveau filtre</h3><button class="btn sm" onclick=fermerFiltre()>✕</button></div>
+    <p class=note>Crée un filtre sur mesure — par exemple <b>un filtre par entreprise</b> : mets le
+      domaine de la société dans « Expéditeur » (ex. <code>@acme.com</code>), tu verras alors
+      uniquement les mails d'Acme. Tu peux aussi viser des mots-clés.</p>
+    <label>Nom du filtre</label><input id=fNom class=fld placeholder="Entreprise Acme">
+    <label>Expéditeur contient <span class=muted>(optionnel)</span></label>
+    <input id=fExp class=fld placeholder="@acme.com">
+    <label>Mots-clés <span class=muted>(optionnel, séparés par des virgules)</span></label>
+    <input id=fMots class=fld placeholder="facture, devis, commande">
+    <p class=hint>Au moins un expéditeur OU un mot-clé. Un mail correspond s'il contient l'un des
+      mots ET (si rempli) l'expéditeur.</p>
+    <div class=row><button class="btn pri" onclick=creerFiltre()>Créer le filtre</button><span id=fres class=res></span></div>
+  </div>
+</div>
+
 <script>
 const CATS=[['','Tout'],['__nl','Non lus'],['facture','💶 Factures'],['rendez_vous','📅 RDV'],
-  ['personnel','👤 Perso'],['notification','🔔 Notifs'],['newsletter','📰 Pubs']];
+  ['personnel','👤 Perso'],['notification','🔔 Notifs'],['newsletter','📰 Newsletters'],['autre','✉️ Autres']];
+let FILTRES=[];
 const ETIQ={facture:'💶 facture',rendez_vous:'📅 rdv',personnel:'👤 perso',notification:'🔔 notif',newsletter:'📰 pub',autre:'✉️ autre'};
 let filtre='', selId=null, MSGS=[];
 function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
@@ -399,8 +462,13 @@ function dateCourte(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return ''
   return d.toDateString()===au.toDateString()?d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});}
 
 function dessinerFiltres(){
-  document.getElementById('filtres').innerHTML=CATS.map(([v,l])=>
+  const base=CATS.map(([v,l])=>
     `<span class="chip ${filtre===v?'on':''}" onclick="setFiltre('${v}')">${l}</span>`).join('');
+  const perso=FILTRES.map(f=>{const v='f:'+f.id;
+    return `<span class="chip ${filtre===v?'on':''}" onclick="setFiltre('${v}')" title="${esc((f.mots||[]).join(', '))}${f.expediteur?(' · '+esc(f.expediteur)):''}">⭐ ${esc(f.nom)}`
+      +`<span class="xchip" onclick="event.stopPropagation();supprimerFiltre('${f.id}')">✕</span></span>`;}).join('');
+  document.getElementById('filtres').innerHTML=base+perso+
+    `<span class="chip add" onclick="ouvrirFiltre()">+ Filtre</span>`;
 }
 function setFiltre(v){filtre=v;dessinerFiltres();recharger();}
 
@@ -417,7 +485,9 @@ async function chargerConfig(){
 
 async function recharger(){
   const p=new URLSearchParams();
-  if(filtre==='__nl')p.set('non_lus','true'); else if(filtre)p.set('categorie',filtre);
+  if(filtre==='__nl')p.set('non_lus','true');
+  else if(filtre.startsWith('f:'))p.set('filtre',filtre.slice(2));
+  else if(filtre)p.set('categorie',filtre);
   const compte=document.getElementById('fCompte').value; if(compte)p.set('compte',compte);
   p.set('limite','200');
   const j=await fetch('/mail?'+p,{headers:entetes()}).then(r=>r.json());
@@ -519,5 +589,32 @@ async function deco(id){
   await fetch('/comptes/'+id,{method:'DELETE',headers:entetes()});chargerComptes();
 }
 
-dessinerFiltres(); chargerConfig().then(recharger);
+// ── Filtres personnalisés (ex. un par entreprise) ───────────────────────────
+async function chargerFiltres(){
+  const j=await fetch('/filtres',{headers:entetes()}).then(r=>r.json());
+  FILTRES=j.filtres||[]; dessinerFiltres();
+}
+function ouvrirFiltre(){document.getElementById('mFiltre').classList.add('on');}
+function fermerFiltre(){document.getElementById('mFiltre').classList.remove('on');}
+async function creerFiltre(){
+  const nom=document.getElementById('fNom').value.trim();
+  const exp=document.getElementById('fExp').value.trim();
+  const mots=document.getElementById('fMots').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!nom){document.getElementById('fres').textContent='Donne un nom.';return;}
+  if(!exp&&!mots.length){document.getElementById('fres').textContent='Mets un expéditeur ou un mot-clé.';return;}
+  const r=await fetch('/filtres',{method:'POST',headers:entetes(),
+    body:JSON.stringify({nom,expediteur:exp,mots})});
+  if(!r.ok){const j=await r.json();document.getElementById('fres').textContent='❌ '+(j.detail||'Échec.');return;}
+  ['fNom','fExp','fMots'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('fres').textContent='';
+  fermerFiltre(); await chargerFiltres();
+}
+async function supprimerFiltre(id){
+  if(!confirm('Supprimer ce filtre ?'))return;
+  if(filtre==='f:'+id)filtre='';
+  await fetch('/filtres/'+id,{method:'DELETE',headers:entetes()});
+  await chargerFiltres(); recharger();
+}
+
+dessinerFiltres(); chargerFiltres(); chargerConfig().then(recharger);
 </script></body></html>"""
