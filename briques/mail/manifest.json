@@ -1,7 +1,7 @@
 {
   "nom": "mail",
-  "version": "0.1.1",
-  "description": "Boîtes de réception (email ENTRANT), multi-tenant et provider-agnostique, LECTURE SEULE. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête) et trier les mails reçus, et préparer un brouillon de réponse (JAMAIS envoyé en v0.1.x). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos). L'envoi (SMTP) est prévu en v0.2.0.",
+  "version": "0.2.0",
+  "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION. Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos).",
   "role": "mail",
   "couche": "backend",
   "statut": "a_tester",
@@ -15,9 +15,10 @@
     "plusieurs_adresses_boite_unifiee",
     "tri_par_importance",
     "resume_ia_repli_honnete",
-    "brouillon_de_reponse_non_envoye",
+    "brouillon_de_reponse",
+    "envoi_reponse_sur_validation",
     "mock_honnete_par_defaut",
-    "imap_reel_mot_de_passe_app"
+    "imap_smtp_reel_mot_de_passe_app"
   ],
   "taches": [
     {
@@ -83,13 +84,25 @@
     },
     {
       "nom": "mail_brouillon_repondre",
-      "description": "PRÉPARE un brouillon de réponse à un email reçu (à partir de son identifiant). Le brouillon est rangé mais N'EST PAS ENVOYÉ (l'envoi arrive en v0.2.0). ACTION : confirme=true requis.",
+      "description": "PRÉPARE un brouillon de réponse à un email reçu (à partir de son identifiant). Le brouillon est rangé mais N'EST PAS ENVOYÉ : l'utilisateur le relit/ajuste, puis demande l'envoi via mail_brouillon_envoyer. ACTION : confirme=true requis.",
       "methode": "POST",
       "chemin": "/mail/brouillon",
       "params": {
         "message_id": {"type": "string", "description": "Identifiant du message auquel répondre.", "requis": true},
         "instruction": {"type": "string", "description": "Consigne de ton/contenu (optionnel), ex. « décline poliment », « propose jeudi 14h »."},
         "lang": {"type": "string", "description": "Langue du brouillon (fr, en, es). Défaut fr."}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_brouillon_envoyer",
+      "description": "ENVOIE un brouillon une fois VALIDÉ par l'utilisateur (id du brouillon obtenu via mail_brouillon_repondre ou la liste des brouillons). Envoi SMTP RÉEL si la boîte d'origine est réelle ; sinon envoi SIMULÉ honnête (rien ne part). On peut passer un 'corps'/'sujet' validé qui remplace le brouillon avant l'envoi. ACTION à EFFET DE BORD RÉEL (un email part) : confirme=true requis, seulement après accord explicite.",
+      "methode": "POST",
+      "chemin": "/brouillons/{brouillon_id}/envoyer",
+      "params": {
+        "brouillon_id": {"type": "string", "description": "Identifiant du brouillon à envoyer.", "requis": true},
+        "sujet": {"type": "string", "description": "Sujet validé (optionnel) qui remplace celui du brouillon."},
+        "corps": {"type": "string", "description": "Corps validé (optionnel) qui remplace celui du brouillon."}
       },
       "action": true
     },
@@ -102,7 +115,9 @@
         "host": {"type": "string", "description": "Serveur IMAP, ex. imap.gmail.com.", "requis": true},
         "utilisateur": {"type": "string", "description": "Adresse / identifiant IMAP.", "requis": true},
         "mot_de_passe": {"type": "string", "description": "MOT DE PASSE D'APPLICATION (pas le mot de passe principal).", "requis": true},
-        "port": {"type": "integer", "description": "Port IMAP (défaut 993)."}
+        "port": {"type": "integer", "description": "Port IMAP (défaut 993)."},
+        "smtp_host": {"type": "string", "description": "Serveur SMTP pour l'envoi (optionnel ; deviné depuis l'hôte IMAP sinon, ex. smtp.gmail.com)."},
+        "smtp_port": {"type": "integer", "description": "Port SMTP (optionnel, défaut 587 STARTTLS)."}
       },
       "action": true
     },

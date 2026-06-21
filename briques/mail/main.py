@@ -25,11 +25,12 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import domaine
+import envoi
 import fournisseurs
 import resume
 import stockage
 
-app = FastAPI(title="Mail — boîtes de réception multi-tenant (lecture seule)", version="0.1.1")
+app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.2.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -58,6 +59,13 @@ class CompteEntree(BaseModel):
     mot_de_passe: str
     port: int = 993
     dossier: str = "INBOX"
+    smtp_host: str = ""   # pour l'envoi (v0.2.0) ; vide = deviné depuis l'hôte IMAP
+    smtp_port: int = 0
+
+
+class EnvoiEntree(BaseModel):
+    sujet: str | None = None   # override « validé » optionnel avant envoi
+    corps: str | None = None
 
 
 class ResumerEntree(BaseModel):
@@ -113,7 +121,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.1.1"}
+    return {"ok": True, "brique": "mail", "version": "0.2.0"}
 
 
 @app.get("/config")
@@ -147,7 +155,8 @@ def connecter_compte(corps: CompteEntree, tenant: str = Depends(tenant_actuel)):
                                  "mot de passe en sécurité.")
     deja = any(c["utilisateur"] == corps.utilisateur for c in stockage.lister_comptes(tenant))
     compte = stockage.enregistrer_compte(tenant, corps.host, corps.utilisateur, corps.mot_de_passe,
-                                         port=corps.port, dossier=corps.dossier)
+                                         port=corps.port, dossier=corps.dossier,
+                                         smtp_host=corps.smtp_host, smtp_port=corps.smtp_port)
     try:
         n = _sync_compte(tenant, stockage.lire_compte(tenant, compte["id"], avec_secret=True),
                          stockage.expediteurs_connus(tenant))
@@ -237,16 +246,52 @@ async def brouillon(corps: BrouillonEntree, tenant: str = Depends(tenant_actuel)
     sujet = msg.get("sujet") or ""
     if not sujet.lower().startswith("re:"):
         sujet = "Re: " + sujet
-    enr = stockage.enregistrer_brouillon(tenant, en_reponse_a=corps.message_id,
-                                         a=msg.get("de", ""), sujet=sujet, corps=redige["corps"])
+    # On retient la boîte d'où la réponse partira (celle qui a reçu le message d'origine).
+    enr = stockage.enregistrer_brouillon(
+        tenant, en_reponse_a=corps.message_id, a=msg.get("de", ""), sujet=sujet,
+        corps=redige["corps"], compte=msg.get("compte", ""))
     return {"ok": True, "envoye": False, "brouillon": enr,
             "genere_par": redige["genere_par"], "note": redige.get("note", ""),
-            "message": "Brouillon préparé (NON envoyé). L'envoi sera disponible en v0.2.0."}
+            "message": "Brouillon préparé (NON envoyé). Relis/ajuste-le, puis demande l'envoi."}
 
 
 @app.get("/brouillons")
 def lister_brouillons(tenant: str = Depends(tenant_actuel)):
     return {"brouillons": stockage.lister_brouillons(tenant)}
+
+
+def _compte_du_brouillon(tenant: str, br: dict) -> dict | None:
+    """Retrouve la boîte réelle (avec secret) d'où envoyer ce brouillon, ou None (→ envoi simulé)."""
+    if not br.get("compte"):
+        return None
+    for c in stockage.lister_comptes(tenant):
+        if c["utilisateur"] == br["compte"]:
+            return stockage.lire_compte(tenant, c["id"], avec_secret=True)
+    return None
+
+
+@app.post("/brouillons/{brouillon_id}/envoyer")
+def envoyer_brouillon(brouillon_id: str, corps: EnvoiEntree = EnvoiEntree(),
+                      tenant: str = Depends(tenant_actuel)):
+    """ENVOIE un brouillon validé (SMTP réel si la boîte est réelle, sinon envoi SIMULÉ honnête).
+    On peut passer un `sujet`/`corps` « validé » qui remplace le brouillon avant l'envoi. ACTION à
+    effet de bord réel : confirme=true requis (géré par le Cœur)."""
+    br = stockage.lire_brouillon(tenant, brouillon_id)
+    if not br:
+        raise HTTPException(404, "Brouillon introuvable.")
+    if br["statut"] == "envoye":
+        raise HTTPException(409, "Ce brouillon a déjà été envoyé.")
+    if corps.sujet is not None or corps.corps is not None:
+        br = stockage.maj_brouillon(tenant, brouillon_id, sujet=corps.sujet, corps=corps.corps)
+    compte = _compte_du_brouillon(tenant, br)
+    try:
+        res = envoi.envoyer(compte, a=br["a"], sujet=br["sujet"], corps=br["corps"],
+                            en_reponse_a_uid=str(br.get("en_reponse_a") or ""))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+    stockage.marquer_brouillon_envoye(tenant, brouillon_id)
+    return {"ok": True, "envoye": True, "mode": res["mode"], "de": res["de"],
+            "a": br["a"], "message": res["message"]}
 
 
 # ── Back-office minimal : gérer ses boîtes sans passer le mdp par le chat ─────
@@ -283,28 +328,56 @@ _PAGE = """<!doctype html><html lang=fr><meta charset=utf-8>
 
 <h2>Ajouter une boîte</h2>
 <label>Serveur IMAP <input id=host placeholder="imap.gmail.com"></label>
-<label>Port <input id=port value="993"></label>
+<label>Port IMAP <input id=port value="993"></label>
 <label>Adresse / utilisateur <input id=user placeholder="toi@gmail.com"></label>
 <label>Mot de passe d'application <input id=pass type=password placeholder="xxxx xxxx xxxx xxxx"></label>
+<label>Serveur SMTP (envoi — optionnel, deviné sinon) <input id=smtp placeholder="smtp.gmail.com"></label>
+<label>Port SMTP <input id=smtpport value="587"></label>
 <label>Clé API (si la brique est protégée — sinon laisse vide) <input id=key placeholder="(vide en local)"></label>
 <button onclick=connecter()>Connecter & synchroniser</button>
 <div id=res></div>
 
+<h2>Brouillons à valider</h2>
+<p class=note>Relis et ajuste un brouillon, puis <b>Envoyer</b>. Envoi réel si la boîte est réelle ;
+ sinon envoi <b>simulé</b> (rien ne part).</p>
+<ul id=brouillons><li class=vide>Chargement…</li></ul>
+
 <script>
 function entetes(){const h={'Content-Type':'application/json'};const k=document.getElementById('key').value.trim();if(k)h['X-API-Key']=k;return h;}
+function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
 async function charger(){
  const r=await fetch('/comptes',{headers:entetes()}); const j=await r.json();
  const ul=document.getElementById('liste');
- if(!j.comptes||!j.comptes.length){ul.innerHTML='<li class=vide>Aucune boîte connectée — boîte simulée par défaut.</li>';return;}
- ul.innerHTML=j.comptes.map(c=>`<li><span>📥 <b>${c.adresse}</b> <small>(${c.hote})</small></span>`
+ if(!j.comptes||!j.comptes.length){ul.innerHTML='<li class=vide>Aucune boîte connectée — boîte simulée par défaut.</li>';}
+ else ul.innerHTML=j.comptes.map(c=>`<li><span>📥 <b>${esc(c.adresse)}</b> <small>(${esc(c.hote)})</small></span>`
    +`<button class=x onclick="deco('${c.id}')">Déconnecter</button></li>`).join('');
+ chargerBrouillons();
+}
+async function chargerBrouillons(){
+ const r=await fetch('/brouillons',{headers:entetes()}); const j=await r.json();
+ const ul=document.getElementById('brouillons');
+ const att=(j.brouillons||[]).filter(b=>b.statut!=='envoye');
+ if(!att.length){ul.innerHTML='<li class=vide>Aucun brouillon en attente.</li>';return;}
+ ul.innerHTML=att.map(b=>`<li style="display:block"><div><b>À : ${esc(b.a)}</b> — ${esc(b.sujet)}`
+   +` <small>${b.compte?('(depuis '+esc(b.compte)+')'):'(simulé)'}</small></div>`
+   +`<textarea id="t-${b.id}" style="width:100%;height:90px;margin:.4rem 0;border:1px solid #cbd5e1;border-radius:8px;padding:.5rem">${esc(b.corps)}</textarea>`
+   +`<button onclick="envoyer('${b.id}')">Envoyer</button></li>`).join('');
 }
 async function connecter(){
  const r=await fetch('/comptes',{method:'POST',headers:entetes(),body:JSON.stringify({
-   host:host.value.trim(),port:+port.value||993,utilisateur:user.value.trim(),mot_de_passe:pass.value})});
+   host:host.value.trim(),port:+port.value||993,utilisateur:user.value.trim(),mot_de_passe:pass.value,
+   smtp_host:smtp.value.trim(),smtp_port:+smtpport.value||0})});
  const j=await r.json();
  res.innerHTML = r.ok ? '✅ '+(j.message||'Connecté.') : '❌ '+(j.detail||'Échec.');
- if(r.ok){pass.value='';user.value='';host.value='';charger();}
+ if(r.ok){pass.value='';user.value='';host.value='';smtp.value='';charger();}
+}
+async function envoyer(id){
+ if(!confirm('Envoyer cette réponse ?'))return;
+ const corps=document.getElementById('t-'+id).value;
+ const r=await fetch('/brouillons/'+id+'/envoyer',{method:'POST',headers:entetes(),body:JSON.stringify({corps})});
+ const j=await r.json();
+ res.innerHTML = r.ok ? ((j.mode==='reel'?'✅ ':'🟡 ')+(j.message||'Envoyé.')) : '❌ '+(j.detail||'Échec.');
+ chargerBrouillons();
 }
 async function deco(id){
  if(!confirm('Déconnecter cette boîte ?'))return;

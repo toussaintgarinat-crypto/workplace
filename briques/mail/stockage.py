@@ -55,7 +55,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS comptes (
     id TEXT PRIMARY KEY, tenant TEXT NOT NULL, host TEXT NOT NULL, port INTEGER DEFAULT 993,
     utilisateur TEXT NOT NULL, mdp_chiffre BLOB NOT NULL, dossier TEXT DEFAULT 'INBOX',
-    cree_le TEXT, UNIQUE(tenant, utilisateur));
+    smtp_host TEXT, smtp_port INTEGER, cree_le TEXT, UNIQUE(tenant, utilisateur));
 CREATE INDEX IF NOT EXISTS idx_comptes_tenant ON comptes(tenant);
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -66,8 +66,8 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_msg_tenant ON messages(tenant);
 
 CREATE TABLE IF NOT EXISTS brouillons (
-    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, en_reponse_a TEXT,
-    a TEXT, sujet TEXT, corps TEXT, cree_le TEXT);
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, en_reponse_a TEXT, compte_id TEXT, compte TEXT,
+    a TEXT, sujet TEXT, corps TEXT, statut TEXT DEFAULT 'brouillon', cree_le TEXT, envoye_le TEXT);
 CREATE INDEX IF NOT EXISTS idx_br_tenant ON brouillons(tenant);
 """
 
@@ -98,6 +98,19 @@ def init() -> None:
             if col not in cols_msg:
                 c.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
 
+        # Comptes : colonnes SMTP (envoi, v0.2.0) si elles manquent.
+        cols_cpt = _colonnes(c, "comptes")
+        for col, typ in (("smtp_host", "TEXT"), ("smtp_port", "INTEGER")):
+            if col not in cols_cpt:
+                c.execute(f"ALTER TABLE comptes ADD COLUMN {col} {typ}")
+
+        # Brouillons : provenance (compte) + cycle de vie d'envoi (v0.2.0) si elles manquent.
+        cols_br = _colonnes(c, "brouillons")
+        for col, typ in (("compte_id", "TEXT"), ("compte", "TEXT"),
+                         ("statut", "TEXT"), ("envoye_le", "TEXT")):
+            if col not in cols_br:
+                c.execute(f"ALTER TABLE brouillons ADD COLUMN {col} {typ}")
+
 
 init()  # schéma prêt dès l'import (robuste même sous TestClient)
 
@@ -125,23 +138,28 @@ def _dechiffrer(blob: bytes) -> str:
 # ── Comptes IMAP (plusieurs par tenant) ──────────────────────────────────────
 def _compte_dict(r: sqlite3.Row, *, avec_secret: bool = False) -> dict:
     d = {"id": r["id"], "host": r["host"], "port": r["port"], "utilisateur": r["utilisateur"],
-         "dossier": r["dossier"], "cree_le": r["cree_le"]}
+         "dossier": r["dossier"], "smtp_host": r["smtp_host"], "smtp_port": r["smtp_port"],
+         "cree_le": r["cree_le"]}
     if avec_secret:
         d["mot_de_passe"] = _dechiffrer(r["mdp_chiffre"])
     return d
 
 
 def enregistrer_compte(tenant: str, host: str, utilisateur: str, mot_de_passe: str,
-                       *, port: int = 993, dossier: str = "INBOX") -> dict:
+                       *, port: int = 993, dossier: str = "INBOX",
+                       smtp_host: str = "", smtp_port: int = 0) -> dict:
     """Ajoute une boîte au tenant. Réenregistrer la MÊME adresse met à jour ses identifiants
-    (contrainte UNIQUE(tenant, utilisateur)) au lieu de créer un doublon."""
+    (contrainte UNIQUE(tenant, utilisateur)) au lieu de créer un doublon. `smtp_host`/`smtp_port`
+    (optionnels) servent à l'envoi (v0.2.0) ; vides = devinés depuis l'hôte IMAP au moment d'envoyer."""
     with _conn() as c:
         c.execute(
-            "INSERT INTO comptes (id, tenant, host, port, utilisateur, mdp_chiffre, dossier, cree_le) "
-            "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(tenant, utilisateur) DO UPDATE SET "
-            "host=excluded.host, port=excluded.port, mdp_chiffre=excluded.mdp_chiffre, "
-            "dossier=excluded.dossier",
-            (_id(), tenant, host, port, utilisateur, _chiffrer(mot_de_passe), dossier, _maintenant()))
+            "INSERT INTO comptes (id, tenant, host, port, utilisateur, mdp_chiffre, dossier, "
+            "smtp_host, smtp_port, cree_le) VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(tenant, utilisateur) DO UPDATE SET host=excluded.host, port=excluded.port, "
+            "mdp_chiffre=excluded.mdp_chiffre, dossier=excluded.dossier, "
+            "smtp_host=excluded.smtp_host, smtp_port=excluded.smtp_port",
+            (_id(), tenant, host, port, utilisateur, _chiffrer(mot_de_passe), dossier,
+             smtp_host or None, smtp_port or None, _maintenant()))
         r = c.execute("SELECT * FROM comptes WHERE tenant=? AND utilisateur=?",
                       (tenant, utilisateur)).fetchone()
     return _compte_dict(r)
@@ -255,21 +273,54 @@ def expediteurs_connus(tenant: str) -> set[str]:
     return {r["de"] for r in rows}
 
 
-# ── Brouillons (préparés, jamais envoyés en v0.1.x) ──────────────────────────
-def enregistrer_brouillon(tenant: str, *, en_reponse_a: str, a: str, sujet: str,
-                          corps: str) -> dict:
+# ── Brouillons (préparés ; envoyés sur validation en v0.2.0) ─────────────────
+def enregistrer_brouillon(tenant: str, *, en_reponse_a: str, a: str, sujet: str, corps: str,
+                          compte_id: str | None = None, compte: str = "") -> dict:
+    """Range un brouillon (statut « brouillon »). `compte`/`compte_id` = la boîte d'où il PARTIRA
+    (celle qui a reçu le message d'origine), pour envoyer depuis la bonne adresse."""
     bid = _id()
     with _conn() as c:
-        c.execute("INSERT INTO brouillons (id, tenant, en_reponse_a, a, sujet, corps, cree_le) "
-                  "VALUES (?,?,?,?,?,?,?)",
-                  (bid, tenant, en_reponse_a, a, sujet, corps, _maintenant()))
+        c.execute("INSERT INTO brouillons (id, tenant, en_reponse_a, compte_id, compte, a, sujet, "
+                  "corps, statut, cree_le) VALUES (?,?,?,?,?,?,?,?,'brouillon',?)",
+                  (bid, tenant, en_reponse_a, compte_id, compte, a, sujet, corps, _maintenant()))
         r = c.execute("SELECT * FROM brouillons WHERE id=?", (bid,)).fetchone()
     return _brouillon_dict(r)
 
 
 def _brouillon_dict(r: sqlite3.Row) -> dict:
-    return {"id": r["id"], "en_reponse_a": r["en_reponse_a"], "a": r["a"],
-            "sujet": r["sujet"], "corps": r["corps"], "cree_le": r["cree_le"]}
+    return {"id": r["id"], "en_reponse_a": r["en_reponse_a"], "compte_id": r["compte_id"],
+            "compte": r["compte"] or "", "a": r["a"], "sujet": r["sujet"], "corps": r["corps"],
+            "statut": r["statut"] or "brouillon", "cree_le": r["cree_le"], "envoye_le": r["envoye_le"]}
+
+
+def lire_brouillon(tenant: str, brouillon_id: str) -> dict | None:
+    """Un brouillon précis du tenant (cloisonné : autre tenant → None)."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM brouillons WHERE id=? AND tenant=?",
+                      (brouillon_id, tenant)).fetchone()
+    return _brouillon_dict(r) if r else None
+
+
+def maj_brouillon(tenant: str, brouillon_id: str, *, sujet: str | None = None,
+                  corps: str | None = None) -> dict | None:
+    """Modifie un brouillon AVANT envoi (la « validation » : l'utilisateur ajuste le texte)."""
+    champs, args = [], []
+    if sujet is not None:
+        champs.append("sujet=?"); args.append(sujet)
+    if corps is not None:
+        champs.append("corps=?"); args.append(corps)
+    if champs:
+        with _conn() as c:
+            args += [brouillon_id, tenant]
+            c.execute(f"UPDATE brouillons SET {', '.join(champs)} WHERE id=? AND tenant=? "
+                      "AND statut='brouillon'", args)
+    return lire_brouillon(tenant, brouillon_id)
+
+
+def marquer_brouillon_envoye(tenant: str, brouillon_id: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE brouillons SET statut='envoye', envoye_le=? WHERE id=? AND tenant=?",
+                  (_maintenant(), brouillon_id, tenant))
 
 
 def lister_brouillons(tenant: str) -> list[dict]:
