@@ -125,9 +125,41 @@ LIVE : narration en direct pendant un vrai chantier.
 
 ---
 
-## S90 — La porte à divulgation progressive + prompt caching
+## S90 — La porte à divulgation progressive + prompt caching ✅ LIVRÉ + PROUVÉ LIVE (2026-06-21)
 
-**Objectif.** Dégraisser le contexte (le `core/outils.py` de 95 Ko) ET rendre le préfixe stable
+**Livré (côté Cœur — sprint « hors-brique »).**
+- **Porte (taille).** `catalogue.py` lit un champ `niveau` par capacité (défaut 0, borné ≥ 0,
+  tolérant). `outils.outils_pour(registre, *, chargees, porte)` : avec `porte=True`, les capacités
+  de **niveau ≥ 1** sont retirées du contexte et remplacées par un méta-outil **`competence_charger`**
+  (pendant de `ToolSearch`) qui les LISTE (nom — description) ; le LLM l'appelle avec un `nom` → son
+  schéma complet devient appelable au tour suivant (`executer` rend le schéma ; la boucle de
+  `assistant.py` suit `competences_chargees` et recompose les outils). Gardé par
+  `PORTE_PROGRESSIVE` (off par défaut) → tant qu'aucune capacité ne déclare `niveau:1`, comportement
+  S64 strictement inchangé. La Gateway MCP garde `porte=False` (clients externes voient tout).
+- **S90a (préfixe stable).** `outils_pour` **trie les outils par nom** (préfixe d'outils stable d'une
+  requête à l'autre) ; dans `assistant.py`, le seul message système VOLATIL (date/heure) passe **en
+  dernier**, après le prompt fondateur + digests gelés → le gros préfixe ne « bouge » plus.
+- **S90b (`cache_control` conditionnel).** Nouveau `core/cache.py` : `fournisseur(modele)` +
+  `appliquer(messages, modele)` pose un `cache_control: ephemeral` sur le dernier message système
+  **si Anthropic**, **no-op** pour OpenAI (auto-cache) / local (jamais muté). Branché par modèle dans
+  `llm_pipeline.completer` ET `completer_flux` (aliasé `cache_prefixe` car `cache` est déjà un param).
+- **Drive-by honnête.** Bug pré-existant corrigé dans `shadow.py` + `proprioception.py` :
+  `float(conf.get("…_taux") or DEFAUT)` faisait retomber un **taux 0 explicite** sur le défaut (~10 %)
+  → régler le taux à 0 ne désactivait pas l'échantillonnage (fuite de souveraineté/coût + tests
+  flaky). Corrigé (`DEFAUT if brut is None else brut`).
+
+**+18 tests** (`test_cache` 6, `test_porte` 6, `test_catalogue` +1, + non-régression `test_s138`/
+`test_proprioception` désormais stables) → **32 tests core verts, 0 flaky** (5 rounds).
+**Preuve LIVE** (contre la vraie Gateway, modèle `anthropic/claude-sonnet-4-6`, préfixe stable
+7702 tokens) : appel 1 → `cache_write_tokens=7702`, coût **$0.0290** ; appel 2 (préfixe identique) →
+`cached_tokens=7702`, coût **$0.0024** = **~12× moins cher**. (Chemin `openai/gpt-4o-mini` : la
+Gateway ne remonte pas `cached_tokens` ici — noté honnêtement, mécanisme prouvé côté Anthropic.)
+
+**Reste.** Aucune capacité ne déclare encore `niveau:1` (la porte est armée mais inerte tant qu'une
+brique n'opte pas dedans — branchement naturel en S91/S92). Mesure du cache OpenAI à confirmer si la
+config Gateway expose un jour `cached_tokens`.
+
+**Objectif (rappel).** Dégraisser le contexte (le `core/outils.py` de 95 Ko) ET rendre le préfixe stable
 bon marché. Deux faces : taille (porte) et coût (caching).
 
 **Périmètre (porte, côté Cœur).**
@@ -197,6 +229,6 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 | **S87** | Fusion contrôlée + rebuild ciblé | ✅ livré (26 tests) |
 | **S88** | Flux BMAD léger (plan d'abord + DDD) | ✅ livré + prouvé LIVE (36 tests) |
 | **S89** | Task trace activable | ✅ livré + prouvé LIVE (42 tests) |
-| **S90** | Porte progressive (skills/MCP) + prompt caching | à faire |
+| **S90** | Porte progressive (niveau-0/1) + prompt caching | ✅ livré + prouvé LIVE (cache 12×, 32 tests) |
 | **S91** | Création de skills + accroche MCP | à faire |
 | **S92** | IDE code-server + pilotage Cœur `dev_demander` | à faire |

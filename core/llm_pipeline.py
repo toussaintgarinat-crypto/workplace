@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+import cache as cache_prefixe  # S90b — aliasé : `cache` est déjà un paramètre booléen de completer()
 import cache_semantique
 import journal_usage
 import routage
@@ -199,6 +200,9 @@ async def completer(
             essayes.append(modele)
             try:
                 payload["model"] = modele
+                # [S90b] point de cache conditionnel : marque le préfixe stable si Anthropic,
+                # no-op (charge inchangée) pour OpenAI auto-cache / local.
+                payload["messages"] = cache_prefixe.appliquer(messages, modele)
                 r = await client.post(
                     f"{GATEWAY_URL}/v1/chat/completions",
                     headers={"Authorization": f"Bearer {GATEWAY_KEY}"},
@@ -313,6 +317,7 @@ async def completer_flux(
         for modele in modeles_effectifs:
             essayes.append(modele)
             payload["model"] = modele
+            payload["messages"] = cache_prefixe.appliquer(messages, modele)  # [S90b] cf. completer()
             contenu = ""
             tool_frags: dict = {}                 # index -> {id, name, args}
             usage: dict = {}

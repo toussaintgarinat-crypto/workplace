@@ -43,6 +43,14 @@ def base_brique(registre, nom: str) -> str | None:
     return f"http://{BRIQUE_HOST}:{port}"
 
 
+def _niveau(brut) -> int:
+    """Niveau de divulgation déclaré (entier ≥ 0), tolérant : valeur absente/illisible → 0."""
+    try:
+        return max(0, int(brut))
+    except (TypeError, ValueError):
+        return 0
+
+
 def collecter_capacites(registre) -> list[dict]:
     """Découvre toutes les capacités déclarées par les briques (champ manifest `capacites`).
 
@@ -78,6 +86,10 @@ def collecter_capacites(registre) -> list[dict]:
                 "url": base + chemin,
                 "params": dict(decl.get("params") or {}),
                 "action": bool(decl.get("action", False)),
+                # S90 — porte à divulgation progressive : niveau 0 = toujours en contexte
+                # (nom+description+schéma), niveau ≥ 1 = DIFFÉRÉ derrière `competence_charger`
+                # (corps chargé à la demande). Défaut 0 → rétrocompat totale.
+                "niveau": _niveau(decl.get("niveau")),
             })
     return capacites
 

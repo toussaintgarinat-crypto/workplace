@@ -49,7 +49,8 @@ def echantillonne(conf: dict | None = None) -> bool:
     actif = ACTIF or bool((conf or {}).get("proprioception_actif"))
     if not actif:
         return False
-    taux = float((conf or {}).get("proprioception_taux") or TAUX_DEFAUT)
+    brut = (conf or {}).get("proprioception_taux")   # 0 explicite = désactivé (cf. shadow.py)
+    taux = float(TAUX_DEFAUT if brut is None else brut)
     return random.random() < max(0.0, min(1.0, taux))
 
 

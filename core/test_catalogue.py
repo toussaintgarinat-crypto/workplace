@@ -110,6 +110,18 @@ def test_pas_de_doublon_quand_noms_uniques():
     assert catalogue.doublons(cap) == []
 
 
+def test_niveau_defaut_zero_et_lecture():
+    # S90 : niveau absent → 0 (rétrocompat) ; niveau déclaré → repris ; illisible/négatif → 0.
+    reg = _Registre({"x": {"nom": "x", "port": 1, "capacites": [
+        {"nom": "x_a", "chemin": "/a"},                          # niveau absent
+        {"nom": "x_b", "chemin": "/b", "niveau": 1},             # différée
+        {"nom": "x_c", "chemin": "/c", "niveau": "oups"},        # illisible → 0, jamais casser
+        {"nom": "x_d", "chemin": "/d", "niveau": -3},            # borné à 0
+    ]}})
+    par_nom = {c["nom"]: c["niveau"] for c in catalogue.collecter_capacites(reg)}
+    assert par_nom == {"x_a": 0, "x_b": 1, "x_c": 0, "x_d": 0}
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
