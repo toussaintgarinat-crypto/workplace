@@ -230,10 +230,39 @@ type SKILL.md) et y **accroche des MCP**, puis les enregistre dans la porte (S90
 
 ---
 
-## S92 — IDE `code-server` + pilotage Cœur `dev_demander`
+## S92 — IDE `code-server` + pilotage Cœur `dev_demander` ✅ LIVRÉ + PROUVÉ LIVE (2026-06-21)
 
-**Objectif.** Le confort : un vrai IDE web + piloter l'atelier **à la voix / en chat** depuis
-l'assistant, avec gate dans la conversation.
+**Livré.** Brique v0.6.0. `POST /demander` = l'**orchestrateur en un geste** : réutilise tels
+quels `ouvrir`/`planifier`/`lancer` (mêmes gardes, mêmes états) → `plan_requis=true` ouvre +
+PLANIFIE et **s'arrête au gate du plan** ; sinon ouvre + LANCE l'agent et **s'arrête au gate du
+diff** ; JAMAIS de fusion auto ; renvoie le chantier + une `prochaine_etape` lisible (+ `diff_stats`
+quand le diff est prêt). Le `manifest.json` expose la **boîte à outils de pilotage** découverte par
+le Cœur (organisme vivant S63) : **`dev_demander` (niveau-0)** + `dev_chantiers`/`dev_diff`/
+`dev_plan_valider`/`dev_lancer`/`dev_fusionner`/`dev_jeter` (**niveau-1**, chargées à la demande par
+la porte S90) → on pilote tout le cycle plan→code→gate→fusion **en parlant** ; comme `dev_demander`
+est `action:true`, le builder du Cœur lui injecte automatiquement le param **`confirme`** = gate
+dans le chat (boutons S76). Côté confort : `briques/dev/docker-compose.yml` ajoute un conteneur
+**`code-server`** (image épinglée `4.96.4`, télémétrie coupée) monté sur le dépôt + la brique `dev`
+elle-même (repo monté rw, worktrees gitignorés `.dev-ateliers/`). Cœur : constante `DEV_IDE_URL`,
+**onglet « Atelier dev »** (entre Mail et Profil) avec **iframe code-server** chargée paresseusement
++ renvoi vers l'Assistant pour le pilotage ; la **carte au Registre** était déjà câblée via
+`vue_dashboard:"dev"` (bouton « Ouvrir dans le dashboard »).
+
+**+3 tests (`test_demander.py`) → brique 55 tests pytest verts.** Catalogue/outils/dashboard du
+Cœur vérifiés : les 7 capacités `dev_*` sont découvertes (niveaux 0/1 corrects), `outils_pour` les
+transforme en outils LLM (path param `cid` géré, `confirme` auto-injecté sur `dev_demander`), le
+dashboard rend l'onglet + substitue `__DEV_IDE_URL__`. **Preuve LIVE** (uvicorn :5953, repli plan
+local) : `/sante` v0.6.0 ; `/demander` sans plan → `revue` + `diff_stats` (note dans
+`briques/mail/`) + `prochaine_etape` ; `dev_diff` montre la note ; `/demander` plan_requis=true →
+`planifie` (plan 3 stories) + codage **verrouillé 409** ; **`main` identique** (SHA inchangé) ;
+les 2 chantiers jetés, **aucun worktree ni branche `dev/` résiduels**.
+
+**Reste.** Preuve LIVE de la boucle COMPLÈTE depuis le chat (Cœur + Gateway + brique + vrai agent
+de code) et de l'IDE `code-server` en conteneur (stack Docker lancée) — l'offline + le LIVE brique
+prouvent le mécanisme ; le bout-en-bout conversationnel se rejouera stack montée.
+
+**Objectif (rappel).** Le confort : un vrai IDE web + piloter l'atelier **à la voix / en chat**
+depuis l'assistant, avec gate dans la conversation.
 
 **Périmètre.**
 - Conteneur `code-server` monté sur le dépôt → **onglet iframe « Atelier dev »** au dashboard
@@ -260,4 +289,4 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 | **S89** | Task trace activable | ✅ livré + prouvé LIVE (42 tests) |
 | **S90** | Porte progressive (niveau-0/1) + prompt caching | ✅ livré + prouvé LIVE (cache 12×, 32 tests) |
 | **S91** | Création de skills + accroche MCP | ✅ livré + prouvé LIVE (v0.5.0, 52 tests) |
-| **S92** | IDE code-server + pilotage Cœur `dev_demander` | à faire |
+| **S92** | IDE code-server + pilotage Cœur `dev_demander` | ✅ livré + prouvé LIVE (v0.6.0, 55 tests) |

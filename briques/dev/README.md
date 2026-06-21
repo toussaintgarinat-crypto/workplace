@@ -61,11 +61,12 @@ seule brique modifiée**, puis on jette le worktree. Garde-fous, par constructio
 - **Rebuild ciblé** : **simulé honnête** par défaut (commande `docker compose` journalisée, non
   exécutée) ; réel seulement si `DEV_REBUILD=1`.
 
-## API (v0.4.0)
+## API (v0.6.0)
 
 | Méthode | Chemin | Rôle |
 |---|---|---|
 | `GET`  | `/sante` | Vivant + filet présent + agents disponibles |
+| `POST` | `/demander` | **Pilotage en un geste** (S92) : ouvre + planifie (si `plan_requis`) **ou** code, s'arrête au gate ; renvoie la `prochaine_etape` |
 | `POST` | `/chantiers` | Ouvre un worktree + branche neuve (`intention`, `brique_cible`, `agent`, `trace`, `sprint`, `plan_requis`) |
 | `POST` | `/chantiers/{id}/planifier` | **BMAD** : l'Architect conçoit le plan (mini-PRD + stories + DDD) |
 | `POST` | `/chantiers/{id}/plan/valider` | **Gate de plan** (`confirme=true`) → débloque le codage |
@@ -75,6 +76,14 @@ seule brique modifiée**, puis on jette le worktree. Garde-fous, par constructio
 | `POST` | `/chantiers/{id}/fusionner` | **Gate** (`confirme=true`) → merge dans `main` + rebuild ciblé → jette |
 | `GET`  | `/chantiers` · `/chantiers/{id}` | Liste / détail |
 | `DELETE` | `/chantiers/{id}` | Jette le worktree (chantier + trace effacés) |
+| `POST` | `/skills` · `/skills/persona/{role}` | **Fabrique une skill** façon Claude Code (gate `confirme=true`) / persona BMAD (S91) |
+| `GET`  | `/skills` · `/skills/{nom}` · `/skills/{nom}/corps` | Liste (niveau-0) / détail / corps (instructions + MCP) |
+| `DELETE` | `/skills/{nom}` | Supprime une skill |
+
+Le **manifest** expose au Cœur (organisme vivant S63) la boîte à outils de pilotage :
+`dev_demander` (niveau-0), `dev_chantiers`/`dev_diff`/`dev_plan_valider`/`dev_lancer`/
+`dev_fusionner`/`dev_jeter` (niveau-1, porte S90), + `dev_skills_lister`/`dev_skill_charger`/
+`dev_skill_creer` → on pilote tout le cycle **en parlant à l'assistant**, gate dans le chat.
 
 `agent` ∈ `claude_code` | `opencode` | `factice` | `""` (auto : Claude Code → OpenCode →
 mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
@@ -89,11 +98,19 @@ mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
 - `DEV_BRIQUES_DEBLOQUEES` — CSV de briques sensibles autorisées à la fusion (au cas par cas)
 - `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` — LLM du plan BMAD (repli honnête local si absent)
 - `DEV_TRACES` — dossier des journaux de trace (un JSONL par chantier)
+- `DEV_SKILLS_DIR` — dossier des skills fabriquées (S91)
+- `DEV_IDE_PASSWORD` — mot de passe de l'IDE web `code-server` (S92, défaut local)
+
+## IDE web (S92)
+
+`docker compose up` (dans `briques/dev/`) lance la brique **et** un conteneur **`code-server`**
+(IDE web, port `8744`) monté sur le dépôt → onglet **« Atelier dev »** du dashboard du Cœur
+(`DEV_IDE_URL`). On y relit/édite le code et le diff d'un chantier, à côté du pilotage à la voix.
 
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 42 tests : domaine + filet + fusion + BMAD + task trace + parcours mock
+python3 -m pytest -q   # 55 tests : domaine + filet + fusion + BMAD + task trace + skills + pilotage
 ```
 
 ## Feuille de route (sprints — détail dans `SPRINTS.md`)
@@ -102,6 +119,6 @@ python3 -m pytest -q   # 42 tests : domaine + filet + fusion + BMAD + task trace
 - **S87** ✅ Fusion contrôlée + rebuild ciblé (ferme la boucle ; seul sprint qui touche `main`)
 - **S88** ✅ Flux **BMAD** léger : plan d'abord (mini-PRD + stories + DDD) + gate de plan
 - **S89** ✅ **Task trace** activable (narration pas-à-pas FR, SSE direct + archive)
-- **S90** La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
-- **S91** **Création de skills** + accroche **MCP** par la brique
-- **S92** **IDE `code-server`** en iframe + outil Cœur `dev_demander` (gate dans le chat)
+- **S90** ✅ La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
+- **S91** ✅ **Création de skills** + accroche **MCP** par la brique
+- **S92** ✅ **IDE `code-server`** en iframe + outil Cœur `dev_demander` (gate dans le chat)

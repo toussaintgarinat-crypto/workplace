@@ -1,0 +1,65 @@
+# Auto-atelier dev (S92) : la brique + un IDE web (code-server) monté sur le dépôt.
+#
+# Le filet (git worktrees) a besoin du VRAI dépôt Workplace : on monte la racine du projet
+# en lecture-écriture dans les deux services. La brique reste SOUVERAINE (mono-user, local) —
+# ne JAMAIS exposer ces ports à l'extérieur (un agent de code = exécution arbitraire ; le
+# filet + les gates sont ce qui rend ça sûr, pas le réseau).
+#
+# NB : la brique se prouve aussi très bien en local via `uvicorn main:app --port 5950`
+# (c'est le mode des preuves LIVE jusqu'ici). Ce compose sert surtout à câbler l'IDE web.
+services:
+
+  dev:
+    build: .
+    container_name: workplace_dev
+    image: workplace/dev:0.6.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "5950:5950"
+    environment:
+      # Le dépôt cible = la racine Workplace montée en rw (le filet a besoin du vrai .git).
+      - DEV_REPO=/repo
+      # Les worktrees jetables vivent à côté (gitignoré), même filesystem que le dépôt.
+      - DEV_ATELIERS=/repo/.dev-ateliers
+      - DEV_DB=/data/chantiers.json
+      - DEV_TRACES=/data/traces
+      - DEV_SKILLS_DIR=/data/skills
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # DEV_KEY (garde X-API-Key, vide=ouvert), DEV_REBUILD (1=rebuild réel au merge),
+      # DEV_BRIQUES_DEBLOQUEES, GATEWAY_URL/KEY/MODEL : viennent du .env racine via env_file.
+      # NE PAS les redéclarer en `=${VAR:-}` (piège « env shadow » : écraserait par du vide).
+    volumes:
+      - ../..:/repo            # le dépôt Workplace (filet git : worktrees + diff + merge)
+      - dev_data:/data         # chantiers.json + traces + skills fabriquées
+      # Socket Docker : seulement utile si DEV_REBUILD=1 (rebuild ciblé réel au merge).
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5950/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # IDE web : on relit/édite le code (et le diff d'un chantier) dans le navigateur, en onglet
+  # iframe « Atelier dev » du dashboard du Cœur (DEV_IDE_URL côté Cœur → ce service).
+  code-server:
+    image: codercom/code-server:4.96.4   # version épinglée (pas de :latest)
+    container_name: workplace_dev_ide
+    environment:
+      # Mot de passe de l'IDE (local/souverain). À surcharger dans le .env racine.
+      - PASSWORD=${DEV_IDE_PASSWORD:-atelier-dev}
+    ports:
+      - "8744:8080"
+    volumes:
+      - ../..:/home/coder/project   # ouvre directement le dépôt Workplace
+      - dev_ide_config:/home/coder/.config
+    # On ouvre le dépôt et on désactive la télémétrie (souveraineté).
+    command: ["--disable-telemetry", "--auth", "password", "/home/coder/project"]
+    restart: unless-stopped
+
+volumes:
+  dev_data:
+  dev_ide_config:

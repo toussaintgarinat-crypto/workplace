@@ -1,7 +1,7 @@
 {
   "nom": "dev",
-  "version": "0.5.0",
-  "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). v0.3.0 = S88 (flux BMAD léger opt-in : l'Architect planifie AVANT de coder — mini-PRD + stories + note DDD via LLM, repli honnête local — double gate valide-le-plan puis valide-le-diff, codage verrouillé tant que le plan n'est pas validé, plan validé injecté à l'agent codeur). v0.4.0 = S89 (task trace activable on/off : trace ON → l'agent raconte chaque pas EN FRANÇAIS — factice ses pas, Claude Code via hook PreToolUse qui traduit ses outils — archivé dans chantier.journal + diffusé EN DIRECT via SSE GET /chantiers/{id}/trace ; trace OFF → silence). v0.5.0 = S91 (création de SKILLS façon Claude Code : dossier + SKILL.md frontmatter name/description/allowed-tools/mcp, personas BMAD prêtes Analyst/Architect/Dev/QA, MCP accrochés ; POST/GET/DELETE /skills + GET /skills/{nom}/corps = instructions+MCP ; capacités dev_skills_lister/dev_skill_charger/dev_skill_creer découvertes par le Cœur → lister puis CHARGER une skill à la demande depuis l'assistant ; skills_atelier.capacite_pour rend une capacité de niveau-1 prête pour la porte S90). À venir : IDE code-server, outil Cœur dev_demander.",
+  "version": "0.6.0",
+  "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). v0.3.0 = S88 (flux BMAD léger opt-in : l'Architect planifie AVANT de coder — mini-PRD + stories + note DDD via LLM, repli honnête local — double gate valide-le-plan puis valide-le-diff, codage verrouillé tant que le plan n'est pas validé, plan validé injecté à l'agent codeur). v0.4.0 = S89 (task trace activable on/off : trace ON → l'agent raconte chaque pas EN FRANÇAIS — factice ses pas, Claude Code via hook PreToolUse qui traduit ses outils — archivé dans chantier.journal + diffusé EN DIRECT via SSE GET /chantiers/{id}/trace ; trace OFF → silence). v0.5.0 = S91 (création de SKILLS façon Claude Code : dossier + SKILL.md frontmatter name/description/allowed-tools/mcp, personas BMAD prêtes Analyst/Architect/Dev/QA, MCP accrochés ; POST/GET/DELETE /skills + GET /skills/{nom}/corps = instructions+MCP ; capacités dev_skills_lister/dev_skill_charger/dev_skill_creer découvertes par le Cœur → lister puis CHARGER une skill à la demande depuis l'assistant ; skills_atelier.capacite_pour rend une capacité de niveau-1 prête pour la porte S90). v0.6.0 = S92 (sprint d'intégration : POST /demander = orchestrateur en un geste — ouvre un chantier puis PLANIFIE si plan_requis sinon LANCE l'agent, s'arrête au gate du plan ou du diff, JAMAIS de fusion auto ; le manifest expose la boîte à outils de pilotage découverte par le Cœur — dev_demander niveau-0 + dev_chantiers/dev_diff/dev_plan_valider/dev_lancer/dev_fusionner/dev_jeter niveau-1 chargées à la demande par la porte S90 → on pilote tout le cycle plan→code→gate→fusion EN PARLANT à l'assistant, gate dans le chat via les boutons S76 ; côté confort un conteneur code-server monté sur le dépôt = onglet iframe « Atelier dev » au dashboard).",
   "role": "dev",
   "couche": "backend",
   "statut": "a_tester",
@@ -29,10 +29,99 @@
     "creation_skills_facon_claude_code",
     "personas_bmad_pretes",
     "accroche_mcp_aux_skills",
-    "skills_branchees_sur_la_porte"
+    "skills_branchees_sur_la_porte",
+    "pilotage_du_coeur_dev_demander",
+    "orchestrateur_un_geste_plan_ou_code",
+    "boite_outils_pilotage_decouverte",
+    "gate_dans_le_chat_jamais_de_fusion_auto",
+    "ide_web_code_server_iframe_dashboard"
   ],
   "besoin": [],
   "capacites": [
+    {
+      "nom": "dev_demander",
+      "description": "Pilote l'auto-atelier EN UN GESTE depuis l'assistant : ouvre un chantier (worktree jetable, jamais main) puis fait le bon premier pas. Si plan_requis=true → planifie (Architect) et s'arrête au gate du plan ; sinon → lance l'agent de code et s'arrête au gate du diff. JAMAIS de fusion automatique. ACTION souveraine (crée une branche + fait coder un agent) : confirme l'intention avec l'humain avant d'appeler. Renvoie le chantier + la prochaine_etape.",
+      "methode": "POST",
+      "chemin": "/demander",
+      "params": {
+        "intention": {"type": "string", "requis": true, "description": "Ce qu'on veut faire, en clair (ex. « ajoute un champ téléphone à la brique mail »)."},
+        "brique_cible": {"type": "string", "description": "Nom de la brique visée (ex. mail, restaurant). Sert au nom de branche et au rebuild ciblé."},
+        "agent": {"type": "string", "description": "Agent de code : claude_code, opencode, factice, ou vide pour choix auto."},
+        "trace": {"type": "boolean", "description": "true → l'agent raconte chaque pas en français (task trace S89, suivable via dev_diff/SSE)."},
+        "plan_requis": {"type": "boolean", "description": "true → exiger un plan BMAD validé AVANT de coder (double gate). false → coder directement."},
+        "lang": {"type": "string", "description": "Langue du plan de l'Architect (défaut fr)."},
+        "base": {"type": "string", "description": "Ref git de départ (défaut HEAD)."},
+        "sprint": {"type": "string", "description": "Rattachement optionnel à une story de sprint."}
+      },
+      "action": true,
+      "niveau": 0
+    },
+    {
+      "nom": "dev_chantiers",
+      "description": "Liste les chantiers de l'auto-atelier (tous états : cree/planifie/en_cours/revue/fusionne/jete). Pour reprendre un chantier en cours ou retrouver un id.",
+      "methode": "GET",
+      "chemin": "/chantiers",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_diff",
+      "description": "Le diff d'un chantier (ce que l'humain relit au gate, avec les stats de fichiers). À lire AVANT de fusionner.",
+      "methode": "GET",
+      "chemin": "/chantiers/{cid}/diff",
+      "params": {
+        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier (cf. dev_demander / dev_chantiers)."}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_plan_valider",
+      "description": "GATE DU PLAN (1er gate BMAD) : valide le plan d'un chantier pour débloquer le codage. ACTION : confirme=true requis après que l'humain a relu le plan.",
+      "methode": "POST",
+      "chemin": "/chantiers/{cid}/plan/valider",
+      "params": {
+        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."},
+        "confirme": {"type": "boolean", "requis": true, "description": "true pour valider le plan (gate humain)."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_lancer",
+      "description": "Lance (ou relance) l'agent de code dans le worktree du chantier : il code et commite sur sa branche, le diff devient prêt à relire. Verrouillé (409) si un plan requis n'est pas validé. ACTION souveraine.",
+      "methode": "POST",
+      "chemin": "/chantiers/{cid}/lancer",
+      "params": {
+        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_fusionner",
+      "description": "GATE DU DIFF (gate final) : fusionne la branche du chantier dans main (merge --no-ff) + rebuild ciblé de la seule brique modifiée, puis jette le worktree. Le SEUL geste qui touche main. ACTION à effet de bord : confirme=true requis après relecture du diff ; refuse les briques sensibles (paiements/connexion/auth) et les conflits.",
+      "methode": "POST",
+      "chemin": "/chantiers/{cid}/fusionner",
+      "params": {
+        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."},
+        "confirme": {"type": "boolean", "requis": true, "description": "true pour fusionner dans main (gate humain)."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_jeter",
+      "description": "Jette un chantier : détruit son worktree + sa branche, efface la trace. La prod (main) n'a jamais bougé. À utiliser quand on renonce au diff.",
+      "methode": "DELETE",
+      "chemin": "/chantiers/{cid}",
+      "params": {
+        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."}
+      },
+      "action": true,
+      "niveau": 1
+    },
     {
       "nom": "dev_skills_lister",
       "description": "Liste les skills (workflows réutilisables et personas) fabriquées dans l'auto-atelier : nom + description, sans le corps. À appeler avant de charger une skill.",
