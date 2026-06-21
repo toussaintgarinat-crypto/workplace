@@ -64,8 +64,12 @@ def test_montant_a_encaisser_borne_au_reste_global():
     assert domaine.montant_a_encaisser(1000, "egal", total_cents=1000, parts=3) == 334
     # « part » : le dû propre du convive, borné au reste.
     assert domaine.montant_a_encaisser(1000, "part", du_convive_cents=600) == 600
+    # « tournee » (S85) : tout le reste de la table, peu importe les autres paramètres.
+    assert domaine.montant_a_encaisser(1000, "tournee") == 1000
+    assert domaine.montant_a_encaisser(450, "tournee", du_convive_cents=100) == 450
     # Table soldée → rien, quel que soit le mode.
     assert domaine.montant_a_encaisser(0, "libre", montant_cents=500) == 0
+    assert domaine.montant_a_encaisser(0, "tournee") == 0
 
 
 # ── Bout-en-bout : les trois modes via l'API client ──────────────

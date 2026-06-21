@@ -33,6 +33,7 @@
   .actions button { flex:1; padding:11px; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
   .b-prete { background:var(--prete); color:#0d1119; }
   .b-servie { background:var(--ok); color:#0d1119; }
+  .b-annul { flex:none; width:42px; background:transparent; border:1px solid #ef4444; color:#ef4444; font-size:1.1rem; }
   .etiq { font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:6px; }
   .etiq.prete { color:var(--prete); background:rgba(251,191,36,.14); }
   .vide { color:var(--doux); text-align:center; padding:80px 20px; grid-column:1/-1; }
@@ -50,9 +51,11 @@
 const T = {
   fr: { titre:"Cuisine — commandes en direct", table:"Table", prete:"Prête", servie:"Servie",
         en_cuisine:"En préparation", est_prete:"Prête à servir", vide:"Aucune commande en attente.",
+        annul_titre:"Annuler cette commande", confirm_annul:"Annuler cette commande ? Elle sortira de la cuisine et de l'addition.",
         pas_session:"Ouvrez l'écran cuisine depuis le back-office (session requise)." },
   en: { titre:"Kitchen — live orders", table:"Table", prete:"Ready", servie:"Served",
         en_cuisine:"Preparing", est_prete:"Ready to serve", vide:"No pending orders.",
+        annul_titre:"Cancel this order", confirm_annul:"Cancel this order? It will leave the kitchen and the bill.",
         pas_session:"Open the kitchen screen from the back-office (session required)." }
 };
 let lang = localStorage.getItem('resto_lang') || 'fr';
@@ -82,20 +85,29 @@ function rendre(cmds){
     const prete = c.statut==='prete';
     const lignes = c.lignes.map(l=>`<li><b>${l.quantite}×</b> ${esc(l.nom_plat)}</li>`).join('');
     const etiq = prete ? `<span class="etiq prete">${t('est_prete')}</span>` : '';
-    const actions = prete
+    const avance = prete
       ? `<button class="b-servie" onclick="statut('${c.id}','servie')">${t('servie')}</button>`
       : `<button class="b-prete" onclick="statut('${c.id}','prete')">${t('prete')}</button>`;
+    const annul = `<button class="b-annul" title="${t('annul_titre')}" onclick="annuler('${c.id}')">🗑</button>`;
     return `<div class="cmd ${prete?'prete':''}">
       <div class="tete"><span class="table">${t('table')} ${esc(c.table_numero)}</span><span class="heure">${heure(c.cree_le)}</span></div>
       <div class="conv">${esc(c.convive)} ${etiq}</div>
       <ul>${lignes}</ul>
-      <div class="actions">${actions}</div></div>`;
+      <div class="actions">${avance}${annul}</div></div>`;
   }).join('');
 }
 
 window.statut = async (id, statut) => {
   await fetch(`/restaurants/${resto}/commandes/${id}/statut`, {method:'POST',
     headers:{'Content-Type':'application/json', Authorization:'Bearer '+session}, body:JSON.stringify({statut})});
+  charger();
+};
+
+// Annuler une commande déjà envoyée (erreur / annulation client) — retrait simple de l'addition.
+window.annuler = async (id) => {
+  if(!confirm(t('confirm_annul'))) return;
+  await fetch(`/restaurants/${resto}/commandes/${id}`, {method:'DELETE',
+    headers:{Authorization:'Bearer '+session}});
   charger();
 };
 

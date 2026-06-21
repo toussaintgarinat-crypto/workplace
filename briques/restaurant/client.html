@@ -91,6 +91,13 @@
   .conv.avis .merci { color:var(--accent); font-weight:700; padding:6px 0; }
   .recap { display:flex; justify-content:space-between; font-size:1.1rem; font-weight:800; margin:16px 4px; }
   .demo { font-size:.74rem; color:var(--attente); text-align:center; margin-top:8px; }
+  /* Tablée (surnom rigolo) + tournée + souvenir (S85) */
+  .conv.tablee .tete span:first-child { font-size:1.05rem; }
+  .conv.tablee .actions button { background:transparent; border:1px solid var(--bord); color:var(--accent); border-radius:8px; padding:5px 12px; font-weight:700; cursor:pointer; }
+  .conv.tablee .sous { color:var(--doux); font-size:.85rem; margin-top:4px; }
+  .gros.tournee { background:linear-gradient(110deg,#f59e0b,#ec4899); color:#fff; }
+  .conv.souvenir-carte .sous { color:var(--doux); font-size:.85rem; }
+  .souvenir { font-size:1rem; line-height:1.5; padding:6px 2px; white-space:pre-wrap; }
 
   .vide { color:var(--doux); text-align:center; padding:48px 12px; }
   .gros { width:100%; padding:15px; border:none; border-radius:12px; background:var(--accent); color:#0f1420; font-weight:800; font-size:1.05rem; cursor:pointer; }
@@ -186,6 +193,12 @@ const T = {
         votre_avis:"Votre avis", avis_sous:"Comment s'est passé votre repas ?",
         commentaire_ex:"Un mot pour le chef (optionnel)…", envoyer_avis:"Envoyer mon avis",
         avis_merci:"Merci pour votre avis ! 🙏",
+        nommer_tablee:"Donnez un nom à votre tablée", nommer_court:"Nommer",
+        nommer_tablee_sous:"Un surnom rigolo pour votre soirée (« Les Gloutons »…) — juste pour vos souvenirs.",
+        nommer_placeholder:"Les Gloutons, La Joyeuse Marmite…",
+        tournee:"Je paye ma tournée", tournee_msg:"Tournée offerte ! 🍻 Toute la table est réglée. Quelle générosité !",
+        resume_titre:"Souvenir de la soirée", resume_btn:"✨ Générer notre souvenir",
+        resume_gen:"On écrit votre souvenir…", resume_local:"Récap de la soirée (assistant festif hors ligne).",
         porte_demarrer:"Démarrer la table", porte_demarrer_sous:"Vous êtes le premier ici. Démarrez la table : vous obtiendrez un code à partager avec votre tablée.",
         porte_rejoindre:"Rejoindre la table", porte_rejoindre_sous:"Entrez le code à 4 chiffres affiché sur le téléphone qui a démarré la table.",
         porte_partage:"Partagez ce code avec votre tablée :", porte_continuer:"Continuer", porte_code_faux:"Code incorrect.", porte_code:"Code à 4 chiffres" },
@@ -210,6 +223,12 @@ const T = {
         votre_avis:"Your review", avis_sous:"How was your meal?",
         commentaire_ex:"A word for the chef (optional)…", envoyer_avis:"Send my review",
         avis_merci:"Thanks for your review! 🙏",
+        nommer_tablee:"Name your table", nommer_court:"Name it",
+        nommer_tablee_sous:"A fun nickname for your evening (« The Foodies »…) — just for your memories.",
+        nommer_placeholder:"The Foodies, The Happy Bunch…",
+        tournee:"My treat — I'll pay for everyone", tournee_msg:"Round's on you! 🍻 The whole table is settled. How generous!",
+        resume_titre:"Evening memory", resume_btn:"✨ Create our memory",
+        resume_gen:"Writing your memory…", resume_local:"Evening recap (festive assistant offline).",
         porte_demarrer:"Start the table", porte_demarrer_sous:"You are the first here. Start the table: you'll get a code to share with your party.",
         porte_rejoindre:"Join the table", porte_rejoindre_sous:"Enter the 4-digit code shown on the phone that started the table.",
         porte_partage:"Share this code with your party:", porte_continuer:"Continue", porte_code_faux:"Wrong code.", porte_code:"4-digit code" }
@@ -221,6 +240,7 @@ const code = location.pathname.split('/').filter(Boolean).pop();
 let data = null, devise = 'EUR', pourboirePct = 0;
 let repMode = 'egal', repNb = 2;           // répartition flexible (S83) : egal | libre, nb de convives
 let avisNote = 0, avisEnvoye = false;      // avis client (S84) : note 1–5 + état d'envoi
+let souvenirTexte = '', souvenirSource = ''; // résumé de soirée (S85) : texte généré + origine
 let vue = 'carte';                         // carte | panier | addition
 let ecran = 'accueil';                     // (vue carte) accueil | categorie
 let categorieActive = null, recherche = '';
@@ -509,8 +529,8 @@ async function chargerAddition(){
   if(r.status===403){ gererPorte(); return; }   // code exigé et pas (encore) rejoint
   const e = await r.json();
   const corps = $('#addition-corps'); if(!corps) return;
-  if(!e.convives.length){ corps.innerHTML = `<div class="vide">${t('rien_addition')}</div>`; return; }
-  corps.innerHTML = e.convives.map(c=>{
+  if(!e.convives.length){ corps.innerHTML = carteTablee(e) + `<div class="vide">${t('rien_addition')}</div>`; return; }
+  corps.innerHTML = carteTablee(e) + e.convives.map(c=>{
     const aMoi = convives.includes(c.convive);   // ce convive est-il porté par cet appareil ?
     const det = c.details.map(d=>`<div class="ligne"><span>${d.quantite}× ${esc(d.nom_plat)}${d.notes?` · “${esc(d.notes)}”`:''}</span><span>${euro(d.prix_cents*d.quantite)}</span></div>`).join('');
     const etat = c.regle ? `<span class="etat ok">${t('regle')}</span>` : `<span class="etat att">${t('en_attente')}</span>`;
@@ -531,11 +551,64 @@ async function chargerAddition(){
       ${c.pourboire_cents?`<div class="ligne"><span>${t('pourboire')}</span><span>${euro(c.pourboire_cents)}</span></div>`:''}
       ${bloc}</div>`;
   }).join('')
+  + (e.reste_cents > 0 ? boutonTournee(e) : '')
   + (e.reste_cents > 0 ? panneauRepartition(e) : '')
   + (e.tva && e.tva.tva_cents ? `<div class="tva-ligne"><span>${t('dont_tva')} (${e.tva.tva_taux}%)</span><span>${euro(e.tva.tva_cents)}</span></div>` : '')
   + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`
+  + carteSouvenir()
   + carteAvis();
 }
+
+// ── Tablée (surnom rigolo, S85) ──────────────────────────────────────────────
+function carteTablee(e){
+  const nom = (e.nom_session || '').trim();
+  return `<div class="conv tablee"><div class="tete">
+    <span>${nom ? '🎉 '+esc(nom) : t('nommer_tablee')}</span>
+    <div class="actions"><button onclick="nommerTablee()">${nom ? t('renommer') : t('nommer_court')}</button></div></div>
+    ${nom ? '' : `<div class="sous">${t('nommer_tablee_sous')}</div>`}</div>`;
+}
+window.nommerTablee = () => {
+  const actuel = (data && data.nom_session) || '';
+  demanderNom(t('nommer_tablee'), t('nommer_tablee_sous'), actuel, async nom=>{
+    const r = await fetch('/t/'+code+'/nommer', {method:'POST', headers:entetes(true),
+      body:JSON.stringify({nom})});
+    if(r.ok){ const d = await r.json(); if(data) data.nom_session = d.nom_session; }
+    chargerAddition();
+  });
+};
+
+// ── Tournée (S85) : un convive régale toute la table ─────────────────────────
+function boutonTournee(e){
+  return `<div class="conv tournee-carte">
+    <button class="gros tournee" onclick="payerTournee(${e.reste_cents})">🍻 ${t('tournee')} · ${euro(e.reste_cents)}</button>
+    <div class="demo">${t('demo')}</div></div>`;
+}
+window.payerTournee = async (reste) => {
+  if(!reste || reste<=0) return;
+  const convive = conviveCourant || convives[0] || '';
+  const r = await fetch('/t/'+code+'/payer', {method:'POST', headers:entetes(true),
+    body:JSON.stringify({convive, mode:'tournee', pourboire_cents:0})});
+  if(r.ok){ alert(t('tournee_msg')); chargerAddition(); }
+};
+
+// ── Souvenir de soirée (S85) : résumé festif via le LLM, repli factuel honnête ──
+function rendreSouvenir(){
+  if(!souvenirTexte) return `<button class="gros" onclick="genererResume()">${t('resume_btn')}</button>`;
+  const tag = souvenirSource==='local' ? `<div class="demo">${t('resume_local')}</div>` : '';
+  return `<div class="souvenir">${esc(souvenirTexte)}</div>${tag}`;
+}
+function carteSouvenir(){
+  return `<div class="conv souvenir-carte"><div class="tete"><span>${t('resume_titre')}</span></div>
+    <div id="souvenir-zone">${rendreSouvenir()}</div></div>`;
+}
+window.genererResume = async () => {
+  const z = $('#souvenir-zone'); if(z) z.innerHTML = `<div class="sous">${t('resume_gen')}</div>`;
+  const r = await fetch('/t/'+code+'/resume?lang='+lang, {headers:entetes(false)});
+  if(!r.ok){ if(z) z.innerHTML = rendreSouvenir(); return; }
+  const d = await r.json();
+  souvenirTexte = d.texte || ''; souvenirSource = d.genere_par || '';
+  if(z) z.innerHTML = rendreSouvenir();
+};
 
 // Avis client (S84) : note 1–5 étoiles + commentaire, déposé via le QR de la table.
 function carteAvis(){
@@ -637,7 +710,8 @@ function brancherWS(){
     let m = {}; try { m = JSON.parse(ev.data); } catch(e){}
     if(m.type==='rupture' || m.type==='carte_modifiee'){ rechargerCarte(); return; }
     if(m.type==='session'){ charger(); return; }   // un autre appareil a démarré/clôturé la table
-    if(vue==='addition') chargerAddition();
+    if(m.type==='nom_session'){ if(data) data.nom_session = m.nom_session; if(vue==='addition') chargerAddition(); return; }
+    if(vue==='addition') chargerAddition();   // commande/paiement/annulation → addition à jour
   };
   ws.onclose = () => setTimeout(brancherWS, 3000);
 }

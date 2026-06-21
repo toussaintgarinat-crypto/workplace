@@ -123,10 +123,12 @@ def montant_a_encaisser(reste_global_cents: int, mode: str, *, du_convive_cents:
     `mode` de répartition, TOUJOURS borné au reste GLOBAL de la table (anti-surpaiement :
     on n'encaisse jamais plus que ce qui reste dû à la table, peu importe le mode).
 
-    - `part`  : la part propre du convive (« chacun ses plats », défaut historique).
-    - `egal`  : une part d'un partage égal du TOTAL en `parts` (la plus grosse part ;
-                le dernier payeur règle le reliquat, plus petit → somme exacte).
-    - `libre` : un montant arbitraire choisi par le payeur (« je mets 30 € »).
+    - `part`    : la part propre du convive (« chacun ses plats », défaut historique).
+    - `egal`    : une part d'un partage égal du TOTAL en `parts` (la plus grosse part ;
+                  le dernier payeur règle le reliquat, plus petit → somme exacte).
+    - `libre`   : un montant arbitraire choisi par le payeur (« je mets 30 € »).
+    - `tournee` : TOUT le reste de la table d'un coup (« je paye ma tournée » : un convive
+                  régale toute la tablée). Égal au reste global, donc solde la table.
 
     Retourne le montant borné (≥ 0). 0 → rien à encaisser (déjà soldé / saisie vide)."""
     reste = max(0, int(reste_global_cents))
@@ -136,6 +138,8 @@ def montant_a_encaisser(reste_global_cents: int, mode: str, *, du_convive_cents:
         vise = parts_egales(total_cents, parts)[0] if parts else 0
     elif mode == "libre":
         vise = max(0, int(montant_cents))
+    elif mode == "tournee":           # « je paye ma tournée » : tout le reste de la table
+        vise = reste
     else:  # "part" (défaut) — le reste dû propre au convive
         vise = max(0, int(du_convive_cents))
     return min(vise, reste)
