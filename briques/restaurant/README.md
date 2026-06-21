@@ -69,6 +69,22 @@ l'**onboarding d'un nouveau restaurant**.
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
 
+## Avis clients par QR (v0.10.0)
+
+Le client laisse un **avis** (note **1–5 ⭐ + commentaire** optionnel) directement depuis la page
+**Addition** de l'app de table — donc **via le QR**, sans compte, sans appli à installer. Le
+restaurateur retrouve la **synthèse** dans un onglet **« Avis »** du back-office : **moyenne**,
+nombre, et les derniers commentaires.
+
+- **Souverain / interne** : aucun service tiers, aucune synchro Google (un *pont* Google Reviews
+  resterait un incrément séparé, sur le modèle du pont agenda↔Google).
+- **Un avis par convive et par visite** (table + session) : re-soumettre **corrige** le sien
+  (upsert), jamais de doublon — index unique `(table, session, convive)`.
+- **Note validée serveur** : `domaine.normaliser_note` borne à 1–5 (hors bornes → 400) ;
+  `domaine.moyenne_notes` calcule la moyenne (arrondie à une décimale). Règles **pures**, testées.
+- **Cloisonné** : `GET /restaurants/{id}/avis` est gardé par le propriétaire (404 sur le resto
+  d'autrui). Dépôt client : `POST /t/{code}/avis` (capability du QR, respecte le code de table).
+
 ## Répartition flexible de l'addition (v0.9.0)
 
 Jusqu'ici chacun ne pouvait régler que **ses propres plats**. Désormais le client choisit,

@@ -116,6 +116,7 @@
     <button data-o="assistant"></button>
     <button data-o="tables"></button>
     <button data-o="additions"></button>
+    <button data-o="avis"></button>
     <button data-o="cuisine"></button>
     <button data-o="reglages"></button>
   </div>
@@ -128,7 +129,9 @@ const T = {
   titre:"Restaurant", connexion:"Se connecter", inscription:"Créer un compte",
   vers_inscription:"Pas de compte ? Créer un compte", vers_connexion:"Déjà un compte ? Se connecter",
   nom_resto:"Nom du restaurant", deco:"Déconnexion", new_resto:"+ Restaurant",
-  o_carte:"Carte", o_assistant:"Assistant carte", o_tables:"Tables & QR", o_additions:"Additions", o_cuisine:"Cuisine",
+  o_carte:"Carte", o_assistant:"Assistant carte", o_tables:"Tables & QR", o_additions:"Additions", o_avis:"Avis", o_cuisine:"Cuisine",
+  avis_aucun:"Aucun avis pour l'instant. Les clients peuvent en laisser depuis la page Addition (QR de table).",
+  avis_base:"sur la base de", avis_mot:"avis", anonyme:"Anonyme",
   ajouter_plat:"Ajouter un plat", nom:"Nom", desc:"Description", prix:"Prix (€)", ajouter:"Ajouter",
   asst_titre:"Importer une ancienne carte", asst_aide:"Photographiez ou déposez l'ancienne carte (image ou PDF). Je la lis (OCR) et je vous propose les plats : vous corrigez, puis vous ajoutez à votre carte.",
   asst_choisir:"Choisir une photo / un PDF", asst_lire:"Lire la carte", asst_lecture:"Lecture en cours…",
@@ -165,7 +168,9 @@ const T = {
   titre:"Restaurant", connexion:"Sign in", inscription:"Create account",
   vers_inscription:"No account? Create one", vers_connexion:"Have an account? Sign in",
   nom_resto:"Restaurant name", deco:"Sign out", new_resto:"+ Restaurant",
-  o_carte:"Menu", o_assistant:"Menu assistant", o_tables:"Tables & QR", o_additions:"Bills", o_cuisine:"Kitchen",
+  o_carte:"Menu", o_assistant:"Menu assistant", o_tables:"Tables & QR", o_additions:"Bills", o_avis:"Reviews", o_cuisine:"Kitchen",
+  avis_aucun:"No reviews yet. Customers can leave one from the Bill page (table QR).",
+  avis_base:"based on", avis_mot:"reviews", anonyme:"Anonymous",
   ajouter_plat:"Add a dish", nom:"Name", desc:"Description", prix:"Price (€)", ajouter:"Add",
   asst_titre:"Import an old menu", asst_aide:"Take a photo or drop the old menu (image or PDF). I read it (OCR) and propose the dishes: fix them, then add to your menu.",
   asst_choisir:"Choose a photo / PDF", asst_lire:"Read the menu", asst_lecture:"Reading…",
@@ -290,6 +295,7 @@ function rendre(){
   else if(onglet==='assistant') vueAssistant();
   else if(onglet==='tables') vueTables();
   else if(onglet==='additions') vueAdditions();
+  else if(onglet==='avis') vueAvis();
   else if(onglet==='reglages') vueReglages();
 }
 
@@ -567,6 +573,29 @@ window.imprimerTicket = ()=>{
     <script>window.print()<\/script></body></html>`);
   w.document.close();
 };
+
+// Avis clients (note 1–5 + commentaire), déposés via le QR de table → synthèse pour le resto.
+async function vueAvis(){
+  $('#vue').innerHTML = `<h2>${t('o_avis')}</h2><div id="avis-corps" class="conv" style="max-width:640px">…</div>`;
+  const r = await fetch(`/restaurants/${restoActif}/avis`, {headers:H()});
+  const d = await r.json().catch(()=>null);
+  const corps = $('#avis-corps'); if(!corps) return;
+  if(!d || !d.nombre){ corps.innerHTML = `<div class="liv-sub" style="color:#94a3b8">${t('avis_aucun')}</div>`; return; }
+  const pleines = Math.round(d.moyenne);
+  const etoiles = '★★★★★'.slice(0, pleines) + '☆☆☆☆☆'.slice(0, 5 - pleines);
+  corps.innerHTML = `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span style="font-size:2.2rem;font-weight:800;color:var(--accent)">${d.moyenne.toFixed(1)}</span>
+      <span style="color:#f5b301;font-size:1.4rem;letter-spacing:2px">${etoiles}</span>
+      <span class="liv-sub" style="color:#94a3b8">${t('avis_base')} ${d.nombre} ${t('avis_mot')}</span>
+    </div>`
+    + d.avis.map(a=>{
+        const e = '★'.repeat(a.note) + '☆'.repeat(5 - a.note);
+        return `<div style="border-top:1px solid var(--bord);padding:10px 0;margin-top:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <b>${esc(a.convive || t('anonyme'))}</b><span style="color:#f5b301;letter-spacing:2px">${e}</span></div>
+          ${a.commentaire ? `<div class="liv-sub" style="margin-top:4px;color:#cbd5e1">“${esc(a.commentaire)}”</div>` : ''}</div>`;
+      }).join('');
+}
 
 // Réglages : TVA du restaurant + sécurité du compte (mot de passe, déconnexion partout).
 function vueReglages(){

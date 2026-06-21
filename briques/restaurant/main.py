@@ -32,7 +32,7 @@ import carte_ia
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.9.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.10.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -221,10 +221,16 @@ class Rejoindre(BaseModel):
     pin: str = ""                          # code à saisir pour rejoindre une table protégée
 
 
+class AvisEntree(BaseModel):
+    convive: str = ""                      # qui laisse l'avis (défaut normalisé serveur)
+    note: int = 0                          # 1–5 étoiles (validé serveur)
+    commentaire: str = ""                  # texte libre optionnel
+
+
 # ── Santé ────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "restaurant", "version": "0.9.0"}
+    return {"ok": True, "brique": "restaurant", "version": "0.10.0"}
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -592,6 +598,13 @@ def tickets(restaurant_id: str, limite: int = 50, compte_id: str = Depends(compt
     return {"tickets": stockage.lister_tickets(compte_id, restaurant_id, limite) or []}
 
 
+@app.get("/restaurants/{restaurant_id}/avis")
+def avis(restaurant_id: str, limite: int = 50, compte_id: str = Depends(compte_actuel)):
+    """Synthèse des avis clients (moyenne, nombre, derniers) — vue restaurateur."""
+    _exige_resto(compte_id, restaurant_id)
+    return stockage.resume_avis(compte_id, restaurant_id, limite)
+
+
 # ── CLIENT (public, via le code de table du QR) ──────────────────
 def _table_par_code(code: str) -> dict:
     t = stockage.table_par_code(code)
@@ -712,6 +725,19 @@ async def payer(code: str, corps: PayerPart, x_table_session: Optional[str] = He
     await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
                              {"type": "paiement", "table_id": t["id"], "etat": etat})
     return {"paiement": res, "etat": etat, "demo": True}
+
+
+@app.post("/t/{code}/avis")
+def laisser_avis(code: str, corps: AvisEntree, x_table_session: Optional[str] = Header(None)):
+    """Le client laisse un avis (note 1–5 + commentaire) via le QR de sa table. Un avis par
+    convive et par visite (re-soumettre corrige le sien). Note validée serveur."""
+    t = _table_par_code(code)
+    _exige_adhesion(t, x_table_session)
+    res = stockage.enregistrer_avis(t["restaurant_id"], t["id"], corps.convive, corps.note,
+                                    corps.commentaire)
+    if not res:
+        raise HTTPException(400, "Note invalide (attendu : 1 à 5 étoiles).")
+    return {"avis": res, "merci": True}
 
 
 # ── WebSockets ───────────────────────────────────────────────────
