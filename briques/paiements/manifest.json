@@ -1,0 +1,22 @@
+{
+  "nom": "paiements",
+  "version": "0.1.0",
+  "description": "Rail d'argent multi-tenant et provider-agnostique (Stripe Connect). Possède les comptes connectés des vendeurs (onboarding hébergé), l'encaissement avec COMMISSION PLATEFORME (destination charge + application_fee), les remboursements et les webhooks signés. Réutilisable par plusieurs solutions (restaurant, Forge, marketplaces), chacune isolée par sa clé API. Le SPLIT/addition partagée reste dans la brique appelante. Fournisseur MOCK honnête par défaut (aucun argent ne bouge), Stripe réel dès qu'une clé est fournie (test puis live = étape externe : validation plateforme + KYC vendeurs).",
+  "role": "paiements",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/paiements",
+  "port": 6020,
+  "url_sante": "http://host.docker.internal:6020/sante",
+  "depends_on": [],
+  "offre": [
+    "multi_tenant_par_cle",
+    "comptes_connectes_vendeurs",
+    "onboarding_heberge",
+    "encaissement_avec_commission",
+    "remboursement",
+    "webhooks_signes",
+    "mock_honnete_par_defaut",
+    "stripe_connect_reel"
+  ]
+}

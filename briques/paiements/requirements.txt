@@ -1,0 +1,7 @@
+# Brique paiements — rail multi-tenant (Stripe Connect). Dépendances minces et épinglées.
+# Le métier (commission, transitions) est en Python pur (domaine.py). Le SDK Stripe n'est
+# chargé que par le vrai rail (import paresseux) : mock + tests tournent sans appel tiers.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+stripe==12.0.1

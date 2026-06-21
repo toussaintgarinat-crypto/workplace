@@ -1,0 +1,34 @@
+services:
+  paiements:
+    build: .
+    container_name: workplace_paiements
+    image: workplace/paiements:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6020:6020"
+    environment:
+      - PORT=6020
+      - PAIEMENTS_DB=/data/paiements.db
+      # Clés des SOLUTIONS autorisées (CSV). VIDE = dev ouvert (espace « public » unique).
+      # Hérité du .env racine ; ne PAS redéclarer en `=${VAR:-}` (piège « env shadow »).
+      # URL publique de la brique (liens d'onboarding / retours). VIDE = localhost.
+      - PAIEMENTS_PUBLIC_URL=${PAIEMENTS_PUBLIC_URL:-http://localhost:6020}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Stripe : clé (de préférence RESTREINTE rk_) + secret webhook. ABSENTS du `environment`
+      # exprès (ils viennent du .env racine via env_file) — les redéclarer en `=${VAR:-}` les
+      # écraserait par du VIDE (piège « env shadow »). Sans clé : rail MOCK honnête.
+    volumes:
+      - paiements_data:/data   # comptes connectés + paiements
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6020/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  paiements_data:
