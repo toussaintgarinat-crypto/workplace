@@ -1,0 +1,73 @@
+# Brique `dev` — l'auto-atelier souverain (port 5950)
+
+Modifier les briques de Workplace et **ajouter des features depuis l'assistant**, avec le
+**filet git** comme garantie « on ne casse pas la prod ».
+
+> ⚠️ **Atelier PERSO SOUVERAIN.** Mono-user, local / self-host, **jamais exposé à un client**
+> (comme la brique `paiements` est cloisonnée exprès). Un agent de code = exécution de code
+> arbitraire ; le filet git + le gate humain sont ce qui rend ça sûr.
+
+## Le principe (le filet)
+
+L'agent ne travaille **jamais** dans le dépôt vivant. Pour chaque chantier :
+
+1. `git worktree add -b dev/<intention> <chemin> <base>` — une copie isolée, branche neuve,
+   **jamais `main`**. La prod continue de tourner.
+2. L'agent (**Claude Code** ou **OpenCode**, sinon **mock honnête**) code dans le worktree et
+   commite sur sa branche.
+3. On relit le **diff** (`base...branche`) — le gate humain.
+4. Soit on **fusionne** (gate humain, S87), soit on **jette** : `git worktree remove` →
+   chantier effacé, prod intacte. Aucun `git push`, aucun déploiement automatique.
+
+## La fusion contrôlée (S87 — le seul geste qui touche `main`)
+
+Une fois le diff relu, on **confirme** : la branche est fusionnée dans `main` (`git merge
+--no-ff`, donc un commit de merge **relisible / `git revert`-able**), puis on rebuild **la
+seule brique modifiée**, puis on jette le worktree. Garde-fous, par construction :
+
+- **Gate explicite** : `confirme=true` requis (sinon `428`) — la fusion modifie `main`.
+- **Briques sensibles** : `paiements` / `connexion` / `auth` sont **refusées** (`403`) sauf
+  déblocage explicite via `DEV_BRIQUES_DEBLOQUEES`.
+- **Jamais forcé** : un conflit (ou un arbre sale) → `merge --abort` + `409`, dépôt laissé propre.
+- **Rebuild ciblé** : **simulé honnête** par défaut (commande `docker compose` journalisée, non
+  exécutée) ; réel seulement si `DEV_REBUILD=1`.
+
+## API (v0.2.0)
+
+| Méthode | Chemin | Rôle |
+|---|---|---|
+| `GET`  | `/sante` | Vivant + filet présent + agents disponibles |
+| `POST` | `/chantiers` | Ouvre un worktree + branche neuve (`intention`, `brique_cible`, `agent`, `trace`, `sprint`) |
+| `POST` | `/chantiers/{id}/lancer` | L'agent code dans le worktree, commite |
+| `GET`  | `/chantiers/{id}/diff` | Le diff à relire (jamais déployé) |
+| `POST` | `/chantiers/{id}/fusionner` | **Gate** (`confirme=true`) → merge dans `main` + rebuild ciblé → jette |
+| `GET`  | `/chantiers` · `/chantiers/{id}` | Liste / détail |
+| `DELETE` | `/chantiers/{id}` | Jette le worktree (chantier effacé) |
+
+`agent` ∈ `claude_code` | `opencode` | `factice` | `""` (auto : Claude Code → OpenCode →
+mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
+
+## Réglages (env)
+
+- `DEV_REPO` — dépôt cible (défaut : la racine Workplace)
+- `DEV_ATELIERS` — dossier des worktrees jetables (hors du dépôt)
+- `DEV_DB` — fichier JSON des chantiers
+- `DEV_KEY` — clé d'accès optionnelle (vide = atelier local ouvert)
+- `DEV_REBUILD` — `1` pour rebuild RÉELLEMENT la brique fusionnée (défaut : simulé honnête)
+- `DEV_BRIQUES_DEBLOQUEES` — CSV de briques sensibles autorisées à la fusion (au cas par cas)
+
+## Tests
+
+```bash
+python3 -m pytest -q   # 26 tests : domaine pur + filet git + fusion contrôlée + parcours mock
+```
+
+## Feuille de route (sprints — détail dans `SPRINTS.md`)
+
+- **S86** ✅ Socle git (worktree + branche + diff, prouvé sans déploiement)
+- **S87** ✅ Fusion contrôlée + rebuild ciblé (ferme la boucle ; seul sprint qui touche `main`)
+- **S88** Flux **BMAD** léger : plan d'abord (mini-PRD + stories) + gate, règle **DDD**
+- **S89** **Task trace** activable (narration pas-à-pas, pédagogique)
+- **S90** La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
+- **S91** **Création de skills** + accroche **MCP** par la brique
+- **S92** **IDE `code-server`** en iframe + outil Cœur `dev_demander` (gate dans le chat)

@@ -1,0 +1,27 @@
+{
+  "nom": "dev",
+  "version": "0.2.0",
+  "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). À venir : flux BMAD (plan d'abord), task trace activable, porte skills/MCP + prompt caching, IDE code-server, outil Cœur dev_demander.",
+  "role": "dev",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/dev",
+  "port": 5950,
+  "url_sante": "http://host.docker.internal:5950/sante",
+  "url_ui": "http://localhost:5950/",
+  "vue_dashboard": "dev",
+  "depends_on": [],
+  "offre": [
+    "auto_atelier_souverain",
+    "git_worktree_jetable_filet",
+    "agent_code_abstrait_claude_ou_opencode",
+    "mock_honnete_par_defaut",
+    "diff_sans_deploiement",
+    "gate_humain_avant_fusion",
+    "fusion_controlee_merge_no_ff",
+    "rebuild_cible_simule_ou_reel",
+    "garde_fou_briques_sensibles"
+  ],
+  "besoin": [],
+  "capacites": []
+}
