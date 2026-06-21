@@ -389,6 +389,7 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
  .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px}
  .modal.on{display:flex} .card{background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow:auto;padding:20px}
  .card h3{margin:0 0 10px} .note{background:var(--bg);padding:10px;border-radius:8px;font-size:.82rem;color:#475569;margin:10px 0}
+ .note a{color:var(--ac);font-weight:600;text-decoration:none} .note a:hover{text-decoration:underline}
  .acc{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:6px 0}
  label{display:block;font-size:.82rem;font-weight:600;margin:8px 0 3px} .fld{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px}
  .muted{color:var(--mut)}
@@ -412,11 +413,26 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
   <div class=card>
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h3>Mes boîtes mail</h3><button class="btn sm" onclick=fermerComptes()>✕</button></div>
-    <p class=note>Lecture seule : rien n'est jamais supprimé ni déplacé. Utilise un
-      <b>mot de passe d'application</b> (Gmail : Compte → Sécurité → Mots de passe des applications),
-      pas ton mot de passe principal — il est chiffré au repos. Tu peux connecter plusieurs adresses.</p>
+    <p class=note><b>Comment connecter ton adresse — 3 étapes :</b><br>
+      <b>1.</b> Choisis ton fournisseur ci-dessous (les serveurs se remplissent tout seuls).<br>
+      <b>2.</b> Sur le site de ta messagerie, génère un <b>mot de passe d'application</b> (l'aide
+      s'affiche selon le fournisseur) — c'est un code DÉDIÉ à cette appli, différent de ton mot de
+      passe habituel.<br>
+      <b>3.</b> Saisis ton adresse + ce mot de passe d'application, puis « Connecter ».<br>
+      <span class=muted>Lecture seule : rien n'est jamais supprimé ni déplacé. Le mot de passe est
+      chiffré au repos, jamais affiché. Tu peux connecter plusieurs adresses.</span></p>
     <div id=accs></div>
     <h3 style="font-size:.95rem;margin-top:16px">Ajouter une boîte</h3>
+    <label>Fournisseur</label>
+    <select id=fourn class=fld onchange=preremplir()>
+      <option value="">— Choisis ton fournisseur —</option>
+      <option value=gmail>Gmail</option>
+      <option value=outlook>Outlook / Hotmail / Live</option>
+      <option value=icloud>iCloud / Apple</option>
+      <option value=yahoo>Yahoo</option>
+      <option value=autre>Autre (réglage manuel)</option>
+    </select>
+    <div id=aideFourn class=note style="display:none"></div>
     <label>Serveur IMAP</label><input id=host class=fld placeholder="imap.gmail.com">
     <div class=row>
       <div style=flex:1><label>Port IMAP</label><input id=port class=fld value=993></div>
@@ -587,6 +603,22 @@ async function connecter(){
 async function deco(id){
   if(!confirm('Déconnecter cette boîte ?'))return;
   await fetch('/comptes/'+id,{method:'DELETE',headers:entetes()});chargerComptes();
+}
+const PROVIDERS={
+ gmail:{imap:'imap.gmail.com',smtp:'smtp.gmail.com',aide:`<b>Gmail</b> — active d'abord la <b>validation en 2 étapes</b>, puis génère un mot de passe d'application : <a href="https://myaccount.google.com/apppasswords" target=_blank rel=noopener>myaccount.google.com/apppasswords</a>. Colle ici le code de 16 lettres (sans les espaces).`},
+ outlook:{imap:'outlook.office365.com',smtp:'smtp.office365.com',aide:`<b>Outlook / Hotmail / Live</b> — active la vérification en 2 étapes, puis crée un mot de passe d'application : <a href="https://account.microsoft.com/security" target=_blank rel=noopener>account.microsoft.com/security</a> → Options de sécurité avancées → Mots de passe d'application.`},
+ icloud:{imap:'imap.mail.me.com',smtp:'smtp.mail.me.com',aide:`<b>iCloud / Apple</b> — active l'authentification à deux facteurs, puis crée un « mot de passe pour app » : <a href="https://appleid.apple.com" target=_blank rel=noopener>appleid.apple.com</a> → Connexion et sécurité → Mots de passe d'app.`},
+ yahoo:{imap:'imap.mail.yahoo.com',smtp:'smtp.mail.yahoo.com',aide:`<b>Yahoo</b> — sécurité du compte : <a href="https://login.yahoo.com/account/security" target=_blank rel=noopener>login.yahoo.com/account/security</a> → Générer un mot de passe d'application.`},
+ autre:{imap:'',smtp:'',aide:`<b>Autre fournisseur</b> — renseigne à la main les serveurs IMAP (port 993) et SMTP (port 587). Utilise un <b>mot de passe d'application</b> si ton fournisseur en propose ; sinon ton mot de passe habituel.`},
+};
+function preremplir(){
+  const v=document.getElementById('fourn').value, p=PROVIDERS[v], aide=document.getElementById('aideFourn');
+  if(!p){aide.style.display='none';return;}
+  document.getElementById('host').value=p.imap;
+  document.getElementById('smtp').value=p.smtp;
+  document.getElementById('port').value=993;
+  document.getElementById('smtpport').value=587;
+  aide.style.display='block'; aide.innerHTML=p.aide+' <span class=muted>Les serveurs ont été remplis pour toi.</span>';
 }
 
 // ── Filtres personnalisés (ex. un par entreprise) ───────────────────────────
