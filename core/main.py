@@ -55,6 +55,9 @@ TRANSCRIPTION_UI_URL = os.environ.get("TRANSCRIPTION_UI_URL", "http://localhost:
 # Brique « restaurant » (port 6010) : back-office restaurateur (commande & paiement à table
 # par QR, multi-tenant). Embarquée dans l'onglet « Atelier » comme les autres briques.
 RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/")
+# Brique « mail » (port 6030) : client mail (boîtes de réception unifiées + réponse sur
+# validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
+MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
@@ -117,6 +120,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .health-ok          { background: #14532d55; color: #4ade80; border: 1px solid #16653155; }
   .health-inaccessible{ background: #7f1d1d55; color: #f87171; border: 1px solid #991b1b55; }
   .health-inconnu     { background: #1e293b; color: #475569; border: 1px solid #2d3748; }
+  .port-pill { font-size: 0.74rem; padding: 3px 8px; border-radius: 20px; font-weight: 600;
+    font-variant-numeric: tabular-nums; background: #1e293b; color: #93a4c3; border: 1px solid #2d3748; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip { font-size: 0.68rem; background: #1e2535; border: 1px solid #2d3148; border-radius: 6px; padding: 2px 8px; color: #64748b; }
   .section-label { font-size: 0.65rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; margin-top: 10px; }
@@ -365,6 +370,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')">Assistant</button>
       <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
+      <button class="tab" data-vue="mail" onclick="switchVue('mail')">Mail</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -697,6 +703,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div id="event-modal"></div>
   <div id="label-modal"></div>
 
+  <!-- VUE MAIL -->
+  <div class="view" id="vue-mail">
+    <div class="topbar">
+      <h2>Mail</h2>
+      <a class="btn ghost" href="__MAIL_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+    </div>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <iframe id="mail-iframe" title="Mail"
+        style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"
+        allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+  </div>
+
   <!-- VUE PROFIL -->
   <div class="view" id="vue-profil">
     <div class="topbar">
@@ -775,6 +794,7 @@ function switchVue(v) {
     chargerCerveau(); majBoutonVoix(); brancherDragDrop(); chargerDossiers(); rafraichirPastilleRappels();
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
+  if (v === 'mail') chargerMail();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
   if (v === 'historique') chargerHistorique();
@@ -850,6 +870,16 @@ function chargerForge() {
   if (forgeCharge) return;
   const f = document.getElementById('forge-iframe');
   if (f) { f.src = FORGE_UI_URL; forgeCharge = true; }
+}
+
+// ── Mail (client mail intégré, brique 6030) ────────────────────────────────────
+// Chargement paresseux de l'iframe au 1er affichage de l'onglet.
+const MAIL_UI_URL = '__MAIL_UI_URL__';
+let mailCharge = false;
+function chargerMail() {
+  if (mailCharge) return;
+  const f = document.getElementById('mail-iframe');
+  if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
 }
 
 // ── Profil ────────────────────────────────────────────────────────────────────
@@ -2367,6 +2397,7 @@ function carteHTML(b, h) {
     ${deps  ? `<div class="section-label">Dépend de</div><div class="chips">${deps}</div>` : ''}
     <div class="card-footer" style="margin-top:14px">
       <span class="${statutClass}"><span class="dot"></span>${statutLabel}</span>
+      ${b.port ? `<span class="port-pill" title="Port utilisé par la brique">:${b.port}</span>` : ''}
       ${healthHTML}
     </div>
     <button class="btn ghost card-open" onclick="ouvrirBrique('${b.nom}')">Ouvrir ↗</button>
@@ -2706,7 +2737,8 @@ async def dashboard():
         .replace("__STUDIO_UI_URL__", studio_ui)
         .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
         .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
-        .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL))
+        .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
+        .replace("__MAIL_UI_URL__", MAIL_UI_URL))
 
 
 # ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────

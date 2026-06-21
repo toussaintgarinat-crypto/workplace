@@ -30,7 +30,7 @@ import fournisseurs
 import resume
 import stockage
 
-app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.2.0")
+app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.2.1")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -121,7 +121,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.2.0"}
+    return {"ok": True, "brique": "mail", "version": "0.2.1"}
 
 
 @app.get("/config")
@@ -294,94 +294,230 @@ def envoyer_brouillon(brouillon_id: str, corps: EnvoiEntree = EnvoiEntree(),
             "a": br["a"], "message": res["message"]}
 
 
-# ── Back-office minimal : gérer ses boîtes sans passer le mdp par le chat ─────
+# ── Front-end : un vrai client mail (liste + lecture + réponse + gestion comptes) ─
 @app.get("/", response_class=HTMLResponse)
-def back_office():
-    """Petite page pour connecter/déconnecter des boîtes IMAP. On préfère taper le mot de passe
-    d'application ICI plutôt que dans la conversation (le chat journalise les messages)."""
+def front_end():
+    """Client mail complet (boîte unifiée, lecture, réponse, gestion des boîtes). Pensé pour être
+    embarqué en iframe dans le dashboard du Cœur. Le mot de passe d'app se saisit ICI (la modale
+    Comptes), pas dans le chat (qui journalise les messages)."""
     return HTMLResponse(_PAGE)
 
 
-_PAGE = """<!doctype html><html lang=fr><meta charset=utf-8>
+_PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Mail — mes boîtes</title>
+<title>Mail</title>
 <style>
- body{font-family:system-ui;max-width:600px;margin:48px auto;padding:0 16px;color:#1e293b}
- h1{font-size:1.4rem} h2{font-size:1.05rem;margin-top:2rem}
- label{display:block;margin:.7rem 0 .2rem;font-weight:600;font-size:.9rem}
- input{width:100%;padding:.6rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem}
- button{margin-top:1rem;padding:.6rem 1.1rem;border:0;border-radius:8px;background:#4f46e5;
-   color:#fff;font-size:.95rem;cursor:pointer} button.x{background:#e11d48;margin:0;padding:.3rem .6rem;font-size:.8rem}
- .note{background:#f1f5f9;padding:.8rem;border-radius:8px;font-size:.85rem;color:#475569;margin-top:1rem}
- #res{margin-top:1rem;font-size:.9rem} ul{list-style:none;padding:0}
- li{display:flex;justify-content:space-between;align-items:center;padding:.6rem .8rem;border:1px solid #e2e8f0;
-   border-radius:8px;margin:.4rem 0} .vide{color:#94a3b8;font-style:italic}
-</style>
-<h1>📬 Mes boîtes mail (lecture seule)</h1>
-<p class=note>Tes boîtes sont lues en <b>lecture seule</b> : rien n'est jamais supprimé ni déplacé.
- Utilise un <b>mot de passe d'application</b> (Gmail : Compte → Sécurité → Mots de passe des
- applications), pas ton mot de passe principal. Il est chiffré au repos, jamais affiché. Tu peux
- connecter <b>plusieurs adresses</b> : l'assistant les voit en une boîte unifiée.</p>
+ *{box-sizing:border-box} :root{--ac:#4f46e5;--bd:#e2e8f0;--mut:#64748b;--bg:#f8fafc}
+ body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;
+   background:#fff;height:100vh;display:flex;flex-direction:column;font-size:14px}
+ .top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+ .top h1{font-size:1rem;margin:0;display:flex;align-items:center;gap:6px}
+ .badge{font-size:.72rem;padding:2px 8px;border-radius:999px;font-weight:600}
+ .badge.mock{background:#fef9c3;color:#854d0e} .badge.reel{background:#dcfce7;color:#166534}
+ .grow{flex:1}
+ select,input,button,textarea{font:inherit}
+ select,.btn{padding:6px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff;cursor:pointer;color:#0f172a}
+ .btn:hover{background:var(--bg)} .btn.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
+ .btn.pri:hover{filter:brightness(1.06)} .btn.sm{padding:4px 8px;font-size:.8rem}
+ .search{padding:6px 10px;border:1px solid var(--bd);border-radius:8px;min-width:160px}
+ .filtres{display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+ .chip{padding:4px 10px;border:1px solid var(--bd);border-radius:999px;background:#fff;cursor:pointer;font-size:.82rem;color:var(--mut)}
+ .chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+ .body{flex:1;display:grid;grid-template-columns:minmax(280px,360px) 1fr;min-height:0}
+ .liste{border-right:1px solid var(--bd);overflow:auto}
+ .it{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;gap:8px}
+ .it:hover{background:var(--bg)} .it.sel{background:#eef2ff}
+ .it .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:transparent}
+ .it.nl .dot{background:var(--ac)} .it.nl .de{font-weight:700}
+ .it .mid{min-width:0;flex:1} .it .de{font-size:.86rem;display:flex;justify-content:space-between;gap:6px}
+ .it .suj{font-size:.88rem;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .it .ex{font-size:.78rem;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .it .meta{font-size:.7rem;color:var(--mut);display:flex;gap:6px;align-items:center;margin-top:3px}
+ .cat{font-size:.68rem;padding:1px 6px;border-radius:999px;background:#f1f5f9;color:#475569}
+ .pri-h{color:#b91c1c;font-weight:700}
+ .lec{overflow:auto;padding:18px 22px} .lec .vide{color:var(--mut);margin-top:30vh;text-align:center}
+ .lec h2{font-size:1.15rem;margin:0 0 4px} .lec .from{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .lec .corps{white-space:pre-wrap;line-height:1.5;border-top:1px solid var(--bd);padding-top:14px}
+ .rep{margin-top:18px;border-top:1px dashed var(--bd);padding-top:14px}
+ textarea{width:100%;border:1px solid var(--bd);border-radius:8px;padding:10px;min-height:130px;resize:vertical}
+ .row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+ .res{font-size:.85rem;margin-left:8px}
+ .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px}
+ .modal.on{display:flex} .card{background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow:auto;padding:20px}
+ .card h3{margin:0 0 10px} .note{background:var(--bg);padding:10px;border-radius:8px;font-size:.82rem;color:#475569;margin:10px 0}
+ .acc{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:6px 0}
+ label{display:block;font-size:.82rem;font-weight:600;margin:8px 0 3px} .fld{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px}
+ .muted{color:var(--mut)}
+</style></head><body>
+<div class=top>
+  <h1>📬 Mail <span id=mode class="badge mock">…</span></h1>
+  <div class=grow></div>
+  <select id=fCompte onchange=recharger()><option value="">Toutes les adresses</option></select>
+  <input id=q class=search placeholder="Rechercher…" oninput=recharger()>
+  <button class=btn onclick=synchroniser() title="Synchroniser">🔄</button>
+  <button class=btn onclick=resumer()>✨ Résumé</button>
+  <button class="btn pri" onclick=ouvrirComptes()>⚙ Comptes</button>
+</div>
+<div class=filtres id=filtres></div>
+<div class=body>
+  <div class=liste id=liste></div>
+  <div class=lec id=lec><div class=vide>Sélectionne un message pour le lire.</div></div>
+</div>
 
-<h2>Boîtes connectées</h2>
-<ul id=liste><li class=vide>Chargement…</li></ul>
-
-<h2>Ajouter une boîte</h2>
-<label>Serveur IMAP <input id=host placeholder="imap.gmail.com"></label>
-<label>Port IMAP <input id=port value="993"></label>
-<label>Adresse / utilisateur <input id=user placeholder="toi@gmail.com"></label>
-<label>Mot de passe d'application <input id=pass type=password placeholder="xxxx xxxx xxxx xxxx"></label>
-<label>Serveur SMTP (envoi — optionnel, deviné sinon) <input id=smtp placeholder="smtp.gmail.com"></label>
-<label>Port SMTP <input id=smtpport value="587"></label>
-<label>Clé API (si la brique est protégée — sinon laisse vide) <input id=key placeholder="(vide en local)"></label>
-<button onclick=connecter()>Connecter & synchroniser</button>
-<div id=res></div>
-
-<h2>Brouillons à valider</h2>
-<p class=note>Relis et ajuste un brouillon, puis <b>Envoyer</b>. Envoi réel si la boîte est réelle ;
- sinon envoi <b>simulé</b> (rien ne part).</p>
-<ul id=brouillons><li class=vide>Chargement…</li></ul>
+<div class=modal id=mComptes>
+  <div class=card>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>Mes boîtes mail</h3><button class="btn sm" onclick=fermerComptes()>✕</button></div>
+    <p class=note>Lecture seule : rien n'est jamais supprimé ni déplacé. Utilise un
+      <b>mot de passe d'application</b> (Gmail : Compte → Sécurité → Mots de passe des applications),
+      pas ton mot de passe principal — il est chiffré au repos. Tu peux connecter plusieurs adresses.</p>
+    <div id=accs></div>
+    <h3 style="font-size:.95rem;margin-top:16px">Ajouter une boîte</h3>
+    <label>Serveur IMAP</label><input id=host class=fld placeholder="imap.gmail.com">
+    <div class=row>
+      <div style=flex:1><label>Port IMAP</label><input id=port class=fld value=993></div>
+      <div style=flex:2><label>Adresse</label><input id=user class=fld placeholder="toi@gmail.com"></div>
+    </div>
+    <label>Mot de passe d'application</label><input id=pass type=password class=fld placeholder="xxxx xxxx xxxx xxxx">
+    <div class=row>
+      <div style=flex:2><label>Serveur SMTP <span class=muted>(deviné sinon)</span></label><input id=smtp class=fld placeholder="smtp.gmail.com"></div>
+      <div style=flex:1><label>Port SMTP</label><input id=smtpport class=fld value=587></div>
+    </div>
+    <label>Clé API <span class=muted>(vide en local)</span></label><input id=key class=fld placeholder="(vide)">
+    <div class=row><button class="btn pri" onclick=connecter()>Connecter & synchroniser</button><span id=accres class=res></span></div>
+  </div>
+</div>
 
 <script>
-function entetes(){const h={'Content-Type':'application/json'};const k=document.getElementById('key').value.trim();if(k)h['X-API-Key']=k;return h;}
+const CATS=[['','Tout'],['__nl','Non lus'],['facture','💶 Factures'],['rendez_vous','📅 RDV'],
+  ['personnel','👤 Perso'],['notification','🔔 Notifs'],['newsletter','📰 Pubs']];
+const ETIQ={facture:'💶 facture',rendez_vous:'📅 rdv',personnel:'👤 perso',notification:'🔔 notif',newsletter:'📰 pub',autre:'✉️ autre'};
+let filtre='', selId=null, MSGS=[];
 function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
-async function charger(){
- const r=await fetch('/comptes',{headers:entetes()}); const j=await r.json();
- const ul=document.getElementById('liste');
- if(!j.comptes||!j.comptes.length){ul.innerHTML='<li class=vide>Aucune boîte connectée — boîte simulée par défaut.</li>';}
- else ul.innerHTML=j.comptes.map(c=>`<li><span>📥 <b>${esc(c.adresse)}</b> <small>(${esc(c.hote)})</small></span>`
-   +`<button class=x onclick="deco('${c.id}')">Déconnecter</button></li>`).join('');
- chargerBrouillons();
+function entetes(){const h={'Content-Type':'application/json'};const k=(document.getElementById('key')||{}).value;if(k&&k.trim())h['X-API-Key']=k.trim();return h;}
+function dateCourte(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return '';const au=new Date();
+  return d.toDateString()===au.toDateString()?d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});}
+
+function dessinerFiltres(){
+  document.getElementById('filtres').innerHTML=CATS.map(([v,l])=>
+    `<span class="chip ${filtre===v?'on':''}" onclick="setFiltre('${v}')">${l}</span>`).join('');
 }
-async function chargerBrouillons(){
- const r=await fetch('/brouillons',{headers:entetes()}); const j=await r.json();
- const ul=document.getElementById('brouillons');
- const att=(j.brouillons||[]).filter(b=>b.statut!=='envoye');
- if(!att.length){ul.innerHTML='<li class=vide>Aucun brouillon en attente.</li>';return;}
- ul.innerHTML=att.map(b=>`<li style="display:block"><div><b>À : ${esc(b.a)}</b> — ${esc(b.sujet)}`
-   +` <small>${b.compte?('(depuis '+esc(b.compte)+')'):'(simulé)'}</small></div>`
-   +`<textarea id="t-${b.id}" style="width:100%;height:90px;margin:.4rem 0;border:1px solid #cbd5e1;border-radius:8px;padding:.5rem">${esc(b.corps)}</textarea>`
-   +`<button onclick="envoyer('${b.id}')">Envoyer</button></li>`).join('');
+function setFiltre(v){filtre=v;dessinerFiltres();recharger();}
+
+async function chargerConfig(){
+  const j=await fetch('/config',{headers:entetes()}).then(r=>r.json());
+  const el=document.getElementById('mode');
+  if(j.fournisseur==='imap'){el.className='badge reel';el.textContent=(j.comptes.length)+' boîte(s)';}
+  else{el.className='badge mock';el.textContent='boîte simulée';}
+  const sel=document.getElementById('fCompte');const cur=sel.value;
+  sel.innerHTML='<option value="">Toutes les adresses</option>'+
+    (j.comptes||[]).map(c=>`<option value="${esc(c.adresse)}">${esc(c.adresse)}</option>`).join('');
+  sel.value=cur;
+}
+
+async function recharger(){
+  const p=new URLSearchParams();
+  if(filtre==='__nl')p.set('non_lus','true'); else if(filtre)p.set('categorie',filtre);
+  const compte=document.getElementById('fCompte').value; if(compte)p.set('compte',compte);
+  p.set('limite','200');
+  const j=await fetch('/mail?'+p,{headers:entetes()}).then(r=>r.json());
+  let msgs=j.messages||[]; const q=document.getElementById('q').value.trim().toLowerCase();
+  if(q)msgs=msgs.filter(m=>((m.sujet||'')+' '+(m.de_nom||'')+' '+(m.de||'')+' '+(m.extrait||'')).toLowerCase().includes(q));
+  MSGS=msgs;
+  const L=document.getElementById('liste');
+  if(!msgs.length){L.innerHTML='<div class=vide style="padding:30px;color:#94a3b8">Aucun message.</div>';return;}
+  L.innerHTML=msgs.map(m=>`<div class="it ${m.lu?'':'nl'} ${m.id===selId?'sel':''}" onclick="ouvrir('${m.id}')">
+    <span class=dot></span><div class=mid>
+      <div class=de><span class=de>${esc(m.de_nom||m.de)}</span><span class=muted style="font-size:.72rem">${dateCourte(m.date)}</span></div>
+      <div class=suj>${esc(m.sujet||'(sans sujet)')}</div>
+      <div class=ex>${esc(m.extrait||'')}</div>
+      <div class=meta><span class=cat>${ETIQ[m.categorie]||m.categorie||''}</span>
+        ${m.score>=70?'<span class=pri-h>● prioritaire</span>':''}
+        ${m.compte?('<span class=muted>'+esc(m.compte)+'</span>'):''}</div>
+    </div></div>`).join('');
+}
+
+async function ouvrir(id){
+  selId=id; recharger();
+  const m=await fetch('/mail/'+id,{headers:entetes()}).then(r=>r.json());
+  if(m.detail){document.getElementById('lec').innerHTML='<div class=vide>Message introuvable.</div>';return;}
+  document.getElementById('lec').innerHTML=`
+    <h2>${esc(m.sujet||'(sans sujet)')}</h2>
+    <div class=from><b>${esc(m.de_nom||m.de)}</b> &lt;${esc(m.de)}&gt; · ${dateCourte(m.date)}
+      ${m.compte?(' · <span class=muted>reçu sur '+esc(m.compte)+'</span>'):''}</div>
+    <div class=corps>${esc(m.corps||m.extrait||'')}</div>
+    <div class=rep id=rep>
+      <div class=row>
+        <input id=consigne class=search style="flex:1" placeholder="Consigne (optionnel) : « décline poliment », « propose jeudi 14h »…">
+        <button class=btn onclick="preparer('${m.id}')">✍️ Préparer une réponse</button>
+      </div>
+      <div id=compose></div>
+    </div>`;
+}
+
+async function preparer(mid){
+  const consigne=document.getElementById('consigne').value;
+  document.getElementById('compose').innerHTML='<p class=muted>Rédaction…</p>';
+  const j=await fetch('/mail/brouillon',{method:'POST',headers:entetes(),
+    body:JSON.stringify({message_id:mid,instruction:consigne})}).then(r=>r.json());
+  if(!j.brouillon){document.getElementById('compose').innerHTML='<p class=muted>Échec.</p>';return;}
+  const b=j.brouillon;
+  document.getElementById('compose').innerHTML=`
+    <div class=muted style="font-size:.78rem;margin:6px 0">Brouillon ${j.genere_par==='ia'?'(assistant)':'(modèle local)'}${b.compte?'':' · envoi simulé (boîte mock)'}. Relis/ajuste avant d'envoyer.</div>
+    <textarea id=corps>${esc(b.corps)}</textarea>
+    <div class=row><button class="btn pri" onclick="envoyer('${b.id}')">📤 Envoyer la réponse</button>
+      <span id=envres class=res></span></div>`;
+}
+
+async function envoyer(bid){
+  if(!confirm('Envoyer cette réponse ?'))return;
+  const corps=document.getElementById('corps').value;
+  const r=await fetch('/brouillons/'+bid+'/envoyer',{method:'POST',headers:entetes(),body:JSON.stringify({corps})});
+  const j=await r.json();
+  document.getElementById('envres').innerHTML = r.ok
+    ? (j.mode==='reel'?'✅ ':'🟡 ')+esc(j.message||'Envoyé.')
+    : '❌ '+esc(j.detail||'Échec.');
+}
+
+async function synchroniser(){
+  const j=await fetch('/mail/sync',{method:'POST',headers:entetes()}).then(r=>r.json());
+  recharger();
+  if(j.echecs&&j.echecs.length)alert('Boîtes en échec : '+j.echecs.join(', '));
+}
+
+async function resumer(){
+  document.getElementById('lec').innerHTML='<p class=muted style="padding:20px">Résumé en cours…</p>';
+  const j=await fetch('/mail/resumer',{method:'POST',headers:entetes(),body:JSON.stringify({lang:'fr'})}).then(r=>r.json());
+  document.getElementById('lec').innerHTML=`<h2>✨ Le point sur ta boîte</h2>
+    <div class=muted style="font-size:.78rem;margin-bottom:8px">${j.genere_par==='ia'?'Résumé par l’assistant':'Résumé local'}</div>
+    <div class=corps style="border:0;padding:0">${esc(j.texte||'')}</div>`;
+}
+
+// ── Modale Comptes ──────────────────────────────────────────────────────────
+function ouvrirComptes(){document.getElementById('mComptes').classList.add('on');chargerComptes();}
+function fermerComptes(){document.getElementById('mComptes').classList.remove('on');chargerConfig();recharger();}
+async function chargerComptes(){
+  const j=await fetch('/comptes',{headers:entetes()}).then(r=>r.json());
+  const box=document.getElementById('accs');
+  box.innerHTML=(j.comptes&&j.comptes.length)
+    ? j.comptes.map(c=>`<div class=acc><span>📥 <b>${esc(c.adresse)}</b> <span class=muted>(${esc(c.hote)})</span></span>
+        <button class="btn sm" onclick="deco('${c.id}')">Déconnecter</button></div>`).join('')
+    : '<p class=muted>Aucune boîte connectée — boîte simulée par défaut.</p>';
 }
 async function connecter(){
- const r=await fetch('/comptes',{method:'POST',headers:entetes(),body:JSON.stringify({
-   host:host.value.trim(),port:+port.value||993,utilisateur:user.value.trim(),mot_de_passe:pass.value,
-   smtp_host:smtp.value.trim(),smtp_port:+smtpport.value||0})});
- const j=await r.json();
- res.innerHTML = r.ok ? '✅ '+(j.message||'Connecté.') : '❌ '+(j.detail||'Échec.');
- if(r.ok){pass.value='';user.value='';host.value='';smtp.value='';charger();}
-}
-async function envoyer(id){
- if(!confirm('Envoyer cette réponse ?'))return;
- const corps=document.getElementById('t-'+id).value;
- const r=await fetch('/brouillons/'+id+'/envoyer',{method:'POST',headers:entetes(),body:JSON.stringify({corps})});
- const j=await r.json();
- res.innerHTML = r.ok ? ((j.mode==='reel'?'✅ ':'🟡 ')+(j.message||'Envoyé.')) : '❌ '+(j.detail||'Échec.');
- chargerBrouillons();
+  const g=id=>document.getElementById(id).value;
+  document.getElementById('accres').textContent='Connexion…';
+  const r=await fetch('/comptes',{method:'POST',headers:entetes(),body:JSON.stringify({
+    host:g('host').trim(),port:+g('port')||993,utilisateur:g('user').trim(),mot_de_passe:g('pass'),
+    smtp_host:g('smtp').trim(),smtp_port:+g('smtpport')||0})});
+  const j=await r.json();
+  document.getElementById('accres').innerHTML = r.ok?'✅ '+esc(j.message||'Connecté.'):'❌ '+esc(j.detail||'Échec.');
+  if(r.ok){['host','user','pass','smtp'].forEach(i=>document.getElementById(i).value='');chargerComptes();chargerConfig();}
 }
 async function deco(id){
- if(!confirm('Déconnecter cette boîte ?'))return;
- await fetch('/comptes/'+id,{method:'DELETE',headers:entetes()}); charger();
+  if(!confirm('Déconnecter cette boîte ?'))return;
+  await fetch('/comptes/'+id,{method:'DELETE',headers:entetes()});chargerComptes();
 }
-charger();
-</script></html>"""
+
+dessinerFiltres(); chargerConfig().then(recharger);
+</script></body></html>"""
