@@ -19,9 +19,10 @@ scannant un QR code. Inspiré de Sunday / Skeat, mais souverain (rien ne sort ve
    **QR code** par table (généré **localement**, `segno`, jamais un service tiers).
 2. Le client **scanne**, choisit son **prénom / numéro de siège**, commande. La commande
    part en **cuisine en temps réel** (WebSocket), étiquetée table + convive.
-3. Au moment de payer, chacun règle **sa part** : en ligne (paiement **mock honnête** en
-   incrément 1, marqué « démo »), ou **en espèces** validées par le restaurateur. La
-   tablette et les clients voient le **« reste à payer »** bouger en direct.
+3. Au moment de payer, l'addition se règle par **répartition flexible** (v0.9.0) : **chacun
+   sa part**, **partage égal** en N convives, ou **montant libre** — en ligne (paiement
+   **mock honnête** en incrément 1, marqué « démo »), ou **en espèces** validées par le
+   restaurateur. La tablette et les clients voient le **« reste à payer »** bouger en direct.
 
 ## Prêt pour la vente (v0.2.0)
 
@@ -67,6 +68,26 @@ l'**onboarding d'un nouveau restaurant**.
 > n'importe quel `restaurant_id` via le Cœur. Le cloisonnement reste tenu **en base** (chaque
 > opération passe par le compte propriétaire dérivé du resto) ; l'**isolation par restaurateur
 > côté Cœur** relève de l'épopée multi-tenant à venir.
+
+## Répartition flexible de l'addition (v0.9.0)
+
+Jusqu'ici chacun ne pouvait régler que **ses propres plats**. Désormais le client choisit,
+sur la page **Addition**, **comment** régler le reste de la table :
+
+- **Chacun sa part** (`mode=part`, défaut historique) — règle le dû propre du convive ;
+- **Partage égal** (`mode=egal`, `parts=N`) — divise le **total** en N parts égales ; chacun
+  règle une part, le **dernier payeur absorbe le reliquat** → la somme tombe **juste** au
+  centime (`1000 / 3 → 334 + 333 + 333`, jamais de centime orphelin) ;
+- **Montant libre** (`mode=libre`, `montant_cents`) — « je mets 30 € » sur l'addition commune.
+
+**Invariant clé — anti-surpaiement** : quel que soit le mode, le montant encaissé est
+**recalculé serveur** et **toujours borné au reste GLOBAL** de la table. Impossible de payer
+plus que ce que la table doit, ni de cumuler deux paiements libres au-delà du total.
+
+Côté **domaine** (`domaine.py` pur, testé en microsecondes) : `parts_egales(total, n)` (partage
+exact, résidu sur les premières parts) et `montant_a_encaisser(reste_global, mode, …)` (la
+règle de plafonnement, source unique). Exposé par `POST /t/{code}/payer` et
+`/restaurants/{id}/tables/{id}/paiement-especes` (mêmes champs `mode`/`parts`/`montant_cents`).
 
 ## Rejoindre la table par code (v0.8.0)
 

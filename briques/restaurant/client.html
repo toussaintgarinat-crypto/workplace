@@ -77,6 +77,13 @@
   .tips { display:flex; gap:8px; margin-top:10px; }
   .tips button { flex:1; padding:9px; border-radius:9px; border:1px solid var(--bord); background:transparent; color:var(--doux); font-weight:700; cursor:pointer; }
   .tips button.on { color:var(--accent); border-color:var(--accent); }
+  .conv.repartir { border-style:dashed; }
+  .conv .sous { color:var(--doux); font-size:.85rem; margin:-2px 0 4px; }
+  .seg { display:flex; gap:8px; margin-top:8px; }
+  .seg button { flex:1; padding:10px; border-radius:9px; border:1px solid var(--bord); background:transparent; color:var(--doux); font-weight:700; cursor:pointer; }
+  .seg button.on { color:var(--accent); border-color:var(--accent); }
+  .rond { width:32px; height:32px; border-radius:50%; border:1px solid var(--bord); background:transparent; color:var(--texte); font-weight:800; cursor:pointer; }
+  .conv .ligne input { background:var(--fond); border:1px solid var(--bord); border-radius:8px; color:var(--texte); padding:6px 8px; }
   .recap { display:flex; justify-content:space-between; font-size:1.1rem; font-weight:800; margin:16px 4px; }
   .demo { font-size:.74rem; color:var(--attente); text-align:center; margin-top:8px; }
 
@@ -168,6 +175,9 @@ const T = {
         regle:"Réglé ✓", en_attente:"En attente", total_table:"Reste sur la table",
         demo:"Paiement de démonstration (aucun débit réel)", rien_addition:"Aucune commande pour l'instant.",
         dont_tva:"dont TVA", pourboire:"Pourboire", sans:"Sans", des:"dès",
+        repartir:"Partager autrement", repartir_sous:"Réglez ce qu'il reste sur la table comme vous voulez :",
+        rep_egal:"Partage égal", rep_libre:"Montant libre", nb_convives:"À combien partagez-vous ?",
+        une_part:"Une part", payer_libre:"Payer ce montant", montant_ex:"ex. 20",
         porte_demarrer:"Démarrer la table", porte_demarrer_sous:"Vous êtes le premier ici. Démarrez la table : vous obtiendrez un code à partager avec votre tablée.",
         porte_rejoindre:"Rejoindre la table", porte_rejoindre_sous:"Entrez le code à 4 chiffres affiché sur le téléphone qui a démarré la table.",
         porte_partage:"Partagez ce code avec votre tablée :", porte_continuer:"Continuer", porte_code_faux:"Code incorrect.", porte_code:"Code à 4 chiffres" },
@@ -186,6 +196,9 @@ const T = {
         regle:"Settled ✓", en_attente:"Pending", total_table:"Left on the table",
         demo:"Demo payment (no real charge)", rien_addition:"No orders yet.",
         dont_tva:"incl. VAT", pourboire:"Tip", sans:"None", des:"from",
+        repartir:"Split differently", repartir_sous:"Settle what's left on the table however you like:",
+        rep_egal:"Split evenly", rep_libre:"Custom amount", nb_convives:"How many are splitting?",
+        une_part:"One share", payer_libre:"Pay this amount", montant_ex:"e.g. 20",
         porte_demarrer:"Start the table", porte_demarrer_sous:"You are the first here. Start the table: you'll get a code to share with your party.",
         porte_rejoindre:"Join the table", porte_rejoindre_sous:"Enter the 4-digit code shown on the phone that started the table.",
         porte_partage:"Share this code with your party:", porte_continuer:"Continue", porte_code_faux:"Wrong code.", porte_code:"4-digit code" }
@@ -195,6 +208,7 @@ const code = location.pathname.split('/').filter(Boolean).pop();
 
 // État appareil ------------------------------------------------------------
 let data = null, devise = 'EUR', pourboirePct = 0;
+let repMode = 'egal', repNb = 2;           // répartition flexible (S83) : egal | libre, nb de convives
 let vue = 'carte';                         // carte | panier | addition
 let ecran = 'accueil';                     // (vue carte) accueil | categorie
 let categorieActive = null, recherche = '';
@@ -505,8 +519,42 @@ async function chargerAddition(){
       ${c.pourboire_cents?`<div class="ligne"><span>${t('pourboire')}</span><span>${euro(c.pourboire_cents)}</span></div>`:''}
       ${bloc}</div>`;
   }).join('')
+  + (e.reste_cents > 0 ? panneauRepartition(e) : '')
   + (e.tva && e.tva.tva_cents ? `<div class="tva-ligne"><span>${t('dont_tva')} (${e.tva.tva_taux}%)</span><span>${euro(e.tva.tva_cents)}</span></div>` : '')
   + `<div class="recap"><span>${t('total_table')}</span><span>${euro(e.reste_cents)}</span></div>`;
+}
+
+// Répartition flexible (S83) : régler le reste de la table autrement que « chacun ses plats ».
+function panneauRepartition(e){
+  const part = Math.ceil(e.reste_cents / Math.max(1, repNb));   // aperçu d'une part égale
+  return `<div class="conv repartir"><div class="tete"><span>${t('repartir')}</span></div>
+    <div class="sous">${t('repartir_sous')}</div>
+    <div class="seg">
+      <button class="${repMode==='egal'?'on':''}" onclick="setRepMode('egal')">${t('rep_egal')}</button>
+      <button class="${repMode==='libre'?'on':''}" onclick="setRepMode('libre')">${t('rep_libre')}</button>
+    </div>
+    ${repMode==='egal' ? `
+      <div class="ligne" style="margin-top:10px"><span>${t('nb_convives')}</span>
+        <span><button class="rond" onclick="setRepNb(-1)">−</button> <b>${repNb}</b> <button class="rond" onclick="setRepNb(1)">＋</button></span></div>
+      <button class="gros" style="margin-top:10px" onclick="payerEgal()">${t('une_part')} · ${euro(Math.min(part, e.reste_cents))}</button>`
+    : `
+      <div class="ligne" style="margin-top:10px"><span>${t('rep_libre')}</span>
+        <input id="rep-montant" inputmode="decimal" placeholder="${t('montant_ex')}" style="width:90px;text-align:right">&nbsp;€</div>
+      <button class="gros" style="margin-top:10px" onclick="payerLibre()">${t('payer_libre')}</button>`}
+    <div class="demo">${t('demo')}</div></div>`;
+}
+window.setRepMode = m => { repMode = m; chargerAddition(); };
+window.setRepNb = d => { repNb = Math.max(1, repNb + d); chargerAddition(); };
+window.payerEgal = () => paiementReparti({mode:'egal', parts:repNb});
+window.payerLibre = () => {
+  const v = parseFloat(($('#rep-montant')||{}).value); if(!v || v<=0) return;
+  paiementReparti({mode:'libre', montant_cents: Math.round(v*100)});
+};
+async function paiementReparti(extra){
+  const convive = conviveCourant || convives[0] || '';
+  await fetch('/t/'+code+'/payer', {method:'POST', headers:entetes(true),
+    body:JSON.stringify(Object.assign({convive, pourboire_cents:0}, extra))});
+  chargerAddition();
 }
 window.setTip = p => { pourboirePct = p; chargerAddition(); };
 window.payer = async (convive, reste) => {
