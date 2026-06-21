@@ -10,6 +10,13 @@ Port **6030**. Multi-tenant (une boîte par clé API), provider-agnostique. Con�
 briques : noyau + briques, le Cœur découvre les capacités via `manifest.json` et les expose comme
 outils de l'assistant — **aucun code du Cœur à modifier**.
 
+## Front-end
+La brique sert un **vrai client mail** sur **http://localhost:6030/** : boîte unifiée (liste +
+lecture), filtres (catégorie, compte, non-lus), recherche, résumé, réponse inline (préparer →
+relire → envoyer) et gestion des comptes (modale ⚙ Comptes). Il est **embarqué dans le dashboard
+du Cœur** comme onglet **« Mail »** (entre Agenda et Profil), via une iframe (`MAIL_UI_URL`). La
+brique apparaît aussi dans le **Registre de briques** (carte avec son **port**).
+
 ## Honnêteté technique
 - **Défaut = mock honnête.** Sans compte connecté, la boîte est **simulée** (8 messages variés,
   étiquetés `source: "simule"`), **aucune connexion réseau**. Sert la démo, les tests et le dev.
