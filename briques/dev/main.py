@@ -1,4 +1,4 @@
-"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.3.0 — S88 : flux BMAD (plan d'abord).
+"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.4.0 — S89 : task trace activable.
 
 Permet de modifier les briques de Workplace et d'ajouter des features DEPUIS l'assistant, avec
 le **filet git** comme garantie « ne casse pas la prod » : chaque chantier vit dans un
@@ -30,8 +30,14 @@ Nouveau en v0.3.0 (S88 — flux BMAD léger : le PLAN d'abord, opt-in via `plan_
     plan, ce qui débloque le codage. `lancer` est VERROUILLÉ (409) tant que ce n'est pas fait.
   Le plan validé est ensuite injecté à l'agent codeur (la story porte le contexte).
 
-À venir : task trace activable, porte skills/MCP + caching, IDE code-server, outil Cœur
-`dev_demander`.
+Nouveau en v0.4.0 (S89 — task trace activable, pour APPRENDRE en regardant) :
+  • Interrupteur `trace` par chantier : ON → l'agent raconte chaque pas en français (factice
+    narre ses pas ; Claude Code via un hook `PreToolUse` qui traduit ses outils) → archivé dans
+    `chantier.journal` ET diffusé en direct.
+  • GET /chantiers/{id}/trace → flux SSE de la narration en temps réel (`suivre=false` = relire
+    l'archive). Trace OFF → l'agent bosse en silence, flux vide.
+
+À venir : porte skills/MCP + caching, IDE code-server, outil Cœur `dev_demander`.
 """
 from __future__ import annotations
 
@@ -40,9 +46,11 @@ import os
 import uuid
 from typing import Optional
 
+import time
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 import agents
@@ -50,6 +58,7 @@ import domaine
 import git_atelier
 import plan as plan_mod
 import rebuild
+import traceur
 
 DEV_DB = os.environ.get("DEV_DB", os.path.join(os.path.dirname(__file__), "chantiers.json"))
 DEV_KEY = os.environ.get("DEV_KEY", "")  # vide = ouvert (atelier local) ; défini = exigé
@@ -61,7 +70,7 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.3.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
@@ -183,8 +192,15 @@ async def planifier(cid: str, corps: PlanEntree = PlanEntree()):
     if not ch.peut_planifier:
         raise HTTPException(status_code=409,
                             detail=f"chantier en état {ch.statut} : on ne planifie qu'avant de coder")
+    if ch.trace_active:
+        traceur.Traceur(traceur.fichier_pour(cid)).noter(
+            "L'Architect conçoit le plan : mini-PRD, stories, note de domaine (DDD).")
     ch.plan = await plan_mod.concevoir(ch.intention, ch.brique_cible, corps.lang)
     ch.plan_valide = False
+    if ch.trace_active:
+        traceur.Traceur(traceur.fichier_pour(cid)).noter(
+            f"Plan {ch.plan.get('genere_par', '?')} prêt ({len(ch.plan.get('stories', []))} stories) "
+            "— en attente de validation.")
     if ch.statut == domaine.CREE:
         ch.avancer(domaine.PLANIFIE)
     _ranger(ch)
@@ -220,8 +236,10 @@ def lancer(cid: str):
     if not ch.peut_lancer:
         raise HTTPException(status_code=409, detail=f"chantier en état {ch.statut} : non relançable")
     agent = agents.choisir(ch.agent if ch.agent != "auto" else "")
+    tf = traceur.fichier_pour(cid) if ch.trace_active else ""
     res = agent.executer(ch.worktree, ch.intention, trace=ch.trace_active,
-                         brique_cible=ch.brique_cible, plan=(ch.plan or {}).get("texte", ""))
+                         brique_cible=ch.brique_cible, plan=(ch.plan or {}).get("texte", ""),
+                         trace_fichier=tf)
     ch.agent = res["agent"]
     ch.resume = res["resume"]
     ch.journal = res.get("journal") or []
@@ -243,6 +261,31 @@ def diff(cid: str):
     except git_atelier.ErreurGit as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"branche": ch.branche, "base": ch.base, "stats": stats, "diff": texte}
+
+
+@app.get("/chantiers/{cid}/trace", dependencies=[Depends(garde)])
+def trace_sse(cid: str, suivre: bool = True):
+    """SSE : la narration pas-à-pas EN DIRECT (S89). `suivre=false` = renvoyer l'archive puis clore.
+
+    Quand la trace du chantier est active, l'agent y raconte ses pas en français ; ce flux les
+    pousse au navigateur au fil de l'eau (apprendre en regardant). Trace OFF → flux vide."""
+    _chantier(cid)  # 404 si le chantier est inconnu
+    fichier = traceur.fichier_pour(cid)
+
+    def flux():
+        envoyes = 0
+        fin = time.time() + 120  # garde-fou : on ne suit pas indéfiniment
+        while True:
+            evts = traceur.lire(fichier)
+            for e in evts[envoyes:]:
+                yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
+            envoyes = len(evts)
+            if not suivre or time.time() > fin:
+                break
+            time.sleep(0.4)
+        yield "event: fin\ndata: {}\n\n"
+
+    return StreamingResponse(flux(), media_type="text/event-stream")
 
 
 class FusionEntree(BaseModel):
@@ -300,6 +343,7 @@ def jeter(cid: str):
     """Jette le worktree + la branche : le chantier disparaît, la prod n'a jamais bougé."""
     ch = _chantier(cid)
     git_atelier.jeter_chantier(ch.branche)
+    traceur.Traceur(traceur.fichier_pour(cid)).effacer()  # la trace live disparaît avec le chantier
     ch.statut = domaine.JETE
     _ranger(ch)
     return {"ok": True, "statut": ch.statut}
@@ -312,9 +356,10 @@ def accueil():
         "<!doctype html><meta charset=utf-8><title>Atelier dev</title>"
         "<body style='font-family:system-ui;max-width:42rem;margin:3rem auto;color:#222'>"
         "<h1>🛠️ Auto-atelier dev</h1>"
-        "<p>Brique souveraine (port 5950) — v0.3.0 (S88) : socle git + fusion contrôlée + "
-        "<b>flux BMAD</b> (plan d'abord). Chaque chantier vit dans un <b>worktree jetable</b>, "
+        "<p>Brique souveraine (port 5950) — v0.4.0 (S89) : socle git + fusion contrôlée + "
+        "flux BMAD + <b>task trace</b>. Chaque chantier vit dans un <b>worktree jetable</b>, "
         "jamais sur <code>main</code> ; double gate <i>valide le plan</i> puis <i>valide le "
-        "diff</i> ; la fusion rebuild la <b>seule</b> brique modifiée.</p>"
+        "diff</i> ; trace ON → l'agent <b>raconte chaque pas en français</b> "
+        "(<code>GET /chantiers/{id}/trace</code> en direct).</p>"
         "<p>Voir <code>/sante</code> et l'API <code>/chantiers</code>.</p></body>"
     )

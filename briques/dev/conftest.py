@@ -13,6 +13,7 @@ _racine = tempfile.mkdtemp(prefix="dev-atelier-tests-")
 _repo = os.path.join(_racine, "depot")
 os.environ["DEV_REPO"] = _repo
 os.environ["DEV_ATELIERS"] = os.path.join(_racine, "ateliers")
+os.environ["DEV_TRACES"] = os.path.join(_racine, "traces")
 os.environ["DEV_DB"] = os.path.join(_racine, "chantiers.json")
 os.environ.pop("DEV_KEY", None)  # atelier ouvert en test
 # Pas de LLM en test : le plan BMAD (S88) retombe sur son squelette local, déterministe et

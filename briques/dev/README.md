@@ -19,6 +19,21 @@ L'agent ne travaille **jamais** dans le dépôt vivant. Pour chaque chantier :
 4. Soit on **fusionne** (gate humain, S87), soit on **jette** : `git worktree remove` →
    chantier effacé, prod intacte. Aucun `git push`, aucun déploiement automatique.
 
+## La task trace (S89 — apprendre en regardant)
+
+Interrupteur **on/off** par chantier (`trace:true`). Quand c'est ON, l'agent **raconte chaque pas
+en français** — le factice narre ses pas ; **Claude Code** délègue la narration fine de ses outils
+à un **hook `PreToolUse`** (`trace_hook.py`) qui les traduit (« je lis le fichier… », « je lance la
+commande… »). La narration est **archivée** (`chantier.journal`, durable dans un JSONL par chantier)
+ET **diffusée en direct** :
+
+```
+GET /chantiers/{id}/trace        # flux SSE de la narration en temps réel
+GET /chantiers/{id}/trace?suivre=false   # relire l'archive puis clore
+```
+
+Trace OFF → l'agent bosse en silence, on ne montre que le diff final.
+
 ## Le flux BMAD léger (S88 — le plan d'abord, opt-in)
 
 Reprend 3 idées de **BMAD** sans l'installer : un agent **« Architect »** par phase, le **plan
@@ -46,7 +61,7 @@ seule brique modifiée**, puis on jette le worktree. Garde-fous, par constructio
 - **Rebuild ciblé** : **simulé honnête** par défaut (commande `docker compose` journalisée, non
   exécutée) ; réel seulement si `DEV_REBUILD=1`.
 
-## API (v0.3.0)
+## API (v0.4.0)
 
 | Méthode | Chemin | Rôle |
 |---|---|---|
@@ -55,10 +70,11 @@ seule brique modifiée**, puis on jette le worktree. Garde-fous, par constructio
 | `POST` | `/chantiers/{id}/planifier` | **BMAD** : l'Architect conçoit le plan (mini-PRD + stories + DDD) |
 | `POST` | `/chantiers/{id}/plan/valider` | **Gate de plan** (`confirme=true`) → débloque le codage |
 | `POST` | `/chantiers/{id}/lancer` | L'agent code dans le worktree, commite (verrouillé si plan requis non validé) |
+| `GET`  | `/chantiers/{id}/trace` | **Task trace** SSE : la narration FR en direct (`suivre=false` = archive) |
 | `GET`  | `/chantiers/{id}/diff` | Le diff à relire (jamais déployé) |
 | `POST` | `/chantiers/{id}/fusionner` | **Gate** (`confirme=true`) → merge dans `main` + rebuild ciblé → jette |
 | `GET`  | `/chantiers` · `/chantiers/{id}` | Liste / détail |
-| `DELETE` | `/chantiers/{id}` | Jette le worktree (chantier effacé) |
+| `DELETE` | `/chantiers/{id}` | Jette le worktree (chantier + trace effacés) |
 
 `agent` ∈ `claude_code` | `opencode` | `factice` | `""` (auto : Claude Code → OpenCode →
 mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
@@ -72,11 +88,12 @@ mock honnête). Si `DEV_KEY` est défini, l'en-tête `X-API-Key` est exigé.
 - `DEV_REBUILD` — `1` pour rebuild RÉELLEMENT la brique fusionnée (défaut : simulé honnête)
 - `DEV_BRIQUES_DEBLOQUEES` — CSV de briques sensibles autorisées à la fusion (au cas par cas)
 - `GATEWAY_URL` / `GATEWAY_KEY` / `GATEWAY_MODEL` — LLM du plan BMAD (repli honnête local si absent)
+- `DEV_TRACES` — dossier des journaux de trace (un JSONL par chantier)
 
 ## Tests
 
 ```bash
-python3 -m pytest -q   # 36 tests : domaine + filet git + fusion + flux BMAD (plan) + parcours mock
+python3 -m pytest -q   # 42 tests : domaine + filet + fusion + BMAD + task trace + parcours mock
 ```
 
 ## Feuille de route (sprints — détail dans `SPRINTS.md`)
@@ -84,7 +101,7 @@ python3 -m pytest -q   # 36 tests : domaine + filet git + fusion + flux BMAD (pl
 - **S86** ✅ Socle git (worktree + branche + diff, prouvé sans déploiement)
 - **S87** ✅ Fusion contrôlée + rebuild ciblé (ferme la boucle ; seul sprint qui touche `main`)
 - **S88** ✅ Flux **BMAD** léger : plan d'abord (mini-PRD + stories + DDD) + gate de plan
-- **S89** **Task trace** activable (narration pas-à-pas, pédagogique)
+- **S89** ✅ **Task trace** activable (narration pas-à-pas FR, SSE direct + archive)
 - **S90** La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
 - **S91** **Création de skills** + accroche **MCP** par la brique
 - **S92** **IDE `code-server`** en iframe + outil Cœur `dev_demander` (gate dans le chat)

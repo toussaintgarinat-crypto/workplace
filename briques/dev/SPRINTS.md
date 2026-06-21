@@ -94,9 +94,19 @@ ne démarre **pas** sans validation du plan (409). LIVE avec un vrai agent : pla
 
 ---
 
-## S89 — Task trace activable (pédagogie)
+## S89 — Task trace activable (pédagogie) ✅ LIVRÉ + PROUVÉ LIVE (2026-06-21)
 
-**Objectif.** Interrupteur on/off : quand activé, l'agent **narre chaque pas en français**
+**Livré.** Brique v0.4.0. `traceur.py` = journal JSONL par chantier (`Traceur` noter/lire/phrases/
+effacer) + traduction des outils en phrases FR (`phrase_pour_outil`, `phrase_pour_evenement`).
+`trace_hook.py` = hook autonome branché par Claude Code en **PreToolUse** (traduit chaque outil en
+direct, silencieux/tolérant). Les agents narrent quand `trace=True` (factice = ses pas ; Claude Code
+= start/end + hook ; OpenCode = start/end) → `chantier.journal` archivé. `GET /chantiers/{id}/trace`
+= **flux SSE** (`suivre=false` = relire l'archive puis clore). La phase plan (S88) est aussi narrée.
+`jeter` efface la trace. **+6 tests (42 au total)**. Preuve LIVE (uvicorn) : flux SSE ouvert AVANT
+`lancer` → la narration FR arrive **en temps réel** pendant le travail de l'agent ; trace OFF →
+journal vide + flux silencieux.
+
+**Objectif (rappel).** Interrupteur on/off : quand activé, l'agent **narre chaque pas en français**
 (« j'ouvre la branche… », « je crée l'entité X parce que… ») → affiché en direct + archivé.
 Conçu pour *apprendre le code* en regardant l'agent travailler.
 
@@ -186,7 +196,7 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 | **S86** | Socle git | ✅ livré + prouvé LIVE |
 | **S87** | Fusion contrôlée + rebuild ciblé | ✅ livré (26 tests) |
 | **S88** | Flux BMAD léger (plan d'abord + DDD) | ✅ livré + prouvé LIVE (36 tests) |
-| **S89** | Task trace activable | à faire |
+| **S89** | Task trace activable | ✅ livré + prouvé LIVE (42 tests) |
 | **S90** | Porte progressive (skills/MCP) + prompt caching | à faire |
 | **S91** | Création de skills + accroche MCP | à faire |
 | **S92** | IDE code-server + pilotage Cœur `dev_demander` | à faire |
