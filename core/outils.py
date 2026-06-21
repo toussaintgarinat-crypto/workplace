@@ -629,6 +629,17 @@ _NOMS_STATIQUES = {o["function"]["name"] for o in OUTILS}
 CAPACITES_DYNAMIQUES = os.getenv("CAPACITES_DYNAMIQUES", "1").lower() not in ("0", "false", "no")
 _ALLOWLIST = {s.strip() for s in os.getenv("CAPACITES_ALLOWLIST", "").split(",") if s.strip()}
 
+# ── La porte à divulgation progressive (S90) ─────────────────────────────────
+# Pendant de `ToolSearch`/`Skill` de Claude Code : les capacités de NIVEAU ≥ 1 ne sont PAS
+# présentées en entier au LLM (corps + schéma) — elles restent « derrière la porte », juste
+# listées (nom + description) dans le méta-outil `competence_charger`. Le LLM appelle ce
+# méta-outil avec le `nom` voulu : le schéma complet devient appelable au tour suivant. But :
+# dégraisser le contexte (et le rendre cacheable) sans amputer les pouvoirs. OFF par défaut
+# (`PORTE_PROGRESSIVE`) → tant qu'aucune capacité ne déclare `niveau: 1`, comportement S64
+# strictement inchangé.
+PORTE_PROGRESSIVE = os.getenv("PORTE_PROGRESSIVE", "0").lower() in ("1", "true", "yes", "on")
+META_CHARGER = "competence_charger"
+
 
 def _capacites_dynamiques(registre) -> dict:
     """Capacités découvertes qui deviennent des outils dynamiques : ``{nom: cap}``.
@@ -666,13 +677,51 @@ def _spec_depuis_capacite(cap: dict) -> dict:
         "parameters": _p(props, requis)}}
 
 
-def outils_pour(registre) -> list[dict]:
+def _differees(registre, chargees) -> dict:
+    """Capacités NIVEAU ≥ 1 encore derrière la porte (non chargées) : ``{nom: cap}``."""
+    deja = set(chargees or ())
+    return {n: c for n, c in _capacites_dynamiques(registre).items()
+            if c.get("niveau", 0) >= 1 and n not in deja}
+
+
+def _spec_charger(differees: dict) -> dict:
+    """Méta-outil `competence_charger` : liste les compétences différées (nom — description)
+    dans sa propre description et permet de charger l'une d'elles par son nom (pendant de
+    `ToolSearch`). Présenté UNIQUEMENT s'il reste quelque chose derrière la porte."""
+    catalogue_txt = " ; ".join(f"{n} — {c.get('description', '') or 'sans description'}"
+                               for n, c in sorted(differees.items()))
+    return {"type": "function", "function": {
+        "name": META_CHARGER,
+        "description": (
+            "Charge une COMPÉTENCE différée pour pouvoir l'utiliser : son schéma complet "
+            "devient appelable au tour SUIVANT. Appelle-moi avec le `nom` EXACT avant "
+            "d'employer la compétence voulue. Compétences chargeables : "
+            + catalogue_txt + "."),
+        "parameters": _p({"nom": {"type": "string",
+                                  "description": "Nom exact de la compétence à charger."}},
+                         ["nom"])}}
+
+
+def outils_pour(registre, *, chargees=None, porte: bool = False) -> list[dict]:
     """Liste d'outils présentée au LLM : les outils en dur + les capacités dynamiques.
 
     C'est la fin du contrat figé : ajouter `capacites` à un manifest suffit pour que
-    l'assistant voie un nouvel outil, sans toucher au Cœur."""
+    l'assistant voie un nouvel outil, sans toucher au Cœur.
+
+    `porte=True` (S90) active la divulgation progressive : les capacités de niveau ≥ 1 NON
+    présentes dans `chargees` sont retirées et remplacées par le méta-outil `competence_charger`
+    (qui les liste). `porte=False` (défaut, ex. Gateway MCP) renvoie TOUT — comportement S64.
+
+    La liste est TRIÉE par nom dans les deux cas : préfixe d'outils stable d'une requête à
+    l'autre → cacheable (S90a). Le tri ne change rien fonctionnellement (function-calling)."""
     dyn = _capacites_dynamiques(registre)
-    return OUTILS + [_spec_depuis_capacite(c) for c in dyn.values()]
+    specs = OUTILS + [_spec_depuis_capacite(c) for c in dyn.values()]
+    if porte:
+        differees = _differees(registre, chargees)
+        if differees:
+            specs = [s for s in specs if s["function"]["name"] not in differees]
+            specs = specs + [_spec_charger(differees)]
+    return sorted(specs, key=lambda s: s["function"]["name"])
 
 
 def est_action(nom: str, registre) -> bool:
@@ -742,6 +791,20 @@ async def executer(nom: str, args: dict, registre) -> str:
 
             if nom == "etat_briques":
                 return json.dumps(await _etat_briques(client, registre), ensure_ascii=False)
+
+            if nom == META_CHARGER:
+                # La porte (S90) : ouvre une compétence différée. On renvoie son schéma
+                # complet — la boucle de l'assistant l'ajoutera aux outils du tour suivant.
+                cible = (args or {}).get("nom", "")
+                cap = _capacites_dynamiques(registre).get(cible)
+                if not cap:
+                    return json.dumps({"ok": False, "message": f"Compétence inconnue : {cible}."},
+                                      ensure_ascii=False)
+                return json.dumps(
+                    {"ok": True, "chargee": cible,
+                     "outil": _spec_depuis_capacite(cap)["function"],
+                     "message": f"Compétence « {cible} » chargée — appelle-la maintenant."},
+                    ensure_ascii=False)
 
             if nom == "mes_capacites":
                 # Conscience de soi (S65) : on rend l'anatomie depuis la source de vérité

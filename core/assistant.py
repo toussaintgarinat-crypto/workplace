@@ -115,8 +115,11 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
                + "\n- " + langue_mod.consigne_reponse(conf.get("langue"))
                + amelioration.addendum_actif())
-    amorce = [{"role": "system", "content": systeme},
-              {"role": "system", "content": contexte_date}]
+    # S90a — préfixe stable & cacheable : on place d'abord TOUT ce qui ne change pas d'une
+    # requête à l'autre (prompt fondateur, digests d'identité/conscience) ; le seul élément
+    # VOLATIL — la date/heure — est ajouté en DERNIER message système, juste avant la
+    # conversation, pour ne pas casser le préfixe mis en cache (cf. cache.py, S90b).
+    amorce = [{"role": "system", "content": systeme}]
     # Qui est l'utilisateur : digest COMPACT dérivé de sa fiche d'identité (S48) —
     # prénom, âge, anniversaire, signes… Volontairement court (coût LLM, cf. S138) ;
     # vide si aucune fiche. C'est ce qui fait enfin « parler » la page « se présenter ».
@@ -128,8 +131,12 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         amorce.append({"role": "system", "content": digest})
 
     # Outils présentés au LLM : les outils en dur + les capacités découvertes dans les
-    # manifests (S64). Calculés une fois par tour (lecture en mémoire, bon marché).
-    outils_actifs = outils.outils_pour(registre)
+    # manifests (S64), TRIÉS par nom (préfixe stable, S90a). Avec la porte (S90), les
+    # capacités de niveau ≥ 1 restent différées derrière `competence_charger` tant que le LLM
+    # ne les a pas chargées dans CETTE conversation (`competences_chargees`). OFF par défaut.
+    competences_chargees: set[str] = set()
+    outils_actifs = outils.outils_pour(registre, chargees=competences_chargees,
+                                        porte=outils.PORTE_PROGRESSIVE)
 
     # Conscience de soi (S65) : digest COMPACT de l'anatomie du Cœur (ses organes/briques
     # + le nombre d'outils) injecté comme un repère, à la manière du digest d'identité. Il
@@ -141,6 +148,9 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         corps = ""
     if corps:
         amorce.append({"role": "system", "content": corps})
+
+    # VOLATIL en dernier (S90a) : la date ferme le préfixe stable sans le casser.
+    amorce.append({"role": "system", "content": contexte_date})
 
     historique = amorce + list(messages)
     # Ordre effectif : cascade auto (gratuits → repli payant) ou chaîne manuelle.
@@ -232,6 +242,14 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
                 yield {"type": "outil", "nom": nom, "args": args,
                        "action": outils.est_action(nom, registre)}
                 resultat = await outils.executer(nom, args, registre)
+                # La porte (S90) : si le LLM vient d'ouvrir une compétence différée, on
+                # l'ajoute aux outils du tour suivant (son schéma devient appelable).
+                if nom == outils.META_CHARGER and '"ok": true' in resultat:
+                    cible = (args or {}).get("nom")
+                    if cible:
+                        competences_chargees.add(cible)
+                        outils_actifs = outils.outils_pour(
+                            registre, chargees=competences_chargees, porte=True)
                 confirmation = '"confirmation_requise": true' in resultat
                 yield {"type": "resultat_outil", "nom": nom,
                        "resultat": resultat, "confirmation": confirmation}

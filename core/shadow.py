@@ -42,7 +42,8 @@ def echantillonne(conf: dict) -> bool:
     """True si le shadow est actif ET que ce tirage tombe dans l'échantillon."""
     if not conf.get("shadow_actif"):
         return False
-    taux = float(conf.get("shadow_taux") or TAUX_DEFAUT)
+    brut = conf.get("shadow_taux")          # 0 explicite = désactivé : ne PAS retomber sur le défaut
+    taux = float(TAUX_DEFAUT if brut is None else brut)
     return random.random() < max(0.0, min(1.0, taux))
 
 
