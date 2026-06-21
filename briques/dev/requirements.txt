@@ -1,0 +1,5 @@
+# Brique dev — auto-atelier. Le filet git passe par `git` en sous-processus (aucune lib git),
+# le domaine est en Python pur (domaine.py). Dépendances minces et épinglées.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
