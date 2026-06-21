@@ -1,0 +1,100 @@
+{
+  "nom": "mail",
+  "version": "0.1.0",
+  "description": "Boîte de réception (email ENTRANT), multi-tenant et provider-agnostique, LECTURE SEULE. L'assistant peut lister, lire, résumer (IA + repli honnête) et trier par importance les mails reçus, et préparer un brouillon de réponse (JAMAIS envoyé en v0.1.0). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîte IMAP réelle dès qu'on connecte un compte (mot de passe d'application, chiffré au repos). L'envoi (SMTP) est prévu en v0.2.0.",
+  "role": "mail",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/mail",
+  "port": 6030,
+  "url_sante": "http://host.docker.internal:6030/sante",
+  "depends_on": [],
+  "offre": [
+    "multi_tenant_par_cle",
+    "boite_reception_lecture_seule",
+    "tri_par_importance",
+    "resume_ia_repli_honnete",
+    "brouillon_de_reponse_non_envoye",
+    "mock_honnete_par_defaut",
+    "imap_reel_mot_de_passe_app"
+  ],
+  "taches": [
+    {
+      "nom": "sync-mail",
+      "description": "Rafraîchit le cache de la boîte depuis le fournisseur (IMAP réel ou mock).",
+      "methode": "POST",
+      "chemin": "/mail/sync",
+      "cadence_heures": 1,
+      "idempotent": true,
+      "entete_token_env": "MAIL_KEY",
+      "tolere_echec": true
+    }
+  ],
+  "capacites": [
+    {
+      "nom": "mail_lister",
+      "description": "Liste les emails reçus, TRIÉS par importance (les plus urgents/à traiter d'abord). Donne expéditeur, sujet, extrait, catégorie, score, lu/non-lu. Sert « lis mes mails », « montre-moi les pubs/newsletters », « les factures », « les autres ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/mail",
+      "params": {
+        "non_lus": {"type": "boolean", "description": "Ne montrer que les messages non lus."},
+        "categorie": {"type": "string", "description": "Filtrer par type : 'newsletter' (= pubs/promos), 'facture', 'rendez_vous', 'personnel', 'notification', 'autre'. Les libellés courants (« pub », « promo », « rdv »…) sont tolérés. Omettre = tout."},
+        "limite": {"type": "integer", "description": "Nombre maximum de messages (défaut 50)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "mail_lire",
+      "description": "Lit le CONTENU COMPLET d'un email (corps entier), à partir de son identifiant obtenu via mail_lister. Lecture seule (ne marque pas le message comme lu côté serveur).",
+      "methode": "GET",
+      "chemin": "/mail/{message_id}",
+      "params": {
+        "message_id": {"type": "string", "description": "Identifiant du message (champ id de mail_lister).", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "mail_resumer",
+      "description": "Fait le POINT sur la boîte de réception : un digest priorisé (ce qui demande une action / est urgent d'abord), rédigé par l'assistant. Sert « résume ma boîte », « qu'est-ce qui est important ce matin ? ». Lecture seule.",
+      "methode": "POST",
+      "chemin": "/mail/resumer",
+      "params": {
+        "lang": {"type": "string", "description": "Langue du résumé (fr, en, es). Défaut fr."}
+      },
+      "action": false
+    },
+    {
+      "nom": "mail_trier",
+      "description": "Range la boîte par CATÉGORIE (factures/paiements, rendez-vous, personnel, notifications, newsletters). Sert « trie mes mails », « montre-moi les factures ». Lecture seule.",
+      "methode": "POST",
+      "chemin": "/mail/trier",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "mail_brouillon_repondre",
+      "description": "PRÉPARE un brouillon de réponse à un email reçu (à partir de son identifiant). Le brouillon est rangé mais N'EST PAS ENVOYÉ (l'envoi arrive en v0.2.0). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/mail/brouillon",
+      "params": {
+        "message_id": {"type": "string", "description": "Identifiant du message auquel répondre.", "requis": true},
+        "instruction": {"type": "string", "description": "Consigne de ton/contenu (optionnel), ex. « décline poliment », « propose jeudi 14h »."},
+        "lang": {"type": "string", "description": "Langue du brouillon (fr, en, es). Défaut fr."}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_compte_connecter",
+      "description": "Connecte une boîte IMAP réelle (lecture seule). ASTUCE : il vaut MIEUX le faire depuis la page back-office de la brique que par message (le mot de passe transiterait dans la conversation). À n'utiliser que si l'utilisateur fournit explicitement ses identifiants. ACTION (manipule un secret) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/comptes",
+      "params": {
+        "host": {"type": "string", "description": "Serveur IMAP, ex. imap.gmail.com.", "requis": true},
+        "utilisateur": {"type": "string", "description": "Adresse / identifiant IMAP.", "requis": true},
+        "mot_de_passe": {"type": "string", "description": "MOT DE PASSE D'APPLICATION (pas le mot de passe principal).", "requis": true},
+        "port": {"type": "integer", "description": "Port IMAP (défaut 993)."}
+      },
+      "action": true
+    }
+  ]
+}
