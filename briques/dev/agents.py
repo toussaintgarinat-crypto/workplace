@@ -21,13 +21,27 @@ import os
 import shutil
 import subprocess
 
-# Invite commune : DDD + filet. Étoffée au flux BMAD (plan d'abord) à l'incrément 2.
+# Invite commune : DDD + filet + (S88) le DOMAINE PUR d'abord, et la story (plan validé) en tête.
 GABARIT_INVITE = (
     "Tu travailles dans une COPIE ISOLÉE (git worktree) du projet Workplace, sur une branche "
-    "dédiée — jamais `main`. Objectif : {intention}. Respecte le Domain-Driven Design "
-    "(entités/agrégats, langage métier, domaine pur). Ne pousse rien, ne déploie rien : "
-    "produis des modifications de fichiers, je relirai le diff."
+    "dédiée — jamais `main`. Objectif : {intention}.\n"
+    "Méthode imposée (Domain-Driven Design) : commence par le DOMAINE PUR — modélise les "
+    "entités/agrégats en langage métier dans un `domaine.py` SANS aucune I/O (ni réseau, ni "
+    "base, ni fichier), testable hors-ligne — AVANT toute logique technique ou branchement. "
+    "Ne pousse rien, ne déploie rien : produis des modifications de fichiers, je relirai le diff."
 )
+
+# Préfixe injecté quand un plan BMAD a été validé : la story porte le contexte (3e idée BMAD).
+GABARIT_PLAN = (
+    "PLAN VALIDÉ à respecter (ne t'en écarte pas sans raison ; il prime sur l'improvisation) :\n"
+    "{plan}\n\n"
+)
+
+
+def _invite(intention: str, plan: str = "") -> str:
+    """Compose l'invite : le plan validé en tête (s'il existe), puis le gabarit DDD + filet."""
+    base = GABARIT_INVITE.format(intention=intention)
+    return (GABARIT_PLAN.format(plan=plan) + base) if plan.strip() else base
 
 
 class LanceurAgent:
@@ -38,7 +52,7 @@ class LanceurAgent:
         raise NotImplementedError
 
     def executer(self, worktree: str, intention: str, trace: bool = False,
-                 brique_cible: str = "") -> dict:
+                 brique_cible: str = "", plan: str = "") -> dict:
         raise NotImplementedError
 
 
@@ -57,8 +71,8 @@ class ClaudeCode(LanceurAgent):
         return shutil.which("claude") is not None
 
     def executer(self, worktree: str, intention: str, trace: bool = False,
-                 brique_cible: str = "") -> dict:
-        invite = GABARIT_INVITE.format(intention=intention)
+                 brique_cible: str = "", plan: str = "") -> dict:
+        invite = _invite(intention, plan)
         proc = subprocess.run(
             ["claude", "-p", invite],
             cwd=worktree, capture_output=True, text=True,
@@ -78,8 +92,8 @@ class OpenCode(LanceurAgent):
         return shutil.which("opencode") is not None
 
     def executer(self, worktree: str, intention: str, trace: bool = False,
-                 brique_cible: str = "") -> dict:
-        invite = GABARIT_INVITE.format(intention=intention)
+                 brique_cible: str = "", plan: str = "") -> dict:
+        invite = _invite(intention, plan)
         proc = subprocess.run(
             ["opencode", "run", invite],
             cwd=worktree, capture_output=True, text=True,
@@ -102,7 +116,7 @@ class Factice(LanceurAgent):
         return True
 
     def executer(self, worktree: str, intention: str, trace: bool = False,
-                 brique_cible: str = "") -> dict:
+                 brique_cible: str = "", plan: str = "") -> dict:
         # Quand un chantier vise une brique, la note atterrit DANS `briques/<nom>/` — comme le
         # ferait un vrai agent : le rebuild ciblé (S87) peut alors repérer la brique modifiée.
         if brique_cible:
@@ -111,6 +125,7 @@ class Factice(LanceurAgent):
             chemin = os.path.join(dossier, "ATELIER_DEV_NOTE.md")
         else:
             chemin = os.path.join(worktree, "ATELIER_DEV_NOTE.md")
+        bloc_plan = f"\n## Plan validé suivi\n\n{plan}\n" if plan.strip() else ""
         with open(chemin, "w", encoding="utf-8") as f:
             f.write(
                 "# Note d'atelier (simulation honnête)\n\n"
@@ -118,6 +133,7 @@ class Factice(LanceurAgent):
                 "Aucun agent de code réel (Claude Code / OpenCode) n'était disponible : "
                 "cette modification est un PLACEHOLDER pour prouver le filet git "
                 "(worktree isolé → diff → fusion/abandon). Rien n'a touché `main`.\n"
+                + bloc_plan
             )
         _commit(worktree, f"dev(atelier, simulation): {intention}")
         journal = ["Aucun agent réel disponible → mock factice honnête.",

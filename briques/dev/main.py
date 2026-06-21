@@ -1,4 +1,4 @@
-"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.2.0 — S87 : fusion contrôlée.
+"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.3.0 — S88 : flux BMAD (plan d'abord).
 
 Permet de modifier les briques de Workplace et d'ajouter des features DEPUIS l'assistant, avec
 le **filet git** comme garantie « ne casse pas la prod » : chaque chantier vit dans un
@@ -23,8 +23,15 @@ Nouveau en v0.2.0 (S87 — ferme la boucle, SEUL sprint qui touche `main`) :
     briques sensibles (paiements/connexion/auth) sauf déblocage explicite ; un conflit est
     remonté proprement, jamais forcé.
 
-À venir : flux BMAD (plan d'abord), task trace activable, porte skills/MCP + caching,
-IDE code-server, outil Cœur `dev_demander`.
+Nouveau en v0.3.0 (S88 — flux BMAD léger : le PLAN d'abord, opt-in via `plan_requis`) :
+  • POST /chantiers/{id}/planifier → l'« Architect » conçoit un plan (mini-PRD + stories +
+    note de domaine DDD) AVANT de coder (LLM Gateway, repli honnête local).
+  • POST /chantiers/{id}/plan/valider → 1er gate du DOUBLE gate (`confirme=true`) : valide le
+    plan, ce qui débloque le codage. `lancer` est VERROUILLÉ (409) tant que ce n'est pas fait.
+  Le plan validé est ensuite injecté à l'agent codeur (la story porte le contexte).
+
+À venir : task trace activable, porte skills/MCP + caching, IDE code-server, outil Cœur
+`dev_demander`.
 """
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ from pydantic import BaseModel
 import agents
 import domaine
 import git_atelier
+import plan as plan_mod
 import rebuild
 
 DEV_DB = os.environ.get("DEV_DB", os.path.join(os.path.dirname(__file__), "chantiers.json"))
@@ -53,7 +61,7 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.2.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
@@ -102,8 +110,10 @@ class ChantierEntree(BaseModel):
     brique_cible: str = ""
     base: str = "HEAD"
     agent: str = ""          # "claude_code" | "opencode" | "" (auto)
-    trace: bool = False      # task trace (narration), incrément 3
+    trace: bool = False      # task trace (narration), S89
     sprint: str = ""
+    plan_requis: bool = False  # flux BMAD (S88) : exiger un plan validé avant de coder
+    lang: str = "fr"         # langue du plan (Architect)
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────────
@@ -138,6 +148,7 @@ def ouvrir(corps: ChantierEntree):
         id=cid, intention=corps.intention, brique_cible=corps.brique_cible,
         branche=branche, base=corps.base, agent=corps.agent or "auto",
         trace_active=corps.trace, sprint=corps.sprint, worktree=worktree,
+        plan_requis=corps.plan_requis,
     )
     _ranger(ch)
     return ch.to_dict()
@@ -154,19 +165,67 @@ def voir(cid: str):
     return _chantier(cid).to_dict()
 
 
+class PlanEntree(BaseModel):
+    lang: str = "fr"
+
+
+class ValiderPlanEntree(BaseModel):
+    confirme: bool = False   # gate de plan (BMAD) : on valide AVANT de débloquer le codage
+
+
+@app.post("/chantiers/{cid}/planifier", dependencies=[Depends(garde)])
+async def planifier(cid: str, corps: PlanEntree = PlanEntree()):
+    """BMAD : l'« Architect » conçoit le plan (mini-PRD + stories + domaine DDD) AVANT de coder.
+
+    Replanifiable tant qu'on n'a pas commencé à coder (`cree`/`planifie`). Un nouveau plan
+    REMET À ZÉRO sa validation : on revalide ce qu'on relit."""
+    ch = _chantier(cid)
+    if not ch.peut_planifier:
+        raise HTTPException(status_code=409,
+                            detail=f"chantier en état {ch.statut} : on ne planifie qu'avant de coder")
+    ch.plan = await plan_mod.concevoir(ch.intention, ch.brique_cible, corps.lang)
+    ch.plan_valide = False
+    if ch.statut == domaine.CREE:
+        ch.avancer(domaine.PLANIFIE)
+    _ranger(ch)
+    return ch.to_dict()
+
+
+@app.post("/chantiers/{cid}/plan/valider", dependencies=[Depends(garde)])
+def valider_plan(cid: str, corps: ValiderPlanEntree):
+    """GATE de plan : relire le plan → confirmer → débloque le codage (`lancer`).
+
+    409 s'il n'y a pas de plan à valider ; 428 sans confirmation explicite (premier gate du
+    double gate BMAD : valide le plan, puis valide le diff)."""
+    ch = _chantier(cid)
+    if ch.statut != domaine.PLANIFIE or not ch.plan:
+        raise HTTPException(status_code=409, detail="aucun plan à valider (planifie d'abord)")
+    if not corps.confirme:
+        raise HTTPException(status_code=428, detail="confirmation requise (confirme=true) pour valider le plan")
+    ch.plan_valide = True
+    _ranger(ch)
+    return ch.to_dict()
+
+
 @app.post("/chantiers/{cid}/lancer", dependencies=[Depends(garde)])
 def lancer(cid: str):
-    """Lance l'agent dans le worktree : il code, commite sur SA branche. Diff prêt à relire."""
+    """Lance l'agent dans le worktree : il code, commite sur SA branche. Diff prêt à relire.
+
+    BMAD : si un plan est requis mais pas validé, le codage est VERROUILLÉ (409) — c'est tout
+    l'intérêt du « plan d'abord »."""
     ch = _chantier(cid)
+    if ch.code_verrouille_par_plan:
+        raise HTTPException(status_code=409,
+                            detail="plan BMAD requis : planifie puis valide le plan avant de coder")
     if not ch.peut_lancer:
         raise HTTPException(status_code=409, detail=f"chantier en état {ch.statut} : non relançable")
     agent = agents.choisir(ch.agent if ch.agent != "auto" else "")
     res = agent.executer(ch.worktree, ch.intention, trace=ch.trace_active,
-                         brique_cible=ch.brique_cible)
+                         brique_cible=ch.brique_cible, plan=(ch.plan or {}).get("texte", ""))
     ch.agent = res["agent"]
     ch.resume = res["resume"]
     ch.journal = res.get("journal") or []
-    if ch.statut == domaine.CREE:
+    if ch.statut in (domaine.CREE, domaine.PLANIFIE):
         ch.avancer(domaine.EN_COURS)
     if res.get("diff_pret"):
         ch.avancer(domaine.REVUE)
@@ -253,8 +312,9 @@ def accueil():
         "<!doctype html><meta charset=utf-8><title>Atelier dev</title>"
         "<body style='font-family:system-ui;max-width:42rem;margin:3rem auto;color:#222'>"
         "<h1>🛠️ Auto-atelier dev</h1>"
-        "<p>Brique souveraine (port 5950) — v0.2.0 (S87) : socle git + <b>fusion contrôlée</b>. "
-        "Chaque chantier vit dans un <b>worktree jetable</b>, jamais sur <code>main</code> ; "
-        "la fusion exige le gate humain et rebuild la <b>seule</b> brique modifiée.</p>"
+        "<p>Brique souveraine (port 5950) — v0.3.0 (S88) : socle git + fusion contrôlée + "
+        "<b>flux BMAD</b> (plan d'abord). Chaque chantier vit dans un <b>worktree jetable</b>, "
+        "jamais sur <code>main</code> ; double gate <i>valide le plan</i> puis <i>valide le "
+        "diff</i> ; la fusion rebuild la <b>seule</b> brique modifiée.</p>"
         "<p>Voir <code>/sante</code> et l'API <code>/chantiers</code>.</p></body>"
     )

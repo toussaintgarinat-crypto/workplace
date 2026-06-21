@@ -40,6 +40,32 @@ def test_exiger_transition_leve():
         domaine.exiger_transition(domaine.CREE, domaine.FUSIONNE)
 
 
+def test_transition_cree_planifie_en_cours():
+    # Flux BMAD (S88) : cree → planifie → en_cours, replanification autorisée.
+    assert domaine.transition_autorisee(domaine.CREE, domaine.PLANIFIE)
+    assert domaine.transition_autorisee(domaine.PLANIFIE, domaine.EN_COURS)
+    assert domaine.transition_autorisee(domaine.PLANIFIE, domaine.PLANIFIE)  # replanifier
+    assert not domaine.transition_autorisee(domaine.PLANIFIE, domaine.REVUE)  # pas de saut
+
+
+def test_verrou_de_plan_bmad():
+    ch = domaine.Chantier(id="x", intention="t", brique_cible="mail",
+                          branche="dev/mail-t", plan_requis=True)
+    # Plan requis mais pas validé → codage VERROUILLÉ.
+    assert ch.peut_planifier and ch.code_verrouille_par_plan and not ch.peut_lancer
+    ch.avancer(domaine.PLANIFIE)
+    ch.plan = {"texte": "## Mini-PRD\n..."}
+    ch.plan_valide = True
+    # Plan validé → verrou levé, on peut coder.
+    assert not ch.code_verrouille_par_plan and ch.peut_lancer
+    ch.avancer(domaine.EN_COURS)
+
+
+def test_sans_plan_requis_pas_de_verrou():
+    ch = domaine.Chantier(id="y", intention="t", brique_cible="mail", branche="dev/mail-y")
+    assert not ch.code_verrouille_par_plan and ch.peut_lancer  # rétrocompat flux direct
+
+
 def test_chantier_avancer_et_drapeaux():
     ch = domaine.Chantier(id="x", intention="t", brique_cible="mail",
                           branche="dev/mail-t")

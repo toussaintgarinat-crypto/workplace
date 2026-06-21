@@ -15,6 +15,9 @@ os.environ["DEV_REPO"] = _repo
 os.environ["DEV_ATELIERS"] = os.path.join(_racine, "ateliers")
 os.environ["DEV_DB"] = os.path.join(_racine, "chantiers.json")
 os.environ.pop("DEV_KEY", None)  # atelier ouvert en test
+# Pas de LLM en test : le plan BMAD (S88) retombe sur son squelette local, déterministe et
+# hors-ligne (aucun appel réseau). La preuve LIVE avec vrai LLM se fait à part.
+os.environ["GATEWAY_MODEL"] = ""
 
 
 def _git(*args, cwd=_repo):
