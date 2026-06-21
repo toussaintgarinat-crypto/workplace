@@ -78,3 +78,12 @@ def test_mail_filtre_par_mot():
 
 def test_mail_filtre_inexistant_404():
     assert client.get("/mail", params={"filtre": "nope"}, headers=T).status_code == 404
+
+
+def test_mail_filtre_par_nom_insensible_casse():
+    # L'assistant dit « le filtre Acme » sans connaître l'id : résolution par nom.
+    _reset()
+    client.post("/filtres", json={"nom": "Acme", "expediteur": "@example.com"}, headers=T)
+    j = client.get("/mail", params={"filtre": "acme"}, headers=T).json()   # casse différente
+    assert j["filtre"] == "Acme"
+    assert j["messages"] and all("@example.com" in m["de"] for m in j["messages"])

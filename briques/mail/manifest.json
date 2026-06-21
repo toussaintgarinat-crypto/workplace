@@ -38,16 +38,47 @@
   "capacites": [
     {
       "nom": "mail_lister",
-      "description": "Liste les emails reçus (BOÎTE UNIFIÉE de toutes les adresses), TRIÉS par importance (les plus urgents/à traiter d'abord). Donne expéditeur, sujet, extrait, catégorie, score, lu/non-lu et le compte (adresse) d'origine. Sert « lis mes mails », « montre-moi les pubs/newsletters », « les factures du compte pro », « les autres ». Lecture seule.",
+      "description": "Liste les emails reçus (BOÎTE UNIFIÉE de toutes les adresses), TRIÉS par importance (les plus urgents/à traiter d'abord). Donne expéditeur, sujet, extrait, catégorie, score, lu/non-lu et le compte (adresse) d'origine. Sert « lis mes mails », « montre-moi les pubs/newsletters », « les factures du compte pro », « les autres », « les mails de l'entreprise Acme » (via filtre). Lecture seule.",
       "methode": "GET",
       "chemin": "/mail",
       "params": {
         "non_lus": {"type": "boolean", "description": "Ne montrer que les messages non lus."},
         "categorie": {"type": "string", "description": "Filtrer par type : 'newsletter' (= pubs/promos), 'facture', 'rendez_vous', 'personnel', 'notification', 'autre'. Les libellés courants (« pub », « promo », « rdv »…) sont tolérés. Omettre = tout."},
         "compte": {"type": "string", "description": "Filtrer sur UNE adresse précise (ex. « perso@gmail.com »). Voir les adresses connectées via mail_comptes_lister. Omettre = toutes."},
+        "filtre": {"type": "string", "description": "Nom (ou id) d'un FILTRE PERSONNALISÉ pour ne voir que ses mails — typiquement UNE ENTREPRISE (ex. « Acme »). Voir les filtres existants via mail_filtres_lister. Omettre = pas de filtre perso."},
         "limite": {"type": "integer", "description": "Nombre maximum de messages (défaut 50)."}
       },
       "action": false
+    },
+    {
+      "nom": "mail_filtres_lister",
+      "description": "Liste les FILTRES PERSONNALISÉS de l'utilisateur (souvent un par entreprise) : nom, mots-clés, expéditeur. Sert à savoir quels filtres existent avant d'utiliser le paramètre 'filtre' de mail_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/filtres",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "mail_filtre_creer",
+      "description": "Crée un filtre personnalisé, typiquement POUR UNE ENTREPRISE : un nom + un expéditeur (sous-chaîne, idéal un domaine ex. « @acme.com ») et/ou des mots-clés. Ensuite, mail_lister avec filtre=ce nom ne montre que ces mails. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/filtres",
+      "params": {
+        "nom": {"type": "string", "description": "Nom du filtre, ex. le nom de l'entreprise (« Acme »).", "requis": true},
+        "expediteur": {"type": "string", "description": "Sous-chaîne devant figurer dans l'expéditeur, idéalement le domaine de l'entreprise (« @acme.com »)."},
+        "mots": {"type": "array", "description": "Mots-clés (liste) ; un mail matche s'il en contient au moins un. Optionnel si 'expediteur' est fourni."}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_filtre_supprimer",
+      "description": "Supprime un filtre personnalisé par son id (obtenu via mail_filtres_lister). ACTION : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/filtres/{filtre_id}",
+      "params": {
+        "filtre_id": {"type": "string", "description": "Identifiant du filtre à supprimer.", "requis": true}
+      },
+      "action": true
     },
     {
       "nom": "mail_comptes_lister",
