@@ -1,0 +1,54 @@
+services:
+  recherche:
+    build: .
+    container_name: workplace_recherche
+    image: workplace/recherche:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (source unique). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6040:6040"
+    environment:
+      # ── Moteur de recherche (cascade, cf. fournisseurs.py) ──────────────────
+      # SearXNG souverain (conteneur voisin) : URL INTERNE au réseau Docker du stack.
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      # Ordre de préférence surchargeable (liste, ex. "tavily" ou "duckduckgo,searxng").
+      - RECHERCHE_PROVIDERS=${RECHERCHE_PROVIDERS:-}
+      # Repli DuckDuckGo sans-infra (réseau sortant vers DDG). 0 = éteint.
+      - RECHERCHE_DDG=${RECHERCHE_DDG:-1}
+      # Fournisseur hébergé à clé (extension multi-tenant). VIDE = inerte.
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - RECHERCHE_N_DEFAUT=${RECHERCHE_N_DEFAUT:-8}
+      - RECHERCHE_SAFESEARCH=${RECHERCHE_SAFESEARCH:-1}
+      # ── Lecture de page (cf. extraction.py) ─────────────────────────────────
+      - RECHERCHE_MAX_OCTETS=${RECHERCHE_MAX_OCTETS:-3145728}   # 3 Mo
+      - RECHERCHE_TIMEOUT=${RECHERCHE_TIMEOUT:-25}
+      - RECHERCHE_ROBOTS=${RECHERCHE_ROBOTS:-1}                 # respecte robots.txt
+      # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Clés API acceptées : viennent du .env racine via env_file (ne PAS redéclarer
+      # ici en =${API_KEYS:-} → l'écraserait par du vide, piège « env shadow »).
+    depends_on:
+      - searxng
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6040/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Métamoteur SearXNG : agrège Google/Bing/DDG/Wikipédia… et rend du JSON. NON exposé
+  # au public — seul `recherche` l'appelle, sur le réseau interne de ce compose.
+  searxng:
+    image: searxng/searxng:${SEARXNG_TAG:-latest}   # ⚠ à épingler au 1er pull (cf. README)
+    container_name: workplace_searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      # Secret de signature : hérité du .env racine, défaut DEV non secret sinon.
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-dev-searxng-secret-NON-SECRET}
+    volumes:
+      - ./searxng:/etc/searxng:rw     # settings.yml (format JSON activé, limiteur off)
+    restart: unless-stopped
+    # Pas de `ports:` → SearXNG reste INTERNE (joignable seulement via le service recherche).
