@@ -20,10 +20,20 @@ import pont_crm
 import packager
 import revue
 import appliquer
+import bundle
 
 AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
 DB_PATH = os.getenv("DB_PATH", "/data/apps.db")
 EXPORT_DIR = os.getenv("EXPORT_DIR", "/export")
+
+# Bundles (S95→S97) : racine des sources de briques + du Cœur montées en lecture seule
+# (cf. docker-compose). Sert à lister les briques cochables et à composer une solution
+# par client. En dev hors-Docker, repli sur l'arborescence du dépôt.
+_RACINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BRIQUES_SRC = os.getenv("BRIQUES_SRC", os.path.join(_RACINE, "briques"))
+# Le Cœur est monté à CÔTÉ des briques (cf. docker-compose : ../../core → /briques_src/core),
+# donc on dérive son chemin du voisin de BRIQUES_SRC, pas de __file__ (qui vaut /core en conteneur).
+CORE_SRC = os.getenv("CORE_SRC", os.path.join(os.path.dirname(BRIQUES_SRC.rstrip("/")), "core"))
 
 # Brique « donnees » (persistance serveur). Deux URLs :
 #  - INTERNE : appelée par CE service (générateur) pour semer les données → réseau Docker.
@@ -812,6 +822,109 @@ def supprimer_app(app_id: str):
     with _connexion() as conn:
         conn.execute("DELETE FROM apps WHERE id=?", (app_id,))
         conn.commit()
+
+
+# ── Bundles « solution par client » (S95→S97) ───────────────────────────────────
+# Le Studio coche des briques (depuis le registre lu sur disque) → le moteur `bundle`
+# compose une stack 100% isolée par client. « Vivant » : recocher régénère sans écraser
+# le .env d'un bundle déjà déployé (clés/secrets préservés).
+
+# Briques NON cochables : l'infrastructure de la PLATEFORME (ajoutée d'office au bundle
+# comme services dédiés ou propre à l'usine de génération), pas un produit client.
+_BRIQUES_NON_COCHABLES = bundle.PLATEFORME | {"generateur", "audit", "donnees"}
+
+
+def _lister_briques_cochables(briques_dir: str) -> list[dict]:
+    """Le catalogue des briques métier qu'on peut cocher pour un bundle, lu sur disque."""
+    manifests = bundle.lire_manifests(briques_dir)
+    catalogue = []
+    for nom, man in sorted(manifests.items()):
+        if nom in _BRIQUES_NON_COCHABLES:
+            continue
+        if not man.get("port"):  # frontend pur / sans service joignable → pas embarquable seul
+            continue
+        catalogue.append({
+            "nom": nom,
+            "description": man.get("description", ""),
+            "version": man.get("version", ""),
+            "port": man.get("port"),
+            "offre": man.get("offre", []),
+        })
+    return catalogue
+
+
+def _lister_bundles(export_dir: str) -> list[dict]:
+    """Les bundles déjà composés (lus depuis leurs `bundle.json`) → recocher = vivant."""
+    bundles = []
+    if not os.path.isdir(export_dir):
+        return bundles
+    for entree in sorted(os.listdir(export_dir)):
+        chemin = os.path.join(export_dir, entree, "bundle.json")
+        if os.path.isfile(chemin):
+            try:
+                with open(chemin, encoding="utf-8") as f:
+                    bundles.append(json.load(f))
+            except (OSError, json.JSONDecodeError):
+                continue
+    return bundles
+
+
+class DemandeBundle(BaseModel):
+    client: str
+    briques: list[str]
+    decalage: int = bundle.DECALAGE_DEFAUT
+    avec_gateway: bool = True
+    avec_assistant: bool = True
+
+
+@app.get("/bundles/briques")
+def bundles_briques():
+    """Catalogue des briques cochables (pour composer un bundle)."""
+    return {"briques": _lister_briques_cochables(BRIQUES_SRC)}
+
+
+@app.get("/bundles")
+def bundles_lister():
+    """Les bundles déjà composés (pour les recocher / ré-enrichir)."""
+    return {"bundles": _lister_bundles(EXPORT_DIR)}
+
+
+@app.get("/bundles/{slug}")
+def bundle_lire(slug: str):
+    chemin = os.path.join(EXPORT_DIR, f"{slug}-bundle", "bundle.json")
+    if not os.path.isfile(chemin):
+        raise HTTPException(404, "Bundle non trouvé")
+    with open(chemin, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.post("/bundles", status_code=201)
+def bundle_composer(demande: DemandeBundle):
+    """Compose (ou recompose) le bundle d'un client à partir des briques cochées."""
+    if not demande.client.strip():
+        raise HTTPException(422, "Nom du client requis")
+    if not demande.briques:
+        raise HTTPException(422, "Cochez au moins une brique")
+    try:
+        rapport = bundle.ecrire_bundle(
+            demande.client, demande.briques,
+            briques_dir=BRIQUES_SRC, export_dir=EXPORT_DIR, core_dir=CORE_SRC,
+            decalage=demande.decalage,
+            avec_gateway=demande.avec_gateway, avec_assistant=demande.avec_assistant,
+        )
+    except Exception as exc:  # pragma: no cover - garde-fou honnête
+        raise HTTPException(500, f"Échec de composition : {exc}")
+    return rapport
+
+
+@app.get("/bundles-studio")
+def bundles_studio():
+    """Page composeur : cocher des briques → fabriquer une solution par client."""
+    chemin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "studio_bundles.html")
+    if not os.path.isfile(chemin):
+        raise HTTPException(404, "Composeur indisponible")
+    with open(chemin, encoding="utf-8") as f:
+        return Response(content=f.read(), media_type="text/html; charset=utf-8")
 
 
 @app.get("/sante")
