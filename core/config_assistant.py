@@ -335,36 +335,74 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
     return ordre
 
 
-# ── Clé OpenRouter (env de la Gateway) ──────────────────────────────────────
-def _lire_cle() -> str:
+# ── Clés des fournisseurs LLM (env de la Gateway) ───────────────────────────
+# Chaque fournisseur dont la clé est réglable depuis ⚙ Cerveau. La clé est écrite
+# dans le .env de la Gateway puis réinjectée à la recréation du conteneur. Pour
+# exposer un nouveau fournisseur dans le dashboard : ajouter une entrée ici + le
+# bloc modèle dans litellm_config.yaml. Aucun autre code à toucher.
+FOURNISSEURS_CLES = [
+    {"id": "openrouter", "env": "OPENROUTER_API_KEY",   "label": "OpenRouter",             "placeholder": "sk-or-..."},
+    {"id": "opencode",   "env": "OPENCODE_ZEN_API_KEY", "label": "OpenCode Go",            "placeholder": "sk-..."},
+    {"id": "anthropic",  "env": "ANTHROPIC_API_KEY",    "label": "Anthropic (direct)",     "placeholder": "sk-ant-..."},
+    {"id": "openai",     "env": "OPENAI_API_KEY",       "label": "OpenAI (direct)",        "placeholder": "sk-..."},
+    {"id": "groq",       "env": "GROQ_API_KEY",         "label": "Groq",                   "placeholder": "gsk_..."},
+    {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-..."},
+    {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "..."},
+    {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza..."},
+]
+_ENV_PAR_ID = {f["id"]: f["env"] for f in FOURNISSEURS_CLES}
+# Valeurs à NE PAS compter comme une vraie clé (placeholders d'amorçage).
+_CLES_FACTICES = {"", "sk-or-...", "openai/not-configured"}
+
+
+def _lire_cle_env(nom: str) -> str:
     if not GATEWAY_ENV_PATH.exists():
         return ""
     for ligne in GATEWAY_ENV_PATH.read_text().splitlines():
-        if ligne.startswith("OPENROUTER_API_KEY="):
+        if ligne.startswith(f"{nom}="):
             return ligne.split("=", 1)[1].strip()
     return ""
 
 
-def cle_openrouter_definie() -> bool:
-    cle = _lire_cle()
-    return bool(cle) and "change" not in cle.lower() and cle not in ("sk-or-...", "")
+def _cle_definie(val: str) -> bool:
+    return bool(val) and "change" not in val.lower() and val not in _CLES_FACTICES
 
 
-def _ecrire_cle(cle: str) -> None:
-    """Réécrit (ou ajoute) la ligne OPENROUTER_API_KEY dans le .env de la Gateway."""
+def _ecrire_cle_env(nom: str, cle: str) -> None:
+    """Réécrit (ou ajoute) la ligne `{nom}=…` dans le .env de la Gateway."""
     lignes: list[str] = []
     trouve = False
     if GATEWAY_ENV_PATH.exists():
         for ligne in GATEWAY_ENV_PATH.read_text().splitlines():
-            if ligne.startswith("OPENROUTER_API_KEY="):
-                lignes.append(f"OPENROUTER_API_KEY={cle}")
+            if ligne.startswith(f"{nom}="):
+                lignes.append(f"{nom}={cle}")
                 trouve = True
             else:
                 lignes.append(ligne)
     if not trouve:
-        lignes.append(f"OPENROUTER_API_KEY={cle}")
+        lignes.append(f"{nom}={cle}")
     GATEWAY_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     GATEWAY_ENV_PATH.write_text("\n".join(lignes) + "\n")
+
+
+def cles_fournisseurs_etat() -> list[dict]:
+    """Pour le dashboard : chaque fournisseur + si sa clé est réellement définie."""
+    return [{"id": f["id"], "label": f["label"], "placeholder": f["placeholder"],
+             "definie": _cle_definie(_lire_cle_env(f["env"]))}
+            for f in FOURNISSEURS_CLES]
+
+
+# Rétro-compat : OpenRouter, le fournisseur historique câblé ailleurs.
+def _lire_cle() -> str:
+    return _lire_cle_env("OPENROUTER_API_KEY")
+
+
+def _ecrire_cle(cle: str) -> None:
+    _ecrire_cle_env("OPENROUTER_API_KEY", cle)
+
+
+def cle_openrouter_definie() -> bool:
+    return _cle_definie(_lire_cle_env("OPENROUTER_API_KEY"))
 
 
 # ── Pilotage Docker de la Gateway (via le socket, sans dépendance externe) ───
@@ -387,7 +425,6 @@ async def recreer_gateway() -> bool:
     On ne touche que les conteneurs portant `OPENROUTER_API_KEY` (la Gateway, pas la
     base de données). False si aucun conteneur du projet n'est trouvé.
     """
-    nouvelle_cle = _lire_cle()
     filtres = json.dumps({"label": [f"com.docker.compose.project={GATEWAY_PROJET}"]})
     async with _docker_client() as d:
         r = await d.get("/containers/json", params={"all": "true", "filters": filtres})
@@ -400,18 +437,26 @@ async def recreer_gateway() -> bool:
             if any(e.startswith("OPENROUTER_API_KEY=") for e in (insp["Config"].get("Env") or [])):
                 cibles.append(insp)
         for insp in cibles:
-            await _recreer_conteneur(d, insp, nouvelle_cle)
+            await _recreer_conteneur(d, insp)
     return True
 
 
-async def _recreer_conteneur(d: httpx.AsyncClient, insp: dict, nouvelle_cle: str) -> None:
-    """Recrée un conteneur à l'identique en remplaçant sa clé OpenRouter."""
+async def _recreer_conteneur(d: httpx.AsyncClient, insp: dict) -> None:
+    """Recrée un conteneur à l'identique en rafraîchissant TOUTES les clés gérées
+    (OpenRouter + fournisseurs directs) depuis le .env de la Gateway. Docker fige
+    l'env d'un conteneur à sa création ; on réinjecte donc les valeurs fraîches."""
     ancien_id = insp["Id"]
     court = ancien_id[:12]
     nom = insp["Name"].lstrip("/")
     cfg = insp["Config"]
-    env = [f"OPENROUTER_API_KEY={nouvelle_cle}" if e.startswith("OPENROUTER_API_KEY=") else e
+    fraiches = {f["env"]: _lire_cle_env(f["env"]) for f in FOURNISSEURS_CLES}
+    env = [f"{e.split('=', 1)[0]}={fraiches[e.split('=', 1)[0]]}"
+           if e.split("=", 1)[0] in fraiches else e
            for e in (cfg.get("Env") or [])]
+    presents = {e.split("=", 1)[0] for e in env}
+    for nom_env, val in fraiches.items():
+        if nom_env not in presents:
+            env.append(f"{nom_env}={val}")
     reseaux = (insp.get("NetworkSettings") or {}).get("Networks") or {}
 
     def _alias(ep: dict) -> list[str]:  # on retire l'alias = id court de l'ANCIEN conteneur
