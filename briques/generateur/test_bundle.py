@@ -58,7 +58,9 @@ def _composes():
 
 
 def test_composition_resto_paiements():
-    compose, rapport = bundle.composer("Vincept", ["restaurant", "paiements"], _manifests(), _composes())
+    # Briques métier seules (infra gateway/assistant testée à part).
+    compose, rapport = bundle.composer("Vincept", ["restaurant", "paiements"], _manifests(),
+                                       _composes(), avec_gateway=False, avec_assistant=False)
     svc = compose["services"]
     assert set(svc) == {"restaurant", "paiements"}
 
@@ -69,7 +71,7 @@ def test_composition_resto_paiements():
     assert r["env_file"] == ["./.env"]            # secrets = .env DU bundle
     assert "depends_on" not in r                  # dépendances d'origine purgées
     assert r["ports"] == ["${PORT_RESTAURANT:-6210}:6010"]   # hôte décalé, interne natif
-    assert "GATEWAY_URL=http://gateway:4001" in r["environment"]
+    assert "GATEWAY_URL=http://gateway:4000" in r["environment"]   # port INTERNE de la gateway
     assert "PORT=6010" in r["environment"]        # port interne intact
     # healthcheck conservé tel quel
     assert r["healthcheck"] == {"test": ["CMD", "true"]}
@@ -78,6 +80,31 @@ def test_composition_resto_paiements():
     assert compose["volumes"] == {"restaurant_data": None, "paiements_data": None}
     assert rapport["ports"] == {"restaurant": 6210, "paiements": 6220}
     assert rapport["inconnues"] == []
+
+
+def test_gateway_et_assistant_par_defaut():
+    compose, _ = bundle.composer("Vincept", ["restaurant"], _manifests(), _composes())
+    svc = compose["services"]
+    # infra présente d'office
+    assert {"gateway", "gateway_db", "assistant"} <= set(svc)
+
+    gw = svc["gateway"]
+    assert gw["image"] == bundle.GATEWAY_IMAGE
+    assert gw["command"] == ["--config", "/app/config.yaml", "--port", "4000"]
+    assert gw["ports"] == ["${PORT_GATEWAY:-4201}:4000"]       # hôte décalé → interne 4000
+    assert "LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}" in gw["environment"]
+    assert gw["depends_on"] == {"gateway_db": {"condition": "service_healthy"}}
+
+    a = svc["assistant"]
+    assert a["build"] == "./core"
+    assert a["ports"] == ["${PORT_ASSISTANT:-5300}:5000"]
+    assert "GATEWAY_URL=http://gateway:4000" in a["environment"]
+    assert "GATEWAY_KEY=${GATEWAY_KEY}" in a["environment"]
+    assert "BRIQUES_DIR=/manifests" in a["environment"]
+    assert "RESTAURANT_URL=http://restaurant:6010" in a["environment"]   # join par nom de service
+    assert a["depends_on"] == ["gateway", "restaurant"]
+    assert compose["volumes"]["gateway_db"] is None
+    assert compose["volumes"]["assistant_data"] is None
 
 
 def test_url_inter_brique_si_presente_sinon_intacte():
@@ -142,8 +169,8 @@ def test_bundle_vivant_ajout_preserve_existant():
     assert "paiements" in apres["services"]
 
 
-def test_ecrire_bundle_sur_disque(tmp_path):
-    # mini-arborescence de briques sur disque (manifest + compose + source + bruit ignoré)
+def _arbo_disque(tmp_path):
+    """Mini-arborescence Workplace sur disque : briques (+ gateway config) et core."""
     briques = tmp_path / "briques"
     for nom, port in (("restaurant", 6010), ("paiements", 6020)):
         d = briques / nom
@@ -152,19 +179,58 @@ def test_ecrire_bundle_sur_disque(tmp_path):
         (d / "docker-compose.yml").write_text(json.dumps(_composes()[nom]))
         (d / "main.py").write_text("# source\n")
         (d / "data" / "x.db").write_text("DONNEES")
+    (briques / "gateway").mkdir()
+    (briques / "gateway" / "litellm_config.yaml").write_text("master_key: os.environ/LITELLM_MASTER_KEY\n")
+    core = tmp_path / "core"
+    core.mkdir()
+    (core / "Dockerfile").write_text("FROM python:3.12-slim\n")
     export = tmp_path / "export"
     export.mkdir()
+    return briques, export
 
+
+def test_ecrire_bundle_sur_disque(tmp_path):
+    briques, export = _arbo_disque(tmp_path)
     recap = bundle.ecrire_bundle("Vincept", ["restaurant", "paiements"], str(briques), str(export))
 
     dossier = export / "vincept-bundle"
     assert dossier.is_dir()
     assert (dossier / "docker-compose.yml").exists()
-    assert (dossier / ".env.example").exists()
+    assert (dossier / "LISEZMOI.txt").exists()
     assert (dossier / "briques" / "restaurant" / "main.py").exists()
-    assert not (dossier / "briques" / "restaurant" / "data").exists()   # bruit non copié
+    assert not (dossier / "briques" / "restaurant" / "data").exists()        # bruit non copié
+    # manifests copiés pour la découverte par l'assistant
+    assert (dossier / "manifests" / "restaurant" / "manifest.json").exists()
+    # Cœur (build assistant) + config Gateway copiés
+    assert (dossier / "core" / "Dockerfile").exists()
+    assert (dossier / "gateway" / "litellm_config.yaml").exists()
 
     meta = json.loads((dossier / "bundle.json").read_text())
     assert meta["briques"] == ["restaurant", "paiements"]
     assert meta["ports"] == {"restaurant": 6210, "paiements": 6220}
     assert recap["dossier"] == str(dossier)
+
+
+def test_env_cle_interne_partagee_et_openrouter_vide(tmp_path):
+    briques, export = _arbo_disque(tmp_path)
+    bundle.ecrire_bundle("Vincept", ["restaurant"], str(briques), str(export))
+    env = (export / "vincept-bundle" / ".env").read_text()
+    vals = dict(l.split("=", 1) for l in env.splitlines() if "=" in l and not l.startswith("#"))
+    assert vals["OPENROUTER_API_KEY"] == ""                       # à remplir par le client
+    assert vals["LITELLM_MASTER_KEY"] == vals["GATEWAY_KEY"]      # couplage critique respecté
+    assert vals["LITELLM_MASTER_KEY"].startswith("sk-")
+    assert vals["PORT_ASSISTANT"] == "5300"
+
+
+def test_env_non_ecrase_au_reenrichissement(tmp_path):
+    # Bundle vivant : ajouter une brique NE DOIT PAS régénérer le .env (clés/secrets gardés).
+    briques, export = _arbo_disque(tmp_path)
+    bundle.ecrire_bundle("Vincept", ["restaurant"], str(briques), str(export))
+    chemin_env = export / "vincept-bundle" / ".env"
+    chemin_env.write_text("OPENROUTER_API_KEY=sk-DEJA-POSEE\nLITELLM_MASTER_KEY=sk-fixe\nGATEWAY_KEY=sk-fixe\n")
+
+    bundle.ecrire_bundle("Vincept", ["restaurant", "paiements"], str(briques), str(export))
+
+    assert "sk-DEJA-POSEE" in chemin_env.read_text()              # clé du client préservée
+    meta = json.loads((export / "vincept-bundle" / "bundle.json").read_text())
+    assert meta["briques"] == ["restaurant", "paiements"]        # mais la brique est bien ajoutée
