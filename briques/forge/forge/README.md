@@ -59,8 +59,8 @@ DEFAULT_LLM_MODEL=openai/gpt-4o
 
 | Variable | Description | Défaut |
 |---|---|---|
-| `DEFAULT_LLM_PROVIDER` | Provider par défaut (`ollama`, `anthropic`, `openai`, `groq`) | `ollama` |
-| `DEFAULT_LLM_MODEL` | Modèle par défaut | `llama3.2` |
+| `DEFAULT_LLM_PROVIDER` | Provider par défaut (`opencode`, `ollama`, `anthropic`, `openai`, `groq`) | `opencode` |
+| `DEFAULT_LLM_MODEL` | Modèle par défaut | `go/deepseek-v4-flash` |
 
 
 ### Optionnelles — Email (SMTP)
