@@ -379,8 +379,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')">Mail</button>
-      <button class="tab" data-vue="dev" onclick="switchVue('dev')">Atelier dev</button>
-      <button class="tab" data-vue="gateway" onclick="switchVue('gateway')">Gateway</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -641,6 +639,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Agents IA, RAG, ventures — l'atelier technique complet (interface intégrée).</span>
           <span class="creation-badge">Brique · port 3000</span>
         </button>
+        <button class="creation-tuile" onclick="switchVue('dev')">
+          <span class="creation-emoji">💻</span>
+          <span class="creation-titre">Atelier dev</span>
+          <span class="creation-desc">L'IDE du dépôt (code-server) : relire et éditer le code, le diff d'un chantier. Piloter en parlant à l'Assistant.</span>
+          <span class="creation-badge">Cœur · IDE</span>
+        </button>
         <button class="creation-tuile" onclick="ouvrirCreation('__RESTAURANT_UI_URL__', 'Restaurant — commande & paiement à table')">
           <span class="creation-emoji">🍽️</span>
           <span class="creation-titre">Restaurant</span>
@@ -736,7 +740,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE ATELIER DEV (S92) : IDE web code-server monté sur le dépôt -->
   <div class="view" id="vue-dev">
     <div class="topbar">
-      <h2>Atelier dev — l'IDE du dépôt</h2>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
+        <h2 style="margin:0">Atelier dev — l'IDE du dépôt</h2>
+      </div>
       <a class="btn ghost" href="__DEV_IDE_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
     </div>
     <p class="liv-sub" style="margin:0 0 12px">
@@ -755,7 +762,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE GATEWAY : console d'admin native de la Gateway (LiteLLM UI) en iframe -->
   <div class="view" id="vue-gateway">
     <div class="topbar">
-      <h2>Gateway — routeur LLM &amp; clés</h2>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn ghost" onclick="switchVue('briques')">← Registre</button>
+        <h2 style="margin:0">Gateway — routeur LLM &amp; clés</h2>
+      </div>
       <a class="btn ghost" href="__GATEWAY_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
     </div>
     <p class="liv-sub" style="margin:0 0 12px">
@@ -843,8 +853,10 @@ let VUE = 'briques';
 
 function switchVue(v) {
   VUE = v;
-  // « Atelier » est un hub : les sous-vues Usine / Forge / hub gardent l'onglet Atelier actif.
-  const tabActive = ['atelier', 'usine', 'forge'].includes(v) ? 'atelier' : v;
+  // « Atelier » est un hub : les sous-vues Usine / Forge / Atelier dev / hub gardent l'onglet Atelier actif.
+  // « Gateway » n'a plus d'onglet : on l'ouvre depuis la carte du registre → l'onglet Registre reste actif.
+  const tabActive = ['atelier', 'usine', 'forge', 'dev'].includes(v) ? 'atelier'
+                  : v === 'gateway' ? 'briques' : v;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.vue === tabActive));
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === 'vue-' + v));
   if (v === 'usine') chargerLivraisons();

@@ -23,10 +23,28 @@ def test_dashboard_repond():
     assert "text/html" in r.headers["content-type"]
 
 
-def test_onglet_creations_present():
+def test_hub_atelier_present():
+    """Le Hub des créations a fusionné dans l'onglet « Atelier » (tuiles Usine/Forge/…)."""
     html = client.get("/dashboard").text
-    assert 'data-vue="creations"' in html
-    assert "vue-creations" in html
+    assert 'data-vue="atelier"' in html
+    assert 'id="vue-atelier"' in html
+
+
+def test_atelier_dev_est_une_tuile_de_l_atelier():
+    """« Atelier dev » n'a plus d'onglet propre : c'est une tuile du hub Atelier
+    (switchVue('dev')), sa vue reste servie."""
+    html = client.get("/dashboard").text
+    assert 'data-vue="dev"' not in html              # plus d'onglet de premier niveau
+    assert "switchVue('dev')" in html                # accessible via une tuile de l'Atelier
+    assert 'id="vue-dev"' in html                    # la vue IDE existe toujours
+
+
+def test_gateway_hors_onglets_accessible_par_le_registre():
+    """La Gateway n'a plus d'onglet : on l'ouvre via sa carte (rubrique Frontend du
+    registre, vue_dashboard=gateway). La vue console reste servie."""
+    html = client.get("/dashboard").text
+    assert 'data-vue="gateway"' not in html          # plus d'onglet de premier niveau
+    assert 'id="vue-gateway"' in html                # la console LiteLLM existe toujours
 
 
 def test_urls_briques_injectees():
