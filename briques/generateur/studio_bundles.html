@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composeur de solutions — Workplace</title>
+<style>
+  :root {
+    --fond: #1a1410; --carte: #241c16; --carte-haut: #2e241c;
+    --bord: #3a2e23; --or: #d9a441; --or-clair: #f0c878;
+    --texte: #efe7dc; --doux: #b3a594; --vert: #6bbf73; --rouge: #d97b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fond); color: var(--texte);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif; line-height: 1.5;
+  }
+  header {
+    padding: 24px 28px; border-bottom: 1px solid var(--bord);
+    background: linear-gradient(180deg, #241c16, #1a1410);
+  }
+  header h1 { margin: 0; font-size: 22px; color: var(--or-clair); font-weight: 600; }
+  header p { margin: 6px 0 0; color: var(--doux); font-size: 14px; max-width: 720px; }
+  .grille { display: grid; grid-template-columns: 1fr 360px; gap: 22px; padding: 24px 28px; }
+  @media (max-width: 900px) { .grille { grid-template-columns: 1fr; } }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--doux); margin: 0 0 12px; }
+  .briques { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .brique {
+    background: var(--carte); border: 1px solid var(--bord); border-radius: 12px;
+    padding: 14px; cursor: pointer; transition: border-color .15s, background .15s; position: relative;
+  }
+  .brique:hover { border-color: var(--or); }
+  .brique.cochee { border-color: var(--or); background: var(--carte-haut); }
+  .brique .nom { font-weight: 600; color: var(--or-clair); display: flex; align-items: center; gap: 8px; }
+  .brique .nom .puce {
+    width: 16px; height: 16px; border-radius: 5px; border: 2px solid var(--bord); flex: none;
+    display: grid; place-items: center; font-size: 11px; color: var(--fond);
+  }
+  .brique.cochee .puce { background: var(--or); border-color: var(--or); }
+  .brique .meta { font-size: 12px; color: var(--doux); margin-top: 2px; }
+  .brique .desc { font-size: 12.5px; color: var(--doux); margin-top: 8px; max-height: 3.6em; overflow: hidden; }
+  aside { display: flex; flex-direction: column; gap: 18px; }
+  .panneau { background: var(--carte); border: 1px solid var(--bord); border-radius: 12px; padding: 16px; }
+  label { display: block; font-size: 13px; color: var(--doux); margin: 0 0 6px; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--bord);
+    background: var(--fond); color: var(--texte); font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--or); }
+  .bascule { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; cursor: pointer; }
+  .bascule input { margin-top: 3px; }
+  .bascule span { font-size: 13px; }
+  .bascule small { display: block; color: var(--doux); font-size: 11.5px; }
+  .ligne { display: flex; gap: 12px; }
+  .ligne > div { flex: 1; }
+  button.principal {
+    width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 9px;
+    background: var(--or); color: #2a1d0a; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  button.principal:disabled { opacity: .5; cursor: not-allowed; }
+  .bundle-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 9px 11px; border-radius: 8px; border: 1px solid var(--bord); margin-bottom: 8px; cursor: pointer;
+  }
+  .bundle-item:hover { border-color: var(--or); }
+  .bundle-item .b-nom { font-weight: 600; }
+  .bundle-item small { color: var(--doux); display: block; font-size: 11.5px; }
+  .resultat { margin: 0 28px 28px; }
+  .resultat .carte-res {
+    background: var(--carte-haut); border: 1px solid var(--or); border-radius: 12px; padding: 18px;
+  }
+  .resultat h3 { margin: 0 0 8px; color: var(--vert); }
+  pre {
+    background: var(--fond); border: 1px solid var(--bord); border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-size: 12.5px; color: var(--or-clair);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--bord); }
+  th { color: var(--doux); font-weight: 600; }
+  .alerte { color: var(--rouge); font-size: 13px; margin-top: 8px; }
+  .vide { color: var(--doux); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 Composeur de solutions</h1>
+  <p>Cochez les briques (restaurant, paiements, mail, agenda…) pour fabriquer la solution
+     d'une entreprise : une stack <strong>100 % séparée</strong> (ses conteneurs, ses ports,
+     ses données), lancée d'une commande. Recocher un client existant l'enrichit sans rien perdre.</p>
+</header>
+
+<div class="grille">
+  <section>
+    <h2>Briques disponibles</h2>
+    <div class="briques" id="briques"><p class="vide">Chargement…</p></div>
+  </section>
+
+  <aside>
+    <div class="panneau">
+      <label for="client">Nom de l'entreprise cliente</label>
+      <input type="text" id="client" placeholder="ex. Le Bistrot du Port" autocomplete="off">
+
+      <div class="ligne" style="margin-top:12px">
+        <div>
+          <label for="decalage">Décalage de ports</label>
+          <input type="number" id="decalage" value="200" min="0" step="100">
+        </div>
+      </div>
+
+      <label class="bascule">
+        <input type="checkbox" id="gateway" checked>
+        <span>Cerveau (Gateway LLM)
+          <small>Le moteur d'IA partagé du bundle. Recommandé.</small></span>
+      </label>
+      <label class="bascule">
+        <input type="checkbox" id="assistant" checked>
+        <span>Assistant (le Cœur)
+          <small>L'assistant qui pilote les briques en parlant.</small></span>
+      </label>
+
+      <button class="principal" id="composer" disabled>Composer la solution</button>
+    </div>
+
+    <div class="panneau">
+      <h2>Solutions déjà composées</h2>
+      <div id="bundles"><p class="vide">Chargement…</p></div>
+    </div>
+  </aside>
+</div>
+
+<div class="resultat" id="resultat"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let CATALOGUE = [];
+const choisies = new Set();
+
+async function chargerBriques() {
+  const r = await fetch("bundles/briques");
+  const d = await r.json();
+  CATALOGUE = d.briques || [];
+  const c = $("#briques");
+  if (!CATALOGUE.length) { c.innerHTML = '<p class="vide">Aucune brique disponible.</p>'; return; }
+  c.innerHTML = "";
+  CATALOGUE.forEach((b) => {
+    const el = document.createElement("div");
+    el.className = "brique";
+    el.dataset.nom = b.nom;
+    el.innerHTML = `
+      <div class="nom"><span class="puce">✓</span>${b.nom}</div>
+      <div class="meta">port ${b.port}${b.version ? " · v" + b.version : ""}</div>
+      <div class="desc">${(b.description || "").slice(0, 180)}</div>`;
+    el.onclick = () => toggle(b.nom, el);
+    c.appendChild(el);
+  });
+}
+
+function toggle(nom, el) {
+  if (choisies.has(nom)) { choisies.delete(nom); el.classList.remove("cochee"); }
+  else { choisies.add(nom); el.classList.add("cochee"); }
+  majBouton();
+}
+
+function appliquerSelection(noms) {
+  choisies.clear();
+  document.querySelectorAll(".brique").forEach((el) => {
+    const coche = noms.includes(el.dataset.nom);
+    el.classList.toggle("cochee", coche);
+    if (coche) choisies.add(el.dataset.nom);
+  });
+  majBouton();
+}
+
+function majBouton() {
+  $("#composer").disabled = !($("#client").value.trim() && choisies.size);
+}
+
+async function chargerBundles() {
+  const r = await fetch("bundles");
+  const d = await r.json();
+  const c = $("#bundles");
+  const list = d.bundles || [];
+  if (!list.length) { c.innerHTML = '<p class="vide">Aucune pour l\'instant.</p>'; return; }
+  c.innerHTML = "";
+  list.forEach((b) => {
+    const el = document.createElement("div");
+    el.className = "bundle-item";
+    el.innerHTML = `<div><span class="b-nom">${b.client}</span>
+      <small>${(b.briques || []).join(", ") || "—"}</small></div>
+      <span style="color:var(--or)">recocher ↻</span>`;
+    el.onclick = () => {
+      $("#client").value = b.client;
+      $("#decalage").value = b.decalage ?? 200;
+      $("#gateway").checked = b.gateway !== false;
+      $("#assistant").checked = b.assistant !== false;
+      appliquerSelection(b.briques || []);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    c.appendChild(el);
+  });
+}
+
+async function composer() {
+  const btn = $("#composer");
+  btn.disabled = true; btn.textContent = "Composition…";
+  try {
+    const r = await fetch("bundles", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client: $("#client").value.trim(),
+        briques: [...choisies],
+        decalage: parseInt($("#decalage").value, 10) || 200,
+        avec_gateway: $("#gateway").checked,
+        avec_assistant: $("#assistant").checked,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Échec");
+    afficherResultat(d);
+    chargerBundles();
+  } catch (e) {
+    $("#resultat").innerHTML = `<div class="carte-res"><p class="alerte">⚠ ${e.message}</p></div>`;
+  } finally {
+    btn.textContent = "Composer la solution"; majBouton();
+  }
+}
+
+function afficherResultat(d) {
+  const ports = Object.entries(d.ports || {})
+    .map(([n, p]) => `<tr><td>${n}</td><td>http://localhost:${p}</td></tr>`).join("");
+  const inconnues = (d.inconnues || []).length
+    ? `<p class="alerte">Écartées (introuvables / sans port) : ${d.inconnues.join(", ")}</p>` : "";
+  $("#resultat").innerHTML = `
+    <div class="carte-res">
+      <h3>✓ Solution « ${d.client} » composée</h3>
+      <p class="vide">Dossier : <code>${d.dossier}</code> — briques : ${d.briques.join(", ") || "—"}</p>
+      ${inconnues}
+      <table><tr><th>Service</th><th>Adresse</th></tr>${ports}</table>
+      <p class="vide" style="margin-top:14px">Pour la lancer chez le client :</p>
+      <pre>cd ${d.dossier}\n# renseignez OPENROUTER_API_KEY dans .env\ndocker compose up -d --build</pre>
+    </div>`;
+}
+
+$("#client").addEventListener("input", majBouton);
+$("#composer").addEventListener("click", composer);
+chargerBriques();
+chargerBundles();
+</script>
+</body>
+</html>
