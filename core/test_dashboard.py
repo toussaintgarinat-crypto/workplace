@@ -39,6 +39,19 @@ def test_atelier_dev_est_une_tuile_de_l_atelier():
     assert 'id="vue-dev"' in html                    # la vue IDE existe toujours
 
 
+def test_bulles_d_aide_presentes():
+    """Des bulles d'aide en clair (composant .aide) expliquent chaque section au
+    visiteur non technique : au moins sur les onglets et les titres de vues."""
+    html = client.get("/dashboard").text
+    # Le composant bulle + au moins une explication non technique repère.
+    assert 'class="aide"' in html
+    assert "aide-txt" in html
+    assert "comme à un téléphone" in html          # explication du registre de briques
+    assert "standard téléphonique" in html         # explication de la Gateway
+    # Info-bulles natives au survol des onglets.
+    assert "Parle à ton assistant en langage normal" in html
+
+
 def test_gateway_hors_onglets_accessible_par_le_registre():
     """La Gateway n'a plus d'onglet : on l'ouvre via sa carte (rubrique Frontend du
     registre, vue_dashboard=gateway). La vue console reste servie."""

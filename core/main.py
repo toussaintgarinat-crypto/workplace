@@ -139,6 +139,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .tab { background: transparent; border: none; color: #64748b; font-size: 0.85rem; font-weight: 500; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
   .tab:hover { color: #e2e8f0; }
   .tab.active { background: #1e2535; color: #7c83ff; }
+  /* Bulles d'aide (« ⓘ » survolable) — expliquent en clair à quoi sert chaque chose. */
+  .aide { position: relative; display: inline-flex; align-items: center; justify-content: center;
+          width: 17px; height: 17px; border-radius: 50%; border: 1px solid #3d4468;
+          color: #94a3b8; font-size: 0.68rem; font-weight: 700; font-style: italic; font-family: Georgia, serif;
+          cursor: help; margin-left: 7px; flex-shrink: 0; user-select: none; vertical-align: middle; }
+  .aide:hover, .aide:focus { color: #c7b9ff; border-color: #7c83ff; outline: none; }
+  .aide .aide-txt { position: absolute; bottom: calc(100% + 9px); left: 50%; transform: translateX(-50%);
+          width: 290px; max-width: 78vw; background: #0f1320; border: 1px solid #3d4468; border-radius: 10px;
+          padding: 12px 14px; font-size: 0.8rem; font-weight: 400; font-style: normal; font-family: inherit;
+          line-height: 1.55; color: #cbd5e1; text-transform: none; letter-spacing: normal; text-align: left;
+          box-shadow: 0 14px 34px #0009; opacity: 0; visibility: hidden; transition: opacity .15s; z-index: 60; }
+  .aide:hover .aide-txt, .aide:focus .aide-txt { opacity: 1; visibility: visible; }
+  .aide .aide-txt::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+          border: 6px solid transparent; border-top-color: #3d4468; }
+  .aide.aide-clair { color: #b9c2d8; border-color: #cbd5e1; }
   /* Assistant */
   .chat { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; display: flex; flex-direction: column; height: 65vh; overflow: hidden; }
   .chat-fil { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
@@ -373,13 +388,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h1>Workplace — <span>Cœur</span></h1>
   <div style="display:flex;align-items:center;gap:16px">
     <div class="tabs">
-      <button class="tab active" data-vue="briques" onclick="switchVue('briques')">Registre de briques</button>
-      <button class="tab" data-vue="atelier" onclick="switchVue('atelier')">Atelier</button>
-      <button class="tab" data-vue="assistant" onclick="switchVue('assistant')">Assistant</button>
-      <button class="tab" data-vue="historique" onclick="switchVue('historique')">Historique</button>
-      <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
-      <button class="tab" data-vue="mail" onclick="switchVue('mail')">Mail</button>
-      <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
+      <button class="tab active" data-vue="briques" onclick="switchVue('briques')" title="La liste de tous les modules de ton assistant (agenda, mail, recherche web…). Chaque carte est une fonction, avec une pastille verte si elle marche.">Registre de briques</button>
+      <button class="tab" data-vue="atelier" onclick="switchVue('atelier')" title="Pour fabriquer et gérer tes outils : créer une app d'entreprise, gérer un restaurant, créer des personnages, ou éditer le code.">Atelier</button>
+      <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
+      <button class="tab" data-vue="historique" onclick="switchVue('historique')" title="Retrouve toutes tes conversations passées (site, Telegram…), réunies au même endroit.">Historique</button>
+      <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
+      <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
+      <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
   </div>
@@ -388,7 +403,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE BRIQUES -->
   <div class="view active" id="vue-briques">
     <div class="topbar">
-      <h2>Registre de briques</h2>
+      <h2>Registre de briques<span class="aide" tabindex="0">i<span class="aide-txt">Pense à ton assistant comme à un téléphone : chaque « brique » est une appli installée (agenda, mail, recherche web, voix…). Cette page les liste toutes et montre si chacune fonctionne — pastille verte = en ligne. « Frontend » = celles qui ont un écran à ouvrir ; « Backend » = les moteurs qui travaillent en coulisse.</span></span></h2>
       <div style="display:flex;align-items:center;gap:12px">
         <span id="last-check"></span>
         <button class="btn" id="refresh-btn" onclick="charger()">
@@ -405,7 +420,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
-        <h2>Usine à applications — livrer une entreprise en une commande</h2>
+        <h2>Usine à applications — livrer une entreprise en une commande<span class="aide" tabindex="0">i<span class="aide-txt">Décris une entreprise (ou dépose ses documents) et l'assistant te fabrique une application sur mesure clé en main — avec ses comptes utilisateurs et son suivi client. Le tout en une seule fois.</span></span></h2>
       </div>
       <span id="usine-check"></span>
     </div>
@@ -457,7 +472,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE ASSISTANT -->
   <div class="view" id="vue-assistant">
     <div class="topbar">
-      <h2>Assistant — parle-lui, dépose-lui des documents, il pilote la solution</h2>
+      <h2>Assistant — parle-lui, dépose-lui des documents, il pilote la solution<span class="aide" tabindex="0">i<span class="aide-txt">Le cœur de l'app : écris (ou parle) comme à quelqu'un, et l'assistant agit pour toi — chercher sur internet, lire un mail, ajouter un rendez-vous, résumer un document. Il te demande toujours confirmation avant une action importante.</span></span></h2>
       <div style="display:flex;gap:10px">
         <button class="btn ghost" id="btn-rappels" onclick="basculerRappels()" title="Rappels">🔔<span id="rappels-pastille" class="pastille" style="display:none">0</span></button>
         <button class="btn ghost" id="btn-voix" onclick="basculerLectureVocale()" title="Lire les réponses à voix haute">🔊 Voix : off</button>
@@ -586,7 +601,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE HISTORIQUE (S78) : trace unifiée de toutes les conversations (web + Telegram…) -->
   <div class="view" id="vue-historique">
     <div class="topbar">
-      <h2>Historique — toutes tes conversations, toutes surfaces (web, Telegram…)</h2>
+      <h2>Historique — toutes tes conversations, toutes surfaces (web, Telegram…)<span class="aide" tabindex="0">i<span class="aide-txt">La mémoire de tes échanges : retrouve ici toutes tes conversations avec l'assistant, qu'elles viennent de ce site, de Telegram ou d'ailleurs, réunies au même endroit.</span></span></h2>
       <button class="btn" onclick="chargerHistorique()">↻ Rafraîchir</button>
     </div>
     <div class="histo-grille">
@@ -599,7 +614,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
-        <h2>Forge — agents IA, RAG, ventures (interface complète intégrée)</h2>
+        <h2>Forge — agents IA, RAG, ventures (interface complète intégrée)<span class="aide" tabindex="0">i<span class="aide-txt">L'atelier technique avancé : créer des assistants IA spécialisés, leur donner une base de connaissances (tes documents), et gérer tes projets. Pour aller plus loin que l'assistant principal.</span></span></h2>
       </div>
       <div style="display:flex;align-items:center;gap:12px">
         <span class="liv-sub">Connexion unique (realm Oria) — la première fois, l'écran de connexion s'ouvre dans Forge.</span>
@@ -624,7 +639,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <!-- Grille de tuiles (état par défaut) -->
     <div id="creations-grille">
       <div class="topbar">
-        <h2>Atelier — fabriquer & gérer : apps, créations, restaurant</h2>
+        <h2>Atelier — fabriquer & gérer : apps, créations, restaurant<span class="aide" tabindex="0">i<span class="aide-txt">Ton établi : ici tu fabriques et gères des choses concrètes — livrer une application d'entreprise, gérer un restaurant, créer des personnages, ou ouvrir l'éditeur de code (Atelier dev). Clique une tuile pour entrer.</span></span></h2>
       </div>
       <div class="creations-tuiles">
         <button class="creation-tuile" onclick="switchVue('usine')">
@@ -696,7 +711,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <div class="view" id="vue-agenda">
     <div class="topbar">
-      <h2>Agenda</h2>
+      <h2>Agenda<span class="aide" tabindex="0">i<span class="aide-txt">Ton calendrier : vois tes rendez-vous (mois ou semaine), ajoutes-en, mets des rappels. Tu peux aussi demander à l'assistant « ajoute un déjeuner mardi à 12h ».</span></span></h2>
       <div style="display:flex;gap:8px">
         <button class="btn" style="opacity:.85" onclick="ouvrirGestionEtiquettes()">🏷 Étiquettes</button>
         <button class="btn" onclick="ouvrirModaleEvent(null, null)">+ Nouveau rendez-vous</button>
@@ -727,7 +742,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE MAIL -->
   <div class="view" id="vue-mail">
     <div class="topbar">
-      <h2>Mail</h2>
+      <h2>Mail<span class="aide" tabindex="0">i<span class="aide-txt">Ta boîte de réception. L'assistant peut t'aider à lire, trier tes mails et préparer des réponses — qu'il n'envoie qu'après ton accord.</span></span></h2>
       <a class="btn ghost" href="__MAIL_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
     </div>
     <div class="panel" style="padding:0;overflow:hidden">
@@ -742,7 +757,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn ghost" onclick="switchVue('atelier')">← Atelier</button>
-        <h2 style="margin:0">Atelier dev — l'IDE du dépôt</h2>
+        <h2 style="margin:0">Atelier dev — l'IDE du dépôt<span class="aide" tabindex="0">i<span class="aide-txt">L'éditeur de code de l'application, pour les curieux ou les développeurs. Pas besoin de t'en servir : tu peux demander toutes les modifications à l'Assistant, en français — il fait le travail et te montre le résultat.</span></span></h2>
       </div>
       <a class="btn ghost" href="__DEV_IDE_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
     </div>
@@ -764,7 +779,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn ghost" onclick="switchVue('briques')">← Registre</button>
-        <h2 style="margin:0">Gateway — routeur LLM &amp; clés</h2>
+        <h2 style="margin:0">Gateway — routeur LLM &amp; clés<span class="aide" tabindex="0">i<span class="aide-txt">Le « standard téléphonique » entre ton assistant et les intelligences artificielles : il transmet chaque demande au bon modèle d'IA et suit les coûts. Tu n'as quasiment jamais besoin d'y toucher — c'est de la plomberie interne.</span></span></h2>
       </div>
       <a class="btn ghost" href="__GATEWAY_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
     </div>
@@ -788,7 +803,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- VUE PROFIL -->
   <div class="view" id="vue-profil">
     <div class="topbar">
-      <h2>Profil — ton contexte d'amorçage (sert à personnaliser l'assistant)</h2>
+      <h2>Profil — ton contexte d'amorçage (sert à personnaliser l'assistant)<span class="aide" tabindex="0">i<span class="aide-txt">Qui tu es : prénom, date de naissance, préférences, façon de te parler… L'assistant s'appuie là-dessus pour personnaliser ses réponses. Plus tu remplis, plus il te ressemble.</span></span></h2>
       <div style="display:flex;align-items:center;gap:12px">
         <span id="profil-etat" style="font-size:0.8rem;color:#64748b"></span>
         <button class="btn" id="btn-profil-save" onclick="sauverProfil()">Enregistrer</button>
@@ -1849,12 +1864,17 @@ async function charger() {
       const couche = b.couche === 'frontend' ? 'frontend' : 'backend';
       parCouche[couche].push({ b, h });
     });
+    const AIDE_COUCHE = {
+      frontend: "Les briques qui ont un écran ou une page à ouvrir et utiliser directement (ex. l'agenda, le mail, le studio).",
+      backend:  "Les briques « moteurs » : elles travaillent en coulisse pour les autres (mémoire, voix, recherche…), sans écran à elles."
+    };
     [['frontend', 'Frontend'], ['backend', 'Backend']].forEach(([cle, titre]) => {
       const items = parCouche[cle];
       if (!items.length) return;
       const cartes = items.map(({ b, h }) => carteHTML(b, h)).join('');
+      const aide = `<span class="aide aide-clair" tabindex="0">i<span class="aide-txt">${AIDE_COUCHE[cle]}</span></span>`;
       groupes.insertAdjacentHTML('beforeend',
-        `<div class="groupe-couche"><h3 class="groupe-titre">${titre}` +
+        `<div class="groupe-couche"><h3 class="groupe-titre">${titre}${aide}` +
         `<span class="groupe-compteur">${items.length}</span></h3>` +
         `<div class="grid">${cartes}</div></div>`);
     });
