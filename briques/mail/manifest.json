@@ -1,6 +1,6 @@
 {
   "nom": "mail",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION. Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon). FILTRES PERSONNALISÉS (ex. un par entreprise, par domaine d'expéditeur ou mots-clés). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos).",
   "role": "mail",
   "couche": "backend",

@@ -46,6 +46,16 @@ _SEED = [
      "extrait": "Profitez de -50% sur une sélection de meubles. Offre valable jusqu'à dimanche.",
      "corps": "Soldes exceptionnels ! -50% sur le mobilier. Cliquez pour en profiter. "
               "Pour vous désabonner, cliquez ici.",
+     # Cet exemple porte une vraie partie HTML (style inline + image DISTANTE = pixel/visuel
+     # de tracking) pour démontrer le rendu fidèle en iframe sandboxée + le blocage par défaut.
+     "corps_html": (
+         "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto\">"
+         "<h1 style=\"color:#c026d3\">🔥 Soldes -50%</h1>"
+         "<p>Profitez de <b>-50%</b> sur une sélection de meubles. "
+         "Offre valable <i>jusqu'à dimanche</i>.</p>"
+         "<img src=\"https://example.com/banniere-promo.png\" alt=\"Bannière promo\" width=\"560\">"
+         "<p><a href=\"https://boutique-deco.fr/soldes\">J'en profite</a> · "
+         "<a href=\"https://boutique-deco.fr/desabo\">Se désabonner</a></p></div>"),
      "lu": True, "dossier": "INBOX"},
     {"id": "m5", "de": "thomas.client@entreprise.com", "de_nom": "Thomas (client)",
      "sujet": "URGENT — relance sur le devis signé",
@@ -95,28 +105,50 @@ def _decoder(brut) -> str:
         return str(brut)
 
 
-def _extrait_corps(msg: email.message.Message, limite: int = 600) -> tuple[str, str]:
-    """(corps_texte, extrait) — privilégie le text/plain, ignore les pièces jointes."""
-    corps = ""
+def _decoder_partie(part: email.message.Message) -> str:
+    """Décode le payload d'une partie MIME dans son charset (repli tolérant)."""
+    try:
+        return part.get_payload(decode=True).decode(
+            part.get_content_charset() or "utf-8", "replace")
+    except Exception:  # noqa: BLE001 — une partie tordue ne doit pas casser le message
+        return ""
+
+
+def _strip_tags(html: str) -> str:
+    """Texte lisible approximatif depuis du HTML (repli d'extrait quand pas de text/plain)."""
+    txt = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
+    txt = re.sub(r"(?s)<[^>]+>", " ", txt)
+    txt = (txt.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
+              .replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'"))
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _extrait_corps(msg: email.message.Message, limite: int = 600) -> tuple[str, str, str]:
+    """(corps_texte, corps_html, extrait) — garde le text/plain ET le text/html.
+
+    Beaucoup d'emails modernes n'ont QU'une partie HTML : on la conserve pour un rendu
+    fidèle (iframe sandboxée côté UI), et on dérive un extrait lisible depuis le HTML
+    faute de text/plain. Les pièces jointes sont ignorées."""
+    corps, corps_html = "", ""
     if msg.is_multipart():
         for part in msg.walk():
-            if part.get_content_type() == "text/plain" and "attachment" not in str(
-                    part.get("Content-Disposition") or ""):
-                try:
-                    corps = part.get_payload(decode=True).decode(
-                        part.get_content_charset() or "utf-8", "replace")
-                    break
-                except Exception:  # noqa: BLE001
-                    continue
+            if "attachment" in str(part.get("Content-Disposition") or ""):
+                continue
+            ctype = part.get_content_type()
+            if ctype == "text/plain" and not corps:
+                corps = _decoder_partie(part)
+            elif ctype == "text/html" and not corps_html:
+                corps_html = _decoder_partie(part)
     else:
-        try:
-            corps = msg.get_payload(decode=True).decode(
-                msg.get_content_charset() or "utf-8", "replace")
-        except Exception:  # noqa: BLE001
-            corps = ""
+        contenu = _decoder_partie(msg)
+        if msg.get_content_type() == "text/html":
+            corps_html = contenu
+        else:
+            corps = contenu
     corps = re.sub(r"\n{3,}", "\n\n", corps).strip()
-    extrait = re.sub(r"\s+", " ", corps)[:limite].strip()
-    return corps, extrait
+    base = corps or _strip_tags(corps_html)
+    extrait = re.sub(r"\s+", " ", base)[:limite].strip()
+    return corps, corps_html, extrait
 
 
 class Imap:
@@ -158,7 +190,7 @@ class Imap:
                     flags = fetched[0][0]
                 msg = email.message_from_bytes(fetched[0][1])
                 nom, adresse = email.utils.parseaddr(_decoder(msg.get("From")))
-                corps, extrait = _extrait_corps(msg)
+                corps, corps_html, extrait = _extrait_corps(msg)
                 out.append({
                     "id": num.decode(),
                     "de": adresse,
@@ -167,6 +199,7 @@ class Imap:
                     "date": _date_iso(msg.get("Date")),
                     "extrait": extrait,
                     "corps": corps,
+                    "corps_html": corps_html,
                     "lu": b"\\Seen" in flags,
                     "dossier": dossier,
                     "source": "imap",
