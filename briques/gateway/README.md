@@ -60,6 +60,27 @@ Ces clés sont utilisées par les autres services. Elles correspondent aux valeu
 | `google/gemini-2.5-flash` | OpenRouter | |
 | `ollama/llama3.2` | Ollama local | Nécessite `OLLAMA_URL` |
 | `ollama/llama3.3` | Ollama local | Nécessite `OLLAMA_URL` |
+| `go/*` | OpenCode Go | Nécessite `OPENCODE_ZEN_API_KEY` (endpoint `/zen/go/v1`) |
+
+
+### Fournisseurs directs (alternatives à OpenRouter)
+
+Activés par leur propre clé d'env — **inertes tant que la clé est vide**. Pour
+basculer l'assistant dessus : poser la clé puis régler `GATEWAY_MODEL` (et
+éventuellement `REPLI_PAYANT`) sur le nom du modèle.
+
+| Nom du modèle | Provider | Clé d'env |
+|---|---|---|
+| `anthropic-direct/claude-sonnet-4-6`, `…/claude-haiku-4-5` | Anthropic | `ANTHROPIC_API_KEY` |
+| `openai-direct/gpt-4o`, `…/gpt-4o-mini` | OpenAI | `OPENAI_API_KEY` |
+| `groq/llama-3.3-70b` | Groq | `GROQ_API_KEY` |
+| `deepseek-direct/chat`, `…/reasoner` | DeepSeek | `DEEPSEEK_API_KEY` |
+| `mistral/large`, `mistral/small` | Mistral | `MISTRAL_API_KEY` |
+| `gemini-direct/2.5-flash`, `…/2.5-pro` | Google AI Studio | `GEMINI_API_KEY` |
+| `custom/llm` | N'importe quel endpoint OpenAI-compatible | `CUSTOM_LLM_URL` + `CUSTOM_LLM_API_KEY` + `CUSTOM_LLM_MODEL` |
+
+> Ajouter un autre modèle d'un fournisseur déjà présent = copier-coller une entrée
+> dans `litellm_config.yaml` (bloc « FOURNISSEURS DIRECTS »). Aucun code à toucher.
 
 
 ## Obtenir une clé OpenRouter

@@ -247,6 +247,86 @@ model_list:
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
 
+  # ── FOURNISSEURS DIRECTS (alternatives à OpenRouter) ────────────────────────
+  # Même motif que les blocs ci-dessus : chaque entrée est ACTIVÉE par sa propre
+  # clé d'env et reste INERTE tant que la clé est vide (déclarée vide dans
+  # .env.example). Pour qu'un client (ou toi) bascule de fournisseur, il suffit de
+  # poser la clé puis de pointer GATEWAY_MODEL / REPLI_PAYANT sur le nom voulu —
+  # aucun code à toucher. Les noms portent le préfixe du fournisseur pour éviter
+  # toute collision avec les mêmes modèles servis via OpenRouter (`openai/…`,
+  # `anthropic/…`). Copie-colle une ligne pour ajouter un autre modèle d'un
+  # fournisseur déjà présent.
+
+  # Anthropic en direct (sans le markup OpenRouter). Clé: ANTHROPIC_API_KEY.
+  - model_name: anthropic-direct/claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: anthropic-direct/claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # OpenAI en direct. Clé: OPENAI_API_KEY.
+  - model_name: openai-direct/gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: openai-direct/gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Groq (inférence très rapide, OpenAI-compatible). Clé: GROQ_API_KEY.
+  - model_name: groq/llama-3.3-70b
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+
+  # DeepSeek en direct (moins cher que via OpenRouter). Clé: DEEPSEEK_API_KEY.
+  - model_name: deepseek-direct/chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: deepseek-direct/reasoner
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # Mistral (souverain UE). Clé: MISTRAL_API_KEY.
+  - model_name: mistral/large
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: os.environ/MISTRAL_API_KEY
+  - model_name: mistral/small
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+
+  # Google Gemini en direct (AI Studio, clé distincte d'OpenRouter). Clé: GEMINI_API_KEY.
+  - model_name: gemini-direct/2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: gemini-direct/2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ENDPOINT PERSONNALISÉ — n'importe quel service OpenAI-compatible (Together,
+  # Fireworks, Perplexity, un proxy interne…) SANS rien hardcoder ici : tout est
+  # piloté par env. Poser les 3 variables suffit ; vide = inerte.
+  #   CUSTOM_LLM_URL     ex. https://api.together.xyz/v1
+  #   CUSTOM_LLM_API_KEY clé du service
+  #   CUSTOM_LLM_MODEL   ex. openai/meta-llama/Llama-3.3-70B-Instruct-Turbo
+  - model_name: custom/llm
+    litellm_params:
+      model: os.environ/CUSTOM_LLM_MODEL
+      api_base: os.environ/CUSTOM_LLM_URL
+      api_key: os.environ/CUSTOM_LLM_API_KEY
+      timeout: 60
+      num_retries: 0
+
   # Ollama local — OLLAMA_URL = IP du serveur Ollama (NetBird, LAN, ou localhost)
   # Ces entrées sont ignorées si OLLAMA_URL est vide
   - model_name: ollama/llama3.2

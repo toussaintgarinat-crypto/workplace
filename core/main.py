@@ -62,6 +62,10 @@ MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
 # embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
 # chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
 DEV_IDE_URL = os.environ.get("DEV_IDE_URL", "http://localhost:8744/")
+# Console d'admin native de la Gateway (LiteLLM UI), reprise par l'onglet « Gateway »
+# du dashboard dans une iframe. URL vue depuis le NAVIGATEUR (port publié 4001), pas
+# l'URL interne GATEWAY_URL (host.docker.internal) qui sert aux appels du Cœur.
+GATEWAY_UI_URL = os.environ.get("GATEWAY_UI_URL", "http://localhost:4001/ui")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
@@ -376,6 +380,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')">Mail</button>
       <button class="tab" data-vue="dev" onclick="switchVue('dev')">Atelier dev</button>
+      <button class="tab" data-vue="gateway" onclick="switchVue('gateway')">Gateway</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -521,6 +526,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div class="liv-sub" style="margin-top:4px">Enregistrer redémarre la Gateway (~15&nbsp;s) puis teste la clé pour de vrai.</div>
         </div>
         <button class="btn" id="btn-cle" onclick="enregistrerCle()">Enregistrer la clé</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Clés des autres fournisseurs</label>
+          <div class="liv-sub" style="margin-top:2px;margin-bottom:8px">Active un fournisseur direct (Anthropic, Groq, Mistral, OpenAI, DeepSeek, Gemini) ou OpenCode Go. Enregistrer redémarre la Gateway (~15&nbsp;s). Choisis ensuite son modèle dans « Modèle LLM » ci-dessus.</div>
+          <div id="cerveau-cles-fournisseurs"><div class="liv-sub">Chargement…</div></div>
+        </div>
       </div>
       <div class="cerveau-row" style="margin-top:14px">
         <div class="field" style="flex:1">
@@ -740,6 +752,29 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- VUE GATEWAY : console d'admin native de la Gateway (LiteLLM UI) en iframe -->
+  <div class="view" id="vue-gateway">
+    <div class="topbar">
+      <h2>Gateway — routeur LLM &amp; clés</h2>
+      <a class="btn ghost" href="__GATEWAY_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+    </div>
+    <p class="liv-sub" style="margin:0 0 12px">
+      Console d'admin de la Gateway (LiteLLM) : modèles, <b>clés virtuelles</b>, budgets/quotas,
+      <b>logs &amp; dépenses</b>. Connexion avec la clé maîtresse (<code>LITELLM_MASTER_KEY</code>).
+      Pour le réglage courant — choisir le modèle de l'assistant, poser une clé de fournisseur —
+      passe plutôt par l'<a href="#" onclick="switchVue('assistant');return false">Assistant</a> → ⚙ Cerveau.
+    </p>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <iframe id="gateway-iframe" title="Console Gateway (LiteLLM)"
+        style="width:100%;height:calc(100vh - 230px);min-height:520px;border:0;border-radius:12px"
+        allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+    <p class="liv-sub" style="margin:10px 0 0">
+      Si la console ne s'affiche pas dans le cadre (certaines versions de LiteLLM
+      refusent l'iframe), utilise « Ouvrir dans un onglet ↗ ».
+    </p>
+  </div>
+
   <!-- VUE PROFIL -->
   <div class="view" id="vue-profil">
     <div class="topbar">
@@ -820,6 +855,7 @@ function switchVue(v) {
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
   if (v === 'dev') chargerDev();
+  if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
   if (v === 'historique') chargerHistorique();
@@ -914,6 +950,15 @@ function chargerDev() {
   if (devCharge) return;
   const f = document.getElementById('dev-iframe');
   if (f) { f.src = DEV_IDE_URL; devCharge = true; }
+}
+
+// ── Gateway (console LiteLLM, S93) : iframe chargée paresseusement au 1er affichage ──
+const GATEWAY_UI_URL = '__GATEWAY_UI_URL__';
+let gatewayCharge = false;
+function chargerGateway() {
+  if (gatewayCharge) return;
+  const f = document.getElementById('gateway-iframe');
+  if (f) { f.src = GATEWAY_UI_URL; gatewayCharge = true; }
 }
 
 // ── Profil ────────────────────────────────────────────────────────────────────
@@ -1552,6 +1597,19 @@ async function chargerCerveau(force) {
     pill(document.getElementById('cle-statut'),
          c.cle_openrouter_definie ? true : false,
          c.cle_openrouter_definie ? '● définie' : '● absente');
+    // Clés des autres fournisseurs (Anthropic, Groq, OpenCode Go…) — OpenRouter a son champ dédié.
+    const zoneF = document.getElementById('cerveau-cles-fournisseurs');
+    if (zoneF) {
+      const fs = (c.cles_fournisseurs || []).filter(f => f.id !== 'openrouter');
+      zoneF.innerHTML = fs.map(f => `
+        <div class="cerveau-row" style="margin-top:6px;align-items:flex-end">
+          <div class="field" style="flex:1">
+            <label style="font-size:0.82rem">${f.label} <span class="cerveau-pill">${f.definie ? '● définie' : '● absente'}</span></label>
+            <input type="password" id="cle-f-${f.id}" placeholder="${f.placeholder}" autocomplete="off">
+          </div>
+          <button class="btn ghost" onclick="enregistrerCleFournisseur('${f.id}')">Enregistrer</button>
+        </div>`).join('') || '<div class="liv-sub">Aucun fournisseur additionnel.</div>';
+    }
     // Voix : provider + URL Unmute, puis (re)construction du fournisseur.
     const selV = document.getElementById('cerveau-voix');
     if (selV) {
@@ -1738,6 +1796,22 @@ async function enregistrerCle() {
     else cerveauMsg('⚠ Échec à l\\'étape « ' + r.etape + ' » : ' + r.detail, 'ko');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
+}
+
+async function enregistrerCleFournisseur(id) {
+  const inp = document.getElementById('cle-f-' + id);
+  const cle = (inp && inp.value || '').trim();
+  if (!cle) { cerveauMsg('Saisis une clé pour ' + id + '.', 'ko'); return; }
+  cerveauMsg('Enregistrement de la clé « ' + id + ' », redémarrage de la Gateway… (~15 s)', 'info');
+  try {
+    const r = await fetch('/assistant/cle-fournisseur', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ fournisseur: id, cle })
+    }).then(r => r.json());
+    if (r.ok) { cerveauMsg('✔ Clé « ' + id + ' » enregistrée, la Gateway a redémarré. Choisis son modèle dans « Modèle LLM ».', 'ok'); if (inp) inp.value = ''; }
+    else cerveauMsg('⚠ Échec (' + (r.etape || '?') + ') : ' + (r.detail || ''), 'ko');
+    await chargerCerveau(true);
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
 }
 
 async function charger() {
@@ -2772,7 +2846,8 @@ async def dashboard():
         .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
         .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
         .replace("__MAIL_UI_URL__", MAIL_UI_URL)
-        .replace("__DEV_IDE_URL__", DEV_IDE_URL))
+        .replace("__DEV_IDE_URL__", DEV_IDE_URL)
+        .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))
 
 
 # ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────
@@ -3013,6 +3088,8 @@ async def assistant_config_get():
         "fallback_models": conf["fallback_models"],
         "modeles_disponibles": await config_assistant.lister_modeles(),
         "cle_openrouter_definie": config_assistant.cle_openrouter_definie(),
+        # Clés des autres fournisseurs LLM (Anthropic, Groq, OpenCode Go…) : état défini/absent.
+        "cles_fournisseurs": config_assistant.cles_fournisseurs_etat(),
         "voix_provider": conf["voix_provider"],
         "unmute_url": conf["unmute_url"],
         "wakeword_url": conf["wakeword_url"],
@@ -3214,6 +3291,34 @@ async def assistant_cle_openrouter(corps: dict):
     ok, detail = await config_assistant.tester_modele(conf["model"])
     return {"ok": ok, "etape": "fini" if ok else "test", "detail": detail,
             "cle_openrouter_definie": config_assistant.cle_openrouter_definie()}
+
+
+@app.post("/assistant/cle-fournisseur", tags=["assistant"])
+async def assistant_cle_fournisseur(corps: dict):
+    """Enregistre la clé d'un fournisseur LLM (Anthropic, Groq, OpenCode Go…) puis
+    recrée la Gateway pour qu'elle la prenne en compte.
+
+    Corps : {"fournisseur": "groq"|"anthropic"|…, "cle": "..."}.
+    Contrairement à /assistant/cle-openrouter, ne lance PAS de complétion de test :
+    le modèle actif n'est pas forcément celui de ce fournisseur. On confirme que la
+    clé est écrite et que la Gateway est redevenue joignable. Pour l'utiliser, choisir
+    ensuite un de ses modèles dans ⚙ Cerveau → Modèle LLM."""
+    fid = (corps.get("fournisseur") or "").strip()
+    cle = (corps.get("cle") or "").strip()
+    nom_env = config_assistant._ENV_PAR_ID.get(fid)
+    if not nom_env:
+        raise HTTPException(status_code=400, detail=f"Fournisseur inconnu : {fid!r}.")
+    if not cle:
+        raise HTTPException(status_code=400, detail="La clé est vide.")
+    config_assistant._ecrire_cle_env(nom_env, cle)
+    if not await config_assistant.recreer_gateway():
+        return {"ok": False, "etape": "recreation",
+                "detail": "Conteneur de la Gateway introuvable (accès au socket Docker ?).",
+                "cles_fournisseurs": config_assistant.cles_fournisseurs_etat()}
+    joignable = await config_assistant.attendre_gateway()
+    return {"ok": joignable, "etape": "fini" if joignable else "attente",
+            "detail": "Gateway redémarrée." if joignable else "Gateway injoignable après recréation.",
+            "cles_fournisseurs": config_assistant.cles_fournisseurs_etat()}
 
 
 @app.post("/assistant/document", tags=["assistant"])
