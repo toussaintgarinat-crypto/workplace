@@ -79,8 +79,11 @@ services:
       # Surtout PAS ré-interpolée ici : `${LLM_API_KEY}` n'est pas résolu au parse
       # (il est dans l'env_file, pas dans l'env de compose) → retombait sur un faux
       # défaut et la Gateway refusait les embeddings (403/401). Cf. S17 C1.
-      - DEFAULT_LLM_PROVIDER=openai
-      - DEFAULT_LLM_MODEL=openai/gpt-4o-mini
+      # Défaut LLM des agents Forge = abonnement OpenCode Go (préfixe go/, via la Gateway).
+      # Ne sert que de REPLI quand un agent n'a aucun preset ; chaque pôle a son preset
+      # (table llm_presets, défaut aligné). Repli local possible : ollama / llama3.2.
+      - DEFAULT_LLM_PROVIDER=opencode
+      - DEFAULT_LLM_MODEL=go/deepseek-v4-flash
       - MEMOIRE_URL=http://host.docker.internal:5600
       - MEMOIRE_ESPACE=Workplace
       # Auth (S17) — le core vérifie les JWT contre le realm `oria` du Keycloak

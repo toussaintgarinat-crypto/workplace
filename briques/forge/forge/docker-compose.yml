@@ -134,8 +134,8 @@ services:
       # LLM via gateway (S128) + valeurs par défaut LLM
       - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://gateway:4000}
       - GATEWAY_API_KEY=${GATEWAY_API_KEY:-sk-forge}
-      - DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-ollama}
-      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-llama3.2}
+      - DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-opencode}
+      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-go/deepseek-v4-flash}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - FALLBACK_LLM_CHAIN=${FALLBACK_LLM_CHAIN:-}
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}

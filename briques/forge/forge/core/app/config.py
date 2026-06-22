@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     KEYCLOAK_AUDIENCE: str = ""  # vide = verify_aud désactivé (multi-tenant)
 
     # ── LLM (S128) — tout passe par la LiteLLM Gateway (OpenAI-compatible) ─
-    DEFAULT_LLM_PROVIDER: str = "ollama"
-    DEFAULT_LLM_MODEL: str = "llama3.2"
+    DEFAULT_LLM_PROVIDER: str = "opencode"
+    DEFAULT_LLM_MODEL: str = "go/deepseek-v4-flash"
     GATEWAY_BASE_URL: str = "http://gateway:4000"
     GATEWAY_API_KEY: str = "sk-forge"
     OLLAMA_BASE_URL: str = ""  # http://host:11434/api — pour /llm-config/ollama/*
