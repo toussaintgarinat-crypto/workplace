@@ -1,0 +1,8 @@
+# Brique recherche — recherche web + lecture de page. Dépendances épinglées.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+
+# Extraction LOCALE souveraine du contenu éditorial d'une page (page_lire).
+# Absent → la brique reste fonctionnelle avec un nettoyage HTML basique (repli honnête).
+trafilatura==2.0.0

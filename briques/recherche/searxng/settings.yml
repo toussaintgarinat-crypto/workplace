@@ -1,0 +1,31 @@
+# Réglages SearXNG pour la brique recherche — métamoteur SOUVERAIN auto-hébergé.
+# On part des défauts de SearXNG et on ne change que l'essentiel pour un usage PROGRAMMATIQUE
+# par la brique (format JSON activé, limiteur anti-bot désactivé sur le réseau interne).
+use_default_settings: true
+
+general:
+  instance_name: "Workplace — recherche"
+  # Pas de page de stats/contact publique : usage interne au stack.
+  enable_metrics: false
+
+server:
+  # Remplacé au démarrage par la variable d'env SEARXNG_SECRET (entrypoint de l'image).
+  secret_key: "remplace-moi-par-SEARXNG_SECRET"
+  # Limiteur anti-bot : INUTILE ici (SearXNG n'est joignable que par la brique sur le
+  # réseau Docker interne, jamais exposé au public) et il bloquerait nos requêtes JSON.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # Active la sortie JSON (désactivée par défaut) : c'est ce que la brique consomme.
+  formats:
+    - html
+    - json
+  # Langue par défaut ; la brique surcharge par requête (param `language`).
+  default_lang: "fr"
+  safe_search: 1
+
+# Un format JSON sans HTML reste possible ; on garde HTML pour pouvoir déboguer à la main.
+ui:
+  static_use_hash: true
