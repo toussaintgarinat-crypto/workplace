@@ -1,12 +1,15 @@
-"""Fournisseurs de boîte mail — interface PROVIDER-AGNOSTIQUE, **lecture seule** (v0.1.0).
+"""Fournisseurs de boîte mail — interface PROVIDER-AGNOSTIQUE.
 
 Deux fournisseurs, choisis selon qu'un compte IMAP est configuré pour le tenant :
 
   • `Mock` : par défaut, **honnête**. Aucune connexion réseau, une petite boîte SIMULÉE
              seedée (factures, rdv, perso, newsletter…) pour la démo et les tests. Tous les
              messages portent `source="simule"` : jamais un faux mail présenté comme réel.
-  • `Imap` : réel via `imaplib` (stdlib) en **TLS**, ouvert en **READ-ONLY** (`select(..., readonly=True)`)
-             — on ne touche JAMAIS au serveur (pas de \\Seen posé, pas de suppression/déplacement).
+  • `Imap` : réel via `imaplib` (stdlib) en **TLS**. La LECTURE ouvre la boîte en
+             `readonly=True` (lire ne pose JAMAIS \\Seen). Les ACTIONS d'écriture explicites —
+             marquer lu/non lu, déplacer, supprimer (→ corbeille) — ouvrent la boîte en
+             lecture-écriture et opèrent par **UID** (STORE/MOVE/COPY), l'identifiant stable d'un
+             message (insensible aux décalages de numéros de séquence après suppression).
              Mot de passe d'application (Gmail/Outlook/n'importe quel IMAP). Import paresseux : le
              mock et les tests tournent sans rien installer.
 
@@ -93,6 +96,17 @@ class Mock:
         msgs = [dict(m, source="simule") for m in _SEED if m["dossier"] == dossier]
         return msgs[:limite]
 
+    # La boîte simulée n'a pas de serveur : ces actions « réussissent » côté fournisseur ;
+    # l'effet réel (lu / retrait / dossier) est porté par le cache local (cf. main.py / stockage).
+    def marquer_lu(self, uid: str, lu: bool = True, dossier: str = "INBOX") -> bool:
+        return True
+
+    def deplacer(self, uid: str, destination: str, dossier: str = "INBOX") -> bool:
+        return True
+
+    def supprimer(self, uid: str, dossier: str = "INBOX") -> bool:
+        return True
+
 
 # ── Fournisseur IMAP réel (lecture seule) ────────────────────────────────────
 def _decoder(brut) -> str:
@@ -173,14 +187,17 @@ class Imap:
     def recuperer(self, dossier: str = "INBOX", limite: int = 50) -> list[dict]:
         m = self._connecter()
         try:
-            m.select(dossier, readonly=True)  # READ-ONLY : on ne modifie jamais la boîte
-            typ, data = m.search(None, "ALL")
+            m.select(dossier, readonly=True)  # READ-ONLY : lire ne modifie jamais la boîte
+            # On cherche/récupère par UID (identifiant STABLE) plutôt que par numéro de séquence :
+            # l'UID stocké servira ensuite à agir au bon endroit (marquer lu / déplacer / supprimer),
+            # même si des messages ont été retirés entre-temps.
+            typ, data = m.uid("search", None, "ALL")
             if typ != "OK":
                 return []
-            ids = data[0].split()[-limite:]  # les plus récents
+            uids = data[0].split()[-limite:]  # les plus récents
             out: list[dict] = []
-            for num in reversed(ids):
-                typ, fetched = m.fetch(num, "(BODY.PEEK[] FLAGS)")  # PEEK = ne pose pas \Seen
+            for uid in reversed(uids):
+                typ, fetched = m.uid("fetch", uid, "(BODY.PEEK[] FLAGS)")  # PEEK = ne pose pas \Seen
                 if typ != "OK" or not fetched or not isinstance(fetched[0], tuple):
                     continue
                 flags = b""
@@ -192,7 +209,7 @@ class Imap:
                 nom, adresse = email.utils.parseaddr(_decoder(msg.get("From")))
                 corps, corps_html, extrait = _extrait_corps(msg)
                 out.append({
-                    "id": num.decode(),
+                    "id": uid.decode(),
                     "de": adresse,
                     "de_nom": nom or adresse,
                     "sujet": _decoder(msg.get("Subject")),
@@ -206,10 +223,98 @@ class Imap:
                 })
             return out
         finally:
-            try:
-                m.logout()
-            except Exception:  # noqa: BLE001
-                pass
+            _fermer(m)
+
+    # ── Actions d'écriture (lecture-écriture, par UID) ───────────────────────
+    def marquer_lu(self, uid: str, lu: bool = True, dossier: str = "INBOX") -> bool:
+        """Pose (lu=True) ou retire (lu=False) le drapeau \\Seen sur le serveur, par UID. True si OK."""
+        m = self._connecter()
+        try:
+            m.select(dossier)  # lecture-écriture (pas readonly)
+            op = "+FLAGS" if lu else "-FLAGS"
+            typ, _ = m.uid("STORE", uid, op, "(\\Seen)")
+            return typ == "OK"
+        finally:
+            _fermer(m)
+
+    def deplacer(self, uid: str, destination: str, dossier: str = "INBOX") -> bool:
+        """Déplace un message (par UID) du dossier source vers `destination`. True si OK."""
+        m = self._connecter()
+        try:
+            m.select(dossier)
+            return _move(m, uid, destination)
+        finally:
+            _fermer(m)
+
+    def supprimer(self, uid: str, dossier: str = "INBOX") -> bool:
+        """« Supprimer » = mettre à la CORBEILLE (réversible côté serveur), en visant d'abord le
+        dossier corbeille annoncé par le serveur (special-use \\Trash, RFC 6154), puis des noms
+        usuels. En dernier recours seulement : marque \\Deleted + EXPUNGE (suppression définitive)."""
+        m = self._connecter()
+        try:
+            m.select(dossier)
+            for corbeille in self._corbeilles(m):
+                if _move(m, uid, corbeille):
+                    return True
+            # Aucune corbeille atteignable : suppression définitive.
+            typ, _ = m.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+            if typ != "OK":
+                return False
+            m.expunge()
+            return True
+        finally:
+            _fermer(m)
+
+    def _corbeilles(self, m: imaplib.IMAP4_SSL) -> list[str]:
+        """Noms candidats de corbeille : d'abord le(s) dossier(s) \\Trash special-use annoncé(s)
+        par le serveur, puis des noms usuels (multi-fournisseurs/langues) en repli."""
+        noms: list[str] = []
+        try:
+            typ, boites = m.list()
+            if typ == "OK":
+                for ligne in boites or []:
+                    s = (ligne.decode("utf-8", "replace")
+                         if isinstance(ligne, (bytes, bytearray)) else str(ligne))
+                    if "\\Trash" in s:
+                        nom = s.rsplit(" ", 1)[-1].strip().strip('"')
+                        if nom and nom not in noms:
+                            noms.append(nom)
+        except Exception:  # noqa: BLE001 — un LIST capricieux ne doit pas bloquer la suppression
+            pass
+        for n in _CORBEILLES:
+            if n not in noms:
+                noms.append(n)
+        return noms
+
+
+# Noms de corbeille usuels (repli si le serveur n'annonce pas de special-use \Trash).
+_CORBEILLES = ("Trash", "[Gmail]/Trash", "[Gmail]/Corbeille", "Deleted", "Deleted Items",
+               "Deleted Messages", "Corbeille")
+
+
+def _fermer(m: imaplib.IMAP4_SSL) -> None:
+    try:
+        m.logout()
+    except Exception:  # noqa: BLE001 — fermeture best-effort
+        pass
+
+
+def _move(m: imaplib.IMAP4_SSL, uid: str, destination: str) -> bool:
+    """Déplace un message (par UID) vers `destination` : UID MOVE (RFC 6851) si le serveur le
+    supporte (Gmail/Outlook le font), sinon repli COPY + \\Deleted + EXPUNGE. True si OK.
+    Un dossier de destination inexistant → COPY renvoie « NO » → False (sans rien casser)."""
+    try:
+        typ, _ = m.uid("MOVE", uid, destination)
+        if typ == "OK":
+            return True
+    except imaplib.IMAP4.error:
+        pass  # serveur sans capacité MOVE : on retombe sur COPY
+    typ, _ = m.uid("COPY", uid, destination)
+    if typ != "OK":
+        return False
+    m.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+    m.expunge()
+    return True
 
 
 def _date_iso(brut) -> str:

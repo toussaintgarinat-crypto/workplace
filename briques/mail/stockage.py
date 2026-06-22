@@ -279,6 +279,39 @@ def expediteurs_connus(tenant: str) -> set[str]:
     return {r["de"] for r in rows}
 
 
+# ── Mutations d'un message dans le cache (reflet local des actions d'écriture) ─
+# Pour une boîte RÉELLE, l'action a déjà été appliquée côté serveur (fournisseurs.Imap) ;
+# on met ensuite le cache à jour pour que la boîte unifiée soit cohérente immédiatement.
+# Pour une boîte MOCK (pas de serveur), le cache EST la seule source de vérité.
+def marquer_message_lu(tenant: str, message_id: str, lu: bool = True) -> dict | None:
+    """Marque (lu=True) ou démarque (lu=False) un message dans le cache. Cloisonné par tenant :
+    un message d'un autre tenant est invisible. Renvoie le message à jour, ou None si introuvable."""
+    with _conn() as c:
+        cur = c.execute("UPDATE messages SET lu=? WHERE id=? AND tenant=?",
+                        (1 if lu else 0, message_id, tenant))
+        if cur.rowcount == 0:
+            return None
+    return lire_message(tenant, message_id)
+
+
+def supprimer_message(tenant: str, message_id: str) -> bool:
+    """Retire un message du cache (boîte unifiée). Cloisonné par tenant. True si un message a été retiré."""
+    with _conn() as c:
+        cur = c.execute("DELETE FROM messages WHERE id=? AND tenant=?", (message_id, tenant))
+        return cur.rowcount > 0
+
+
+def deplacer_message(tenant: str, message_id: str, dossier: str) -> dict | None:
+    """Change le dossier d'un message dans le cache. Cloisonné par tenant. Renvoie le message à
+    jour, ou None si introuvable."""
+    with _conn() as c:
+        cur = c.execute("UPDATE messages SET dossier=? WHERE id=? AND tenant=?",
+                        (dossier, message_id, tenant))
+        if cur.rowcount == 0:
+            return None
+    return lire_message(tenant, message_id)
+
+
 # ── Brouillons (préparés ; envoyés sur validation en v0.2.0) ─────────────────
 def enregistrer_brouillon(tenant: str, *, en_reponse_a: str, a: str, sujet: str, corps: str,
                           compte_id: str | None = None, compte: str = "") -> dict:

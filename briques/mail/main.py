@@ -31,7 +31,7 @@ import fournisseurs
 import resume
 import stockage
 
-app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.4.0")
+app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.5.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -85,6 +85,14 @@ class BrouillonEntree(BaseModel):
     lang: str = "fr"
 
 
+class MarquerEntree(BaseModel):
+    lu: bool = True    # true = marquer lu (défaut) ; false = marquer non lu
+
+
+class DeplacerEntree(BaseModel):
+    dossier: str       # dossier de destination (ex. « Archive »)
+
+
 # ── Synchronisation (cache ← fournisseur, boîte unifiée) ─────────────────────
 def _sync_compte(tenant: str, compte: dict, connus: set[str]) -> int:
     """Synchronise UNE boîte IMAP : récupère, tague (compte_id + adresse), enrichit, remplace sa
@@ -128,7 +136,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.4.0"}
+    return {"ok": True, "brique": "mail", "version": "0.5.0"}
 
 
 @app.get("/config")
@@ -254,6 +262,78 @@ def lire(message_id: str, tenant: str = Depends(tenant_actuel)):
     if not msg:
         raise HTTPException(404, "Message introuvable.")
     return msg
+
+
+# ── Actions d'écriture sur un message (marquer lu / déplacer / supprimer) ─────
+def _compte_reel_du_message(tenant: str, msg: dict) -> dict | None:
+    """La boîte RÉELLE (avec secret) d'où provient ce message, ou None si message simulé (mock)."""
+    adresse = msg.get("compte") or ""
+    if not adresse or adresse in ("simulé", "simule"):
+        return None
+    for c in stockage.lister_comptes(tenant):
+        if c["utilisateur"] == adresse:
+            return stockage.lire_compte(tenant, c["id"], avec_secret=True)
+    return None
+
+
+def _agir_serveur(compte: dict | None, action) -> None:
+    """Applique l'action sur le serveur IMAP réel si la boîte est réelle (sinon mock = no-op,
+    seul le cache local change). `action(fournisseur)` renvoie un booléen ; 502 si le serveur
+    échoue. Le cache n'est mis à jour QU'APRÈS le succès serveur (pas de mensonge local)."""
+    fourn = fournisseurs.fournisseur_pour(compte)
+    try:
+        ok = action(fourn)
+    except Exception as e:  # noqa: BLE001 — erreur réseau/IMAP
+        raise HTTPException(502, "Action refusée par le serveur de messagerie.") from e
+    if not ok:
+        raise HTTPException(502, "Le serveur de messagerie n'a pas pu appliquer l'action.")
+
+
+@app.post("/mail/{message_id}/lu")
+def marquer_lu(message_id: str, corps: MarquerEntree = MarquerEntree(),
+               tenant: str = Depends(tenant_actuel)):
+    """Marque un message comme LU (ou non lu si lu=false) — sur le serveur si la boîte est réelle,
+    puis dans la boîte unifiée. ACTION : confirme=true requis (géré par le Cœur)."""
+    _assurer_cache(tenant)
+    msg = stockage.lire_message(tenant, message_id)
+    if not msg:
+        raise HTTPException(404, "Message introuvable.")
+    compte = _compte_reel_du_message(tenant, msg)
+    _agir_serveur(compte, lambda f: f.marquer_lu(msg["uid"], corps.lu, msg.get("dossier", "INBOX")))
+    maj = stockage.marquer_message_lu(tenant, message_id, corps.lu)
+    return {"ok": True, "lu": corps.lu, "mode": "reel" if compte else "simule", "message": maj}
+
+
+@app.post("/mail/{message_id}/deplacer")
+def deplacer(message_id: str, corps: DeplacerEntree, tenant: str = Depends(tenant_actuel)):
+    """DÉPLACE un message vers un dossier (ex. « Archive », « Travail ») — sur le serveur si la
+    boîte est réelle, puis dans la boîte unifiée. ACTION : confirme=true requis (géré par le Cœur)."""
+    dest = corps.dossier.strip()
+    if not dest:
+        raise HTTPException(400, "Donne le dossier de destination.")
+    _assurer_cache(tenant)
+    msg = stockage.lire_message(tenant, message_id)
+    if not msg:
+        raise HTTPException(404, "Message introuvable.")
+    compte = _compte_reel_du_message(tenant, msg)
+    _agir_serveur(compte, lambda f: f.deplacer(msg["uid"], dest, msg.get("dossier", "INBOX")))
+    maj = stockage.deplacer_message(tenant, message_id, dest)
+    return {"ok": True, "dossier": dest, "mode": "reel" if compte else "simule", "message": maj}
+
+
+@app.delete("/mail/{message_id}")
+def supprimer(message_id: str, tenant: str = Depends(tenant_actuel)):
+    """SUPPRIME un message : mis à la CORBEILLE côté serveur (réversible) si la boîte est réelle,
+    et retiré de la boîte unifiée. ACTION : confirme=true requis (géré par le Cœur)."""
+    _assurer_cache(tenant)
+    msg = stockage.lire_message(tenant, message_id)
+    if not msg:
+        raise HTTPException(404, "Message introuvable.")
+    compte = _compte_reel_du_message(tenant, msg)
+    _agir_serveur(compte, lambda f: f.supprimer(msg["uid"], msg.get("dossier", "INBOX")))
+    stockage.supprimer_message(tenant, message_id)
+    return {"ok": True, "supprime": True, "mode": "reel" if compte else "simule",
+            "message": "Message mis à la corbeille." if compte else "Message retiré (boîte simulée)."}
 
 
 @app.post("/mail/trier")

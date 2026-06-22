@@ -1,10 +1,13 @@
 # Brique `mail` — la boîte de réception de l'assistant (entrant) + réponse sur validation
 
-> **v0.2.0 — multi-adresses, lecture + réponse.** Connecte **plusieurs boîtes** (perso, pro…) ;
-> l'assistant les voit en une **boîte unifiée** et peut **lister/filtrer (catégorie, compte,
-> non-lus), lire, résumer et trier** tes emails, **préparer un brouillon de réponse**, puis
+> **v0.5.0 — multi-adresses, lecture + réponse + gestion.** Connecte **plusieurs boîtes** (perso,
+> pro…) ; l'assistant les voit en une **boîte unifiée** et peut **lister/filtrer (catégorie,
+> compte, non-lus), lire, résumer et trier** tes emails, **préparer un brouillon de réponse**, puis
 > **l'envoyer une fois que tu l'as validé** (SMTP réel si la boîte est réelle ; envoi **simulé**
-> honnête sinon). La lecture IMAP reste strictement en lecture seule.
+> honnête sinon), et enfin **gérer** les messages : **marquer lu/non lu, déplacer vers un dossier,
+> supprimer** (mis à la **corbeille** côté serveur, donc réversible). La **lecture** IMAP reste
+> strictement en lecture seule ; les **actions d'écriture** sont explicites, gardées (`confirme`)
+> et opèrent par **UID** (identifiant stable).
 
 Port **6030**. Multi-tenant (une boîte par clé API), provider-agnostique. Conçue comme les autres
 briques : noyau + briques, le Cœur découvre les capacités via `manifest.json` et les expose comme
@@ -32,9 +35,15 @@ désormais **conservés et affichés fidèlement**, comme dans une vraie boîte 
 ## Honnêteté technique
 - **Défaut = mock honnête.** Sans compte connecté, la boîte est **simulée** (8 messages variés,
   étiquetés `source: "simule"`), **aucune connexion réseau**. Sert la démo, les tests et le dev.
-- **IMAP réel = lecture seule stricte.** On ouvre la boîte en `readonly` et on lit avec
-  `BODY.PEEK[]` : lire un mail ne le marque **pas** comme lu côté serveur, et **rien n'est jamais
-  supprimé ni déplacé**.
+- **Lecture IMAP = strictement read-only.** On ouvre la boîte en `readonly` et on lit avec
+  `BODY.PEEK[]` : lire un mail ne le marque **pas** comme lu côté serveur.
+- **Écriture = seulement sur action explicite et gardée.** `mail_marquer_lu` / `mail_deplacer` /
+  `mail_supprimer` sont des **actions** (`confirme=true` requis, gate du Cœur) : elles ouvrent la
+  boîte en lecture-écriture et opèrent par **UID** (identifiant stable, pas un numéro de séquence
+  qui dérive après suppression). **Supprimer = mettre à la corbeille** (UID MOVE vers le dossier
+  `\Trash`, donc **réversible**) ; la suppression définitive (`\Deleted` + `EXPUNGE`) n'est qu'un
+  **dernier recours** si aucune corbeille n'est atteignable. En mode mock, ces actions n'ont pas
+  de serveur : seul le cache local change, et la réponse l'annonce honnêtement (`mode: "simule"`).
 - **Mot de passe chiffré au repos** (AES-GCM, clé = SHA-256 de `MAIL_VAULT_SECRET`). Jamais en
   clair dans une réponse, un log ou une erreur. ⚠️ Chiffrement *au repos*, pas bout-en-bout.
 - **Résumé / tri.** Le tri et le score d'importance sont **heuristiques et explicables**
@@ -85,6 +94,9 @@ Pour **« les mails par entreprise »** : un filtre par société sur le **domai
 - `mail_trier` — la boîte rangée par catégorie (lecture)
 - `mail_brouillon_repondre` — prépare un brouillon de réponse (action)
 - `mail_brouillon_envoyer` — **envoie** un brouillon validé, réel ou simulé (action à effet réel)
+- `mail_marquer_lu` — marque un message **lu / non lu** (action ; serveur si boîte réelle)
+- `mail_deplacer` — déplace un message vers un **dossier** (action ; serveur si boîte réelle)
+- `mail_supprimer` — **supprime** un message → **corbeille** réversible côté serveur (action)
 - `mail_compte_connecter` — ajoute une boîte IMAP/SMTP (action ; préférer le back-office)
 - `mail_compte_deconnecter` — retire une boîte (action)
 
@@ -97,5 +109,7 @@ cd briques/mail && python -m pytest -q   # offline : domaine, isolation, parcour
 
 ## Reste à prouver LIVE (honnêteté)
 Connecter un **vrai compte IMAP/SMTP** (mot de passe d'app) via le back-office, puis
-lister/lire/résumer de vrais mails et **envoyer une vraie réponse** (un email part réellement).
-(Étape externe : tes identifiants.)
+lister/lire/résumer de vrais mails, **envoyer une vraie réponse** (un email part réellement), et
+**marquer lu / déplacer / supprimer** sur le serveur réel (l'UID STORE/MOVE et la détection du
+dossier corbeille `\Trash` sont écrits et testés en mock, mais pas encore rejoués contre un vrai
+IMAP — Hotmail/Gmail). (Étape externe : tes identifiants.)

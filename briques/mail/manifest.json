@@ -1,7 +1,7 @@
 {
   "nom": "mail",
-  "version": "0.4.0",
-  "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION. Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon). FILTRES PERSONNALISÉS (ex. un par entreprise, par domaine d'expéditeur ou mots-clés). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos).",
+  "version": "0.5.0",
+  "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION + GESTION (marquer lu, déplacer, supprimer). Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon), et GÉRER les messages : marquer lu/non lu, déplacer vers un dossier, supprimer (mis à la corbeille côté serveur, réversible). FILTRES PERSONNALISÉS (ex. un par entreprise, par domaine d'expéditeur ou mots-clés). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos). Les actions d'écriture opèrent par UID (identifiant stable) en lecture-écriture ; la lecture reste read-only.",
   "role": "mail",
   "couche": "backend",
   "statut": "a_tester",
@@ -19,6 +19,7 @@
     "resume_ia_repli_honnete",
     "brouillon_de_reponse",
     "envoi_reponse_sur_validation",
+    "marquer_lu_deplacer_supprimer",
     "filtres_personnalises_par_entreprise",
     "mock_honnete_par_defaut",
     "imap_smtp_reel_mot_de_passe_app"
@@ -162,6 +163,38 @@
       "chemin": "/comptes/{compte_id}",
       "params": {
         "compte_id": {"type": "string", "description": "Identifiant de la boîte à déconnecter (champ id de mail_comptes_lister).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_marquer_lu",
+      "description": "Marque un email comme LU (ou non lu avec lu=false), à partir de son identifiant (champ id de mail_lister). Appliqué sur le serveur (drapeau \\Seen) si la boîte est réelle, et dans la boîte unifiée. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/mail/{message_id}/lu",
+      "params": {
+        "message_id": {"type": "string", "description": "Identifiant du message (champ id de mail_lister).", "requis": true},
+        "lu": {"type": "boolean", "description": "true = marquer lu (défaut) ; false = marquer non lu."}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_deplacer",
+      "description": "Déplace un email vers un DOSSIER (ex. « Archive », « Travail », « À traiter »), à partir de son identifiant (champ id de mail_lister). Appliqué sur le serveur si la boîte est réelle. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/mail/{message_id}/deplacer",
+      "params": {
+        "message_id": {"type": "string", "description": "Identifiant du message à déplacer.", "requis": true},
+        "dossier": {"type": "string", "description": "Nom du dossier de destination (ex. « Archive »).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_supprimer",
+      "description": "Supprime un email à partir de son identifiant (champ id de mail_lister) : mis à la CORBEILLE côté serveur (réversible) si la boîte est réelle, et retiré de la boîte unifiée. ACTION : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/mail/{message_id}",
+      "params": {
+        "message_id": {"type": "string", "description": "Identifiant du message à supprimer.", "requis": true}
       },
       "action": true
     }
