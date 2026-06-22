@@ -42,7 +42,10 @@ services:
   # Métamoteur SearXNG : agrège Google/Bing/DDG/Wikipédia… et rend du JSON. NON exposé
   # au public — seul `recherche` l'appelle, sur le réseau interne de ce compose.
   searxng:
-    image: searxng/searxng:${SEARXNG_TAG:-latest}   # ⚠ à épingler au 1er pull (cf. README)
+    # Tag tierce ÉPINGLÉ (relevé du 1er pull : DOCKER_TAG réel). Codé en dur exprès — le
+    # lanceur fait `cd dossier && docker compose up -d` sans sourcer le .env racine, donc
+    # un `${SEARXNG_TAG:-…}` retomberait toujours sur le défaut (piège « env shadow »).
+    image: searxng/searxng:2026.6.22-952896d29
     container_name: workplace_searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/

@@ -42,12 +42,14 @@ curl -s localhost:6040/lire-page -H 'content-type: application/json' \
      -d '{"url":"https://fr.wikipedia.org/wiki/Logiciel_libre"}' | jq '.titre, .nb_caracteres'
 ```
 
-## ⚠ Dette connue (à solder au 1er déploiement)
+## Image SearXNG
 
-Le conteneur SearXNG utilise `searxng/searxng:${SEARXNG_TAG:-latest}`. Le défaut `latest`
-est **flottant** (contraire à la règle d'épinglage du projet) : au premier `docker compose
-pull`, relever le tag daté réellement tiré (`docker image ls searxng/searxng`) et le figer
-dans le `.env` racine (`SEARXNG_TAG=2025.xx.xx-…`).
+Le conteneur tierce est **épinglé en dur** dans `docker-compose.yml`
+(`searxng/searxng:2026.6.22-952896d29`) — pas via une variable d'env : le lanceur fait
+`cd dossier && docker compose up -d` sans sourcer le `.env` racine, donc un
+`${SEARXNG_TAG:-…}` retomberait toujours sur son défaut (piège « env shadow »). Pour
+mettre à jour : `docker pull searxng/searxng:latest`, relever le `DOCKER_TAG`
+(`docker inspect … org.opencontainers.image.version`) et changer la ligne `image:`.
 
 ## Réglages (env, tous facultatifs)
 
