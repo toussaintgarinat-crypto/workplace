@@ -1,4 +1,4 @@
-# Brique `dev` — l'auto-atelier souverain (port 5950)
+# Brique `dev` — l'auto-atelier souverain (port 5955)
 
 Modifier les briques de Workplace et **ajouter des features depuis l'assistant**, avec le
 **filet git** comme garantie « on ne casse pas la prod ».

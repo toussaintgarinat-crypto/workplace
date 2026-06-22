@@ -58,7 +58,7 @@ RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/"
 # Brique « mail » (port 6030) : client mail (boîtes de réception unifiées + réponse sur
 # validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
 MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
-# Brique « dev » (auto-atelier, port 5950) : IDE web code-server monté sur le dépôt (S92),
+# Brique « dev » (auto-atelier, port 5955) : IDE web code-server monté sur le dépôt (S92),
 # embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
 # chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
 DEV_IDE_URL = os.environ.get("DEV_IDE_URL", "http://localhost:8744/")

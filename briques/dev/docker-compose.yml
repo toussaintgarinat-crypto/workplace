@@ -5,7 +5,7 @@
 # ne JAMAIS exposer ces ports à l'extérieur (un agent de code = exécution arbitraire ; le
 # filet + les gates sont ce qui rend ça sûr, pas le réseau).
 #
-# NB : la brique se prouve aussi très bien en local via `uvicorn main:app --port 5950`
+# NB : la brique se prouve aussi très bien en local via `uvicorn main:app --port 5955`
 # (c'est le mode des preuves LIVE jusqu'ici). Ce compose sert surtout à câbler l'IDE web.
 services:
 
@@ -17,7 +17,7 @@ services:
       - path: ../../.env
         required: false
     ports:
-      - "5950:5950"
+      - "5955:5955"
     environment:
       # Le dépôt cible = la racine Workplace montée en rw (le filet a besoin du vrai .git).
       - DEV_REPO=/repo
@@ -37,7 +37,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5950/sante')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5955/sante')"]
       interval: 30s
       timeout: 10s
       retries: 3
