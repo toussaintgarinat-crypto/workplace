@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import domaine
@@ -30,7 +31,7 @@ import fournisseurs
 import resume
 import stockage
 
-app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.3.0")
+app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.4.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -127,7 +128,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.3.0"}
+    return {"ok": True, "brique": "mail", "version": "0.4.0"}
 
 
 @app.get("/config")
@@ -344,9 +345,20 @@ def front_end():
     return HTMLResponse(_PAGE)
 
 
+_STATIC = Path(__file__).parent / "static"
+
+
+@app.get("/static/purify.min.js")
+def _purify():
+    """Sert DOMPurify (Cure53) vendu en LOCAL — assainit le HTML des emails côté navigateur,
+    sans CDN (souverain/offline). Rendu ensuite dans une iframe sandboxée (anti-XSS, double rempart)."""
+    return FileResponse(_STATIC / "purify.min.js", media_type="application/javascript")
+
+
 _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Mail</title>
+<script src="/static/purify.min.js"></script>
 <style>
  *{box-sizing:border-box} :root{--ac:#4f46e5;--bd:#e2e8f0;--mut:#64748b;--bg:#f8fafc}
  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;
@@ -382,6 +394,11 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
  .lec{overflow:auto;padding:18px 22px} .lec .vide{color:var(--mut);margin-top:30vh;text-align:center}
  .lec h2{font-size:1.15rem;margin:0 0 4px} .lec .from{color:var(--mut);font-size:.85rem;margin-bottom:14px}
  .lec .corps{white-space:pre-wrap;line-height:1.5;border-top:1px solid var(--bd);padding-top:14px}
+ .lec .corps-html{border-top:1px solid var(--bd);padding-top:14px}
+ .lec iframe.html{width:100%;border:0;background:#fff}
+ .imgbar{display:flex;align-items:center;gap:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;
+   border-radius:8px;padding:8px 12px;font-size:.82rem;margin:0 0 12px}
+ .imgbar button{margin-left:auto}
  .rep{margin-top:18px;border-top:1px dashed var(--bd);padding-top:14px}
  textarea{width:100%;border:1px solid var(--bd);border-radius:8px;padding:10px;min-height:130px;resize:vertical}
  .row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
@@ -523,15 +540,62 @@ async function recharger(){
     </div></div>`).join('');
 }
 
+let _htmlCourant=null;  // HTML brut du message ouvert (null si email texte seul)
+
+// Assainit le HTML (DOMPurify), bloque les images distantes si demandé, renvoie un srcdoc + le nb d'images bloquées.
+function rendreMailHtml(html, chargerImages){
+  const propre=DOMPurify.sanitize(html,{
+    FORBID_TAGS:['script','form','iframe','object','embed','input','button','textarea','audio','video','meta','base'],
+    FORBID_ATTR:['srcdoc']});
+  const doc=new DOMParser().parseFromString(propre,'text/html');
+  let bloquees=0;
+  const distant=u=>/^\s*(https?:)?\/\//i.test(u||'');
+  if(!chargerImages){
+    doc.querySelectorAll('img').forEach(img=>{
+      if(distant(img.getAttribute('src'))||img.getAttribute('srcset')){
+        bloquees++; img.removeAttribute('src'); img.removeAttribute('srcset'); img.style.display='none';
+      }});
+    doc.querySelectorAll('[style]').forEach(el=>{
+      const s=el.getAttribute('style')||'';
+      if(/url\((['"]?)\s*(https?:)?\/\//i.test(s)){
+        bloquees++; el.setAttribute('style', s.replace(/background(-image)?\s*:[^;]*;?/gi,''));
+      }});
+  }
+  const srcdoc=`<!doctype html><html><head><base target="_blank"><meta charset=utf-8>`
+    +`<style>html,body{margin:0;padding:0}body{font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;`
+    +`color:#0f172a;word-wrap:break-word;overflow-wrap:break-word}img{max-width:100%;height:auto}`
+    +`table{max-width:100%}a{color:#4f46e5}</style></head><body>${doc.body.innerHTML}</body></html>`;
+  return {srcdoc, bloquees};
+}
+
+// Rend l'email HTML dans l'iframe sandboxée (sans allow-scripts : aucun JS de l'email ne s'exécute).
+function afficherMail(chargerImages){
+  const {srcdoc, bloquees}=rendreMailHtml(_htmlCourant, chargerImages);
+  const f=document.getElementById('mailframe');
+  f.onload=()=>{try{f.style.height=Math.min((f.contentDocument.body.scrollHeight||600)+24,5000)+'px';}catch(e){f.style.height='600px';}};
+  f.srcdoc=srcdoc;
+  const bar=document.getElementById('imgbar');
+  bar.innerHTML=(!chargerImages && bloquees>0)
+    ? `<span>🛡️ ${bloquees} image(s) distante(s) bloquée(s) (protège des pixels espions).</span>`
+      +`<button class="btn sm" onclick="afficherMail(true)">Afficher les images</button>`
+    : '';
+  bar.style.display=bar.innerHTML?'':'none';
+}
+
 async function ouvrir(id){
   selId=id; recharger();
   const m=await fetch('/mail/'+id,{headers:entetes()}).then(r=>r.json());
   if(m.detail){document.getElementById('lec').innerHTML='<div class=vide>Message introuvable.</div>';return;}
+  _htmlCourant=(m.corps_html && m.corps_html.trim())?m.corps_html:null;
+  const zone=_htmlCourant
+    ? `<div class=corps-html><div class=imgbar id=imgbar style="display:none"></div>
+        <iframe class=html id=mailframe sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe></div>`
+    : `<div class=corps>${esc(m.corps||m.extrait||'')}</div>`;
   document.getElementById('lec').innerHTML=`
     <h2>${esc(m.sujet||'(sans sujet)')}</h2>
     <div class=from><b>${esc(m.de_nom||m.de)}</b> &lt;${esc(m.de)}&gt; · ${dateCourte(m.date)}
       ${m.compte?(' · <span class=muted>reçu sur '+esc(m.compte)+'</span>'):''}</div>
-    <div class=corps>${esc(m.corps||m.extrait||'')}</div>
+    ${zone}
     <div class=rep id=rep>
       <div class=row>
         <input id=consigne class=search style="flex:1" placeholder="Consigne (optionnel) : « décline poliment », « propose jeudi 14h »…">
@@ -539,6 +603,7 @@ async function ouvrir(id){
       </div>
       <div id=compose></div>
     </div>`;
+  if(_htmlCourant){document.getElementById('imgbar').style.display='';afficherMail(false);}
 }
 
 async function preparer(mid){

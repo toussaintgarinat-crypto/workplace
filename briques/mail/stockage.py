@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_comptes_tenant ON comptes(tenant);
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY, tenant TEXT NOT NULL, compte_id TEXT, compte TEXT, uid TEXT,
-    de TEXT, de_nom TEXT, sujet TEXT, date TEXT, extrait TEXT, corps TEXT,
+    de TEXT, de_nom TEXT, sujet TEXT, date TEXT, extrait TEXT, corps TEXT, corps_html TEXT,
     lu INTEGER DEFAULT 0, dossier TEXT DEFAULT 'INBOX',
     categorie TEXT, score INTEGER DEFAULT 0, source TEXT, recu_le TEXT);
 CREATE INDEX IF NOT EXISTS idx_msg_tenant ON messages(tenant);
@@ -99,7 +99,7 @@ def init() -> None:
 
         # Messages : ajoute les colonnes de tag par compte si elles manquent (DB v0.1.0).
         cols_msg = _colonnes(c, "messages")
-        for col in ("compte_id", "compte"):
+        for col in ("compte_id", "compte", "corps_html"):
             if col not in cols_msg:
                 c.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
 
@@ -198,11 +198,11 @@ def _inserer(c: sqlite3.Connection, tenant: str, messages: list[dict], now: str)
     for m in messages:
         c.execute(
             "INSERT INTO messages (id, tenant, compte_id, compte, uid, de, de_nom, sujet, date, "
-            "extrait, corps, lu, dossier, categorie, score, source, recu_le) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "extrait, corps, corps_html, lu, dossier, categorie, score, source, recu_le) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (_id(), tenant, m.get("compte_id"), m.get("compte", ""), str(m.get("id", "")),
              m.get("de", ""), m.get("de_nom", ""), m.get("sujet", ""), m.get("date", ""),
-             m.get("extrait", ""), m.get("corps", ""), 1 if m.get("lu") else 0,
+             m.get("extrait", ""), m.get("corps", ""), m.get("corps_html", ""), 1 if m.get("lu") else 0,
              m.get("dossier", "INBOX"), m.get("categorie", ""), int(m.get("score", 0)),
              m.get("source", ""), now))
 
@@ -236,6 +236,7 @@ def _msg_dict(r: sqlite3.Row, *, avec_corps: bool = False) -> dict:
          "score": r["score"], "source": r["source"]}
     if avec_corps:
         d["corps"] = r["corps"]
+        d["corps_html"] = (r["corps_html"] if "corps_html" in r.keys() else "") or ""
     return d
 
 

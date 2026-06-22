@@ -17,6 +17,18 @@ relire → envoyer) et gestion des comptes (modale ⚙ Comptes). Il est **embarq
 du Cœur** comme onglet **« Mail »** (entre Agenda et Profil), via une iframe (`MAIL_UI_URL`). La
 brique apparaît aussi dans le **Registre de briques** (carte avec son **port**).
 
+### Rendu HTML des emails (v0.4.0)
+Les emails au format **HTML** (newsletters, factures, pro… souvent *sans* version texte) sont
+désormais **conservés et affichés fidèlement**, comme dans une vraie boîte mail :
+- le backend garde **les deux** parties (`text/plain` *et* `text/html`) ; l'extrait est dérivé du
+  HTML quand il n'y a pas de texte (fini les corps vides) ;
+- le HTML est **assaini** par **DOMPurify** (vendu en local, `/static/purify.min.js`, aucun CDN)
+  puis rendu dans une **`<iframe>` sandboxée** (sans `allow-scripts` : aucun JS de l'email ne
+  s'exécute, et le CSS de l'email ne déborde pas dans l'app) ;
+- les **images distantes sont bloquées par défaut** (protège des **pixels espions** / tracking),
+  avec un bouton **« Afficher les images »** par message. Les emails en texte seul gardent leur
+  rendu d'origine.
+
 ## Honnêteté technique
 - **Défaut = mock honnête.** Sans compte connecté, la boîte est **simulée** (8 messages variés,
   étiquetés `source: "simule"`), **aucune connexion réseau**. Sert la démo, les tests et le dev.
