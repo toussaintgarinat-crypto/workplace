@@ -6,9 +6,9 @@
   "couche": "backend",
   "statut": "a_tester",
   "chemin_source": "~/Desktop/Workplace/briques/dev",
-  "port": 5950,
-  "url_sante": "http://host.docker.internal:5950/sante",
-  "url_ui": "http://localhost:5950/",
+  "port": 5955,
+  "url_sante": "http://host.docker.internal:5955/sante",
+  "url_ui": "http://localhost:5955/",
   "vue_dashboard": "dev",
   "depends_on": [],
   "offre": [

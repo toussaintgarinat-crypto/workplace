@@ -16,6 +16,28 @@
     "commande_nom_sur_mesure"
   ],
   "besoin": [],
+  "capacites": [
+    {
+      "nom": "ecoute_noms",
+      "description": "Liste les mots-clés de réveil (« comme Siri ») disponibles : les noms GRATUITS embarqués et les noms de marque SUR MESURE déjà livrés. Donne pour chacun le label et le palier (gratuit/payant). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/noms",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "ecoute_commandes",
+      "description": "Liste les commandes de noms de réveil sur mesure et leur état (payée → entraînement → livrée). Sert « où en est mon mot-clé personnalisé ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/commandes",
+      "params": {
+        "statut": {"type": "string", "description": "Filtrer par état (ex. « payee », « entrainement », « livree »). Omettre = toutes."}
+      },
+      "action": false,
+      "niveau": 1
+    }
+  ],
   "taches": [
     {
       "nom": "file-entrainement-wakeword",

@@ -67,6 +67,7 @@ BRIQUES=(
   "personnages|$RACINE/briques/personnages|http://localhost:5900/sante"
   "studio|$RACINE/briques/studio|http://localhost:6060/sante"
   "restaurant|$RACINE/briques/restaurant|http://localhost:6010/sante"
+  "paiements|$RACINE/briques/paiements|http://localhost:6020/sante"
   "mail|$RACINE/briques/mail|http://localhost:6030/sante"
   "recherche|$RACINE/briques/recherche|http://localhost:6040/sante"
   "oria|$RACINE/oria-stack/oria|"

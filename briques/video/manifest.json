@@ -17,5 +17,62 @@
     "repli_placeholder_honnete"
   ],
   "besoin": [],
+  "capacites": [
+    {
+      "nom": "video_fournisseurs",
+      "description": "Liste les moteurs vidéo disponibles et lesquels sont configurés, dans l'ordre de préférence. Sert à savoir avec quoi on peut générer avant de lancer une vidéo. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/fournisseurs",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "video_generer",
+      "description": "Génère une courte vidéo à partir d'un prompt texte (texte→vidéo), ou anime une image de départ (image→vidéo) si image_url est fournie. ACTION (consomme un fournisseur, peut coûter cher) : confirme=true requis. Repli placeholder honnête si aucun moteur configuré.",
+      "methode": "POST",
+      "chemin": "/generer",
+      "params": {
+        "prompt": {"type": "string", "description": "Description de la vidéo voulue (en clair).", "requis": true},
+        "image_url": {"type": "string", "description": "Image de départ à animer (image→vidéo). Omettre = texte→vidéo."},
+        "secondes": {"type": "integer", "description": "Durée en secondes (défaut 5)."},
+        "seed": {"type": "integer", "description": "Graine pour reproduire/varier le rendu (optionnel)."},
+        "fournisseur": {"type": "string", "description": "Forcer un moteur précis (voir video_fournisseurs). Omettre = préférence."}
+      },
+      "action": true,
+      "niveau": 0
+    },
+    {
+      "nom": "video_teaser",
+      "description": "Génère une BANDE-ANNONCE d'épisode à partir d'un titre/synopsis et de personnages. Synergie avec le Studio. ACTION (peut coûter cher) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/teaser",
+      "params": {
+        "titre": {"type": "string", "description": "Titre de l'épisode/série (optionnel)."},
+        "synopsis": {"type": "string", "description": "Résumé/ambiance pour guider la bande-annonce (optionnel)."},
+        "style": {"type": "string", "description": "Style visuel souhaité (optionnel)."},
+        "personnages": {"type": "array", "description": "Personnages à représenter (optionnel)."},
+        "secondes": {"type": "integer", "description": "Durée en secondes (défaut 5)."},
+        "fournisseur": {"type": "string", "description": "Forcer un moteur précis. Omettre = préférence."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "video_animer",
+      "description": "ANIME le portrait d'un personnage (image→vidéo) à partir de sa fiche, idéalement d'un portrait déjà généré (image_url). Synergie avec Personnages/Studio. ACTION (peut coûter cher) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/animer",
+      "params": {
+        "fiche": {"type": "object", "description": "Fiche du personnage : {nom, role, description, archetype…}.", "requis": true},
+        "image_url": {"type": "string", "description": "Portrait à animer (recommandé). Omettre = texte→vidéo."},
+        "style": {"type": "string", "description": "Style visuel souhaité (optionnel)."},
+        "secondes": {"type": "integer", "description": "Durée en secondes (défaut 5)."},
+        "fournisseur": {"type": "string", "description": "Forcer un moteur précis. Omettre = préférence."}
+      },
+      "action": true,
+      "niveau": 1
+    }
+  ],
   "taches": []
 }

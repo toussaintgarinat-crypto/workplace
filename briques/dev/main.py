@@ -1,4 +1,4 @@
-"""Brique « dev » — l'auto-atelier souverain (port 5950), v0.6.0 — S92 : pilotage Cœur + IDE.
+"""Brique « dev » — l'auto-atelier souverain (port 5955), v0.6.0 — S92 : pilotage Cœur + IDE.
 
 Permet de modifier les briques de Workplace et d'ajouter des features DEPUIS l'assistant, avec
 le **filet git** comme garantie « ne casse pas la prod » : chaque chantier vit dans un
@@ -498,7 +498,7 @@ def accueil():
         "<!doctype html><meta charset=utf-8><title>Atelier dev</title>"
         "<body style='font-family:system-ui;max-width:42rem;margin:3rem auto;color:#222'>"
         "<h1>🛠️ Auto-atelier dev</h1>"
-        "<p>Brique souveraine (port 5950) — v0.6.0 (S92) : socle git + fusion contrôlée + "
+        "<p>Brique souveraine (port 5955) — v0.6.0 (S92) : socle git + fusion contrôlée + "
         "flux BMAD + <b>task trace</b> + <b>fabrique de skills</b> + <b>pilotage par le Cœur</b>. "
         "Chaque chantier vit dans un <b>worktree jetable</b>, jamais sur <code>main</code> ; "
         "double gate <i>valide le plan</i> puis <i>valide le diff</i> ; trace ON → l'agent "

@@ -22,5 +22,47 @@
   "besoin": [
     "ingestion_fichier",
     "llm_chat"
+  ],
+  "capacites": [
+    {
+      "nom": "audits_lister",
+      "description": "Liste les audits d'entreprise déjà réalisés (id, statut, date, documents audités). Sert « montre mes audits », « où en est l'audit ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/audits",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "audit_lire",
+      "description": "Lit le résultat complet d'un audit : les 4 couches (Territoire, Flux, Problèmes, Priorités) et leurs fiches. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/audits/{audit_id}",
+      "params": {
+        "audit_id": {"type": "string", "description": "Identifiant de l'audit (voir audits_lister).", "requis": true}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "audit_lancer",
+      "description": "Lance un AUDIT d'entreprise sur des documents déjà ingérés (brique etl), en 4 couches IA : Territoire, Flux, Problèmes, Priorités. ACTION (travail LLM long et coûteux, démarre en tâche de fond) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/auditer",
+      "params": {
+        "doc_ids": {"type": "array", "description": "Liste des identifiants de documents à auditer (voir les documents via la brique etl).", "requis": true}
+      },
+      "action": true,
+      "niveau": 0
+    },
+    {
+      "nom": "audit_tout",
+      "description": "Lance un audit sur TOUS les documents ingérés disponibles (pas de sélection). ACTION (travail LLM très long et coûteux) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/auditer/tout",
+      "params": {},
+      "action": true,
+      "niveau": 1
+    }
   ]
 }

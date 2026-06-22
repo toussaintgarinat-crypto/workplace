@@ -34,7 +34,7 @@ def _registre_avec_skills():
                "mcp": ["github"]}
     skill_b = {"name": "persona-architect", "description": "Conçoit le plan avant le code."}
     capacites = [sk.capacite_pour(skill_a), sk.capacite_pour(skill_b)]
-    return _Registre({"dev": {"nom": "dev", "port": 5950, "capacites": capacites}})
+    return _Registre({"dev": {"nom": "dev", "port": 5955, "capacites": capacites}})
 
 
 def test_capacite_pour_est_niveau1_et_lecture():

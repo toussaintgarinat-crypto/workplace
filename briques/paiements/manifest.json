@@ -18,5 +18,96 @@
     "webhooks_signes",
     "mock_honnete_par_defaut",
     "stripe_connect_reel"
+  ],
+  "capacites": [
+    {
+      "nom": "paiements_config",
+      "description": "État du rail d'argent : fournisseur actif (MOCK honnête ou Stripe réel), devise, si une clé Stripe est configurée. Sert à savoir si « l'argent bouge pour de vrai » avant d'agir. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/config",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "paiements_comptes_lister",
+      "description": "Liste les comptes connectés des vendeurs (id, nom, email, statut d'onboarding). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/comptes-connectes",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "paiements_lister",
+      "description": "Liste les paiements/encaissements effectués (id, montant, commission, statut, compte vendeur). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/paiements",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "paiements_compte_lire",
+      "description": "Détail d'un compte connecté vendeur (état d'onboarding, capacités d'encaissement). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/comptes-connectes/{compte_id}",
+      "params": {
+        "compte_id": {"type": "string", "description": "Identifiant du compte connecté (voir paiements_comptes_lister).", "requis": true}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "paiement_lire",
+      "description": "Détail d'un paiement précis (montant, commission plateforme, statut, remboursements). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/paiements/{paiement_id}",
+      "params": {
+        "paiement_id": {"type": "string", "description": "Identifiant du paiement (voir paiements_lister).", "requis": true}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "paiements_compte_creer",
+      "description": "Crée un COMPTE CONNECTÉ vendeur (Stripe Connect) pour qu'il puisse encaisser. ACTION (crée une entité chez le fournisseur) : confirme=true requis. Renvoie un lien d'onboarding hébergé.",
+      "methode": "POST",
+      "chemin": "/comptes-connectes",
+      "params": {
+        "nom": {"type": "string", "description": "Nom du vendeur / de la boutique."},
+        "email": {"type": "string", "description": "Email du vendeur."},
+        "pays": {"type": "string", "description": "Code pays à 2 lettres (défaut FR)."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "paiement_creer",
+      "description": "Encaisse un PAIEMENT vers un compte vendeur avec COMMISSION plateforme. ACTION (de l'argent bouge si Stripe réel ; mock sinon) : confirme=true requis. La commission est soit en points de base (commission_bps : 250 = 2,5 %) soit un montant fixe (commission_cents, prioritaire).",
+      "methode": "POST",
+      "chemin": "/paiements",
+      "params": {
+        "compte_connecte_id": {"type": "string", "description": "Compte vendeur destinataire (voir paiements_comptes_lister).", "requis": true},
+        "montant_cents": {"type": "integer", "description": "Montant total à encaisser, en CENTIMES (12,50 € = 1250).", "requis": true},
+        "devise": {"type": "string", "description": "Devise (défaut EUR)."},
+        "commission_bps": {"type": "integer", "description": "Commission plateforme en points de base (250 = 2,5 %). 0 = aucune."},
+        "commission_cents": {"type": "integer", "description": "…ou commission en montant fixe (centimes). Prioritaire sur commission_bps si fournie."},
+        "description": {"type": "string", "description": "Libellé du paiement (optionnel)."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "paiement_rembourser",
+      "description": "Rembourse un paiement (total ou partiel selon le fournisseur). ACTION (de l'argent revient au client si Stripe réel) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/paiements/{paiement_id}/rembourser",
+      "params": {
+        "paiement_id": {"type": "string", "description": "Identifiant du paiement à rembourser (voir paiements_lister).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1
+    }
   ]
 }
