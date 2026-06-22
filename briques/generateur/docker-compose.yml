@@ -12,6 +12,10 @@ services:
       - generateur_data:/data
       - ../../apps_exportees:/export
       - ../donnees:/briques_src/donnees:ro
+      # Bundles (S95) : sources des briques + Cœur, pour assembler une solution par
+      # client à partir d'une sélection de briques. Lecture seule.
+      - ../../briques:/briques_src/briques:ro
+      - ../../core:/briques_src/core:ro
     environment:
       - AUDIT_URL=http://host.docker.internal:5300
       - GATEWAY_URL=http://host.docker.internal:4001
@@ -22,6 +26,8 @@ services:
       - DONNEES_URL_INTERNE=http://host.docker.internal:5500
       - DONNEES_URL_PUBLIQUE=http://localhost:5500
       - DONNEES_SRC=/briques_src/donnees
+      # Bundles (S95) : racine des sources de briques montées (cf. volumes).
+      - BRIQUES_SRC=/briques_src/briques
       # Pont consenti app→CRM (S24) : la brique forge (adaptateur) écrit dans le CRM
       # du cabinet via son identité de service. Aucun secret ne vit ici.
       - FORGE_URL_INTERNE=http://host.docker.internal:5700
