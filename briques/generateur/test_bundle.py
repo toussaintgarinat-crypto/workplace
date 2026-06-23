@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+import yaml
 import bundle
 
 
@@ -234,3 +235,56 @@ def test_env_non_ecrase_au_reenrichissement(tmp_path):
     assert "sk-DEJA-POSEE" in chemin_env.read_text()              # clé du client préservée
     meta = json.loads((export / "vincept-bundle" / "bundle.json").read_text())
     assert meta["briques"] == ["restaurant", "paiements"]        # mais la brique est bien ajoutée
+
+
+# ── Config Gateway du bundle (S99) : ne garder que ce que le bundle peut démarrer ──
+
+_CONFIG_PLATEFORME = """
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+litellm_settings:
+  drop_params: true
+model_list:
+  - model_name: or/gpt
+    litellm_params:
+      model: openrouter/openai/gpt-4o
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: or/claude
+    litellm_params:
+      model: openrouter/anthropic/claude
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: anthropic-direct/sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: groq/llama
+    litellm_params:
+      model: groq/llama-3.3
+      api_key: os.environ/GROQ_API_KEY
+virtual_keys:
+  - key: sk-forge
+    models: auto
+"""
+
+
+def test_config_gateway_allegee_ne_garde_que_les_variables_disponibles():
+    out = bundle.config_gateway_allegee(_CONFIG_PLATEFORME)
+    data = yaml.safe_load(out)
+    noms = [m["model_name"] for m in data["model_list"]]
+    assert noms == ["or/gpt", "or/claude"]          # OpenRouter gardés, fournisseurs directs retirés
+    assert "virtual_keys" not in data                # section non standard retirée
+    assert set(data) == {"general_settings", "litellm_settings", "model_list"}
+    # plus aucune variable hors de ce que le .env du bundle fournit -> LiteLLM démarre
+    assert bundle._refs_env(data) <= bundle.ENV_BUNDLE_GATEWAY
+
+
+def test_ecrire_bundle_ecrit_une_config_gateway_allegee(tmp_path):
+    briques, export = _arbo_disque(tmp_path)
+    (briques / "gateway").mkdir(parents=True, exist_ok=True)
+    (briques / "gateway" / "litellm_config.yaml").write_text(_CONFIG_PLATEFORME)
+    bundle.ecrire_bundle("Vincept", ["restaurant"], str(briques), str(export))
+    cfg = (export / "vincept-bundle" / "gateway" / "litellm_config.yaml").read_text()
+    data = yaml.safe_load(cfg)
+    assert bundle._refs_env(data) <= bundle.ENV_BUNDLE_GATEWAY
+    assert all("anthropic-direct" not in m["model_name"] for m in data["model_list"])
