@@ -92,11 +92,16 @@ PROMPT_SYSTEME = (
 )
 
 
-async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
+async def converser(messages: list[dict], registre,
+                    instructions_projet: str | None = None) -> AsyncIterator[dict]:
     """Déroule un tour de conversation et émet des événements jusqu'à la réponse finale.
 
     `messages` : historique au format OpenAI ({role, content}). Émet des dicts
     {type: texte|outil|resultat_outil|fin|erreur, ...}.
+
+    `instructions_projet` : contexte propre au projet de la conversation (façon Claude
+    Projects), injecté dans la zone VOLATILE de l'amorce — après le préfixe stable mis en
+    cache (S90), pour ne pas le casser quand on passe d'un projet à l'autre.
     """
     # Date/heure courante (Europe/Paris) injectée pour interpréter « demain », « lundi »…
     try:
@@ -148,6 +153,12 @@ async def converser(messages: list[dict], registre) -> AsyncIterator[dict]:
         corps = ""
     if corps:
         amorce.append({"role": "system", "content": corps})
+
+    # Instructions du projet (façon Claude Projects) : contexte propre à la conversation,
+    # placé dans la zone volatile (après le préfixe stable caché S90, avant la date).
+    if (instructions_projet or "").strip():
+        amorce.append({"role": "system",
+                       "content": "Contexte du projet en cours :\n" + instructions_projet.strip()})
 
     # VOLATIL en dernier (S90a) : la date ferme le préfixe stable sans le casser.
     amorce.append({"role": "system", "content": contexte_date})

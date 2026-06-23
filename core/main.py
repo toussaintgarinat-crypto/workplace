@@ -17,6 +17,7 @@ import config_assistant
 import identite
 import journal_usage
 import journal_conversations
+import projets as projets_mod
 import langue as langue_mod
 import personas
 import shadow
@@ -172,17 +173,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .actions button.primaire { background: #7c83ff; border-color: #7c83ff; color: #0f1117; font-weight: 600; }
   .actions button.primaire:hover { background: #9298ff; }
   .actions.fait { opacity: 0.45; pointer-events: none; }
-  .histo-grille { display: grid; grid-template-columns: 300px 1fr; gap: 16px; height: 70vh; }
-  .histo-fils { overflow-y: auto; padding: 8px; }
-  .histo-msgs { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-  .fil-item { padding: 10px 12px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
-  .fil-item:hover { background: #161922; }
-  .fil-item.actif { background: #1f2330; border-color: #7c83ff66; }
-  .fil-item .fil-titre { font-size: 0.86rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-  .fil-item .fil-apercu { font-size: 0.75rem; color: #94a3b8; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .fil-badge { font-size: 0.66rem; padding: 1px 7px; border-radius: 999px; background: #2d3148; color: #cbd5e1; }
-  .fil-badge.telegram { background: #229ed91f; color: #4cc3f0; }
-  .fil-badge.web { background: #7c83ff1f; color: #9298ff; }
   .chat-saisie { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #2d3148; }
   .chat-saisie input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
   .chat-saisie input:focus { outline: none; border-color: #7c83ff; }
@@ -212,6 +202,55 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .dossier-chip { display: inline-flex; align-items: center; gap: 6px; background: #1e2535; border: 1px solid #2d3148; border-radius: 8px; padding: 4px 10px; margin: 0 6px 6px 0; font-size: 0.8rem; color: #cbd5e1; cursor: pointer; }
   .dossier-chip:hover { border-color: #7c83ff; }
   .dossier-chip b { color: #7c83ff; }
+  /* Assistant 2-panes (sidebar conversations + projets, façon Claude/Perplexity) */
+  .asst { display: grid; grid-template-columns: 268px 1fr; gap: 16px; height: 72vh; }
+  .asst-side { background: #161922; border: 1px solid #2d3148; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+  .asst-new { margin: 12px; padding: 11px 14px; border-radius: 10px; border: 1px solid #7c83ff; background: #7c83ff; color: #0f1117; font: inherit; font-weight: 600; font-size: 0.88rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background .15s; }
+  .asst-new:hover { background: #9298ff; }
+  .asst-scroll { flex: 1; overflow-y: auto; padding: 0 8px 10px; }
+  .asst-sec { margin-top: 6px; }
+  .asst-sec-tete { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; font-weight: 700; }
+  .asst-sec-tete .asst-add { background: none; border: none; color: #7c83ff; font-size: 1rem; cursor: pointer; line-height: 1; padding: 0 4px; border-radius: 6px; }
+  .asst-sec-tete .asst-add:hover { background: #1f2330; }
+  .asst-search { width: calc(100% - 16px); margin: 4px 8px 8px; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 7px 11px; color: #e2e8f0; font-size: 0.82rem; box-sizing: border-box; }
+  .asst-search:focus { outline: none; border-color: #7c83ff; }
+  .asst-projet { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .asst-projet:hover { background: #1f2330; }
+  .asst-projet.actif { background: #1f2330; border-color: #7c83ff55; }
+  .asst-projet .pp-dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+  .asst-projet .pp-nom { font-size: 0.84rem; color: #e2e8f0; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asst-projet .pp-nb { font-size: 0.7rem; color: #64748b; }
+  .conv { position: relative; padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .conv:hover { background: #1f2330; }
+  .conv.actif { background: #1c2030; border-color: #7c83ff55; }
+  .conv.actif .conv-titre { color: #9298ff; }
+  .conv-titre { font-size: 0.84rem; color: #e2e8f0; font-weight: 600; display: flex; align-items: center; gap: 6px; padding-right: 44px; }
+  .conv-titre span.txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-apercu { font-size: 0.73rem; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-actions { position: absolute; top: 7px; right: 7px; display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+  .conv:hover .conv-actions { opacity: 1; }
+  .conv-actions button { background: #232838; border: 1px solid #2d3148; color: #94a3b8; border-radius: 6px; width: 24px; height: 24px; font-size: 0.72rem; cursor: pointer; line-height: 1; }
+  .conv-actions button:hover { color: #e2e8f0; border-color: #7c83ff; }
+  .conv-surf { font-size: 0.6rem; padding: 1px 6px; border-radius: 999px; flex: 0 0 auto; }
+  .conv-surf.telegram { background: #229ed91f; color: #4cc3f0; }
+  .conv-surf.web { background: #7c83ff1f; color: #9298ff; }
+  .asst-vide-side { color: #475569; font-size: 0.78rem; padding: 14px 10px; }
+  .asst-main { display: flex; flex-direction: column; min-width: 0; }
+  .asst-tete { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .asst-tete-gauche { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .asst-conv-titre { font-size: 1rem; font-weight: 700; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asst-projet-tag { font-size: 0.72rem; padding: 3px 10px; border-radius: 999px; border: 1px solid #2d3148; color: #cbd5e1; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .asst-projet-tag .pt-dot { width: 8px; height: 8px; border-radius: 3px; }
+  .asst-main .chat { height: auto; flex: 1; min-height: 0; }
+  /* Modale projet : instructions + dossiers rattachés */
+  .pm-row { margin-bottom: 14px; }
+  .pm-row label { display: block; font-size: 0.74rem; color: #94a3b8; font-weight: 600; margin-bottom: 5px; }
+  .pm-in, .pm-ta { width: 100%; box-sizing: border-box; background: #0f1117; color: #e2e8f0; border: 1px solid #2d3148; border-radius: 8px; padding: 9px 11px; font-size: 0.88rem; font-family: inherit; }
+  .pm-in:focus, .pm-ta:focus { outline: none; border-color: #7c83ff; }
+  .pm-ta { min-height: 96px; resize: vertical; line-height: 1.5; }
+  .pm-docs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pm-doc { display: inline-flex; align-items: center; gap: 6px; background: #1e2535; border: 1px solid #2d3148; border-radius: 8px; padding: 5px 10px; font-size: 0.8rem; color: #cbd5e1; cursor: pointer; user-select: none; }
+  .pm-doc.sel { border-color: #7c83ff; background: #7c83ff1f; color: #c7cbff; }
   /* Agenda */
   .agenda-corps { display: flex; flex-direction: column; gap: 4px; }
   .agenda-jour { font-size: 0.72rem; color: #7c83ff; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; margin: 14px 0 6px; }
@@ -375,6 +414,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     .tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     /* Chat : occupe l'écran (la « télécommande »). dvh = hauteur réelle hors barre mobile. */
     .chat { height: calc(100dvh - 150px); }
+    /* Assistant 2-panes : on empile la sidebar (repliée, scrollable) au-dessus du chat. */
+    .asst { grid-template-columns: 1fr; height: auto; gap: 12px; }
+    .asst-side { max-height: 34vh; }
+    .asst-main .chat { height: calc(100dvh - 260px); }
+    .asst-tete { flex-wrap: wrap; }
     .bulle { max-width: 88%; font-size: 0.95rem; }
     /* Inputs ≥ 16px : empêche le zoom auto d'iOS au focus. */
     .chat-saisie input, .cerveau-row input, .cerveau-row select { font-size: 16px; }
@@ -390,8 +434,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="tabs">
       <button class="tab active" data-vue="briques" onclick="switchVue('briques')" title="La liste de tous les modules de ton assistant (agenda, mail, recherche web…). Chaque carte est une fonction, avec une pastille verte si elle marche.">Registre de briques</button>
       <button class="tab" data-vue="atelier" onclick="switchVue('atelier')" title="Pour fabriquer et gérer tes outils : créer une app d'entreprise, gérer un restaurant, créer des personnages, ou éditer le code.">Atelier</button>
-      <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
-      <button class="tab" data-vue="historique" onclick="switchVue('historique')" title="Retrouve toutes tes conversations passées (site, Telegram…), réunies au même endroit.">Historique</button>
+      <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Tes conversations et tes projets vivent ici, comme dans Claude ou Perplexity. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
@@ -469,17 +512,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div id="livraisons"></div>
   </div>
 
-  <!-- VUE ASSISTANT -->
+  <!-- VUE ASSISTANT (refonte façon Claude/Perplexity : sidebar conversations + projets) -->
   <div class="view" id="vue-assistant">
-    <div class="topbar">
-      <h2>Assistant — parle-lui, dépose-lui des documents, il pilote la solution<span class="aide" tabindex="0">i<span class="aide-txt">Le cœur de l'app : écris (ou parle) comme à quelqu'un, et l'assistant agit pour toi — chercher sur internet, lire un mail, ajouter un rendez-vous, résumer un document. Il te demande toujours confirmation avant une action importante.</span></span></h2>
-      <div style="display:flex;gap:10px">
-        <button class="btn ghost" id="btn-rappels" onclick="basculerRappels()" title="Rappels">🔔<span id="rappels-pastille" class="pastille" style="display:none">0</span></button>
-        <button class="btn ghost" id="btn-voix" onclick="basculerLectureVocale()" title="Lire les réponses à voix haute">🔊 Voix : off</button>
-        <button class="btn ghost" id="btn-cerveau" onclick="toggleCerveau()">⚙ Cerveau</button>
-      </div>
-    </div>
-
     <!-- Panneau des rappels proactifs -->
     <div class="panel" id="panel-rappels" style="display:none">
       <h3>🔔 Rappels</h3>
@@ -573,18 +607,50 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div id="cerveau-msg" class="cerveau-msg"></div>
     </div>
 
-    <div class="chat" id="chat-zone">
-      <div class="drop-overlay" id="drop-overlay">📎 Déposez le document — je le classe</div>
-      <div id="chat-fil" class="chat-fil">
-        <div class="msg assistant"><div class="bulle">Bonjour 👋 Je pilote toute la solution. Demandez-moi « où en sont les entreprises ? », déposez un document (je le range), ou cliquez sur 🎤 pour me parler. Pour toute action, je vous demanderai confirmation.</div></div>
-      </div>
-      <form id="chat-form" class="chat-saisie" onsubmit="return envoyerMessage(event)">
-        <button class="btn ghost icone" type="button" id="btn-fichier" title="Déposer un document" onclick="document.getElementById('fichier-input').click()">📎</button>
-        <button class="btn ghost icone" type="button" id="btn-micro" title="Parler à l'assistant" onclick="basculerMicro()">🎤</button>
-        <input type="text" id="chat-input" placeholder="Écrivez, ou cliquez sur 🎤 pour parler…" autocomplete="off">
-        <button class="btn" type="submit" id="chat-btn">Envoyer</button>
-      </form>
-      <input type="file" id="fichier-input" style="display:none" onchange="deposerFichier(this.files[0])">
+    <!-- Disposition 2-panes : sidebar (conversations + projets) | conversation active -->
+    <div class="asst">
+      <aside class="asst-side">
+        <button class="asst-new" onclick="nouvelleConversation()">＋ Nouvelle conversation</button>
+        <input type="text" class="asst-search" id="asst-search" placeholder="Rechercher une conversation…" oninput="filtrerConversations()" autocomplete="off">
+        <div class="asst-scroll">
+          <div class="asst-sec">
+            <div class="asst-sec-tete"><span>Projets</span><button class="asst-add" title="Nouveau projet" onclick="ouvrirProjetModal()">＋</button></div>
+            <div id="asst-projets"><div class="asst-vide-side">Aucun projet pour l'instant.</div></div>
+          </div>
+          <div class="asst-sec">
+            <div class="asst-sec-tete"><span id="asst-convs-titre">Conversations</span></div>
+            <div id="asst-convs"><div class="asst-vide-side">Chargement…</div></div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="asst-main">
+        <div class="asst-tete">
+          <div class="asst-tete-gauche">
+            <span class="asst-conv-titre" id="asst-conv-titre">Nouvelle conversation</span>
+            <span class="asst-projet-tag" id="asst-conv-projet" style="display:none"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn ghost" id="btn-rappels" onclick="basculerRappels()" title="Rappels">🔔<span id="rappels-pastille" class="pastille" style="display:none">0</span></button>
+            <button class="btn ghost" id="btn-voix" onclick="basculerLectureVocale()" title="Lire les réponses à voix haute">🔊 Voix : off</button>
+            <button class="btn ghost" id="btn-cerveau" onclick="toggleCerveau()">⚙ Cerveau</button>
+          </div>
+        </div>
+
+        <div class="chat" id="chat-zone">
+          <div class="drop-overlay" id="drop-overlay">📎 Déposez le document — je le classe</div>
+          <div id="chat-fil" class="chat-fil">
+            <div class="msg assistant"><div class="bulle">Bonjour 👋 Je pilote toute la solution. Demandez-moi « où en sont les entreprises ? », déposez un document (je le range), ou cliquez sur 🎤 pour me parler. Pour toute action, je vous demanderai confirmation.</div></div>
+          </div>
+          <form id="chat-form" class="chat-saisie" onsubmit="return envoyerMessage(event)">
+            <button class="btn ghost icone" type="button" id="btn-fichier" title="Déposer un document" onclick="document.getElementById('fichier-input').click()">📎</button>
+            <button class="btn ghost icone" type="button" id="btn-micro" title="Parler à l'assistant" onclick="basculerMicro()">🎤</button>
+            <input type="text" id="chat-input" placeholder="Écrivez, ou cliquez sur 🎤 pour parler…" autocomplete="off">
+            <button class="btn" type="submit" id="chat-btn">Envoyer</button>
+          </form>
+          <input type="file" id="fichier-input" style="display:none" onchange="deposerFichier(this.files[0])">
+        </div>
+      </section>
     </div>
 
     <!-- Dossiers : documents rangés par projet et catégorie -->
@@ -598,18 +664,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <!-- VUE FORGE (SPA intégrée — S19) -->
-  <!-- VUE HISTORIQUE (S78) : trace unifiée de toutes les conversations (web + Telegram…) -->
-  <div class="view" id="vue-historique">
-    <div class="topbar">
-      <h2>Historique — toutes tes conversations, toutes surfaces (web, Telegram…)<span class="aide" tabindex="0">i<span class="aide-txt">La mémoire de tes échanges : retrouve ici toutes tes conversations avec l'assistant, qu'elles viennent de ce site, de Telegram ou d'ailleurs, réunies au même endroit.</span></span></h2>
-      <button class="btn" onclick="chargerHistorique()">↻ Rafraîchir</button>
-    </div>
-    <div class="histo-grille">
-      <div class="panel histo-fils" id="histo-fils"><span class="liv-sub">Chargement…</span></div>
-      <div class="panel histo-msgs" id="histo-msgs"><span class="liv-sub">Choisis une conversation à gauche.</span></div>
-    </div>
-  </div>
-
   <div class="view" id="vue-forge">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px">
@@ -864,6 +918,32 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div id="modal-brique-corps"></div>
   </div>
 </div>
+
+<!-- Modale projet (créer/éditer) façon Claude Projects : nom + instructions + dossiers -->
+<div class="modal-fond" id="modal-projet" style="display:none" onclick="if(event.target===this)fermerProjetModal()">
+  <div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerProjetModal()">✕</button>
+    <div class="modal-titre" id="pm-titre">Nouveau projet</div>
+    <div class="liv-sub" style="margin-bottom:16px">Regroupe des conversations et donne-leur un contexte commun, comme dans Claude ou Perplexity.</div>
+    <div class="pm-row">
+      <label>Nom du projet</label>
+      <input type="text" class="pm-in" id="pm-nom" placeholder="ex. Refonte du restaurant" autocomplete="off">
+    </div>
+    <div class="pm-row">
+      <label>Instructions personnalisées <span class="liv-sub" style="font-weight:400">(facultatif — appliquées à chaque conversation du projet)</span></label>
+      <textarea class="pm-ta" id="pm-instructions" placeholder="ex. Tu m'aides sur la brique restaurant. Réponds de façon concise et oriente-toi solutions."></textarea>
+    </div>
+    <div class="pm-row">
+      <label>Documents de référence <span class="liv-sub" style="font-weight:400">(dossiers existants à consulter pour ce projet)</span></label>
+      <div class="pm-docs" id="pm-docs"><span class="liv-sub">Aucun dossier disponible — l'assistant en crée en rangeant tes documents.</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="pm-enregistrer" onclick="enregistrerProjet()">Créer le projet</button>
+      <button class="btn danger" id="pm-supprimer" style="display:none" onclick="supprimerProjet()">Supprimer</button>
+      <button class="btn ghost" onclick="fermerProjetModal()">Annuler</button>
+    </div>
+  </div>
+</div>
 <script>
 const ROLES_LABELS = {
   memoire:'Mémoire', llm:'LLM', collaboration:'Collaboration',
@@ -884,6 +964,8 @@ function switchVue(v) {
   if (v === 'assistant') {
     setTimeout(() => document.getElementById('chat-input').focus(), 50);
     chargerCerveau(); majBoutonVoix(); brancherDragDrop(); chargerDossiers(); rafraichirPastilleRappels();
+    chargerSidebarAssistant();
+    if (!CONV_ID) nouvelleConversation();
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
@@ -891,49 +973,245 @@ function switchVue(v) {
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
-  if (v === 'historique') chargerHistorique();
 }
 
-// ── Historique unifié (S78) : la trace de toutes les surfaces, lue depuis le Cœur ──
-function diteSurface(s) { return s === 'telegram' ? '💬 Telegram' : s === 'web' ? '🖥 Web' : (s || '?'); }
-async function chargerHistorique() {
-  const box = document.getElementById('histo-fils');
-  box.innerHTML = '<span class="liv-sub">Chargement…</span>';
+// ── Conversations & projets dans l'Assistant (refonte façon Claude/Perplexity) ──────
+// L'historique (trace unifiée S78, web + Telegram) vit DANS l'assistant : sidebar de
+// conversations + projets. Chaque conversation web a son propre `fil` (web:conv-…),
+// reprenable ; les conversations Telegram apparaissent aussi (badge), relisibles ici.
+let CONV_ID = null;          // interlocuteur de la conversation web courante (web:CONV_ID)
+let CONV_SURFACE = 'web';    // surface de la conversation ouverte (web ou telegram…)
+let CONV_PROJET = null;      // projet rattaché à la conversation courante
+let FILS_CACHE = [];         // dernier chargement des fils (pour le filtre de recherche)
+let PROJETS_CACHE = [];      // dernier chargement des projets
+let FILTRE_PROJET = null;    // si défini, la sidebar ne montre que ce projet
+let PROJET_EDIT = null;      // projet en cours d'édition dans la modale (null = création)
+
+function badgeSurface(s) {
+  s = s || 'web';
+  const ico = s === 'telegram' ? '💬' : '🖥';
+  return '<span class="conv-surf ' + (s === 'telegram' ? 'telegram' : 'web') + '">' + ico + '</span>';
+}
+async function chargerSidebarAssistant() {
+  await Promise.all([chargerProjetsSidebar(), chargerConversations()]);
+}
+
+// Nouvelle conversation : un fil web frais (héritera du projet filtré le cas échéant).
+function nouvelleConversation() {
+  CONV_ID = 'conv-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  CONV_SURFACE = 'web';
+  CONV_PROJET = FILTRE_PROJET || null;
+  CHAT_HIST.length = 0;
+  const fil = document.getElementById('chat-fil');
+  fil.innerHTML = '<div class="msg assistant"><div class="bulle">Bonjour 👋 Je pilote toute la solution. Demandez-moi « où en sont les entreprises ? », déposez un document (je le range), ou cliquez sur 🎤 pour me parler. Pour toute action, je vous demanderai confirmation.</div></div>';
+  majEnteteConversation('Nouvelle conversation');
+  document.querySelectorAll('#asst-convs .conv').forEach(x => x.classList.remove('actif'));
+  const inp = document.getElementById('chat-input'); if (inp) inp.focus();
+}
+
+function majEnteteConversation(titre) {
+  document.getElementById('asst-conv-titre').textContent = titre || 'Conversation';
+  const tag = document.getElementById('asst-conv-projet');
+  const p = PROJETS_CACHE.find(x => x.id === CONV_PROJET);
+  if (p) {
+    tag.style.display = 'inline-flex';
+    tag.innerHTML = '<span class="pt-dot" style="background:' + p.couleur + '"></span>' + escapeHtml(p.nom);
+    tag.title = 'Ranger dans un autre projet';
+    tag.onclick = () => choisirProjetPourConversation();
+  } else {
+    tag.style.display = 'inline-flex';
+    tag.innerHTML = '＋ Ranger dans un projet';
+    tag.title = 'Ranger cette conversation dans un projet';
+    tag.onclick = () => choisirProjetPourConversation();
+  }
+}
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+async function chargerProjetsSidebar() {
+  const box = document.getElementById('asst-projets');
   try {
-    const d = await fetch('/assistant/conversations').then(r => r.json());
-    const fils = d.fils || [];
-    if (!fils.length) { box.innerHTML = '<span class="liv-sub">Aucune conversation pour l\\'instant.</span>'; return; }
+    const d = await fetch('/assistant/projets').then(r => r.json());
+    PROJETS_CACHE = d.projets || [];
+    if (!PROJETS_CACHE.length) { box.innerHTML = '<div class="asst-vide-side">Aucun projet. Crée-en un avec ＋.</div>'; return; }
     box.innerHTML = '';
-    fils.forEach(f => {
+    PROJETS_CACHE.forEach(p => {
       const el = document.createElement('div');
-      el.className = 'fil-item'; el.dataset.fil = f.fil;
-      const surf = (f.surface || 'web');
-      const qui = f.interlocuteur && f.interlocuteur !== 'dashboard' ? (' · ' + f.interlocuteur) : '';
-      el.innerHTML = '<div class="fil-titre"><span class="fil-badge ' + surf + '">' + diteSurface(surf)
-        + '</span><span>' + (f.nombre || 0) + ' msg' + qui + '</span></div>'
-        + '<div class="fil-apercu">' + (f.dernier || '') + '</div>';
-      el.onclick = () => ouvrirFil(f.fil, el);
+      el.className = 'asst-projet' + (FILTRE_PROJET === p.id ? ' actif' : '');
+      el.innerHTML = '<span class="pp-dot" style="background:' + p.couleur + '"></span>'
+        + '<span class="pp-nom">' + escapeHtml(p.nom) + '</span>'
+        + '<span class="pp-nb">' + (p.conversations || 0) + '</span>';
+      el.onclick = () => basculerFiltreProjet(p.id);
+      el.ondblclick = () => ouvrirProjetModal(p.id);
+      el.title = 'Cliquer : filtrer · double-clic : éditer';
       box.appendChild(el);
     });
-  } catch(e) { box.innerHTML = '<span class="liv-sub">Erreur : ' + e.message + '</span>'; }
+  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
 }
-async function ouvrirFil(fil, el) {
-  document.querySelectorAll('#histo-fils .fil-item').forEach(x => x.classList.toggle('actif', x === el));
-  const box = document.getElementById('histo-msgs');
-  box.innerHTML = '<span class="liv-sub">Chargement…</span>';
+
+function basculerFiltreProjet(pid) {
+  FILTRE_PROJET = (FILTRE_PROJET === pid) ? null : pid;
+  document.getElementById('asst-convs-titre').textContent =
+    FILTRE_PROJET ? 'Conversations du projet' : 'Conversations';
+  chargerProjetsSidebar();
+  chargerConversations();
+}
+
+async function chargerConversations() {
+  const box = document.getElementById('asst-convs');
   try {
-    const d = await fetch('/assistant/conversations?fil=' + encodeURIComponent(fil) + '&limite=200').then(r => r.json());
+    const url = '/assistant/conversations' + (FILTRE_PROJET ? '?projet=' + encodeURIComponent(FILTRE_PROJET) : '');
+    const d = await fetch(url).then(r => r.json());
+    FILS_CACHE = d.fils || [];
+    rendreConversations();
+  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
+}
+
+function rendreConversations() {
+  const box = document.getElementById('asst-convs');
+  const q = (document.getElementById('asst-search').value || '').toLowerCase().trim();
+  let fils = FILS_CACHE;
+  if (q) fils = fils.filter(f => ((f.titre || '') + ' ' + (f.dernier || '')).toLowerCase().includes(q));
+  if (!fils.length) { box.innerHTML = '<div class="asst-vide-side">' + (q ? 'Aucun résultat.' : 'Aucune conversation. Écris un message pour démarrer.') + '</div>'; return; }
+  box.innerHTML = '';
+  fils.forEach(f => {
+    const el = document.createElement('div');
+    el.className = 'conv' + (f.fil === filActifCourant() ? ' actif' : '');
+    const titre = f.titre || f.dernier || '(sans titre)';
+    el.innerHTML = '<div class="conv-titre">' + badgeSurface(f.surface) + '<span class="txt">' + escapeHtml(titre) + '</span></div>'
+      + '<div class="conv-apercu">' + escapeHtml(f.dernier || '') + '</div>'
+      + '<div class="conv-actions">'
+      + '<button title="Renommer" onclick="event.stopPropagation();renommerConversation(\\'' + f.fil + '\\')">✎</button>'
+      + '<button title="Supprimer" onclick="event.stopPropagation();supprimerConversation(\\'' + f.fil + '\\')">🗑</button>'
+      + '</div>';
+    el.onclick = () => ouvrirConversation(f);
+    box.appendChild(el);
+  });
+}
+function filActifCourant() { return CONV_SURFACE + ':' + CONV_ID; }
+function filtrerConversations() { rendreConversations(); }
+
+async function ouvrirConversation(f) {
+  const part = (f.fil || '').split(':');
+  CONV_SURFACE = part[0] || 'web';
+  CONV_ID = part.slice(1).join(':');
+  CONV_PROJET = f.projet_id || null;
+  try {
+    const d = await fetch('/assistant/conversations?fil=' + encodeURIComponent(f.fil) + '&limite=200').then(r => r.json());
     const msgs = d.messages || [];
-    box.innerHTML = '';
-    if (!msgs.length) { box.innerHTML = '<span class="liv-sub">Conversation vide.</span>'; return; }
+    CHAT_HIST.length = 0;
+    const fil = document.getElementById('chat-fil');
+    fil.innerHTML = '';
     msgs.forEach(m => {
-      const b = document.createElement('div');
-      b.className = 'bulle ' + (m.role === 'user' ? 'user' : 'assistant');
-      b.textContent = m.content || '';
-      box.appendChild(b);
+      const role = m.role === 'user' ? 'user' : 'assistant';
+      ajouterBulle(role, m.content || '');
+      CHAT_HIST.push({ role: role, content: m.content || '' });
     });
-    box.scrollTop = box.scrollHeight;
-  } catch(e) { box.innerHTML = '<span class="liv-sub">Erreur : ' + e.message + '</span>'; }
+    majEnteteConversation(f.titre || msgs[0] && msgs[0].content || 'Conversation');
+  } catch(e) { ajouterBulle('assistant', '⚠ Impossible de charger : ' + e.message); }
+  rendreConversations();
+}
+
+async function renommerConversation(fil) {
+  const f = FILS_CACHE.find(x => x.fil === fil) || {};
+  const titre = prompt('Renommer la conversation :', f.titre || '');
+  if (titre === null) return;
+  await fetch('/assistant/conversations/' + encodeURIComponent(fil), {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ titre: titre })
+  });
+  if (fil === filActifCourant()) majEnteteConversation(titre);
+  chargerConversations();
+}
+
+async function supprimerConversation(fil) {
+  if (!confirm('Supprimer définitivement cette conversation ?')) return;
+  await fetch('/assistant/conversations/' + encodeURIComponent(fil), { method: 'DELETE' });
+  if (fil === filActifCourant()) nouvelleConversation();
+  chargerSidebarAssistant();
+}
+
+// Ranger la conversation courante dans un projet (petit choix par prompt indexé).
+async function choisirProjetPourConversation() {
+  if (!CONV_ID) return;
+  if (!PROJETS_CACHE.length) { if (confirm('Aucun projet. En créer un ?')) ouvrirProjetModal(); return; }
+  const liste = PROJETS_CACHE.map((p, i) => (i + 1) + '. ' + p.nom).join('\\n');
+  const rep = prompt('Ranger dans quel projet ? (numéro, ou 0 pour détacher)\\n\\n' + liste
+    + '\\n\\n(' + PROJETS_CACHE.length + ' projets)', CONV_PROJET ? String(PROJETS_CACHE.findIndex(p => p.id === CONV_PROJET) + 1) : '');
+  if (rep === null) return;
+  const n = parseInt(rep, 10);
+  const pid = (n === 0) ? null : (PROJETS_CACHE[n - 1] && PROJETS_CACHE[n - 1].id) || null;
+  CONV_PROJET = pid;
+  await fetch('/assistant/conversations/' + encodeURIComponent(filActifCourant()), {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projet_id: pid })
+  });
+  majEnteteConversation(document.getElementById('asst-conv-titre').textContent);
+  chargerSidebarAssistant();
+}
+
+// ── Modale projet (créer / éditer) ──────────────────────────────────────────────
+async function ouvrirProjetModal(pid) {
+  PROJET_EDIT = pid || null;
+  const p = pid ? PROJETS_CACHE.find(x => x.id === pid) : null;
+  document.getElementById('pm-titre').textContent = p ? 'Éditer le projet' : 'Nouveau projet';
+  document.getElementById('pm-nom').value = p ? p.nom : '';
+  document.getElementById('pm-instructions').value = p ? (p.instructions || '') : '';
+  document.getElementById('pm-enregistrer').textContent = p ? 'Enregistrer' : 'Créer le projet';
+  document.getElementById('pm-supprimer').style.display = p ? 'inline-block' : 'none';
+  await rendreDocsProjet(p ? (p.documents || []) : []);
+  document.getElementById('modal-projet').style.display = 'flex';
+  setTimeout(() => document.getElementById('pm-nom').focus(), 50);
+}
+function fermerProjetModal() { document.getElementById('modal-projet').style.display = 'none'; }
+
+// Documents = dossiers existants (projets + catégories de l'ETL), cochables.
+async function rendreDocsProjet(selection) {
+  const box = document.getElementById('pm-docs');
+  let dossiers = { projets: {}, categories: {} };
+  try { dossiers = await fetch('/assistant/dossiers').then(r => r.json()); } catch(e) {}
+  const items = [];
+  Object.keys(dossiers.projets || {}).forEach(n => items.push({ type: 'projet', nom: n }));
+  Object.keys(dossiers.categories || {}).forEach(n => items.push({ type: 'categorie', nom: n }));
+  if (!items.length) { box.innerHTML = '<span class="liv-sub">Aucun dossier disponible — l\\'assistant en crée en rangeant tes documents.</span>'; box.dataset.sel = '[]'; return; }
+  const estSel = (it) => (selection || []).some(s => s.nom === it.nom && s.type === it.type);
+  box.innerHTML = '';
+  items.forEach(it => {
+    const chip = document.createElement('span');
+    chip.className = 'pm-doc' + (estSel(it) ? ' sel' : '');
+    chip.textContent = (it.type === 'projet' ? '📁 ' : '🏷 ') + it.nom;
+    chip.onclick = () => chip.classList.toggle('sel');
+    chip.dataset.type = it.type; chip.dataset.nom = it.nom;
+    box.appendChild(chip);
+  });
+}
+function docsSelectionnes() {
+  return Array.from(document.querySelectorAll('#pm-docs .pm-doc.sel'))
+    .map(c => ({ type: c.dataset.type, nom: c.dataset.nom }));
+}
+
+async function enregistrerProjet() {
+  const nom = document.getElementById('pm-nom').value.trim();
+  if (!nom) { document.getElementById('pm-nom').focus(); return; }
+  const corps = { nom: nom, instructions: document.getElementById('pm-instructions').value, documents: docsSelectionnes() };
+  if (PROJET_EDIT) {
+    await fetch('/assistant/projets/' + PROJET_EDIT, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps) });
+  } else {
+    await fetch('/assistant/projets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps) });
+  }
+  fermerProjetModal();
+  await chargerSidebarAssistant();
+  if (CONV_PROJET) majEnteteConversation(document.getElementById('asst-conv-titre').textContent);
+}
+
+async function supprimerProjet() {
+  if (!PROJET_EDIT) return;
+  if (!confirm('Supprimer ce projet ? Ses conversations seront détachées (non supprimées).')) return;
+  await fetch('/assistant/projets/' + PROJET_EDIT, { method: 'DELETE' });
+  if (FILTRE_PROJET === PROJET_EDIT) FILTRE_PROJET = null;
+  if (CONV_PROJET === PROJET_EDIT) { CONV_PROJET = null; }
+  fermerProjetModal();
+  chargerSidebarAssistant();
 }
 
 // ── Créations (Hub des briques créatives, migré d'Oria) ─────────────────────────
@@ -2064,9 +2342,13 @@ async function envoyerMessage(e) {
   const texte = input.value.trim();
   if (!texte) return false;
   input.value = '';
+  // Toujours dans une conversation : si aucune n'est ouverte, on en démarre une.
+  if (!CONV_ID) nouvelleConversation();
+  const premierMessage = CHAT_HIST.length === 0;
   document.getElementById('chat-btn').classList.add('loading');
   ajouterBulle('user', texte);
   CHAT_HIST.push({ role:'user', content: texte });
+  if (premierMessage) majEnteteConversation(texte.length > 48 ? texte.slice(0, 48) + '…' : texte);
 
   const fil = document.getElementById('chat-fil');
   const tip = document.createElement('div');
@@ -2077,7 +2359,8 @@ async function envoyerMessage(e) {
   try {
     const r = await fetch('/assistant/chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ messages: CHAT_HIST })
+      body: JSON.stringify({ messages: CHAT_HIST, surface: CONV_SURFACE,
+                             interlocuteur: CONV_ID, projet_id: CONV_PROJET })
     });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
@@ -2120,6 +2403,8 @@ async function envoyerMessage(e) {
     // Une action a pu changer l'état → rafraîchir tableau usine + dossiers en arrière-plan.
     chargerLivraisons().catch(()=>{});
     chargerDossiers().catch(()=>{});
+    // La conversation courante a été journalisée → la sidebar reflète le titre auto + l'aperçu.
+    chargerConversations().catch(()=>{});
   }
   return false;
 }
@@ -3080,6 +3365,12 @@ async def assistant_chat(corps: dict):
     surface = corps.get("surface") or "web"
     interlocuteur = corps.get("interlocuteur") or "dashboard"
     utilisateur = corps.get("utilisateur")
+    fil = journal_conversations.fil(surface, interlocuteur)
+
+    # Projet de la conversation (façon Claude Projects) : on prend le `projet_id` du corps
+    # si fourni, sinon celui déjà rattaché au fil ; ses instructions nourrissent le prompt.
+    projet_id = corps.get("projet_id") or journal_conversations.meta(fil).get("projet_id")
+    instructions_projet = projets_mod.contexte_de(projet_id)
 
     # Trace : on enregistre le DERNIER message utilisateur avant de répondre.
     dernier_user = next((m.get("content") for m in reversed(messages)
@@ -3091,7 +3382,8 @@ async def assistant_chat(corps: dict):
     async def flux():
         final = ""
         try:
-            async for evt in assistant.converser(messages, registre):
+            async for evt in assistant.converser(messages, registre,
+                                                  instructions_projet=instructions_projet):
                 t = evt.get("type")
                 if t == "texte_delta":
                     final += evt.get("contenu") or ""
@@ -3110,12 +3402,77 @@ async def assistant_chat(corps: dict):
 
 
 @app.get("/assistant/conversations", tags=["assistant"])
-async def assistant_conversations(fil: str | None = None, limite: int = 100):
+async def assistant_conversations(fil: str | None = None, limite: int = 100,
+                                  projet: str | None = None):
     """Trace UNIFIÉE des conversations (S78), toutes surfaces confondues. Sans `fil` :
-    la liste des fils (aperçu du dernier message). Avec `fil` : les messages de ce fil."""
+    la liste des fils (titre, projet, aperçu). Avec `fil` : les messages de ce fil.
+    `projet` filtre la liste sur les conversations rattachées à ce projet."""
     if fil:
-        return {"fil": fil, "messages": journal_conversations.messages(fil, limite)}
-    return {"fils": journal_conversations.fils(limite)}
+        return {"fil": fil, "messages": journal_conversations.messages(fil, limite),
+                "meta": journal_conversations.meta(fil)}
+    return {"fils": journal_conversations.fils(limite, projet_id=projet)}
+
+
+@app.patch("/assistant/conversations/{fil:path}", tags=["assistant"])
+async def assistant_conversation_modifier(fil: str, corps: dict):
+    """Modifie la méta d'une conversation : `titre`, `projet_id`, `epingle`, `archive`.
+    Seuls les champs présents sont touchés (façon « renommer » / « ranger dans un projet »)."""
+    champs = {k: corps[k] for k in ("titre", "projet_id", "epingle", "archive") if k in corps}
+    if "titre" in champs:
+        champs["titre"] = (champs["titre"] or "").strip()
+    return {"ok": True, "meta": journal_conversations.definir_meta(fil, **champs)}
+
+
+@app.delete("/assistant/conversations/{fil:path}", tags=["assistant"])
+async def assistant_conversation_supprimer(fil: str):
+    """Supprime une conversation (ses messages ET sa méta)."""
+    journal_conversations.supprimer_fil(fil)
+    return {"ok": True}
+
+
+@app.get("/assistant/projets", tags=["assistant"])
+async def assistant_projets():
+    """Liste des projets (façon Claude Projects / Perplexity Spaces) avec compteur de
+    conversations rattachées."""
+    fils = journal_conversations.fils(limite=10000)
+    par_projet: dict[str, int] = {}
+    for f in fils:
+        pid = f.get("projet_id")
+        if pid:
+            par_projet[pid] = par_projet.get(pid, 0) + 1
+    projets = projets_mod.lister()
+    for p in projets:
+        p["conversations"] = par_projet.get(p["id"], 0)
+    return {"projets": projets}
+
+
+@app.post("/assistant/projets", tags=["assistant"])
+async def assistant_projet_creer(corps: dict):
+    """Crée un projet : `nom` (requis), `instructions` (contexte propre), `documents` (refs)."""
+    p = projets_mod.creer(nom=corps.get("nom") or "", instructions=corps.get("instructions") or "",
+                          documents=corps.get("documents") or [], couleur=corps.get("couleur"))
+    return {"ok": True, "projet": p}
+
+
+@app.patch("/assistant/projets/{projet_id}", tags=["assistant"])
+async def assistant_projet_modifier(projet_id: str, corps: dict):
+    """Met à jour un projet (nom, instructions, documents, couleur)."""
+    p = projets_mod.modifier(projet_id, nom=corps.get("nom"),
+                             instructions=corps.get("instructions"),
+                             documents=corps.get("documents"), couleur=corps.get("couleur"))
+    if not p:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    return {"ok": True, "projet": p}
+
+
+@app.delete("/assistant/projets/{projet_id}", tags=["assistant"])
+async def assistant_projet_supprimer(projet_id: str):
+    """Supprime un projet ; ses conversations sont DÉTACHÉES (elles ne sont pas effacées)."""
+    detachees = journal_conversations.detacher_projet(projet_id)
+    ok = projets_mod.supprimer(projet_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    return {"ok": True, "conversations_detachees": detachees}
 
 
 @app.get("/assistant/config", tags=["assistant"])
