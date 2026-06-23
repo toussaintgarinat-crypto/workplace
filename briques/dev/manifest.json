@@ -1,6 +1,6 @@
 {
   "nom": "dev",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). v0.3.0 = S88 (flux BMAD léger opt-in : l'Architect planifie AVANT de coder — mini-PRD + stories + note DDD via LLM, repli honnête local — double gate valide-le-plan puis valide-le-diff, codage verrouillé tant que le plan n'est pas validé, plan validé injecté à l'agent codeur). v0.4.0 = S89 (task trace activable on/off : trace ON → l'agent raconte chaque pas EN FRANÇAIS — factice ses pas, Claude Code via hook PreToolUse qui traduit ses outils — archivé dans chantier.journal + diffusé EN DIRECT via SSE GET /chantiers/{id}/trace ; trace OFF → silence). v0.5.0 = S91 (création de SKILLS façon Claude Code : dossier + SKILL.md frontmatter name/description/allowed-tools/mcp, personas BMAD prêtes Analyst/Architect/Dev/QA, MCP accrochés ; POST/GET/DELETE /skills + GET /skills/{nom}/corps = instructions+MCP ; capacités dev_skills_lister/dev_skill_charger/dev_skill_creer découvertes par le Cœur → lister puis CHARGER une skill à la demande depuis l'assistant ; skills_atelier.capacite_pour rend une capacité de niveau-1 prête pour la porte S90). v0.6.0 = S92 (sprint d'intégration : POST /demander = orchestrateur en un geste — ouvre un chantier puis PLANIFIE si plan_requis sinon LANCE l'agent, s'arrête au gate du plan ou du diff, JAMAIS de fusion auto ; le manifest expose la boîte à outils de pilotage découverte par le Cœur — dev_demander niveau-0 + dev_chantiers/dev_diff/dev_plan_valider/dev_lancer/dev_fusionner/dev_jeter niveau-1 chargées à la demande par la porte S90 → on pilote tout le cycle plan→code→gate→fusion EN PARLANT à l'assistant, gate dans le chat via les boutons S76 ; côté confort un conteneur code-server monté sur le dépôt = onglet iframe « Atelier dev » au dashboard).",
   "role": "dev",
   "couche": "backend",
@@ -34,7 +34,10 @@
     "orchestrateur_un_geste_plan_ou_code",
     "boite_outils_pilotage_decouverte",
     "gate_dans_le_chat_jamais_de_fusion_auto",
-    "ide_web_code_server_iframe_dashboard"
+    "ide_web_code_server_iframe_dashboard",
+    "ide_web_spearcode_porte_de_gungnir",
+    "spearcode_fichiers_execution_format_versions_snippets",
+    "spearcode_pilotable_par_l_assistant"
   ],
   "besoin": [],
   "capacites": [
@@ -156,6 +159,53 @@
       },
       "action": true,
       "niveau": 0
+    },
+    {
+      "nom": "dev_ide_arborescence",
+      "description": "IDE web SpearCode (porté de Gungnir) : liste les fichiers et dossiers du workspace de l'IDE à un chemin donné (lecture seule). Sert à explorer le code avant de lire/écrire un fichier. Confiné au workspace de l'IDE (DEV_IDE_WORKSPACE), distinct des worktrees de chantier.",
+      "methode": "GET",
+      "chemin": "/ide/tree",
+      "params": {
+        "path": {"type": "string", "description": "Chemin relatif dans le workspace (vide = racine)."}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_ide_lire_fichier",
+      "description": "IDE web SpearCode : lit le CONTENU texte d'un fichier du workspace de l'IDE (langage + nb de lignes). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/ide/file",
+      "params": {
+        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier dans le workspace."}
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_ide_ecrire_fichier",
+      "description": "IDE web SpearCode : écrit/crée un fichier dans le workspace de l'IDE (crée les dossiers parents). ACTION souveraine (écrit sur le disque) : confirme=true requis après accord. Pour modifier une brique de prod, préférer le flux d'atelier (dev_demander) avec son filet git ; cet outil écrit directement dans le workspace de l'IDE.",
+      "methode": "PUT",
+      "chemin": "/ide/file",
+      "params": {
+        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier à écrire."},
+        "content": {"type": "string", "requis": true, "description": "Contenu texte complet du fichier."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "dev_ide_executer",
+      "description": "IDE web SpearCode : exécute un fichier du workspace (python/node/bash/ruby/go/php/lua/R) et renvoie stdout/stderr. Bornée (timeout, env nettoyé des secrets, sans shell). ACTION souveraine (exécution de code) : confirme=true requis après accord.",
+      "methode": "POST",
+      "chemin": "/ide/run",
+      "params": {
+        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier à exécuter."},
+        "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments de ligne de commande."},
+        "timeout": {"type": "integer", "description": "Délai max en secondes (défaut 30, max 120)."}
+      },
+      "action": true,
+      "niveau": 1
     }
   ]
 }

@@ -122,3 +122,41 @@ python3 -m pytest -q   # 55 tests : domaine + filet + fusion + BMAD + task trace
 - **S90** ✅ La **porte** à divulgation progressive (skills/MCP) + **prompt caching** (préfixe stable)
 - **S91** ✅ **Création de skills** + accroche **MCP** par la brique
 - **S92** ✅ **IDE `code-server`** en iframe + outil Cœur `dev_demander` (gate dans le chat)
+- **S93** ✅ **IDE web SpearCode** greffé (porté de Gungnir) — voir ci-dessous
+
+## IDE web SpearCode (porté de Gungnir, sous `/ide`)
+
+À côté de la logique d'auto-atelier (worktrees + agents, **inchangée**), la brique embarque
+désormais le **mini-IDE navigateur du plugin `code`/SpearCode de
+[Gungnir](https://github.com/kevinggraphiste-hub/Gungnir)**, dans le package `spearcode/`,
+monté sous le préfixe **`/ide`** :
+
+| Sous-module | Routes |
+|---|---|
+| `files`    | `/ide/tree`, `/ide/file` (GET/PUT/DELETE), `/ide/rename`, `/ide/folder`, `/ide/upload`, `/ide/download`, `/ide/search`, `/ide/stats`, `/ide/files`, `/ide/preview` |
+| `exec`     | `/ide/run` (exécute un fichier), `/ide/terminal` (commande shell bornée) |
+| `format`   | `/ide/format`, `/ide/format/available` |
+| `versions` | `/ide/version/save`, `/ide/version/list`, `/ide/version/get`, `/ide/version/delete` |
+| `snippets` | `/ide/snippets` (GET/POST), `/ide/snippets/{id}` (DELETE) |
+
+**Découplage vs Gungnir** : le plugin original isolait tout par-utilisateur (ContextVar +
+table `User` + clés providers en base + rate-limit slowapi). Conformément au modèle de la
+brique `dev` (mono-user souverain), `spearcode/__init__.py` fournit des helpers à **workspace
+unique** (env `DEV_IDE_WORKSPACE`, données sous `DEV_IDE_DATA`), sans base ni rate-limiter ;
+les sous-modules `files/exec/format/versions/snippets` sont repris **quasi verbatim**.
+
+**Sécurité conservée** : `_safe_path` bloque la traversée de répertoire **et** l'évasion par
+symlink (confinement strict au workspace) ; l'exécution est bornée (timeout, env nettoyé des
+secrets `KEY/SECRET/TOKEN/PASSWORD/DATABASE_URL`, pas de shell pour `/run`, patterns
+destructeurs refusés pour `/terminal`).
+
+**Pilotable par l'assistant** : capacités niveau-1 exposées au Cœur — `dev_ide_arborescence`,
+`dev_ide_lire_fichier` (lecture seule), `dev_ide_ecrire_fichier`, `dev_ide_executer` (actions
+gatées). Pour modifier une brique de **prod**, préférer le flux d'atelier (`dev_demander`) et
+son filet git ; l'IDE écrit, lui, directement dans son workspace.
+
+**Non portés** (volontaire) : `ai.py` (assistant de code couplé au stack LLM de Gungnir — la
+brique a déjà ses agents Claude Code/OpenCode), `git.py` (la logique git = `git_atelier.py`,
+qu'on garde), `lsp/` (nécessite des serveurs de langage installés). Le **frontend React**
+SpearCode n'est pas porté : c'est le **backend** de l'IDE qui est intégré (consommable par
+une UI/iframe ou par l'assistant).
