@@ -357,6 +357,48 @@ def compose_yaml(compose: dict) -> str:
     return yaml.safe_dump(compose, sort_keys=False, allow_unicode=True, default_flow_style=False)
 
 
+# ── Config Gateway du bundle ──────────────────────────────────────────────────────
+# La config LiteLLM de la plateforme référence ~18 fournisseurs (Anthropic, OpenAI,
+# Gemini, Groq, Mistral, Zen, modèles locaux…), chacun via `os.environ/SA_CLE`. Le .env
+# d'un bundle ne fournit QUE OPENROUTER_API_KEY (le client a une seule clé). Or LiteLLM
+# v1.86.2 plante au démarrage (`load_config` → « argument of type 'NoneType' is not
+# iterable ») dès qu'une variable référencée est absente — le gateway du bundle entrait
+# alors en crash-loop. On livre donc une config RÉDUITE aux seuls modèles dont toutes les
+# variables sont disponibles dans le bundle (OpenRouter par défaut).
+ENV_BUNDLE_GATEWAY = {"OPENROUTER_API_KEY", "LITELLM_MASTER_KEY", "DATABASE_URL"}
+
+_RE_ENVREF = re.compile(r"os\.environ/([A-Z0-9_]+)")
+
+
+def _refs_env(valeur) -> set[str]:
+    """Toutes les variables `os.environ/…` référencées dans une valeur (récursif)."""
+    refs: set[str] = set()
+    if isinstance(valeur, str):
+        refs.update(_RE_ENVREF.findall(valeur))
+    elif isinstance(valeur, dict):
+        for v in valeur.values():
+            refs |= _refs_env(v)
+    elif isinstance(valeur, list):
+        for v in valeur:
+            refs |= _refs_env(v)
+    return refs
+
+
+def config_gateway_allegee(yaml_source: str, env_dispo: set[str] = ENV_BUNDLE_GATEWAY) -> str:
+    """Réduit la config LiteLLM de la plateforme à ce qu'un bundle peut DÉMARRER : on ne
+    garde que les modèles dont toutes les variables d'environnement sont fournies par le
+    bundle. `general_settings`/`litellm_settings` sont conservés ; les sections non standard
+    (`virtual_keys`…) sont retirées. Pur (str→str)."""
+    data = yaml.safe_load(yaml_source) or {}
+    gardes = [m for m in (data.get("model_list") or []) if _refs_env(m) <= set(env_dispo)]
+    sortie: dict = {}
+    for cle in ("general_settings", "litellm_settings"):
+        if cle in data:
+            sortie[cle] = data[cle]
+    sortie["model_list"] = gardes
+    return yaml.safe_dump(sortie, sort_keys=False, allow_unicode=True)
+
+
 # ── Couche disque (lit les vraies sources, écrit le bundle) ───────────────────────
 
 _IGNORER = shutil.ignore_patterns(
@@ -464,7 +506,13 @@ def ecrire_bundle(client: str, choisies, briques_dir: str, export_dir: str,
         cfg = os.path.join(briques_dir, "gateway", "litellm_config.yaml")
         if os.path.isfile(cfg):
             os.makedirs(os.path.join(dossier, "gateway"), exist_ok=True)
-            shutil.copy2(cfg, os.path.join(dossier, "gateway", "litellm_config.yaml"))
+            with open(cfg, encoding="utf-8") as f:
+                source = f.read()
+            with open(os.path.join(dossier, "gateway", "litellm_config.yaml"), "w", encoding="utf-8") as f:
+                f.write("# Config LiteLLM du bundle — réduite aux modèles OpenRouter (clé unique\n")
+                f.write("# du client). Générée par bundle.config_gateway_allegee ; ne pas copier la\n")
+                f.write("# config multi-fournisseurs de la plateforme (variables d'env absentes → crash).\n")
+                f.write(config_gateway_allegee(source))
 
     # 3. Orchestration + mémoire du bundle.
     with open(os.path.join(dossier, "docker-compose.yml"), "w", encoding="utf-8") as f:
