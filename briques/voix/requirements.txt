@@ -6,3 +6,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
+# Chat vocal TEMPS RÉEL (realtime.py) : relais WebSocket vers OpenAI/Gemini/Grok.
+# Client WS amont + support WebSocket côté serveur FastAPI/uvicorn.
+websockets==14.1
+wsproto==1.2.0
