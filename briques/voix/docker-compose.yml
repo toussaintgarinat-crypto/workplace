@@ -2,7 +2,7 @@ services:
   voix:
     build: .
     container_name: workplace_voix
-    image: workplace/voix:0.1.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/voix:0.2.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # Réglages partagés à la racine (source unique). Facultatif.
       - path: ../../.env
