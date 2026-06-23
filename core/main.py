@@ -648,6 +648,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Livrer une entreprise complète (app + comptes + CRM) en une commande.</span>
           <span class="creation-badge">Cœur</span>
         </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__GENERATEUR_BUNDLES_URL__', 'Composeur de solutions — cocher des briques → bundle par client')">
+          <span class="creation-emoji">🧩</span>
+          <span class="creation-titre">Composeur de solutions</span>
+          <span class="creation-desc">Cocher des briques (resto, paiements, mail…) → un bundle livré et isolé par client (ses conteneurs, ses ports, ses données). Vivant : on rajoute une brique plus tard.</span>
+          <span class="creation-badge">Cœur · bundles</span>
+        </button>
         <button class="creation-tuile" onclick="switchVue('forge')">
           <span class="creation-emoji">⚒️</span>
           <span class="creation-titre">Forge</span>
@@ -2879,6 +2885,7 @@ async def dashboard():
         .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
         .replace("__MAIL_UI_URL__", MAIL_UI_URL)
         .replace("__DEV_IDE_URL__", DEV_IDE_URL)
+        .replace("__GENERATEUR_BUNDLES_URL__", f"{GENERATEUR_URL_PUBLIQUE}/bundles-studio")
         .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))
 
 
