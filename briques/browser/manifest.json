@@ -1,0 +1,51 @@
+{
+  "nom": "browser",
+  "version": "1.0.0",
+  "description": "Recherche web + lecture de page (« les yeux du Cœur sur le web »), moteur HuntR : lance EN PARALLÈLE jusqu'à 9 moteurs (SearXNG souverain, DuckDuckGo, Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing), déduplique par URL canonique et CLASSE par CONSENSUS (nb de moteurs × poids × rang). Multi-thème : web / news / academic / code. SOUVERAIN par défaut (SearXNG auto-hébergé conteneur voisin + repli DuckDuckGo sans clé) ; les moteurs à clé sont inertes tant que leur clé n'est pas renseignée. Filtres de source opt-in (blocklist propagande d'État/désinfo + allowlist). La lecture de page est LOCALE (Trafilatura), bornée en taille/temps et polie (robots.txt). Remplace l'ancienne brique recherche en gardant ses deux capacités. Repli honnête : jamais de lien inventé, jamais de faux texte.",
+  "role": "recherche",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/browser",
+  "port": 6040,
+  "url_sante": "http://host.docker.internal:6040/sante",
+  "depends_on": [],
+  "offre": [
+    "recherche_web_multi_providers_consensus",
+    "metamoteur_searxng_auto_heberge",
+    "repli_duckduckgo_sans_infra",
+    "neuf_moteurs_dont_tavily_brave_exa_serper_serpapi_kagi_bing",
+    "themes_web_news_academic_code",
+    "filtres_de_source_opt_in",
+    "lecture_de_page_locale_trafilatura",
+    "liens_cliquables_preserves",
+    "robots_txt_respecte",
+    "repli_honnete"
+  ],
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "recherche_web",
+      "description": "Cherche sur le WEB et renvoie une liste de résultats CLASSÉS et CLIQUABLES (titre, url, court extrait). Sert « cherche sur internet… », « trouve-moi des sources sur… », « quelles sont les actualités de… ». Interroge en parallèle tous les moteurs configurés et FUSIONNE par consensus (souverain SearXNG + repli, plus moteurs à clé éventuels). Paramètre `topic` : 'web' (défaut), 'news' (actualités datées), 'academic' (articles/Scholar), 'code' (GitHub/StackOverflow/docs). Lecture seule. Pour LIRE et résumer une de ces pages, enchaîner avec page_lire en passant son url.",
+      "methode": "POST",
+      "chemin": "/rechercher",
+      "params": {
+        "requete": {"type": "string", "description": "La requête à chercher (mots-clés ou question en langage naturel)."},
+        "n": {"type": "integer", "description": "Nombre de résultats voulus (défaut 8, max 50)."},
+        "topic": {"type": "string", "description": "Thème : 'web' (défaut), 'news', 'academic' ou 'code'. Oriente les moteurs et les domaines."},
+        "langue": {"type": "string", "description": "Langue de recherche (ex. 'fr', 'en'). Défaut 'fr'."}
+      },
+      "action": false
+    },
+    {
+      "nom": "page_lire",
+      "description": "Télécharge une page WEB (par URL) et renvoie son TEXTE PRINCIPAL nettoyé (sans menus/pub) PLUS la liste de ses liens cliquables. Sert à LIRE puis RÉSUMER une source trouvée via recherche_web, en gardant les liens accessibles. Extraction locale (Trafilatura), bornée en taille/temps, respecte robots.txt. Pas de rendu JavaScript. Lecture seule.",
+      "methode": "POST",
+      "chemin": "/lire-page",
+      "params": {
+        "url": {"type": "string", "description": "L'adresse http(s) de la page à lire."}
+      },
+      "action": false
+    }
+  ],
+  "taches": []
+}
