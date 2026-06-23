@@ -1,19 +1,22 @@
 """Lecture de page web — « page_lire » : une URL → texte principal + liens.
 
-Pendant naturel de la recherche : une fois qu'on a des liens, on veut LIRE une page et
-en sortir le contenu utile (sans la pub, les menus, le pied de page) ainsi que les liens
-qu'elle contient — pour que l'assistant puisse résumer EN gardant des sources cliquables.
+Pendant naturel de la recherche : une fois qu'on a des liens (HuntR), on veut LIRE une
+page et en sortir le contenu utile (sans la pub, les menus, le pied de page) ainsi que
+les liens qu'elle contient — pour que l'assistant résume EN gardant des sources cliquables.
 
 Souverain d'abord : extraction LOCALE via Trafilatura (réputée pour isoler le contenu
 éditorial). Repli HONNÊTE si Trafilatura est absent ou échoue : nettoyage HTML basique
-(retrait des balises) plutôt qu'un faux texte. On ne rend JAMAIS de contenu inventé.
+plutôt qu'un faux texte. On ne rend JAMAIS de contenu inventé.
 
 Garde-fous (une page web est hostile par défaut) :
-  • taille bornée (`RECHERCHE_MAX_OCTETS`, défaut 3 Mo) — on tronque au-delà ;
+  • taille bornée (`BROWSER_MAX_OCTETS`, défaut 3 Mo) — on tronque au-delà ;
   • temps borné (timeout httpx) ;
   • redirections suivies, mais le schéma final doit rester http/https ;
-  • `robots.txt` respecté par défaut (opt-out `RECHERCHE_ROBOTS=0`) — politesse + légalité ;
+  • `robots.txt` respecté par défaut (opt-out `BROWSER_ROBOTS=0`) — politesse + légalité ;
   • pas de rendu JavaScript en v1 (on lit le HTML servi tel quel).
+
+Note : les anciennes variables `RECHERCHE_*` restent acceptées en repli (compat brique
+recherche, que browser remplace).
 """
 import os
 import re
@@ -23,16 +26,20 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 
+def _env(nom: str, defaut: str) -> str:
+    """Lit BROWSER_<nom>, repli RECHERCHE_<nom> (compat), puis défaut."""
+    return os.getenv(f"BROWSER_{nom}", os.getenv(f"RECHERCHE_{nom}", defaut))
+
+
 def max_octets() -> int:
     try:
-        return int(os.getenv("RECHERCHE_MAX_OCTETS", str(3 * 1024 * 1024)))
+        return int(_env("MAX_OCTETS", str(3 * 1024 * 1024)))
     except ValueError:
         return 3 * 1024 * 1024
 
 
 def _ua() -> str:
-    return os.getenv("RECHERCHE_UA",
-                     "Mozilla/5.0 (compatible; WorkplaceRecherche/0.1; +http://localhost:6040)")
+    return _env("UA", "Mozilla/5.0 (compatible; WorkplaceBrowser/1.0; +http://localhost:6040)")
 
 
 class ErreurLecture(Exception):
@@ -50,9 +57,9 @@ def valider_url(url: str) -> str:
 async def robots_autorise(url: str) -> bool:
     """`robots.txt` autorise-t-il notre UA à lire cette URL ? (tolérant : oui si doute).
 
-    Désactivable par `RECHERCHE_ROBOTS=0`. En cas d'erreur réseau sur le robots.txt, on
+    Désactivable par `BROWSER_ROBOTS=0`. En cas d'erreur réseau sur le robots.txt, on
     AUTORISE (un robots injoignable ne doit pas bloquer une lecture légitime)."""
-    if os.getenv("RECHERCHE_ROBOTS", "1") == "0":
+    if _env("ROBOTS", "1") == "0":
         return True
     p = urlparse(url)
     base = f"{p.scheme}://{p.netloc}"
@@ -74,7 +81,7 @@ async def telecharger(url: str) -> tuple[str, str]:
     Lève `ErreurLecture` si le contenu n'est pas du HTML/texte ou si le téléchargement
     échoue. Tronque au-delà de `max_octets()`."""
     limite = max_octets()
-    timeout = httpx.Timeout(float(os.getenv("RECHERCHE_TIMEOUT", "25")))
+    timeout = httpx.Timeout(float(_env("TIMEOUT", "25")))
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True,
                                      max_redirects=5) as c:
@@ -174,7 +181,7 @@ async def lire_page(url: str) -> dict:
     url = valider_url(url)
     if not await robots_autorise(url):
         raise ErreurLecture("Lecture refusée par le robots.txt du site (politesse). "
-                             "Forçable côté admin via RECHERCHE_ROBOTS=0.")
+                             "Forçable côté admin via BROWSER_ROBOTS=0.")
     page_html, url_finale = await telecharger(url)
     texte, moteur = extraire_texte(page_html)
     limite = max_octets()
