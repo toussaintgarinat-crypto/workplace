@@ -12,15 +12,16 @@ OpenAI / ElevenLabs / la Gateway en repli OPT-IN. Sans moteur, on rend un repli 
 import os
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 import fournisseurs
 import moteur
+import realtime
 
-app = FastAPI(title="Voix — synthèse vocale souveraine (TTS)", version="0.1.0")
+app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.2.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -57,6 +58,7 @@ class Synthese(BaseModel):
 async def sante():
     """État : fournisseurs connus, configurés, moteur actif, souveraineté."""
     actif = await moteur.fournisseur_actif()
+    rt = realtime.fournisseurs_configures()
     return {
         "ok": True,
         "fournisseurs": list(fournisseurs.REGISTRE.keys()),
@@ -65,6 +67,8 @@ async def sante():
         "actif": actif,
         "backend": actif or "placeholder",
         "souverain": actif == "piper",
+        # Chat vocal temps réel (porté de Gungnir) : moteurs configurés (clé présente).
+        "temps_reel": [n for n, info in rt.items() if info["configure"]],
     }
 
 
@@ -89,6 +93,36 @@ async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
     media = _MEDIA.get(res["format"], "application/octet-stream")
     return Response(res["audio"], media_type=media,
                     headers={"X-Backend": res["backend"], "X-Format": res["format"]})
+
+
+# ── Chat vocal TEMPS RÉEL (speech-to-speech) — porté du plugin voice de Gungnir ──
+# Le TTS Piper ci-dessus est le geste « texte → audio » souverain. Ces endpoints
+# ajoutent l'autre versant : une CONVERSATION vocale bidirectionnelle, en relayant un
+# WebSocket navigateur ↔ l'API temps réel d'un fournisseur (OpenAI / Gemini / Grok).
+# OPT-IN : chaque relais reste inerte tant que sa clé n'est pas renseignée (cf. realtime.py).
+
+@app.get("/voix/realtime", tags=["temps-réel"])
+async def realtime_fournisseurs():
+    """Catalogue des fournisseurs de chat vocal temps réel + leur état de configuration."""
+    return {"fournisseurs": realtime.fournisseurs_configures(), "agent": realtime.nom_agent()}
+
+
+@app.websocket("/realtime/openai")
+async def ws_openai(websocket: WebSocket):
+    """Relais WebSocket navigateur ↔ OpenAI Realtime (PCM16 24 kHz)."""
+    await realtime.relai_openai(websocket)
+
+
+@app.websocket("/realtime/google")
+async def ws_google(websocket: WebSocket):
+    """Relais WebSocket navigateur ↔ Gemini Multimodal Live."""
+    await realtime.relai_google(websocket)
+
+
+@app.websocket("/realtime/grok")
+async def ws_grok(websocket: WebSocket):
+    """Relais WebSocket navigateur ↔ xAI Grok Realtime (OpenAI-compatible)."""
+    await realtime.relai_grok(websocket)
 
 
 if __name__ == "__main__":
