@@ -91,12 +91,21 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.6.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.7.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
     allow_methods=["*"], allow_headers=["*"],
 )
+
+# ── IDE web SpearCode (porté de Gungnir) ───────────────────────────────────────
+# Greffe l'IDE navigateur du plugin `code` de Gungnir SOUS /ide, à côté de la logique
+# d'auto-atelier (worktrees + agents) qui reste inchangée. Mini-IDE souverain mono-user :
+# explorateur de fichiers, lecture/écriture, exécution bornée, formatage, versions, snippets,
+# confiné au workspace DEV_IDE_WORKSPACE (cf. spearcode/__init__.py). Inerte tant qu'on ne
+# l'appelle pas ; aucune des routes d'atelier existantes n'est touchée.
+import spearcode  # noqa: E402
+app.include_router(spearcode.router, prefix="/ide", tags=["IDE SpearCode"])
 
 
 # ── Garde-fou minimal (souverain, mono-user) ───────────────────────────────────

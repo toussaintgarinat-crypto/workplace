@@ -10,5 +10,9 @@ os.environ["API_KEYS"] = ""              # mode ouvert
 os.environ["VOIX_LOCAL"] = "0"           # coupe le moteur souverain Piper (déterminisme)
 
 for _v in ("VOIX_PROVIDERS", "PIPER_VOICE", "PIPER_BIN", "OPENAI_API_KEY",
-           "ELEVENLABS_API_KEY", "GATEWAY_KEY"):
+           "ELEVENLABS_API_KEY", "GATEWAY_KEY",
+           # Chat vocal temps réel : aucune clé en test → relais inertes, déterministe.
+           "VOIX_OPENAI_API_KEY", "VOIX_GOOGLE_API_KEY", "VOIX_XAI_API_KEY",
+           "GEMINI_API_KEY", "GOOGLE_API_KEY", "XAI_API_KEY", "GROK_API_KEY",
+           "VOIX_AGENT_NOM"):
     os.environ.pop(_v, None)

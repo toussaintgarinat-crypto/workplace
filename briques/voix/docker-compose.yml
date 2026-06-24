@@ -2,7 +2,7 @@ services:
   voix:
     build: .
     container_name: workplace_voix
-    image: workplace/voix:0.1.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/voix:0.2.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # Réglages partagés à la racine (source unique). Facultatif.
       - path: ../../.env
@@ -15,6 +15,12 @@ services:
       # Format audio par défaut (opus = conteneur Ogg, idéal message vocal Telegram).
       - VOIX_FORMAT=${VOIX_FORMAT:-opus}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # ── Chat vocal TEMPS RÉEL (realtime.py) — OPT-IN, inerte sans clé ────────────
+      # Nom de l'assistant annoncé dans la session vocale (safe à déclarer ici).
+      - VOIX_AGENT_NOM=${VOIX_AGENT_NOM:-Assistant}
+      # ⚠ Clés des fournisseurs temps réel (OPENAI_API_KEY / GEMINI_API_KEY|GOOGLE_API_KEY /
+      # XAI_API_KEY) : à poser dans le .env RACINE — hérités via env_file. NE PAS les
+      # redéclarer ici en `VAR=${VAR:-}` (piège env-shadow : écrase la valeur racine par du vide).
       # ⚠ PIPER_VOICE (chemin du modèle .onnx monté dans /voix-modeles) vient du .env RACINE
       # via env_file. NE PAS le redéclarer ici en `PIPER_VOICE=${PIPER_VOICE:-}` : ça
       # s'interpole depuis le SHELL (vide) et ÉCRASE la valeur du .env racine → Piper jamais

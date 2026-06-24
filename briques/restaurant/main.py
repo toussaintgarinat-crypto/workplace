@@ -172,6 +172,10 @@ class MajPlat(BaseModel):
     stock: Optional[int] = None        # réappro : entier = unités ; null = repasser en illimité
 
 
+class ReordonnerPlats(BaseModel):
+    ids: list[str] = []                # nouvelle suite des id de plats (S104 cliquer-déposer)
+
+
 class ImporterCarte(BaseModel):
     contenu_base64: str = ""           # l'ancienne carte (photo/PDF) en base64 (data-URI toléré)
     url: str = ""                      # …ou par URL
@@ -411,6 +415,19 @@ async def maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
     return p
 
 
+@app.post("/restaurants/{restaurant_id}/plats/reordonner")
+async def reordonner_plats(restaurant_id: str, corps: ReordonnerPlats,
+                           compte_id: str = Depends(compte_actuel)):
+    """Réordonne les plats par cliquer-déposer (S104). `ids` = la nouvelle suite ; chaque
+    plat reçoit son rang comme `ordre`. La carte client (triée par `ordre`) suit aussitôt."""
+    _exige_resto(compte_id, restaurant_id)
+    plats = stockage.reordonner_plats(compte_id, restaurant_id, corps.ids)
+    if plats is None:
+        raise HTTPException(404, "Restaurant introuvable.")
+    await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_reordonnee"})
+    return {"plats": plats}
+
+
 @app.delete("/restaurants/{restaurant_id}/plats/{plat_id}")
 def supprimer_plat(restaurant_id: str, plat_id: str, compte_id: str = Depends(compte_actuel)):
     if not stockage.supprimer_plat(compte_id, restaurant_id, plat_id):
@@ -477,6 +494,13 @@ def _compte_de_service(restaurant_id: str) -> str:
     if not compte_id:
         raise HTTPException(404, "Restaurant introuvable.")
     return compte_id
+
+
+@app.get("/service/restaurants")
+def service_lister_restaurants(_: bool = Depends(service_ok)):
+    """Liste des restaurants (id, nom, devise, TVA) — pour que l'assistant DÉCOUVRE seul les
+    ids sans qu'on les lui fournisse (S103). Chemin de service (clé opérateur)."""
+    return {"restaurants": stockage.lister_tous_restaurants()}
 
 
 @app.get("/service/restaurants/{restaurant_id}")
@@ -849,6 +873,14 @@ async def ws_table(ws: WebSocket, code: str):
 # ── Fronts (servis par la brique) ────────────────────────────────
 def _page(nom: str) -> str:
     return (_ICI / nom).read_text(encoding="utf-8")
+
+
+@app.get("/manipulation_directe.js", include_in_schema=False)
+def front_socle_manipulation():
+    """Socle « manipulation directe » (S101/S102) : menu contextuel + modale, servi au
+    back-office. Source unique synchronisée par outils/sync_socle.sh (cf. en-tête)."""
+    from fastapi.responses import FileResponse
+    return FileResponse(_ICI / "manipulation_directe.js", media_type="application/javascript")
 
 
 @app.get("/", response_class=HTMLResponse)

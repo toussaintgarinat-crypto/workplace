@@ -80,7 +80,11 @@
   .ligne-form > div { flex:1; min-width:120px; }
   .ligne-form label { font-size:.8rem; color:var(--doux); display:block; margin-bottom:4px; }
   .ligne-form .champ { margin-bottom:0; }
+  .plat { cursor:context-menu; }
 </style>
+<!-- Socle « manipulation directe » (S102) : menu contextuel (clic droit / appui long)
+     + modale de confirmation, servi par la brique restaurant. -->
+<script src="/manipulation_directe.js"></script>
 </head>
 <body>
 
@@ -145,6 +149,11 @@ const T = {
   formats:"Formats", des:"dès", formats_aide:"Formats et prix (taille=prix, séparés par des virgules). Ex : 25cl=3.50, 50cl=7, 1L=13, Girafe 2,5L=28. Vider = prix unique.",
   stock:"Stock", stock_illimite:"illimité", stock_epuise:"Épuisé", stock_restant:"restant(s)",
   stock_aide:"Stock restant (nombre d'unités). Vider = stock illimité. À 0, le plat disparaît automatiquement de la carte client.",
+  modifier_prix:"Modifier le prix", changer_categorie:"Changer la catégorie",
+  dupliquer:"Dupliquer", copie:"copie", rupture:"Mettre en rupture", reappro:"Réapprovisionner",
+  rendre_dispo:"Rendre disponible", rendre_indispo:"Rendre indisponible",
+  jour_on:"Marquer plat du jour", jour_off:"Retirer plat du jour",
+  suppr_q:"Retirer ce plat de la carte ? Cette action est définitive.",
   ajouter_table:"Ajouter une table", num_table:"N° de table", tables_vide:"Aucune table.",
   ouvrir_cuisine:"Ouvrir l'écran cuisine ↗", choisir_table:"Choisissez une table",
   du:"Dû", paye:"Payé", reste:"Reste à payer", regle:"Réglé ✓", attente:"En attente",
@@ -184,6 +193,11 @@ const T = {
   formats:"Sizes", des:"from", formats_aide:"Sizes and prices (size=price, comma-separated). E.g. 25cl=3.50, 50cl=7, 1L=13, Giraffe 2.5L=28. Empty = single price.",
   stock:"Stock", stock_illimite:"unlimited", stock_epuise:"Sold out", stock_restant:"left",
   stock_aide:"Remaining stock (number of units). Empty = unlimited. At 0, the dish automatically disappears from the customer menu.",
+  modifier_prix:"Edit price", changer_categorie:"Change category",
+  dupliquer:"Duplicate", copie:"copy", rupture:"Mark sold out", reappro:"Restock",
+  rendre_dispo:"Make available", rendre_indispo:"Make unavailable",
+  jour_on:"Mark today's special", jour_off:"Unmark today's special",
+  suppr_q:"Remove this dish from the menu? This is permanent.",
   ajouter_table:"Add a table", num_table:"Table no.", tables_vide:"No tables yet.",
   ouvrir_cuisine:"Open kitchen screen ↗", choisir_table:"Pick a table",
   du:"Due", paye:"Paid", reste:"Left to pay", regle:"Settled ✓", attente:"Pending",
@@ -311,7 +325,7 @@ function plCarte(p){
   const badgeEpuise = p.epuise ? `<span class="badge-epuise">${t('stock_epuise')}</span>` : '';
   const libStock = p.stock===null||p.stock===undefined
     ? t('stock') : (p.epuise ? t('stock_epuise') : `${t('stock')}: ${p.stock}`);
-  return `<div class="plat ${(p.disponible && !p.epuise)?'':'indispo'}">
+  return `<div class="plat ${(p.disponible && !p.epuise)?'':'indispo'}" data-id="${p.id}">
     <div class="haut">${img}<div><div class="nom">${esc(p.nom)}${badgeEpuise}</div>
     ${prixHaut}</div></div>
     ${p.description?`<div class="desc">${esc(p.description)}</div>`:''}
@@ -346,7 +360,72 @@ async function vueCarte(){
     }).join('');
   }
   $('#vue').innerHTML = `<h2>${t('o_carte')}</h2>${form}${cartes}`;
+  brancherMenusPlats(plats);
+  brancherDndPlats();
 }
+
+// S104 — cliquer-déposer : réordonner les plats dans chaque section de la carte. Chaque
+// grille (= une catégorie) est triable ; on persiste l'ordre GLOBAL des plats (DOM) pour
+// que la carte client (triée par `ordre`) suive. Pointer Events via le socle.
+function brancherDndPlats(){
+  if(typeof window.sortable!=='function') return;
+  document.querySelectorAll('#vue .grille').forEach(grille=>{
+    window.sortable(grille, { itemSelector:'.plat[data-id]', onReorder: persistOrdrePlats });
+  });
+}
+let _ordreEnCours=false;
+async function persistOrdrePlats(){
+  if(_ordreEnCours) return; _ordreEnCours=true;
+  try{
+    const ids=[...document.querySelectorAll('#vue .plat[data-id]')].map(el=>el.dataset.id);
+    await fetch(`/restaurants/${restoActif}/plats/reordonner`, {method:'POST', headers:H(),
+      body:JSON.stringify({ids})});
+  }catch(e){ /* l'ordre reste visuellement appliqué ; resync au prochain vueCarte */ }
+  finally{ _ordreEnCours=false; }
+}
+
+// S102 — menu contextuel (clic droit / appui long) sur chaque carte de plat. Regroupe
+// les actions du plat (déjà accessibles par boutons) + dupliquer / rupture / supprimer.
+function brancherMenusPlats(plats){
+  if (typeof window.attacherMenu !== 'function') return;   // socle non chargé : on n'empêche rien
+  const parId = {}; plats.forEach(p => parId[p.id] = p);
+  document.querySelectorAll('#vue .plat[data-id]').forEach(el => {
+    window.attacherMenu(el, () => menuPlat(parId[el.dataset.id]));
+  });
+}
+function menuPlat(p){
+  if (!p) return [];
+  const aFormats = p.formats && p.formats.length;
+  const enRupture = (p.stock===0) || p.epuise;
+  return [
+    { label:t('modifier_prix'), emoji:'💶', fn:()=> aFormats ? editerFormats(p.id) : editerPrix(p.id, p.prix_cents) },
+    { label:t('changer_categorie'), emoji:'🏷', fn:()=>editerCategorie(p.id, p.categorie||'') },
+    { label:t('formats'), emoji:'📐', fn:()=>editerFormats(p.id) },
+    { label:t('stock'), emoji:'📦', fn:()=>editerStock(p.id) },
+    { sep:true },
+    { label: p.disponible ? t('rendre_indispo') : t('rendre_dispo'), emoji:'👁', fn:()=>bascule(p.id,'disponible',!p.disponible) },
+    { label: p.plat_du_jour ? t('jour_off') : t('jour_on'), emoji:'⭐', fn:()=>bascule(p.id,'plat_du_jour',!p.plat_du_jour) },
+    { label: enRupture ? t('reappro') : t('rupture'), emoji: enRupture ? '♻️' : '🚫', fn:()=>basculerRupture(p, enRupture) },
+    { label:t('dupliquer'), emoji:'⧉', fn:()=>dupliquerPlat(p) },
+    { sep:true },
+    { label:t('suppr'), emoji:'🗑', danger:true, fn:()=>supprPlat(p.id) },
+  ];
+}
+// Rupture = stock à 0 (le plat disparaît de la carte client, badge Épuisé). Réappro =
+// stock illimité (null). Réutilise la sémantique de stock existante (anti-survente S80).
+window.basculerRupture = async (p, enRupture)=>{
+  await fetch(`/restaurants/${restoActif}/plats/${p.id}`, {method:'PATCH', headers:H(),
+    body:JSON.stringify({stock: enRupture ? null : 0})});
+  vueCarte();
+};
+// Dupliquer = créer un plat identique (suffixe « (copie) »), avec formats/stock/photo.
+window.dupliquerPlat = async (p)=>{
+  await fetch(`/restaurants/${restoActif}/plats`, {method:'POST', headers:H(),
+    body:JSON.stringify({nom:`${p.nom} (${t('copie')})`, description:p.description||'',
+      prix_cents:p.prix_cents||0, categorie:p.categorie||'', formats:p.formats||[],
+      plat_du_jour:false, photo:p.photo||'', stock:(p.stock===undefined?null:p.stock)})});
+  vueCarte();
+};
 window.ajouterPlat = async ()=>{
   const nom=$('#p-nom').value.trim(); if(!nom) return;
   const prix=Math.round(parseFloat($('#p-prix').value||'0')*100);
@@ -354,15 +433,24 @@ window.ajouterPlat = async ()=>{
     body:JSON.stringify({nom, prix_cents:prix||0, description:$('#p-desc').value.trim(), categorie:$('#p-cat').value.trim()})});
   vueCarte();
 };
+// Petites aides : la modale du socle si présente, sinon repli prompt/alert natifs.
+async function _demande(titre, message, valeur){
+  if (typeof window.demanderTexte === 'function') return await window.demanderTexte({titre, message, valeur});
+  const v = prompt(message, valeur); return v===null ? null : v.trim();
+}
+async function _info(titre, message){
+  if (typeof window.ouvrirModal === 'function') return await window.ouvrirModal({titre, message, action:'OK'});
+  alert(message);
+}
 window.editerCategorie = async (id, actuel)=>{
-  const v = prompt(t('section'), actuel); if(v===null) return;
+  const v = await _demande(t('changer_categorie'), t('section'), actuel); if(v===null) return;
   await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({categorie:v.trim()})});
   vueCarte();
 };
 window.editerPrix = async (id, actuel)=>{
-  const v = prompt(t('nouveau_prix'), (actuel/100).toFixed(2)); if(v===null) return;
+  const v = await _demande(t('modifier_prix'), t('nouveau_prix'), (actuel/100).toFixed(2)); if(v===null) return;
   const c = Math.round(parseFloat(v.replace(',','.'))*100);
-  if(isNaN(c)||c<0){ alert(t('prix_invalide')); return; }
+  if(isNaN(c)||c<0){ await _info(t('prix_invalide'), t('prix_invalide')); return; }
   await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({prix_cents:c})});
   vueCarte();
 };
@@ -370,7 +458,7 @@ window.editerFormats = async (id)=>{
   const plats = (await (await fetch(`/restaurants/${restoActif}/plats`, {headers:H()})).json()).plats;
   const p = plats.find(x=>x.id===id); if(!p) return;
   const actuel = (p.formats||[]).map(f=>`${f.taille}=${(f.prix_cents/100).toFixed(2)}`).join(', ');
-  const v = prompt(t('formats_aide'), actuel);
+  const v = await _demande(t('formats'), t('formats_aide'), actuel);
   if(v===null) return;
   const formats = v.split(',').map(s=>s.trim()).filter(Boolean).map(part=>{
     const i = part.lastIndexOf('='); if(i<0) return null;
@@ -385,7 +473,7 @@ window.editerStock = async (id)=>{
   const plats = (await (await fetch(`/restaurants/${restoActif}/plats`, {headers:H()})).json()).plats;
   const p = plats.find(x=>x.id===id); if(!p) return;
   const actuel = (p.stock===null||p.stock===undefined) ? '' : String(p.stock);
-  const v = prompt(t('stock_aide'), actuel);
+  const v = await _demande(t('stock'), t('stock_aide'), actuel);
   if(v===null) return;
   const s = v.trim()==='' ? null : Math.max(0, parseInt(v.trim(), 10));
   if(s!==null && isNaN(s)) return;
@@ -393,7 +481,13 @@ window.editerStock = async (id)=>{
   vueCarte();
 };
 window.bascule = async (id, champ, val)=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({[champ]:val})}); vueCarte(); };
-window.supprPlat = async id=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'DELETE', headers:H()}); vueCarte(); };
+window.supprPlat = async id=>{
+  const ok = (typeof window.confirmer === 'function')
+    ? await window.confirmer({titre:t('suppr'), message:t('suppr_q')})
+    : confirm(t('suppr_q'));
+  if(!ok) return;
+  await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'DELETE', headers:H()}); vueCarte();
+};
 window.photo = (id, input)=>{ const f=input.files[0]; if(!f) return; const fr=new FileReader();
   fr.onload = async ()=>{ await fetch(`/restaurants/${restoActif}/plats/${id}`, {method:'PATCH', headers:H(), body:JSON.stringify({photo:fr.result})}); vueCarte(); };
   fr.readAsDataURL(f); };

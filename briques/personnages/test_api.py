@@ -201,3 +201,27 @@ def test_recherche_inverse_llm_ko_reste_honnete(monkeypatch):
     assert r.status_code == 200
     data = r.json()
     assert data["source_analyse"] == "lexique" and data["signes"] == []
+
+
+def test_socle_manipulation_directe_servi():
+    # S101 : socle partagé (menu contextuel + modale + cliquer-déposer) servi par la brique.
+    r = client.get("/manipulation_directe.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    for marqueur in ("function sortable", "function attacherMenu", "demanderTexte"):
+        assert marqueur in r.text
+
+
+def test_front_charge_le_socle_partage():
+    # Le front holistique (/atelier) consomme le socle (plus de copie inline du menu/modale).
+    html = client.get("/atelier").text
+    assert "/manipulation_directe.js" in html
+    assert "function ouvrirModal" not in html   # copie inline retirée (dédup S101)
+
+
+def test_front_branche_le_cliquer_deposer_categories():
+    # S104 : glisser une fiche sur une catégorie (zone .cat-zone) la range via PATCH categorie.
+    html = client.get("/atelier").text
+    assert "brancherDndFiches" in html
+    assert "cat-zone" in html and "zones:'.cat-zone'" in html
+    assert "rangerFicheDirect" in html

@@ -1,7 +1,9 @@
-# Brique recherche — recherche web + lecture de page. Dépendances épinglées.
+# Brique recherche (moteur HuntR porté) — recherche web multi-providers + lecture de page.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
+aiohttp==3.11.11            # clients des providers HuntR (Tavily, Brave, Exa, Serper…)
+duckduckgo-search==7.2.1    # provider DuckDuckGo « news » (le texte passe par ddg_lite, sans clé)
 
 # Extraction LOCALE souveraine du contenu éditorial d'une page (page_lire).
 # Absent → la brique reste fonctionnelle avec un nettoyage HTML basique (repli honnête).

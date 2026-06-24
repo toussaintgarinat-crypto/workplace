@@ -85,9 +85,46 @@
   .ec .ecv{font-family:Georgia,serif;font-size:.98rem;margin:2px 0}
   .ec .ecv b{color:var(--accent)}
   .ec .ecs{font-size:.76rem;color:var(--mut);line-height:1.45}
+  /* Appui long → suppression : retour visuel pendant le maintien */
+  .lp-arming{position:relative;overflow:hidden}
+  .lp-arming::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;
+    background:linear-gradient(90deg,#e0667a,#ff9bab);transform-origin:left;
+    animation:lp-fill 550ms linear forwards}
+  @keyframes lp-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  /* Modale de confirmation/saisie réutilisable (app-like, responsive) */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;z-index:1000;
+    align-items:center;justify-content:center;padding:18px}
+  .modal.on{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;max-width:420px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  .modal h3{margin:0 0 8px}
+  .modal p{color:var(--mut);font-size:.88rem;line-height:1.55;margin:0 0 14px}
+  .modal input{margin:0 0 16px}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  button.danger{background:linear-gradient(135deg,#e0667a,#b84a5c);color:#fff}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#100d12;
+    border:1px solid var(--accent);color:var(--ink);padding:11px 18px;border-radius:10px;
+    font-size:.85rem;z-index:1001;display:none;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+  @media(max-width:560px){.modal .actions{justify-content:stretch}.modal .actions button{flex:1}}
+  /* Menu contextuel (appui long tactile = clic droit souris) */
+  .ctx{position:fixed;z-index:1002;min-width:190px;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;padding:6px;box-shadow:0 14px 40px rgba(0,0,0,.55);display:none}
+  .ctx.on{display:block}
+  .ctx button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;
+    color:var(--ink);border:none;border-radius:7px;padding:10px 12px;font-size:.86rem;font-weight:500;margin:0}
+  .ctx button:hover{background:var(--panel2)}
+  .ctx button.danger{color:#ff8fa0}
+  .ctx button.danger:hover{background:rgba(224,102,122,.12)}
+  .ctx .sep{height:1px;background:var(--line);margin:5px 4px}
 </style>
 </head>
 <body>
+<div class="toast" id="toast"></div>
+
+<!-- Socle « manipulation directe » (S101) : modale (confirm/saisie) + menu contextuel
+     + cliquer-déposer, source unique partagée. Expose confirmer / demanderTexte /
+     attacherMenu / sortable… sur window. -->
+<script src="/manipulation_directe.js"></script>
 <div class="wrap">
   <header>
     <h1>Atelier holistique<span class="dot">.</span></h1>
@@ -144,6 +181,7 @@
     <div class="hint">Heure + coordonnées débloquent l'Ascendant, le signe lunaire et le rashi védique. Sans elles, le portrait reste calculé sur la date. <b>🎲 Aléatoire</b> = un personnage tiré au sort.</div>
     <details id="mes-fiches" style="margin-top:12px" ontoggle="if(this.open) chargerFiches()">
       <summary style="cursor:pointer;font-size:.8rem;color:var(--accent)">💾 Mes personnages enregistrés</summary>
+      <p class="hint" style="margin:6px 0 0">Touchez pour ouvrir · <b>clic droit</b> / <b>appui long</b> pour le menu (renommer, ranger, supprimer).</p>
       <div id="fiches-liste" class="hint" style="margin-top:8px">…</div>
     </details>
     <div id="desc-err" class="err"></div>
@@ -186,6 +224,8 @@
       <!-- Synergie Studio : envoie ce personnage à une série (visible seulement dans l'iframe Oria). -->
       <button type="button" id="btn-studio" onclick="envoyerStudio()" style="display:none;margin-top:14px"
         title="Ajouter ce personnage à une série du Studio">📤 Envoyer au Studio</button>
+      <button type="button" id="btn-renommer" class="ghost" onclick="renommerFicheOuverte()" style="display:none;margin-top:14px"
+        title="Modifier le nom de ce personnage enregistré (le nom d’origine reste conservé)">✎ Renommer ce personnage</button>
     </div>
   </div>
 
@@ -215,6 +255,12 @@
 <script>
 const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const $ = id => document.getElementById(id);
+
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2600); }
+
+// ouvrirModal / confirmer / demanderTexte / ouvrirMenu / fermerMenu / attacherMenu /
+// attacherAppuiLong / sortable proviennent du socle partagé /manipulation_directe.js.
 
 function switchTab(t){
   $('tab-desc').classList.toggle('on', t==='desc');
@@ -545,18 +591,43 @@ async function chargerFiches(){
     const nommees=Object.keys(groupes).filter(c=>c).sort((a,b)=>a.localeCompare(b,'fr'));
     const ordre=nommees.concat(groupes[''] ? [''] : []);
     ordre.forEach(cat=>{
+      // S104 : chaque section de catégorie est une ZONE de dépôt (data-cat). Glisser une
+      // fiche dedans la range dans cette catégorie. La fiche elle-même porte data-id.
+      const zone=document.createElement('div');
+      zone.className='cat-zone'; zone.dataset.cat=cat;          // '' = « Non rangés »
       const titre=document.createElement('div');
       titre.style.cssText='margin:12px 0 4px;font-size:.78rem;font-weight:600;'+
         'color:var(--accent);text-transform:uppercase;letter-spacing:.04em';
       titre.textContent=(cat||'Non rangés')+'  ('+groupes[cat].length+')';
-      box.append(titre);
-      groupes[cat].forEach(f=>box.append(ligneFiche(f)));
+      zone.append(titre);
+      groupes[cat].forEach(f=>zone.append(ligneFiche(f)));
+      box.append(zone);
     });
+    brancherDndFiches(box);
   }catch(e){ box.textContent='⚠ '+e.message; }
+}
+
+// S104 — cliquer-déposer : glisser une fiche sur une autre catégorie la range. Pointer
+// Events via le socle (souris + tactile), repli silencieux si le socle est absent.
+function brancherDndFiches(box){
+  if(typeof window.sortable!=='function') return;
+  window.sortable(box, {
+    itemSelector:'[data-id]', zones:'.cat-zone',
+    onDropZone:(id, zoneEl)=>{ rangerFicheDirect(id, zoneEl.dataset.cat||''); },
+  });
+}
+async function rangerFicheDirect(id, cat){
+  try{
+    const r=await fetch('/fiches/'+id+'/categorie',{method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({categorie:cat})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
+    chargerFiches();                            // rafraîchit + regroupe
+  }catch(e){ alert('⚠ '+e.message); }
 }
 
 function ligneFiche(f){
   const row=document.createElement('div');
+  row.dataset.id=f.id;                          // cible du cliquer-déposer (S104)
   row.style.cssText='display:flex;align-items:stretch;gap:8px;margin:6px 0';
   const open=document.createElement('button'); open.className='ghost';
   open.style.cssText='flex:1;margin:0;text-align:left;padding:8px 12px';
@@ -566,6 +637,15 @@ function ligneFiche(f){
     '<span style="opacity:.6">'+aka+'</span>'+
     (f.archetype?' — '+f.archetype:'')+'  ·  '+String(f.cree_le||'').slice(0,10);
   open.onclick=()=>chargerFiche(f.id);
+  // Clic droit / appui long → menu d'actions (le tap court ouvre la fiche). Les boutons
+  // ✎/🗂/✕ restent visibles en doublon pour la découvrabilité.
+  attacherMenu(open, ()=>[
+    {label:'Ouvrir', emoji:'📂', fn:()=>chargerFiche(f.id)},
+    {label:'Renommer', emoji:'✎', fn:()=>renommerFiche(f.id, f.nom)},
+    {label:'Ranger dans une catégorie', emoji:'🗂', fn:()=>rangerFiche(f.id, f.categorie)},
+    {sep:true},
+    {label:'Supprimer', emoji:'🗑️', danger:true, fn:()=>supprimerFiche(f.id, row, f.nom)},
+  ]);
   const rng=document.createElement('button'); rng.className='ghost';
   rng.style.cssText='margin:0;width:auto;padding:8px 12px';
   rng.textContent='🗂'; rng.title='Ranger dans une catégorie';
@@ -590,16 +670,17 @@ function majDatalistCategories(arr){
 }
 
 async function rangerFiche(id, catActuelle){
-  const cat=prompt('Ranger dans quelle catégorie ? (ex. Famille, Collègues — vide pour retirer)', catActuelle||'');
+  // Modale du socle (remplace prompt natif) — repli prompt si socle absent.
+  const cat = (typeof window.demanderTexte==='function')
+    ? await window.demanderTexte({titre:'Ranger ce personnage',
+        message:'Dans quelle catégorie ? (ex. Famille, Collègues — vide pour retirer)',
+        valeur:catActuelle||''})
+    : prompt('Ranger dans quelle catégorie ? (vide pour retirer)', catActuelle||'');
   if(cat===null) return;                        // annulé
-  try{
-    const r=await fetch('/fiches/'+id+'/categorie',{method:'PATCH',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({categorie:cat})});
-    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
-    chargerFiches();                            // rafraîchit + regroupe
-  }catch(e){ alert('⚠ '+e.message); }
+  rangerFicheDirect(id, cat);
 }
 
+let _ficheOuverte=null;   // fiche enregistrée actuellement sélectionnée {id, nom}
 async function chargerFiche(id){
   try{
     const r=await fetch('/fiches/'+id); if(!r.ok) throw new Error('HTTP '+r.status);
@@ -617,32 +698,47 @@ async function chargerFiche(id){
         '🤖 Lecture approfondie (enregistrée)</div>'+mdToHtml(d.lecture_approfondie);
       $('o-approf').style.display='block';
     }
+    // Fiche sélectionnée → on l'expose au renommage direct (demande de l'utilisateur).
+    _ficheOuverte={id:f.id, nom:f.nom};
+    $('btn-renommer').style.display='block';
     $('desc-out').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(e){ $('desc-err').textContent='⚠ '+e.message; }
 }
 
+// Renommer la fiche actuellement OUVERTE (bouton visible une fois un personnage sélectionné).
+function renommerFicheOuverte(){
+  if(_ficheOuverte) renommerFiche(_ficheOuverte.id, _ficheOuverte.nom);
+}
+
 async function renommerFiche(id, nomActuel){
-  // Renomme la fiche pour une série (nom de scène). Le nom cosmique d'origine reste figé.
-  const nom=prompt('Nouveau nom pour cette série (le nom d’origine est conservé) :', nomActuel||'');
+  // Renomme la fiche (nom de scène). Le nom cosmique d'origine reste figé côté brique.
+  const nom=await demanderTexte({titre:'Renommer le personnage',
+    message:'Nouveau nom (le nom d’origine est conservé) :', valeur:nomActuel||''});
   if(nom===null) return;                      // annulé
-  if(!nom.trim()){ alert('Le nom ne peut pas être vide.'); return; }
+  if(!nom){ toast('Le nom ne peut pas être vide.'); return; }
   try{
     const r=await fetch('/fiches/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({nom})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
-    chargerFiches();                          // rafraîchit la liste (affiche « né·e … »)
-  }catch(e){ alert('⚠ '+e.message); }
+    if(_ficheOuverte && _ficheOuverte.id===id) _ficheOuverte.nom=nom;
+    chargerFiches(); toast('Renommé ✓');       // rafraîchit la liste (affiche « né·e … »)
+  }catch(e){ toast('⚠ '+e.message); }
 }
 
-async function supprimerFiche(id, row){
-  if(!confirm('Supprimer définitivement ce personnage enregistré ?')) return;
+async function supprimerFiche(id, row, nom){
+  const ok=await confirmer({titre:'Supprimer le personnage',
+    message:`« ${nom||'ce personnage'} » sera supprimé définitivement. Cette action est irréversible.`,
+    action:'Supprimer définitivement'});
+  if(!ok) return;
   try{
     const r=await fetch('/fiches/'+id,{method:'DELETE'});
     if(r.status!==204) throw new Error('HTTP '+r.status);
     row.remove();
+    if(_ficheOuverte && _ficheOuverte.id===id){ _ficheOuverte=null; $('btn-renommer').style.display='none'; }
     const box=$('fiches-liste');
     if(!box.querySelector('div')) box.textContent="Aucun personnage enregistré pour l'instant.";
-  }catch(e){ alert('⚠ '+e.message); }
+    toast('Personnage supprimé 🗑️');
+  }catch(e){ toast('⚠ '+e.message); }
 }
 
 function renderPortrait(d){
