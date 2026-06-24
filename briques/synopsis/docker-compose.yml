@@ -1,0 +1,29 @@
+services:
+  synopsis:
+    build: .
+    image: workplace/synopsis:1.0.0
+    container_name: workplace-synopsis
+    ports:
+      - "6090:6090"
+    volumes:
+      - synopsis_clips:/clips
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      - PORT=6090
+      - CLIP_OUTPUT_DIR=/clips
+      - LLM_MODEL=${LLM_MODEL:-deepseek/deepseek-v4-flash}
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - API_KEYS=${API_KEYS:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6090/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  synopsis_clips:

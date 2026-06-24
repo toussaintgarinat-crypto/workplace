@@ -16,6 +16,9 @@ os.environ["DEV_ATELIERS"] = os.path.join(_racine, "ateliers")
 os.environ["DEV_TRACES"] = os.path.join(_racine, "traces")
 os.environ["DEV_DB"] = os.path.join(_racine, "chantiers.json")
 os.environ.pop("DEV_KEY", None)  # atelier ouvert en test
+# IDE SpearCode (porté de Gungnir) : workspace + données en temporaire (jamais le vrai dépôt).
+os.environ["DEV_IDE_WORKSPACE"] = os.path.join(_racine, "ide-workspace")
+os.environ["DEV_IDE_DATA"] = os.path.join(_racine, "ide-data")
 # Pas de LLM en test : le plan BMAD (S88) retombe sur son squelette local, déterministe et
 # hors-ligne (aucun appel réseau). La preuve LIVE avec vrai LLM se fait à part.
 os.environ["GATEWAY_MODEL"] = ""

@@ -16,6 +16,8 @@ import journal_conversations as jc  # noqa: E402
 def _reset():
     if jc.CHEMIN.exists():
         jc.CHEMIN.unlink()
+    if jc.META.exists():
+        jc.META.unlink()
 
 
 def test_enregistrer_et_relire_un_fil():
@@ -66,6 +68,84 @@ def test_bornage_taille(monkeypatch):
     msgs = jc.messages("web:dashboard", limite=10000)
     assert len(msgs) <= 120
     assert msgs[-1]["content"] == "msg 199"
+
+
+def test_titre_auto_au_premier_message():
+    _reset()
+    jc.enregistrer("web", "conv-1", "user", "Comment va le restaurant aujourd'hui ?")
+    jc.enregistrer("web", "conv-1", "assistant", "Très bien.")
+    # le titre auto vient du 1er message humain, pas de la réponse
+    assert jc.meta("web:conv-1")["titre"].startswith("Comment va le restaurant")
+
+
+def test_titre_auto_tronque():
+    _reset()
+    long = "x" * 200
+    jc.enregistrer("web", "c", "user", long)
+    t = jc.meta("web:c")["titre"]
+    assert t.endswith("…") and len(t) <= 50
+
+
+def test_renommer_garde_le_titre_manuel():
+    _reset()
+    jc.enregistrer("web", "c", "user", "premier message")
+    jc.renommer("web:c", "Mon titre choisi")
+    # un nouveau message ne réécrit pas le titre manuel
+    jc.enregistrer("web", "c", "user", "deuxième")
+    assert jc.meta("web:c")["titre"] == "Mon titre choisi"
+
+
+def test_assigner_et_filtrer_par_projet():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "A")
+    jc.enregistrer("web", "c2", "user", "B")
+    jc.assigner_projet("web:c1", "proj-42")
+    fils = jc.fils(projet_id="proj-42")
+    assert [f["fil"] for f in fils] == ["web:c1"]
+    assert jc.fils()[0].get("projet_id") in (None, "proj-42")  # tous les fils ont le champ
+
+
+def test_detacher_projet():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "A")
+    jc.assigner_projet("web:c1", "p")
+    assert jc.detacher_projet("p") == 1
+    assert jc.meta("web:c1")["projet_id"] is None
+
+
+def test_supprimer_fil():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "A")
+    jc.enregistrer("web", "c2", "user", "B")
+    jc.renommer("web:c1", "titre")
+    jc.supprimer_fil("web:c1")
+    assert jc.messages("web:c1") == []
+    assert jc.meta("web:c1") == {}
+    assert [f["fil"] for f in jc.fils()] == ["web:c2"]
+
+
+def test_fils_enrichis_titre_et_meta():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "Bonjour le monde")
+    f = jc.fils()[0]
+    assert f["titre"].startswith("Bonjour") and "epingle" in f and "archive" in f
+
+
+def test_reordonner_impose_l_ordre_manuel():
+    """S104 — cliquer-déposer : `reordonner` fixe `ordre`, qui prime sur la récence (mais
+    pas sur l'épinglage)."""
+    _reset()
+    for c in ("c1", "c2", "c3"):
+        jc.enregistrer("web", c, "user", "msg " + c)
+    # Par défaut : la plus récente d'abord (c3, c2, c1).
+    assert [f["fil"] for f in jc.fils()] == ["web:c3", "web:c2", "web:c1"]
+    # On impose l'ordre manuel inverse.
+    n = jc.reordonner(["web:c1", "web:c2", "web:c3"])
+    assert n == 3
+    assert [f["fil"] for f in jc.fils()] == ["web:c1", "web:c2", "web:c3"]
+    # Une épinglée passe devant l'ordre manuel.
+    jc.definir_meta("web:c3", epingle=True)
+    assert jc.fils()[0]["fil"] == "web:c3"
 
 
 if __name__ == "__main__":

@@ -32,6 +32,22 @@ def test_service_exige_la_cle():
     assert client.get(f"/service/restaurants/{resto}/plats", headers=CLE).status_code == 200
 
 
+def test_service_lister_restaurants_decouverte():
+    """S103 : l'assistant découvre les ids des restaurants sans qu'on les fournisse.
+    Fail-closed (clé requise) et le resto créé apparaît bien dans la liste."""
+    _, resto = _resto()
+    assert client.get("/service/restaurants").status_code == 401
+    assert client.get("/service/restaurants", headers={"X-API-Key": "fausse"}).status_code == 401
+    r = client.get("/service/restaurants", headers=CLE)
+    assert r.status_code == 200
+    restos = r.json()["restaurants"]
+    ids = {x["id"] for x in restos}
+    assert resto in ids
+    # Chaque entrée porte au moins l'id et le nom (contexte pour l'assistant).
+    cible = next(x for x in restos if x["id"] == resto)
+    assert cible["nom"] == "Chez Service"
+
+
 def test_service_cycle_de_vie_d_un_plat():
     session, resto = _resto()
     # Le Cœur ajoute un plat (action).

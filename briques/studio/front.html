@@ -61,6 +61,43 @@
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#100d0a;
     border:1px solid var(--accent);color:var(--ink);padding:11px 18px;border-radius:10px;
     font-size:.85rem;z-index:999;display:none;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+  /* Appui long → suppression : retour visuel pendant le maintien (la carte « se charge ») */
+  .lp-arming{position:relative;overflow:hidden}
+  .lp-arming::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;
+    background:linear-gradient(90deg,var(--bad),#ff9bab);transform-origin:left;
+    animation:lp-fill var(--lp-ms,550ms) linear forwards}
+  @keyframes lp-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  /* Modale de confirmation réutilisable (app-like, responsive) */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:1000;
+    align-items:center;justify-content:center;padding:18px}
+  .modal.on{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;max-width:420px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  .modal h3{margin:0 0 8px}
+  .modal p{color:var(--mut);font-size:.88rem;line-height:1.55;margin:0 0 18px}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  button.danger{background:linear-gradient(135deg,var(--bad),#b84a5c);color:#fff}
+  .hint-lp{font-size:.72rem;color:var(--mut);margin:-4px 0 10px}
+  /* Menu contextuel (appui long tactile = clic droit souris) */
+  .ctx{position:fixed;z-index:1001;min-width:190px;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;padding:6px;box-shadow:0 14px 40px rgba(0,0,0,.55);display:none}
+  .ctx.on{display:block}
+  .ctx button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;
+    color:var(--ink);border:none;border-radius:7px;padding:10px 12px;font-size:.86rem;font-weight:500}
+  .ctx button:hover{background:var(--panel2)}
+  .ctx button.danger{color:#ff8fa0;background:transparent}
+  .ctx button.danger:hover{background:rgba(224,102,122,.12)}
+  .ctx .sep{height:1px;background:var(--line);margin:5px 4px}
+  /* Passe responsive : sur petit écran, on aère et on étire les actions */
+  @media(max-width:560px){
+    .wrap{padding:18px 14px 90px}
+    header h1{font-size:1.4rem}
+    header p{font-size:.85rem}
+    .panel{padding:16px}
+    .modal .actions{justify-content:stretch}
+    .modal .actions button{flex:1}
+    .serie-item .meta{font-size:.68rem}
+  }
 </style>
 </head>
 <body>
@@ -80,6 +117,7 @@
     <div>
       <div class="panel">
         <h2>Mes séries</h2>
+        <p class="hint-lp">Astuce : <b>clic droit</b> ou <b>appui long</b> sur une série pour les actions (ouvrir, supprimer…).</p>
         <div id="liste-series"><p class="muted">Chargement…</p></div>
       </div>
       <div class="panel">
@@ -104,6 +142,9 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- Socle « manipulation directe » (S101) : modale + menu contextuel + cliquer-déposer,
+     source unique partagée. Expose confirmer / attacherMenu / sortable… sur window. -->
+<script src="/manipulation_directe.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -120,6 +161,9 @@ async function api(path, method='GET', body=null){
 }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2600); }
+
+// confirmer / ouvrirMenu / fermerMenu / attacherMenu / attacherAppuiLong / sortable
+// proviennent du socle partagé /manipulation_directe.js (chargé juste au-dessus).
 
 let CIBLES=[], LANGUES=[], serieCourante=null;
 const DIMENSIONS=[
@@ -151,12 +195,44 @@ async function chargerListe(){
     const series = await api('/series');
     if(!series.length){ $('liste-series').innerHTML = '<p class="muted">Aucune série pour l\'instant.</p>'; return; }
     $('liste-series').innerHTML = series.map(s=>`
-      <div class="card serie-item ${serieCourante&&serieCourante.id===s.id?'on':''}" onclick="ouvrirSerie('${s.id}')">
+      <div class="card serie-item ${serieCourante&&serieCourante.id===s.id?'on':''}"
+           data-id="${esc(s.id)}" data-titre="${esc(s.titre)}" onclick="ouvrirSerie('${s.id}')">
         <div><h3>${esc(s.titre)}</h3>
           <div class="meta">${s.episodes} chapitre(s) · ${s.personnages} perso · ${s.tomes} tome(s) · ${esc((s.langue||'fr').toUpperCase())}</div></div>
         <span class="pill">${s.briques}/5 bible</span>
       </div>`).join('');
+    // Clic droit / appui long → menu d'actions ; le tap court ouvre la série (inchangé).
+    $('liste-series').querySelectorAll('.serie-item').forEach(el=> attacherMenu(el, ()=>[
+      {label:'Ouvrir', emoji:'📂', fn:()=>ouvrirSerie(el.dataset.id)},
+      {sep:true},
+      {label:'Supprimer', emoji:'🗑️', danger:true, fn:()=>supprimerSerie(el.dataset.id, el.dataset.titre)},
+    ]));
+    brancherDndSeries();
   }catch(e){ $('liste-series').innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; }
+}
+
+// S104 — cliquer-déposer : réordonner les séries. L'ordre est persisté côté brique
+// (POST /series/reordonner) ; le tap court ouvre toujours la série. Socle = Pointer Events.
+function brancherDndSeries(){
+  if(typeof window.sortable!=='function') return;
+  window.sortable($('liste-series'), {
+    itemSelector:'.serie-item[data-id]',
+    onReorder: async (ids)=>{ try{ await api('/series/reordonner','POST',{ids}); }catch(e){} },
+  });
+}
+
+// Supprimer une série (définitif) : geste = appui long, garde-fou = confirmation nommée.
+async function supprimerSerie(id, titre){
+  const ok = await confirmer({
+    titre:'Supprimer la série',
+    message:`« ${titre||'sans titre'} » sera supprimée définitivement, avec ses chapitres, sa bible et sa distribution. Cette action est irréversible.`,
+    action:'Supprimer définitivement'});
+  if(!ok) return;
+  try{
+    await api('/series/'+id,'DELETE');
+    if(serieCourante && serieCourante.id===id){ serieCourante=null; $('zone-serie').innerHTML=''; }
+    await chargerListe(); toast('Série supprimée 🗑️');
+  }catch(e){ toast('⚠ '+e.message); }
 }
 
 async function creerSerie(){

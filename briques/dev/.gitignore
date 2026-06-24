@@ -5,3 +5,8 @@ chantiers.json.tmp
 # Skills fabriquées par l'atelier (S91) — contenu souverain généré, recréable. Le dossier
 # par défaut DEV_SKILLS_DIR vit ici ; on ne versionne pas les skills produites.
 skills/
+
+# IDE web SpearCode (S93 — porté de Gungnir) : workspace éditable + données locales
+# (config, versions de fichiers, snippets). Runtime, recréés au démarrage, jamais versionnés.
+ide-workspace/
+ide-data/

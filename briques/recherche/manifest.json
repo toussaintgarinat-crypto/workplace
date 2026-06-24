@@ -1,7 +1,7 @@
 {
   "nom": "recherche",
-  "version": "0.1.0",
-  "description": "Recherche web + lecture de page en API (« les yeux du Cœur sur le web »), SOUVERAINE par défaut : métamoteur SearXNG auto-hébergé (conteneur voisin, 0 clé, agrège Google/Bing/DDG/Wikipédia… en JSON) avec repli DuckDuckGo sans-infra et extension Tavily à clé. La lecture de page est LOCALE (Trafilatura), bornée en taille/temps et polie (robots.txt). Deux gestes : rechercher (liens classés cliquables) et lire-page (texte principal + liens, pour résumer EN gardant les sources). Repli honnête : jamais de lien inventé, jamais de faux texte. Produit autonome, miroir des briques vision/transcription, composable par l'assistant.",
+  "version": "1.0.0",
+  "description": "Recherche web + lecture de page (« les yeux du Cœur sur le web »), moteur HuntR (porté de Gungnir) : lance EN PARALLÈLE jusqu'à 9 moteurs (SearXNG souverain, DuckDuckGo, Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing), déduplique par URL canonique et CLASSE par CONSENSUS (nb de moteurs × poids × rang). Multi-thème : web / news / academic / code. SOUVERAIN par défaut (SearXNG auto-hébergé conteneur voisin + repli DuckDuckGo sans clé) ; les moteurs à clé sont inertes tant que leur clé n'est pas renseignée. Filtres de source opt-in (blocklist propagande d'État/désinfo + allowlist). La lecture de page est LOCALE (Trafilatura), bornée en taille/temps et polie (robots.txt). Repli honnête : jamais de lien inventé, jamais de faux texte.",
   "role": "recherche",
   "couche": "backend",
   "statut": "a_tester",
@@ -10,10 +10,12 @@
   "url_sante": "http://host.docker.internal:6040/sante",
   "depends_on": [],
   "offre": [
-    "recherche_web_souveraine",
+    "recherche_web_multi_providers_consensus",
     "metamoteur_searxng_auto_heberge",
     "repli_duckduckgo_sans_infra",
-    "multi_fournisseurs",
+    "neuf_moteurs_dont_tavily_brave_exa_serper_serpapi_kagi_bing",
+    "themes_web_news_academic_code",
+    "filtres_de_source_opt_in",
     "lecture_de_page_locale_trafilatura",
     "liens_cliquables_preserves",
     "robots_txt_respecte",
@@ -23,12 +25,13 @@
   "capacites": [
     {
       "nom": "recherche_web",
-      "description": "Cherche sur le WEB et renvoie une liste de résultats CLASSÉS et CLIQUABLES (titre, url, court extrait). Sert « cherche sur internet… », « trouve-moi des sources sur… », « quelles sont les actualités de… ». Souverain (SearXNG auto-hébergé) avec repli. Lecture seule. Pour LIRE et résumer une de ces pages, enchaîner avec page_lire en passant son url.",
+      "description": "Cherche sur le WEB et renvoie une liste de résultats CLASSÉS et CLIQUABLES (titre, url, court extrait). Sert « cherche sur internet… », « trouve-moi des sources sur… », « quelles sont les actualités de… ». Interroge en parallèle tous les moteurs configurés et FUSIONNE par consensus (souverain SearXNG + repli, plus moteurs à clé éventuels). Paramètre `topic` : 'web' (défaut), 'news' (actualités datées), 'academic' (articles/Scholar), 'code' (GitHub/StackOverflow/docs). Lecture seule. Pour LIRE et résumer une de ces pages, enchaîner avec page_lire en passant son url.",
       "methode": "POST",
       "chemin": "/rechercher",
       "params": {
         "requete": {"type": "string", "description": "La requête à chercher (mots-clés ou question en langage naturel)."},
         "n": {"type": "integer", "description": "Nombre de résultats voulus (défaut 8, max 50)."},
+        "topic": {"type": "string", "description": "Thème : 'web' (défaut), 'news', 'academic' ou 'code'. Oriente les moteurs et les domaines."},
         "langue": {"type": "string", "description": "Langue de recherche (ex. 'fr', 'en'). Défaut 'fr'."}
       },
       "action": false

@@ -1,46 +1,66 @@
-"""Tests de l'API — TestClient, mode repli honnête (aucun moteur joignable, hors-ligne)."""
+"""API de la brique browser : contrat compatible recherche + repli honnête."""
 from fastapi.testclient import TestClient
 
 import main
+import providers
+from search_providers import SearchResult
 
-c = TestClient(main.app)
+
+client = TestClient(main.app)
 
 
-def test_sante_aucun_moteur_configure():
-    r = c.get("/sante")
+def test_sante_liste_les_neuf_moteurs():
+    r = client.get("/sante")
     assert r.status_code == 200
-    d = r.json()
-    assert d["ok"] is True
-    assert set(d["fournisseurs"]) == {"searxng", "duckduckgo", "tavily"}
-    assert d["configures"] == [] and d["actif"] is None   # conftest a tout neutralisé
-
-
-def test_fournisseurs_catalogue():
-    d = c.get("/fournisseurs").json()
-    noms = {f["nom"] for f in d["fournisseurs"]}
-    assert noms == {"searxng", "duckduckgo", "tavily"}
-    assert all(f["configure"] is False for f in d["fournisseurs"])
+    data = r.json()
+    assert data["ok"] is True
+    assert "duckduckgo" in data["fournisseurs"]
+    assert "searxng" in data["fournisseurs"]
+    # En test, aucun moteur n'est configuré (conftest neutralise tout).
+    assert data["configures"] == []
+    assert data["actif"] is None
 
 
 def test_rechercher_sans_moteur_rend_note_honnete():
-    r = c.post("/rechercher", json={"requete": "logiciel libre"})
+    r = client.post("/rechercher", json={"requete": "postgres"})
     assert r.status_code == 200
-    d = r.json()
-    assert d["resultats"] == [] and d["backend"] is None and d["nb"] == 0
-    assert "Aucun moteur" in d["note"]      # honnête : on le DIT, pas de faux liens
+    data = r.json()
+    assert data["resultats"] == []
+    assert data["nb"] == 0
+    assert "note" in data            # explique POURQUOI c'est vide, n'invente rien
 
 
 def test_rechercher_requete_vide_422():
-    assert c.post("/rechercher", json={"requete": "   "}).status_code == 422
+    assert client.post("/rechercher", json={"requete": "   "}).status_code == 422
+
+
+def test_rechercher_fusionne_les_providers(monkeypatch):
+    class Faux:
+        def __init__(self, source, urls):
+            self.source = source
+            self.urls = urls
+        async def search(self, query, max_results=10, topic="web"):
+            return [SearchResult(title=f"T {u}", url=u, snippet="extrait", content="",
+                                 source=self.source) for u in self.urls]
+
+    monkeypatch.setattr(providers, "actifs", lambda: [
+        ("duckduckgo", Faux("duckduckgo", ["https://a.test/1"])),
+        ("brave", Faux("brave", ["https://a.test/1", "https://b.test/2"])),
+    ])
+    r = client.post("/rechercher", json={"requete": "x", "topic": "web"})
+    data = r.json()
+    assert data["nb"] == 2                                   # /1 (consensus) + /2
+    assert data["resultats"][0]["url"] == "https://a.test/1"  # trouvé par 2 → en tête
+    assert set(data["resultats"][0]["providers"]) == {"duckduckgo", "brave"}
+    assert "duckduckgo" in data["moteurs"] and "brave" in data["moteurs"]
+
+
+def test_rechercher_topic_invalide_retombe_sur_web(monkeypatch):
+    monkeypatch.setattr(providers, "actifs", lambda: [])
+    r = client.post("/rechercher", json={"requete": "x", "topic": "n_importe_quoi"})
+    assert r.json()["topic"] == "web"
 
 
 def test_lire_page_url_invalide_422():
-    r = c.post("/lire-page", json={"url": "file:///etc/passwd"})
+    r = client.post("/lire-page", json={"url": "file:///etc/passwd"})
     assert r.status_code == 422
-    assert "URL invalide" in r.json()["detail"]
-
-
-def test_fournisseur_force_indisponible_rend_note():
-    # On force un moteur précis non configuré → note honnête, pas d'appel réseau.
-    d = c.post("/rechercher", json={"requete": "x", "fournisseur": "tavily"}).json()
-    assert d["resultats"] == [] and d["backend"] is None

@@ -1,71 +1,60 @@
-# Brique `recherche` — recherche web + lecture de page (port 6040)
+# Brique `recherche` — recherche web multi-providers + lecture de page (moteur HuntR)
 
-« Les yeux du Cœur sur le web ». Deux gestes composables, **souverains par défaut**,
-exposés comme **capacités auto-découvertes** (le Cœur les transforme en outils du LLM via
-le manifest, sans aucune ligne de code côté Cœur) :
+Les **yeux du Cœur sur le web**. Contrat exposé au Cœur (capacités `recherche_web` et
+`page_lire`, port **6040**), avec un moteur **porté du plugin HuntR de
+[Gungnir](https://github.com/kevinggraphiste-hub/Gungnir)**.
 
-| Capacité       | Endpoint       | Rôle |
-|----------------|----------------|------|
-| `recherche_web`| `POST /rechercher` | une requête → **liens classés cliquables** (titre, url, extrait) |
-| `page_lire`    | `POST /lire-page`  | une URL → **texte principal nettoyé + liens** de la page (pour résumer en gardant les sources) |
+## Deux gestes (capacités exposées au Cœur)
 
-Le couple est pensé pour l'usage agent : *cherche → choisis une source → lis-la → résume
-en citant les liens*.
+| Capacité | Endpoint | Rôle |
+|---|---|---|
+| `recherche_web` | `POST /rechercher` | une requête → liens classés cliquables, **fusion multi-moteurs par consensus** |
+| `page_lire` | `POST /lire-page` | une URL → texte principal (Trafilatura) + liens, pour résumer en gardant les sources |
 
-## Souveraineté & repli honnête
+## Le moteur HuntR
 
-**Recherche** (cf. `fournisseurs.py`, cascade configurable par `RECHERCHE_PROVIDERS`) :
+- **Jusqu'à 9 moteurs en parallèle** : SearXNG (souverain), DuckDuckGo (sans clé), puis
+  Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing (à clé, **inertes** sans clé).
+- **Fusion par consensus** (`multi_search`) : dédup par URL canonique, score
+  `nb de moteurs × poids du moteur × 1/rang`, bonus +25 % par moteur supplémentaire qui
+  confirme une URL. Le `content` plein de Tavily est conservé quand il est présent.
+- **Multi-thème** (`topic`) : `web` (défaut), `news` (actualités datées),
+  `academic` (arXiv/PubMed/Scholar, Scholar boosté en tête), `code` (GitHub/StackOverflow/docs).
+- **Filtres de source opt-in** : blocklist de départ (propagande d'État sanctionnée UE/UK
+  + désinfo documentée) + blocklist/allowlist maison (modes `boost`/`strict`).
 
-1. **`searxng`** — métamoteur [SearXNG](https://docs.searxng.org/) auto-hébergé (conteneur
-   voisin, **0 clé**), agrège Google/Bing/DDG/Wikipédia… et rend du JSON propre. Défaut.
-2. **`duckduckgo`** — repli **zéro-infra** : scraping de la page HTML « lite » de DDG.
-   Fragile (pas d'API officielle), mais ni conteneur ni clé. Filet de sécurité.
-3. **`tavily`** — API à clé (`TAVILY_API_KEY`), **inerte** sans clé. Matérialise l'extension
-   « fournisseur payant par tenant » (Brave, Serper… suivront le même contrat).
+## Souveraineté & honnêteté
 
-**Lecture de page** (cf. `extraction.py`) : extraction **locale** via Trafilatura (repli
-nettoyage HTML basique si absent), **bornée** en taille (`RECHERCHE_MAX_OCTETS`, 3 Mo) et
-temps (`RECHERCHE_TIMEOUT`), **polie** (respecte `robots.txt`, opt-out `RECHERCHE_ROBOTS=0`),
-**sans rendu JavaScript** en v1.
+Souverain par défaut (SearXNG auto-hébergé conteneur voisin + repli DuckDuckGo sans clé).
+Aucune clé embarquée : chaque moteur à clé se configure par variable d'env et reste inerte
+sinon. Repli honnête : **jamais de lien inventé ni de faux texte** — si aucun moteur ne
+répond, la réponse est une liste vide qui le DIT ; si une page est illisible, on rend
+l'erreur, pas un placeholder.
 
-> Honnêteté : aucun lien inventé, aucun faux texte. Sans moteur configuré, `/rechercher`
-> rend une liste vide qui le **dit** ; une page illisible rend une erreur, pas un placeholder.
-
-## Démarrage
-
-```bash
-docker compose up -d        # lance la brique (6040) + le conteneur SearXNG (interne)
-curl -s localhost:6040/sante | jq
-curl -s localhost:6040/rechercher -H 'content-type: application/json' \
-     -d '{"requete":"sobriété numérique","n":5}' | jq
-curl -s localhost:6040/lire-page -H 'content-type: application/json' \
-     -d '{"url":"https://fr.wikipedia.org/wiki/Logiciel_libre"}' | jq '.titre, .nb_caracteres'
-```
-
-## Image SearXNG
-
-Le conteneur tierce est **épinglé en dur** dans `docker-compose.yml`
-(`searxng/searxng:2026.6.22-952896d29`) — pas via une variable d'env : le lanceur fait
-`cd dossier && docker compose up -d` sans sourcer le `.env` racine, donc un
-`${SEARXNG_TAG:-…}` retomberait toujours sur son défaut (piège « env shadow »). Pour
-mettre à jour : `docker pull searxng/searxng:latest`, relever le `DOCKER_TAG`
-(`docker inspect … org.opencontainers.image.version`) et changer la ligne `image:`.
-
-## Réglages (env, tous facultatifs)
+## Configuration (env)
 
 | Variable | Défaut | Rôle |
-|----------|--------|------|
-| `SEARXNG_URL` | `http://searxng:8080` | URL interne du métamoteur |
-| `SEARXNG_SECRET` | dev | secret de signature SearXNG (à définir en prod) |
-| `RECHERCHE_PROVIDERS` | (ordre par défaut) | force l'ordre des moteurs |
-| `RECHERCHE_DDG` | `1` | active le repli DuckDuckGo |
-| `TAVILY_API_KEY` | (vide) | active le moteur Tavily |
-| `RECHERCHE_MAX_OCTETS` | `3145728` | taille max d'une page lue |
-| `RECHERCHE_ROBOTS` | `1` | respecte `robots.txt` |
-| `API_KEYS` | (vide = ouvert) | clés acceptées (`X-API-Key`) |
+|---|---|---|
+| `SEARXNG_URL` | `http://searxng:8080` | métamoteur souverain (conteneur voisin) |
+| `RECHERCHE_DDG` | `1` | repli DuckDuckGo sans-infra (`0` = éteint) |
+| `RECHERCHE_PROVIDERS` | _(vide)_ | force/ordonne les moteurs (CSV), sinon tous les configurés |
+| `TAVILY_API_KEY` … `BING_API_KEY` | _(vide)_ | active les moteurs à clé |
+| `RECHERCHE_STARTER_BLOCKLIST` | `0` | `1` = active la blocklist propagande/désinfo |
+| `RECHERCHE_BLOCKLIST` / `RECHERCHE_ALLOWLIST` | _(vide)_ | CSV de domaines ; `RECHERCHE_ALLOWLIST_MODE` = `off`/`boost`/`strict` |
+| `RECHERCHE_MAX_OCTETS` / `RECHERCHE_TIMEOUT` / `RECHERCHE_ROBOTS` | 3 Mo / 25 s / `1` | garde-fous de `page_lire` |
+
+> Les variantes `BROWSER_*` (nommage interne HuntR) restent acceptées en repli.
 
 ## Tests
 
 ```bash
-pytest -q   # offline : parseurs purs (SearXNG/DDG/Tavily), extraction, API en repli honnête
+cd briques/recherche && python3 -m pytest -q   # 25 tests offline, sans réseau
 ```
+
+## Provenance
+
+Moteur porté de `backend/plugins/browser` (HuntR) de Gungnir, plugin Python intégré au
+backend monolithique, **réemballé en brique Workplace autonome** (service Docker + manifest
+auto-découvert) sous le nom `recherche`. La dépendance au cœur Gungnir
+(`web_fetch.web_search_lite`) a été remplacée par un client DuckDuckGo souverain local
+(`ddg_lite.py`). La lecture de page reprend l'extraction Trafilatura souveraine.

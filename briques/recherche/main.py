@@ -1,16 +1,18 @@
-"""Brique « recherche » — recherche web + lecture de page en API.
+"""Brique « recherche » (moteur HuntR porté) — recherche web multi-providers + lecture de page.
 
-Produit autonome, sans dépendance à Oria/Workplace, miroir des briques vision/transcription.
-Deux gestes composables, déclarés comme CAPACITÉS dans le manifest → outils du Cœur :
+Contrat exposé au Cœur : capacités `recherche_web` et `page_lire` (port 6040), avec un moteur
+riche emprunté au plugin HuntR de Gungnir :
 
-  • /rechercher : une requête → liens classés CLIQUABLES (titre, url, extrait).
+  • /rechercher : une requête → liens classés CLIQUABLES. Lance EN PARALLÈLE tous les
+                  moteurs configurés (jusqu'à 9 : SearXNG, DuckDuckGo, Tavily, Brave, Exa,
+                  Serper, SerpAPI, Kagi, Bing), déduplique par URL canonique et CLASSE par
+                  consensus (nb de moteurs × poids × rang). Multi-thème (web|news|academic|code).
                   Capacité `recherche_web`. Lecture seule.
-  • /lire-page  : une URL → texte principal + liens de la page, pour que l'assistant
-                  RÉSUME en gardant les sources. Capacité `page_lire`. Lecture seule.
+  • /lire-page  : une URL → texte principal (Trafilatura souverain) + liens, pour résumer
+                  EN gardant les sources. Capacité `page_lire`. Lecture seule.
 
-Souverain par défaut : le moteur de recherche est SearXNG auto-hébergé (conteneur voisin,
-0 clé), avec repli DuckDuckGo sans-infra et extension Tavily à clé (cf. fournisseurs.py).
-La lecture de page est LOCALE (Trafilatura), bornée et polie (robots.txt) (cf. extraction.py).
+Souverain par défaut : SearXNG auto-hébergé (conteneur voisin, 0 clé) + DuckDuckGo
+sans-infra. Les moteurs à clé sont INERTES tant que leur clé n'est pas renseignée.
 
 Honnêteté : aucun lien inventé, aucun faux texte. Si aucun moteur ne répond, on rend une
 liste vide qui le DIT ; si une page est illisible, on rend l'erreur, pas un placeholder.
@@ -24,12 +26,14 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import extraction
-import fournisseurs
+import providers
+from search_providers import VALID_TOPICS, multi_search
+from source_filters import apply_source_filters, has_active_filters
 
-app = FastAPI(title="Recherche — recherche web + lecture de page", version="0.1.0")
+app = FastAPI(title="Recherche — HuntR : recherche web multi-providers + lecture de page",
+              version="1.0.0")
 
-# Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
-# = comportement historique. En MULTI-TENANT local, restreindre (cf. brique vision).
+# Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*".
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
@@ -46,11 +50,39 @@ def cle_api(x_api_key: Optional[str] = Header(None),
     raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
 
 
+def _filtres_config() -> dict:
+    """Filtres de source (blocklist/allowlist) lus depuis l'env. Opt-in, inertes par défaut."""
+    cfg: dict = {}
+    if _envr("STARTER_BLOCKLIST", "0") == "1":
+        cfg["use_starter_blocklist"] = True
+    bl = [d.strip() for d in _envr("BLOCKLIST", "").split(",") if d.strip()]
+    if bl:
+        cfg["blocklist"] = bl
+    al = [d.strip() for d in _envr("ALLOWLIST", "").split(",") if d.strip()]
+    if al:
+        cfg["allowlist"] = al
+        cfg["allowlist_mode"] = _envr("ALLOWLIST_MODE", "boost").lower()
+    return cfg
+
+
+def _envr(nom: str, defaut: str = "") -> str:
+    """Lit RECHERCHE_<nom>, repli BROWSER_<nom> (nommage HuntR), puis défaut."""
+    return os.getenv(f"RECHERCHE_{nom}", os.getenv(f"BROWSER_{nom}", defaut))
+
+
+def _n_defaut() -> int:
+    try:
+        return max(1, min(50, int(_envr("N_DEFAUT", "8"))))
+    except ValueError:
+        return 8
+
+
 class Rechercher(BaseModel):
     requete:     str
     n:           Optional[int] = None          # nombre de résultats voulus
-    langue:      Optional[str] = None          # ex. "fr", "en"
-    fournisseur: Optional[str] = None          # force un moteur (sinon : ordre de préférence)
+    langue:      Optional[str] = None          # compat (HuntR cible le fr par défaut)
+    topic:       Optional[str] = None          # web | news | academic | code
+    fournisseur: Optional[str] = None          # force UN moteur (sinon : tous les actifs)
 
 
 class LirePage(BaseModel):
@@ -59,67 +91,78 @@ class LirePage(BaseModel):
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def accueil():
-    return ("<h1>🔎 Brique recherche</h1><p>Recherche web (SearXNG souverain + repli) et "
+    return ("<h1>🔎 Brique recherche (moteur HuntR)</h1><p>Recherche web multi-providers "
+            "(SearXNG souverain + DuckDuckGo + 7 moteurs à clé, fusion par consensus) et "
             "lecture de page (Trafilatura). Voir <a href='/docs'>/docs</a>.</p>")
 
 
 @app.get("/sante", tags=["système"])
 def sante():
     """État : moteurs connus, ceux configurés, et celui qui servirait en tête."""
-    dispo = fournisseurs.disponibles()
+    actifs = providers.noms_actifs()
     return {
         "ok": True,
-        "fournisseurs": list(fournisseurs.REGISTRE.keys()),
-        "ordre": fournisseurs.ordre(),
-        "configures": dispo,
-        "actif": dispo[0] if dispo else None,
+        "fournisseurs": list(providers.CATALOGUE.keys()),
+        "ordre": providers.ordre(),
+        "configures": actifs,
+        "actif": actifs[0] if actifs else None,
     }
 
 
 @app.get("/fournisseurs", tags=["système"])
 def liste_fournisseurs():
     """Catalogue des moteurs : nom + s'il est configuré (pour proposer un choix côté UI)."""
-    return {"fournisseurs": [{"nom": n, "configure": f.disponible()}
-                             for n, f in fournisseurs.REGISTRE.items()],
-            "ordre": fournisseurs.ordre()}
+    actifs = set(providers.noms_actifs())
+    return {"fournisseurs": [{"nom": n, "configure": n in actifs}
+                             for n in providers.CATALOGUE],
+            "ordre": providers.ordre()}
 
 
 @app.post("/rechercher", tags=["recherche", "synergie"])
 async def rechercher(body: Rechercher, _cle: str = Depends(cle_api)):
-    """Une requête → liens classés cliquables. Cascade de moteurs, repli honnête (vide)."""
+    """Une requête → liens classés cliquables. Fusion multi-moteurs, repli honnête (vide)."""
     requete = (body.requete or "").strip()
     if not requete:
         raise HTTPException(422, "Requête vide.")
-    n = body.n or fournisseurs._n_defaut()
-    n = max(1, min(50, n))
-    langue = (body.langue or "fr").strip()
+    n = max(1, min(50, body.n or _n_defaut()))
+    topic = (body.topic or "web").lower()
+    if topic not in VALID_TOPICS:
+        topic = "web"
 
+    actifs = providers.actifs()
     if body.fournisseur:
-        f = fournisseurs.REGISTRE.get(body.fournisseur.lower())
-        candidats = [body.fournisseur.lower()] if (f and f.disponible()) else []
-    else:
-        candidats = fournisseurs.disponibles()
+        cible = body.fournisseur.lower()
+        actifs = [(nom, inst) for nom, inst in actifs if nom == cible]
 
-    if not candidats:
-        return {"requete": requete, "resultats": [], "backend": None, "nb": 0,
-                "note": "Aucun moteur de recherche configuré : démarrez le conteneur "
-                        "SearXNG (souverain), autorisez DuckDuckGo (RECHERCHE_DDG=1) ou "
-                        "renseignez TAVILY_API_KEY."}
+    if not actifs:
+        return {"requete": requete, "topic": topic, "resultats": [], "backend": None, "nb": 0,
+                "note": "Aucun moteur de recherche configuré : démarrez le conteneur SearXNG "
+                        "(souverain), autorisez DuckDuckGo (BROWSER_DDG=1) ou renseignez une clé "
+                        "(TAVILY_API_KEY, BRAVE_API_KEY, SERPER_API_KEY…)."}
 
-    erreurs = {}
-    for nom in candidats:
-        try:
-            resultats = await fournisseurs.REGISTRE[nom].rechercher(requete, n, langue)
-            if resultats:
-                return {"requete": requete, "resultats": resultats,
-                        "backend": nom, "nb": len(resultats)}
-            erreurs[nom] = "aucun résultat"
-        except Exception as e:  # noqa: BLE001
-            erreurs[nom] = str(e)[:160]
+    resultats = await multi_search(actifs, requete, max_results=n, topic=topic)
 
-    return {"requete": requete, "resultats": [], "backend": None, "nb": 0,
-            "note": "Moteurs essayés sans résultat : " + ", ".join(candidats),
-            "erreurs": erreurs}
+    rapport_filtre = None
+    cfg = _filtres_config()
+    if resultats and has_active_filters(cfg):
+        resultats, rapport_filtre = apply_source_filters(resultats, cfg)
+
+    noms = [nom for nom, _ in actifs]
+    sortie = [{
+        "titre": r.title,
+        "url": r.url,
+        "extrait": r.snippet or r.content,
+        "source": r.source,
+        "providers": r.providers or [r.source],
+    } for r in resultats]
+
+    reponse = {"requete": requete, "topic": topic, "resultats": sortie,
+               "backend": ",".join(noms), "moteurs": noms, "nb": len(sortie)}
+    if rapport_filtre:
+        reponse["filtre"] = rapport_filtre
+    if not sortie:
+        reponse["note"] = "Moteurs essayés sans résultat : " + ", ".join(noms)
+    return reponse
 
 
 @app.post("/lire-page", tags=["recherche", "synergie"])

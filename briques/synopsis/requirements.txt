@@ -1,0 +1,8 @@
+youtube-transcript-api
+tiktoken
+httpx
+fastapi
+uvicorn
+gtts
+yt-dlp>=2026.3.17
+fpdf2

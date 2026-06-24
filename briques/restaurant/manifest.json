@@ -1,6 +1,6 @@
 {
   "nom": "restaurant",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et règle l'addition par RÉPARTITION FLEXIBLE — chacun sa part, partage égal en N, ou montant libre — avec « reste à payer » live et anti-surpaiement serveur ; paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
   "couche": "backend",
@@ -44,6 +44,14 @@
   ],
   "besoin": [],
   "capacites": [
+    {
+      "nom": "restaurant_lister",
+      "description": "Liste les restaurants gérés (id, nom, devise, TVA). À appeler EN PREMIER pour découvrir l'identifiant d'un restaurant avant toute autre action (carte, plats…), sans le demander à l'utilisateur. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants",
+      "params": {},
+      "action": false
+    },
     {
       "nom": "restaurant_carte_lister",
       "description": "Liste la carte complète d'un restaurant (tous les plats, y compris indisponibles) : nom, prix en centimes, catégorie, disponibilité, plat du jour. Sert à savoir ce qui existe déjà avant d'ajouter/modifier. Lecture seule.",
