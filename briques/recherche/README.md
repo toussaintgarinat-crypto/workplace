@@ -1,8 +1,8 @@
-# Brique `browser` — recherche web multi-providers + lecture de page (moteur HuntR)
+# Brique `recherche` — recherche web multi-providers + lecture de page (moteur HuntR)
 
-Les **yeux du Cœur sur le web**. Remplace l'ancienne brique `recherche` en gardant son
-contrat (capacités `recherche_web` et `page_lire`, port **6040**), mais avec un moteur
-beaucoup plus riche **porté du plugin HuntR de [Gungnir](https://github.com/kevinggraphiste-hub/Gungnir)**.
+Les **yeux du Cœur sur le web**. Contrat exposé au Cœur (capacités `recherche_web` et
+`page_lire`, port **6040**), avec un moteur **porté du plugin HuntR de
+[Gungnir](https://github.com/kevinggraphiste-hub/Gungnir)**.
 
 ## Deux gestes (capacités exposées au Cœur)
 
@@ -11,7 +11,7 @@ beaucoup plus riche **porté du plugin HuntR de [Gungnir](https://github.com/kev
 | `recherche_web` | `POST /rechercher` | une requête → liens classés cliquables, **fusion multi-moteurs par consensus** |
 | `page_lire` | `POST /lire-page` | une URL → texte principal (Trafilatura) + liens, pour résumer en gardant les sources |
 
-## Ce que HuntR apporte par rapport à l'ancienne `recherche`
+## Le moteur HuntR
 
 - **Jusqu'à 9 moteurs en parallèle** : SearXNG (souverain), DuckDuckGo (sans clé), puis
   Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing (à clé, **inertes** sans clé).
@@ -36,25 +36,25 @@ l'erreur, pas un placeholder.
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `SEARXNG_URL` | `http://searxng:8080` | métamoteur souverain (conteneur voisin) |
-| `BROWSER_DDG` | `1` | repli DuckDuckGo sans-infra (`0` = éteint) |
-| `BROWSER_PROVIDERS` | _(vide)_ | force/ordonne les moteurs (CSV), sinon tous les configurés |
+| `RECHERCHE_DDG` | `1` | repli DuckDuckGo sans-infra (`0` = éteint) |
+| `RECHERCHE_PROVIDERS` | _(vide)_ | force/ordonne les moteurs (CSV), sinon tous les configurés |
 | `TAVILY_API_KEY` … `BING_API_KEY` | _(vide)_ | active les moteurs à clé |
-| `BROWSER_STARTER_BLOCKLIST` | `0` | `1` = active la blocklist propagande/désinfo |
-| `BROWSER_BLOCKLIST` / `BROWSER_ALLOWLIST` | _(vide)_ | CSV de domaines ; `BROWSER_ALLOWLIST_MODE` = `off`/`boost`/`strict` |
-| `BROWSER_MAX_OCTETS` / `BROWSER_TIMEOUT` / `BROWSER_ROBOTS` | 3 Mo / 25 s / `1` | garde-fous de `page_lire` |
+| `RECHERCHE_STARTER_BLOCKLIST` | `0` | `1` = active la blocklist propagande/désinfo |
+| `RECHERCHE_BLOCKLIST` / `RECHERCHE_ALLOWLIST` | _(vide)_ | CSV de domaines ; `RECHERCHE_ALLOWLIST_MODE` = `off`/`boost`/`strict` |
+| `RECHERCHE_MAX_OCTETS` / `RECHERCHE_TIMEOUT` / `RECHERCHE_ROBOTS` | 3 Mo / 25 s / `1` | garde-fous de `page_lire` |
 
-> Les anciennes variables `RECHERCHE_*` restent acceptées en repli (compat).
+> Les variantes `BROWSER_*` (nommage interne HuntR) restent acceptées en repli.
 
 ## Tests
 
 ```bash
-cd briques/browser && python3 -m pytest -q   # 25 tests offline, sans réseau
+cd briques/recherche && python3 -m pytest -q   # 25 tests offline, sans réseau
 ```
 
 ## Provenance
 
 Moteur porté de `backend/plugins/browser` (HuntR) de Gungnir, plugin Python intégré au
 backend monolithique, **réemballé en brique Workplace autonome** (service Docker + manifest
-auto-découvert). La dépendance au cœur Gungnir (`web_fetch.web_search_lite`) a été remplacée
-par un client DuckDuckGo souverain local (`ddg_lite.py`). La lecture de page reprend
-l'extraction Trafilatura souveraine de l'ancienne brique `recherche`.
+auto-découvert) sous le nom `recherche`. La dépendance au cœur Gungnir
+(`web_fetch.web_search_lite`) a été remplacée par un client DuckDuckGo souverain local
+(`ddg_lite.py`). La lecture de page reprend l'extraction Trafilatura souveraine.

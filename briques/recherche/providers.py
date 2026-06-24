@@ -6,7 +6,7 @@ SearXNG auto-hébergé (conteneur voisin) puis DuckDuckGo sans-infra ; les provi
 clé (Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing) sont INERTES tant que leur clé
 n'est pas renseignée. Un provider non configuré est simplement ignoré.
 
-Compat : les variables `RECHERCHE_*` de l'ancienne brique restent acceptées en repli.
+Config par `RECHERCHE_*` ; les variantes `BROWSER_*` (nommage HuntR) restent acceptées en repli.
 """
 import os
 
@@ -17,11 +17,11 @@ from search_providers import (
 
 
 def _env(nom: str, defaut: str = "") -> str:
-    return os.getenv(f"BROWSER_{nom}", os.getenv(f"RECHERCHE_{nom}", defaut))
+    return os.getenv(f"RECHERCHE_{nom}", os.getenv(f"BROWSER_{nom}", defaut))
 
 
 def _ddg():
-    # Filet souverain sans-infra. Défaut actif ; BROWSER_DDG=0 pour l'éteindre.
+    # Filet souverain sans-infra. Défaut actif ; RECHERCHE_DDG=0 pour l'éteindre.
     return DDGProvider() if _env("DDG", "1") != "0" else None
 
 
@@ -52,7 +52,7 @@ CATALOGUE = {
     "bing":       lambda: _a_cle(BingProvider, "BING_API_KEY", "AZURE_BING_KEY"),
 }
 
-# Souverain d'abord, puis hébergés à clé. Surchargé par BROWSER_PROVIDERS (CSV).
+# Souverain d'abord, puis hébergés à clé. Surchargé par RECHERCHE_PROVIDERS (CSV).
 ORDRE_DEFAUT = ["searxng", "duckduckgo", "tavily", "brave", "exa",
                 "serper", "serpapi", "kagi", "bing"]
 

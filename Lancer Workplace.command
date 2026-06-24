@@ -69,7 +69,7 @@ BRIQUES=(
   "restaurant|$RACINE/briques/restaurant|http://localhost:6010/sante"
   "paiements|$RACINE/briques/paiements|http://localhost:6020/sante"
   "mail|$RACINE/briques/mail|http://localhost:6030/sante"
-  "browser|$RACINE/briques/browser|http://localhost:6040/sante"
+  "recherche|$RACINE/briques/recherche|http://localhost:6040/sante"
   # Atelier dev : code/améliore les briques depuis l'assistant. Avant le Cœur
   # pour qu'il la découvre via son manifest au démarrage.
   "dev|$RACINE/briques/dev|http://localhost:5955/sante"

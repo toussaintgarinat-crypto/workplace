@@ -1,4 +1,4 @@
-# Brique browser (HuntR porté) — recherche web multi-providers + lecture de page.
+# Brique recherche (moteur HuntR porté) — recherche web multi-providers + lecture de page.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
