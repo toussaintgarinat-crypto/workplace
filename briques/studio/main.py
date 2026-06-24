@@ -20,7 +20,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -115,6 +115,16 @@ def front():
     return _FRONT.read_text(encoding="utf-8")
 
 
+# Socle partagé « manipulation directe » (S101) : menu contextuel + modale + cliquer-déposer.
+# Source unique = shared/manipulation_directe.js, copié ici par outils/sync_socle.sh.
+_SOCLE = Path(__file__).parent / "manipulation_directe.js"
+
+
+@app.get("/manipulation_directe.js", include_in_schema=False)
+def socle():
+    return FileResponse(_SOCLE, media_type="application/javascript")
+
+
 # ── Santé & équipe ───────────────────────────────────────────────
 @app.get("/sante", tags=["système"])
 def sante():
@@ -144,6 +154,10 @@ class CreerSerie(BaseModel):
     cible:    Optional[str] = None   # public cible (âge du lecteur), ex. "0-3"
     langue:   Optional[str] = None   # langue de TRAVAIL ; défaut "fr"
     world_id: Optional[str] = None   # rattachement Oria FACULTATIF (hook S53)
+
+
+class ReordonnerSeries(BaseModel):
+    ids: list[str] = []              # nouvelle suite des id de séries (S104 cliquer-déposer)
 
 
 class Proposer(BaseModel):
@@ -290,9 +304,28 @@ def lister_series(world_id: Optional[str] = None, _cle: str = Depends(cle_api)):
             "cible": s.get("cible"),
             "langue": s.get("langue") or S.LANGUE_DEFAUT,
             "arbre": bool(s.get("arbre")), "cree_le": s.get("cree_le"),
+            "ordre": s.get("ordre"),
         })
+    # S104 — ordre d'affichage : par défaut la plus récente d'abord ; dès qu'on réordonne
+    # à la main (cliquer-déposer), `ordre` prime. Tri stable en 2 passes : récence, puis
+    # `ordre` croissant (les séries non rangées — ordre None — restent en tête, par récence).
     out.sort(key=lambda x: x.get("cree_le") or "", reverse=True)
+    out.sort(key=lambda x: x["ordre"] if x.get("ordre") is not None else -1)
     return out
+
+
+@app.post("/series/reordonner", tags=["séries"])
+def reordonner_series(body: ReordonnerSeries, _cle: str = Depends(cle_api)):
+    """Réordonne les séries par cliquer-déposer (S104). `ids` = la nouvelle suite ; chaque
+    série reçoit son rang comme `ordre` (persisté dans son fichier d'atelier)."""
+    for rang, sid in enumerate(body.ids):
+        try:
+            serie = S._load(sid)
+        except FileNotFoundError:
+            continue
+        serie["ordre"] = rang
+        S._save(serie)
+    return {"ok": True, "ordonnees": len(body.ids)}
 
 
 @app.get("/series/{serie_id}", tags=["séries"])

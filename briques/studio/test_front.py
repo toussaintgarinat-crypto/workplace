@@ -41,3 +41,38 @@ def test_front_ecoute_la_synergie_personnages():
     # Import d'un personnage poussé par l'atelier Personnages (postMessage), composition.
     html = client.get("/").text
     assert "personnage:export" in html and "/personnages/importer" in html
+
+
+def test_socle_manipulation_directe_servi():
+    # S101 : socle partagé (menu contextuel + modale + cliquer-déposer) servi par la brique.
+    r = client.get("/manipulation_directe.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    for marqueur in ("function sortable", "function attacherMenu", "window.__mdSocle"):
+        assert marqueur in r.text
+
+
+def test_front_charge_le_socle_partage():
+    # Le front consomme le socle (plus de copie inline du menu/modale).
+    html = client.get("/").text
+    assert '/manipulation_directe.js' in html
+    # La copie inline a bien été retirée (dédup S101).
+    assert "function ouvrirMenu" not in html
+
+
+def test_front_branche_le_cliquer_deposer_series():
+    # S104 : le front câble le sortable pour réordonner les séries (+ persistance).
+    html = client.get("/").text
+    assert "brancherDndSeries" in html
+    assert "/series/reordonner" in html
+
+
+def test_reordonner_series_persiste_l_ordre():
+    """S104 — POST /series/reordonner range les séries ; /series suit la nouvelle suite."""
+    ids = [client.post("/series", json={"titre": t}).json()["id"]
+           for t in ("Un", "Deux", "Trois")]
+    nouvel_ordre = list(reversed(ids))
+    r = client.post("/series/reordonner", json={"ids": nouvel_ordre})
+    assert r.status_code == 200 and r.json()["ordonnees"] == 3
+    listed = [s["id"] for s in client.get("/series").json() if s["id"] in ids]
+    assert listed == nouvel_ordre

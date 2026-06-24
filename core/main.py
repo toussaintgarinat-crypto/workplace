@@ -234,6 +234,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .conv-surf { font-size: 0.6rem; padding: 1px 6px; border-radius: 999px; flex: 0 0 auto; }
   .conv-surf.telegram { background: #229ed91f; color: #4cc3f0; }
   .conv-surf.web { background: #7c83ff1f; color: #9298ff; }
+  .conv-pin { font-size: 0.7rem; flex: 0 0 auto; }
+  .conv.archivee { opacity: 0.5; }
+  .conv.archivee .conv-titre { font-style: italic; }
+  .asst-arch-toggle { font-size: 0.74rem; color: #64748b; padding: 8px 10px; cursor: pointer; user-select: none; }
+  .asst-arch-toggle:hover { color: #9298ff; }
   .asst-vide-side { color: #475569; font-size: 0.78rem; padding: 14px 10px; }
   .asst-main { display: flex; flex-direction: column; min-width: 0; }
   .asst-tete { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -426,6 +431,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     #panel-cerveau { max-height: 70dvh; overflow-y: auto; }
   }
 </style>
+<!-- Socle « manipulation directe » (S101/S102) : menu contextuel (clic droit / appui
+     long), modale de confirmation et cliquer-déposer, servi par le Cœur. -->
+<script src="/manipulation_directe.js"></script>
 </head>
 <body>
 <header>
@@ -1041,9 +1049,16 @@ async function chargerProjetsSidebar() {
       el.innerHTML = '<span class="pp-dot" style="background:' + p.couleur + '"></span>'
         + '<span class="pp-nom">' + escapeHtml(p.nom) + '</span>'
         + '<span class="pp-nb">' + (p.conversations || 0) + '</span>';
+      el.dataset.pid = p.id;     // zone de dépôt : glisser une conversation ici la range (S104)
       el.onclick = () => basculerFiltreProjet(p.id);
       el.ondblclick = () => ouvrirProjetModal(p.id);
-      el.title = 'Cliquer : filtrer · double-clic : éditer';
+      el.title = 'Cliquer : filtrer · double-clic ou clic droit : éditer · glisser une conversation ici pour la ranger';
+      attacherMenu(el, () => [
+        { label: 'Éditer le projet', emoji: '✎', fn: () => ouvrirProjetModal(p.id) },
+        { label: 'Filtrer sur ce projet', emoji: '🔎', fn: () => basculerFiltreProjet(p.id) },
+        { sep: true },
+        { label: 'Supprimer le projet', emoji: '🗑', danger: true, fn: () => supprimerProjetParId(p.id) },
+      ]);
       box.appendChild(el);
     });
   } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
@@ -1067,29 +1082,86 @@ async function chargerConversations() {
   } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
 }
 
+let MONTRER_ARCHIVES = false;   // les conversations archivées sont masquées par défaut
+
 function rendreConversations() {
   const box = document.getElementById('asst-convs');
   const q = (document.getElementById('asst-search').value || '').toLowerCase().trim();
   let fils = FILS_CACHE;
   if (q) fils = fils.filter(f => ((f.titre || '') + ' ' + (f.dernier || '')).toLowerCase().includes(q));
-  if (!fils.length) { box.innerHTML = '<div class="asst-vide-side">' + (q ? 'Aucun résultat.' : 'Aucune conversation. Écris un message pour démarrer.') + '</div>'; return; }
+  const nbArch = fils.filter(f => f.archive).length;
+  if (!MONTRER_ARCHIVES) fils = fils.filter(f => !f.archive);
   box.innerHTML = '';
+  if (!fils.length) {
+    box.innerHTML = '<div class="asst-vide-side">' + (q ? 'Aucun résultat.' : 'Aucune conversation. Écris un message pour démarrer.') + '</div>';
+  }
   fils.forEach(f => {
     const el = document.createElement('div');
-    el.className = 'conv' + (f.fil === filActifCourant() ? ' actif' : '');
+    el.className = 'conv' + (f.fil === filActifCourant() ? ' actif' : '') + (f.archive ? ' archivee' : '');
+    el.dataset.fil = f.fil;
     const titre = f.titre || f.dernier || '(sans titre)';
-    el.innerHTML = '<div class="conv-titre">' + badgeSurface(f.surface) + '<span class="txt">' + escapeHtml(titre) + '</span></div>'
+    el.innerHTML = '<div class="conv-titre">' + badgeSurface(f.surface)
+      + (f.epingle ? '<span class="conv-pin" title="Épinglée">📌</span>' : '')
+      + '<span class="txt">' + escapeHtml(titre) + '</span></div>'
       + '<div class="conv-apercu">' + escapeHtml(f.dernier || '') + '</div>'
       + '<div class="conv-actions">'
-      + '<button title="Renommer" onclick="event.stopPropagation();renommerConversation(\\'' + f.fil + '\\')">✎</button>'
-      + '<button title="Supprimer" onclick="event.stopPropagation();supprimerConversation(\\'' + f.fil + '\\')">🗑</button>'
+      + '<button title="Plus…" onclick="event.stopPropagation();ouvrirMenuConv(event,\\'' + f.fil + '\\')">⋯</button>'
       + '</div>';
+    el.dataset.id = f.fil;        // cible du cliquer-déposer (S104)
     el.onclick = () => ouvrirConversation(f);
+    // Menu contextuel (clic droit / appui long) : mêmes actions que le bouton ⋯.
+    attacherMenu(el, () => itemsMenuConv(f.fil));
     box.appendChild(el);
   });
+  brancherDndConversations();
+  // Bascule « voir les archivées » (n'apparaît que s'il y en a et qu'on filtre).
+  if (nbArch && !q) {
+    const t = document.createElement('div');
+    t.className = 'asst-arch-toggle';
+    t.textContent = MONTRER_ARCHIVES ? '▾ Masquer les archivées' : '▸ Archivées (' + nbArch + ')';
+    t.onclick = () => { MONTRER_ARCHIVES = !MONTRER_ARCHIVES; rendreConversations(); };
+    box.appendChild(t);
+  }
 }
 function filActifCourant() { return CONV_SURFACE + ':' + CONV_ID; }
 function filtrerConversations() { rendreConversations(); }
+
+// S104 — cliquer-déposer dans l'Assistant : réordonner les conversations (persisté via
+// /reordonner) ET glisser une conversation sur un projet (zone .asst-projet) pour la
+// ranger. Pointer Events via le socle ; le tap court ouvre la conversation (inchangé).
+// Le socle est idempotent : on peut rappeler ceci à chaque rendu sans empiler.
+function brancherDndConversations() {
+  if (typeof window.sortable !== 'function') return;
+  window.sortable(document.getElementById('asst-convs'), {
+    itemSelector: '.conv', zones: '.asst-projet',
+    onReorder: (fils) => persistOrdreConversations(fils),
+    onDropZone: (fil, zoneEl) => assignerProjetConversation(fil, zoneEl.dataset.pid),
+  });
+}
+async function persistOrdreConversations(fils) {
+  try {
+    await fetch('/assistant/conversations/reordonner', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fils: fils }) });
+  } catch(e) { /* l'ordre reste appliqué visuellement ; resync au prochain chargement */ }
+}
+
+// Actions du menu contextuel d'une conversation (clic droit, appui long, ou bouton ⋯).
+function itemsMenuConv(fil) {
+  const f = FILS_CACHE.find(x => x.fil === fil) || {};
+  return [
+    { label: 'Renommer', emoji: '✎', fn: () => renommerConversation(fil) },
+    { label: f.epingle ? 'Désépingler' : 'Épingler', emoji: '📌', fn: () => epinglerConversation(fil, !f.epingle) },
+    { label: f.archive ? 'Désarchiver' : 'Archiver', emoji: '🗂', fn: () => archiverConversation(fil, !f.archive) },
+    { label: 'Ranger dans un projet…', emoji: '📁', fn: () => rangerConversation(fil) },
+    { sep: true },
+    { label: 'Supprimer', emoji: '🗑', danger: true, fn: () => supprimerConversation(fil) },
+  ];
+}
+function ouvrirMenuConv(ev, fil) {
+  ev.stopPropagation();
+  const r = ev.currentTarget.getBoundingClientRect();
+  ouvrirMenu(r.left, r.bottom + 4, itemsMenuConv(fil));
+}
 
 async function ouvrirConversation(f) {
   const part = (f.fil || '').split(':');
@@ -1112,42 +1184,74 @@ async function ouvrirConversation(f) {
   rendreConversations();
 }
 
-async function renommerConversation(fil) {
-  const f = FILS_CACHE.find(x => x.fil === fil) || {};
-  const titre = prompt('Renommer la conversation :', f.titre || '');
-  if (titre === null) return;
+async function patchConversation(fil, corps) {
   await fetch('/assistant/conversations/' + encodeURIComponent(fil), {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ titre: titre })
+    body: JSON.stringify(corps)
   });
+}
+
+async function renommerConversation(fil) {
+  const f = FILS_CACHE.find(x => x.fil === fil) || {};
+  const titre = await demanderTexte({ titre: 'Renommer la conversation',
+    message: 'Donnez-lui un nom plus parlant.', valeur: f.titre || '' });
+  if (titre === null) return;
+  await patchConversation(fil, { titre: titre });
   if (fil === filActifCourant()) majEnteteConversation(titre);
   chargerConversations();
 }
 
+async function epinglerConversation(fil, epingle) {
+  await patchConversation(fil, { epingle: epingle });
+  chargerConversations();
+}
+
+async function archiverConversation(fil, archive) {
+  await patchConversation(fil, { archive: archive });
+  chargerConversations();
+}
+
+// Ranger une conversation (par son fil) dans un projet : un second menu liste les projets.
+function rangerConversation(fil) {
+  const f = FILS_CACHE.find(x => x.fil === fil) || {};
+  if (!PROJETS_CACHE.length) {
+    confirmer({ titre: 'Aucun projet', message: 'Crée un projet pour y ranger des conversations ?',
+      action: 'Créer un projet', danger: false }).then(ok => { if (ok) ouvrirProjetModal(); });
+    return;
+  }
+  const items = PROJETS_CACHE.map(p => ({
+    label: p.nom + (p.id === f.projet_id ? '  ✓' : ''), emoji: '📁',
+    fn: () => assignerProjetConversation(fil, p.id),
+  }));
+  if (f.projet_id) items.push({ sep: true }, { label: 'Détacher du projet', emoji: '✖', fn: () => assignerProjetConversation(fil, null) });
+  // Centré : pas de coordonnées de clic ici (vient d'un item de menu déjà fermé).
+  ouvrirMenu(innerWidth / 2 - 95, innerHeight / 3, items);
+}
+
+async function assignerProjetConversation(fil, pid) {
+  await patchConversation(fil, { projet_id: pid });
+  if (fil === filActifCourant()) {
+    CONV_PROJET = pid;
+    majEnteteConversation(document.getElementById('asst-conv-titre').textContent);
+  }
+  chargerSidebarAssistant();
+}
+
 async function supprimerConversation(fil) {
-  if (!confirm('Supprimer définitivement cette conversation ?')) return;
+  const f = FILS_CACHE.find(x => x.fil === fil) || {};
+  const ok = await confirmer({ titre: 'Supprimer la conversation',
+    message: 'Supprimer définitivement « ' + (f.titre || f.dernier || 'cette conversation') + ' » ? Cette action est irréversible.' });
+  if (!ok) return;
   await fetch('/assistant/conversations/' + encodeURIComponent(fil), { method: 'DELETE' });
   if (fil === filActifCourant()) nouvelleConversation();
   chargerSidebarAssistant();
 }
 
-// Ranger la conversation courante dans un projet (petit choix par prompt indexé).
-async function choisirProjetPourConversation() {
+// Ranger la conversation COURANTE dans un projet (depuis l'étiquette d'en-tête) :
+// réutilise le menu de choix de projet partagé avec le clic droit.
+function choisirProjetPourConversation() {
   if (!CONV_ID) return;
-  if (!PROJETS_CACHE.length) { if (confirm('Aucun projet. En créer un ?')) ouvrirProjetModal(); return; }
-  const liste = PROJETS_CACHE.map((p, i) => (i + 1) + '. ' + p.nom).join('\\n');
-  const rep = prompt('Ranger dans quel projet ? (numéro, ou 0 pour détacher)\\n\\n' + liste
-    + '\\n\\n(' + PROJETS_CACHE.length + ' projets)', CONV_PROJET ? String(PROJETS_CACHE.findIndex(p => p.id === CONV_PROJET) + 1) : '');
-  if (rep === null) return;
-  const n = parseInt(rep, 10);
-  const pid = (n === 0) ? null : (PROJETS_CACHE[n - 1] && PROJETS_CACHE[n - 1].id) || null;
-  CONV_PROJET = pid;
-  await fetch('/assistant/conversations/' + encodeURIComponent(filActifCourant()), {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projet_id: pid })
-  });
-  majEnteteConversation(document.getElementById('asst-conv-titre').textContent);
-  chargerSidebarAssistant();
+  rangerConversation(filActifCourant());
 }
 
 // ── Modale projet (créer / éditer) ──────────────────────────────────────────────
@@ -1206,11 +1310,20 @@ async function enregistrerProjet() {
 
 async function supprimerProjet() {
   if (!PROJET_EDIT) return;
-  if (!confirm('Supprimer ce projet ? Ses conversations seront détachées (non supprimées).')) return;
-  await fetch('/assistant/projets/' + PROJET_EDIT, { method: 'DELETE' });
-  if (FILTRE_PROJET === PROJET_EDIT) FILTRE_PROJET = null;
-  if (CONV_PROJET === PROJET_EDIT) { CONV_PROJET = null; }
+  const id = PROJET_EDIT;
   fermerProjetModal();
+  await supprimerProjetParId(id);
+}
+
+// Supprime un projet par son id (depuis la modale OU le menu contextuel de la sidebar).
+async function supprimerProjetParId(pid) {
+  const p = PROJETS_CACHE.find(x => x.id === pid) || {};
+  const ok = await confirmer({ titre: 'Supprimer le projet',
+    message: 'Supprimer « ' + (p.nom || 'ce projet') + ' » ? Ses conversations seront détachées (non supprimées).' });
+  if (!ok) return;
+  await fetch('/assistant/projets/' + pid, { method: 'DELETE' });
+  if (FILTRE_PROJET === pid) FILTRE_PROJET = null;
+  if (CONV_PROJET === pid) CONV_PROJET = null;
   chargerSidebarAssistant();
 }
 
@@ -3149,6 +3262,16 @@ async def curateur_rejeter(id_: str):
     return curateur.rejeter_capacite(id_)
 
 
+@app.get("/manipulation_directe.js", tags=["système"], include_in_schema=False)
+async def socle_manipulation_directe():
+    """Socle « manipulation directe » (S101/S102) servi au dashboard : menu contextuel,
+    modale de confirmation et cliquer-déposer. Source unique synchronisée par
+    outils/sync_socle.sh (cf. en-tête du fichier)."""
+    from fastapi.responses import FileResponse
+    chemin = os.path.join(os.path.dirname(__file__), "manipulation_directe.js")
+    return FileResponse(chemin, media_type="application/javascript")
+
+
 @app.get("/dashboard", tags=["système"], response_class=HTMLResponse)
 async def dashboard():
     """Interface visuelle du registre de briques."""
@@ -3413,11 +3536,18 @@ async def assistant_conversations(fil: str | None = None, limite: int = 100,
     return {"fils": journal_conversations.fils(limite, projet_id=projet)}
 
 
+@app.post("/assistant/conversations/reordonner", tags=["assistant"])
+async def assistant_conversations_reordonner(corps: dict):
+    """Réordonne les conversations par cliquer-déposer (S104). `fils` = la nouvelle suite ;
+    chaque conversation reçoit son rang comme `ordre`."""
+    return {"ok": True, "ordonnees": journal_conversations.reordonner(corps.get("fils") or [])}
+
+
 @app.patch("/assistant/conversations/{fil:path}", tags=["assistant"])
 async def assistant_conversation_modifier(fil: str, corps: dict):
-    """Modifie la méta d'une conversation : `titre`, `projet_id`, `epingle`, `archive`.
+    """Modifie la méta d'une conversation : `titre`, `projet_id`, `epingle`, `archive`, `ordre`.
     Seuls les champs présents sont touchés (façon « renommer » / « ranger dans un projet »)."""
-    champs = {k: corps[k] for k in ("titre", "projet_id", "epingle", "archive") if k in corps}
+    champs = {k: corps[k] for k in ("titre", "projet_id", "epingle", "archive", "ordre") if k in corps}
     if "titre" in champs:
         champs["titre"] = (champs["titre"] or "").strip()
     return {"ok": True, "meta": journal_conversations.definir_meta(fil, **champs)}

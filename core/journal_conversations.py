@@ -201,10 +201,23 @@ def fils(limite: int = 50, projet_id: str | None = None) -> list[dict]:
         e["projet_id"] = m.get("projet_id")
         e["epingle"] = bool(m.get("epingle"))
         e["archive"] = bool(m.get("archive"))
-    valeurs = par_fil.values()
+        e["ordre"] = m.get("ordre")
+    valeurs = list(par_fil.values())
     if projet_id is not None:
         valeurs = [e for e in valeurs if e.get("projet_id") == projet_id]
-    # Épinglées d'abord, puis par récence.
-    classes = sorted(valeurs, key=lambda x: (x.get("epingle", False), x.get("horodatage") or 0),
-                     reverse=True)
-    return classes[:max(1, limite)]
+    # S104 — tri stable en 3 passes : récence, puis `ordre` manuel (cliquer-déposer ;
+    # non rangées = ordre None → restent en tête par récence), puis épinglées tout en haut.
+    valeurs.sort(key=lambda x: x.get("horodatage") or 0, reverse=True)
+    valeurs.sort(key=lambda x: x["ordre"] if x.get("ordre") is not None else -1)
+    valeurs.sort(key=lambda x: x.get("epingle", False), reverse=True)
+    return valeurs[:max(1, limite)]
+
+
+def reordonner(fils_: list[str]) -> int:
+    """Fixe l'ordre d'affichage des conversations (S104). `fils_` = la nouvelle suite ;
+    chaque fil reçoit son rang comme `ordre`. Renvoie le nombre de fils rangés."""
+    d = _charger_meta()
+    for rang, f in enumerate(fils_):
+        d.setdefault(f, {})["ordre"] = rang
+    _ecrire_meta(d)
+    return len(fils_)

@@ -92,3 +92,40 @@ def test_sans_cle_pas_dapi_key(monkeypatch):
     monkeypatch.setattr(main, "STUDIO_KEY", "")
     html = client.get("/dashboard").text
     assert "api_key=" not in html
+
+
+# ── S102 — Manipulation directe : menu contextuel du dashboard ────────────────────
+def test_socle_manipulation_directe_servi():
+    """Le Cœur sert le socle (S101/S102) en JavaScript, pour le menu contextuel + modale."""
+    r = client.get("/manipulation_directe.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    # Le socle expose bien les helpers attendus par le dashboard.
+    assert "attacherMenu" in r.text
+    assert "function sortable" in r.text
+
+
+def test_dashboard_charge_le_socle():
+    """Le dashboard inclut le socle et n'utilise plus prompt()/confirm() natifs pour
+    renommer/supprimer une conversation (remplacés par la modale du socle)."""
+    html = client.get("/dashboard").text
+    assert '<script src="/manipulation_directe.js"></script>' in html
+    # Le menu contextuel est branché sur les conversations et les projets.
+    assert "itemsMenuConv" in html
+    assert "attacherMenu(el," in html
+    # Actions S102 câblées.
+    assert "epinglerConversation" in html
+    assert "archiverConversation" in html
+    assert "rangerConversation" in html
+    assert "supprimerProjetParId" in html
+
+
+def test_dashboard_branche_le_cliquer_deposer_conversations():
+    """S104 : le dashboard câble le sortable des conversations (réordonner + glisser sur
+    un projet) ; les zones projet portent data-pid et les conversations data-id."""
+    html = client.get("/dashboard").text
+    assert "brancherDndConversations" in html
+    assert "zones: '.asst-projet'" in html
+    assert "persistOrdreConversations" in html
+    assert "el.dataset.pid = p.id" in html
+    assert "el.dataset.id = f.fil" in html

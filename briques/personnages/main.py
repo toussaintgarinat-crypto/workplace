@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -148,6 +148,14 @@ def accueil():
 def atelier_holistique():
     """Démo visuelle du moteur holistique : portrait (descendant) & recherche inverse (montant)."""
     return Path(__file__).parent.joinpath("front_holistique.html").read_text(encoding="utf-8")
+
+
+# Socle partagé « manipulation directe » (S101) : menu contextuel + modale + cliquer-déposer.
+# Source unique = shared/manipulation_directe.js, copié ici par outils/sync_socle.sh.
+@app.get("/manipulation_directe.js", include_in_schema=False)
+def socle():
+    return FileResponse(Path(__file__).parent / "manipulation_directe.js",
+                        media_type="application/javascript")
 
 
 # ── Santé ────────────────────────────────────────────────────────
