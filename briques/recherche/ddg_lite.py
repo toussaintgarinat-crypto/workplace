@@ -1,4 +1,4 @@
-"""Client DuckDuckGo SOUVERAIN, zéro clé — filet de la brique `browser`.
+"""Client DuckDuckGo SOUVERAIN, zéro clé — filet de la brique `recherche`.
 
 Remplace la dépendance Gungnir `backend.core.agents.tools.web_fetch.web_search_lite`
 par une implémentation autonome : on lit la page HTML « lite » de DuckDuckGo
@@ -26,9 +26,9 @@ _TIMEOUT = 20
 
 def _ua() -> str:
     return os.getenv(
-        "BROWSER_UA",
-        os.getenv("RECHERCHE_UA",
-                  "Mozilla/5.0 (compatible; WorkplaceBrowser/1.0; +http://localhost:6040)"),
+        "RECHERCHE_UA",
+        os.getenv("BROWSER_UA",
+                  "Mozilla/5.0 (compatible; WorkplaceRecherche/1.0; +http://localhost:6040)"),
     )
 
 

@@ -9,14 +9,13 @@ Souverain d'abord : extraction LOCALE via Trafilatura (réputée pour isoler le 
 plutôt qu'un faux texte. On ne rend JAMAIS de contenu inventé.
 
 Garde-fous (une page web est hostile par défaut) :
-  • taille bornée (`BROWSER_MAX_OCTETS`, défaut 3 Mo) — on tronque au-delà ;
+  • taille bornée (`RECHERCHE_MAX_OCTETS`, défaut 3 Mo) — on tronque au-delà ;
   • temps borné (timeout httpx) ;
   • redirections suivies, mais le schéma final doit rester http/https ;
-  • `robots.txt` respecté par défaut (opt-out `BROWSER_ROBOTS=0`) — politesse + légalité ;
+  • `robots.txt` respecté par défaut (opt-out `RECHERCHE_ROBOTS=0`) — politesse + légalité ;
   • pas de rendu JavaScript en v1 (on lit le HTML servi tel quel).
 
-Note : les anciennes variables `RECHERCHE_*` restent acceptées en repli (compat brique
-recherche, que browser remplace).
+Note : les variantes `BROWSER_*` (nommage HuntR) restent acceptées en repli.
 """
 import os
 import re
@@ -27,8 +26,8 @@ import httpx
 
 
 def _env(nom: str, defaut: str) -> str:
-    """Lit BROWSER_<nom>, repli RECHERCHE_<nom> (compat), puis défaut."""
-    return os.getenv(f"BROWSER_{nom}", os.getenv(f"RECHERCHE_{nom}", defaut))
+    """Lit RECHERCHE_<nom>, repli BROWSER_<nom> (compat HuntR), puis défaut."""
+    return os.getenv(f"RECHERCHE_{nom}", os.getenv(f"BROWSER_{nom}", defaut))
 
 
 def max_octets() -> int:
@@ -39,7 +38,7 @@ def max_octets() -> int:
 
 
 def _ua() -> str:
-    return _env("UA", "Mozilla/5.0 (compatible; WorkplaceBrowser/1.0; +http://localhost:6040)")
+    return _env("UA", "Mozilla/5.0 (compatible; WorkplaceRecherche/1.0; +http://localhost:6040)")
 
 
 class ErreurLecture(Exception):
@@ -57,7 +56,7 @@ def valider_url(url: str) -> str:
 async def robots_autorise(url: str) -> bool:
     """`robots.txt` autorise-t-il notre UA à lire cette URL ? (tolérant : oui si doute).
 
-    Désactivable par `BROWSER_ROBOTS=0`. En cas d'erreur réseau sur le robots.txt, on
+    Désactivable par `RECHERCHE_ROBOTS=0`. En cas d'erreur réseau sur le robots.txt, on
     AUTORISE (un robots injoignable ne doit pas bloquer une lecture légitime)."""
     if _env("ROBOTS", "1") == "0":
         return True
@@ -181,7 +180,7 @@ async def lire_page(url: str) -> dict:
     url = valider_url(url)
     if not await robots_autorise(url):
         raise ErreurLecture("Lecture refusée par le robots.txt du site (politesse). "
-                             "Forçable côté admin via BROWSER_ROBOTS=0.")
+                             "Forçable côté admin via RECHERCHE_ROBOTS=0.")
     page_html, url_finale = await telecharger(url)
     texte, moteur = extraire_texte(page_html)
     limite = max_octets()

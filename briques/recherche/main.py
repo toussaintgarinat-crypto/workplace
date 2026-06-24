@@ -1,8 +1,7 @@
-"""Brique « browser » (HuntR porté) — recherche web multi-providers + lecture de page.
+"""Brique « recherche » (moteur HuntR porté) — recherche web multi-providers + lecture de page.
 
-Remplace l'ancienne brique `recherche` : MÊME contrat exposé au Cœur (capacités
-`recherche_web` et `page_lire`, même port 6040), mais un moteur bien plus riche emprunté
-au plugin HuntR de Gungnir :
+Contrat exposé au Cœur : capacités `recherche_web` et `page_lire` (port 6040), avec un moteur
+riche emprunté au plugin HuntR de Gungnir :
 
   • /rechercher : une requête → liens classés CLIQUABLES. Lance EN PARALLÈLE tous les
                   moteurs configurés (jusqu'à 9 : SearXNG, DuckDuckGo, Tavily, Brave, Exa,
@@ -31,7 +30,7 @@ import providers
 from search_providers import VALID_TOPICS, multi_search
 from source_filters import apply_source_filters, has_active_filters
 
-app = FastAPI(title="Browser — HuntR : recherche web multi-providers + lecture de page",
+app = FastAPI(title="Recherche — HuntR : recherche web multi-providers + lecture de page",
               version="1.0.0")
 
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*".
@@ -54,22 +53,26 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 def _filtres_config() -> dict:
     """Filtres de source (blocklist/allowlist) lus depuis l'env. Opt-in, inertes par défaut."""
     cfg: dict = {}
-    if os.getenv("BROWSER_STARTER_BLOCKLIST", "0") == "1":
+    if _envr("STARTER_BLOCKLIST", "0") == "1":
         cfg["use_starter_blocklist"] = True
-    bl = [d.strip() for d in os.getenv("BROWSER_BLOCKLIST", "").split(",") if d.strip()]
+    bl = [d.strip() for d in _envr("BLOCKLIST", "").split(",") if d.strip()]
     if bl:
         cfg["blocklist"] = bl
-    al = [d.strip() for d in os.getenv("BROWSER_ALLOWLIST", "").split(",") if d.strip()]
+    al = [d.strip() for d in _envr("ALLOWLIST", "").split(",") if d.strip()]
     if al:
         cfg["allowlist"] = al
-        cfg["allowlist_mode"] = os.getenv("BROWSER_ALLOWLIST_MODE", "boost").lower()
+        cfg["allowlist_mode"] = _envr("ALLOWLIST_MODE", "boost").lower()
     return cfg
+
+
+def _envr(nom: str, defaut: str = "") -> str:
+    """Lit RECHERCHE_<nom>, repli BROWSER_<nom> (nommage HuntR), puis défaut."""
+    return os.getenv(f"RECHERCHE_{nom}", os.getenv(f"BROWSER_{nom}", defaut))
 
 
 def _n_defaut() -> int:
     try:
-        return max(1, min(50, int(os.getenv("BROWSER_N_DEFAUT",
-                                            os.getenv("RECHERCHE_N_DEFAUT", "8")))))
+        return max(1, min(50, int(_envr("N_DEFAUT", "8"))))
     except ValueError:
         return 8
 
@@ -88,7 +91,7 @@ class LirePage(BaseModel):
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def accueil():
-    return ("<h1>🌐 Brique browser (HuntR)</h1><p>Recherche web multi-providers "
+    return ("<h1>🔎 Brique recherche (moteur HuntR)</h1><p>Recherche web multi-providers "
             "(SearXNG souverain + DuckDuckGo + 7 moteurs à clé, fusion par consensus) et "
             "lecture de page (Trafilatura). Voir <a href='/docs'>/docs</a>.</p>")
 
