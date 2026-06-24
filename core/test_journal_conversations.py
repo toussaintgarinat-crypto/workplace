@@ -131,6 +131,23 @@ def test_fils_enrichis_titre_et_meta():
     assert f["titre"].startswith("Bonjour") and "epingle" in f and "archive" in f
 
 
+def test_reordonner_impose_l_ordre_manuel():
+    """S104 — cliquer-déposer : `reordonner` fixe `ordre`, qui prime sur la récence (mais
+    pas sur l'épinglage)."""
+    _reset()
+    for c in ("c1", "c2", "c3"):
+        jc.enregistrer("web", c, "user", "msg " + c)
+    # Par défaut : la plus récente d'abord (c3, c2, c1).
+    assert [f["fil"] for f in jc.fils()] == ["web:c3", "web:c2", "web:c1"]
+    # On impose l'ordre manuel inverse.
+    n = jc.reordonner(["web:c1", "web:c2", "web:c3"])
+    assert n == 3
+    assert [f["fil"] for f in jc.fils()] == ["web:c1", "web:c2", "web:c3"]
+    # Une épinglée passe devant l'ordre manuel.
+    jc.definir_meta("web:c3", epingle=True)
+    assert jc.fils()[0]["fil"] == "web:c3"
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):

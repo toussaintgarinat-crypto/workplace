@@ -253,6 +253,17 @@ def lister_restaurants(compte_id: str) -> list:
     return [_resto_dict(r) for r in rows]
 
 
+def lister_tous_restaurants() -> list:
+    """Tous les restaurants connus de la brique (id, nom, devise, TVA), tous comptes
+    confondus. Réservé au CHEMIN DE SERVICE (clé opérateur RESTAURANT_KEY = même frontière
+    de confiance que le tableau de bord) : permet à l'assistant de DÉCOUVRIR les ids des
+    restaurants sans qu'on les lui fournisse (S103)."""
+    with _conn() as c:
+        rows = c.execute("SELECT id, nom, devise, tva_taux, pin_requis, cree_le FROM restaurants "
+                         "ORDER BY cree_le").fetchall()
+    return [_resto_dict(r) for r in rows]
+
+
 def lire_restaurant(compte_id: str, restaurant_id: str) -> dict | None:
     with _conn() as c:
         if not _possede(c, compte_id, restaurant_id):
@@ -556,6 +567,22 @@ def supprimer_plat(compte_id: str, restaurant_id: str, plat_id: str) -> bool:
             return False
         cur = c.execute("DELETE FROM plats WHERE id=? AND restaurant_id=?", (plat_id, restaurant_id))
     return cur.rowcount > 0
+
+
+def reordonner_plats(compte_id: str, restaurant_id: str, ids: list[str]) -> list | None:
+    """Fixe l'ordre d'affichage des plats (S104 cliquer-déposer). `ids` = la nouvelle
+    suite des id de plats ; chaque plat reçoit `ordre = son rang`. Les plats absents de
+    `ids` (filtrés, hors page…) ne sont PAS touchés. Renvoie la carte rangée, ou None si
+    le restaurant n'appartient pas au compte."""
+    with _conn() as c:
+        if not _possede(c, compte_id, restaurant_id):
+            return None
+        for rang, pid in enumerate(ids):
+            c.execute("UPDATE plats SET ordre=? WHERE id=? AND restaurant_id=?",
+                      (rang, pid, restaurant_id))
+        rows = c.execute("SELECT * FROM plats WHERE restaurant_id=? ORDER BY ordre, cree_le",
+                         (restaurant_id,)).fetchall()
+    return [_plat_dict(r) for r in rows]
 
 
 # ── Commandes (côté client : créées via le code de table) ────────
