@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synopsis — résumé vidéo</title>
+<style>
+  :root{
+    --bg:#15120e; --panel:#1f1a14; --panel2:#272019; --bord:#3a2f24;
+    --txt:#f2e8da; --mut:#b6a78f; --or:#e0a64e; --or2:#c98a30; --ok:#7bbf6a; --err:#e06a5a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.55}
+  .wrap{max-width:860px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:1.7rem;margin:0 0 4px;font-weight:650}
+  .sub{color:var(--mut);margin:0 0 28px;font-size:.96rem}
+  .card{background:var(--panel);border:1px solid var(--bord);border-radius:16px;padding:22px;margin-bottom:20px}
+  label{display:block;font-size:.82rem;color:var(--mut);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}
+  input[type=text],select{width:100%;background:var(--panel2);border:1px solid var(--bord);color:var(--txt);
+       border-radius:10px;padding:12px 14px;font-size:1rem;outline:none}
+  input[type=text]:focus,select:focus{border-color:var(--or)}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row > div{flex:1;min-width:140px}
+  button{background:var(--or);color:#1a140c;border:0;border-radius:10px;padding:12px 22px;
+       font-size:1rem;font-weight:650;cursor:pointer;transition:.15s}
+  button:hover{background:var(--or2)}
+  button:disabled{opacity:.5;cursor:default}
+  .sep{display:flex;align-items:center;gap:14px;color:var(--mut);margin:18px 0;font-size:.85rem}
+  .sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--bord)}
+  .drop{border:2px dashed var(--bord);border-radius:12px;padding:26px;text-align:center;color:var(--mut);
+       cursor:pointer;transition:.15s;background:var(--panel2)}
+  .drop:hover,.drop.over{border-color:var(--or);color:var(--txt)}
+  .drop b{color:var(--or)}
+  .fichier{margin-top:10px;font-size:.9rem;color:var(--ok)}
+  .langue{margin-top:16px;max-width:240px}
+  #etat{display:none;margin:20px 0;padding:14px 16px;border-radius:10px;background:var(--panel2);
+       border:1px solid var(--bord);color:var(--mut)}
+  #etat.err{color:var(--err);border-color:var(--err)}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--bord);border-top-color:var(--or);
+       border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:8px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  #res{display:none}
+  #res h2{font-size:1.3rem;margin:0 0 4px}
+  .meta{color:var(--mut);font-size:.85rem;margin-bottom:18px}
+  .bloc{background:var(--panel);border:1px solid var(--bord);border-radius:14px;padding:20px;margin-bottom:16px}
+  .bloc h3{margin:0 0 12px;font-size:1rem;color:var(--or);text-transform:uppercase;letter-spacing:.05em}
+  .resume p{margin:0 0 10px} .resume h2,.resume h3{color:var(--txt)} .resume strong{color:var(--or)}
+  .chap{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--bord)}
+  .chap:last-child{border-bottom:0}
+  .ts{color:var(--or);font-variant-numeric:tabular-nums;font-weight:600;flex-shrink:0;min-width:64px}
+  .ins{padding:6px 0;color:var(--txt)} .ins .ts{display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Synopsis</h1>
+  <p class="sub">Résume <b>n'importe quelle vidéo</b> par IA — colle une URL YouTube ou un lien direct,
+     ou dépose un fichier vidéo. Résumé structuré, chapitres horodatés et points clés.</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Lien de la vidéo</label>
+        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=…  ou  https://…/video.mp4">
+      </div>
+      <button id="go-url" onclick="resumerUrl()">Résumer</button>
+    </div>
+
+    <div class="sep">ou</div>
+
+    <div id="drop" class="drop">
+      Glisse un fichier vidéo/audio ici, ou <b>clique pour choisir</b><br>
+      <span style="font-size:.82rem">mp4, mov, mkv, webm, mp3, m4a…</span>
+      <div id="nomfichier" class="fichier"></div>
+    </div>
+    <input id="file" type="file" accept="video/*,audio/*" style="display:none">
+
+    <div class="langue">
+      <label>Langue du résumé</label>
+      <select id="langue">
+        <option>Français</option><option>English</option><option>Español</option>
+        <option>Deutsch</option><option>Português</option><option>Italiano</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="etat"></div>
+
+  <div id="res">
+    <h2 id="r-titre"></h2>
+    <div class="meta" id="r-meta"></div>
+    <div class="bloc resume"><h3>Résumé</h3><div id="r-resume"></div></div>
+    <div class="bloc" id="b-chap" style="display:none"><h3>Chapitres</h3><div id="r-chap"></div></div>
+    <div class="bloc" id="b-ins" style="display:none"><h3>Points clés</h3><div id="r-ins"></div></div>
+  </div>
+</div>
+
+<script>
+let FICHIER = null;
+const $ = id => document.getElementById(id);
+const drop = $('drop'), file = $('file');
+
+drop.onclick = () => file.click();
+file.onchange = () => choisir(file.files[0]);
+['dragover','dragenter'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { if (ev.dataTransfer.files[0]) choisir(ev.dataTransfer.files[0]); });
+
+function choisir(f){ if(!f) return; FICHIER = f; $('nomfichier').textContent = '📎 ' + f.name; }
+
+function esc(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function md(t){
+  return esc(t)
+    .replace(/^### (.*)$/gm,'<h3>$1</h3>')
+    .replace(/^## (.*)$/gm,'<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^- (.*)$/gm,'• $1')
+    .split(/\n{2,}/).map(p => '<p>' + p.replace(/\n/g,'<br>') + '</p>').join('');
+}
+
+function etat(msg, err){
+  const e = $('etat'); e.style.display = 'block'; e.className = err ? 'err' : '';
+  e.innerHTML = err ? esc(msg) : '<span class="spin"></span>' + esc(msg);
+}
+function cacherEtat(){ $('etat').style.display = 'none'; }
+function busy(b){ $('go-url').disabled = b; }
+
+async function resumerUrl(){
+  const url = $('url').value.trim();
+  if(!url) return alerter('Colle un lien de vidéo, ou dépose un fichier.');
+  await lancer(() => fetch('/resumer', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ url, langue: $('langue').value })
+  }), 'Transcription puis analyse de la vidéo… (cela peut prendre une minute)');
+}
+
+async function resumerFichier(){
+  const fd = new FormData();
+  fd.append('fichier', FICHIER);
+  fd.append('langue', $('langue').value);
+  await lancer(() => fetch('/resumer-fichier', { method:'POST', body: fd }),
+    'Extraction de l’audio, transcription puis analyse… (selon la durée, quelques minutes)');
+}
+
+function alerter(m){ etat(m, true); }
+
+async function lancer(req, msg){
+  $('res').style.display = 'none'; busy(true); etat(msg, false);
+  try{
+    const r = await req();
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.detail || ('Erreur ' + r.status));
+    afficher(data); cacherEtat();
+  }catch(e){ alerter('❌ ' + e.message); }
+  finally{ busy(false); }
+}
+
+function afficher(d){
+  $('r-titre').textContent = d.titre || 'Résumé';
+  $('r-meta').textContent = 'Langue source : ' + (d.langue_source || '—');
+  $('r-resume').innerHTML = md(d.resume || '');
+
+  const chaps = d.chapitres || [];
+  $('b-chap').style.display = chaps.length ? 'block' : 'none';
+  $('r-chap').innerHTML = chaps.map(c =>
+    `<div class="chap"><span class="ts">${esc(c.timestamp||c.ts||'')}</span><span>${esc(c.subject||c.title||c.titre||'')}</span></div>`
+  ).join('');
+
+  const ins = d.insights || [];
+  $('b-ins').style.display = ins.length ? 'block' : 'none';
+  $('r-ins').innerHTML = ins.map(i =>
+    `<div class="ins"><span class="ts">${esc(i.timestamp||'')}</span> <strong>${esc(i.title||'')}</strong>${i.description ? ' — ' + esc(i.description) : ''}</div>`
+  ).join('');
+
+  $('res').style.display = 'block';
+  $('res').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// Le bouton « Résumer » sert l'URL ; si un fichier est choisi sans URL, il prime.
+$('go-url').addEventListener('click', () => {}, true);
+document.addEventListener('keydown', e => { if(e.key === 'Enter' && document.activeElement === $('url')) resumerUrl(); });
+$('go-url').onclick = () => {
+  if (FICHIER && !$('url').value.trim()) return resumerFichier();
+  return resumerUrl();
+};
+</script>
+</body>
+</html>

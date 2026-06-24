@@ -1,24 +1,24 @@
 {
   "nom": "synopsis",
-  "version": "1.0.0",
-  "description": "Résumé de vidéos YouTube par IA — extraction transcript, synthèse LLM, chapitrage automatique, highlight reels.",
-  "role": "youtube",
+  "version": "1.1.0",
+  "description": "Résumé de N'IMPORTE QUELLE vidéo par IA (YouTube, lien direct, ou fichier uploadé) — transcription, synthèse LLM, chapitrage automatique, points clés, highlight reels.",
+  "role": "video",
   "couche": "backend",
   "statut": "actif",
   "chemin_source": "briques/synopsis",
   "port": 6090,
   "url_sante": "http://host.docker.internal:6090/sante",
-  "depends_on": ["gateway"],
+  "depends_on": ["gateway", "transcription"],
   "capacites": [
     {
-      "nom": "youtube_resumer",
-      "description": "Résume une vidéo YouTube à partir de son URL. Extrait la transcription, l'analyse via LLM, et produit un résumé structuré avec chapitres temporels et insights clés.",
+      "nom": "video_resumer",
+      "description": "Résume une vidéo à partir d'une URL : YouTube (transcript natif) OU lien direct vers un média (délégué à la transcription Whisper). Produit un résumé structuré avec chapitres temporels et points clés.",
       "methode": "POST",
       "chemin": "/resumer",
       "params": {
         "url": {
           "type": "string",
-          "description": "URL de la vidéo YouTube à résumer",
+          "description": "URL de la vidéo (YouTube ou lien direct vers un fichier média)",
           "requis": true
         },
         "langue": {

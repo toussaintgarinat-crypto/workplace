@@ -59,6 +59,9 @@ RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/"
 # Brique « mail » (port 6030) : client mail (boîtes de réception unifiées + réponse sur
 # validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
 MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
+# Brique « synopsis » (port 6090) : résumé de n'importe quelle vidéo (YouTube, URL, fichier)
+# par IA. Embarquée dans son propre onglet « Synopsis ».
+SYNOPSIS_UI_URL = os.environ.get("SYNOPSIS_UI_URL", "http://localhost:6090/")
 # Brique « dev » (auto-atelier, port 5955) : IDE web code-server monté sur le dépôt (S92),
 # embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
 # chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
@@ -445,6 +448,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Tes conversations et tes projets vivent ici, comme dans Claude ou Perplexity. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
+      <button class="tab" data-vue="synopsis" onclick="switchVue('synopsis')" title="Résume n'importe quelle vidéo (YouTube, lien direct ou fichier) : résumé, chapitres horodatés et points clés.">Synopsis</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -820,6 +824,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- VUE SYNOPSIS (brique 6090) : résumé de n'importe quelle vidéo -->
+  <div class="view" id="vue-synopsis">
+    <div class="topbar">
+      <h2>Synopsis<span class="aide" tabindex="0">i<span class="aide-txt">Résume n'importe quelle vidéo — colle une URL YouTube, un lien direct, ou dépose un fichier. Tu obtiens un résumé structuré, des chapitres horodatés et les points clés.</span></span></h2>
+      <a class="btn ghost" href="__SYNOPSIS_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+    </div>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <iframe id="synopsis-iframe" title="Synopsis"
+        style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"
+        allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+  </div>
+
   <!-- VUE ATELIER DEV (S92) : IDE web code-server monté sur le dépôt -->
   <div class="view" id="vue-dev">
     <div class="topbar">
@@ -977,6 +994,7 @@ function switchVue(v) {
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
+  if (v === 'synopsis') chargerSynopsis();
   if (v === 'dev') chargerDev();
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
@@ -1365,6 +1383,15 @@ function chargerMail() {
   if (mailCharge) return;
   const f = document.getElementById('mail-iframe');
   if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
+}
+
+// ── Synopsis (résumé vidéo, brique 6090) — iframe paresseuse au 1er affichage ──
+const SYNOPSIS_UI_URL = '__SYNOPSIS_UI_URL__';
+let synopsisCharge = false;
+function chargerSynopsis() {
+  if (synopsisCharge) return;
+  const f = document.getElementById('synopsis-iframe');
+  if (f) { f.src = SYNOPSIS_UI_URL; synopsisCharge = true; }
 }
 
 // ── Atelier dev (S92) : IDE web code-server, chargé paresseusement au 1er affichage ──
@@ -3292,6 +3319,7 @@ async def dashboard():
         .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
         .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
         .replace("__MAIL_UI_URL__", MAIL_UI_URL)
+        .replace("__SYNOPSIS_UI_URL__", SYNOPSIS_UI_URL)
         .replace("__DEV_IDE_URL__", DEV_IDE_URL)
         .replace("__GENERATEUR_BUNDLES_URL__", f"{GENERATEUR_URL_PUBLIQUE}/bundles-studio")
         .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))

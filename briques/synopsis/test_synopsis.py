@@ -138,3 +138,113 @@ def test_reel_erreur_transcript_400():
     with patch("main.get_youtube_transcript", side_effect=ValueError("Privée")):
         r = client.post("/reel", json={"url": "https://youtube.com/watch?v=bad"})
     assert r.status_code == 400
+
+
+# ── Routage YouTube vs média quelconque ──────────────────────────────────────
+
+def test_est_youtube():
+    assert main._est_youtube("https://www.youtube.com/watch?v=abc")
+    assert main._est_youtube("https://youtu.be/abc")
+    assert not main._est_youtube("https://example.com/cours.mp4")
+    assert not main._est_youtube("https://vimeo.com/123")
+
+
+def test_resumer_url_media_delegue_transcription():
+    """Une URL NON-YouTube passe par la brique transcription, pas par YouTube."""
+    fake = {"transcript": [{"start": 0.0, "text": "Bonjour", "duration": 0.0}],
+            "titre": "cours.mp4", "langue": "fr"}
+    with (
+        patch("main.transcribe_client.transcrire_url", return_value=fake) as mock_tr,
+        patch("main.get_youtube_transcript") as mock_yt,
+        patch("main.chunk_transcript", return_value=_CHUNKS_FAKE),
+        patch("main.llm_complete", return_value=_RESUME_FAKE),
+    ):
+        r = client.post("/resumer", json={"url": "https://example.com/cours.mp4"})
+    assert r.status_code == 200
+    assert r.json()["titre"] == "cours.mp4"
+    mock_tr.assert_called_once()
+    mock_yt.assert_not_called()
+
+
+# ── /resumer-fichier (n'importe quelle vidéo uploadée) ───────────────────────
+
+def test_resumer_fichier_ok():
+    fake = {"transcript": [{"start": 0.0, "text": "Salut", "duration": 0.0}],
+            "titre": "ma-video", "langue": "fr"}
+    with (
+        patch("main.audio.extraire_audio", return_value=b"RIFFfakewav") as mock_audio,
+        patch("main.transcribe_client.transcrire_fichier", return_value=fake) as mock_tr,
+        patch("main.chunk_transcript", return_value=_CHUNKS_FAKE),
+        patch("main.llm_complete", return_value=_RESUME_FAKE),
+    ):
+        r = client.post("/resumer-fichier",
+                        files={"fichier": ("ma-video.mp4", b"\x00\x01videodata", "video/mp4")},
+                        data={"langue": "Français"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["titre"] == "ma-video"
+    assert isinstance(data["chapitres"], list)
+    mock_audio.assert_called_once()
+    mock_tr.assert_called_once()
+
+
+def test_resumer_fichier_vide_422():
+    r = client.post("/resumer-fichier",
+                    files={"fichier": ("vide.mp4", b"", "video/mp4")})
+    assert r.status_code == 422
+
+
+def test_resumer_fichier_sans_moteur_400():
+    """Si la transcription n'a aucun moteur, on rend une erreur honnête (400)."""
+    with patch("main.audio.extraire_audio", return_value=b"wav"), \
+         patch("main.transcribe_client.transcrire_fichier",
+               side_effect=ValueError("aucun moteur de transcription configuré")):
+        r = client.post("/resumer-fichier",
+                        files={"fichier": ("v.mp4", b"data", "video/mp4")})
+    assert r.status_code == 400
+    assert "moteur" in r.json()["detail"]
+
+
+# ── Normalisation des réponses de la brique transcription ────────────────────
+
+def test_normaliser_place_holder_leve():
+    from lib import transcribe_client
+    import pytest
+    with pytest.raises(ValueError, match="moteur"):
+        transcribe_client._normaliser({"place_holder": True, "texte": "", "note": "rien"}, "T")
+
+
+def test_normaliser_segments_horodates():
+    from lib import transcribe_client
+    data = {"texte": "a b", "segments": [
+        {"start": 0, "text": "a", "duration": 1},
+        {"start": 1, "text": "b", "duration": 1}]}
+    out = transcribe_client._normaliser(data, "Titre")
+    assert len(out["transcript"]) == 2
+    assert out["transcript"][0]["text"] == "a"
+    assert out["titre"] == "Titre"
+
+
+def test_normaliser_sans_segments_un_seul_bloc():
+    from lib import transcribe_client
+    out = transcribe_client._normaliser({"texte": "tout le texte", "segments": []}, "T")
+    assert len(out["transcript"]) == 1
+    assert out["transcript"][0]["text"] == "tout le texte"
+
+
+# ── Extraction audio ─────────────────────────────────────────────────────────
+
+def test_extraire_audio_vide_leve():
+    from lib import audio
+    import pytest
+    with pytest.raises(ValueError, match="vide"):
+        audio.extraire_audio(b"", "x.mp4")
+
+
+# ── Front servi ──────────────────────────────────────────────────────────────
+
+def test_front_servi():
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Synopsis" in r.text
+    assert "text/html" in r.headers["content-type"]
