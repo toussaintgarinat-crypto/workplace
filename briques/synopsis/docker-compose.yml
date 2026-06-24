@@ -1,7 +1,7 @@
 services:
   synopsis:
     build: .
-    image: workplace/synopsis:1.0.0
+    image: workplace/synopsis:1.1.0
     container_name: workplace-synopsis
     ports:
       - "6090:6090"
@@ -15,6 +15,8 @@ services:
       - CLIP_OUTPUT_DIR=/clips
       - LLM_MODEL=${LLM_MODEL:-deepseek/deepseek-v4-flash}
       - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      # Brique transcription (Whisper) : voie d'entrée des vidéos NON-YouTube (URL/fichier).
+      - TRANSCRIPTION_URL=${TRANSCRIPTION_URL:-http://host.docker.internal:5980}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - API_KEYS=${API_KEYS:-}
     restart: unless-stopped
