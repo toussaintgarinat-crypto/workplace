@@ -1,6 +1,6 @@
 {
   "nom": "voix",
-  "version": "0.2.0",
+  "version": "0.5.0",
   "description": "Brique vocale en API. (1) TTS texte→audio SOUVERAIN par défaut : moteur Piper local (CPU) en tête, puis fournisseurs hébergés en repli optionnel (OpenAI, ElevenLabs, ou la Gateway Workplace), repli honnête (jamais de fausse voix). (2) CHAT VOCAL TEMPS RÉEL (speech-to-speech) porté du plugin « voice » de Gungnir : relais WebSocket navigateur ↔ API temps réel d'un fournisseur (OpenAI Realtime, Gemini Live, xAI Grok), vrai audio bidirectionnel avec VAD côté fournisseur, OPT-IN et inerte sans clé. Produit autonome, composable par l'assistant et le pont messageries (connexion) pour répondre en vocal.",
   "role": "voix",
   "couche": "backend",

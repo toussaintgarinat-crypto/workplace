@@ -14,5 +14,7 @@ for _v in ("VOIX_PROVIDERS", "PIPER_VOICE", "PIPER_BIN", "OPENAI_API_KEY",
            # Chat vocal temps réel : aucune clé en test → relais inertes, déterministe.
            "VOIX_OPENAI_API_KEY", "VOIX_GOOGLE_API_KEY", "VOIX_XAI_API_KEY",
            "GEMINI_API_KEY", "GOOGLE_API_KEY", "XAI_API_KEY", "GROK_API_KEY",
-           "VOIX_AGENT_NOM"):
+           "VOIX_AGENT_NOM",
+           # Moteurs locaux naturels OPT-IN : drapeaux coupés → inertes en test.
+           "VOIX_KOKORO", "VOIX_COQUI"):
     os.environ.pop(_v, None)

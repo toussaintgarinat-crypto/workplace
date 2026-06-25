@@ -1,8 +1,13 @@
 services:
   voix:
-    build: .
+    build:
+      context: .
+      args:
+        # Installer Kokoro (voix naturelle locale) DANS l'image. Lourd (PyTorch) : mettre "0"
+        # pour une image légère. "1" = essayable tout de suite (activé par VOIX_KOKORO ci-dessous).
+        INSTALL_KOKORO: "1"
     container_name: workplace_voix
-    image: workplace/voix:0.2.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/voix:0.5.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # Réglages partagés à la racine (source unique). Facultatif.
       - path: ../../.env
@@ -15,6 +20,12 @@ services:
       # Format audio par défaut (opus = conteneur Ogg, idéal message vocal Telegram).
       - VOIX_FORMAT=${VOIX_FORMAT:-opus}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Dossier persistant du choix de moteur (bascule « en un clic », cf. /voix/moteur).
+      - VOIX_DIR=/data/voix
+      # Active Kokoro au runtime (cohérent avec INSTALL_KOKORO=1 au build). Valeur STATIQUE
+      # (pas d'interpolation ${...} → pas de piège env-shadow). Mettre 0 pour revenir à Piper seul.
+      - VOIX_KOKORO=1
+      - KOKORO_VOICE=${KOKORO_VOICE:-ff_siwis}
       # ── Chat vocal TEMPS RÉEL (realtime.py) — OPT-IN, inerte sans clé ────────────
       # Nom de l'assistant annoncé dans la session vocale (safe à déclarer ici).
       - VOIX_AGENT_NOM=${VOIX_AGENT_NOM:-Assistant}
@@ -29,9 +40,20 @@ services:
       # GATEWAY_URL) et API_KEYS : à poser dans le .env RACINE — hérités via env_file.
       # NE PAS les redéclarer ici en `VAR=${VAR:-}` (s'interpole depuis le SHELL et écrase
       # la valeur du .env racine par du vide — cf. piège corrigé sur connexion 2026-06-19).
+      # ── Moteurs LOCAUX NATURELS (kokoro / coqui) — OPT-IN, INERTES par défaut ────
+      # Voix bien plus naturelle que Piper, 100 % locale, mais LOURDE (gros modèle, GPU
+      # conseillé). À n'activer que sur une machine qui encaisse. Pour activer :
+      #   1) installer la dépendance dans l'image : décommenter la ligne voulue dans
+      #      requirements-voix-naturelle.txt et l'ajouter au Dockerfile (ou rebuild dédié) ;
+      #   2) poser dans le .env RACINE (PAS ici — piège env-shadow) : VOIX_KOKORO=1 (et
+      #      éventuellement KOKORO_VOICE=ff_siwis) OU VOIX_COQUI=1 + COQUI_SPEAKER_WAV=/...wav ;
+      #   3) préférer la voix naturelle : VOIX_PROVIDERS=kokoro,piper (piper reste le repli).
+      # Tant que ce n'est pas fait, ces moteurs sont « non disponibles » → Piper, sans changement.
     volumes:
       # Modèles de voix Piper (.onnx + .onnx.json), en lecture seule. Pose-les dans ./voix-modeles.
       - "${PIPER_VOICE_DIR:-./voix-modeles}:/voix-modeles:ro"
+      # Persistance du choix de moteur (survit aux recreate).
+      - "./data:/data/voix"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5985/sante')"]

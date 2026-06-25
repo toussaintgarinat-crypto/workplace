@@ -1,0 +1,20 @@
+# Dépendances OPTIONNELLES — moteurs de voix LOCAUX NATURELS (OPT-IN).
+#
+# NE PAS installer par défaut : ces paquets sont LOURDS (PyTorch + gros modèles) et
+# n'ont d'intérêt que sur une machine qui encaisse (GPU conseillé). Le défaut de la
+# brique reste Piper (souverain, léger, déjà dans requirements.txt).
+#
+# Pour activer un moteur naturel (cf. docker-compose.yml et README) :
+#   pip install -r requirements-voix-naturelle.txt        # (ou seulement la ligne voulue)
+# puis poser le drapeau d'env correspondant (VOIX_KOKORO=1 ou VOIX_COQUI=1) au .env RACINE
+# et mettre le moteur en tête : VOIX_PROVIDERS=kokoro,piper (ou coqui,piper).
+#
+# Versions volontairement NON épinglées ici : à figer au moment de l'intégration réelle,
+# selon la plateforme/CUDA disponible (le code, lui, importe ces libs paresseusement).
+
+# Kokoro — ~82M params, licence Apache, très naturel pour sa taille (FR : voix ff_siwis).
+# kokoro
+# soundfile
+
+# Coqui XTTS-v2 — multilingue + clonage de voix (exige un WAV de référence). Plus lourd.
+# coqui-tts

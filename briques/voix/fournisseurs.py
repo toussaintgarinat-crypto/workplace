@@ -188,18 +188,152 @@ class Gateway(_HTTP):
             return r.content, fmt
 
 
-# ── Registre + ordre de préférence ──────────────────────────────
-REGISTRE = {f.nom: f for f in (Piper(), OpenAI(), ElevenLabs(), Gateway())}
+# ── Moteurs LOCAUX NATURELS (souverains, OPT-IN inerte) ─────────
+# Piper est rapide et souverain mais sonne « synthétique ». Ces moteurs rendent une voix
+# bien plus NATURELLE, tout en restant LOCAUX (rien ne sort de la maison) — au prix d'une
+# exécution plus LOURDE (gros modèles, idéalement un GPU). Ils sont donc INERTES par défaut :
+#   • la dépendance Python n'est PAS dans requirements.txt (cf. requirements-voix-naturelle.txt),
+#     elle est importée PARESSEUSEMENT (l'image et le build d'aujourd'hui ne changent pas) ;
+#   • `disponible()` exige un DRAPEAU d'env explicite ET que la lib soit importable.
+# Activation le jour où la machine encaisse : installer la dépendance, poser le drapeau, et
+# mettre le moteur en TÊTE de l'ordre (`VOIX_PROVIDERS=kokoro,piper` — piper reste le repli).
 
-# Défaut : SOUVERAIN d'abord (`piper`), puis les hébergés. Surchargé par VOIX_PROVIDERS.
-ORDRE_DEFAUT = ["piper", "openai", "elevenlabs", "gateway"]
+def _drapeau(nom_env: str) -> bool:
+    return os.getenv(nom_env, "0").strip().lower() in ("1", "true", "oui", "on", "yes")
+
+
+class Kokoro:
+    """Kokoro TTS en local (modèle ~82M, licence Apache, très naturel pour sa taille).
+
+    OPT-IN : `VOIX_KOKORO=1` + `pip install kokoro soundfile`. Voix FR via `KOKORO_VOICE`
+    (défaut `ff_siwis`) et `KOKORO_LANG` (défaut `f` = français). Le pipeline (chargement du
+    modèle) est COÛTEUX → mis en cache sur l'instance (singleton du registre)."""
+    nom = "kokoro"
+
+    def __init__(self):
+        self._pipe = None                         # pipeline Kokoro mis en cache (paresseux)
+
+    def disponible(self) -> bool:
+        if not _drapeau("VOIX_KOKORO"):
+            return False
+        try:
+            import kokoro  # noqa: F401 — import paresseux : présent ssi installé
+        except Exception:  # noqa: BLE001 — lib absente/cassée → moteur non disponible (honnête)
+            return False
+        return True
+
+    async def synthetiser(self, texte, voix, langue, format) -> tuple[bytes, str]:
+        cible = (format or os.getenv("VOIX_FORMAT", "opus") or "").lower()
+        return await asyncio.to_thread(self._bloquant, texte, voix, cible)
+
+    def _bloquant(self, texte: str, voix: Optional[str], cible: str) -> tuple[bytes, str]:
+        import io
+
+        import numpy as np
+        import soundfile as sf
+        from kokoro import KPipeline
+        if self._pipe is None:
+            self._pipe = KPipeline(lang_code=os.getenv("KOKORO_LANG", "f"))
+        nom_voix = voix or os.getenv("KOKORO_VOICE", "ff_siwis")
+        vitesse = float(os.getenv("KOKORO_SPEED", "1"))
+        morceaux = [audio for _gs, _ps, audio in self._pipe(texte, voice=nom_voix, speed=vitesse)]
+        if not morceaux:
+            raise RuntimeError("Kokoro n'a produit aucun audio.")
+        samples = np.concatenate(morceaux) if len(morceaux) > 1 else morceaux[0]
+        buf = io.BytesIO()
+        sf.write(buf, samples, 24000, format="WAV")     # Kokoro sort en 24 kHz
+        wav = buf.getvalue()
+        if cible in _FMT_OPUS:                            # bulle vocale Telegram
+            opus = _vers_opus(wav)
+            if opus:
+                return opus, "ogg"
+        return wav, "wav"
+
+
+class Coqui:
+    """Coqui XTTS-v2 en local (multilingue, CLONAGE de voix à partir d'un échantillon).
+
+    OPT-IN : `VOIX_COQUI=1` + `pip install coqui-tts`. Modèle via `COQUI_MODEL` (défaut
+    XTTS-v2), langue `COQUI_LANG` (défaut `fr`). XTTS exige une VOIX de référence : un
+    fichier WAV (`COQUI_SPEAKER_WAV`, recommandé — clone ce timbre) OU un locuteur intégré
+    (`COQUI_SPEAKER`). GPU conseillé : `COQUI_DEVICE=cuda` (sinon CPU, lent). Modèle mis en
+    cache sur l'instance."""
+    nom = "coqui"
+
+    def __init__(self):
+        self._tts = None                          # objet TTS mis en cache (paresseux)
+
+    def disponible(self) -> bool:
+        if not _drapeau("VOIX_COQUI"):
+            return False
+        try:
+            import TTS  # noqa: F401 — import paresseux : présent ssi installé
+        except Exception:  # noqa: BLE001 — lib absente/cassée → non disponible (honnête)
+            return False
+        return True
+
+    async def synthetiser(self, texte, voix, langue, format) -> tuple[bytes, str]:
+        cible = (format or os.getenv("VOIX_FORMAT", "opus") or "").lower()
+        return await asyncio.to_thread(self._bloquant, texte, voix, langue, cible)
+
+    def _bloquant(self, texte, voix, langue, cible) -> tuple[bytes, str]:
+        from TTS.api import TTS
+        if self._tts is None:
+            modele = os.getenv("COQUI_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+            self._tts = TTS(modele)
+            if os.getenv("COQUI_DEVICE"):
+                self._tts.to(os.getenv("COQUI_DEVICE"))
+        kwargs = {"text": texte, "language": langue or os.getenv("COQUI_LANG", "fr")}
+        ref = voix or os.getenv("COQUI_SPEAKER_WAV")
+        if ref:
+            kwargs["speaker_wav"] = ref
+        elif os.getenv("COQUI_SPEAKER"):
+            kwargs["speaker"] = os.getenv("COQUI_SPEAKER")
+        else:
+            raise RuntimeError("XTTS exige une voix de référence : pose COQUI_SPEAKER_WAV "
+                               "(fichier WAV) ou COQUI_SPEAKER (locuteur intégré).")
+        chemin = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            self._tts.tts_to_file(file_path=chemin, **kwargs)
+            with open(chemin, "rb") as f:
+                wav = f.read()
+        finally:
+            try:
+                os.unlink(chemin)
+            except OSError:
+                pass
+        if not wav:
+            raise RuntimeError("Coqui n'a produit aucun audio.")
+        if cible in _FMT_OPUS:
+            opus = _vers_opus(wav)
+            if opus:
+                return opus, "ogg"
+        return wav, "wav"
+
+
+# ── Registre + ordre de préférence ──────────────────────────────
+REGISTRE = {f.nom: f for f in (Piper(), Kokoro(), Coqui(),
+                               OpenAI(), ElevenLabs(), Gateway())}
+
+# Défaut : SOUVERAIN d'abord (`piper`), puis les locaux-naturels OPT-IN (inertes tant que non
+# installés/activés), puis les hébergés. Surchargé par VOIX_PROVIDERS. Pour PRÉFÉRER une voix
+# naturelle une fois la machine prête : `VOIX_PROVIDERS=kokoro,piper` (ou `coqui,piper`).
+ORDRE_DEFAUT = ["piper", "kokoro", "coqui", "openai", "elevenlabs", "gateway"]
 
 
 def ordre() -> list:
-    """Ordre de préférence effectif (filtré sur les fournisseurs connus du registre)."""
+    """Ordre de préférence effectif (filtré sur les fournisseurs connus du registre).
+
+    Priorité : le moteur CHOISI à la volée (page de réglage, persisté) passe en TÊTE ; vient
+    ensuite l'ordre d'env `VOIX_PROVIDERS` (ou le défaut). Le choix runtime permet la bascule
+    « en un clic » sans redémarrer le conteneur."""
     brut = [n.strip().lower() for n in os.getenv("VOIX_PROVIDERS", "").split(",") if n.strip()]
-    noms = brut or ORDRE_DEFAUT
-    return [n for n in noms if n in REGISTRE]
+    noms = [n for n in (brut or ORDRE_DEFAUT) if n in REGISTRE]
+    import reglages
+    choisi = reglages.moteur_choisi()
+    if choisi in REGISTRE:
+        noms = [choisi] + [n for n in noms if n != choisi]
+    return noms
 
 
 def disponibles() -> list:

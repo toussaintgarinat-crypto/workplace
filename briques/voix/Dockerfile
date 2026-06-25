@@ -26,6 +26,17 @@ ENV LD_LIBRARY_PATH=/opt/piper
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ── Voix NATURELLE locale (Kokoro) — OPT-IN au BUILD (INSTALL_KOKORO=1) ──────────
+# Lourd (PyTorch) : installé seulement si demandé (cf. docker-compose.yml build.args).
+# espeak-ng = phonémisation FR pour Kokoro. Au runtime, activer avec VOIX_KOKORO=1.
+ARG INSTALL_KOKORO=0
+RUN if [ "$INSTALL_KOKORO" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends espeak-ng \
+      && rm -rf /var/lib/apt/lists/* \
+      && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+      && pip install --no-cache-dir kokoro soundfile "misaki[fr]"; \
+    fi
+
 COPY . .
 
 # Pour le souverain Piper, monter un modèle de voix (.onnx + .onnx.json) et désigner son
