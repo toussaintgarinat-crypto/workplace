@@ -107,4 +107,14 @@ licence CPML ; **éthique** (consentement de la personne clonée) — à rendre 
 
 ---
 
-*Préparés le 2026-06-25. Non lancés. Pour démarrer : « lance le sprint S106 » (ou S107).*
+*Préparés le 2026-06-25. S106 + S107 LIVRÉS le 2026-06-25 (commits `78a1a0c`, `07f315b`).*
+
+> ⚠ **Preuve LIVE de la voix Coqui (S106) / du timbre cloné (S107) — TENTÉE, bloquée par la RAM.**
+> 2026-06-25 : image **0.7.0 rebuildée** (Coqui + clones + python-multipart), conteneur recréé
+> *healthy*, modèle **XTTS-v2 téléchargé** (1,8 Go, `TTS_HOME=/data/voix/coqui`). Mais l'inférence
+> XTTS **fait redémarrer le conteneur** (process tué) : la VM Docker (~7,8 Go) n'a que ~2,4 Go
+> libres avec **44 conteneurs** actifs (Keycloak seul = 2,65 Go) et le **swap saturé**. Ce n'est
+> PAS un bug du code (91 tests verts ; CRUD clones, endpoints, routage `clone:<nom>`→Coqui OK) —
+> c'est le **risque HW documenté** (XTTS lourd en CPU/RAM). Pour prouver à l'oreille plus tard :
+> libérer ~2 Go (arrêter Keycloak/Oria le temps du test) **ou** attendre la machine dédiée
+> (Proxmox). La voix de lecture **hébergée** (OpenAI/ElevenLabs) marcherait sans cette charge.
