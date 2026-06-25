@@ -9,7 +9,16 @@ S107 **dépend** de S106 (le clonage exige le moteur XTTS actif).
 > `VOIX_COQUI=1`), **out of the box** (locuteur intégré par défaut, aucun WAV requis),
 > comparateur « voix de lecture » dans la page de réglage (même résumé sur chaque moteur),
 > licence CPML dite honnêtement. 74 tests verts. **Reste à prouver LIVE** (rebuild image +
-> écoute Coqui vs hébergé). **Prochain : S107** (clonage de voix réutilisables).
+> écoute Coqui vs hébergé). Commit `78a1a0c`.
+>
+> ✅ **S107 LIVRÉ (voix v0.7.0)** — bibliothèque de **voix clonées** réutilisables : `clones.py`
+> (CRUD pur : `VOIX_DIR/voix-clonees/<slug>.wav` + index, validation WAV/durée) ; endpoints
+> `GET/POST/DELETE /voix/clones` + `POST /voix/clones/{nom}/tester` ; convention
+> `voix:"clone:<nom>"` dans `/synthetiser` → `moteur` **force Coqui** + résout le `speaker_wav` ;
+> section « 🎭 Mes voix clonées » dans la tuile Voix (enregistrer/écouter/supprimer) ; capacités
+> manifest pour la **réutilisation Studio** (`GET /voix/clones`) ; consentement + licence CPML
+> dits dans l'UI. 91 tests verts. **Reste à prouver LIVE** (rebuild + cloner un vrai timbre et
+> l'utiliser dans une série du Studio). → **fil voix S106→S107 CODE-COMPLET**.
 
 ---
 
@@ -56,7 +65,7 @@ licence CPML de XTTS (perso OK, commercial à vérifier) ; téléchargement du m
 
 ---
 
-## S107 — Clonage de voix RÉUTILISABLES (bibliothèque de voix)
+## S107 — Clonage de voix RÉUTILISABLES (bibliothèque de voix) — ✅ LIVRÉ
 
 **Objectif.** Cloner une voix à partir d'un court échantillon (~10-20 s de WAV), l'**enregistrer
 sous un nom**, et la **réutiliser dans plusieurs contextes** : l'assistant, la narration de résumés,

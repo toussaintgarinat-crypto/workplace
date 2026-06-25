@@ -12,7 +12,7 @@ services:
         # plus légère. ⚠ Modèle XTTS sous licence CPML (non commerciale) : perso OK.
         INSTALL_COQUI: "1"
     container_name: workplace_voix
-    image: workplace/voix:0.6.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/voix:0.7.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # Réglages partagés à la racine (source unique). Facultatif.
       - path: ../../.env

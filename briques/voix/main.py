@@ -12,17 +12,19 @@ OpenAI / ElevenLabs / la Gateway en repli OPT-IN. Sans moteur, on rend un repli 
 import os
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket
+from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
+                     UploadFile, WebSocket)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+import clones
 import fournisseurs
 import moteur
 import realtime
 import reglages
 
-app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.6.0")
+app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.7.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -167,6 +169,67 @@ async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
         raise HTTPException(422, "Le texte est vide.")
     res = await moteur.synthetiser(body.texte, body.voix, body.langue, body.format,
                                    body.fournisseur, body.usage)
+    if res.get("place_holder") or not res.get("audio"):
+        return JSONResponse({k: v for k, v in res.items() if k != "audio"}, status_code=200)
+    media = _MEDIA.get(res["format"], "application/octet-stream")
+    return Response(res["audio"], media_type=media,
+                    headers={"X-Backend": res["backend"], "X-Format": res["format"]})
+
+
+# ── Bibliothèque de VOIX CLONÉES (S107) — cloner une fois, rappeler partout ──
+# Coqui XTTS reproduit un timbre depuis un court échantillon (speaker_wav). On range ces
+# échantillons sous un nom (clones.py) pour les réutiliser : assistant, lecture de résumés,
+# personnages des séries du Studio (via GET /voix/clones, capacité au manifest). La synthèse
+# avec une voix clonée passe par la convention `voix: "clone:<nom>"` de /synthetiser.
+
+@app.get("/voix/clones", tags=["clones"])
+async def lister_clones():
+    """Liste les voix clonées enregistrées (nom, date, durée, notes). Sert l'UI ET le Studio
+    (réutilisation transverse). Indique si Coqui est disponible — sans lui, les clones ne
+    peuvent pas être rendus (on le DIT honnêtement plutôt que d'échouer en silence)."""
+    coqui = fournisseurs.REGISTRE["coqui"].disponible()
+    return {"ok": True, "clones": clones.lister(), "coqui_disponible": coqui,
+            "convention": "clone:<nom>"}
+
+
+@app.post("/voix/clones", tags=["clones"])
+async def creer_clone(nom: str = Form(...), fichier: UploadFile = File(...),
+                      notes: str = Form(""), _cle: str = Depends(cle_api)):
+    """Enregistre un échantillon de référence (WAV ~10-20 s) sous un nom réutilisable.
+    Valide honnêtement le fichier (WAV, durée mini). ÉTHIQUE : ne cloner qu'une voix qu'on a
+    le droit d'utiliser (consentement) — la responsabilité reste humaine."""
+    octets = await fichier.read()
+    try:
+        entree = clones.enregistrer(nom, octets, notes)
+    except ValueError as e:                          # entrée invalide → 422 honnête
+        raise HTTPException(422, str(e))
+    except Exception as e:  # noqa: BLE001 — dossier non inscriptible, etc.
+        raise HTTPException(500, f"Impossible d'enregistrer la voix : {e}")
+    return {"ok": True, "clone": entree}
+
+
+@app.delete("/voix/clones/{nom}", tags=["clones"])
+async def supprimer_clone(nom: str, _cle: str = Depends(cle_api)):
+    """Retire une voix clonée (fichier + index). 404 honnête si elle n'existe pas."""
+    if not clones.supprimer(nom):
+        raise HTTPException(404, f"Voix clonée « {nom} » introuvable.")
+    return {"ok": True, "supprime": nom}
+
+
+class TestClone(BaseModel):
+    texte:  Optional[str] = None
+    format: Optional[str] = None
+
+
+@app.post("/voix/clones/{nom}/tester", tags=["clones"])
+async def tester_clone(nom: str, body: TestClone = TestClone(), _cle: str = Depends(cle_api)):
+    """Écoute un échantillon synthétisé AVEC cette voix clonée. Renvoie les octets audio, ou un
+    JSON placeholder honnête si Coqui n'est pas disponible / la voix est inconnue."""
+    if clones.obtenir(nom) is None:
+        raise HTTPException(404, f"Voix clonée « {nom} » introuvable.")
+    texte = (body.texte or "").strip() or (
+        "Bonjour, ceci est un essai de ma voix enregistrée dans la bibliothèque.")
+    res = await moteur.synthetiser(texte, f"{clones.PREFIXE}{nom}", None, body.format, None, None)
     if res.get("place_holder") or not res.get("audio"):
         return JSONResponse({k: v for k, v in res.items() if k != "audio"}, status_code=200)
     media = _MEDIA.get(res["format"], "application/octet-stream")
