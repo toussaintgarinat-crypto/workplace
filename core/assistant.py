@@ -26,6 +26,7 @@ import langue as langue_mod
 import llm_pipeline
 import muscle
 import outils
+import routage_outils
 import personas
 import identite
 import proprioception
@@ -186,6 +187,13 @@ async def converser(messages: list[dict], registre,
         question = next((m.get("content") for m in reversed(messages)
                          if m.get("role") == "user"), "") or ""
         outils_appeles: list[str] = []
+
+        # Routage d'outils par embeddings (opt-in ROUTAGE_OUTILS) : ne présenter au LLM que les
+        # outils PERTINENTS pour la requête courante + le socle des outils en dur (toujours
+        # pertinents). Repli honnête : liste inchangée si le routage est inactif/indisponible.
+        # La conscience de soi (plus haut) garde, elle, le compte COMPLET → anatomie honnête.
+        outils_actifs = await routage_outils.filtrer_outils(
+            question, outils_actifs, client=client, toujours=outils._NOMS_STATIQUES)
 
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage

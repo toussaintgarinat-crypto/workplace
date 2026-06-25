@@ -276,6 +276,15 @@ model_list:
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+  # Embeddings OpenAI en direct — alternative MEILLEURE pour le FR court au all-minilm local.
+  # Sélectionnable via ROUTAGE_EMBEDDING_MODEL=text-embedding-3-small (routage d'outils) ou
+  # LLM_CACHE_EMBEDDING (cache sémantique). Inerte tant qu'OPENAI_API_KEY n'est pas posée
+  # (renvoie alors une erreur d'auth → le routage retombe honnêtement sur « tous les outils »).
+  # OpenRouter ne sert PAS d'embeddings : c'est pourquoi on passe par OpenAI en direct.
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
 
   # Groq (inférence très rapide, OpenAI-compatible). Clé: GROQ_API_KEY.
   - model_name: groq/llama-3.3-70b
