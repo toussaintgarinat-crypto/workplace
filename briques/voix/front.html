@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voix — choisir le moteur</title>
+<style>
+  :root { --or:#d9a441; --or2:#f0c674; --bg:#16130f; --carte:#211c15; --bord:#3a3024;
+          --txt:#efe7d8; --gris:#a89a82; --ok:#5fb37a; --rouge:#c9685f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg);
+         color:var(--txt); padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; color:var(--or2); }
+  .sous { color:var(--gris); margin:0 0 20px; font-size:14px; }
+  .grille { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+  .carte { background:var(--carte); border:1px solid var(--bord); border-radius:12px; padding:14px; }
+  .carte.actif { border-color:var(--or); box-shadow:0 0 0 1px var(--or) inset; }
+  .titre { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .nom { font-weight:600; font-size:16px; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:20px; border:1px solid var(--bord);
+           color:var(--gris); white-space:nowrap; }
+  .badge.actif { background:var(--or); color:#16130f; border-color:var(--or); font-weight:600; }
+  .badge.dispo { color:var(--ok); border-color:var(--ok); }
+  .badge.absent { color:var(--rouge); border-color:var(--rouge); }
+  .note { color:var(--gris); font-size:13px; margin:8px 0 12px; min-height:34px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; border-radius:8px; border:1px solid var(--bord); background:#2c2519;
+           color:var(--txt); padding:7px 12px; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--or); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primaire { background:var(--or); color:#16130f; border-color:var(--or); font-weight:600; }
+  .testeur { margin-top:24px; background:var(--carte); border:1px solid var(--bord);
+             border-radius:12px; padding:14px; }
+  textarea { width:100%; min-height:70px; background:#16130f; color:var(--txt);
+             border:1px solid var(--bord); border-radius:8px; padding:10px; font:inherit; resize:vertical; }
+  .ligne { display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap; }
+  audio { height:34px; }
+  .msg { margin-top:10px; font-size:13px; min-height:18px; }
+  .msg.err { color:var(--rouge); } .msg.ok { color:var(--ok); }
+</style>
+</head>
+<body>
+  <h1>🎙️ Voix de l'assistant</h1>
+  <p class="sous">Choisis une voix par <b>usage</b>, en un clic. <b>💬 Conversation</b> = réponses
+    courtes (Telegram) : on privilégie la rapidité. <b>📖 Lecture</b> = résumés &amp; longs textes :
+    on privilégie une belle voix (la lenteur n'y gêne pas). Au-delà de <b id="seuil">280</b>
+    caractères, c'est la voix de Lecture qui parle.</p>
+
+  <div id="grille" class="grille">Chargement…</div>
+
+  <div class="testeur">
+    <strong>Tester la voix active</strong>
+    <textarea id="texte">Bonjour, ceci est un test de ma nouvelle voix. Si je sonne naturelle, le changement a réussi.</textarea>
+    <div class="ligne">
+      <button id="btnTester" class="primaire" onclick="tester()">▶︎ Tester</button>
+      <audio id="lecteur" controls></audio>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+let etat = { fournisseurs: [], choisi: null, lecture: null, actif: null, seuil: 280 };
+
+async function charger() {
+  const r = await fetch('voix/moteur');
+  etat = await r.json();
+  if (etat.seuil) $('#seuil').textContent = etat.seuil;
+  rendre();
+}
+
+function rendre() {
+  const g = $('#grille'); g.innerHTML = '';
+  for (const f of etat.fournisseurs) {
+    const estConv = f.nom === etat.choisi;
+    const estLect = f.nom === etat.lecture;
+    const c = document.createElement('div');
+    c.className = 'carte' + ((estConv || estLect) ? ' actif' : '');
+    let badges = f.configure
+      ? `<span class="badge dispo">disponible</span>`
+      : `<span class="badge absent">non installé</span>`;
+    const roles = [];
+    if (estConv) roles.push('💬 conversation');
+    if (estLect) roles.push('📖 lecture');
+    if (roles.length) badges = `<span class="badge actif">✓ ${roles.join(' · ')}</span>`;
+    c.innerHTML = `
+      <div class="titre"><span class="nom">${f.libelle}</span>${badges}</div>
+      <div class="note">${f.note || ''} <em>(${f.nature})</em></div>
+      <div class="actions">
+        <button class="primaire" ${(!f.configure || estConv) ? 'disabled' : ''}
+                onclick="choisir('${f.nom}','conversation')" title="Voix des réponses courtes (rapide)">💬 Conversation</button>
+        <button ${(!f.configure || estLect) ? 'disabled' : ''}
+                onclick="choisir('${f.nom}','lecture')" title="Voix des résumés et longs textes (belle)">📖 Lecture</button>
+        <button ${!f.configure ? 'disabled' : ''} onclick="tester('${f.nom}')">▶︎ Tester</button>
+      </div>`;
+    g.appendChild(c);
+  }
+}
+
+async function choisir(nom, role) {
+  message('', '');
+  const r = await fetch('voix/moteur', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ fournisseur: nom, role })
+  });
+  const d = await r.json();
+  if (!r.ok) { message(d.detail || 'Échec du changement.', 'err'); return; }
+  const r2 = role === 'lecture' ? 'Lecture (résumés)' : 'Conversation';
+  message(`Voix de ${r2} : « ${nom} » est maintenant en service.`, 'ok');
+  await charger();
+}
+
+async function tester(fournisseur) {
+  const texte = $('#texte').value.trim();
+  if (!texte) { message('Écris un texte à dire.', 'err'); return; }
+  $('#btnTester').disabled = true;
+  message('Synthèse en cours…', '');
+  try {
+    const corps = { texte };
+    if (fournisseur) corps.fournisseur = fournisseur;
+    const r = await fetch('synthetiser', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corps)
+    });
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.startsWith('audio/')) {
+      const d = await r.json().catch(() => ({}));
+      message(d.note || d.detail || 'Aucune voix disponible.', 'err'); return;
+    }
+    const blob = await r.blob();
+    const lecteur = $('#lecteur');
+    lecteur.src = URL.createObjectURL(blob);
+    lecteur.play();
+    message('Lecture (' + (r.headers.get('X-Backend') || '?') + ').', 'ok');
+  } catch (e) { message('Erreur réseau : ' + e, 'err'); }
+  finally { $('#btnTester').disabled = false; }
+}
+
+function message(t, cls) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (cls || ''); }
+charger();
+</script>
+</body>
+</html>

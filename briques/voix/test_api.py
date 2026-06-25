@@ -25,6 +25,39 @@ def test_liste_voix():
     assert all(f["configure"] is False for f in r.json()["fournisseurs"])
 
 
+def test_moteur_etat():
+    r = client.get("/voix/moteur")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["choisi"] is None                  # aucun choix par défaut
+    noms = [f["nom"] for f in data["fournisseurs"]]
+    assert "piper" in noms and "kokoro" in noms
+    assert all("libelle" in f for f in data["fournisseurs"])
+
+
+def test_choisir_moteur_inconnu_400():
+    r = client.post("/voix/moteur", json={"fournisseur": "n-existe-pas"})
+    assert r.status_code == 400
+
+
+def test_choisir_moteur_non_disponible_409():
+    # kokoro n'est pas installé en test → non sélectionnable, refus honnête.
+    r = client.post("/voix/moteur", json={"fournisseur": "kokoro"})
+    assert r.status_code == 409
+
+
+def test_choisir_auto_ok(monkeypatch, tmp_path):
+    monkeypatch.setenv("VOIX_DIR", str(tmp_path))
+    r = client.post("/voix/moteur", json={"fournisseur": "auto"})
+    assert r.status_code == 200 and r.json()["choisi"] is None
+
+
+def test_page_reglage_servie():
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Voix de l'assistant" in r.text
+
+
 def test_synthetiser_texte_vide_422():
     r = client.post("/synthetiser", json={"texte": "   "})
     assert r.status_code == 422
@@ -41,7 +74,7 @@ def test_synthetiser_repli_honnete():
 
 
 def test_synthetiser_succes_binaire(monkeypatch):
-    async def faux(texte, voix=None, langue=None, format=None, fournisseur=None):
+    async def faux(texte, voix=None, langue=None, format=None, fournisseur=None, usage=None):
         return {"audio": b"OGG-OCTETS", "format": "ogg", "backend": "faux",
                 "place_holder": False}
 

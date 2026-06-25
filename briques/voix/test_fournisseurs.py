@@ -5,13 +5,14 @@ import types
 import fournisseurs as F
 
 
-def test_registre_quatre_fournisseurs():
-    assert set(F.REGISTRE) == {"piper", "openai", "elevenlabs", "gateway"}
+def test_registre_fournisseurs():
+    assert set(F.REGISTRE) == {"piper", "kokoro", "coqui",
+                               "openai", "elevenlabs", "gateway"}
 
 
 def test_ordre_souverain_en_tete():
     assert F.ordre()[0] == "piper"
-    assert F.ordre() == ["piper", "openai", "elevenlabs", "gateway"]
+    assert F.ordre() == ["piper", "kokoro", "coqui", "openai", "elevenlabs", "gateway"]
 
 
 def test_ordre_env(monkeypatch):
@@ -54,6 +55,49 @@ def test_piper_disponible_demande_binaire_et_modele(monkeypatch, tmp_path):
     # sans modèle → indisponible même avec le binaire
     monkeypatch.delenv("PIPER_VOICE")
     assert F.REGISTRE["piper"].disponible() is False
+
+
+# ── Moteurs locaux naturels (OPT-IN inerte) : Kokoro / Coqui ──────────────────
+
+def test_kokoro_coqui_inertes_par_defaut():
+    # Drapeau coupé (conftest) → indisponibles, sans rien importer de lourd.
+    assert F.REGISTRE["kokoro"].disponible() is False
+    assert F.REGISTRE["coqui"].disponible() is False
+
+
+def test_kokoro_inerte_si_drapeau_mais_lib_absente(monkeypatch):
+    # Drapeau levé MAIS la lib n'est pas installée (env de test) → toujours indisponible.
+    monkeypatch.setenv("VOIX_KOKORO", "1")
+    assert F.REGISTRE["kokoro"].disponible() is False
+
+
+def test_coqui_inerte_si_drapeau_mais_lib_absente(monkeypatch):
+    monkeypatch.setenv("VOIX_COQUI", "1")
+    assert F.REGISTRE["coqui"].disponible() is False
+
+
+def test_kokoro_disponible_si_drapeau_et_lib(monkeypatch):
+    # Drapeau levé + lib « présente » (faux module injecté) → disponible.
+    monkeypatch.setenv("VOIX_KOKORO", "1")
+    monkeypatch.setitem(__import__("sys").modules, "kokoro", types.ModuleType("kokoro"))
+    assert F.REGISTRE["kokoro"].disponible() is True
+
+
+def test_coqui_disponible_si_drapeau_et_lib(monkeypatch):
+    monkeypatch.setenv("VOIX_COQUI", "1")
+    monkeypatch.setitem(__import__("sys").modules, "TTS", types.ModuleType("TTS"))
+    assert F.REGISTRE["coqui"].disponible() is True
+
+
+def test_coqui_exige_voix_de_reference(monkeypatch):
+    # Sans COQUI_SPEAKER_WAV ni COQUI_SPEAKER → erreur honnête (XTTS clone une voix).
+    fake = types.ModuleType("TTS"); fake.api = types.ModuleType("TTS.api")
+    fake.api.TTS = lambda *a, **k: types.SimpleNamespace(tts_to_file=lambda **kw: None)
+    monkeypatch.setitem(__import__("sys").modules, "TTS", fake)
+    monkeypatch.setitem(__import__("sys").modules, "TTS.api", fake.api)
+    import pytest
+    with pytest.raises(RuntimeError, match="voix de référence"):
+        asyncio.run(F.Coqui().synthetiser("Bonjour", None, None, "opus"))
 
 
 # ── Conversion WAV → Ogg/Opus (bulle vocale Telegram) ─────────────────────────

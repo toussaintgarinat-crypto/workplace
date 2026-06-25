@@ -14,14 +14,15 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import fournisseurs
 import moteur
 import realtime
+import reglages
 
-app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.2.0")
+app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.5.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -52,6 +53,29 @@ class Synthese(BaseModel):
     langue:      Optional[str] = None
     format:      Optional[str] = None
     fournisseur: Optional[str] = None
+    usage:       Optional[str] = None            # "conversation" / "lecture" ; sinon auto (longueur)
+
+
+class ChoixMoteur(BaseModel):
+    fournisseur: Optional[str] = None            # None / "" / "auto" → ordre par défaut
+    role:        Optional[str] = "conversation"  # "conversation" (rapide) / "lecture" (belle)
+
+
+# Métadonnées d'affichage des moteurs (pour la page de réglage : nature + comment l'activer).
+_INFO_MOTEUR = {
+    "piper":      {"libelle": "Piper", "nature": "local souverain",
+                   "note": "Rapide, 100 % local. Voix synthétique."},
+    "kokoro":     {"libelle": "Kokoro", "nature": "local naturel",
+                   "note": "Voix naturelle, locale. Plus lourd (CPU/GPU)."},
+    "coqui":      {"libelle": "Coqui XTTS", "nature": "local naturel",
+                   "note": "Très naturel + clonage de voix. Lourd (GPU conseillé)."},
+    "openai":     {"libelle": "OpenAI", "nature": "hébergé payant",
+                   "note": "Très naturel. Le texte part chez OpenAI (clé requise)."},
+    "elevenlabs": {"libelle": "ElevenLabs", "nature": "hébergé payant",
+                   "note": "Le plus expressif. Le texte part chez ElevenLabs (clé requise)."},
+    "gateway":    {"libelle": "Gateway", "nature": "hébergé",
+                   "note": "Passe par la Gateway Workplace (clé Gateway)."},
+}
 
 
 @app.get("/sante", tags=["système"])
@@ -80,6 +104,60 @@ async def liste_voix():
             "ordre": fournisseurs.ordre()}
 
 
+@app.get("/voix/moteur", tags=["système"])
+async def lire_moteur():
+    """État pour la page de réglage : moteurs des deux RÔLES (conversation rapide / lecture
+    belle), moteur actif, seuil de bascule, et la liste des moteurs avec leur disponibilité
+    (un moteur non installé/non configuré n'est pas sélectionnable)."""
+    actif = await moteur.fournisseur_actif()
+    fournis = []
+    for nom, f in fournisseurs.REGISTRE.items():
+        info = _INFO_MOTEUR.get(nom, {})
+        fournis.append({"nom": nom, "configure": f.disponible(),
+                        "libelle": info.get("libelle", nom), "nature": info.get("nature", ""),
+                        "note": info.get("note", "")})
+    return {"ok": True, "choisi": reglages.moteur_choisi(),
+            "lecture": reglages.moteur_lecture(), "seuil": reglages.seuil_lecture(),
+            "actif": actif, "ordre": fournisseurs.ordre(), "fournisseurs": fournis}
+
+
+@app.post("/voix/moteur", tags=["système"])
+async def choisir_moteur(body: ChoixMoteur, _cle: str = Depends(cle_api)):
+    """Change le moteur d'un RÔLE EN UN CLIC (persiste, effet immédiat sans redémarrage).
+    `role` = `conversation` (voix rapide, défaut) ou `lecture` (voix belle pour résumés/longs
+    textes). Refuse HONNÊTEMENT un moteur inconnu (400) ou non disponible/non installé (409)."""
+    role = (body.role or "conversation").strip().lower()
+    if role not in ("conversation", "lecture"):
+        raise HTTPException(400, f"Rôle inconnu : « {role} » (attendu conversation/lecture).")
+    nom = (body.fournisseur or "").strip().lower()
+    if nom in ("", "auto", "defaut", "défaut"):
+        valeur = reglages.definir_moteur(None, role)  # retour au défaut pour ce rôle
+    else:
+        f = fournisseurs.REGISTRE.get(nom)
+        if f is None:
+            raise HTTPException(400, f"Moteur inconnu : « {nom} ».")
+        if not f.disponible():
+            info = _INFO_MOTEUR.get(nom, {})
+            raise HTTPException(409, f"Le moteur « {info.get('libelle', nom)} » n'est pas "
+                                     f"disponible (non installé ou non configuré).")
+        try:
+            valeur = reglages.definir_moteur(nom, role)
+        except Exception as e:  # noqa: BLE001 — dossier non inscriptible → honnête
+            raise HTTPException(500, f"Impossible d'enregistrer le choix : {e}")
+    return {"ok": True, "role": role, "valeur": valeur,
+            "choisi": reglages.moteur_choisi(), "lecture": reglages.moteur_lecture(),
+            "actif": await moteur.fournisseur_actif()}
+
+
+@app.get("/", include_in_schema=False)
+async def page_reglage():
+    """Page web autoportée : choisir la voix en un clic + bouton « Tester »."""
+    chemin = os.path.join(os.path.dirname(__file__), "front.html")
+    if os.path.exists(chemin):
+        return FileResponse(chemin)
+    raise HTTPException(404, "Page de réglage absente.")
+
+
 @app.post("/synthetiser", tags=["synthese"])
 async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
     """Texte → audio. Renvoie les OCTETS audio (Content-Type adapté) si un moteur a répondu,
@@ -87,7 +165,7 @@ async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
     if not (body.texte or "").strip():
         raise HTTPException(422, "Le texte est vide.")
     res = await moteur.synthetiser(body.texte, body.voix, body.langue, body.format,
-                                   body.fournisseur)
+                                   body.fournisseur, body.usage)
     if res.get("place_holder") or not res.get("audio"):
         return JSONResponse({k: v for k, v in res.items() if k != "audio"}, status_code=200)
     media = _MEDIA.get(res["format"], "application/octet-stream")

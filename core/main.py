@@ -60,8 +60,12 @@ RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/"
 # validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
 MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
 # Brique « synopsis » (port 6090) : résumé de n'importe quelle vidéo (YouTube, URL, fichier)
-# par IA. Embarquée dans son propre onglet « Synopsis ».
+# par IA. Embarquée comme TUILE du hub « Atelier » (ouvrirCreation).
 SYNOPSIS_UI_URL = os.environ.get("SYNOPSIS_UI_URL", "http://localhost:6090/")
+# Brique « voix » (port 5985) : page de réglage du moteur de synthèse vocale — choisir la
+# voix de l'assistant EN UN CLIC (Piper souverain par défaut, Kokoro naturel local…) +
+# bouton « Tester ». Embarquée comme TUILE du hub « Atelier » (ouvrirCreation).
+VOIX_UI_URL = os.environ.get("VOIX_UI_URL", "http://localhost:5985/")
 # Brique « dev » (auto-atelier, port 5955) : IDE web code-server monté sur le dépôt (S92),
 # embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
 # chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
@@ -448,7 +452,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Tes conversations et tes projets vivent ici, comme dans Claude ou Perplexity. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
-      <button class="tab" data-vue="synopsis" onclick="switchVue('synopsis')" title="Résume n'importe quelle vidéo (YouTube, lien direct ou fichier) : résumé, chapitres horodatés et points clés.">Synopsis</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -756,6 +759,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Capter un appel (façon Granola, sans bot) ou un mémo, transcrire en local, et ranger les notes en mémoire ou sur un drive.</span>
           <span class="creation-badge">Brique · port 5980</span>
         </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__SYNOPSIS_UI_URL__', 'Synopsis — résumé de vidéo')">
+          <span class="creation-emoji">🎞️</span>
+          <span class="creation-titre">Synopsis &amp; résumé vidéo</span>
+          <span class="creation-desc">Résume n'importe quelle vidéo (YouTube, lien direct ou fichier) : résumé, chapitres horodatés et points clés.</span>
+          <span class="creation-badge">Brique · port 6090</span>
+        </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__VOIX_UI_URL__', 'Voix — choisir le moteur')">
+          <span class="creation-emoji">🗣️</span>
+          <span class="creation-titre">Voix de l'assistant</span>
+          <span class="creation-desc">Choisis la voix en un clic (Piper, Kokoro…) et teste-la. Sert pour les réponses vocales (Telegram).</span>
+          <span class="creation-badge">Brique · port 5985</span>
+        </button>
         <button class="creation-tuile creation-bientot" disabled>
           <span class="creation-emoji">🖼️</span>
           <span class="creation-titre">Images &amp; Vidéo</span>
@@ -824,18 +839,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- VUE SYNOPSIS (brique 6090) : résumé de n'importe quelle vidéo -->
-  <div class="view" id="vue-synopsis">
-    <div class="topbar">
-      <h2>Synopsis<span class="aide" tabindex="0">i<span class="aide-txt">Résume n'importe quelle vidéo — colle une URL YouTube, un lien direct, ou dépose un fichier. Tu obtiens un résumé structuré, des chapitres horodatés et les points clés.</span></span></h2>
-      <a class="btn ghost" href="__SYNOPSIS_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
-    </div>
-    <div class="panel" style="padding:0;overflow:hidden">
-      <iframe id="synopsis-iframe" title="Synopsis"
-        style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"
-        allow="clipboard-read; clipboard-write"></iframe>
-    </div>
-  </div>
+  <!-- Synopsis (brique 6090) et Voix (brique 5985) sont désormais des TUILES de l'Atelier
+       (ouvrirCreation) plutôt que des onglets dédiés — cf. la grille du hub Atelier. -->
 
   <!-- VUE ATELIER DEV (S92) : IDE web code-server monté sur le dépôt -->
   <div class="view" id="vue-dev">
@@ -994,7 +999,6 @@ function switchVue(v) {
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
-  if (v === 'synopsis') chargerSynopsis();
   if (v === 'dev') chargerDev();
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
@@ -1385,14 +1389,6 @@ function chargerMail() {
   if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
 }
 
-// ── Synopsis (résumé vidéo, brique 6090) — iframe paresseuse au 1er affichage ──
-const SYNOPSIS_UI_URL = '__SYNOPSIS_UI_URL__';
-let synopsisCharge = false;
-function chargerSynopsis() {
-  if (synopsisCharge) return;
-  const f = document.getElementById('synopsis-iframe');
-  if (f) { f.src = SYNOPSIS_UI_URL; synopsisCharge = true; }
-}
 
 // ── Atelier dev (S92) : IDE web code-server, chargé paresseusement au 1er affichage ──
 const DEV_IDE_URL = '__DEV_IDE_URL__';
@@ -3320,6 +3316,7 @@ async def dashboard():
         .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
         .replace("__MAIL_UI_URL__", MAIL_UI_URL)
         .replace("__SYNOPSIS_UI_URL__", SYNOPSIS_UI_URL)
+        .replace("__VOIX_UI_URL__", VOIX_UI_URL)
         .replace("__DEV_IDE_URL__", DEV_IDE_URL)
         .replace("__GENERATEUR_BUNDLES_URL__", f"{GENERATEUR_URL_PUBLIQUE}/bundles-studio")
         .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))
