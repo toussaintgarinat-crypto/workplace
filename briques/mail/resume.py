@@ -120,6 +120,62 @@ async def rediger_brouillon(message: dict, instruction: str = "", lang: str = "f
     return {"corps": corps[:3000], "genere_par": "ia", "note": ""}
 
 
+PROMPT_COMPOSER = (
+    "Tu rédiges, à la place de l'utilisateur, un email NEUF à partir de ce qu'il a dicté. "
+    "Ta mission : (1) CORRIGER l'orthographe, la grammaire et la ponctuation de la dictée ; "
+    "(2) la METTRE EN FORME en email classique et professionnel en {langue} : une formule "
+    "d'appel (« Bonjour, » ou « Bonjour [Nom], »), un corps clair en paragraphes, une formule "
+    "de politesse de clôture (« Cordialement, »), puis la signature « [Ton nom] » sur la dernière "
+    "ligne. Règles STRICTES : reste FIDÈLE à la dictée, n'invente AUCUN fait, chiffre, date ni "
+    "engagement absent ; n'ajoute pas d'objet ni d'en-têtes dans le corps. "
+    "Réponds UNIQUEMENT par un objet JSON : {{\"sujet\": \"...\", \"corps\": \"...\"}} — un objet "
+    "court et fidèle au contenu, et le corps mis en forme. Aucun texte hors du JSON."
+)
+
+
+def _composer_factuel(destinataire: str, dictee: str, sujet: str = "",
+                      lang: str = "fr") -> dict:
+    """Mise en forme LOCALE minimale et honnête (sans LLM) : on encadre la dictée d'une formule
+    d'appel et d'une signature, SANS rien corriger ni inventer. L'utilisateur ajustera."""
+    texte = (dictee or "").strip()
+    if lang == "en":
+        corps = f"Hello,\n\n{texte}\n\nBest regards,\n[Your name]"
+        suj = sujet or (texte.splitlines()[0][:60] if texte else "(no subject)")
+    else:
+        corps = f"Bonjour,\n\n{texte}\n\nCordialement,\n[Ton nom]"
+        suj = sujet or (texte.splitlines()[0][:60] if texte else "(sans objet)")
+    return {"sujet": suj, "corps": corps, "genere_par": "local",
+            "note": "Rédaction assistée indisponible : mise en forme minimale, à relire (la dictée "
+                    "n'a PAS été corrigée)."}
+
+
+async def rediger_nouveau(destinataire: str, dictee: str, sujet: str = "",
+                          lang: str = "fr") -> dict:
+    """Compose un email NEUF à partir d'une dictée : corrige et met en forme (LLM si dispo, sinon
+    gabarit honnête NON corrigé). NE l'envoie pas. Renvoie {sujet, corps, genere_par, note}."""
+    factuel = _composer_factuel(destinataire, dictee, sujet, lang)
+    if not (dictee or "").strip():
+        return {**factuel, "note": "Dictée vide : rien à rédiger."}
+    langue = _LANGUES.get(lang, "français")
+    tache = (f"Destinataire : {destinataire or '(non précisé)'}\n"
+             + (f"Objet souhaité : {sujet}\n" if sujet else "Objet : à proposer.\n")
+             + f"\nDictée de l'utilisateur (à corriger et mettre en forme) :\n{dictee}\n\n"
+             + "Rends le JSON {sujet, corps}.")
+    try:
+        brut = await _completer(PROMPT_COMPOSER.format(langue=langue), tache)
+        import json
+        debut, fin = brut.find("{"), brut.rfind("}")
+        donnees = json.loads(brut[debut:fin + 1]) if debut != -1 and fin != -1 else {}
+        corps = (donnees.get("corps") or "").strip()
+        suj = (donnees.get("sujet") or sujet or "").strip()
+    except Exception:  # noqa: BLE001 — repli honnête, jamais d'erreur opaque
+        return factuel
+    if not corps:
+        return factuel
+    return {"sujet": suj[:200] or factuel["sujet"], "corps": corps[:3000],
+            "genere_par": "ia", "note": ""}
+
+
 async def resumer(messages: list[dict], lang: str = "fr") -> dict:
     """Construit le digest de la boîte. Tente la Gateway, retombe sur le digest FACTUEL local
     en cas d'échec. Renvoie {texte, genere_par:"ia"|"local", note}."""

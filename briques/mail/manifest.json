@@ -1,6 +1,6 @@
 {
   "nom": "mail",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION + GESTION (marquer lu, déplacer, supprimer). Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon), et GÉRER les messages : marquer lu/non lu, déplacer vers un dossier, supprimer (mis à la corbeille côté serveur, réversible). FILTRES PERSONNALISÉS (ex. un par entreprise, par domaine d'expéditeur ou mots-clés). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos). Les actions d'écriture opèrent par UID (identifiant stable) en lecture-écriture ; la lecture reste read-only.",
   "role": "mail",
   "couche": "backend",
@@ -126,6 +126,20 @@
         "message_id": {"type": "string", "description": "Identifiant du message auquel répondre.", "requis": true},
         "instruction": {"type": "string", "description": "Consigne de ton/contenu (optionnel), ex. « décline poliment », « propose jeudi 14h »."},
         "lang": {"type": "string", "description": "Langue du brouillon (fr, en, es). Défaut fr."}
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_composer",
+      "description": "COMPOSE un email NEUF (pas une réponse) à partir de ce que l'utilisateur DICTE : corrige l'orthographe/grammaire, met en forme un email classique (formule d'appel, corps clair, formule de politesse, signature) et propose un objet. Le brouillon est rangé mais N'EST PAS ENVOYÉ : l'utilisateur le relit/ajuste, puis demande l'envoi via mail_brouillon_envoyer. Boîte d'envoi choisie automatiquement si une seule est connectée. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/mail/composer",
+      "params": {
+        "a": {"type": "string", "description": "Destinataire du mail (adresse email).", "requis": true},
+        "dictee": {"type": "string", "description": "Ce que l'utilisateur a dicté/veut dire — sera corrigé et mis en forme.", "requis": true},
+        "sujet": {"type": "string", "description": "Objet souhaité (optionnel) ; sinon l'assistant en propose un."},
+        "compte": {"type": "string", "description": "Adresse d'envoi (optionnel) ; auto si une seule boîte réelle est connectée."},
+        "lang": {"type": "string", "description": "Langue du mail (fr, en, es). Défaut fr."}
       },
       "action": true
     },

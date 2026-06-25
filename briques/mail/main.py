@@ -85,6 +85,14 @@ class BrouillonEntree(BaseModel):
     lang: str = "fr"
 
 
+class ComposerEntree(BaseModel):
+    a: str                 # destinataire du mail neuf
+    dictee: str            # ce que l'utilisateur a dicté (sera corrigé + mis en forme)
+    sujet: str = ""        # objet souhaité (optionnel : l'assistant en propose un sinon)
+    compte: str = ""       # adresse d'envoi (optionnel : auto si une seule boîte réelle)
+    lang: str = "fr"
+
+
 class MarquerEntree(BaseModel):
     lu: bool = True    # true = marquer lu (défaut) ; false = marquer non lu
 
@@ -136,7 +144,7 @@ def _assurer_cache(tenant: str) -> None:
 # ── Santé & config ───────────────────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "mail", "version": "0.5.0"}
+    return {"ok": True, "brique": "mail", "version": "0.6.0"}
 
 
 @app.get("/config")
@@ -374,6 +382,38 @@ async def brouillon(corps: BrouillonEntree, tenant: str = Depends(tenant_actuel)
         corps=redige["corps"], compte=msg.get("compte", ""))
     return {"ok": True, "envoye": False, "brouillon": enr,
             "genere_par": redige["genere_par"], "note": redige.get("note", ""),
+            "message": "Brouillon préparé (NON envoyé). Relis/ajuste-le, puis demande l'envoi."}
+
+
+@app.post("/mail/composer", status_code=201)
+async def composer(corps: ComposerEntree, tenant: str = Depends(tenant_actuel)):
+    """Compose un email NEUF (pas une réponse) : corrige la dictée, la met en forme en email
+    classique et propose un objet, puis le RANGE en brouillon — NE L'ENVOIE PAS. L'utilisateur le
+    relit/ajuste, puis demande l'envoi via mail_brouillon_envoyer.
+
+    Boîte d'envoi : `compte` si fourni, sinon l'UNIQUE boîte réelle connectée (auto), sinon vide
+    → l'envoi sera SIMULÉ honnête (rien ne part)."""
+    if not corps.a.strip():
+        raise HTTPException(422, "Précise le destinataire (a).")
+    redige = await resume.rediger_nouveau(corps.a, corps.dictee, corps.sujet, corps.lang)
+
+    # Choix de la boîte d'envoi : explicite, sinon auto si une seule boîte réelle.
+    comptes = stockage.lister_comptes(tenant)
+    compte_addr = corps.compte.strip()
+    if not compte_addr and len(comptes) == 1:
+        compte_addr = comptes[0]["utilisateur"]
+    note_envoi = ""
+    if compte_addr and not any(c["utilisateur"] == compte_addr for c in comptes):
+        raise HTTPException(404, f"Boîte « {compte_addr} » non connectée.")
+    if not compte_addr:
+        note_envoi = ("Aucune boîte réelle ciblée : l'envoi sera SIMULÉ (rien ne partira). "
+                      "Connecte une boîte ou précise « compte » pour un envoi réel.")
+
+    enr = stockage.enregistrer_brouillon(
+        tenant, en_reponse_a="", a=corps.a.strip(), sujet=redige["sujet"],
+        corps=redige["corps"], compte=compte_addr)
+    return {"ok": True, "envoye": False, "brouillon": enr,
+            "genere_par": redige["genere_par"], "note": " ".join(filter(None, [redige.get("note", ""), note_envoi])),
             "message": "Brouillon préparé (NON envoyé). Relis/ajuste-le, puis demande l'envoi."}
 
 
