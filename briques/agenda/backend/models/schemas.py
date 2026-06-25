@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_serializer, field_validator
+
+from services.horaires import vers_paris, vers_utc_naif
 
 
 # ── Calendars ─────────────────────────────────────────────────────────────────
@@ -169,6 +171,12 @@ class EventCreate(BaseModel):
     def _rappels(cls, v):
         return normaliser_rappels(v)
 
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def _utc(cls, v):
+        # Heure murale Europe/Paris (saisie humaine) ou aware → naïf UTC (stockage).
+        return vers_utc_naif(v)
+
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
@@ -188,6 +196,12 @@ class EventUpdate(BaseModel):
     def _rappels(cls, v):
         return normaliser_rappels(v)
 
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def _utc(cls, v):
+        # None = champ non fourni au PATCH ; sinon → naïf UTC (cf. EventCreate).
+        return vers_utc_naif(v) if v is not None else v
+
 
 class EventOut(BaseModel):
     id: str
@@ -205,6 +219,12 @@ class EventOut(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("start_at", "end_at")
+    def _heure_locale(self, v: datetime):
+        # Stocké en UTC naïf → exposé en Europe/Paris (avec offset), pour que le
+        # navigateur ET les lecteurs par découpage de chaîne voient l'heure locale.
+        return vers_paris(v)
 
     class Config:
         from_attributes = True
