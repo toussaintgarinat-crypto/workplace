@@ -135,8 +135,8 @@ def _rappels_dus(evt: dict, maintenant: datetime):
         debut = datetime.fromisoformat(debut_iso)
     except (ValueError, TypeError):
         return
-    # Comparaison naïve : la brique renvoie des datetimes sans fuseau (heure locale
-    # de saisie), `maintenant` est local lui aussi (datetime.now()).
+    # La brique renvoie l'heure en Europe/Paris (avec offset) ; on la ramène à
+    # l'heure murale locale pour comparer à `maintenant` (datetime.now(), naïf local).
     if debut.tzinfo is not None:
         debut = debut.replace(tzinfo=None)
     for m in rappels:

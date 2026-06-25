@@ -14,6 +14,7 @@ from auth import get_current_user
 from db import get_db
 from models.orm import Event
 from models.schemas import EventOut, EventUpdate
+from services.horaires import vers_utc_naif
 from services.pubsub import publish_change
 from utils.access import require_calendar_access
 
@@ -31,10 +32,12 @@ async def list_events(
 ):
     await require_calendar_access(db, cal_id, user["sub"], min_role="viewer")
     filters = [Event.calendar_id == cal_id]
+    # Les bornes arrivent en UTC (front) ou en heure locale → naïf UTC pour comparer
+    # au stockage (lui aussi naïf UTC) ; sinon naïf vs aware fausse le filtre.
     if start:
-        filters.append(Event.end_at >= start)
+        filters.append(Event.end_at >= vers_utc_naif(start))
     if end:
-        filters.append(Event.start_at <= end)
+        filters.append(Event.start_at <= vers_utc_naif(end))
     result = await db.execute(
         select(Event).where(and_(*filters)).order_by(Event.start_at)
     )
