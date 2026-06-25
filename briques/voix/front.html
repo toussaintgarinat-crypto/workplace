@@ -37,6 +37,15 @@
   audio { height:34px; }
   .msg { margin-top:10px; font-size:13px; min-height:18px; }
   .msg.err { color:var(--rouge); } .msg.ok { color:var(--ok); }
+  .comparatif { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+  .rangee { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+            border:1px solid var(--bord); border-radius:10px; padding:8px 10px; background:#16130f; }
+  .rangee .ident { min-width:150px; }
+  .rangee .ident .nm { font-weight:600; }
+  .rangee .ident .nt { color:var(--gris); font-size:12px; }
+  .rangee.lect { border-color:var(--or); }
+  .rangee audio { flex:1; min-width:160px; }
+  .rangee .st { font-size:12px; color:var(--gris); min-width:60px; }
 </style>
 </head>
 <body>
@@ -58,6 +67,20 @@
     <div id="msg" class="msg"></div>
   </div>
 
+  <div class="testeur" id="comparateur">
+    <strong>📖 Comparer les voix de lecture</strong>
+    <p class="sous" style="margin:6px 0 12px">Le <b>même</b> texte de résumé, synthétisé par chaque
+      moteur disponible — écoute côte à côte, puis choisis ta voix de <b>Lecture</b> (📖 ci-dessous).
+      <b>Coqui</b> (local) et les voix <b>hébergées</b> (OpenAI / ElevenLabs) brillent ici : la
+      lenteur ne gêne pas pour un long texte qu'on écoute posément.</p>
+    <textarea id="texteLecture">Voici le résumé de la vidéo : l'intervenant rappelle que la souveraineté des données n'est pas un luxe mais une nécessité. Il détaille trois principes — garder le calcul à la maison, ne jamais inventer une réponse, et rendre chaque brique remplaçable. En conclusion, une voix de lecture agréable change tout quand on écoute un long texte posément, le soir.</textarea>
+    <div class="ligne">
+      <button class="primaire" onclick="comparerTout()">▶︎ Tout écouter</button>
+      <span class="sous" id="cmpMsg"></span>
+    </div>
+    <div id="comparatif" class="comparatif"></div>
+  </div>
+
 <script>
 const $ = s => document.querySelector(s);
 let etat = { fournisseurs: [], choisi: null, lecture: null, actif: null, seuil: 280 };
@@ -70,6 +93,7 @@ async function charger() {
 }
 
 function rendre() {
+  rendreComparateur();
   const g = $('#grille'); g.innerHTML = '';
   for (const f of etat.fournisseurs) {
     const estConv = f.nom === etat.choisi;
@@ -94,6 +118,62 @@ function rendre() {
         <button ${!f.configure ? 'disabled' : ''} onclick="tester('${f.nom}')">▶︎ Tester</button>
       </div>`;
     g.appendChild(c);
+  }
+}
+
+// ── Comparateur de voix de LECTURE : même texte, un moteur par rangée ──────────
+function rendreComparateur() {
+  const box = $('#comparatif'); box.innerHTML = '';
+  const dispo = etat.fournisseurs.filter(f => f.configure);
+  if (!dispo.length) {
+    box.innerHTML = '<p class="sous">Aucun moteur disponible pour l’instant. '
+      + 'Active Coqui (rebuild) ou pose une clé OpenAI/ElevenLabs au .env racine.</p>';
+    return;
+  }
+  for (const f of dispo) {
+    const lect = f.nom === etat.lecture;
+    const r = document.createElement('div');
+    r.className = 'rangee' + (lect ? ' lect' : '');
+    r.innerHTML = `
+      <div class="ident"><div class="nm">${f.libelle}${lect ? ' 📖' : ''}</div>
+        <div class="nt">${f.nature}</div></div>
+      <button onclick="comparer('${f.nom}', this)">▶︎ Écouter</button>
+      <audio controls style="display:none"></audio>
+      <span class="st"></span>
+      <button ${lect ? 'disabled' : ''} onclick="choisir('${f.nom}','lecture')"
+              title="Utiliser cette voix pour les résumés et longs textes">📖 Lecture</button>`;
+    box.appendChild(r);
+  }
+}
+
+async function comparer(nom, btn) {
+  const texte = $('#texteLecture').value.trim();
+  if (!texte) { $('#cmpMsg').textContent = 'Écris un texte de résumé.'; return; }
+  const rangee = btn.closest('.rangee');
+  const audio = rangee.querySelector('audio');
+  const st = rangee.querySelector('.st');
+  btn.disabled = true; st.textContent = 'synthèse…';
+  try {
+    const r = await fetch('synthetiser', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ texte, fournisseur: nom, usage: 'lecture' })
+    });
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.startsWith('audio/')) {
+      const d = await r.json().catch(() => ({}));
+      st.textContent = '✗'; $('#cmpMsg').textContent = d.note || d.detail || 'Voix indisponible.';
+      return;
+    }
+    audio.src = URL.createObjectURL(await r.blob());
+    audio.style.display = ''; audio.play();
+    st.textContent = '✓ ' + (r.headers.get('X-Backend') || nom);
+  } catch (e) { st.textContent = '✗'; $('#cmpMsg').textContent = 'Erreur réseau : ' + e; }
+  finally { btn.disabled = false; }
+}
+
+async function comparerTout() {
+  for (const b of document.querySelectorAll('#comparatif .rangee > button:first-of-type')) {
+    await comparer(b.getAttribute('onclick').match(/'([^']+)'/)[1], b);
   }
 }
 

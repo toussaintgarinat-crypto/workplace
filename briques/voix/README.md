@@ -89,7 +89,7 @@ Tant qu'on ne les active pas, la brique reste sur Piper, sans aucun changement.
 | Moteur | Forces | Activation |
 |---|---|---|
 | `kokoro` | ~82M params, Apache, très naturel pour sa taille (FR : `ff_siwis`) | `pip install kokoro soundfile` + `VOIX_KOKORO=1` |
-| `coqui` (XTTS-v2) | multilingue + **clonage de voix** (échantillon WAV) | `pip install coqui-tts` + `VOIX_COQUI=1` + `COQUI_SPEAKER_WAV=/ref.wav` |
+| `coqui` (XTTS-v2) | **voix de LECTURE haut de gamme**, multilingue + **clonage de voix** | `pip install coqui-tts` + `VOIX_COQUI=1` (marche *out of the box*) |
 
 **Activation de Kokoro (déjà câblée dans le compose, `build.args.INSTALL_KOKORO=1`) :**
 l'image installe `kokoro soundfile misaki[fr]` (+ `espeak-ng`, torch CPU-only) et le runtime
@@ -98,16 +98,25 @@ pose `VOIX_KOKORO=1`. La voix est ensuite **sélectionnable en un clic** depuis 
 **défaut** (souverain) ; le choix de l'utilisateur est persisté dans `VOIX_DIR` (`/data/voix`).
 Pour une image légère sans voix naturelle : `INSTALL_KOKORO=0` + `VOIX_KOKORO=0`.
 
-**Coqui/XTTS (le jour où la machine a un GPU) :**
+**Activation de Coqui XTTS — la voix de LECTURE (S106, déjà câblée, `build.args.INSTALL_COQUI=1`) :**
+l'image installe `coqui-tts` (+ `espeak-ng`, torch CPU-only) et le runtime pose `VOIX_COQUI=1`.
+Coqui marche **out of the box** : sans aucune voix de référence, XTTS prend un **locuteur intégré
+par défaut** (`COQUI_SPEAKER_DEFAUT`, déf. *Ana Florence*). Le modèle XTTS (~1,8 Go) est
+téléchargé au **1er appel** (prévoir un délai). CPU **lent** mais acceptable pour la lecture
+(résumés, longs textes). On la choisit pour le **rôle lecture** depuis `GET /` (comparateur
+« voix de lecture ») ou `POST /voix/moteur {"fournisseur":"coqui","role":"lecture"}`.
+> ⚠ **Licence** : le modèle XTTS-v2 est sous **CPML (non commerciale)** — usage perso OK,
+> commercial à vérifier. Image plus légère : `INSTALL_COQUI=0` + `VOIX_COQUI=0`.
 
-1. installer la dépendance (cf. `requirements-voix-naturelle.txt`) dans l'image ;
-2. poser le drapeau au **`.env` racine** (pas dans le compose — piège env-shadow) :
-   `VOIX_COQUI=1` (`COQUI_SPEAKER_WAV`, `COQUI_LANG=fr`, `COQUI_DEVICE=cuda` si GPU) ;
-3. sélectionner « Coqui » dans la page de réglage (ou `VOIX_PROVIDERS=coqui,piper`).
+**Voix de lecture hébergées (OpenAI / ElevenLabs) :** poser `OPENAI_API_KEY` / `ELEVENLABS_API_KEY`
+au **`.env` racine** (pas dans le compose — piège env-shadow), puis choisir le moteur pour le
+rôle lecture. Superbe et rapide sans GPU, mais **payant** et le **texte sort de la maison**.
+Le comparateur de `GET /` joue le **même** résumé sur chaque moteur dispo pour choisir à l'oreille.
 
 Variables : `KOKORO_VOICE` (déf. `ff_siwis`), `KOKORO_LANG` (déf. `f`), `KOKORO_SPEED` ;
-`COQUI_MODEL` (déf. XTTS-v2), `COQUI_SPEAKER_WAV` **ou** `COQUI_SPEAKER`, `COQUI_LANG`
-(déf. `fr`), `COQUI_DEVICE`.
+`COQUI_MODEL` (déf. XTTS-v2), `COQUI_SPEAKER_WAV` (clone un timbre) **ou** `COQUI_SPEAKER`
+(intégré nommé) **ou** `COQUI_SPEAKER_DEFAUT` (déf. *Ana Florence*), `COQUI_LANG` (déf. `fr`),
+`COQUI_DEVICE` (`cuda` si GPU).
 
 ## Chat vocal temps réel (porté de Gungnir)
 

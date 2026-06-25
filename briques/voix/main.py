@@ -22,7 +22,7 @@ import moteur
 import realtime
 import reglages
 
-app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.5.0")
+app = FastAPI(title="Voix — TTS souverain + chat vocal temps réel", version="0.6.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -67,8 +67,9 @@ _INFO_MOTEUR = {
                    "note": "Rapide, 100 % local. Voix synthétique."},
     "kokoro":     {"libelle": "Kokoro", "nature": "local naturel",
                    "note": "Voix naturelle, locale. Plus lourd (CPU/GPU)."},
-    "coqui":      {"libelle": "Coqui XTTS", "nature": "local naturel",
-                   "note": "Très naturel + clonage de voix. Lourd (GPU conseillé)."},
+    "coqui":      {"libelle": "Coqui XTTS", "nature": "local · lecture",
+                   "note": "Voix de lecture haut de gamme, 100 % locale + clonage. Lente en "
+                           "CPU (OK pour les résumés). Modèle XTTS sous licence non commerciale."},
     "openai":     {"libelle": "OpenAI", "nature": "hébergé payant",
                    "note": "Très naturel. Le texte part chez OpenAI (clé requise)."},
     "elevenlabs": {"libelle": "ElevenLabs", "nature": "hébergé payant",

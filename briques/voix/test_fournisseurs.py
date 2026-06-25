@@ -89,15 +89,29 @@ def test_coqui_disponible_si_drapeau_et_lib(monkeypatch):
     assert F.REGISTRE["coqui"].disponible() is True
 
 
-def test_coqui_exige_voix_de_reference(monkeypatch):
-    # Sans COQUI_SPEAKER_WAV ni COQUI_SPEAKER → erreur honnête (XTTS clone une voix).
-    fake = types.ModuleType("TTS"); fake.api = types.ModuleType("TTS.api")
-    fake.api.TTS = lambda *a, **k: types.SimpleNamespace(tts_to_file=lambda **kw: None)
-    monkeypatch.setitem(__import__("sys").modules, "TTS", fake)
-    monkeypatch.setitem(__import__("sys").modules, "TTS.api", fake.api)
-    import pytest
-    with pytest.raises(RuntimeError, match="voix de référence"):
-        asyncio.run(F.Coqui().synthetiser("Bonjour", None, None, "opus"))
+def test_coqui_locuteur_integre_par_defaut():
+    # « Out of the box » (S106) : sans aucune config de voix, XTTS prend un locuteur INTÉGRÉ
+    # par défaut → pas d'erreur, ça parle. (Pas de speaker_wav : c'est l'entrée du clonage S107.)
+    args = F.Coqui._args("Bonjour", None, None)
+    assert args["speaker"] == F._COQUI_SPEAKER_DEFAUT
+    assert "speaker_wav" not in args
+    assert args["language"] == "fr"
+
+
+def test_coqui_speaker_wav_prioritaire(monkeypatch):
+    # Un WAV de référence (clone) l'emporte sur tout (point d'accroche du clonage S107).
+    monkeypatch.setenv("COQUI_SPEAKER_WAV", "/voix/ref.wav")
+    monkeypatch.setenv("COQUI_SPEAKER", "Ignoré")
+    args = F.Coqui._args("Bonjour", None, None)
+    assert args["speaker_wav"] == "/voix/ref.wav" and "speaker" not in args
+    # …et l'argument `voix` explicite l'emporte encore (ex. "clone:<nom>" résolu en chemin).
+    assert F.Coqui._args("Bonjour", "/autre.wav", None)["speaker_wav"] == "/autre.wav"
+
+
+def test_coqui_speaker_integre_env(monkeypatch):
+    monkeypatch.setenv("COQUI_SPEAKER", "Claribel Dervla")
+    args = F.Coqui._args("Bonjour", None, "en")
+    assert args["speaker"] == "Claribel Dervla" and args["language"] == "en"
 
 
 # ── Conversion WAV → Ogg/Opus (bulle vocale Telegram) ─────────────────────────

@@ -709,6 +709,146 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
 | 2026-06-08 | **Sprint S22 — Emails & relances d'impayés : code livré + prouvé OFFLINE** : prolonge S20/S21 (la facture émise non payée **se relance toute seule** — l'euro **déjà dû**). Socle `app/email.py` (S130, un seul email) **généralisé**. (1) **Chantier 1 — email réel** : `email.py` → `resolve_smtp_password()` (mdp **chiffré** au coffre `ProviderApiKeys` provider `smtp` via `crypto.py` → repli env `SMTP_PASS`, jamais en clair), `send()` générique + templates (**facture émise**, **relance impayée 3 niveaux** J+7 courtois / J+15 ferme / J+30 finale) ; `config.py` ajoute `SMTP_STARTTLS` (relais interne/dev sans TLS) ; provider `smtp` ajouté à `api_keys.py`. (2) **Chantier 2 — moteur relances (cœur valeur)** : `app/relances.py` — `niveau_du()` (cadence pure : <7→aucune, 7–14→J+7, 15–29→J+15, ≥30→J+30), scan des factures `envoyée` échues avec email, **anti-doublon strict** `(facture, niveau)` via **journal SQLite side-car** (motif `proactif.py`, **aucune migration** du schéma Postgres partagé) ; `apercu()` dry-run (n'envoie rien) / `executer()` (envoie+journalise, tolérant aux échecs par facture) ; `routers/relances.py` (`GET /relances/impayes/apercu`, `POST /relances/impayes/executer`, `GET /relances/journal`, `POST /facturation/{id}/envoyer` = email + statut `envoyée` + horloge) monté `/api`. (3) **Chantier 3 — adaptateur + assistant** : capacité `relances` + routes FR ; `forge_relances_apercu` (lecture), `forge_relances_envoyer`/`forge_facture_envoyer` (actions confirmées). **PROUVÉ OFFLINE (15/15, sans identifiants externes)** : **envoi SMTP RÉEL** contre un serveur **aiosmtpd local** (message transmis, destinataire/sujet/numéro/montant vérifiés) ; cadence 6→aucune/8→J+7/20→J+15/40→J+30 ; **aperçu dry-run n'envoie rien**, facture sans email **ignorée signalée**, executer→3 (niveaux 7/15/30), **ré-exécuter→0 (anti-doublon)**, journal=3 ; 8 fichiers compilent. **HONNÊTETÉ — non prouvé LIVE** : envoi vers un **vrai destinataire** (Gmail/transactionnel) + délivrabilité (SPF/DKIM) nécessite des identifiants SMTP ; **planification périodique** = moteur exécutable à la demande, cron quotidien documenté (anti-doublon le rend sûr) pas encore câblé dans la boucle proactive. Doc `docs/sprints/S22-forge-emails-relances.md`, guide `GUIDE-emails.md` (Mailpit dev → SMTP réel, mdp au coffre). |
 | 2026-06-08 | **S21+S22 — test d'INTÉGRATION réel (17/17, routers réels + Postgres réel + Mailpit réel)** : au-delà des preuves unitaires offline, les **vrais routers** (`facturation`+`relances`+`stripe`) montés dans une app FastAPI contre un **Postgres dédié** (schéma `init_db`, 87 tables) et **Mailpit** ; seule l'auth Keycloak remplacée (override de dépendance), tout dans un seul event loop (httpx ASGITransport). **Prouvé E2E** : créer facture (TTC 1440 calculé en base) → **envoyer par email** (statut `envoyée`, mail *« Votre facture FACT-2026-0001 »* **reçu dans Mailpit**) → rendre échue J+10 → `apercu` niveau **J+7** + **dry-run silencieux** → `executer` (relance *« Rappel — facture… »* **reçue dans Mailpit**, journalisée) → **ré-exécuter = 0 (anti-doublon)**. Stripe (même run, endpoint réel) : `/stripe/etat`→mock, webhook **sans secret→503 / sig invalide→400 / sig valide→200**. Conteneurs de test supprimés après coup. **Reste live** : chemin Keycloak réel + identifiants SMTP/Stripe externes (cf. guides). |
 | 2026-06-08 | **Sprint S23 — Compte client auto à la livraison : code livré + prouvé offline (5/5)**. À la livraison d'une app hébergée, si un **email client** est fourni, on **crée automatiquement son compte d'accès** (Keycloak realm `oria`, **idempotent** par email), Keycloak **lui envoie un lien « définis ton mot de passe »** (`execute-actions-email`, **aucun secret en clair** — option B retenue) et le client est **rattaché à son espace** (`/api/worlds/{id}/rejoindre`, `user_id=sub`). Nouveau module `briques/generateur/client_provisioning.py` (réutilise l'auth de service `workplace-provisioner`), appelé **après** le provisioning de l'espace (besoin du `world_id`) ; statut stocké (`apps.client_onboarding`) et exposé par `GET /apps/{id}`. **Câblage E2E** : `email_client`/`contact_client` traversent `POST /usine/livrer` (+ champs du dashboard) → orchestrateur (`creer_livraison`/`executer_pipeline`/`_etape_generation`, colonnes `livraisons.email_client`/`contact_client`) → `/generer` (`DemandeGeneration`) → onboarding. **Tout best-effort** (jamais bloquant). **Preuve offline** (`test_client_provisioning.py`, Keycloak+Oria mockés `httpx.MockTransport`, 5/5) : nouveau→créé+email+rattaché ; existant→idempotent ; email vide→ignoré (0 appel) ; Keycloak KO→échec sans exception ; SMTP KO→compte créé, email_envoye=False. Migrations SQLite douces. **Reste live** : rôle `realm-management:manage-users` au provisioner + SMTP du realm `oria` (Mailpit) + connexion effective du client. Doc `docs/sprints/S23-forge-compte-client-auto.md`. |
+| — | _⬇️ Entrées reconstruites depuis l'historique git (S24 →), plus concises que les sprints rédigés à la main ci-dessus. Le détail vit dans chaque commit + la mémoire projet._ |
+| 2026-06-08 | Sprint S24 : pont consenti app livrée → CRM du Forge (prouvé LIVE) (`2dc25ae`) |
+| 2026-06-09 | Sprint S25 : persistance backend du thème par user/monde (dettes soldées) (`2cbe150`) |
+| 2026-06-09 | Sprint S26 : structure & navigation Oria (état de vue unique + URL + onboarding) (`7085cd1`) |
+| 2026-06-09 | Sprint S27 : pont Google Agenda (sync consentie pull one-way, prouvé offline) (`4e5994d`) |
+| 2026-06-09 | Sprint S27 : preuve LIVE du pont Google Agenda (`f2928c5`) |
+| 2026-06-09 | Sprint S27 : déploiement du pont Google Agenda (image Docker) (`7e5f454`) |
+| 2026-06-09 | Sprint S27 : doc — déploiement Docker du pont Google Agenda acté (`52eb398`) |
+| 2026-06-10 | Doc : preuve LIVE S138 (chat/cache/routage) + backlog S28-S31 décidé (`7d44890`) |
+| 2026-06-10 | Sprint S28 : clôture LIVE groupée — 3 flux Stripe/emails/comptes prouvés (`84dd467`) |
+| 2026-06-10 | Sprint S29 : brique horloge (planificateur) — tâches périodiques déclarées par manifest (`a34287c`) |
+| 2026-06-10 | Sprint S30 : briefing quotidien — le Jarvis parle le premier (`0f44084`) |
+| 2026-06-11 | Sprint S31 : « l'app vivante » — re-audit post-livraison (`561b136`) |
+| 2026-06-11 | Sprint S32 : « appliquer l'incrément » + preuve LIVE S31 (`41b78f0`) |
+| 2026-06-11 | Sprints S33-S36 : revue autonome, schéma fin, sécu Google, dettes Forge (`f0eab59`) |
+| 2026-06-12 | Sprints S37-S38 : multilingue des apps livrées (FR/EN/ES) (`370ae25`) |
+| 2026-06-12 | Sprint S39 : Jarvis multilingue (réponses + voix, FR/EN/ES) (`fd6eef5`) |
+| 2026-06-12 | Sprint S40 : langue d'interface Oria persistée par compte (User.langue) (`8469afe`) |
+| 2026-06-12 | S40 (suite) : i18n du cluster des modales (création/édition/ajout) (`7839719`) |
+| 2026-06-12 | S40 (suite) : i18n nav + composants légers (sidebar, notifs, DM, recherche…) (`7c72b19`) |
+| 2026-06-12 | S40 (suite) : i18n profil, calendrier, vocal, édition de salle, votes (`d09c81f`) |
+| 2026-06-12 | S40 (suite) : i18n abonnements, fil d'activité, agents IA, découverte (`39718fd`) |
+| 2026-06-12 | S40 (suite) : i18n membres, conductor, vue monde, réseau (`4dca1d6`) |
+| 2026-06-12 | S40 (suite) : i18n apparence, carte du monde, paramètres (`468d6f2`) |
+| 2026-06-12 | S40 (suite) : i18n documents (scope) et projets (`8ab7589`) |
+| 2026-06-12 | S40 (suite) : i18n gestionnaire de docs + docs intercommunaux (`1971d48`) |
+| 2026-06-12 | S40 (suite) : i18n chat agent IA + zones partagées (`f139dd5`) |
+| 2026-06-12 | S40 (suite) : i18n config IA (par monde) + Coins membres (`2ac749f`) |
+| 2026-06-12 | S40 (suite) : i18n assistant d'onboarding (EasySetupWizard) (`d600849`) |
+| 2026-06-12 | S40 (suite) : i18n Jardin Secret (assistant personnel) (`20bd494`) |
+| 2026-06-12 | S40 (suite) : i18n méthode IPCRA (Input/Projet/Casquette/Ressource/Archive) (`c6a4692`) |
+| 2026-06-12 | S40 (fin) : derniers libellés oubliés (accueil monde, room fermée) (`e13cb22`) |
+| 2026-06-12 | S41 (POC) : openWakeWord prouvé sur notre infra → décision GO (`d3846ad`) |
+| 2026-06-12 | S42 : brique « ecoute » (wake word openWakeWord) + fournisseur voix dans l'assistant (`179df67`) |
+| 2026-06-12 | S43 : paliers commerciaux du wake word (gratuit catalogue + payant commande/Stripe/file horloge) (`65bc004`) |
+| 2026-06-14 | S53 : front Studio servi par la brique + iframe dans le Hub Créations Oria (`5b4492e`) |
+| 2026-06-14 | Merge pull request #1 from toussaintgarinat-crypto/s53-studio-front-iframe (`630e0e7`) |
+| 2026-06-14 | S54 : migration séries Oria → brique studio + décommission atelier_router (`834305f`) |
+| 2026-06-14 | S55 : brique vidéo autonome (5970) composée par le Studio + clôture roadmap Studio brique (`07137fa`) |
+| 2026-06-14 | S56 : déploiement migration MemPalace → brique mémoire (Forge core/front + Oria) + dette soldée (`96a7222`) |
+| 2026-06-15 | Studio dans le noyau : Hub Créations migré d'Oria + l'assistant pilote le Studio (compte clé de service) (`62587ae`) |
+| 2026-06-15 | Studio — 2e incrément d'outils assistant : bible fine, distribution/voix, audio (`30cf933`) |
+| 2026-06-15 | Oria : retrait de la section Créations (redondante avec le Hub du noyau) (`c23c24a`) |
+| 2026-06-15 | S57 : brique transcription souveraine (audio→texte) + archivage notes mémoire/dossier (`3ab070a`) |
+| 2026-06-16 | S57+ : transcription branchée à l'assistant + front « capter l'appel » (façon Granola) (`1b953e9`) |
+| 2026-06-16 | S57++ : tuile Transcription au dashboard + PWA mobile (capture micro/haut-parleur) (`d0951c0`) |
+| 2026-06-16 | S57+++ : capteur d'appel natif macOS (ScreenCaptureKit, façon Granola sans bot/pilote) (`e477a28`) |
+| 2026-06-16 | S57++++ : destination Google Drive (OAuth) + diarisation souveraine pyannote activable (`173034a`) |
+| 2026-06-16 | S58→S62 : partage de puissance de calcul (« Découplage IA ») (`b0c3643`) |
+| 2026-06-16 | Merge pull request #2 from toussaintgarinat-crypto/feat/partage-puissance-calcul-s58-s62 (`50e643a`) |
+| 2026-06-17 | feat: export fiche cosmique (personnages v0.3.7) (`0b66a5a`) |
+| 2026-06-17 | feat: fiche cosmique — PDF direct + lecture symbolique enrichie (personnages v0.4.0) (`b9a274d`) |
+| 2026-06-17 | feat: sauvegarde des personnages (fiches persistées, personnages v0.5.0) (`1ff14d2`) |
+| 2026-06-17 | feat: export fiche cosmique en HTML + Markdown (personnages v0.6.0) (`f3eb1d8`) |
+| 2026-06-17 | feat: renommer un personnage pour une série (nom de scène) — personnages v0.7.0 (`11b0876`) |
+| 2026-06-17 | feat: choisir ses personnages holistiques dans le Studio + nom de scène (studio v0.4.0) (`1910696`) |
+| 2026-06-17 | feat: l'assistant crée un personnage holistique en dictant les infos (outil personnage_creer_holistique) (`785d69c`) |
+| 2026-06-17 | fix: enregistrement de fiche cassé sur base migrée (INSERT nommé) — personnages v0.7.1 (`010b8ac`) |
+| 2026-06-18 | feat: la voix ne coupe plus la parole — fin de tour réglable (mains-libres 5 s par défaut) (`5a23d26`) |
+| 2026-06-18 | feat: ranger ses personnages par catégorie libre + l'aléatoire change aussi la ville — personnages v0.8.0 (`8d884cc`) |
+| 2026-06-19 | S63+S64 : le système nerveux qui se découvre — capacités appelables (fin du contrat figé) (`0a1e1a3`) |
+| 2026-06-19 | S65 : conscience de soi — le Cœur décrit son corps au lieu de l'inventer (`5b76647`) |
+| 2026-06-19 | S66 : co-agent exécutif — le « lobe frontal » qui mène un objectif en autonomie (`1efa240`) |
+| 2026-06-19 | S67 : pouls autonome — le cœur qui bat tout seul (`e24a335`) |
+| 2026-06-19 | S68 : proprioception — le Cœur mesure ses propres sorties (`c6faf4b`) |
+| 2026-06-19 | S69 : auto-amélioration des prompts — le Cœur propose, l'humain tranche (`1eac68f`) |
+| 2026-06-19 | S70 : Curator + auto-amélioration des capacités — le Cœur révise son corps (façon Hermes) (`5da9f76`) |
+| 2026-06-19 | S71 : les yeux — brique vision OCR (cascade souveraine + repli honnête) (`5eb0653`) |
+| 2026-06-19 | Brique connexion : pont messageries ↔ assistant (Telegram/WhatsApp/Discord, 5870) (`0c7e951`) |
+| 2026-06-19 | Capture : fin de parole (voix) (`8fdd514`) |
+| 2026-06-19 | Merge S63→S71 + connexion dans main (organisme vivant + yeux OCR + pont messageries) (`14e6aaa`) |
+| 2026-06-19 | Audit infra : modèles Gateway génératifs + tags versionnés + durcissement multi-tenant local (`c07ce58`) |
+| 2026-06-19 | Fix : les secrets du .env racine étaient écrasés par les blocs environment des composes (`7efec24`) |
+| 2026-06-19 | Telegram quasi temps réel : horloge réactive (tick + cadence poll-telegram) (`e834178`) |
+| 2026-06-19 | Conversation speech-to-speech + Gateway MCP (S72→S74) (`4463505`) |
+| 2026-06-19 | S73 déploiement : brique voix buildable + Piper souverain réel (`e9303bf`) |
+| 2026-06-19 | S73 finition : Piper WAV → Ogg/Opus (bulle vocale Telegram) (`bc23bdf`) |
+| 2026-06-19 | S75→S77 : piloter l'amélioration en parlant + boutons d'action + Mini App Telegram (`8f794dd`) |
+| 2026-06-19 | S77 fix + S78 + S79 : Mini App auth corrigée, trace unifiée, app complète dans Telegram (`02a121d`) |
+| 2026-06-19 | Skill tunnel-miniapp : relancer le tunnel jetable de la Mini App Telegram (`ae06a19`) |
+| 2026-06-20 | Agenda « façon TimeTree » : rappels configurables, vue calendrier, ponts TimeTree + Google, étiquettes nommées (`e6af191`) |
+| 2026-06-20 | Brique restaurant : commande & paiement à table par QR (multi-tenant) + onglet Atelier unifié (`c7df4e1`) |
+| 2026-06-20 | Restaurant v0.2.0 : rendre la brique vendable (sauf paiement réel) (`c22eb49`) |
+| 2026-06-20 | Restaurant v0.3.0 : Assistant carte (OCR ancienne carte) + carte pilotable par le Cœur/MCP (`f071827`) |
+| 2026-06-20 | fix(restaurant): éviter le piège « env shadow » sur RESTAURANT_KEY/GATEWAY_KEY (`0c729f5`) |
+| 2026-06-20 | Restaurant v0.4.0 : générer une carte depuis un concept (en plus de l'import OCR) (`10315c5`) |
+| 2026-06-20 | docs(restaurant): captures de la démo Assistant carte (import OCR, génération, carte Vin Cep't) (`86d9800`) |
+| 2026-06-20 | fix(restaurant): QR de table injoignable — RESTAURANT_PUBLIC_URL victime du « env shadow » (`32e06b4`) |
+| 2026-06-20 | Skill tunnel-restaurant : exposer la brique restaurant (6010) en HTTPS pour QR scannables (`f7c1fa6`) |
+| 2026-06-20 | Restaurant v0.5.0 : formats/tailles par plat (bière 25cl/50cl/1L/girafe 2,5L) (`c370a70`) |
+| 2026-06-20 | Restaurant v0.6.0 (S80) : stock & rupture automatique temps réel (`82f7f6d`) |
+| 2026-06-21 | Restaurant v0.7.0 (S81) : UX client multi-pages + multi-convive correct (`f3b297a`) |
+| 2026-06-21 | Restaurant v0.8.0 (S82) : rejoindre la table par code (multi-appareils) (`af08910`) |
+| 2026-06-21 | Restaurant v0.9.0 (S83) : répartition flexible de l'addition (`5c43b51`) |
+| 2026-06-21 | Restaurant v0.10.0 (S84) : avis clients par QR (`65b65e5`) |
+| 2026-06-21 | Paiements v0.1.0 : nouvelle brique « rail d'argent » (Connect, multi-tenant) (`2360bc0`) |
+| 2026-06-21 | Restaurant v0.11.0 (S85) : la soirée — surnom, tournée, résumé IA, annulation cuisine (`6409da3`) |
+| 2026-06-21 | Mail v0.1.0 : l'assistant lit, trie/filtre par catégorie et résume la boîte de réception (brique 6030, lecture seule) (`e3166d2`) |
+| 2026-06-21 | Mail v0.1.1 : plusieurs adresses en une boîte unifiée (filtre par compte + déconnexion) (`c89723b`) |
+| 2026-06-21 | Mail v0.2.0 : envoyer une réponse après validation du brouillon (SMTP réel / simulé honnête) (`62e8cff`) |
+| 2026-06-21 | Mail v0.2.1 : vrai client mail + onglet « Mail » dans le dashboard (entre Agenda et Profil) (`60029ae`) |
+| 2026-06-21 | Registre de briques : afficher le port à côté de la version (et non plus en pied de carte) (`b27fcd7`) |
+| 2026-06-21 | Mail v0.3.0 : filtres personnalisés (ex. un par entreprise) + chips Newsletters/Autres (`3feaaf5`) |
+| 2026-06-21 | Mail : piloter les filtres (par entreprise) à la voix depuis l'assistant (`7b9ccb8`) |
+| 2026-06-21 | Mail : guide intégré « comment connecter mon adresse » (sélecteur de fournisseur) (`69f23b7`) |
+| 2026-06-21 | Dev v0.2.0 (S87) : fusion contrôlée + rebuild ciblé (ferme la boucle) (`8c3296c`) |
+| 2026-06-21 | Dev v0.3.0 (S88) : flux BMAD léger — le plan d'abord (double gate, DDD) (`4055094`) |
+| 2026-06-21 | Dev v0.4.0 (S89) : task trace activable — l'agent raconte ses pas en FR (`eef0e9d`) |
+| 2026-06-21 | Cœur S90 : porte à divulgation progressive + prompt caching conditionnel (`0ecf421`) |
+| 2026-06-21 | Dev v0.5.0 (S91) : fabrique de skills façon Claude Code + accroche MCP, branchée sur la porte (`7157053`) |
+| 2026-06-21 | Dev v0.6.0 (S92) : pilotage du Cœur (dev_demander) + IDE code-server — l'atelier au chat (`dceb33b`) |
+| 2026-06-22 | Cœur S93 : Gateway multi-fournisseurs — choix LLM ouvert au dashboard (`ce7d201`) |
+| 2026-06-22 | Recherche S94 : brique recherche web souveraine (SearXNG) + lecture de page (`e334116`) |
+| 2026-06-22 | Recherche : épingle l'image SearXNG (2026.6.22-952896d29) en dur (`2cb072d`) |
+| 2026-06-22 | Dashboard : Gateway hors onglets (→ carte Frontend du registre) + Atelier dev rangé dans les ateliers (`c52fcba`) |
+| 2026-06-22 | Dashboard : bulles d'aide en français simple (pour utilisateur non technique) (`260b1e3`) |
+| 2026-06-22 | Forge + assistant sur l'abonnement : modèle go/deepseek-v4-flash partout (`7af14da`) |
+| 2026-06-22 | Assistant pilote toutes les briques : capacités au manifest (images/video/audit/ecoute/paiements) + dev 5950→5955 (`546fca7`) |
+| 2026-06-22 | Mail v0.4.0 : rendu HTML fidèle des emails (iframe sandboxée + DOMPurify + blocage images) (`73e96bb`) |
+| 2026-06-22 | Mail v0.5.0 : actions d'écriture (marquer lu / déplacer / supprimer) (`015e1ce`) |
+| 2026-06-23 | Launcher : la brique dev (5955) démarre dès le lancement (avant le Cœur) (`32f6a75`) |
+| 2026-06-23 | S95 : moteur de bundle dans le generateur (sélection de briques → solution isolée par client) (`69821f0`) |
+| 2026-06-23 | S96 : Gateway + assistant (Cœur) dans le bundle (`0e924e0`) |
+| 2026-06-23 | S97 : Studio « composeur de solutions » (cocher des briques → bundle par client) (`bfc9c66`) |
+| 2026-06-23 | S98 : composeur de solutions exposé au dashboard du Cœur (`ce10627`) |
+| 2026-06-23 | S99 : bundle livrable — config Gateway réduite aux modèles démarrables (`c415340`) |
+| 2026-06-23 | Intégration Gungnir #1 : brique browser (HuntR) remplace recherche (`98287e4`) |
+| 2026-06-23 | Intégration Gungnir #2 : chat vocal temps réel fusionné dans la brique voix (`e3055eb`) |
+| 2026-06-23 | Intégration Gungnir #3 : IDE web SpearCode greffé dans la brique dev (`9268253`) |
+| 2026-06-23 | Renomme la brique browser → recherche (garde le moteur HuntR) (`75c19e0`) |
+| 2026-06-23 | Aligne les tags d'image compose sur les manifests (dev/voix/mail/restaurant) (`6ee8fe6`) |
+| 2026-06-23 | Assistant façon Claude/Perplexity : historique dans l'assistant + projets (`ef604d0`) |
+| 2026-06-24 | Épopée « Manipulation directe & découvrabilité » (S100→S104) (`4a9528b`) |
+| 2026-06-24 | Renomme brique browser→recherche (reliquat Gungnir #1) (`f47462b`) |
+| 2026-06-24 | S105 — Brique synopsis v1.0.0 (résumé YouTube IA, port 6090) (`28d7ed0`) |
+| 2026-06-24 | Fix synopsis : ajoute GATEWAY_URL au compose (host.docker.internal:4001) (`f2a1288`) |
+| 2026-06-24 | Merge integration-gungnir → main (Gungnir #1-#3, S100-S105, manipulation directe, synopsis) (`430c3da`) |
+| 2026-06-24 | Ménage racine + reliques : captures→docs/, MemPalace mort, worktree dev (`e44bb07`) |
+| 2026-06-24 | Synopsis v1.1.0 — front + résumé de n'importe quelle vidéo + onglet Cœur (`68a1454`) |
+| 2026-06-25 | **S106 — Voix de LECTURE haut de gamme (voix v0.6.0)** : Coqui XTTS **activé pour de vrai** (`INSTALL_COQUI=1` au build, `VOIX_COQUI=1` au runtime), **out of the box** (locuteur intégré par défaut `COQUI_SPEAKER_DEFAUT` → aucun WAV requis ; `speaker_wav` reste prioritaire = point d'entrée du clonage S107). **Comparateur de voix de lecture** dans la page de réglage (`GET /`) : le **même** texte de résumé synthétisé par chaque moteur dispo (Coqui / OpenAI / ElevenLabs / Kokoro), côte à côte, ▶︎ puis « 📖 Lecture » en un clic. Licence **CPML** (non commerciale) du modèle XTTS dite honnêtement (UI + README). Voix hébergées documentées au `.env` racine (anti env-shadow). 74 tests verts. **Reste preuve LIVE** (rebuild image + écoute Coqui vs hébergé). |
 
 ---
 
