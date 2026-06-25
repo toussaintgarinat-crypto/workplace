@@ -37,6 +37,16 @@ services:
       # sont rate-limités. GATEWAY_MODEL vide = pas de tête imposée (cascade pure) ;
       # choisir un modèle dans ⚙ Cerveau le met en tête (ex. IA locale, ou payant d'abord).
       - GATEWAY_MODEL=
+      # Routage d'outils par embeddings : n'envoie au LLM que les outils pertinents pour la
+      # requête (top-k cosinus) + le socle des outils en dur. Indexé au démarrage via la Gateway.
+      # Opt-in : 0 = comportement historique (tous les outils). Modèle/seuil réglables.
+      - ROUTAGE_OUTILS=${ROUTAGE_OUTILS:-1}
+      # Modèle d'embedding : on réutilise celui RÉELLEMENT servi par la Gateway de ce dépôt —
+      # `embedding/all-minilm` (Ollama local, 384 dims, gratuit, souverain), le même que le cache
+      # sémantique. `text-embedding-3-small` n'y est pas enregistré (→ 400) ; le passer ici exige
+      # de l'ajouter au litellm_config.yaml avec une clé OpenAI/OpenRouter.
+      - ROUTAGE_EMBEDDING_MODEL=${ROUTAGE_EMBEDDING_MODEL:-embedding/all-minilm}
+      - ROUTAGE_TOP_K=${ROUTAGE_TOP_K:-8}
       - CASCADE_AUTO=1
       - REPLI_PAYANT=deepseek/deepseek-v4-flash
       - CASCADE_FREE_N=3

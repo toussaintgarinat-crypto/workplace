@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -31,6 +32,8 @@ import curateur
 import cycle_de_vie
 import orchestrateur
 import catalogue
+import outils
+import routage_outils
 import mcp as mcp_serveur
 from registre import Registre
 
@@ -3041,6 +3044,14 @@ async def lifespan(app: FastAPI):
     orchestrateur.init_db()
     proactif.init_db()
     horloge.init_db()
+    # Routage d'outils par embeddings (opt-in ROUTAGE_OUTILS) : on indexe AU DÉMARRAGE les
+    # descriptions d'outils pour pouvoir filtrer, à chaque requête, sur les plus pertinents.
+    # Best-effort : une indexation ratée (Gateway KO, numpy absent) n'empêche jamais le démarrage
+    # — `filtrer_outils` laissera simplement passer tous les outils (comportement actuel).
+    try:
+        await routage_outils.indexer(outils.outils_pour(registre))
+    except Exception:  # noqa: BLE001 — le routage ne doit jamais bloquer le démarrage
+        logging.getLogger(__name__).warning("Routage d'outils : indexation ignorée", exc_info=True)
     # Boucle proactive en tâche de fond (rappels : agenda imminent, docs à classer).
     tache_proactif = asyncio.create_task(proactif.boucle(registre))
     # Horloge : déclenche les tâches périodiques déclarées par les briques (S29).
