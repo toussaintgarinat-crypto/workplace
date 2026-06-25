@@ -36,7 +36,10 @@ services:
       # {role:"lecture"}). Valeur STATIQUE (pas d'interpolation ${...} → pas de piège env-shadow).
       # Out-of-the-box : un locuteur INTÉGRÉ par défaut suffit (COQUI_SPEAKER_DEFAUT côté code),
       # aucun fichier à fournir. Mettre 0 pour désactiver Coqui sans rebuild.
-      - VOIX_COQUI=1
+      # DÉSACTIVÉ 2026-06-25 : XTTS (torch + modèle ~1,8 Go) saturait la RAM de l'hôte et figeait
+      # Docker. Kokoro (VOIX_KOKORO=1) suffit pour la lecture naturelle. Repasser à 1 sur une
+      # machine qui encaisse (GPU conseillé).
+      - VOIX_COQUI=0
       - COQUI_LANG=${COQUI_LANG:-fr}
       # Le modèle XTTS-v2 est sous licence CPML (NON COMMERCIALE). Coqui exige d'accepter ces
       # conditions avant de télécharger le modèle (~1,8 Go, au 1er appel). On l'accepte ici pour
