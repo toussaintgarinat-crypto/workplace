@@ -81,6 +81,26 @@
     <div id="comparatif" class="comparatif"></div>
   </div>
 
+  <div class="testeur" id="bibliotheque">
+    <strong>🎭 Mes voix clonées</strong>
+    <p class="sous" style="margin:6px 0 12px">Enregistre un <b>timbre</b> depuis un court
+      échantillon (un WAV de ~10-20 s de parole nette) sous un nom, puis réutilise-le partout :
+      conversation, lecture de résumés, et les <b>personnages des séries du Studio</b>. Le rendu
+      utilise <b>Coqui XTTS</b> (local) — <span id="coquiEtat"></span>.
+      <br><b>⚠ Éthique :</b> ne clone qu'une voix que tu as le droit d'utiliser (consentement de
+      la personne). La licence du modèle XTTS est non commerciale.</p>
+    <div class="ligne">
+      <input id="clNom" placeholder="Nom (ex. Marina)" style="background:#16130f;color:var(--txt);
+             border:1px solid var(--bord);border-radius:8px;padding:7px 10px;font:inherit">
+      <input id="clNotes" placeholder="Notes (optionnel)" style="background:#16130f;color:var(--txt);
+             border:1px solid var(--bord);border-radius:8px;padding:7px 10px;font:inherit;flex:1;min-width:140px">
+      <input id="clFichier" type="file" accept="audio/wav,.wav" style="font:inherit;color:var(--gris)">
+      <button class="primaire" onclick="enregistrerClone()">＋ Enregistrer la voix</button>
+    </div>
+    <div id="clMsg" class="msg"></div>
+    <div id="clListe" class="comparatif"></div>
+  </div>
+
 <script>
 const $ = s => document.querySelector(s);
 let etat = { fournisseurs: [], choisi: null, lecture: null, actif: null, seuil: 280 };
@@ -216,7 +236,81 @@ async function tester(fournisseur) {
 }
 
 function message(t, cls) { const m = $('#msg'); m.textContent = t; m.className = 'msg ' + (cls || ''); }
+
+// ── Bibliothèque de voix CLONÉES (clone:<nom>) ────────────────────────────────
+function clMsg(t, cls) { const m = $('#clMsg'); m.textContent = t; m.className = 'msg ' + (cls || ''); }
+
+async function chargerClones() {
+  let d;
+  try { d = await (await fetch('voix/clones')).json(); }
+  catch (e) { $('#clListe').innerHTML = '<p class="sous">Bibliothèque indisponible.</p>'; return; }
+  $('#coquiEtat').innerHTML = d.coqui_disponible
+    ? '<span style="color:var(--ok)">Coqui est actif ✓</span>'
+    : '<span style="color:var(--rouge)">Coqui n’est pas activé</span> (rebuild avec INSTALL_COQUI=1 + VOIX_COQUI=1 pour rendre les voix clonées)';
+  const box = $('#clListe'); box.innerHTML = '';
+  if (!d.clones.length) { box.innerHTML = '<p class="sous">Aucune voix clonée pour l’instant.</p>'; return; }
+  for (const c of d.clones) {
+    const r = document.createElement('div');
+    r.className = 'rangee';
+    r.innerHTML = `
+      <div class="ident"><div class="nm">${c.nom || c.slug}</div>
+        <div class="nt">${c.duree_s}s · ${c.notes || 'clone:' + c.slug}</div></div>
+      <button onclick="testerClone('${c.slug}', this)">▶︎ Écouter</button>
+      <audio controls style="display:none"></audio>
+      <span class="st"></span>
+      <button onclick="choisir('coqui','lecture')" title="Coqui pour la lecture">📖 Lecture</button>
+      <button onclick="supprimerClone('${c.slug}')" title="Supprimer cette voix">🗑</button>`;
+    box.appendChild(r);
+  }
+}
+
+async function enregistrerClone() {
+  const nom = $('#clNom').value.trim();
+  const f = $('#clFichier').files[0];
+  if (!nom) { clMsg('Donne un nom à la voix.', 'err'); return; }
+  if (!f) { clMsg('Choisis un échantillon WAV (~10-20 s).', 'err'); return; }
+  const fd = new FormData();
+  fd.append('nom', nom); fd.append('notes', $('#clNotes').value.trim()); fd.append('fichier', f);
+  clMsg('Enregistrement…', '');
+  try {
+    const r = await fetch('voix/clones', { method:'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { clMsg(d.detail || 'Échec de l’enregistrement.', 'err'); return; }
+    clMsg(`Voix « ${d.clone.nom} » enregistrée — utilise-la avec clone:${d.clone.slug}.`, 'ok');
+    $('#clNom').value = ''; $('#clNotes').value = ''; $('#clFichier').value = '';
+    chargerClones();
+  } catch (e) { clMsg('Erreur réseau : ' + e, 'err'); }
+}
+
+async function testerClone(slug, btn) {
+  const rangee = btn.closest('.rangee');
+  const audio = rangee.querySelector('audio');
+  const st = rangee.querySelector('.st');
+  btn.disabled = true; st.textContent = 'synthèse…';
+  try {
+    const r = await fetch('voix/clones/' + encodeURIComponent(slug) + '/tester', { method:'POST' });
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.startsWith('audio/')) {
+      const d = await r.json().catch(() => ({}));
+      st.textContent = '✗'; clMsg(d.note || d.detail || 'Voix indisponible (Coqui actif ?).', 'err');
+      return;
+    }
+    audio.src = URL.createObjectURL(await r.blob());
+    audio.style.display = ''; audio.play();
+    st.textContent = '✓ ' + (r.headers.get('X-Backend') || 'coqui');
+  } catch (e) { st.textContent = '✗'; clMsg('Erreur réseau : ' + e, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function supprimerClone(slug) {
+  if (!confirm('Supprimer la voix clonée « ' + slug + ' » ?')) return;
+  const r = await fetch('voix/clones/' + encodeURIComponent(slug), { method:'DELETE' });
+  if (r.ok) { clMsg('Voix supprimée.', 'ok'); chargerClones(); }
+  else { const d = await r.json().catch(() => ({})); clMsg(d.detail || 'Échec.', 'err'); }
+}
+
 charger();
+chargerClones();
 </script>
 </body>
 </html>

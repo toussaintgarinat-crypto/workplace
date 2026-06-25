@@ -10,3 +10,6 @@ httpx==0.28.1
 # Client WS amont + support WebSocket côté serveur FastAPI/uvicorn.
 websockets==14.1
 wsproto==1.2.0
+# Bibliothèque de voix CLONÉES (clones.py) : upload de l'échantillon de référence (WAV) via
+# UploadFile/Form (multipart). Léger, sans dépendance lourde (le clonage = Coqui XTTS opt-in).
+python-multipart==0.0.20

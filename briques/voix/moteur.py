@@ -10,6 +10,7 @@ JAMAIS de fausse voix : mieux vaut un « moteur absent » assumé qu'un audio bi
 """
 from typing import Optional
 
+import clones
 import fournisseurs
 import nettoyer
 
@@ -64,6 +65,15 @@ async def synthetiser(texte: str, voix: Optional[str] = None, langue: Optional[s
     texte = nettoyer.pour_la_voix(texte or "")
     if not texte.strip():
         return _repli("Texte vide.", [])
+
+    # Voix CLONÉE (`voix: "clone:<nom>"`) : on résout le WAV de référence et on FORCE Coqui
+    # (seul moteur qui sait reproduire un timbre via speaker_wav). Repli HONNÊTE si la voix
+    # clonée est inconnue (jamais un autre timbre à sa place) ou si Coqui n'est pas disponible.
+    if clones.est_reference_clone(voix):
+        ref = clones.resoudre(voix)
+        if not ref:
+            return _repli(f"Voix clonée « {voix} » introuvable dans la bibliothèque.", [])
+        voix, fournisseur = ref, "coqui"
 
     if fournisseur:                                   # forçage explicite d'un moteur
         f = fournisseurs.REGISTRE.get(fournisseur.lower())

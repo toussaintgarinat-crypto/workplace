@@ -19,7 +19,11 @@ Deux versants vocaux en API :
 | `GET`   | `/voix`         | catalogue des moteurs TTS + lesquels sont configurés |
 | `GET`   | `/voix/moteur`  | état pour la page : moteurs `choisi` (conversation) + `lecture`, `seuil`, `actif`, liste |
 | `POST`  | `/voix/moteur`  | `{fournisseur, role}` → **bascule en un clic** d'un rôle (`conversation`/`lecture` ; `auto`=défaut) |
-| `POST`  | `/synthetiser`  | `{texte, voix?, langue?, format?, fournisseur?, usage?}` → **octets audio** (ou JSON `place_holder` honnête) |
+| `POST`  | `/synthetiser`  | `{texte, voix?, langue?, format?, fournisseur?, usage?}` → **octets audio** (ou JSON `place_holder` honnête). `voix:"clone:<nom>"` = voix clonée |
+| `GET`   | `/voix/clones`  | **bibliothèque de voix clonées** (nom, date, durée, notes) + `coqui_disponible` |
+| `POST`  | `/voix/clones`  | multipart `{nom, fichier (WAV ~10-20 s), notes?}` → enregistre un timbre réutilisable |
+| `DELETE`| `/voix/clones/{nom}` | retire une voix clonée (fichier + index) |
+| `POST`  | `/voix/clones/{nom}/tester` | `{texte?, format?}` → **écoute** un échantillon avec cette voix |
 | `GET`   | `/voix/realtime`| catalogue des fournisseurs de chat vocal temps réel + leur état |
 | `WS`    | `/realtime/openai` | relais WebSocket ↔ OpenAI Realtime (PCM16 24 kHz) |
 | `WS`    | `/realtime/google` | relais WebSocket ↔ Gemini Multimodal Live |
@@ -44,8 +48,22 @@ sinon il compare la longueur du texte (après nettoyage) au seuil `VOIX_SEUIL_LE
 **280** car.) — au-delà, c'est la voix de lecture. La voix de lecture n'est préposée que si elle
 est **choisie et disponible** ; sinon repli honnête sur la voix de conversation. Tout consommateur
 (dont le speech-to-speech Telegram) en bénéficie : un résumé long part automatiquement dans la
-belle voix, une réponse courte dans la voix rapide. *(Choix du moteur de lecture — Coqui local ou
-hébergé — et clonage de voix réutilisables : sprints dédiés à venir.)*
+belle voix, une réponse courte dans la voix rapide.
+
+### Bibliothèque de voix CLONÉES (S107) — cloner une fois, rappeler partout
+
+Coqui XTTS reproduit un **timbre** depuis un court échantillon (`speaker_wav`). Cette brique
+rend le clonage **réutilisable** : on enregistre un échantillon WAV (~10-20 s de parole nette)
+sous un **nom** (`POST /voix/clones`), rangé dans `VOIX_DIR/voix-clonees/<slug>.wav` + un index
+`voix-clonees.json`. On synthétise ensuite avec la convention **`voix:"clone:<nom>"`** dans
+`POST /synthetiser` : le moteur **force Coqui** (seul à savoir cloner) et résout l'échantillon.
+La même voix sert partout — assistant, **lecture de résumés** (rôle lecture), et les
+**personnages des séries du Studio** (qui lit `GET /voix/clones` pour réutiliser le timbre).
+La tuile Voix (`GET /`) a une section « 🎭 Mes voix clonées » : enregistrer, écouter, supprimer.
+
+Repli **honnête** : voix clonée inconnue → placeholder (jamais un autre timbre à la place) ;
+Coqui non activé → on le **dit** (pas d'audio inventé). **⚠ Éthique** : ne cloner qu'une voix
+qu'on a le **droit** d'utiliser (consentement) ; licence du modèle XTTS **non commerciale**.
 
 ### Lecture propre (nettoyage avant TTS)
 
