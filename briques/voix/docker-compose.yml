@@ -6,8 +6,13 @@ services:
         # Installer Kokoro (voix naturelle locale) DANS l'image. Lourd (PyTorch) : mettre "0"
         # pour une image légère. "1" = essayable tout de suite (activé par VOIX_KOKORO ci-dessous).
         INSTALL_KOKORO: "1"
+        # Installer Coqui XTTS-v2 (voix de LECTURE haut de gamme + clonage S107) DANS l'image.
+        # PLUS LOURD encore (torch + coqui-tts ; modèle ~1,8 Go téléchargé au 1er appel). "1" =
+        # essayable tout de suite (activé par VOIX_COQUI ci-dessous). Mettre "0" pour une image
+        # plus légère. ⚠ Modèle XTTS sous licence CPML (non commerciale) : perso OK.
+        INSTALL_COQUI: "1"
     container_name: workplace_voix
-    image: workplace/voix:0.5.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/voix:0.6.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # Réglages partagés à la racine (source unique). Facultatif.
       - path: ../../.env
@@ -26,6 +31,25 @@ services:
       # (pas d'interpolation ${...} → pas de piège env-shadow). Mettre 0 pour revenir à Piper seul.
       - VOIX_KOKORO=1
       - KOKORO_VOICE=${KOKORO_VOICE:-ff_siwis}
+      # Active Coqui XTTS au runtime (cohérent avec INSTALL_COQUI=1 au build). Voix de LECTURE
+      # haut de gamme : la choisir pour le rôle « lecture » via la tuile Voix (POST /voix/moteur
+      # {role:"lecture"}). Valeur STATIQUE (pas d'interpolation ${...} → pas de piège env-shadow).
+      # Out-of-the-box : un locuteur INTÉGRÉ par défaut suffit (COQUI_SPEAKER_DEFAUT côté code),
+      # aucun fichier à fournir. Mettre 0 pour désactiver Coqui sans rebuild.
+      - VOIX_COQUI=1
+      - COQUI_LANG=${COQUI_LANG:-fr}
+      # Le modèle XTTS-v2 est sous licence CPML (NON COMMERCIALE). Coqui exige d'accepter ces
+      # conditions avant de télécharger le modèle (~1,8 Go, au 1er appel). On l'accepte ici pour
+      # un usage PERSONNEL/souverain (la brique le redit dans l'UI/README). Pour un usage
+      # commercial : NE PAS poser ce drapeau et préférer une voix de lecture hébergée/sous licence.
+      - COQUI_TOS_AGREED=1
+      # Cache des modèles XTTS (persiste le téléchargement entre recreate).
+      - TTS_HOME=/data/voix/coqui
+      # ⚠ COQUI_SPEAKER_WAV (clone un timbre depuis un WAV) et COQUI_SPEAKER (locuteur intégré
+      # nommé) : à poser dans le .env RACINE si besoin — hérités via env_file. NE PAS les
+      # redéclarer ici en `VAR=${VAR:-}` (piège env-shadow : écrase la valeur racine par du vide).
+      # ⚠ Clés des voix de lecture HÉBERGÉES (OPENAI_API_KEY, ELEVENLABS_API_KEY) : .env RACINE
+      # aussi (mêmes clés que le temps réel). Le texte SORT de la maison avec ces moteurs.
       # ── Chat vocal TEMPS RÉEL (realtime.py) — OPT-IN, inerte sans clé ────────────
       # Nom de l'assistant annoncé dans la session vocale (safe à déclarer ici).
       - VOIX_AGENT_NOM=${VOIX_AGENT_NOM:-Assistant}

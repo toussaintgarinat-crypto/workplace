@@ -37,6 +37,30 @@ RUN if [ "$INSTALL_KOKORO" = "1" ]; then \
       && pip install --no-cache-dir kokoro soundfile "misaki[fr]"; \
     fi
 
+# ── Voix de LECTURE haut de gamme : Coqui XTTS-v2 — OPT-IN au BUILD (INSTALL_COQUI=1) ──
+# Multilingue + CLONAGE de voix (point d'entrée du sprint S107). PLUS LOURD que Kokoro
+# (torch + coqui-tts ; le modèle XTTS ~1,8 Go est téléchargé au 1er appel, pas au build).
+# CPU lent mais ACCEPTABLE pour la lecture (résumés, longs textes — la latence n'y gêne pas).
+# espeak-ng = phonémisation ; torch CPU-only (no-op si déjà posé par le bloc Kokoro).
+# ⚠ Licence du modèle XTTS-v2 = CPML (non commerciale) : perso OK, commercial à vérifier.
+# Au runtime, activer avec VOIX_COQUI=1 (cf. docker-compose.yml).
+# ⚠ Pièges d'install (torch ≥2.9) : (1) torchaudio requis par XTTS ; (2) extra [codec] =
+# torchcodec, requis depuis torch 2.9 pour l'IO audio (s'appuie sur les libs ffmpeg, déjà là) ;
+# (3) transformers ÉPINGLÉ <5 : la 5.x a retiré `isin_mps_friendly` → coqui-tts 0.27 ne
+# s'importe plus sinon ; (4) data espeak-ng symlinkée ci-dessous (binaire la cherche ailleurs).
+ARG INSTALL_COQUI=0
+RUN if [ "$INSTALL_COQUI" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends espeak-ng \
+      && rm -rf /var/lib/apt/lists/* \
+      # Debian range la data espeak-ng sous /usr/lib/<arch>/espeak-ng-data, mais le binaire la
+      # cherche par défaut dans /usr/share/espeak-ng-data (absent) → erreur « phontab introuvable ».
+      # Symlink robuste (toutes archis) vers le dossier réel repéré via dpkg.
+      && D="$(dirname "$(dpkg -L espeak-ng-data | grep -m1 'espeak-ng-data/phontab$')")" \
+      && ln -sfn "$D" /usr/share/espeak-ng-data \
+      && pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
+      && pip install --no-cache-dir "coqui-tts[codec]" "transformers>=4.57,<5"; \
+    fi
+
 COPY . .
 
 # Pour le souverain Piper, monter un modèle de voix (.onnx + .onnx.json) et désigner son

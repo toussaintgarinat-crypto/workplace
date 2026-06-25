@@ -250,14 +250,25 @@ class Kokoro:
         return wav, "wav"
 
 
+# Locuteur intégré XTTS-v2 retenu par défaut (« out of the box ») : le modèle multi-dataset
+# embarque des voix studio nommées → XTTS marche SANS fichier de référence à fournir. Voix
+# féminine neutre, multilingue (lit le français). Surchargé par COQUI_SPEAKER (intégré) ou,
+# mieux, COQUI_SPEAKER_WAV (clone un timbre — c'est le point d'entrée du clonage S107).
+_COQUI_SPEAKER_DEFAUT = "Ana Florence"
+
+
 class Coqui:
     """Coqui XTTS-v2 en local (multilingue, CLONAGE de voix à partir d'un échantillon).
 
     OPT-IN : `VOIX_COQUI=1` + `pip install coqui-tts`. Modèle via `COQUI_MODEL` (défaut
-    XTTS-v2), langue `COQUI_LANG` (défaut `fr`). XTTS exige une VOIX de référence : un
-    fichier WAV (`COQUI_SPEAKER_WAV`, recommandé — clone ce timbre) OU un locuteur intégré
-    (`COQUI_SPEAKER`). GPU conseillé : `COQUI_DEVICE=cuda` (sinon CPU, lent). Modèle mis en
-    cache sur l'instance."""
+    XTTS-v2), langue `COQUI_LANG` (défaut `fr`). XTTS a besoin d'une VOIX de référence ;
+    par ordre de priorité : un fichier WAV (`COQUI_SPEAKER_WAV` — clone ce timbre), un
+    locuteur intégré (`COQUI_SPEAKER`), sinon un locuteur intégré PAR DÉFAUT (marche « out
+    of the box », cf. `COQUI_SPEAKER_DEFAUT`). GPU conseillé : `COQUI_DEVICE=cuda` (sinon
+    CPU, lent — acceptable pour la voix de LECTURE). Modèle mis en cache sur l'instance.
+
+    ⚠ Licence du modèle XTTS-v2 = CPML (non commerciale) : usage perso OK, à vérifier pour
+    un usage commercial. Le DIRE honnêtement dans l'UI/README."""
     nom = "coqui"
 
     def __init__(self):
@@ -272,6 +283,22 @@ class Coqui:
             return False
         return True
 
+    @staticmethod
+    def _args(texte, voix, langue) -> dict:
+        """Construit les arguments de synthèse XTTS (PUR, sans importer TTS → testable).
+
+        Priorité de la voix : `voix` ou `COQUI_SPEAKER_WAV` (clone un timbre) > `COQUI_SPEAKER`
+        (locuteur intégré) > locuteur intégré PAR DÉFAUT (`COQUI_SPEAKER_DEFAUT`). On garantit
+        toujours une voix → XTTS marche out-of-the-box, jamais d'erreur « voix manquante »."""
+        kwargs = {"text": texte, "language": langue or os.getenv("COQUI_LANG", "fr")}
+        ref = voix or os.getenv("COQUI_SPEAKER_WAV")
+        if ref:
+            kwargs["speaker_wav"] = ref
+        else:
+            kwargs["speaker"] = os.getenv("COQUI_SPEAKER") or os.getenv(
+                "COQUI_SPEAKER_DEFAUT", _COQUI_SPEAKER_DEFAUT)
+        return kwargs
+
     async def synthetiser(self, texte, voix, langue, format) -> tuple[bytes, str]:
         cible = (format or os.getenv("VOIX_FORMAT", "opus") or "").lower()
         return await asyncio.to_thread(self._bloquant, texte, voix, langue, cible)
@@ -283,15 +310,7 @@ class Coqui:
             self._tts = TTS(modele)
             if os.getenv("COQUI_DEVICE"):
                 self._tts.to(os.getenv("COQUI_DEVICE"))
-        kwargs = {"text": texte, "language": langue or os.getenv("COQUI_LANG", "fr")}
-        ref = voix or os.getenv("COQUI_SPEAKER_WAV")
-        if ref:
-            kwargs["speaker_wav"] = ref
-        elif os.getenv("COQUI_SPEAKER"):
-            kwargs["speaker"] = os.getenv("COQUI_SPEAKER")
-        else:
-            raise RuntimeError("XTTS exige une voix de référence : pose COQUI_SPEAKER_WAV "
-                               "(fichier WAV) ou COQUI_SPEAKER (locuteur intégré).")
+        kwargs = self._args(texte, voix, langue)
         chemin = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
         try:
             self._tts.tts_to_file(file_path=chemin, **kwargs)
