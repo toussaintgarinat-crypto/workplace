@@ -3101,10 +3101,19 @@ def detail_brique(nom: str):
 
 
 @app.post("/briques/reload", tags=["briques"])
-def recharger_briques():
-    """Recharge tous les manifests sans redémarrer le cœur."""
+async def recharger_briques():
+    """Recharge tous les manifests sans redémarrer le cœur.
+
+    Réindexe AUSSI le routage d'outils par embeddings (best-effort) : sans ça, une capacité
+    ajoutée à une brique resterait invisible au LLM (pas de vecteur à l'index → jamais routée)
+    jusqu'au prochain redémarrage du Cœur."""
     registre.charger()
-    return {"statut": "ok", "briques_chargees": len(registre.briques)}
+    reindexe = False
+    try:
+        reindexe = await routage_outils.indexer(outils.outils_pour(registre))
+    except Exception:  # noqa: BLE001 — le routage ne doit jamais faire échouer un reload
+        logging.getLogger(__name__).warning("Routage d'outils : réindexation ignorée", exc_info=True)
+    return {"statut": "ok", "briques_chargees": len(registre.briques), "routage_reindexe": reindexe}
 
 
 @app.post("/mcp", tags=["mcp"])
