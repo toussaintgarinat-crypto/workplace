@@ -1,3 +1,27 @@
-# L'image de l'adaptateur (build: .) ne doit PAS embarquer le projet Memory
-# complet (backend/frontend/cli/mcp) — il est bâti par son propre service.
-memory/
+# Le stage Node du Dockerfile build le front depuis memory/frontend → il doit
+# rester dans le contexte. Le RESTE du projet Memory (backend bâti par son propre
+# service, cli, mcp) et tous les artefacts lourds sont exclus.
+memory/backend/
+memory/cli/
+memory/mcp-server/
+memory/scripts/
+memory/.env
+memory/.env.example
+
+# Front : la source OUI, mais jamais le node_modules de l'hôte (npm ci le refait)
+# ni les artefacts de build/cache.
+memory/frontend/node_modules/
+memory/frontend/dist/
+memory/frontend/.vite/
+memory/frontend/.vite-temp/
+memory/frontend/.tmp/
+memory/frontend/.bin/
+
+# Caches Python / venvs / divers
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.venv-test/
+.venv/
+.git/
+.DS_Store

@@ -69,6 +69,10 @@ SYNOPSIS_UI_URL = os.environ.get("SYNOPSIS_UI_URL", "http://localhost:6090/")
 # voix de l'assistant EN UN CLIC (Piper souverain par défaut, Kokoro naturel local…) +
 # bouton « Tester ». Embarquée comme TUILE du hub « Atelier » (ouvrirCreation).
 VOIX_UI_URL = os.environ.get("VOIX_UI_URL", "http://localhost:5985/")
+# Brique « memoire » (port 5600) : le vrai front du projet Memory (graphe IPCRA, recherche
+# hybride). L'adaptateur sert le front buildé + reverse-proxy /api/v1 (S108). Embarquée
+# comme TUILE du hub « Atelier » (ouvrirCreation). Route SPA → /memory.
+MEMOIRE_UI_URL = os.environ.get("MEMOIRE_UI_URL", "http://localhost:5600/memory")
 # Brique « dev » (auto-atelier, port 5955) : IDE web code-server monté sur le dépôt (S92),
 # embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
 # chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
@@ -773,6 +777,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-titre">Voix de l'assistant</span>
           <span class="creation-desc">Choisis la voix en un clic (Piper, Kokoro…) et teste-la. Sert pour les réponses vocales (Telegram).</span>
           <span class="creation-badge">Brique · port 5985</span>
+        </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__MEMOIRE_UI_URL__', 'Mémoire — graphe IPCRA')">
+          <span class="creation-emoji">🧠</span>
+          <span class="creation-titre">Mémoire &amp; graphe IPCRA</span>
+          <span class="creation-desc">Explore la mémoire de la solution : nœuds rangés par stage IPCRA, canvas graphe, recherche hybride.</span>
+          <span class="creation-badge">Brique · port 5600</span>
         </button>
         <button class="creation-tuile creation-bientot" disabled>
           <span class="creation-emoji">🖼️</span>
@@ -3337,6 +3347,7 @@ async def dashboard():
         .replace("__MAIL_UI_URL__", MAIL_UI_URL)
         .replace("__SYNOPSIS_UI_URL__", SYNOPSIS_UI_URL)
         .replace("__VOIX_UI_URL__", VOIX_UI_URL)
+        .replace("__MEMOIRE_UI_URL__", MEMOIRE_UI_URL)
         .replace("__DEV_IDE_URL__", DEV_IDE_URL)
         .replace("__GENERATEUR_BUNDLES_URL__", f"{GENERATEUR_URL_PUBLIQUE}/bundles-studio")
         .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))

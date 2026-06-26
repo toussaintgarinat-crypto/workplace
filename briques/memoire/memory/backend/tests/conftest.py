@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -10,7 +11,12 @@ from sqlalchemy import text
 import app.database
 import app.config
 
-TEST_DB_URL = "postgresql+asyncpg://garinat_t@localhost:5432/memory_test"
+# Postgres de test : par défaut une instance locale (dev), surchargeable par env
+# (TEST_DATABASE_URL) pour tourner dans un conteneur sur le réseau Docker de la brique.
+TEST_DB_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://garinat_t@localhost:5432/memory_test",
+)
 
 app.config.settings.database_url = TEST_DB_URL
 

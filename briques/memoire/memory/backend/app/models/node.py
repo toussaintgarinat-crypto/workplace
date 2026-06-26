@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, Text, DateTime, Enum, ForeignKey, Index
+from sqlalchemy import Column, Integer, Text, DateTime, Enum, ForeignKey, Index, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
@@ -57,6 +57,12 @@ class Node(Base):
     stage_changed_at = Column(DateTime(timezone=True), nullable=True)
     source_url = Column(Text, nullable=True)
     captured_from = Column(Text, nullable=True)
+    # Position libre du nœud sur le canvas graphe (S109) : {"x": float, "y": float}.
+    # NULL = jamais déplacé → le front retombe sur une disposition en grille.
+    canvas_pos = Column(JSONB, nullable=True)
+    # Historique opt-in (S110) : si vrai, chaque édition archive l'état précédent
+    # dans node_revisions. Faux par défaut (souveraineté + on ne gonfle pas la DB).
+    track_history = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     embedding = Column(Vector(384), nullable=True)

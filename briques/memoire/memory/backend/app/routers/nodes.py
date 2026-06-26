@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.database import get_db
 from app.models.node import Node
-from app.schemas.node import NodeCreate, NodeUpdate, NodeResponse, NodeStageUpdate, NodeLocationUpdate, EdgeRef
+from app.schemas.node import NodeCreate, NodeUpdate, NodeResponse, NodeStageUpdate, NodeLocationUpdate, EdgeRef, NodeRevisionResponse
 from app.services.node_service import NodeService
 
 router = APIRouter()
@@ -34,6 +34,7 @@ def node_to_response(node: Node) -> NodeResponse:
         captured_from=node.captured_from,
         location=None,
         edges=edges,
+        track_history=bool(getattr(node, "track_history", False)),
         created_at=node.created_at,
         updated_at=node.updated_at,
     )
@@ -107,6 +108,41 @@ async def update_node_location(space_id: UUID, node_id: UUID, req: NodeLocationU
     node = await svc.update_location(node_id, space_id, req.wing, req.room, req.drawer)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    return node_to_response(node)
+
+
+@router.get("/{node_id}/revisions", response_model=list[NodeRevisionResponse])
+async def list_node_revisions(
+    space_id: UUID, node_id: UUID, limit: int = Query(50), db: AsyncSession = Depends(get_db)
+):
+    """Historique des versions d'un nœud (opt-in via `track_history`), récentes d'abord."""
+    svc = NodeService(db)
+    revisions = await svc.list_revisions(node_id, space_id, limit=limit)
+    if revisions is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return revisions
+
+
+@router.get("/{node_id}/revisions/{revision_id}", response_model=NodeRevisionResponse)
+async def get_node_revision(
+    space_id: UUID, node_id: UUID, revision_id: UUID, db: AsyncSession = Depends(get_db)
+):
+    svc = NodeService(db)
+    revision = await svc.get_revision(node_id, space_id, revision_id)
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    return revision
+
+
+@router.post("/{node_id}/revisions/{revision_id}/restore", response_model=NodeResponse)
+async def restore_node_revision(
+    space_id: UUID, node_id: UUID, revision_id: UUID, db: AsyncSession = Depends(get_db)
+):
+    """Restaure une version passée (l'état courant est lui-même archivé au passage)."""
+    svc = NodeService(db)
+    node = await svc.restore_revision(node_id, space_id, revision_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Revision not found")
     return node_to_response(node)
 
 

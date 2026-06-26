@@ -23,9 +23,12 @@ pour porter les rangements de Forge (wings IPCRa) et d'Oria (wing_user / salles)
 
 import asyncio
 import os
+from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 MEMORY_API = os.environ.get("MEMORY_API", "http://memoire-backend:8000").rstrip("/")
@@ -33,7 +36,11 @@ EMAIL = os.environ.get("MEMOIRE_EMAIL", "service@workplace.local")
 MOTDEPASSE = os.environ.get("MEMOIRE_PASSWORD", "workplace-memoire")
 ESPACE = os.environ.get("MEMOIRE_ESPACE", "Workplace")
 
-VERSION = "0.2.0"
+# Front React buildé (memory/frontend → /app/ui par le Dockerfile multi-stage).
+# Absent en test/dev local : tout le service du front est alors gracieusement inerte.
+UI_DIR = Path(os.environ.get("UI_DIR", "/app/ui"))
+
+VERSION = "0.3.0"
 app = FastAPI(title="Mémoire Workplace", version=VERSION)
 
 # Session résolue paresseusement, protégée par un verrou. Le token de service est partagé ;
@@ -267,3 +274,97 @@ async def supprimer(souvenir_id: str, espace: str | None = None):
         if r.status_code >= 400 and r.status_code != 404:
             raise HTTPException(502, f"Memory: {r.text}")
     return {"supprime": True, "id": souvenir_id}
+
+
+# ── Front React (S108) ─────────────────────────────────────────────────────────
+# La brique sert le vrai front du projet Memory (memory/frontend, buildé dans /app/ui)
+# et reverse-proxy /api/v1 vers le backend Memory interne. Le front parle à /api/v1 en
+# relatif → tout est same-origin (pas de CORS). L'auth est injectée côté serveur : le
+# proxy force le JWT de service sur chaque appel, et l'index pré-remplit localStorage
+# (auth_token + active_space_id) pour passer le garde RequireAuth sans écran de connexion.
+
+# En-têtes hop-by-hop : ne JAMAIS recopier de/vers le client (gérés par le transport).
+_HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "content-encoding",
+    "content-length", "host",
+}
+
+
+@app.api_route(
+    "/api/v1/{chemin:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def proxy_api(chemin: str, request: Request):
+    """Relaie /api/v1/* vers le backend Memory interne en forçant l'auth de service.
+
+    On IGNORE l'Authorization éventuel du front (jeton injecté, peut-être périmé) et on
+    pose toujours un JWT de service frais : la brique est mono-locataire (compte unique).
+    """
+    corps = await request.body()
+    entetes = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in _HOP_BY_HOP and k.lower() != "authorization"
+    }
+    async with await _client() as client:
+        entetes["Authorization"] = f"Bearer {await _token(client)}"
+        amont = await client.request(
+            request.method,
+            f"{MEMORY_API}/api/v1/{chemin}",
+            params=dict(request.query_params),
+            content=corps,
+            headers=entetes,
+        )
+    sortie = {
+        k: v for k, v in amont.headers.items() if k.lower() not in _HOP_BY_HOP
+    }
+    return Response(content=amont.content, status_code=amont.status_code,
+                    headers=sortie, media_type=amont.headers.get("content-type"))
+
+
+# Assets statiques du build Vite (montés seulement si le front est présent).
+if (UI_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(UI_DIR / "assets")), name="assets")
+
+
+def _type_mime(nom: str) -> str:
+    import mimetypes
+    return mimetypes.guess_type(nom)[0] or "application/octet-stream"
+
+
+async def _index_injecte() -> str:
+    """index.html du front avec un <script> qui pré-remplit localStorage (auth + espace)."""
+    index = UI_DIR / "index.html"
+    if not index.is_file():
+        return ("<!doctype html><meta charset=utf-8><title>Mémoire</title>"
+                "<p>Front non buildé (image construite sans le stage Node ?).</p>")
+    html = index.read_text(encoding="utf-8")
+    async with await _client() as client:
+        token = await _token(client)
+        espace_id = await _espace_id(client)
+    boot = (
+        "<script>try{"
+        f"localStorage.setItem('auth_token',{token!r});"
+        f"localStorage.setItem('active_space_id',{espace_id!r});"
+        "}catch(e){}</script>"
+    )
+    return html.replace("</head>", boot + "</head>", 1)
+
+
+@app.get("/", include_in_schema=False)
+async def racine():
+    return RedirectResponse("/memory")
+
+
+@app.get("/{chemin:path}", include_in_schema=False)
+async def spa(chemin: str):
+    """Fallback SPA : toute route front (/memory, /memory/graph, …) rend l'index injecté.
+
+    Déclaré en DERNIER : le contrat (/sante, /retenir…) et /api/v1 sont matchés avant.
+    Un fichier statique racine présent (favicon.svg…) est servi tel quel.
+    """
+    if chemin and UI_DIR.is_dir():
+        cible = UI_DIR / chemin
+        if cible.is_file() and cible.resolve().is_relative_to(UI_DIR.resolve()):
+            return Response(content=cible.read_bytes(), media_type=_type_mime(cible.name))
+    return HTMLResponse(await _index_injecte())

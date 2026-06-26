@@ -20,6 +20,7 @@ interface GraphCanvasProps {
   onNodeClick: (nodeId: string) => void
   onNodeDoubleClick: (nodeId: string) => void
   onEdgeCreate?: (source: string, target: string) => void
+  onNodePositionChange?: (nodeId: string, x: number, y: number) => void
 }
 
 const typeColors: Record<string, string> = {
@@ -72,16 +73,21 @@ export default function GraphCanvas({
   onNodeClick,
   onNodeDoubleClick,
   onEdgeCreate,
+  onNodePositionChange,
 }: GraphCanvasProps) {
   const initialNodes: Node[] = useMemo(
     () =>
       graphNodes.map((n, i) => ({
         id: n.id,
         type: 'custom',
-        position: {
-          x: 150 + (i % 6) * 180,
-          y: 80 + Math.floor(i / 6) * 120,
-        },
+        // Position persistée (drag déjà enregistré) prioritaire ; sinon grille de repli.
+        position:
+          n.pos && Number.isFinite(n.pos.x) && Number.isFinite(n.pos.y)
+            ? { x: n.pos.x, y: n.pos.y }
+            : {
+                x: 150 + (i % 6) * 180,
+                y: 80 + Math.floor(i / 6) * 120,
+              },
         data: { label: n.title, type: n.type },
       })),
     [graphNodes],
@@ -130,6 +136,13 @@ export default function GraphCanvas({
     [onNodeDoubleClick],
   )
 
+  const onNodeDragStopHandler = useCallback(
+    (_: MouseEvent | TouchEvent, node: Node) => {
+      onNodePositionChange?.(node.id, node.position.x, node.position.y)
+    },
+    [onNodePositionChange],
+  )
+
   const defaultEdgeOptions = useMemo(
     () => ({
       type: 'smoothstep',
@@ -158,6 +171,7 @@ export default function GraphCanvas({
         onConnect={onConnect}
         onNodeClick={onNodeClickHandler}
         onNodeDoubleClick={onNodeDoubleClickHandler}
+        onNodeDragStop={onNodeDragStopHandler}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView

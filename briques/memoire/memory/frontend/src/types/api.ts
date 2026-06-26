@@ -30,8 +30,18 @@ export interface NodeResponse {
   captured_from?: string | null
   location?: Location | null
   edges: EdgeRef[]
+  track_history: boolean
   created_at: string
   updated_at: string
+}
+
+export interface NodeRevision {
+  id: string
+  node_id: string
+  title: string
+  content_md: string
+  frontmatter: Record<string, unknown>
+  captured_at: string
 }
 
 export interface NodeCreate {
@@ -52,6 +62,7 @@ export interface NodeUpdate {
   source_url?: string | null
   captured_from?: string | null
   happened_at?: string | null
+  track_history?: boolean
 }
 
 export interface SearchResult {
@@ -99,6 +110,7 @@ export interface GraphNode {
   id: string
   title: string
   type: string
+  pos?: { x: number; y: number } | null
 }
 
 export interface GraphEdge {

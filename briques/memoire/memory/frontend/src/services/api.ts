@@ -1,5 +1,6 @@
 import type {
   NodeResponse,
+  NodeRevision,
   NodeCreate,
   NodeUpdate,
   SearchResult,
@@ -174,6 +175,17 @@ export async function touchNode(id: string): Promise<NodeResponse> {
   return request(`/spaces/${sid}/nodes/${id}/touch`, { method: 'POST' })
 }
 
+// Revisions (historique opt-in, S110/S111) — récentes d'abord
+export async function getNodeRevisions(id: string, limit = 100): Promise<NodeRevision[]> {
+  const sid = getSpaceId()
+  return request(`/spaces/${sid}/nodes/${id}/revisions?limit=${limit}`)
+}
+
+export async function restoreNodeRevision(id: string, revisionId: string): Promise<NodeResponse> {
+  const sid = getSpaceId()
+  return request(`/spaces/${sid}/nodes/${id}/revisions/${revisionId}/restore`, { method: 'POST' })
+}
+
 export async function updateNodeStage(id: string, stage: string, reason?: string): Promise<NodeResponse> {
   const sid = getSpaceId()
   return request(`/spaces/${sid}/nodes/${id}/stage`, {
@@ -287,6 +299,14 @@ export async function createEdge(sourceId: string, targetId: string, type = 'rel
   return request(`/spaces/${sid}/graph/edges`, {
     method: 'POST',
     body: JSON.stringify({ source_id: sourceId, target_id: targetId, type }),
+  })
+}
+
+export async function saveNodePosition(nodeId: string, x: number, y: number): Promise<GraphNode> {
+  const sid = getSpaceId()
+  return request(`/spaces/${sid}/graph/nodes/${nodeId}/position`, {
+    method: 'PUT',
+    body: JSON.stringify({ x, y }),
   })
 }
 

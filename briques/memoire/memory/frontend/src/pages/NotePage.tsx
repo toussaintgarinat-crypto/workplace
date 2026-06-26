@@ -4,6 +4,7 @@ import { ArrowLeft, Save, Trash2, Layers } from 'lucide-react'
 import MarkdownEditor from '../components/editor/MarkdownEditor'
 import FrontmatterEditor from '../components/editor/FrontmatterEditor'
 import TemplatePicker from '../components/editor/TemplatePicker'
+import RevisionTimeline from '../components/editor/RevisionTimeline'
 import * as api from '../services/api'
 import type { NodeResponse, Template, Collection } from '../types/api'
 
@@ -24,6 +25,7 @@ export default function NotePage() {
   const [happenedAt, setHappenedAt] = useState('')
   const [collections, setCollections] = useState<Collection[]>([])
   const [showColPicker, setShowColPicker] = useState(false)
+  const [historyKey, setHistoryKey] = useState(0)
 
   useEffect(() => {
     api.getCollections().then(setCollections).catch(() => {})
@@ -55,16 +57,33 @@ export default function NotePage() {
         })
         navigate(`/memory/note/${created.id}`, { replace: true })
       } else if (id) {
-        await api.updateNode(id, {
+        const updated = await api.updateNode(id, {
           title,
           content_md: content,
           frontmatter,
           happened_at: happenedAt ? new Date(happenedAt).toISOString() : null,
         })
+        setNode(updated)
+        setHistoryKey((k) => k + 1) // une version vient peut-être d'être archivée
       }
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleToggleHistory(on: boolean) {
+    if (!id) return
+    const updated = await api.updateNode(id, { track_history: on })
+    setNode(updated)
+    setHistoryKey((k) => k + 1)
+  }
+
+  function handleRestored(restored: NodeResponse) {
+    setNode(restored)
+    setTitle(restored.title)
+    setContent(restored.content_md)
+    setFrontmatter(restored.frontmatter)
+    setHistoryKey((k) => k + 1)
   }
 
   async function handleDelete() {
@@ -233,6 +252,16 @@ export default function NotePage() {
       <MarkdownEditor value={content} onChange={(v) => setContent(v)} placeholder="Write your memory in Markdown..." />
 
       <FrontmatterEditor frontmatter={frontmatter} onChange={(fm) => setFrontmatter(fm)} />
+
+      {!isNew && node && (
+        <RevisionTimeline
+          nodeId={node.id}
+          trackHistory={node.track_history}
+          refreshKey={historyKey}
+          onToggleHistory={handleToggleHistory}
+          onRestore={handleRestored}
+        />
+      )}
     </div>
   )
 }
