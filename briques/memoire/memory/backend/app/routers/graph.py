@@ -1,9 +1,10 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.database import get_db
-from app.schemas.graph import EdgeCreate, GraphResponse, GraphNode, NodePosition
+from app.schemas.graph import EdgeCreate, GraphResponse, GraphNode, NodePosition, TimelineEntry
 from app.services.graph_service import GraphService
 
 router = APIRouter()
@@ -32,10 +33,29 @@ async def create_edge(space_id: UUID, req: EdgeCreate, db: AsyncSession = Depend
 @router.delete("/edges/{edge_id}")
 async def delete_edge(space_id: UUID, edge_id: UUID, db: AsyncSession = Depends(get_db)):
     svc = GraphService(db)
-    success = await svc.delete_edge(edge_id)
+    success = await svc.delete_edge(space_id, edge_id)
     if not success:
         raise HTTPException(status_code=404, detail="Edge not found")
     return {"detail": "Edge deleted"}
+
+
+@router.get("/at", response_model=GraphResponse)
+async def get_graph_at(
+    space_id: UUID,
+    t: datetime = Query(..., description="Instant ISO 8601 auquel relire le graphe"),
+    depth: int = Query(2),
+    db: AsyncSession = Depends(get_db),
+):
+    """État du graphe à l'instant T (machine à remonter le temps de l'espace, S112)."""
+    svc = GraphService(db)
+    return await svc.get_graph_at(space_id, t, depth=depth)
+
+
+@router.get("/timeline", response_model=list[TimelineEntry])
+async def get_timeline(space_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Instants saillants de l'histoire de l'espace, triés (crans du curseur S113)."""
+    svc = GraphService(db)
+    return await svc.get_timeline(space_id)
 
 
 @router.put("/nodes/{node_id}/position", response_model=GraphNode)

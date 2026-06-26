@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.node import Node, NodeType, IpCraStage, StorageTier, NodeStatus
 from app.models.revision import NodeRevision
+from app.models.stage_event import NodeStageEvent
+from app.models.user import Space
 from app.models.palace import PalaceRoom
 from app.services.embed_service import EmbedService
 
@@ -17,6 +19,14 @@ _TRACKED_FIELDS = ("title", "content_md", "frontmatter")
 class NodeService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _space_tracks_history(self, space_id: UUID) -> bool:
+        """L'espace journalise-t-il son histoire (S112) ? Gouverne les évènements de
+        stade et le soft-delete des liens."""
+        result = await self.db.execute(
+            select(Space.track_history).where(Space.id == space_id)
+        )
+        return bool(result.scalar_one_or_none())
 
     async def list_nodes(
         self,
@@ -70,6 +80,17 @@ class NodeService:
         )
         self.db.add(node)
         await self.db.flush()
+
+        # Journal temporel de l'espace (S112) : si l'espace suit son histoire, on note
+        # l'évènement de création (from=NULL, to=stade initial). Sinon rien (souveraineté).
+        if await self._space_tracks_history(space_id):
+            self.db.add(NodeStageEvent(
+                space_id=space_id,
+                node_id=node.id,
+                from_stage=None,
+                to_stage=node.ipcra_stage,
+                at=now,
+            ))
 
         if location:
             if isinstance(location, dict):
@@ -202,8 +223,21 @@ class NodeService:
         node = result.scalar_one_or_none()
         if not node:
             return None
-        node.ipcra_stage = IpCraStage(stage)
-        node.stage_changed_at = datetime.now(timezone.utc)
+        old_stage = node.ipcra_stage
+        new_stage = IpCraStage(stage)
+        now = datetime.now(timezone.utc)
+        node.ipcra_stage = new_stage
+        node.stage_changed_at = now
+        # Journal temporel (S112) : on n'enregistre que les vraies transitions, et
+        # seulement si l'espace suit son histoire.
+        if old_stage != new_stage and await self._space_tracks_history(space_id):
+            self.db.add(NodeStageEvent(
+                space_id=space_id,
+                node_id=node.id,
+                from_stage=old_stage,
+                to_stage=new_stage,
+                at=now,
+            ))
         await self.db.commit()
         await self.db.refresh(node)
         return node

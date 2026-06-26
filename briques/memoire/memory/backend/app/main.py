@@ -24,6 +24,14 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE nodes ADD COLUMN IF NOT EXISTS track_history BOOLEAN NOT NULL DEFAULT FALSE")
         )
+        # S112 : journal temporel du GRAPHE. Opt-in au niveau de l'espace + soft-delete
+        # des liens. La table node_stage_events (neuve) est créée par create_all.
+        await conn.execute(
+            text("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS track_history BOOLEAN NOT NULL DEFAULT FALSE")
+        )
+        await conn.execute(
+            text("ALTER TABLE edges ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
+        )
     start_scheduler()
     yield
     stop_scheduler()

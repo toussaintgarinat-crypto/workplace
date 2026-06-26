@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from typing import Optional
 from uuid import UUID
 
 from app.database import get_db
@@ -16,11 +17,19 @@ class SpaceCreate(BaseModel):
     description: str = ""
 
 
+class SpaceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    # Active/désactive le journal temporel de TOUT l'espace (S112).
+    track_history: Optional[bool] = None
+
+
 class SpaceResponse(BaseModel):
     id: UUID
     name: str
     description: str
     role: str = ""
+    track_history: bool = False
 
 
 class InviteRequest(BaseModel):
@@ -46,7 +55,7 @@ async def create_space(
     db.add(membership)
     await db.commit()
     await db.refresh(space)
-    return SpaceResponse(id=space.id, name=space.name, description=space.description, role="owner")
+    return SpaceResponse(id=space.id, name=space.name, description=space.description, role="owner", track_history=space.track_history)
 
 
 @router.get("", response_model=list[SpaceResponse])
@@ -61,7 +70,7 @@ async def list_spaces(
     )
     rows = result.all()
     return [
-        SpaceResponse(id=space.id, name=space.name, description=space.description, role=role)
+        SpaceResponse(id=space.id, name=space.name, description=space.description, role=role, track_history=space.track_history)
         for space, role in rows
     ]
 
@@ -76,13 +85,13 @@ async def get_space(
     space = result.scalar_one_or_none()
     if not space:
         raise HTTPException(status_code=404, detail="Space not found")
-    return SpaceResponse(id=space.id, name=space.name, description=space.description, role=membership.role)
+    return SpaceResponse(id=space.id, name=space.name, description=space.description, role=membership.role, track_history=space.track_history)
 
 
-@router.put("/{space_id}")
+@router.put("/{space_id}", response_model=SpaceResponse)
 async def update_space(
     space_id: UUID,
-    req: SpaceCreate,
+    req: SpaceUpdate,
     db: AsyncSession = Depends(get_db),
     _=Depends(require_space_role(UserRole.owner, UserRole.admin)),
 ):
@@ -90,11 +99,16 @@ async def update_space(
     space = result.scalar_one_or_none()
     if not space:
         raise HTTPException(status_code=404, detail="Space not found")
-    space.name = req.name
-    space.description = req.description
+    if req.name is not None:
+        space.name = req.name
+    if req.description is not None:
+        space.description = req.description
+    # Bascule du journal temporel de l'espace (S112).
+    if req.track_history is not None:
+        space.track_history = req.track_history
     await db.commit()
     await db.refresh(space)
-    return SpaceResponse(id=space.id, name=space.name, description=space.description)
+    return SpaceResponse(id=space.id, name=space.name, description=space.description, track_history=space.track_history)
 
 
 @router.delete("/{space_id}")

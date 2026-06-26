@@ -10,6 +10,7 @@ import type {
   GardienLogEntry,
   GraphNode,
   GraphResponse,
+  TimelineEntry,
   Space,
   Template,
   Collection,
@@ -105,7 +106,10 @@ export async function getSpace(spaceId: string): Promise<Space & { role: string 
   return request(`/spaces/${spaceId}`)
 }
 
-export async function updateSpace(spaceId: string, data: { name: string; description?: string }): Promise<Space> {
+export async function updateSpace(
+  spaceId: string,
+  data: { name?: string; description?: string; track_history?: boolean },
+): Promise<Space> {
   return request(`/spaces/${spaceId}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
@@ -292,6 +296,19 @@ export async function getGraph(rootId?: string, depth = 2): Promise<GraphRespons
   if (rootId) q.set('root', rootId)
   q.set('depth', String(depth))
   return request(`/spaces/${sid}/graph?${q}`)
+}
+
+// Machine à remonter le temps de l'espace (S112/S113) — état du graphe à l'instant T.
+export async function getGraphAt(t: string, depth = 2): Promise<GraphResponse> {
+  const sid = getSpaceId()
+  const q = new URLSearchParams({ t, depth: String(depth) })
+  return request(`/spaces/${sid}/graph/at?${q}`)
+}
+
+// Instants saillants de l'histoire de l'espace = crans du curseur global.
+export async function getGraphTimeline(): Promise<TimelineEntry[]> {
+  const sid = getSpaceId()
+  return request(`/spaces/${sid}/graph/timeline`)
 }
 
 export async function createEdge(sourceId: string, targetId: string, type = 'related') {

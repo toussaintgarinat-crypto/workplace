@@ -36,6 +36,10 @@ class Edge(Base):
     edge_metadata = Column("metadata", UUID(as_uuid=True), nullable=True)
     created_by = Column(Enum(EdgeCreator), nullable=False, default=EdgeCreator.user)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Soft-delete (S112) : si l'espace suit son histoire, supprimer un lien ne l'efface
+    # pas mais l'horodate. « Lien vivant à T » = created_at ≤ T < deleted_at (ou NULL).
+    # NULL = lien présent. Hors suivi, la suppression reste un hard-delete (cf. service).
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     source_node = relationship("Node", foreign_keys=[source_id], back_populates="edges_out")
     target_node = relationship("Node", foreign_keys=[target_id], back_populates="edges_in")

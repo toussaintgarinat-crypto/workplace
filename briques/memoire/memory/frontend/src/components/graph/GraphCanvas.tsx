@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -21,6 +21,9 @@ interface GraphCanvasProps {
   onNodeDoubleClick: (nodeId: string) => void
   onEdgeCreate?: (source: string, target: string) => void
   onNodePositionChange?: (nodeId: string, x: number, y: number) => void
+  // Mode lecture du passé (S113) : on n'édite pas l'histoire (ni lien ni position),
+  // et les liens sont statiques (non animés) pour signaler un instantané figé.
+  readOnly?: boolean
 }
 
 const typeColors: Record<string, string> = {
@@ -40,7 +43,8 @@ const edgeTypeColors: Record<string, string> = {
 }
 
 function CustomNode({ data, selected }: NodeProps) {
-  const color = typeColors[data.type as string] || '#64748b'
+  // Couleur par stade-à-T si fourni (mode temps S113), sinon par type figé.
+  const color = typeColors[(data.stage as string) || (data.type as string)] || '#64748b'
   return (
     <div
       className={`px-3 py-2 rounded-lg border-2 text-sm cursor-pointer transition-shadow ${
@@ -74,6 +78,7 @@ export default function GraphCanvas({
   onNodeDoubleClick,
   onEdgeCreate,
   onNodePositionChange,
+  readOnly = false,
 }: GraphCanvasProps) {
   const initialNodes: Node[] = useMemo(
     () =>
@@ -88,7 +93,7 @@ export default function GraphCanvas({
                 x: 150 + (i % 6) * 180,
                 y: 80 + Math.floor(i / 6) * 120,
               },
-        data: { label: n.title, type: n.type },
+        data: { label: n.title, type: n.type, stage: n.stage ?? null },
       })),
     [graphNodes],
   )
@@ -100,25 +105,37 @@ export default function GraphCanvas({
         source: e.source,
         target: e.target,
         type: 'smoothstep',
-        animated: true,
+        animated: !readOnly,
         markerEnd: { type: MarkerType.ArrowClosed, color: edgeTypeColors[e.type] || '#64748b' },
         style: { stroke: edgeTypeColors[e.type] || '#64748b', strokeWidth: 1.5 },
         label: e.type,
       })),
-    [graphEdges],
+    [graphEdges, readOnly],
   )
 
-  const [nodesState, , onNodesChange] = useNodesState(initialNodes)
-  const [edgesState, , onEdgesChange] = useEdgesState(initialEdges)
+  const [nodesState, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edgesState, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const [, setSelected] = useState<string | null>(null)
+
+  // PIÈGE CENTRAL S113 : useNodesState/useEdgesState ne s'initialisent qu'au montage.
+  // On resynchronise quand les props changent (glisser le curseur temporel, recharger),
+  // sinon l'écran ne bougerait pas.
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+
+  useEffect(() => {
+    setEdges(initialEdges)
+  }, [initialEdges, setEdges])
 
   const onConnect = useCallback(
     (conn: Connection) => {
+      if (readOnly) return
       if (conn.source && conn.target && onEdgeCreate) {
         onEdgeCreate(conn.source, conn.target)
       }
     },
-    [onEdgeCreate],
+    [onEdgeCreate, readOnly],
   )
 
   const onNodeClickHandler = useCallback(
@@ -138,9 +155,10 @@ export default function GraphCanvas({
 
   const onNodeDragStopHandler = useCallback(
     (_: MouseEvent | TouchEvent, node: Node) => {
+      if (readOnly) return
       onNodePositionChange?.(node.id, node.position.x, node.position.y)
     },
-    [onNodePositionChange],
+    [onNodePositionChange, readOnly],
   )
 
   const defaultEdgeOptions = useMemo(
@@ -174,6 +192,8 @@ export default function GraphCanvas({
         onNodeDragStop={onNodeDragStopHandler}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
         fitView
         minZoom={0.3}
         maxZoom={2}
@@ -181,7 +201,10 @@ export default function GraphCanvas({
         <Background color="#334155" gap={20} />
         <Controls className="!bg-surface-2 !border-border !text-text" />
         <MiniMap
-          nodeColor={(n) => typeColors[(n.data as Record<string, unknown>)?.type as string] || '#64748b'}
+          nodeColor={(n) => {
+            const d = n.data as Record<string, unknown>
+            return typeColors[(d?.stage as string) || (d?.type as string)] || '#64748b'
+          }}
           maskColor="rgba(15, 23, 42, 0.8)"
           className="!bg-surface-2 !border-border"
         />
