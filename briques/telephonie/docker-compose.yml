@@ -1,0 +1,31 @@
+services:
+  telephonie:
+    build: .
+    container_name: workplace_telephonie
+    image: workplace/telephonie:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6050:6050"
+    environment:
+      - PORT=6050
+      - TELEPHONIE_DB=/data/telephonie.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # API_KEYS (clés des solutions autorisées) + credentials Twilio (TWILIO_ACCOUNT_SID,
+      # TWILIO_AUTH_TOKEN, TWILIO_FROM) viennent du .env racine via env_file. NE PAS les
+      # redéclarer ici en `=${VAR:-}` : ça les écraserait par du VIDE (piège « env shadow »).
+      # Sans credentials : canal MOCK honnête (rien ne part sur le réseau).
+    volumes:
+      - telephonie_data:/data   # numéros possédés + messages + appels
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6050/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  telephonie_data:

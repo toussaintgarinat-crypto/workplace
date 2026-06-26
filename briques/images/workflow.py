@@ -6,7 +6,15 @@ graphe SDXL minimal et standard (chargement modèle → encodage des prompts →
 
 Le nom du checkpoint est configurable (`COMFY_CKPT`) : selon le modèle installé côté
 ComfyUI. Si le modèle diffère, c'est la SEULE valeur à ajuster — le reste du graphe tient.
+
+Modèle À ARCHITECTURE DIFFÉRENTE (Boogu-Image, FLUX, SD3…) : leur pipeline ComfyUI n'est PAS
+celui de SDXL (chargeurs/échantillonneurs propres). Plutôt que de coder un graphe par modèle,
+on accepte un **gabarit exporté depuis ComfyUI** (« Save (API Format) ») via
+`COMFY_WORKFLOW_JSON` (chemin d'un fichier monté). On y substitue les jetons
+`{{PROMPT}}` / `{{NEGATIF}}` / `{{LARGEUR}}` / `{{HAUTEUR}}` / `{{SEED}}` : on branche ainsi
+N'IMPORTE QUEL modèle SANS toucher au code. Absent/illisible → repli sur le graphe SDXL.
 """
+import json
 import os
 import random
 
@@ -16,10 +24,50 @@ STEPS = int(os.getenv("COMFY_STEPS", "28"))
 CFG = float(os.getenv("COMFY_CFG", "7.0"))
 
 
+def _injecter(noeud, jetons: dict):
+    """Substitue récursivement les jetons dans un graphe exporté. Une chaîne ÉGALE à un jeton
+    (`"{{SEED}}"`) prend sa valeur TYPÉE (int) ; un jeton inclus dans du texte est remplacé en
+    chaîne (`"un chat, {{NEGATIF}}"`). Préserve la forme du graphe pour le reste."""
+    if isinstance(noeud, dict):
+        return {k: _injecter(v, jetons) for k, v in noeud.items()}
+    if isinstance(noeud, list):
+        return [_injecter(v, jetons) for v in noeud]
+    if isinstance(noeud, str):
+        if noeud in jetons:                       # jeton seul → valeur typée
+            return jetons[noeud]
+        for jeton, valeur in jetons.items():      # jeton inclus dans du texte → str
+            if jeton in noeud:
+                noeud = noeud.replace(jeton, str(valeur))
+        return noeud
+    return noeud
+
+
+def _gabarit_personnalise(prompt, negatif, largeur, hauteur, graine):
+    """Charge le gabarit `COMFY_WORKFLOW_JSON` et y injecte les jetons. None si non configuré
+    ou illisible (le moteur retombe alors sur le graphe SDXL — repli honnête, jamais d'échec
+    silencieux : un fichier illisible n'invente pas d'image, il rend la main au défaut)."""
+    chemin = os.getenv("COMFY_WORKFLOW_JSON")
+    if not chemin:
+        return None
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            graphe = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return _injecter(graphe, {
+        "{{PROMPT}}": prompt, "{{NEGATIF}}": negatif,
+        "{{LARGEUR}}": int(largeur), "{{HAUTEUR}}": int(hauteur), "{{SEED}}": int(graine),
+    })
+
+
 def construire(prompt: str, negatif: str = "", largeur: int = 1024,
                hauteur: int = 1024, seed=None) -> dict:
-    """Graphe ComfyUI (format API) pour un txt2img SDXL. Clés = identifiants de nœuds."""
+    """Graphe ComfyUI (format API). Gabarit personnalisé (`COMFY_WORKFLOW_JSON`) si présent —
+    pour brancher un modèle à pipeline propre (Boogu, FLUX…) ; sinon txt2img SDXL par défaut."""
     graine = int(seed) if seed is not None else random.randint(0, 2**31 - 1)
+    personnalise = _gabarit_personnalise(prompt, negatif, largeur, hauteur, graine)
+    if personnalise is not None:
+        return personnalise
     return {
         "4": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": CKPT}},

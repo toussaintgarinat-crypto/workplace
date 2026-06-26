@@ -1,0 +1,97 @@
+{
+  "nom": "telephonie",
+  "version": "0.1.0",
+  "description": "Canal téléphonique multi-tenant et provider-agnostique (SMS + voix). Donne à l'assistant un vrai téléphone : acheter un numéro, envoyer/recevoir des SMS, passer des appels vocaux. Chaque solution est isolée par sa clé API. Fournisseur MOCK honnête par défaut (rien ne part sur le réseau), Twilio réel dès qu'une clé est fournie (envois facturés). Brique Workplace native inspirée du pattern AgentPhone-MCP : capacités au manifest → outils du Cœur, plutôt qu'un serveur MCP externe.",
+  "role": "telephonie",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/telephonie",
+  "port": 6050,
+  "url_sante": "http://host.docker.internal:6050/sante",
+  "depends_on": [],
+  "offre": [
+    "multi_tenant_par_cle",
+    "acheter_numero",
+    "envoyer_sms",
+    "recevoir_sms_webhook",
+    "passer_appel_vocal",
+    "mock_honnete_par_defaut",
+    "twilio_reel"
+  ],
+  "capacites": [
+    {
+      "nom": "telephonie_config",
+      "description": "État du canal téléphonique : fournisseur actif (MOCK honnête ou Twilio réel), numéro par défaut. Sert à savoir si « un SMS/appel part pour de vrai » avant d'agir. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/config",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "telephonie_numeros",
+      "description": "Liste les numéros de téléphone possédés par la solution (numéro, pays, statut). Sert à connaître les émetteurs disponibles avant d'envoyer un SMS ou de passer un appel. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/numeros",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "telephonie_sms_lister",
+      "description": "Liste les SMS envoyés et reçus (sens, de, vers, corps, statut, date). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/sms",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "telephonie_appels_lister",
+      "description": "Liste les appels vocaux passés (de, vers, message énoncé, statut, date). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/appels",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "telephonie_numero_acheter",
+      "description": "Achète un NUMÉRO de téléphone (capable SMS + voix) pour pouvoir émettre. ACTION (crée/loue un numéro chez le fournisseur ; facturé si Twilio, factice si mock) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/numeros",
+      "params": {
+        "pays": {"type": "string", "description": "Code pays à 2 lettres du numéro voulu (défaut FR)."}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "telephonie_sms_envoyer",
+      "description": "Envoie un SMS depuis un numéro POSSÉDÉ par la solution. ACTION (un SMS part si Twilio ; simulé si mock) : confirme=true requis. L'émetteur doit faire partie des numéros possédés (voir telephonie_numeros).",
+      "methode": "POST",
+      "chemin": "/sms",
+      "params": {
+        "de": {"type": "string", "description": "Numéro émetteur au format E.164 (ex. +33612345678) — doit être possédé par la solution.", "requis": true},
+        "vers": {"type": "string", "description": "Numéro destinataire au format E.164.", "requis": true},
+        "corps": {"type": "string", "description": "Texte du message (max 1600 caractères).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "telephonie_appel_passer",
+      "description": "Passe un APPEL vocal depuis un numéro POSSÉDÉ ; le message fourni est énoncé à voix haute au décroché. ACTION (un appel part si Twilio ; simulé si mock) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/appels",
+      "params": {
+        "de": {"type": "string", "description": "Numéro émetteur au format E.164 — doit être possédé par la solution.", "requis": true},
+        "vers": {"type": "string", "description": "Numéro destinataire au format E.164.", "requis": true},
+        "message": {"type": "string", "description": "Texte énoncé à voix haute au décroché (optionnel)."}
+      },
+      "action": true,
+      "niveau": 1
+    }
+  ],
+  "taches": []
+}
