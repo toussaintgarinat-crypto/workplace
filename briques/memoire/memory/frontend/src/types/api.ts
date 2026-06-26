@@ -110,7 +110,16 @@ export interface GraphNode {
   id: string
   title: string
   type: string
+  // Stade IPCRA à l'instant rendu : présent par défaut, ou stade-à-T en mode temps (S112/S113).
+  stage?: string | null
   pos?: { x: number; y: number } | null
+}
+
+// Un instant saillant de l'histoire de l'espace (crans du curseur S113).
+export interface TimelineEntry {
+  at: string
+  kind: 'created' | 'stage' | 'edge_added' | 'edge_removed'
+  label: string
 }
 
 export interface GraphEdge {
@@ -140,6 +149,8 @@ export interface Space {
   name: string
   description: string
   role?: string
+  // Journal temporel de TOUT l'espace activé (opt-in, S112) — alimente le curseur global S113.
+  track_history?: boolean
 }
 
 export interface Collection {

@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Share2 } from 'lucide-react'
 import * as api from '../services/api'
-import type { GraphNode, GraphEdge } from '../types/api'
+import type { GraphNode, GraphEdge, TimelineEntry } from '../types/api'
 import GraphCanvas from '../components/graph/GraphCanvas'
 import NodeDetail from '../components/graph/NodeDetail'
 import Legend from '../components/graph/Legend'
+import TimeTravelBar from '../components/graph/TimeTravelBar'
 
 interface DetailData {
   node: GraphNode
@@ -18,10 +19,16 @@ export default function GraphPage() {
   const [detail, setDetail] = useState<DetailData | null>(null)
   const [showLegend, setShowLegend] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Machine à remonter le temps (S113) : null = présent / live, sinon ISO de l'instant lu.
+  const [asOf, setAsOf] = useState<string | null>(null)
+  const [trackHistory, setTrackHistory] = useState(false)
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([])
+  const [activating, setActivating] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
     loadGraph()
+    loadSpaceHistory()
   }, [])
 
   async function loadGraph() {
@@ -36,6 +43,52 @@ export default function GraphPage() {
       setLoading(false)
     }
   }
+
+  // Charge l'état du journal temporel de l'espace + les crans du curseur (S113).
+  async function loadSpaceHistory() {
+    try {
+      const space = await api.getSpace(api.getSpaceId())
+      setTrackHistory(!!space.track_history)
+      if (space.track_history) {
+        setTimeline(await api.getGraphTimeline())
+      }
+    } catch {
+      // ignore : l'espace n'expose peut-être pas encore le flag
+    }
+  }
+
+  // Glissement du curseur : remonter à un instant (asOf) ou revenir au présent (null).
+  const handleSeek = useCallback(async (iso: string | null) => {
+    setAsOf(iso)
+    setDetail(null)
+    if (iso === null) {
+      await loadGraph()
+      return
+    }
+    setLoading(true)
+    try {
+      const data = await api.getGraphAt(iso, 2)
+      setNodes(data.nodes)
+      setEdges(data.edges)
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const handleActivate = useCallback(async () => {
+    setActivating(true)
+    try {
+      await api.updateSpace(api.getSpaceId(), { track_history: true })
+      setTrackHistory(true)
+      setTimeline(await api.getGraphTimeline())
+    } catch {
+      // ignore
+    } finally {
+      setActivating(false)
+    }
+  }, [])
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
@@ -58,11 +111,13 @@ export default function GraphPage() {
       try {
         await api.createEdge(source, target)
         await loadGraph()
+        // Un lien créé est un nouvel instant saillant : rafraîchir les crans.
+        if (trackHistory) setTimeline(await api.getGraphTimeline())
       } catch {
         // ignore
       }
     },
-    [],
+    [trackHistory],
   )
 
   const handleNodePositionChange = useCallback(
@@ -97,6 +152,17 @@ export default function GraphPage() {
         </button>
       </div>
 
+      <div className="mb-3">
+        <TimeTravelBar
+          trackHistory={trackHistory}
+          timeline={timeline}
+          asOf={asOf}
+          activating={activating}
+          onActivate={handleActivate}
+          onSeek={handleSeek}
+        />
+      </div>
+
       <div className="flex gap-2 flex-1 min-h-0">
         <div className="flex-1 bg-surface-2 border border-border rounded-xl overflow-hidden">
           {loading ? (
@@ -111,6 +177,7 @@ export default function GraphPage() {
               onNodeDoubleClick={handleNodeDoubleClick}
               onEdgeCreate={handleEdgeCreate}
               onNodePositionChange={handleNodePositionChange}
+              readOnly={asOf !== null}
             />
           )}
         </div>

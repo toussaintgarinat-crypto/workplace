@@ -1,13 +1,16 @@
 from collections import deque
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.node import Node, NodeStatus
 from app.models.edge import Edge, EdgeType, EdgeCreator
-from app.schemas.graph import GraphResponse, GraphNode, GraphEdge, NodePosition
+from app.models.stage_event import NodeStageEvent
+from app.models.user import Space
+from app.schemas.graph import GraphResponse, GraphNode, GraphEdge, NodePosition, TimelineEntry
 
 
 def _pos(node: Node) -> NodePosition | None:
@@ -34,7 +37,8 @@ class GraphService:
             node_ids = [n.id for n in nodes]
             edge_result = await self.db.execute(
                 select(Edge).where(
-                    or_(Edge.source_id.in_(node_ids), Edge.target_id.in_(node_ids))
+                    or_(Edge.source_id.in_(node_ids), Edge.target_id.in_(node_ids)),
+                    Edge.deleted_at.is_(None),
                 )
             )
             edges = edge_result.scalars().all()
@@ -48,13 +52,14 @@ class GraphService:
             nodes = node_result.scalars().all()
             edge_result = await self.db.execute(
                 select(Edge).where(
-                    or_(Edge.source_id.in_(all_node_ids), Edge.target_id.in_(all_node_ids))
+                    or_(Edge.source_id.in_(all_node_ids), Edge.target_id.in_(all_node_ids)),
+                    Edge.deleted_at.is_(None),
                 )
             )
             edges = edge_result.scalars().all()
 
         return GraphResponse(
-            nodes=[GraphNode(id=n.id, title=n.title, type=n.type.value, pos=_pos(n)) for n in nodes],
+            nodes=[GraphNode(id=n.id, title=n.title, type=n.type.value, stage=n.ipcra_stage.value, pos=_pos(n)) for n in nodes],
             edges=[GraphEdge(id=e.id, source=e.source_id, target=e.target_id, type=e.type.value, weight=e.weight) for e in edges],
         )
 
@@ -66,7 +71,8 @@ class GraphService:
                 break
             result = await self.db.execute(
                 select(Edge).where(
-                    or_(Edge.source_id.in_(current), Edge.target_id.in_(current))
+                    or_(Edge.source_id.in_(current), Edge.target_id.in_(current)),
+                    Edge.deleted_at.is_(None),
                 )
             )
             edges = result.scalars().all()
@@ -108,14 +114,127 @@ class GraphService:
         await self.db.refresh(node)
         return node
 
-    async def delete_edge(self, edge_id: UUID) -> bool:
+    async def _space_tracks_history(self, space_id: UUID) -> bool:
+        """L'espace journalise-t-il son histoire (S112) ?"""
+        result = await self.db.execute(
+            select(Space.track_history).where(Space.id == space_id)
+        )
+        return bool(result.scalar_one_or_none())
+
+    async def delete_edge(self, space_id: UUID, edge_id: UUID) -> bool:
         result = await self.db.execute(select(Edge).where(Edge.id == edge_id))
         edge = result.scalar_one_or_none()
         if not edge:
             return False
-        await self.db.delete(edge)
-        await self.db.commit()
+        # Si l'espace suit son histoire (S112), on horodate la suppression au lieu
+        # d'effacer la ligne → le lien reste « vivant à T » pour les T antérieurs.
+        # Sinon, comportement historique : hard-delete.
+        if await self._space_tracks_history(space_id):
+            if edge.deleted_at is None:
+                edge.deleted_at = datetime.now(timezone.utc)
+                await self.db.commit()
+        else:
+            await self.db.delete(edge)
+            await self.db.commit()
         return True
+
+    async def get_graph_at(self, space_id: UUID, t: datetime, depth: int = 2) -> GraphResponse:
+        """État du graphe tel qu'il était à l'instant T (S112).
+
+        Nœuds dont `created_at ≤ T` ; stade-à-T = `to_stage` du dernier évènement ≤ T
+        (repli honnête sur le stade courant si aucun évènement — on n'invente pas
+        l'avant-activation du suivi). Liens « vivants à T » = `created_at ≤ T` et pas
+        encore supprimés à T (`deleted_at IS NULL OR deleted_at > T`).
+        """
+        node_result = await self.db.execute(
+            select(Node)
+            .where(Node.space_id == space_id, Node.created_at <= t)
+            .order_by(Node.created_at)
+            .limit(50)
+        )
+        nodes = list(node_result.scalars().all())
+        node_ids = [n.id for n in nodes]
+        if not node_ids:
+            return GraphResponse(nodes=[], edges=[])
+
+        # Stade-à-T : dernier évènement ≤ T par nœud.
+        ev_result = await self.db.execute(
+            select(NodeStageEvent)
+            .where(
+                NodeStageEvent.node_id.in_(node_ids),
+                NodeStageEvent.at <= t,
+            )
+            .order_by(NodeStageEvent.at)
+        )
+        stage_at: dict[UUID, str] = {}
+        for ev in ev_result.scalars().all():  # ordre croissant → le dernier gagne
+            stage_at[ev.node_id] = ev.to_stage.value
+
+        edge_result = await self.db.execute(
+            select(Edge).where(
+                Edge.source_id.in_(node_ids),
+                Edge.target_id.in_(node_ids),
+                Edge.created_at <= t,
+                or_(Edge.deleted_at.is_(None), Edge.deleted_at > t),
+            )
+        )
+        edges = edge_result.scalars().all()
+
+        return GraphResponse(
+            nodes=[
+                GraphNode(
+                    id=n.id,
+                    title=n.title,
+                    type=n.type.value,
+                    stage=stage_at.get(n.id, n.ipcra_stage.value),
+                    pos=_pos(n),
+                )
+                for n in nodes
+            ],
+            edges=[GraphEdge(id=e.id, source=e.source_id, target=e.target_id, type=e.type.value, weight=e.weight) for e in edges],
+        )
+
+    async def get_timeline(self, space_id: UUID) -> list[TimelineEntry]:
+        """Instants saillants de l'histoire de l'espace, triés (S112).
+
+        Sert S113 à placer les crans du curseur sans recalcul côté front :
+        créations et transitions de stade (table d'évènements), ajouts et retraits
+        de liens (created_at / deleted_at des liens de l'espace).
+        """
+        entries: list[TimelineEntry] = []
+
+        ev_result = await self.db.execute(
+            select(NodeStageEvent)
+            .where(NodeStageEvent.space_id == space_id)
+            .order_by(NodeStageEvent.at)
+        )
+        for ev in ev_result.scalars().all():
+            if ev.from_stage is None:
+                entries.append(TimelineEntry(at=ev.at, kind="created", label=ev.to_stage.value))
+            else:
+                entries.append(TimelineEntry(
+                    at=ev.at, kind="stage", label=f"{ev.from_stage.value} → {ev.to_stage.value}"
+                ))
+
+        # Les liens n'ont pas de space_id : on les rattache via leurs nœuds.
+        node_ids_result = await self.db.execute(
+            select(Node.id).where(Node.space_id == space_id)
+        )
+        node_ids = [r for r in node_ids_result.scalars().all()]
+        if node_ids:
+            edge_result = await self.db.execute(
+                select(Edge).where(
+                    or_(Edge.source_id.in_(node_ids), Edge.target_id.in_(node_ids))
+                )
+            )
+            for e in edge_result.scalars().all():
+                if e.created_at is not None:
+                    entries.append(TimelineEntry(at=e.created_at, kind="edge_added", label=e.type.value))
+                if e.deleted_at is not None:
+                    entries.append(TimelineEntry(at=e.deleted_at, kind="edge_removed", label=e.type.value))
+
+        entries.sort(key=lambda x: x.at)
+        return entries
 
     async def find_shortest_path(self, space_id: UUID, source_id: UUID, target_id: UUID) -> list[GraphNode]:
         visited = {source_id}
