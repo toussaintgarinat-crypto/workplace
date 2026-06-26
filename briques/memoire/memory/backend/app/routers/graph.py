@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.database import get_db
-from app.schemas.graph import EdgeCreate, GraphResponse, GraphNode
+from app.schemas.graph import EdgeCreate, GraphResponse, GraphNode, NodePosition
 from app.services.graph_service import GraphService
 
 router = APIRouter()
@@ -36,6 +36,21 @@ async def delete_edge(space_id: UUID, edge_id: UUID, db: AsyncSession = Depends(
     if not success:
         raise HTTPException(status_code=404, detail="Edge not found")
     return {"detail": "Edge deleted"}
+
+
+@router.put("/nodes/{node_id}/position", response_model=GraphNode)
+async def set_node_position(
+    space_id: UUID,
+    node_id: UUID,
+    pos: NodePosition,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persiste la position d'un nœud déplacé sur le canvas (S109)."""
+    svc = GraphService(db)
+    node = await svc.set_node_position(space_id, node_id, pos.x, pos.y)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return GraphNode(id=node.id, title=node.title, type=node.type.value, pos=pos)
 
 
 @router.get("/path", response_model=list[GraphNode])

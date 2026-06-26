@@ -65,6 +65,22 @@ export default function GraphPage() {
     [],
   )
 
+  const handleNodePositionChange = useCallback(
+    async (nodeId: string, x: number, y: number) => {
+      // Persistance silencieuse : on ne recharge pas le graphe (garderait la position
+      // déjà affichée par React Flow) ; on met juste à jour notre état local.
+      setNodes((prev) =>
+        prev.map((n) => (n.id === nodeId ? { ...n, pos: { x, y } } : n)),
+      )
+      try {
+        await api.saveNodePosition(nodeId, x, y)
+      } catch {
+        // ignore : la position reste visible le temps de la session
+      }
+    },
+    [],
+  )
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
@@ -94,6 +110,7 @@ export default function GraphPage() {
               onNodeClick={handleNodeClick}
               onNodeDoubleClick={handleNodeDoubleClick}
               onEdgeCreate={handleEdgeCreate}
+              onNodePositionChange={handleNodePositionChange}
             />
           )}
         </div>
@@ -114,7 +131,7 @@ export default function GraphPage() {
       </div>
 
       <div className="mt-2 text-xs text-text/50 text-center">
-        Click a node to see details &middot; Double-click to edit &middot; Drag between nodes to create edges
+        Click a node to see details &middot; Double-click to edit &middot; Drag a node to move it (saved) &middot; Drag between nodes to create edges
       </div>
     </div>
   )

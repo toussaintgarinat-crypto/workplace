@@ -16,10 +16,16 @@ class EdgeCreate(BaseModel):
     weight: float = 1.0
 
 
+class NodePosition(BaseModel):
+    x: float
+    y: float
+
+
 class GraphNode(BaseModel):
     id: UUID
     title: str
     type: str
+    pos: NodePosition | None = None
 
 
 class GraphEdge(BaseModel):

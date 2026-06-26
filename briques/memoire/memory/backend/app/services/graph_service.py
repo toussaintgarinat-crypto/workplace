@@ -7,7 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.node import Node, NodeStatus
 from app.models.edge import Edge, EdgeType, EdgeCreator
-from app.schemas.graph import GraphResponse, GraphNode, GraphEdge
+from app.schemas.graph import GraphResponse, GraphNode, GraphEdge, NodePosition
+
+
+def _pos(node: Node) -> NodePosition | None:
+    """Position canvas persistée d'un nœud, si elle existe et est exploitable."""
+    raw = getattr(node, "canvas_pos", None)
+    if isinstance(raw, dict) and "x" in raw and "y" in raw:
+        try:
+            return NodePosition(x=float(raw["x"]), y=float(raw["y"]))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 class GraphService:
@@ -43,7 +54,7 @@ class GraphService:
             edges = edge_result.scalars().all()
 
         return GraphResponse(
-            nodes=[GraphNode(id=n.id, title=n.title, type=n.type.value) for n in nodes],
+            nodes=[GraphNode(id=n.id, title=n.title, type=n.type.value, pos=_pos(n)) for n in nodes],
             edges=[GraphEdge(id=e.id, source=e.source_id, target=e.target_id, type=e.type.value, weight=e.weight) for e in edges],
         )
 
@@ -83,6 +94,19 @@ class GraphService:
         await self.db.commit()
         await self.db.refresh(edge)
         return edge
+
+    async def set_node_position(self, space_id: UUID, node_id: UUID, x: float, y: float) -> Optional[Node]:
+        """Enregistre la position libre d'un nœud sur le canvas (drag-and-drop, S109)."""
+        result = await self.db.execute(
+            select(Node).where(Node.id == node_id, Node.space_id == space_id)
+        )
+        node = result.scalar_one_or_none()
+        if not node:
+            return None
+        node.canvas_pos = {"x": float(x), "y": float(y)}
+        await self.db.commit()
+        await self.db.refresh(node)
+        return node
 
     async def delete_edge(self, edge_id: UUID) -> bool:
         result = await self.db.execute(select(Edge).where(Edge.id == edge_id))

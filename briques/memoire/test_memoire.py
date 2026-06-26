@@ -199,3 +199,73 @@ async def test_supprimer_404_tolere():
     r = await _appel("DELETE", "/souvenir/absent")
     assert r.status_code == 200
     assert r.json()["supprime"] is True
+
+
+# ── Front React (S108) : proxy /api/v1, redirection, bootstrap d'auth ────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_proxy_force_le_jwt_de_service():
+    """Le proxy /api/v1 relaie vers le backend en posant TOUJOURS l'auth de service."""
+    _mock_auth_et_espace(respx.mock)
+    route = respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/graph").mock(
+        return_value=httpx.Response(200, json={"nodes": [], "edges": []})
+    )
+    # On envoie un Authorization bidon : le proxy doit l'écraser par le JWT de service.
+    r = await _appel("GET", f"/api/v1/spaces/{ESPACE_ID}/graph",
+                     headers={"Authorization": "Bearer perime"})
+    assert r.status_code == 200
+    assert r.json() == {"nodes": [], "edges": []}
+    assert route.calls.last.request.headers["authorization"] == "Bearer jwt-de-service"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_proxy_relaie_corps_et_query():
+    """POST proxifié : corps et paramètres de requête traversent vers le backend."""
+    _mock_auth_et_espace(respx.mock)
+    route = respx.post(f"{API}/api/v1/spaces/{ESPACE_ID}/nodes").mock(
+        return_value=httpx.Response(201, json={"id": "n9"})
+    )
+    r = await _appel("POST", f"/api/v1/spaces/{ESPACE_ID}/nodes?dry=1",
+                     json={"title": "T", "type": "input"})
+    assert r.status_code == 201 and r.json()["id"] == "n9"
+    req = route.calls.last.request
+    assert req.url.params["dry"] == "1"
+    import json as _json
+    assert _json.loads(req.content)["title"] == "T"
+
+
+@pytest.mark.asyncio
+async def test_racine_redirige_vers_memoire():
+    r = await _appel("GET", "/", follow_redirects=False)
+    assert r.status_code in (307, 308)
+    assert r.headers["location"] == "/memory"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_spa_injecte_le_bootstrap(tmp_path, monkeypatch):
+    """La route SPA /memory rend l'index avec le pré-remplissage localStorage (auth+espace)."""
+    _mock_auth_et_espace(respx.mock)
+    (tmp_path / "index.html").write_text(
+        "<!doctype html><html><head><title>x</title></head><body></body></html>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "UI_DIR", tmp_path)
+    r = await _appel("GET", "/memory")
+    assert r.status_code == 200
+    html = r.text
+    assert "localStorage.setItem('auth_token'" in html
+    assert "jwt-de-service" in html
+    assert ESPACE_ID in html
+    assert "</head>" in html  # le script est injecté AVANT la fermeture de head
+
+
+@pytest.mark.asyncio
+async def test_spa_sans_front_rend_un_repli_honnete():
+    """Sans front buildé (UI_DIR absent), la SPA renvoie un repli HTML sans planter."""
+    r = await _appel("GET", "/memory/graph")
+    assert r.status_code == 200
+    assert "Front non buildé" in r.text

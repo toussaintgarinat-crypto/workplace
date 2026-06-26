@@ -37,6 +37,8 @@ class NodeUpdate(BaseModel):
     source_url: Optional[str] = None
     captured_from: Optional[str] = None
     happened_at: Optional[datetime] = None
+    # Active/désactive l'historique opt-in du nœud (S110).
+    track_history: Optional[bool] = None
 
 
 class NodeStageUpdate(BaseModel):
@@ -72,7 +74,19 @@ class NodeResponse(BaseModel):
     captured_from: Optional[str] = None
     location: Optional[Location] = None
     edges: list[EdgeRef] = []
+    track_history: bool = False
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class NodeRevisionResponse(BaseModel):
+    id: UUID
+    node_id: UUID
+    title: str
+    content_md: str
+    frontmatter: dict
+    captured_at: datetime
 
     model_config = {"from_attributes": True}

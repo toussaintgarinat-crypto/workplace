@@ -6,8 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.node import Node, NodeType, IpCraStage, StorageTier, NodeStatus
+from app.models.revision import NodeRevision
 from app.models.palace import PalaceRoom
 from app.services.embed_service import EmbedService
+
+# Champs versionnés par l'historique opt-in (S110) : le contenu éditable d'un nœud.
+_TRACKED_FIELDS = ("title", "content_md", "frontmatter")
 
 
 class NodeService:
@@ -121,6 +125,23 @@ class NodeService:
         node = result.scalar_one_or_none()
         if not node:
             return None
+
+        # Historique opt-in (S110) : si le suivi est (ou devient) actif et qu'un champ
+        # versionné change réellement, on archive l'état PRÉCÉDENT avant de l'écraser.
+        will_track = bool(data.get("track_history", node.track_history))
+        content_changes = any(
+            field in data and data[field] is not None and getattr(node, field) != data[field]
+            for field in _TRACKED_FIELDS
+        )
+        if will_track and content_changes:
+            self.db.add(NodeRevision(
+                node_id=node.id,
+                space_id=node.space_id,
+                title=node.title,
+                content_md=node.content_md or "",
+                frontmatter=node.frontmatter or {},
+            ))
+
         for key, value in data.items():
             if value is not None and hasattr(node, key):
                 setattr(node, key, value)
@@ -132,6 +153,47 @@ class NodeService:
             await embed_svc.embed_node(node.id)
 
         return node
+
+    async def list_revisions(self, node_id: UUID, space_id: UUID, limit: int = 50) -> Optional[list[NodeRevision]]:
+        """Versions archivées d'un nœud, de la plus récente à la plus ancienne.
+
+        Renvoie None si le nœud n'existe pas dans cet espace (→ 404), une liste
+        (éventuellement vide) sinon.
+        """
+        node = await self.db.execute(
+            select(Node.id).where(Node.id == node_id, Node.space_id == space_id)
+        )
+        if node.scalar_one_or_none() is None:
+            return None
+        result = await self.db.execute(
+            select(NodeRevision)
+            .where(NodeRevision.node_id == node_id, NodeRevision.space_id == space_id)
+            .order_by(NodeRevision.captured_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_revision(self, node_id: UUID, space_id: UUID, revision_id: UUID) -> Optional[NodeRevision]:
+        result = await self.db.execute(
+            select(NodeRevision).where(
+                NodeRevision.id == revision_id,
+                NodeRevision.node_id == node_id,
+                NodeRevision.space_id == space_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def restore_revision(self, node_id: UUID, space_id: UUID, revision_id: UUID) -> Optional[Node]:
+        """Restaure une version passée. C'est une édition à part entière : si le suivi
+        est actif, l'état courant est lui-même archivé avant d'être remplacé."""
+        rev = await self.get_revision(node_id, space_id, revision_id)
+        if rev is None:
+            return None
+        return await self.update_node(node_id, space_id, {
+            "title": rev.title,
+            "content_md": rev.content_md or "",
+            "frontmatter": rev.frontmatter or {},
+        })
 
     async def update_stage(self, node_id: UUID, space_id: UUID, stage: str) -> Optional[Node]:
         result = await self.db.execute(
