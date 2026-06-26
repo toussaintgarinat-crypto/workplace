@@ -35,6 +35,14 @@ L'ordre de préférence se règle par `IMAGE_PROVIDERS` (liste, ex.
 `IMAGE_PROVIDERS=gateway` ou `nanobanana,fal,comfyui`). Défaut : `comfyui` → `gateway` →
 hébergés. On peut aussi **forcer** un moteur par requête : `{"fournisseur": "gateway", …}`.
 
+### Modèle souverain à pipeline propre (Boogu-Image, FLUX, SD3…)
+
+Le fournisseur `comfyui` sert **n'importe quel** modèle. Pour un modèle dont le graphe ComfyUI
+diffère de SDXL (ex. **Boogu-Image** 10B, DiT), exporter le workflow depuis ComfyUI
+(« Save (API Format) »), y poser les jetons `{{PROMPT}}` `{{NEGATIF}}` `{{LARGEUR}}`
+`{{HAUTEUR}}` `{{SEED}}`, puis pointer `COMFY_WORKFLOW_JSON` dessus — **aucun code à changer**,
+repli SDXL si le fichier manque. Pas-à-pas : [`docs/BOOGU.md`](docs/BOOGU.md).
+
 ## Endpoints
 
 | Route | Rôle |

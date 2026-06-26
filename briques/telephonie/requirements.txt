@@ -1,0 +1,7 @@
+# Brique telephonie — canal SMS & voix multi-tenant. Dépendances minces et épinglées.
+# Le métier (E.164, segmentation, transitions) est en Python pur (domaine.py). Twilio est
+# appelé en REST direct via httpx (pas de SDK lourd) : mock + tests tournent sans appel tiers.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-multipart==0.0.20
