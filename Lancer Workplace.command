@@ -109,8 +109,14 @@ for ligne in "${BRIQUES[@]}"; do
   fi
 
   info "Démarrage des conteneurs…"
-  if ! ( cd "$dossier" && docker compose up -d ) >/dev/null 2>&1; then
-    err "Échec du démarrage des conteneurs de « $nom »."
+  # On CAPTURE la sortie (au lieu de l'avaler vers /dev/null) : si une image a été
+  # supprimée (prune) et que sa reconstruction échoue, l'erreur reste visible —
+  # sinon la panne est silencieuse et noyée parmi les ~40 briques (cas vécu :
+  # transcription 5980, image fauchée par un prune, vocal cassé sans message).
+  sortie=$( cd "$dossier" && docker compose up -d 2>&1 )
+  if [ $? -ne 0 ]; then
+    err "Échec du démarrage des conteneurs de « $nom » :"
+    echo "$sortie" | tail -15 | sed 's/^/      /'
     ECHECS=$((ECHECS+1))
     continue
   fi
