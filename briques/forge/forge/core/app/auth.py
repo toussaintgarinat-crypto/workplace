@@ -23,7 +23,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from agent_personnel_shared.keycloak_auth import KeycloakSettings, verify_token
+# JWT Keycloak : lib partagée unique du monorepo (S120). Remplace la copie vendored
+# agent_personnel_shared.keycloak_auth (le reste du paquet vendored reste utilisé).
+from shared.workplace_auth import KeycloakSettings, verify_token
 
 from app.config import settings
 from app.db import SessionLocal

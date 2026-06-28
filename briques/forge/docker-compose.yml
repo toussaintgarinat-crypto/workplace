@@ -49,8 +49,9 @@ services:
   # complétion réussie → schéma garanti présent avant le 1er appel. Rejouable.
   forge-migrate:
     build:
-      context: .
-      dockerfile: forge/core/Dockerfile
+      # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S120).
+      context: ../..
+      dockerfile: briques/forge/forge/core/Dockerfile
     image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     command: ["python", "-m", "scripts.init_db"]
     environment:
@@ -62,8 +63,9 @@ services:
 
   forge:
     build:
-      context: .
-      dockerfile: forge/core/Dockerfile
+      # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S120).
+      context: ../..
+      dockerfile: briques/forge/forge/core/Dockerfile
     image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     ports:
       - "8600:8600"
