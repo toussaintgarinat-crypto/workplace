@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Personnages — distribution & casting</title>
+<link rel="stylesheet" href="/workplace.css">
 <style>
+  /* Squelette = design system partagé (var --wp-*) ; accent ambre/rose propre à Personnages. */
   :root{
-    --bg:#0e0c10; --panel:#17141b; --panel2:#1f1a24; --line:#332b3c;
-    --ink:#ece6f0; --mut:#9b8fa8; --accent:#e0a458; --accent2:#c2547a; --ok:#5fd0a0;
+    --bg:var(--wp-bg); --panel:var(--wp-surface); --panel2:var(--wp-surface-2); --line:var(--wp-border);
+    --ink:var(--wp-text); --mut:var(--wp-muted); --accent:#e0a458; --accent2:#c2547a; --ok:var(--wp-ok);
   }
   *{box-sizing:border-box}
   body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#241a2e 0,var(--bg) 55%);

@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Synopsis — résumé vidéo</title>
+<link rel="stylesheet" href="/workplace.css">
 <style>
+  /* Squelette = design system partagé (var --wp-*) ; accent ambre propre à Synopsis. */
   :root{
-    --bg:#15120e; --panel:#1f1a14; --panel2:#272019; --bord:#3a2f24;
-    --txt:#f2e8da; --mut:#b6a78f; --or:#e0a64e; --or2:#c98a30; --ok:#7bbf6a; --err:#e06a5a;
+    --bg:var(--wp-bg); --panel:var(--wp-surface); --panel2:var(--wp-surface-2); --bord:var(--wp-border);
+    --txt:var(--wp-text); --mut:var(--wp-muted); --or:#e0a64e; --or2:#c98a30; --ok:var(--wp-ok); --err:var(--wp-err);
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;

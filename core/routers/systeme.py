@@ -144,6 +144,16 @@ async def socle_manipulation_directe():
     return FileResponse(chemin, media_type="application/javascript")
 
 
+@router.get("/workplace.css", tags=["système"], include_in_schema=False)
+async def design_system():
+    """Design system Workplace (S123) servi au dashboard : tokens visuels partagés.
+    Source unique = shared/static/workplace.css, copié ici par outils/sync_socle.sh."""
+    from fastapi.responses import FileResponse
+    # Le fichier vit à la racine de core/ ; ce router est dans core/routers/ → on remonte d'un cran.
+    chemin = os.path.join(os.path.dirname(os.path.dirname(__file__)), "workplace.css")
+    return FileResponse(chemin, media_type="text/css")
+
+
 # ── PWA « télécommande » (S61) : dashboard installable sur mobile, plein écran ──────
 # Le téléphone n'est qu'une télécommande : zéro calcul/stockage lourd, juste l'UI de chat
 # (streaming S60) qui parle au Cœur. Motif éprouvé de la brique transcription.

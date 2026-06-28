@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Studio — atelier d'audio-séries</title>
+<link rel="stylesheet" href="/workplace.css">
 <style>
+  /* Squelette = design system partagé (var --wp-*) ; accent or chaud propre à Studio. */
   :root{
-    --bg:#15120f; --panel:#1d1a17; --panel2:#241f1a; --line:#3a342b;
-    --ink:#f3e9d2; --mut:#b9b09a; --accent:#C9A227; --accent2:#B5835A; --ok:#7bdc9a; --bad:#e0667a;
+    --bg:var(--wp-bg); --panel:var(--wp-surface); --panel2:var(--wp-surface-2); --line:var(--wp-border);
+    --ink:var(--wp-text); --mut:var(--wp-muted); --accent:#C9A227; --accent2:#B5835A; --ok:var(--wp-ok); --bad:var(--wp-err);
   }
   *{box-sizing:border-box}
   body{margin:0;background:radial-gradient(1100px 560px at 85% -12%,#2a2015 0,var(--bg) 55%);

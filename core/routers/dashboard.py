@@ -20,6 +20,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Workplace">
 <link rel="apple-touch-icon" href="/icon.svg">
+<!-- Design system partagé (S123) : tokens --wp-* du monorepo (source unique shared/static/workplace.css). -->
+<link rel="stylesheet" href="/workplace.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }

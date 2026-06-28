@@ -125,6 +125,13 @@ def socle():
     return FileResponse(_SOCLE, media_type="application/javascript")
 
 
+# Design system partagé (S123) : tokens visuels du monorepo.
+# Source unique = shared/static/workplace.css, copié ici par outils/sync_socle.sh.
+@app.get("/workplace.css", include_in_schema=False)
+def design_system():
+    return FileResponse(Path(__file__).parent / "workplace.css", media_type="text/css")
+
+
 # ── Santé & équipe ───────────────────────────────────────────────
 @app.get("/sante", tags=["système"])
 def sante():
