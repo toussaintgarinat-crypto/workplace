@@ -1,7 +1,7 @@
 """Authentification & contexte utilisateur — portage du middleware Bun (S127).
 
 Réplique ``forge/core/src/api/middleware/auth.ts`` :
-1. vérifie le JWT Keycloak (JWKS, via ``agent_personnel_shared.keycloak_auth``) ;
+1. vérifie le JWT Keycloak (JWKS, via ``shared.workplace_auth``, lib partagée S120) ;
 2. provisionne l'utilisateur Forge (par keycloak_sub, sinon par email, sinon insert) ;
 3. auto-crée l'organisation personnelle + membership au premier login ;
 4. résout l'org active : header ``X-Org-ID`` (si membre) → sinon org personnelle ;
