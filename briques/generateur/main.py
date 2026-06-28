@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from shared.schemas.audit import Audit
 from generateur import generer_app_complete
 from gabarit import entites_du_plan, generer_html
 from langues import normaliser_langue
@@ -244,18 +245,21 @@ async def generer(demande: DemandeGeneration, background_tasks: BackgroundTasks)
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(f"{AUDIT_URL}/audits/{demande.audit_id}")
             r.raise_for_status()
-            audit = r.json()
+            # Contrat figé (S119) : on valide la charge utile au lieu de la lire en dict brut.
+            audit_obj = Audit.model_validate(r.json())
     except Exception as e:
         raise HTTPException(404, f"Audit introuvable ou brique Audit inaccessible : {e}")
 
-    if audit.get("statut") != "termine":
-        raise HTTPException(400, f"L'audit n'est pas terminé (statut : {audit.get('statut')})")
+    if not audit_obj.est_termine:
+        raise HTTPException(400, f"L'audit n'est pas terminé (statut : {audit_obj.statut})")
 
     mode = "hebergee" if demande.persistance == "hebergee" else "autonome"
     langue = normaliser_langue(demande.langue)
     app_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    nom = audit.get("nom_entreprise", "Entreprise")
+    nom = audit_obj.nom_entreprise or "Entreprise"
+    # Le reste du pipeline attend un dict ; model_dump préserve les champs additionnels.
+    audit = audit_obj.model_dump()
 
     with _connexion() as conn:
         conn.execute(
