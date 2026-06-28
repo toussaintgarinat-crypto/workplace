@@ -1,9 +1,13 @@
-"""Validation JWT Keycloak pour la brique « donnees » — autonome, activable par env.
+"""Validation JWT Keycloak pour la brique « donnees » — activable par env.
 
-Pourquoi ici (et pas via agent_personnel_shared) : le bundle livré au client ne copie
-que les fichiers de cette brique. Ce module doit donc être self-contained — il reprend
-la même logique éprouvée que keycloak_auth.py (cache JWKS + verify_aud conditionnel),
-sans dépendance externe au workspace.
+La logique Keycloak (cache JWKS + verify_aud conditionnel) vit désormais dans la lib
+partagée du monorepo `shared/workplace_auth.py` (S120) : une seule source de vérité au
+lieu d'une copie par brique. Ce module ne garde que l'adaptation propre à `donnees` —
+config lue à l'import depuis l'environnement + la dependency FastAPI `garde_auth`.
+
+Portabilité bundle : `shared/` est embarquée dans chaque bundle livré (le moteur de
+bundle la copie + le Dockerfile la `COPY` — cf. bundle.py S120). La brique n'est donc
+plus « self-contained » mais reste autonome au sein du monorepo et des bundles.
 
 Comportement piloté par l'environnement, rétrocompatible par défaut :
 - AUTH_ENABLED absent / "false"  → garde no-op : la brique reste ouverte (donnees
@@ -16,11 +20,12 @@ Multi-tenant : audience vide ⇒ verify_aud désactivé (le realm du bundle suff
 from __future__ import annotations
 
 import os
-import time
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+
+from shared.workplace_auth import KeycloakSettings, verify_token_sync
 
 # ── Configuration (lue à l'import, depuis l'environnement) ──────────────────────
 
@@ -29,11 +34,15 @@ KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "").rstrip("/")          # ex: http://i
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "")                  # ex: client-acme
 KEYCLOAK_AUDIENCE = os.getenv("KEYCLOAK_AUDIENCE", "").strip()    # vide ⇒ verify_aud off
 JWKS_TTL = int(os.getenv("JWKS_TTL", "600"))                      # cache des clés (s)
-_ALGORITHMS = ["RS256"]
 
-# Cache JWKS interne (absorbe la rotation des clés Keycloak sans refrapper le réseau).
-_jwks_cache: Optional[dict] = None
-_jwks_cached_at: float = 0.0
+# Réglages Keycloak partagés (porte le cache JWKS interne). Construit à l'import depuis
+# l'environnement : le comportement reste figé pour la durée de vie du process.
+_KC = KeycloakSettings(
+    url=KEYCLOAK_URL,
+    realm=KEYCLOAK_REALM,
+    audience=KEYCLOAK_AUDIENCE,
+    jwks_ttl=JWKS_TTL,
+)
 
 # auto_error=False : on gère nous-mêmes le 401 (message clair, et no-op si désactivé).
 _bearer = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
@@ -44,37 +53,9 @@ def config_valide() -> bool:
     return bool(AUTH_ENABLED and KEYCLOAK_URL and KEYCLOAK_REALM)
 
 
-def _jwks_url() -> str:
-    return f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
-
-
-def _charger_jwks() -> dict:
-    global _jwks_cache, _jwks_cached_at
-    now = time.monotonic()
-    if _jwks_cache and (now - _jwks_cached_at) < JWKS_TTL:
-        return _jwks_cache
-    import httpx  # import paresseux : inutile si AUTH_ENABLED=false
-    resp = httpx.get(_jwks_url(), timeout=10)
-    resp.raise_for_status()
-    _jwks_cache = resp.json()
-    _jwks_cached_at = time.monotonic()
-    return _jwks_cache
-
-
-def _decode_options() -> dict:
-    return {} if KEYCLOAK_AUDIENCE else {"verify_aud": False}
-
-
 def verifier_jeton(token: str) -> dict:
     """Décode et valide un JWT Keycloak. Lève JWTError si invalide."""
-    from jose import jwt  # import paresseux
-    jwks = _charger_jwks()
-    return jwt.decode(
-        token, jwks,
-        algorithms=_ALGORITHMS,
-        audience=KEYCLOAK_AUDIENCE or None,
-        options=_decode_options(),
-    )
+    return verify_token_sync(token, _KC)
 
 
 def garde_auth(token: str | None = Depends(_bearer)) -> Optional[dict]:
