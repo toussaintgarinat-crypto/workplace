@@ -137,6 +137,60 @@ def test_dependance_plateforme_non_tiree():
     assert ordre == ["restaurant"]               # gateway/memoire = plateforme, exclues
 
 
+# ── Briques dépendant de shared/ (S120 : build-context racine du bundle) ──────────
+def _service_shared():
+    """Service d'une brique au build-context racine du monorepo (forme S118/S120)."""
+    return {"services": {"donnees": {
+        "build": {"context": "../..", "dockerfile": "briques/donnees/Dockerfile"},
+        "container_name": "workplace_donnees",
+        "ports": ["5500:5500"],
+        "environment": ["DB_PATH=/data/donnees.db"],
+        "volumes": ["donnees_data:/data"],
+    }}}
+
+
+def test_depend_de_shared_detecte_le_contexte_racine():
+    assert bundle.depend_de_shared({"build": {"context": "../..", "dockerfile": "x"}}) is True
+    assert bundle.depend_de_shared({"build": "."}) is False
+    assert bundle.depend_de_shared({"build": "./briques/x"}) is False
+    assert bundle.depend_de_shared({}) is False
+
+
+def test_brique_shared_recoit_build_context_racine_du_bundle():
+    manifests = {"donnees": {"nom": "donnees", "port": 5500, "depends_on": []}}
+    compose, _ = bundle.composer("Acme", ["donnees"], manifests, _service_shared_map(),
+                                 avec_gateway=False, avec_assistant=False)
+    d = compose["services"]["donnees"]
+    # Build-context = racine du bundle (reproduit <bundle>/shared/ + <bundle>/briques/donnees/)
+    assert d["build"] == {"context": ".", "dockerfile": "./briques/donnees/Dockerfile"}
+    assert "image" not in d
+
+
+def _service_shared_map():
+    return {"donnees": _service_shared()}
+
+
+def test_ecrire_bundle_embarque_shared(tmp_path, monkeypatch):
+    # Arborescence minimale d'un faux dépôt : briques/donnees/ + shared/.
+    racine = tmp_path / "repo"
+    briques_dir = racine / "briques"
+    (briques_dir / "donnees").mkdir(parents=True)
+    (briques_dir / "donnees" / "Dockerfile").write_text("FROM python:3.11-slim\n")
+    (briques_dir / "donnees" / "manifest.json").write_text(
+        json.dumps({"nom": "donnees", "port": 5500, "depends_on": []}))
+    (briques_dir / "donnees" / "docker-compose.yml").write_text(yaml.safe_dump(_service_shared()))
+    (racine / "shared").mkdir()
+    (racine / "shared" / "workplace_auth.py").write_text("# lib partagée\n")
+
+    export = tmp_path / "export"
+    rapport = bundle.ecrire_bundle("Acme", ["donnees"], str(briques_dir), str(export),
+                                   avec_gateway=False, avec_assistant=False)
+    dossier = export / f"{rapport['slug']}-bundle"
+    # shared/ copiée à la racine du bundle → le build-context racine la trouve.
+    assert (dossier / "shared" / "workplace_auth.py").is_file()
+    assert (dossier / "briques" / "donnees" / "Dockerfile").is_file()
+
+
 def test_inconnue_signalee():
     ordre, inconnues = bundle.resoudre_dependances(["fantome"], _manifests())
     assert ordre == []

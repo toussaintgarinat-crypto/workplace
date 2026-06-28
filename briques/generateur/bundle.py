@@ -178,6 +178,19 @@ def _reecrire_environment(env, ports_internes: dict[str, int]):
     return env
 
 
+def depend_de_shared(service: dict) -> bool:
+    """Vrai si la brique dépend de la lib partagée `shared/` (S118+).
+
+    Marqueur : son compose source utilise le build-context racine du monorepo
+    (`build: {context: ../.., dockerfile: briques/X/Dockerfile}`) — convention posée
+    pour que le Dockerfile puisse `COPY shared/`. Les briques au build-context local
+    (`build: .`) n'en dépendent pas."""
+    build = service.get("build")
+    if not isinstance(build, dict):
+        return False
+    return str(build.get("context", "")).rstrip("/").endswith("..")
+
+
 def transformer_service(nom: str, service: dict, slug_client: str, port_hote: int,
                         port_interne: int, ports_internes: dict[str, int]) -> dict:
     """Transforme le service d'une brique en service du bundle (copie profonde, non destructif)."""
@@ -186,7 +199,13 @@ def transformer_service(nom: str, service: dict, slug_client: str, port_hote: in
     # Build local sur les sources copiées dans le bundle ; on retire l'image épinglée
     # pour forcer un build reproductible propre au bundle.
     s.pop("image", None)
-    s["build"] = f"./briques/{nom}"
+    if depend_de_shared(service):
+        # La brique a besoin de shared/ : le bundle reproduit la disposition du monorepo
+        # (<bundle>/shared/ + <bundle>/briques/<nom>/) → build-context = racine du bundle,
+        # Dockerfile désigné explicitement (il fait `COPY shared/` + `COPY briques/<nom>/`).
+        s["build"] = {"context": ".", "dockerfile": f"./briques/{nom}/Dockerfile"}
+    else:
+        s["build"] = f"./briques/{nom}"
     s["container_name"] = f"{slug_client}_{nom}"
 
     # Secrets/réglages : le bundle a SON propre .env (et non celui de la racine Workplace).
@@ -496,6 +515,17 @@ def ecrire_bundle(client: str, choisies, briques_dir: str, export_dir: str,
         os.makedirs(man_dst, exist_ok=True)
         with open(os.path.join(man_dst, "manifest.json"), "w", encoding="utf-8") as f:
             json.dump(manifests.get(nom, {"nom": nom}), f, ensure_ascii=False, indent=2)
+
+    # 1bis. Lib partagée `shared/` — embarquée si AU MOINS une brique en dépend (S120).
+    #       Le bundle reproduit alors <bundle>/shared/ pour que le build-context racine
+    #       du bundle la trouve (cf. transformer_service / depend_de_shared).
+    if any(depend_de_shared(_service_primaire(composes[n], n))
+           for n in rapport["briques"] if composes.get(n)):
+        shared_src = os.path.join(os.path.dirname(briques_dir.rstrip("/")), "shared")
+        if os.path.isdir(shared_src):
+            shared_dst = os.path.join(dossier, "shared")
+            shutil.rmtree(shared_dst, ignore_errors=True)
+            shutil.copytree(shared_src, shared_dst, ignore=_IGNORER)
 
     # 2. Le Cœur (contexte de build de l'assistant) + la config LiteLLM de la Gateway.
     if avec_assistant and os.path.isdir(core_dir):

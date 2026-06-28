@@ -1,6 +1,9 @@
 services:
   donnees:
-    build: .
+    # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S120).
+    build:
+      context: ../..
+      dockerfile: briques/donnees/Dockerfile
     container_name: workplace_donnees
     ports:
       - "5500:5500"
