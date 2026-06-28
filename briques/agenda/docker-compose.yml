@@ -2,9 +2,10 @@ services:
 
   # ── Agenda (FastAPI, repris de workspace/calendar) ────────────────
   agenda:
+    # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S120).
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ../..
+      dockerfile: briques/agenda/backend/Dockerfile
     # Nom fixe : permet à Traefik de router par nom de conteneur sur proxy_net
     # (cf. oria-stack/infra/traefik/dynamic/agenda.yml → http://agenda:8400).
     container_name: agenda
