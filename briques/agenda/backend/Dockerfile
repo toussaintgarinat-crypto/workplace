@@ -7,14 +7,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
 
 RUN pip install --no-cache-dir setuptools
 
-# Lib partagée (Redis, Keycloak, helpers FastAPI). Contexte de build = briques/agenda/.
-COPY shared /shared
-RUN pip install --no-cache-dir -e /shared
+# Build-context = RACINE du monorepo (cf. docker-compose.yml) pour embarquer shared/.
+# Paquet vendored agent_personnel_shared (Redis, helpers FastAPI, S2S, jobs…) — le JWT
+# Keycloak n'en fait PLUS partie côté usage : il vient de shared.workplace_auth (S120).
+COPY briques/agenda/shared /opt/agent_personnel_shared
+RUN pip install --no-cache-dir -e /opt/agent_personnel_shared
 
-COPY backend/requirements.txt ./
+# Lib partagée du monorepo (S120 : shared.workplace_auth), importable en `shared`.
+COPY shared/ /app/shared/
+
+COPY briques/agenda/backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/ ./
+COPY briques/agenda/backend/ ./
 
 RUN mkdir -p /data/calendar/attachments && \
     useradd -m -u 1000 appuser && \

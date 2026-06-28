@@ -8,7 +8,10 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
-from agent_personnel_shared.keycloak_auth import KeycloakSettings, has_role, verify_token
+# JWT Keycloak : lib partagée unique du monorepo (S120). Remplace la copie vendored
+# agent_personnel_shared.keycloak_auth (le reste du paquet vendored — fastapi_setup,
+# redis_client… — reste utilisé tel quel).
+from shared.workplace_auth import KeycloakSettings, has_role, verify_token
 from config import settings
 
 logger = logging.getLogger(__name__)
