@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import horloge
@@ -17,6 +17,7 @@ import orchestrateur
 import outils
 import proactif
 import routage_outils
+from contexte_tenant import lire_contexte_tenant
 from etat import registre
 from routers import agenda, assistant, dashboard, profil, systeme, usine
 
@@ -63,9 +64,16 @@ app.add_middleware(
 )
 
 
+# Capture du contexte de tenant (S121) : identité de l'appelant (X-User-Id / X-Org-ID /
+# X-User-Token) déposée dans un contextvar pour être propagée aux briques S2S. Posée sur
+# les routers qui déclenchent des appels agenda/donnees/forge. Sans en-tête → défauts
+# (perso/defaut) → comportement mono-user inchangé. systeme/dashboard = lecture pure, non
+# concernés (santé, assets, page HTML).
+_tenant = [Depends(lire_contexte_tenant)]
+
 app.include_router(systeme.router)
-app.include_router(usine.router)
+app.include_router(usine.router, dependencies=_tenant)
 app.include_router(dashboard.router)
-app.include_router(assistant.router)
-app.include_router(agenda.router)
-app.include_router(profil.router)
+app.include_router(assistant.router, dependencies=_tenant)
+app.include_router(agenda.router, dependencies=_tenant)
+app.include_router(profil.router, dependencies=_tenant)

@@ -14,6 +14,7 @@ import briefing
 import catalogue
 import classer
 import config_assistant
+import contexte_tenant
 import horloge
 import journal_conversations
 import journal_usage
@@ -86,6 +87,11 @@ async def assistant_chat(corps: dict):
     surface = corps.get("surface") or "web"
     interlocuteur = corps.get("interlocuteur") or "dashboard"
     utilisateur = corps.get("utilisateur")
+    # Le champ `utilisateur` du corps (surfaces Telegram/Mini App, S78) raffine le
+    # contexte de tenant déjà posé par la dépendance depuis les en-têtes (S121) : les
+    # appels d'outils du tour (agenda/donnees/forge) porteront cette identité.
+    if utilisateur:
+        contexte_tenant.definir_contexte(utilisateur=utilisateur)
     fil = journal_conversations.fil(surface, interlocuteur)
 
     # Projet de la conversation (façon Claude Projects) : on prend le `projet_id` du corps
