@@ -1,6 +1,6 @@
 {
   "nom": "voix",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Brique vocale en API. (1) TTS texte→audio SOUVERAIN par défaut : moteur Piper local (CPU) en tête, puis voix LOCALES naturelles OPT-IN (Kokoro ; Coqui XTTS = voix de LECTURE haut de gamme + clonage) et fournisseurs hébergés en repli optionnel (OpenAI, ElevenLabs, ou la Gateway Workplace), repli honnête (jamais de fausse voix). Voix par USAGE : conversation rapide vs lecture belle ; comparateur côte à côte dans la page de réglage. BIBLIOTHÈQUE DE VOIX CLONÉES : enregistrer un timbre depuis un court échantillon (Coqui XTTS) sous un nom, le réutiliser partout via la convention voix=clone:<nom> (assistant, lecture, personnages des séries du Studio). (2) CHAT VOCAL TEMPS RÉEL (speech-to-speech) porté du plugin « voice » de Gungnir : relais WebSocket navigateur ↔ API temps réel d'un fournisseur (OpenAI Realtime, Gemini Live, xAI Grok), vrai audio bidirectionnel avec VAD côté fournisseur, OPT-IN et inerte sans clé. Produit autonome, composable par l'assistant et le pont messageries (connexion) pour répondre en vocal.",
   "role": "voix",
   "couche": "backend",
@@ -27,5 +27,64 @@
     "relais_grok_realtime"
   ],
   "besoin": [],
-  "taches": []
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "voix_etat",
+      "description": "État de la brique vocale : moteurs TTS connus, lesquels sont configurés, moteur actif, souveraineté (100 % local ou non), et fournisseurs de chat vocal temps réel disponibles. Pour répondre quand l'utilisateur demande « quelle est ma voix actuelle ? » ou « est-ce que ma voix reste locale ? ».",
+      "methode": "GET",
+      "chemin": "/sante",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "voix_reglages_lire",
+      "description": "Réglages de voix détaillés : moteur choisi pour chaque RÔLE (conversation rapide / lecture belle), moteur actif, seuil de bascule par longueur, et la liste complète des moteurs avec leur libellé, nature (local souverain / naturel / hébergé) et disponibilité. Utiliser avant de proposer un changement de voix pour savoir ce qui est installé.",
+      "methode": "GET",
+      "chemin": "/voix/moteur",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "voix_moteur_changer",
+      "description": "Change le moteur TTS d'un RÔLE en un geste (persistant, effet immédiat sans redémarrage). Refuse honnêtement un moteur inconnu ou non installé. À n'appeler qu'après accord explicite de l'utilisateur.",
+      "methode": "POST",
+      "chemin": "/voix/moteur",
+      "params": {
+        "fournisseur": {
+          "type": "string",
+          "description": "Moteur voulu : piper (local souverain), kokoro (local naturel), coqui (lecture haut de gamme + clonage), openai, elevenlabs, gateway. Vide ou « auto » = revenir au défaut pour ce rôle.",
+          "enum": ["piper", "kokoro", "coqui", "openai", "elevenlabs", "gateway", "auto"]
+        },
+        "role": {
+          "type": "string",
+          "description": "Rôle visé : conversation (voix rapide, défaut) ou lecture (voix belle pour résumés et longs textes).",
+          "enum": ["conversation", "lecture"]
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "voix_clones_lister",
+      "description": "Liste les voix CLONÉES enregistrées dans la bibliothèque (nom, date, durée, notes) et indique si le moteur de clonage Coqui est disponible. Une voix clonée se réutilise partout via la convention voix=clone:<nom>.",
+      "methode": "GET",
+      "chemin": "/voix/clones",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "voix_clone_supprimer",
+      "description": "Retire une voix clonée de la bibliothèque (fichier de référence + index). 404 honnête si elle n'existe pas. À n'appeler qu'après accord explicite de l'utilisateur.",
+      "methode": "DELETE",
+      "chemin": "/voix/clones/{nom}",
+      "params": {
+        "nom": {
+          "type": "string",
+          "description": "Nom exact de la voix clonée à supprimer.",
+          "requis": true
+        }
+      },
+      "action": true
+    }
+  ]
 }
