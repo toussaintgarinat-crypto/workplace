@@ -22,10 +22,13 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from shared.workplace_auth import KeycloakSettings, verify_token_sync
+
+# Tenant de repli quand aucune organisation n'est résolue (instance ouverte / pré-S121).
+ORG_DEFAUT = "defaut"
 
 # ── Configuration (lue à l'import, depuis l'environnement) ──────────────────────
 
@@ -87,3 +90,26 @@ def garde_auth(token: str | None = Depends(_bearer)) -> Optional[dict]:
             detail=f"Validation impossible : {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def tenant_actuel(
+    claims: Optional[dict] = Depends(garde_auth),
+    x_org_id: str | None = Header(None),
+) -> str:
+    """Organisation propriétaire des données pour la requête courante (S121).
+
+    Scope par **organisation** (une app appartient à un client/org). Priorité :
+    1. claim Keycloak ``org_id`` (sinon ``sub``) quand l'auth est réellement active —
+       l'identité fait foi, on ne se fie pas à un en-tête falsifiable ;
+    2. en-tête ``X-Org-ID`` (chemin S2S : le Cœur le pose depuis son contexte de tenant) ;
+    3. ``"defaut"`` — instance ouverte / données pré-S121 (rétrocompatible).
+
+    Renvoie toujours une chaîne non vide → toutes les requêtes SQL sont scopables.
+    """
+    if claims:  # auth active ET jeton valide → l'org vient du jeton (source de vérité)
+        org = claims.get("org_id") or claims.get("organization") or claims.get("sub")
+        if org:
+            return str(org)
+    if x_org_id and x_org_id.strip():
+        return x_org_id.strip()
+    return ORG_DEFAUT

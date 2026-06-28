@@ -7,6 +7,7 @@ import json
 import os
 import uuid
 import httpx
+import contexte_tenant
 import orchestrateur
 
 
@@ -149,9 +150,13 @@ async def _forge_appel(client: httpx.AsyncClient, registre, methode: str, chemin
     relayer. L'auth machine-à-machine est gérée *dans* l'adaptateur Forge.
     """
     base = _base(registre, "forge")
+    # Propage l'identité de l'utilisateur courant (S121) : l'adaptateur Forge consomme
+    # `X-Forge-User-Token` pour agir AU NOM de l'utilisateur ; sans token (mono-user), dict
+    # vide → repli sur le token de service côté adaptateur (flux S17/S24 inchangé).
+    entetes = contexte_tenant.entetes_forge()
     try:
         r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
-                                  timeout=timeout)
+                                  headers=entetes or None, timeout=timeout)
     except httpx.HTTPError:
         return json.dumps({"ok": False,
                            "message": "La brique Forge est injoignable (hors ligne ou en démarrage)."},

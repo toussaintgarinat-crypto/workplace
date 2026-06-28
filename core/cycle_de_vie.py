@@ -23,6 +23,7 @@ from pathlib import Path
 
 import httpx
 
+import contexte_tenant
 import orchestrateur
 
 # Dossier où sont écrits les dossiers portables (monté sur l'hôte : apps_exportees/).
@@ -209,7 +210,8 @@ async def _reinjecter(registre, data: dict) -> dict:
             donnees = data.get("donnees") or {}
             if app_id and donnees:
                 r = await client.post(
-                    f"{bases['donnees']}/apps/{app_id}/import", json={"entites": donnees}
+                    f"{bases['donnees']}/apps/{app_id}/import", json={"entites": donnees},
+                    headers=contexte_tenant.entetes_donnees(),
                 )
                 if r.status_code < 400:
                     rapport["donnees"] = r.json().get("nombre", 0)

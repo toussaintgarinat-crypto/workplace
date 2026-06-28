@@ -3,6 +3,7 @@
 documents & données (ETL/Données/Mémoire) : lecture et écriture.
 """
 import json
+import contexte_tenant
 from outils_communs import _confirmation, _base, _espace_memoire
 
 
@@ -73,7 +74,7 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
             return _confirmation("créer un enregistrement", f"{entite} (app {app_id})")
         r = await client.post(
             f"{_base(registre, 'donnees')}/apps/{app_id}/entites/{entite}/enregistrements",
-            json=args.get("donnees") or {})
+            json=args.get("donnees") or {}, headers=contexte_tenant.entetes_donnees())
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec : {r.text}"
 
     if nom == "memoire_retenir":
