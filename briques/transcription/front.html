@@ -12,11 +12,13 @@
 <meta name="apple-mobile-web-app-title" content="Notes d'appel">
 <link rel="apple-touch-icon" href="/icon.svg">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/workplace.css">
 <style>
+  /* Squelette = design system partagé (var --wp-*) ; accent or + rouge « rec » propres à Transcription. */
   :root{
-    --bg:#120f18; --bg2:#1a1622; --pan:#221c2e; --bord:#39304f;
-    --txt:#ece7f5; --doux:#a99fc4; --or:#e7c66b; --or2:#cba94e;
-    --ok:#7fd6a0; --ko:#e88; --rec:#ef5a5a;
+    --bg:var(--wp-bg); --bg2:var(--wp-surface); --pan:var(--wp-surface-2); --bord:var(--wp-border);
+    --txt:var(--wp-text); --doux:var(--wp-muted); --or:#e7c66b; --or2:#cba94e;
+    --ok:var(--wp-ok); --ko:var(--wp-err); --rec:#ef5a5a;
   }
   *{box-sizing:border-box}
   body{margin:0;background:linear-gradient(160deg,var(--bg),var(--bg2));color:var(--txt);

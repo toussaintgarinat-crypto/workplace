@@ -161,6 +161,14 @@ async def page_reglage():
     raise HTTPException(404, "Page de réglage absente.")
 
 
+# Design system partagé (S123) : tokens visuels du monorepo.
+# Source unique = shared/static/workplace.css, copié ici par outils/sync_socle.sh.
+@app.get("/workplace.css", include_in_schema=False)
+def design_system():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "workplace.css"),
+                        media_type="text/css")
+
+
 @app.post("/synthetiser", tags=["synthese"])
 async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
     """Texte → audio. Renvoie les OCTETS audio (Content-Type adapté) si un moteur a répondu,
