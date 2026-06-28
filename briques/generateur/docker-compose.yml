@@ -1,6 +1,9 @@
 services:
   generateur:
-    build: .
+    # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S118).
+    build:
+      context: ../..
+      dockerfile: briques/generateur/Dockerfile
     container_name: workplace_generateur
     env_file:
       # Secrets partagés (GATEWAY_KEY…) — source unique à la racine du projet.
