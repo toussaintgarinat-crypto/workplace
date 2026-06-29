@@ -13,7 +13,7 @@
 |---|---|---|
 | Code (Cœur + briques + `shared/`) | ✅ | `git clone` |
 | `docker-compose.yml` + `Dockerfile` | ✅ | `git clone` |
-| Gabarits `.env.example` / `.env.hp.example` | ✅ | `git clone` |
+| Gabarits `.env.example` | ✅ | `git clone` |
 | Realms Keycloak (`*-realm.json`) | ✅ | `git clone` |
 | **`.env` (secrets réels)** | ❌ (gitignorés, exprès) | **Copier** depuis cette machine (clé USB / `scp`) OU remplir les gabarits |
 | Volumes Docker (données existantes) | ❌ | Optionnel : seulement pour la preuve « migration sur volume existant » |
@@ -69,6 +69,27 @@ make smoke                                   # 185 passed / 6 skipped attendus
 
 ## 5. Démarrer le stack
 
+> ### ⚠️ Prérequis Linux (Docker Engine) — PROUVÉ LIVE 2026-06-29
+> Deux différences vs macOS (Docker Desktop) à régler **avant** de builder, sinon le Cœur
+> ne joint aucune brique :
+> 1. **Réseau externe `proxy_net`** (référencé par gateway/agenda/core, `external: true`) :
+>    ```bash
+>    docker network create proxy_net   # idempotent : ignore l'erreur s'il existe déjà
+>    ```
+> 2. **`host.docker.internal`** n'existe pas nativement sur Linux : les briques
+>    *consommatrices* (qui appellent les autres via `host.docker.internal:PORT`) ont besoin
+>    du mapping `host-gateway`. Sans toucher les composes versionnés, poser un
+>    `docker-compose.override.yml` (fusionné automatiquement) dans chaque brique concernée —
+>    **core, audit, generateur, agenda, forge** (et **donnees** seulement en Niveau B) :
+>    ```yaml
+>    # briques/<nom>/docker-compose.override.yml  (core : à la racine du dossier core/)
+>    services:
+>      <service>:        # core | audit | generateur | agenda ; forge: forge + forge-adapter
+>        extra_hosts:
+>          - "host.docker.internal:host-gateway"
+>    ```
+>    (`studio` a déjà ce mapping en dur — précédent dans le repo.)
+
 Ordre : **gateway → (keycloak si Niveau B) → briques socle → core**. Chaque brique :
 ```bash
 ( cd briques/<nom> && docker compose up -d --build )
@@ -86,13 +107,17 @@ monte tout le stack ; sur Linux/Proxmox, faire les `docker compose up -d --build
 
 Le gros des preuves. Aucun Keycloak requis. Remplace `localhost` par l'IP du HP au besoin.
 
-### S114 — découpage des routes (93 routes, 0 régression)
+### S114 — découpage des routes (0 régression)
 ```bash
 curl -s localhost:5100/openapi.json | python3 -c \
   "import sys,json; print('routes:', len(json.load(sys.stdin)['paths']))"
 curl -s localhost:5100/health        # 200
 curl -s localhost:5100/sante-globale # agrège la santé des briques
 ```
+> Le nombre de routes **dépend des briques découvertes** (le Cœur monte des routes-proxy
+> dynamiques par manifest). Stack complet ≈ 93 routes ; stack minimal Niveau A = 74 paths /
+> 89 opérations (prouvé sur le HP). L'invariant S114 = l'app boote, routes éclatées en
+> `routers/`, `/health` 200, zéro régression — pas un compteur figé.
 
 ### S116 — santé des briques
 ```bash
@@ -111,9 +136,14 @@ done
 ```
 
 ### S118 — vrai appel LLM via la Gateway (bout-en-bout)
+`appeler_json` est **async** et exige `system_prompt` (signature :
+`appeler_json(user, *, system_prompt, temperature=0.1, model=None) -> dict`) :
 ```bash
-( cd briques/audit && docker compose exec audit python3 -c \
-  "import shared.llm_client as c; print(c.appeler_json('réponds {\"produit\":42}')[:120])" )
+( cd briques/audit && docker compose exec -T audit python3 -c \
+  "import asyncio, shared.llm_client as c; \
+   print(asyncio.run(c.appeler_json('Donne le nombre 42.', \
+   system_prompt='Réponds STRICTEMENT en JSON: {\"produit\": <entier>}')))" )
+# Attendu : {'produit': 42}
 ```
 
 ### S119 — contrat Audit→Générateur figé (schéma partagé)
@@ -162,22 +192,51 @@ Pour les preuves qui exigent une **vraie identité JWT**. Plus lourd.
 ```
 
 ### Activer l'auth sur `donnees` (la preuve JWT)
-Le compose `donnees` ne lit pas de `.env` : ajouter le bloc `environment:` (le service
-doit voir Keycloak — réseau partagé) puis recréer :
+Le compose `donnees` ne lit pas de `.env` : poser un `docker-compose.override.yml` (qui
+ajoute aussi `extra_hosts` sur Linux pour joindre le JWKS Keycloak), puis recréer :
 ```yaml
-# briques/donnees/docker-compose.yml → service donnees
+# briques/donnees/docker-compose.override.yml
+services:
+  donnees:
     environment:
-      - DB_PATH=/data/donnees.db
       - AUTH_ENABLED=true
-      - KEYCLOAK_URL=http://identite:8080
+      - KEYCLOAK_URL=http://host.docker.internal:8080   # Linux : via host-gateway
       - KEYCLOAK_REALM=forge
       # - KEYCLOAK_AUDIENCE=   # vide ⇒ verify_aud off (le realm suffit à isoler)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
 ```bash
 ( cd briques/donnees && docker compose up -d )
 # Sans jeton → 401 (et non 500) :
 curl -s -o /dev/null -w '%{http_code}\n' localhost:5500/apps/app1/entites/clients/enregistrements
 ```
+> NB : `shared/workplace_auth` appelle `jwt.decode` **sans `issuer=`** → l'issuer n'est PAS
+> vérifié (seule la signature RS256 via JWKS compte). Donc peu importe le host par lequel le
+> jeton est émis ; pas de piège « issuer host mismatch ».
+
+### Obtenir des jetons (realm `forge` sans utilisateurs : via les service-accounts)
+Le realm `forge` n'a pas d'utilisateurs ni de mapper `org_id` (le tenant retombe alors sur
+le claim `sub`). Frapper un jeton depuis un service-account (secret récupéré par l'API admin) :
+```bash
+KC=http://localhost:8080
+ADMIN_PW=$(grep KEYCLOAK_ADMIN_PASSWORD oria-stack/infra/keycloak/.env | cut -d= -f2)
+ADMIN=$(curl -s $KC/realms/master/protocol/openid-connect/token \
+  -d client_id=admin-cli -d username=admin -d "password=$ADMIN_PW" -d grant_type=password \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+# secret du service-account puis jeton client_credentials :
+CID=$(curl -s "$KC/admin/realms/forge/clients?clientId=forge-service" -H "Authorization: Bearer $ADMIN" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+SECRET=$(curl -s "$KC/admin/realms/forge/clients/$CID/client-secret" -H "Authorization: Bearer $ADMIN" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['value'])")
+TOKEN=$(curl -s "$KC/realms/forge/protocol/openid-connect/token" \
+  -d client_id=forge-service -d "client_secret=$SECRET" -d grant_type=client_credentials \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+# Avec jeton valide → 200 ; jeton trafiqué (${TOKEN}X) → 401.
+curl -s -o /dev/null -w '%{http_code}\n' localhost:5500/apps/app1/entites/clients/enregistrements -H "Authorization: Bearer $TOKEN"
+```
+Pour l'isolation par claim (S121), répéter avec un 2e service-account (`oria-service`) :
+`sub` distinct ⇒ chacun ne voit que ses données, **sans** `X-Org-ID`.
 
 ### S120 — validation JWT Keycloak réelle
 ```bash
@@ -195,13 +254,21 @@ curl -s $B -H "Authorization: Bearer $TOKEN_ORG_A"   # données d'A
 curl -s $B -H "Authorization: Bearer $TOKEN_ORG_B"   # données de B (disjointes)
 ```
 
-### S121 — propagation `X-Forge-User-Token` réelle vers le core Forge
-Un tour Cœur portant le JWT user → l'adaptateur Forge propage le jeton → le core Forge
-**provisionne/scoped par cet utilisateur** (au lieu du token de service) :
+### S121 — propagation `X-Forge-User-Token` vers le core Forge
+L'adaptateur Forge propage le JWT user reçu (au lieu du token de service). Preuve **par
+contraste** sur une route proxy de l'adaptateur (sans dépendre d'un appel d'outil du Cœur) :
 ```bash
-curl -s localhost:5100/<route outil Forge> -H "Authorization: Bearer $TOKEN"
-# Vérifier côté Forge core que l'utilisateur réel (pas « forge-service ») est l'acteur.
+# SANS en-tête → l'adaptateur tente un token de service via SON Keycloak → si absent : 502.
+curl -s -w '\n[%{http_code}]\n' localhost:5700/agents
+# AVEC en-tête → l'adaptateur SAUTE Keycloak et propage CE jeton au core (visible dans les
+# logs du core : "GET /api/agents …"). Le code du core dépend de SA validation à lui.
+curl -s -w '\n[%{http_code}]\n' localhost:5700/agents -H "X-Forge-User-Token: Bearer $TOKEN"
 ```
+> ⚠️ **Limite connue (2026-06-29)** : le core Forge valide contre un Keycloak DIFFÉRENT
+> (realm **`oria`** sur **:8081**, dont le `oria-realm.json` n'est pas dans ce repo) — donc
+> « le core agit *vraiment* au nom du user » exige cette infra Oria + de vrais utilisateurs.
+> Le **maillon S121** (Cœur émet → adaptateur capte+propage → core reçoit) est, lui,
+> prouvable LIVE par le contraste ci-dessus (502 sans en-tête vs le jeton qui atteint le core).
 
 ---
 
@@ -209,7 +276,7 @@ curl -s localhost:5100/<route outil Forge> -H "Authorization: Bearer $TOKEN"
 
 | Sprint | Preuve LIVE | Niveau | Attendu |
 |---|---|---|---|
-| S114 | `len(openapi.paths)` | A | 93 routes |
+| S114 | `len(openapi.paths)` | A | dépend des briques (≈93 complet ; 74 minimal) |
 | S116 | santé briques | A | 200 partout |
 | S118 | `import shared.llm_client` + appel LLM | A | JSON renvoyé |
 | S119 | `/audits/{id}` via response_model | A | couches parsées |
