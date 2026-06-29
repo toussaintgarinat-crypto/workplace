@@ -1,0 +1,21 @@
+# Contexte de build racine (briques audit/generateur, S118) : on n'envoie au daemon
+# que le strict utile. Les Dockerfile ne COPY que `shared/` + le dossier de la brique ;
+# tout le reste est exclu pour garder le contexte léger.
+.git
+**/.git
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/venv
+**/.venv
+.dev-ateliers
+apps_exportees
+.playwright-mcp
+**/*.db
+**/*.sqlite*
+.coverage
+**/.DS_Store
+oria-stack
+.claude
+docs

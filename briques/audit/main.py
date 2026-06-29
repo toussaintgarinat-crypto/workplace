@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from analyse import auditer
+from shared.schemas.audit import Audit
 
 ETL_URL = os.getenv("ETL_URL", "http://host.docker.internal:5200")
 DB_PATH = os.getenv("DB_PATH", "/data/audits.db")
@@ -212,7 +213,7 @@ def lister_audits():
     return [dict(r) for r in rows]
 
 
-@app.get("/audits/{audit_id}")
+@app.get("/audits/{audit_id}", response_model=Audit)
 def lire_audit(audit_id: str):
     with _connexion() as conn:
         row = conn.execute("SELECT * FROM audits WHERE id=?", (audit_id,)).fetchone()

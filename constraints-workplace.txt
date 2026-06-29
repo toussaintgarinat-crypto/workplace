@@ -1,0 +1,34 @@
+# Contraintes de version PARTAGÉES du monorepo Workplace (S117).
+#
+# Source de vérité unique pour les dépendances d'INFRASTRUCTURE communes à toutes les
+# briques et au Cœur (pile web, client HTTP, auth/crypto). Objectif : que le Cœur, les
+# briques et — surtout — les futures libs `shared/` (client Gateway S118, workplace_auth
+# S120) tournent toutes contre LES MÊMES versions, pour qu'une lib partagée ne casse pas
+# d'une brique à l'autre.
+#
+# Un fichier de CONTRAINTES (pas un requirements) : il ne FORCE pas l'installation d'un
+# paquet, il PLAFONNE/épingle sa version SI une brique le tire. Adoption sans réécrire
+# chaque requirements.txt : ajouter `-c constraints-workplace.txt` à l'install pip du
+# Dockerfile, p.ex.
+#     RUN pip install --no-cache-dir -r requirements.txt -c /constraints-workplace.txt
+# Le rollout se fait brique par brique (chaque prochain rebuild adopte la contrainte) ;
+# `make deps-audit` montre l'écart restant entre les requirements et ce fichier.
+#
+# Versions choisies = la version déjà MAJORITAIRE (ou la plus récente en usage) au
+# 2026-06-28, pour minimiser le delta à valider :
+#   fastapi          0.115.6  ← 16 composants (vs 0.111.0/0.115.0/0.115.5 minoritaires)
+#   httpx            0.28.1   ← 16 composants (vs 0.27.0)
+#   python-multipart 0.0.20   ← 5 composants  (vs 0.0.9/0.0.12)
+#   pydantic         2.7.1    ← déjà homogène
+#   uvicorn          0.32.1   ← AUCUN composant ne l'épinglait (flottant partout) :
+#                               ancre de reproductibilité, à VALIDER au 1er rebuild.
+
+fastapi==0.115.6
+httpx==0.28.1
+python-multipart==0.0.20
+pydantic==2.7.1
+uvicorn==0.32.1
+
+# Auth & crypto — figées tôt car les libs shared d'auth (S120) en dépendront.
+python-jose==3.3.0
+cryptography==44.0.0

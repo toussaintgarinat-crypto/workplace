@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Voix — choisir le moteur</title>
+<link rel="stylesheet" href="/workplace.css">
 <style>
-  :root { --or:#d9a441; --or2:#f0c674; --bg:#16130f; --carte:#211c15; --bord:#3a3024;
-          --txt:#efe7d8; --gris:#a89a82; --ok:#5fb37a; --rouge:#c9685f; }
+  /* Squelette = design system partagé (var --wp-*) ; accent or propre à Voix. */
+  :root { --or:#d9a441; --or2:#f0c674; --bg:var(--wp-bg); --carte:var(--wp-surface); --bord:var(--wp-border);
+          --txt:var(--wp-text); --gris:var(--wp-muted); --ok:var(--wp-ok); --rouge:var(--wp-err); }
   * { box-sizing:border-box; }
   body { margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg);
          color:var(--txt); padding:24px; }

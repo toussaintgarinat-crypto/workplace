@@ -1,6 +1,9 @@
 services:
   audit:
-    build: .
+    # Build-context = racine du monorepo pour embarquer shared/ (lib partagée S118).
+    build:
+      context: ../..
+      dockerfile: briques/audit/Dockerfile
     container_name: workplace_audit
     env_file:
       # Secrets partagés (GATEWAY_KEY…) — source unique à la racine du projet.

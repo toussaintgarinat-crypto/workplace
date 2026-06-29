@@ -1,8 +1,18 @@
-"""Validation JWT Keycloak partagée (JWKS cache + verify_aud conditionnel).
+"""Validation JWT Keycloak partagée du monorepo (JWKS cache + verify_aud conditionnel).
+
+Lib `shared/` unique (S120) : promeut au niveau du dépôt la logique Keycloak qui était
+recopiée à l'identique dans trois briques (`agent_personnel_shared.keycloak_auth` vendored
+dans agenda / forge / oria) + réécrite dans `donnees/auth.py`. Source de vérité unique :
+on corrige un bug ou on durcit la validation ICI, pas dans quatre fichiers.
+
+Ne couvre QUE le schéma Keycloak RS256/JWKS. Les briques aux schémas légitimement
+différents ne passent PAS par ici (et c'est voulu) :
+- `restaurant` : sessions HMAC stdlib (comptes restaurateur) — pas du JWT Keycloak ;
+- `memoire` : JWT HS256 symétrique du projet Memory tiers.
 
 Usage type :
 
-    from agent_personnel_shared.keycloak_auth import KeycloakSettings, verify_token, require_role
+    from shared.workplace_auth import KeycloakSettings, verify_token, require_role
 
     KC = KeycloakSettings(
         url="http://keycloak:8080",
