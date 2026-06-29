@@ -13,6 +13,10 @@
 **/node_modules
 **/dist
 **/.next
+
+# ── Artefacts de test (S116) ──
+.coverage
+**/.pytest_cache
 **/build
 **/__pycache__
 *.pyc

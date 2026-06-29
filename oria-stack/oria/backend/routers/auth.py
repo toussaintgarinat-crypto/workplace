@@ -14,6 +14,11 @@ from config import config
 from services.auth_service import AuthService, get_auth_service
 import services.matrix_service as matrix
 
+# NB (S120) : Oria garde VOLONTAIREMENT sa lib JWT vendored (agent_personnel_shared),
+# au lieu de la lib partagée du monorepo `shared.workplace_auth` (qui a unifié donnees,
+# agenda et forge). oria-stack est un sous-stack découplé : son `shared/` est fourni
+# hors-bande (git-ignoré) et son contexte de build ne voit pas la racine du monorepo —
+# l'y rattacher gonflerait le contexte de toutes les autres briques. Découplage assumé.
 from agent_personnel_shared.keycloak_auth import (
     KeycloakSettings,
     verify_token_sync,

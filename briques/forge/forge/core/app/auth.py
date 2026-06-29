@@ -1,7 +1,7 @@
 """Authentification & contexte utilisateur — portage du middleware Bun (S127).
 
 Réplique ``forge/core/src/api/middleware/auth.ts`` :
-1. vérifie le JWT Keycloak (JWKS, via ``agent_personnel_shared.keycloak_auth``) ;
+1. vérifie le JWT Keycloak (JWKS, via ``shared.workplace_auth``, lib partagée S120) ;
 2. provisionne l'utilisateur Forge (par keycloak_sub, sinon par email, sinon insert) ;
 3. auto-crée l'organisation personnelle + membership au premier login ;
 4. résout l'org active : header ``X-Org-ID`` (si membre) → sinon org personnelle ;
@@ -23,7 +23,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from agent_personnel_shared.keycloak_auth import KeycloakSettings, verify_token
+# JWT Keycloak : lib partagée unique du monorepo (S120). Remplace la copie vendored
+# agent_personnel_shared.keycloak_auth (le reste du paquet vendored reste utilisé).
+from shared.workplace_auth import KeycloakSettings, verify_token
 
 from app.config import settings
 from app.db import SessionLocal

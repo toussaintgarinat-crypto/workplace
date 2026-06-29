@@ -80,7 +80,7 @@ def test_aucun_router_ne_lit_x_org_id_cru():
 
 def test_audience_vide_desactive_verify_aud():
     """`audience` vide ⇒ posture S17 ouverte (`verify_aud: False`)."""
-    from agent_personnel_shared.keycloak_auth import KeycloakSettings
+    from shared.workplace_auth import KeycloakSettings
 
     kc = KeycloakSettings(url="http://kc", realm="oria", audience="")
     assert kc.decode_options().get("verify_aud") is False
@@ -88,7 +88,7 @@ def test_audience_vide_desactive_verify_aud():
 
 def test_audience_renseignee_active_verify_aud():
     """`audience` renseigné ⇒ posture verrouillée (verify_aud par défaut = actif)."""
-    from agent_personnel_shared.keycloak_auth import KeycloakSettings
+    from shared.workplace_auth import KeycloakSettings
 
     kc = KeycloakSettings(url="http://kc", realm="oria", audience="forge")
     # verify_aud n'est PAS forcé à False, et l'audience est bien portée.

@@ -849,6 +849,8 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
 | 2026-06-24 | Ménage racine + reliques : captures→docs/, MemPalace mort, worktree dev (`e44bb07`) |
 | 2026-06-24 | Synopsis v1.1.0 — front + résumé de n'importe quelle vidéo + onglet Cœur (`68a1454`) |
 | 2026-06-25 | **S106 — Voix de LECTURE haut de gamme (voix v0.6.0)** : Coqui XTTS **activé pour de vrai** (`INSTALL_COQUI=1` au build, `VOIX_COQUI=1` au runtime), **out of the box** (locuteur intégré par défaut `COQUI_SPEAKER_DEFAUT` → aucun WAV requis ; `speaker_wav` reste prioritaire = point d'entrée du clonage S107). **Comparateur de voix de lecture** dans la page de réglage (`GET /`) : le **même** texte de résumé synthétisé par chaque moteur dispo (Coqui / OpenAI / ElevenLabs / Kokoro), côte à côte, ▶︎ puis « 📖 Lecture » en un clic. Licence **CPML** (non commerciale) du modèle XTTS dite honnêtement (UI + README). Voix hébergées documentées au `.env` racine (anti env-shadow). 74 tests verts. **Reste preuve LIVE** (rebuild image + écoute Coqui vs hébergé). |
+| 2026-06-28 | **Épopée « refactor clarté & maintenabilité » S114→S125 (CLOSE).** Branche `refactor/s114-routes-coeur`. **S114** Cœur découpé : `core/main.py` **4182 → 71 lignes**, 93 routes extraites par préfixe vers `core/routers/` (systeme/usine/assistant/agenda/profil/dashboard) + `core/etat.py` (registre partagé) + `core/urls_ui.py`. **S115** `core/outils.py` **1642 → 743 l.** : dispatcher éclaté en 8 modules `core/outils_domaines/<dom>.py` + helpers `core/outils_communs.py` (façade conserve `OUTILS` + machinerie capacités). **S116** filet de tests additif : `tests/test_briques_smoke.py` (contrat manifest hors-ligne des 28 briques, zéro collision de port) + `Makefile`/`pytest.ini`/`requirements-dev.txt`. **S117** alignement deps : `constraints-workplace.txt` (source de vérité fastapi/httpx/pydantic/uvicorn…) + `scripts/audit_deps.py` (`make deps-audit`). **S118** naissance de `shared/` : `shared/llm_client.py` (client Gateway unifié) → audit+generateur en wrappers ; pattern **build-context racine** (`COPY shared/` + `conftest.py` + `depend_de_shared` bundle). **S119** contrat Audit→Générateur **figé** : `shared/schemas/audit.py` (Pydantic `Audit`, `response_model`). **S120** JWT Keycloak unifié : `shared/workplace_auth.py` (RS256/JWKS), migration donnees+agenda+forge brique par brique ; oria gardé sur sa vendored (sous-stack découplé) ; restaurant (HMAC) + memoire (HS256) hors périmètre. **S121** prépa multi-tenant : `core/contexte_tenant.py` (X-Org-ID/X-User-Id/X-Forge-User-Token), donnees scopé par org (migration idempotente). **S122** voix branchée au Cœur (5 capacités déclaratives). **S123** design system partagé `shared/static/workplace.css` (tokens `--wp-*`) + fronts uniformisés. **S125** runbook bascule HP (`MIGRATION-HP.md` + `scripts/preflight_hp.sh`). **S124** (ce sprint) nettoyage & doc : 3 guides ajoutés (ci-dessous), restaurant documenté **autonome** (gardé dans le repo, choix utilisateur), épopée close. Pattern shared/ triplement prouvé (S118/S119/S120). Reste les **preuves LIVE Docker groupées** sur le HP (régime preuve différé). |
+| 2026-06-28 | **3 guides « comment faire » ajoutés à la racine** : `GUIDE-ajouter-une-brique.md`, `GUIDE-ajouter-un-outil.md`, `GUIDE-modifier-l-auth.md`. Point d'entrée pour étendre Workplace sans relire tout le code. |
 
 ---
 
@@ -856,12 +858,14 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
 
 - Le **Cœur** : écrit en **Python / FastAPI** ✅ (cohérent avec MemPalace/Forge/Assistant).
 - Le **registre de briques** : format manifest acté (JSON, clés : `nom`, `version`, `description`, `role`, `statut`, `chemin_source`, `port`, `url_sante`, `depends_on`, `offre`, `besoin`). ✅
-- **Authentification** unifiée (Keycloak est déjà présent dans Forge/Oria) → à harmoniser.
+- ~~**Authentification** unifiée (Keycloak est déjà présent dans Forge/Oria) → à harmoniser.~~
+  ✅ **Résolu S120** : Keycloak RS256/JWKS unifié dans `shared/workplace_auth.py` (donnees/agenda/forge
+  migrées ; oria sur sa vendored, sous-stack découplé). NB : restaurant (HMAC) et memoire (HS256) sont
+  des schémas distincts **volontairement séparés**. Voir `GUIDE-modifier-l-auth.md`.
 - Déploiement : tout en Docker Compose local d'abord, cloud ensuite.
-- **Contrat Audit → Générateur à figer** (dette repérée le 2026-06-03). Le prompt d'audit et le gabarit
-  divergent sur la forme exacte du JSON (ex. `chemin_critique` produit en liste vs attendu en objet ;
-  `probleme_central` vs `problème_central` ; champs de `value_stream_map`). Le gabarit est désormais
-  défensif (ne plante plus), mais certaines sections s'affichent vides quand la forme diffère. À aligner :
-  un schéma JSON partagé entre `audit/prompts.py` et `generateur/gabarit.py` (vrai « contrat » de brique).
+- ~~**Contrat Audit → Générateur à figer** (dette repérée le 2026-06-03).~~ ✅ **Résolu S119** : schéma
+  partagé `shared/schemas/audit.py` (Pydantic `Audit`, `extra="allow"`) — `audit` le pose en
+  `response_model` sur `GET /audits/{id}`, `generateur` le valide à la consommation (`Audit.model_validate`).
+  Prouvé LIVE 2026-06-28 (le conteneur generateur valide la sortie réelle du producteur).
 - **LLM de prod** : décider du modèle par défaut des briques. Local (Ollama) impossible sans GPU sur cette
   machine ; OpenRouter gratuit instable. Piste : `gpt-4o-mini`/`gemini-flash` (cheap) en défaut, gratuit en option.

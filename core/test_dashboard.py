@@ -12,6 +12,7 @@ os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
 os.environ.setdefault("GATEWAY_KEY", "test")
 
 import main  # noqa: E402
+from routers import dashboard as dashboard_router  # noqa: E402  (S114 : routes déplacées)
 from fastapi.testclient import TestClient  # noqa: E402
 
 client = TestClient(main.app)
@@ -72,24 +73,24 @@ def test_urls_briques_injectees():
 
 def test_url_studio_surchargeable_par_env(monkeypatch):
     """L'URL du Studio est paramétrable (déploiement) et bien réinjectée."""
-    monkeypatch.setattr(main, "STUDIO_UI_URL", "https://studio.exemple.test/atelier")
-    monkeypatch.setattr(main, "STUDIO_KEY", "")
+    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "https://studio.exemple.test/atelier")
+    monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "")
     html = client.get("/dashboard").text
     assert "https://studio.exemple.test/atelier" in html
 
 
 def test_cle_studio_injectee_dans_iframe(monkeypatch):
     """Avec un compte Studio (STUDIO_KEY), l'iframe transporte la clé en ?api_key=."""
-    monkeypatch.setattr(main, "STUDIO_UI_URL", "http://localhost:6060/atelier")
-    monkeypatch.setattr(main, "STUDIO_KEY", "cle-de-service-123")
+    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "http://localhost:6060/atelier")
+    monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "cle-de-service-123")
     html = client.get("/dashboard").text
     assert "http://localhost:6060/atelier?api_key=cle-de-service-123" in html
 
 
 def test_sans_cle_pas_dapi_key(monkeypatch):
     """Sans compte Studio, l'URL de l'iframe reste nue (aucune fuite ?api_key=)."""
-    monkeypatch.setattr(main, "STUDIO_UI_URL", "http://localhost:6060/atelier")
-    monkeypatch.setattr(main, "STUDIO_KEY", "")
+    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "http://localhost:6060/atelier")
+    monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "")
     html = client.get("/dashboard").text
     assert "api_key=" not in html
 

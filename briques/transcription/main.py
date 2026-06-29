@@ -20,7 +20,7 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 import destinations
@@ -85,6 +85,13 @@ def accueil():
     """Front en une page (vanilla) : capter un appel/mémo → notes → ranger. Parle à CETTE
     brique. Sert la démo autonome ET le contenu de l'iframe embarquée par le noyau."""
     return _FRONT.read_text(encoding="utf-8")
+
+
+# Design system partagé (S123) : tokens visuels du monorepo.
+# Source unique = shared/static/workplace.css, copié ici par outils/sync_socle.sh.
+@app.get("/workplace.css", include_in_schema=False)
+def design_system():
+    return FileResponse(Path(__file__).parent / "workplace.css", media_type="text/css")
 
 
 # ── PWA : installable sur mobile (écran d'accueil), capture micro en haut-parleur ──

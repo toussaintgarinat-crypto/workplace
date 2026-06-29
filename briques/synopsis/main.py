@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from lib.extractor import get_youtube_transcript
@@ -149,6 +149,13 @@ def _highlight_reel(url, resume, duree_clip, sous_titres, narration, langue_narr
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def accueil():
     return HTMLResponse(FRONT_HTML)
+
+
+# Design system partagé (S123) : tokens visuels du monorepo.
+# Source unique = shared/static/workplace.css, copié ici par outils/sync_socle.sh.
+@app.get("/workplace.css", include_in_schema=False)
+def design_system():
+    return FileResponse(Path(__file__).parent / "workplace.css", media_type="text/css")
 
 
 @app.get("/sante")

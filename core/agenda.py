@@ -13,15 +13,27 @@ import os
 
 import httpx
 
+import contexte_tenant
 import orchestrateur
 
-USER_ID = "perso"
-# Identité S2S : X-User-Id ; et, si l'auth de la brique est active, le service-token
-# (CALENDAR_SERVICE_TOKEN) qui autorise les appels inter-services. Inoffensif si vide.
-_ENTETES = {"X-User-Id": USER_ID}
+USER_ID = "perso"  # défaut rétrocompatible (mono-user) quand aucun contexte n'est posé
+# Service-token S2S : si l'auth de la brique est active, autorise les appels
+# inter-services. Inoffensif si vide.
 _SERVICE_TOKEN = os.environ.get("CALENDAR_SERVICE_TOKEN", "")
-if _SERVICE_TOKEN:
-    _ENTETES["Authorization"] = f"Bearer {_SERVICE_TOKEN}"
+
+
+def _entetes() -> dict:
+    """En-têtes S2S vers la brique agenda, à chaque appel.
+
+    Identité S2S : `X-User-Id` = utilisateur du contexte de tenant (S121), défaut
+    `perso` quand le Cœur tourne mono-user. Le service-token, lui, est fixe.
+    """
+    e = contexte_tenant.entetes_agenda()  # {"X-User-Id": <utilisateur courant ou perso>}
+    if _SERVICE_TOKEN:
+        e["Authorization"] = f"Bearer {_SERVICE_TOKEN}"
+    return e
+
+
 _cal_defaut: str | None = None  # mémoïsé après première résolution
 
 
@@ -43,14 +55,14 @@ async def _calendrier_defaut(client: httpx.AsyncClient, registre) -> str:
     if _cal_defaut:
         return _cal_defaut
     base = _base(registre)
-    r = await client.get(f"{base}/calendars", headers=_ENTETES)
+    r = await client.get(f"{base}/calendars", headers=_entetes())
     cals = r.json() if r.status_code < 400 else []
     if cals:
         # Préfère un calendrier marqué par défaut, sinon le premier.
         cal = next((c for c in cals if c.get("is_default")), cals[0])
         _cal_defaut = cal["id"]
         return _cal_defaut
-    r = await client.post(f"{base}/calendars", headers=_ENTETES,
+    r = await client.post(f"{base}/calendars", headers=_entetes(),
                           json={"name": "Perso", "is_default": True})
     r.raise_for_status()
     _cal_defaut = r.json()["id"]
@@ -63,7 +75,7 @@ async def lister_agendas(registre) -> list[dict]:
     """Tous les calendriers accessibles (possédés + partagés), avec le rôle de
     l'utilisateur sur chacun ('owner' | 'editor' | 'viewer')."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"{_base(registre)}/calendars", headers=_ENTETES)
+        r = await client.get(f"{_base(registre)}/calendars", headers=_entetes())
         return r.json() if r.status_code < 400 else []
 
 
@@ -77,7 +89,7 @@ async def creer_agenda_partage(registre, nom: str, description: str | None = Non
             corps["description"] = description
         if couleur:
             corps["color"] = couleur
-        r = await client.post(f"{_base(registre)}/calendars", headers=_ENTETES, json=corps)
+        r = await client.post(f"{_base(registre)}/calendars", headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -94,7 +106,7 @@ async def inviter(registre, calendar_id: str, role: str = "viewer",
         if email:
             corps["email"] = email
         r = await client.post(f"{base}/calendars/{calendar_id}/invitations",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         inv = r.json()
         inv["lien"] = _lien_invitation(base, inv["token"])
@@ -105,7 +117,7 @@ async def lister_membres(registre, calendar_id: str) -> list[dict]:
     """Membres d'un calendrier partagé (user_id + rôle)."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{_base(registre)}/calendars/{calendar_id}/members",
-                             headers=_ENTETES)
+                             headers=_entetes())
         return r.json() if r.status_code < 400 else []
 
 
@@ -123,7 +135,7 @@ async def lister_evenements(registre, debut: str | None = None, fin: str | None 
             params["start"] = debut
         if fin:
             params["end"] = fin
-        rc = await client.get(f"{base}/calendars", headers=_ENTETES)
+        rc = await client.get(f"{base}/calendars", headers=_entetes())
         cals = rc.json() if rc.status_code < 400 else []
         if not cals:
             # Garantit au moins le calendrier par défaut (la brique n'en crée pas seule).
@@ -132,11 +144,11 @@ async def lister_evenements(registre, debut: str | None = None, fin: str | None 
         evts: list[dict] = []
         for c in cals:
             r = await client.get(f"{base}/calendars/{c['id']}/events",
-                                 headers=_ENTETES, params=params)
+                                 headers=_entetes(), params=params)
             if r.status_code >= 400:
                 continue
             # Étiquettes du calendrier {id: {name, color}} pour résoudre nom + couleur.
-            rl = await client.get(f"{base}/calendars/{c['id']}/labels", headers=_ENTETES)
+            rl = await client.get(f"{base}/calendars/{c['id']}/labels", headers=_entetes())
             labels = {l["id"]: l for l in (rl.json() if rl.status_code < 400 else [])}
             for e in r.json():
                 e["calendrier"] = c.get("name")
@@ -164,7 +176,7 @@ async def creer_evenement(registre, titre: str, debut: str, fin: str,
         if rappels is not None:
             corps["rappels"] = rappels
         r = await client.post(f"{_base(registre)}/calendars/{cal}/events",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -174,7 +186,7 @@ async def definir_rappels(registre, event_id: str, rappels: list[int]) -> dict:
     Liste vide = supprime tous les rappels. Renvoie l'événement mis à jour."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.patch(f"{_base(registre)}/events/{event_id}",
-                             headers=_ENTETES, json={"rappels": rappels})
+                             headers=_entetes(), json={"rappels": rappels})
         r.raise_for_status()
         return r.json()
 
@@ -185,7 +197,7 @@ async def creer_evenement_dans(registre, calendar_id: str | None, corps: dict) -
     async with httpx.AsyncClient(timeout=15) as client:
         cal = calendar_id or await _calendrier_defaut(client, registre)
         r = await client.post(f"{_base(registre)}/calendars/{cal}/events",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -194,7 +206,7 @@ async def modifier_evenement(registre, event_id: str, corps: dict) -> dict:
     """Met à jour un événement (PATCH partiel) — `corps` = champs bruts de la brique."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.patch(f"{_base(registre)}/events/{event_id}",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -205,7 +217,7 @@ async def lister_etiquettes(registre, calendar_id: str) -> list[dict]:
     """Étiquettes d'un calendrier ({id, name, color, …})."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{_base(registre)}/calendars/{calendar_id}/labels",
-                             headers=_ENTETES)
+                             headers=_entetes())
         return r.json() if r.status_code < 400 else []
 
 
@@ -217,7 +229,7 @@ async def creer_etiquette(registre, calendar_id: str, nom: str,
         if couleur:
             corps["color"] = couleur
         r = await client.post(f"{_base(registre)}/calendars/{calendar_id}/labels",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -226,7 +238,7 @@ async def modifier_etiquette(registre, label_id: str, corps: dict) -> dict:
     """Renomme / recolore une étiquette (PATCH partiel : name, color)."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.patch(f"{_base(registre)}/labels/{label_id}",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         r.raise_for_status()
         return r.json()
 
@@ -234,7 +246,7 @@ async def modifier_etiquette(registre, label_id: str, corps: dict) -> dict:
 async def supprimer_etiquette(registre, label_id: str) -> bool:
     """Supprime une étiquette ; les événements concernés repassent « sans étiquette »."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/labels/{label_id}", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/labels/{label_id}", headers=_entetes())
         return r.status_code < 400
 
 
@@ -243,7 +255,7 @@ async def supprimer_etiquette(registre, label_id: str) -> bool:
 async def lister_documents(registre, event_id: str) -> list[dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{_base(registre)}/events/{event_id}/attachments",
-                             headers=_ENTETES)
+                             headers=_entetes())
         return r.json() if r.status_code < 400 else []
 
 
@@ -252,7 +264,7 @@ async def televerser_document(registre, event_id: str, nom: str, octets: bytes,
     async with httpx.AsyncClient(timeout=60) as client:
         files = {"file": (nom, octets, mimetype or "application/octet-stream")}
         r = await client.post(f"{_base(registre)}/events/{event_id}/attachments",
-                             headers=_ENTETES, files=files)
+                             headers=_entetes(), files=files)
         r.raise_for_status()
         return r.json()
 
@@ -261,7 +273,7 @@ async def telecharger_document(registre, att_id: str):
     """Renvoie (octets, nom, mimetype) d'une pièce jointe, ou (None, None, None)."""
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.get(f"{_base(registre)}/attachments/{att_id}/download",
-                             headers=_ENTETES)
+                             headers=_entetes())
         if r.status_code >= 400:
             return None, None, None
         cd = r.headers.get("content-disposition", "")
@@ -273,7 +285,7 @@ async def telecharger_document(registre, att_id: str):
 
 async def supprimer_document(registre, att_id: str) -> bool:
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/attachments/{att_id}", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/attachments/{att_id}", headers=_entetes())
         return r.status_code < 400
 
 
@@ -282,21 +294,21 @@ async def supprimer_document(registre, att_id: str) -> bool:
 async def lister_commentaires(registre, event_id: str) -> list[dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{_base(registre)}/events/{event_id}/comments",
-                             headers=_ENTETES)
+                             headers=_entetes())
         return r.json() if r.status_code < 400 else []
 
 
 async def ajouter_commentaire(registre, event_id: str, contenu: str) -> dict:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(f"{_base(registre)}/events/{event_id}/comments",
-                             headers=_ENTETES, json={"content": contenu})
+                             headers=_entetes(), json={"content": contenu})
         r.raise_for_status()
         return r.json()
 
 
 async def supprimer_commentaire(registre, comment_id: str) -> bool:
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/comments/{comment_id}", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/comments/{comment_id}", headers=_entetes())
         return r.status_code < 400
 
 
@@ -304,7 +316,7 @@ async def deplacer_evenement(registre, event_id: str, debut: str, fin: str) -> d
     """Replanifie un événement (PATCH des dates)."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.patch(f"{_base(registre)}/events/{event_id}",
-                             headers=_ENTETES, json={"start_at": debut, "end_at": fin})
+                             headers=_entetes(), json={"start_at": debut, "end_at": fin})
         r.raise_for_status()
         return r.json()
 
@@ -312,7 +324,7 @@ async def deplacer_evenement(registre, event_id: str, debut: str, fin: str) -> d
 async def supprimer_evenement(registre, event_id: str) -> bool:
     """Annule (supprime) un événement."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/events/{event_id}", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/events/{event_id}", headers=_entetes())
         return r.status_code < 400
 
 
@@ -321,7 +333,7 @@ async def supprimer_evenement(registre, event_id: str) -> bool:
 async def timetree_etat(registre) -> dict:
     """Connecté à TimeTree ? Quel calendrier partagé sélectionné ?"""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"{_base(registre)}/timetree/status", headers=_ENTETES)
+        r = await client.get(f"{_base(registre)}/timetree/status", headers=_entetes())
         return r.json() if r.status_code < 400 else {"connected": False}
 
 
@@ -334,7 +346,7 @@ async def timetree_connecter(registre, email: str, password: str,
         if calendar_id:
             corps["calendar_id"] = calendar_id
         r = await client.post(f"{_base(registre)}/timetree/connect",
-                             headers=_ENTETES, json=corps)
+                             headers=_entetes(), json=corps)
         if r.status_code >= 400:
             detail = r.json().get("detail") if "application/json" in r.headers.get("content-type", "") else r.text
             return {"connected": False, "erreur": detail}
@@ -345,7 +357,7 @@ async def timetree_choisir_calendrier(registre, calendar_id: str) -> dict:
     """Choisit le calendrier partagé TimeTree à synchroniser."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(f"{_base(registre)}/timetree/select",
-                             headers=_ENTETES, json={"calendar_id": calendar_id})
+                             headers=_entetes(), json={"calendar_id": calendar_id})
         r.raise_for_status()
         return r.json()
 
@@ -353,7 +365,7 @@ async def timetree_choisir_calendrier(registre, calendar_id: str) -> dict:
 async def timetree_synchroniser(registre) -> dict:
     """Déclenche un pull TimeTree → calendrier « TimeTree » (lecture seule)."""
     async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(f"{_base(registre)}/timetree/sync", headers=_ENTETES)
+        r = await client.post(f"{_base(registre)}/timetree/sync", headers=_entetes())
         if r.status_code >= 400:
             detail = r.json().get("detail") if "application/json" in r.headers.get("content-type", "") else r.text
             return {"ok": False, "erreur": detail}
@@ -363,7 +375,7 @@ async def timetree_synchroniser(registre) -> dict:
 async def timetree_deconnecter(registre) -> bool:
     """Purge les identifiants TimeTree du coffre (révocation)."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/timetree/disconnect", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/timetree/disconnect", headers=_entetes())
         return r.status_code < 400
 
 
@@ -372,7 +384,7 @@ async def timetree_deconnecter(registre) -> bool:
 async def google_etat(registre) -> dict:
     """Connecté à Google ? (+ expiration / scope si oui)."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"{_base(registre)}/google/status", headers=_ENTETES)
+        r = await client.get(f"{_base(registre)}/google/status", headers=_entetes())
         return r.json() if r.status_code < 400 else {"connected": False}
 
 
@@ -382,7 +394,7 @@ async def google_url_consentement(registre) -> dict:
     Renvoie {ok, authorization_url} ou {ok: False, erreur} si le pont n'est pas
     configuré (GOOGLE_CLIENT_ID/SECRET absents)."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"{_base(registre)}/google/connect", headers=_ENTETES)
+        r = await client.get(f"{_base(registre)}/google/connect", headers=_entetes())
         if r.status_code >= 400:
             detail = r.json().get("detail") if "application/json" in r.headers.get("content-type", "") else r.text
             return {"ok": False, "erreur": detail}
@@ -397,7 +409,7 @@ async def google_synchroniser(registre, debut: str | None = None, fin: str | Non
             params["time_min"] = debut
         if fin:
             params["time_max"] = fin
-        r = await client.post(f"{_base(registre)}/google/sync", headers=_ENTETES, params=params)
+        r = await client.post(f"{_base(registre)}/google/sync", headers=_entetes(), params=params)
         if r.status_code >= 400:
             detail = r.json().get("detail") if "application/json" in r.headers.get("content-type", "") else r.text
             return {"ok": False, "erreur": detail}
@@ -407,5 +419,5 @@ async def google_synchroniser(registre, debut: str | None = None, fin: str | Non
 async def google_deconnecter(registre) -> bool:
     """Purge les tokens Google du coffre (révocation du consentement)."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.delete(f"{_base(registre)}/google/disconnect", headers=_ENTETES)
+        r = await client.delete(f"{_base(registre)}/google/disconnect", headers=_entetes())
         return r.status_code < 400

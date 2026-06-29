@@ -1,0 +1,4 @@
+# Outillage de TEST du monorepo Workplace (S116) — filet commun.
+# Installer avec :  pip install -r requirements-dev.txt
+pytest>=8,<10
+pytest-cov>=5
