@@ -1,13 +1,13 @@
 {
   "nom": "oria",
-  "version": "1.0.0",
-  "description": "Collaboration — messagerie interne + visio (Matrix / LiveKit)",
+  "version": "0.1.0",
+  "description": "Collaboration — worlds, messagerie Matrix et visio LiveKit. Donne à l'assistant une vue sur les espaces de collaboration : lister les worlds, les membres, les rooms, inviter des gens ou créer un espace.",
   "role": "collaboration",
-  "couche": "frontend",
+  "couche": "backend",
   "statut": "actif",
-  "chemin_source": "oria-stack/oria",
-  "port": 3003,
-  "url_sante": "http://host.docker.internal:8000/health",
+  "chemin_source": "briques/oria",
+  "port": 6085,
+  "url_sante": "http://host.docker.internal:6085/sante",
   "url_ui": "http://localhost:3003",
   "depends_on": [
     "gateway"
@@ -18,6 +18,97 @@
     "agents_canaux"
   ],
   "besoin": [
-    "MATRIX_SERVER_SECRET"
+    "ORIA_KC_CLIENT_SECRET"
+  ],
+  "capacites": [
+    {
+      "nom": "oria_worlds_lister",
+      "description": "Liste les worlds (espaces de collaboration) accessibles par l'assistant dans Oria : nom, description, emoji, couleur, nombre de membres et de buildings. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/worlds",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "oria_utilisateurs_decouvrir",
+      "description": "Découvre les utilisateurs connus dans Oria (id, nom, avatar, bio). Utile pour trouver l'identifiant d'un utilisateur avant de l'inviter dans un world. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/utilisateurs",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "oria_world_membres",
+      "description": "Liste les membres d'un world Oria (nom, rôle, Matrix ID). Nécessite l'UUID du world (obtenu via oria_worlds_lister). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/monde/membres",
+      "params": {
+        "world_id": {
+          "type": "string",
+          "description": "UUID du world (ex. 968142a1-caaa-4256-b4a4-b5d09e310b2c)"
+        }
+      },
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "oria_social_flux",
+      "description": "Récupère le fil d'actualité social Oria (activités récentes des membres : posts, entrées dans les worlds, etc.). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/social/flux",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "oria_world_creer",
+      "description": "Crée un nouvel espace de collaboration (world) dans Oria. ACTION (crée un espace visible par les membres invités) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/worlds",
+      "params": {
+        "nom": {
+          "type": "string",
+          "description": "Nom du world (ex. « Équipe Design »)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description courte du world."
+        },
+        "emoji": {
+          "type": "string",
+          "description": "Emoji représentant le world (défaut 🌍)."
+        },
+        "couleur": {
+          "type": "string",
+          "description": "Couleur hex du world (défaut #3b82f6)."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "oria_inviter",
+      "description": "Invite un utilisateur dans un world Oria. ACTION (envoie une invitation visible par l'utilisateur ciblé) : confirme=true requis. Utiliser oria_utilisateurs_decouvrir pour trouver le user_id.",
+      "methode": "POST",
+      "chemin": "/invitations",
+      "params": {
+        "world_id": {
+          "type": "string",
+          "description": "UUID du world dans lequel inviter."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "UUID de l'utilisateur à inviter (prioritaire sur email)."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email de l'utilisateur à inviter (si user_id inconnu)."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    }
   ]
 }

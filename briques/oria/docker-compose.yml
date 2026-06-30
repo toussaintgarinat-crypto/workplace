@@ -1,0 +1,27 @@
+services:
+  oria:
+    build: .
+    container_name: workplace_oria
+    image: workplace/oria:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6085:6085"
+    environment:
+      - PORT=6085
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - ORIA_KC_URL=${ORIA_KC_URL:-http://host.docker.internal:8081}
+      - ORIA_KC_REALM=${ORIA_KC_REALM:-oria}
+      - ORIA_KC_CLIENT_ID=${ORIA_KC_CLIENT_ID:-core-service}
+      - ORIA_KC_CLIENT_SECRET=${ORIA_KC_CLIENT_SECRET:-core-service-secret-wp}
+      - ORIA_API_URL=${ORIA_API_URL:-http://host.docker.internal:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6085/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
