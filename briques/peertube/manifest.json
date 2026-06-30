@@ -1,0 +1,62 @@
+{
+  "nom": "peertube",
+  "version": "0.1.0",
+  "description": "Hébergement vidéo souverain (PeerTube) : archive, recherche, upload et live RTMP. Aucune dépendance cloud — tout reste sur le HP. Synergie avec le studio (upload post-session) et la mémoire (nœuds vidéo).",
+  "role": "media",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "briques/peertube",
+  "port": 6100,
+  "url_sante": "http://host.docker.internal:6100/sante",
+  "depends_on": [],
+  "offre": ["hebergement_video", "live_rtmp", "recherche_video", "upload_video"],
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "peertube_lister",
+      "description": "Liste les vidéos archivées sur la vidéothèque PeerTube interne (titre, durée, URL embed). Lecture seule. Utile pour retrouver une session enregistrée.",
+      "methode": "GET",
+      "chemin": "/videos",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "peertube_rechercher",
+      "description": "Recherche des vidéos archivées par mot-clé dans la vidéothèque PeerTube. Lecture seule.",
+      "methode": "POST",
+      "chemin": "/videos/rechercher",
+      "params": {
+        "query": {"type": "string", "description": "Mots-clés de recherche.", "requis": true}
+      },
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "peertube_uploader",
+      "description": "Upload une vidéo (fichier MP4/MKV/WebM) dans la vidéothèque PeerTube. ACTION — ne pas déclencher sans confirmation. Retourne l'URL de visionnage.",
+      "methode": "POST",
+      "chemin": "/videos/upload",
+      "params": {
+        "nom": {"type": "string", "description": "Titre de la vidéo.", "requis": true},
+        "description": {"type": "string", "description": "Description de la vidéo (optionnel)."},
+        "fichier": {"type": "file", "description": "Fichier vidéo (multipart).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "peertube_live",
+      "description": "Crée un live RTMP dans PeerTube. Retourne l'URL RTMP et la clé de stream à configurer dans OBS ou le studio. ACTION.",
+      "methode": "POST",
+      "chemin": "/live",
+      "params": {
+        "nom": {"type": "string", "description": "Titre du live.", "requis": true},
+        "description": {"type": "string", "description": "Description du live (optionnel)."}
+      },
+      "action": true,
+      "niveau": 1
+    }
+  ],
+  "taches": []
+}

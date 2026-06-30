@@ -46,6 +46,9 @@ DEV_IDE_URL = os.environ.get("DEV_IDE_URL", "http://localhost:8744/")
 # du dashboard dans une iframe. URL vue depuis le NAVIGATEUR (port publié 4001), pas
 # l'URL interne GATEWAY_URL (host.docker.internal) qui sert aux appels du Cœur.
 GATEWAY_UI_URL = os.environ.get("GATEWAY_UI_URL", "http://localhost:4001/ui")
+# Brique « peertube » (port 6100) : hébergement vidéo souverain. Interface publique pour
+# archive, recherche, upload et live RTMP. Embarquée comme TUILE du hub « Atelier ».
+PEERTUBE_UI_URL = os.environ.get("PEERTUBE_UI_URL", "http://localhost:9000")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
 # définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
 # ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
