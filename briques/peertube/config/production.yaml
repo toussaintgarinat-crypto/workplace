@@ -1,0 +1,64 @@
+listen:
+  hostname: '0.0.0.0'
+  port: 9000
+
+webserver:
+  https: false
+  hostname: '192.168.1.89'
+  port: 9000
+
+database:
+  hostname: 'peertube-db'
+  port: 5432
+  suffix: '_prod'
+  username: 'peertube'
+  password: '${POSTGRES_PASSWORD}'
+  pool:
+    max: 5
+
+redis:
+  hostname: 'peertube-redis'
+
+smtp:
+  hostname: null
+  port: 465
+  username: null
+  password: null
+  tls: true
+  disable_starttls: false
+  ca_file: null
+  from_address: 'admin@peertube.example.com'
+
+email:
+  body:
+    signature: 'Workplace PeerTube'
+  subject:
+    prefix: '[Workplace]'
+
+storage:
+  tmp: '/data/tmp/'
+  tmp_persistent: '/data/tmp-persistent/'
+  bin: '/data/bin/'
+  avatars: '/data/avatars/'
+  web_videos: '/data/web-videos/'
+  streaming_playlists: '/data/streaming-playlists/'
+  redundancy: '/data/redundancy/'
+  logs: '/data/logs/'
+  previews: '/data/previews/'
+  thumbnails: '/data/thumbnails/'
+  torrents: '/data/torrents/'
+  captions: '/data/captions/'
+  cache: '/data/cache/'
+  plugins: '/data/plugins/'
+  well_known: '/data/well-known/'
+  client_overrides: '/data/client-overrides/'
+
+log:
+  level: 'info'
+
+live:
+  enabled: true
+  rtmp:
+    enabled: true
+    use_proxy: false
+    port: 1935
