@@ -19,6 +19,8 @@ services:
       - NOYAU_URL=http://127.0.0.1:5000
       # URL publique du Générateur (liens aperçu/téléchargement du tableau, vus du navigateur).
       - GENERATEUR_URL_PUBLIQUE=http://localhost:5400
+      # URL publique de PeerTube (interface vidéothèque pour archive/recherche/upload/live).
+      - PEERTUBE_UI_URL=http://localhost:9000
       # URL publique de l'Agenda (liens d'invitation transmis aux invités, joignables
       # depuis l'extérieur). En déploiement : https://agenda.${DOMAIN} via Traefik.
       - AGENDA_URL_PUBLIQUE=${AGENDA_URL_PUBLIQUE:-http://localhost:8400}
