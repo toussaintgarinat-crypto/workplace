@@ -34,7 +34,14 @@ bootstrap:
     - encoding: UTF8
     - data-checksums
 
-  post_bootstrap: psql -c "CREATE ROLE \"oria\" WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}' CREATEDB;" -c "CREATE DATABASE \"oria\" OWNER \"oria\";" -d oria -c "GRANT ALL ON SCHEMA public TO oria;" -c "ALTER SCHEMA public OWNER TO oria;"
+  post_bootstrap: >-
+    psql
+    -c "CREATE ROLE \"oria\" WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}' CREATEDB;"
+    -c "CREATE DATABASE \"oria\" OWNER \"oria\";"
+    -c "CREATE DATABASE dendrite OWNER oria;"
+    && psql -d oria
+    -c "GRANT ALL ON SCHEMA public TO oria;"
+    -c "ALTER SCHEMA public OWNER TO oria;"
 
   pg_hba:
     - local all all trust
