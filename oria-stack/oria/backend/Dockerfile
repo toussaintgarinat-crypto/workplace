@@ -2,8 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 RUN pip install --upgrade pip setuptools wheel
 
-# Build context = repo root (cf. oria/docker-compose.yml).
-# ── Shared utilities (Redis, Keycloak, FastAPI helpers) ──────────────
+# Build context = oria-stack/ — agent_personnel_shared vendorisé dans oria-stack/shared/
 COPY shared /shared
 RUN pip install --no-cache-dir -e /shared
 

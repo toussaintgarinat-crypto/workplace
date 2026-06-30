@@ -100,7 +100,7 @@ services:
 
   backend:
     build:
-      # Repo root pour accéder à ./shared/ (paquet partagé S95).
+      # oria-stack/ — agent_personnel_shared vendorisé dans oria-stack/shared/
       context: ..
       dockerfile: oria/backend/Dockerfile
     restart: unless-stopped
@@ -215,7 +215,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080' 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 20
