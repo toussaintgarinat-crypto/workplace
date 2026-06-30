@@ -64,3 +64,80 @@ async def test_creer_live(client):
     live = await client.creer_live("Mon live", "Session de travail")
     assert live["rtmpUrl"] == "rtmp://192.168.1.89:1935/live"
     assert live["streamKey"] == "key123"
+
+
+# === Tests API FastAPI ===
+from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
+import io
+
+
+def test_sante_ok():
+    from main import app
+    with patch("main._peertube") as mock_pt:
+        mock_pt.lister_videos = AsyncMock(return_value=[])
+        client = TestClient(app)
+        resp = client.get("/sante")
+        assert resp.status_code == 200
+        assert resp.json()["statut"] == "ok"
+
+
+def test_lister_videos_vide():
+    from main import app
+    with patch("main._peertube") as mock_pt:
+        mock_pt.lister_videos = AsyncMock(return_value=[])
+        client = TestClient(app)
+        resp = client.get("/videos")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+def test_lister_videos_avec_resultats():
+    from main import app
+    video = {"uuid": "abc", "name": "Test", "description": "d",
+             "thumbnailPath": "/thumb.jpg", "duration": 60, "views": 3,
+             "embedPath": "/videos/embed/abc"}
+    with patch("main._peertube") as mock_pt:
+        mock_pt.lister_videos = AsyncMock(return_value=[video])
+        client = TestClient(app)
+        resp = client.get("/videos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["uuid"] == "abc"
+        assert "embedUrl" in data[0]
+
+
+def test_rechercher_videos():
+    from main import app
+    with patch("main._peertube") as mock_pt:
+        mock_pt.lister_videos = AsyncMock(return_value=[])
+        client = TestClient(app)
+        resp = client.post("/videos/rechercher", json={"query": "test"})
+        assert resp.status_code == 200
+        mock_pt.lister_videos.assert_called_once_with(search="test")
+
+
+def test_upload_video():
+    from main import app
+    with patch("main._peertube") as mock_pt:
+        mock_pt.uploader_video = AsyncMock(
+            return_value={"uuid": "new-u", "url": "http://x/watch/new-u"}
+        )
+        client = TestClient(app)
+        fichier = io.BytesIO(b"fake_video_bytes")
+        resp = client.post("/videos/upload", data={"nom": "Ma vidéo", "description": "test"},
+                           files={"fichier": ("video.mp4", fichier, "video/mp4")})
+        assert resp.status_code == 200
+        assert resp.json()["uuid"] == "new-u"
+
+
+def test_creer_live_api():
+    from main import app
+    with patch("main._peertube") as mock_pt:
+        mock_pt.creer_live = AsyncMock(
+            return_value={"uuid": "live-1", "rtmpUrl": "rtmp://192.168.1.89:1935/live", "streamKey": "sk"}
+        )
+        client = TestClient(app)
+        resp = client.post("/live", json={"nom": "Session", "description": "live"})
+        assert resp.status_code == 200
+        assert resp.json()["rtmpUrl"] == "rtmp://192.168.1.89:1935/live"
