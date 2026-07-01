@@ -1,155 +1,202 @@
-# GUIDE — Mesh NetBird : relier le téléphone, le Cœur et le Muscle (S59)
+# GUIDE — Mesh NetBird : accès distant + réveil du HP + partage de calcul
 
-Ce guide met en place le **« système nerveux »** du partage de puissance de calcul : un
-réseau privé chiffré (mesh WireGuard via **NetBird**) qui relie trois machines **sans
-ouvrir le moindre port** sur la box internet domestique.
+Ce guide met en place un **réseau privé chiffré** (mesh WireGuard via **NetBird**) qui relie
+ton téléphone, le **HP** (Proxmox, qui héberge tout le stack Workplace) et — plus tard — un
+**Mac** de calcul, **sans ouvrir le moindre port applicatif** sur la box internet.
+
+Il sert **deux** buts d'un coup :
+1. **Accès distant à la solution** : joindre le dashboard du Cœur depuis n'importe où (4G),
+   comme si tu étais à la maison, sans exposer Workplace sur internet.
+2. **Réveil du HP à distance** : un petit **Raspberry Pi** allumé H24 réveille le HP
+   (Wake-on-LAN) quand tu en as besoin, puis le HP dort le reste du temps (économie d'énergie).
 
 ```
-   📱 Téléphone (4G/5G)            🧠 Cœur (Proxmox, H24)          💪 Muscle (Mac Apple Silicon)
-   navigateur / PWA                core + briques + Gateway        Ollama / LM Studio / llama.cpp
-        │                                  │                                 │
-        └────────────── mesh NetBird (WireGuard, 100.100.0.0/16) ───────────┘
-                                   ▲ aiguillé par le VPS
-                        (signal :10000, management :33073, TURN :3478/udp)
+   📱 Téléphone (4G/5G)        🍓 Raspberry Pi 3B+ (H24, ~3W)        🖥️ HP 800 G4 (Proxmox)
+   navigateur / PWA            • pair NetBird permanent               ├─ hôte Proxmox (métal)
+        │                      • bouton « réveille le HP » (WoL)      └─ VM Debian 192.168.1.89
+        │                                │                              stack Docker complet
+        │                                │                              (Cœur + briques + Gateway)
+        └───────── mesh NetBird (WireGuard, chiffré bout-en-bout) ──────────────┘
+                                   ▲ aiguillé par NetBird Cloud
+                        (plan de contrôle SaaS — ne voit JAMAIS le trafic)
 ```
 
-Le VPS ne voit jamais le contenu (chiffré de bout en bout entre pairs) : il sert
-uniquement de **rendez-vous** pour percer les NAT. Si deux pairs peuvent se joindre en
-direct, le trafic ne passe même pas par le VPS (P2P) ; sinon il est relayé par le TURN.
+> **Topologie retenue** : le **plan de contrôle** (l'« aiguilleur » qui permet aux pairs de
+> se trouver et de percer les NAT) est **NetBird Cloud** (offre perso gratuite). Il ne voit
+> jamais le contenu (chiffré de bout en bout entre pairs). Ce choix évite d'ouvrir le moindre
+> port sur la box et d'auto-héberger un serveur de contrôle (un Pi 3B+ à 1 Go de RAM ne peut
+> pas faire tourner Zitadel confortablement). Le Pi, lui, est **parfait** comme pair permanent
+> + bouton d'allumage : le client NetBird pèse quelques dizaines de Mo.
 
-> **Honnêteté** : ce guide est *exécutable* mais la preuve LIVE finale (téléphone en 4G →
-> réponse calculée par le Mac) se fait sur **ton** VPS + **ton** Mac. Le dépôt fournit
-> tout le câblage côté Workplace (entrées Gateway, brique calcul, env) ; le mesh lui-même
-> est de l'ops à dérouler une fois.
+> **Rappel Proxmox** : `192.168.1.89` est une **VM KVM** sur l'hôte Proxmox, pas le métal.
+> Conséquences (partie D) : le Wake-on-LAN vise la **carte physique du HP** (pas la MAC de la
+> VM), et la VM doit être en **« Start at boot »** pour remonter toute seule après le réveil.
 
 ---
 
-## 0. Pré-requis
-- Un **VPS** public (l'« aiguilleur ») avec Docker. Le reverse-proxy Traefik existant
-  (`oria-stack/infra/traefik/`) **réserve déjà** les ports NetBird : `10000` (signal),
-  `33073` (management), `3478/udp` (TURN). Vérifie qu'ils sont bien forwardés depuis la box.
-- Un **nom de domaine** pointant sur le VPS (ex. `mesh.mondomaine.fr`) — NetBird s'auto-TLS.
-- Le **Cœur** (Proxmox) et le **Mac** allumables et sous Docker/CLI.
+## Partie A — NetBird Cloud : compte + clé d'enrôlement (toi)
+1. Va sur **https://app.netbird.io**, crée un compte (gratuit pour un usage perso).
+2. **Settings → Setup Keys → Create Setup Key** : coche **Reusable**, donne-lui un nom
+   (ex. `workplace`). Copie la clé (format `XXXXXXXX-...`). C'est le seul secret à partager
+   entre tes machines pour les rattacher au réseau.
+3. (Optionnel mais conseillé) crée un **groupe** `workplace` pour ranger tes pairs.
+
+> Le « management URL » par défaut du Cloud est `https://api.netbird.io` — les clients
+> l'utilisent automatiquement, pas besoin de le préciser en Cloud.
 
 ---
 
-## 1. Déployer le plan de contrôle NetBird sur le VPS
-NetBird fournit un installeur auto-hébergé qui monte management + signal + relay (TURN) +
-dashboard + IdP (Zitadel) correctement configurés entre eux — on s'appuie dessus plutôt
-que de réécrire un compose fragile :
+## Partie B — Enrôler la VM du HP (accès distant) — *je peux le faire par SSH*
+Sur la VM Debian (`192.168.1.89`) :
 
 ```bash
-# Sur le VPS
-export NETBIRD_DOMAIN=mesh.mondomaine.fr
-curl -fsSL https://github.com/netbirdio/netbird/releases/latest/download/getting-started-with-zitadel.sh | bash
-```
-
-À la fin, le script affiche l'URL du **dashboard** (`https://mesh.mondomaine.fr`) et les
-identifiants admin. Connecte-toi : tu y créeras les clés d'enrôlement (« setup keys »).
-
-> Si tu fais tourner Traefik en frontal : les entrées `netbird-signal` / `netbird-management` /
-> `turn-udp` du `traefik.yml` sont là pour router ces flux ; sinon laisse NetBird exposer
-> directement ses ports (déjà forwardés).
-
-Crée **une setup key réutilisable** dans le dashboard (Settings → Setup Keys).
-
----
-
-## 2. Enrôler les trois pairs
-Sur **chaque** machine, installer le client puis se rattacher avec la setup key :
-
-```bash
-# Cœur (Proxmox) et Muscle (Mac) — client CLI
 curl -fsSL https://pkgs.netbird.io/install.sh | sh
-netbird up --management-url https://mesh.mondomaine.fr --setup-key <SETUP_KEY>
-netbird status        # doit afficher « Connected » + une IP 100.100.x.x
+sudo netbird up --setup-key <SETUP_KEY>
+netbird status        # doit afficher « Connected » + une IP mesh (100.x.y.z)
 ```
 
-- **Mac (Muscle)** : on peut aussi installer l'app de menu NetBird (DMG) et coller la
-  même URL + setup key.
-- **Téléphone** : installe l'app **NetBird** (iOS/Android), renseigne l'URL de management
-  et la setup key. En 4G/5G il rejoint le mesh comme les autres.
+Note l'**IP mesh** attribuée à la VM (ex. `100.100.0.10`). Fixe/renomme-la dans le dashboard
+NetBird pour qu'elle soit **stable** (« workplace-hp »).
 
-Note les **IP mesh** attribuées (ex. Cœur `100.100.0.10`, Mac `100.100.0.1`). Idéalement,
-fixe-les / nomme-les dans le dashboard pour qu'elles soient stables.
+À partir de là, l'**accès distant fonctionne déjà** : depuis un pair du mesh (ton téléphone
+enrôlé en partie E), ouvre `http://<IP_MESH_VM>:5100/dashboard`. Le stack tourne déjà sur la
+VM (aucun port ouvert sur la box, tout passe par le tunnel chiffré).
+
+> Donne-moi une setup key et je déroule cette partie B en SSH sur la VM.
 
 ---
 
-## 3. Servir le LLM sur le Mac (le Muscle)
-Au choix (tous OpenAI-compatibles, donc agnostiques côté Workplace) :
+## Partie C — Le Raspberry Pi : pair permanent + bouton « réveille le HP » (toi)
+Le Pi reste **allumé en permanence** (~3 W) : c'est lui qui répond quand le HP dort, et c'est
+lui qui envoie le Wake-on-LAN pour réveiller le HP.
 
+**C.1 — Enrôler le Pi dans le mesh**
 ```bash
-# Ollama (le plus simple) — écoute sur toutes les interfaces pour être joignable via le mesh
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-ollama pull llama3.3
-# ou LM Studio (serveur :1234/v1) / llama.cpp (--host 0.0.0.0 --port 8080) / mlx_lm.server
+# Sur le Pi (Raspberry Pi OS 64 bits conseillé)
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key <SETUP_KEY>
+netbird status                     # « Connected » + IP mesh (ex. 100.100.0.20)
 ```
 
-Vérifie depuis le Cœur, **via l'IP mesh du Mac** :
+**C.2 — Le bouton d'allumage (réutilise la brique `calcul`)**
+La brique `calcul` sait déjà envoyer le Wake-on-LAN (son `POST /noeuds/{id}/reveiller`). On la
+fait tourner sur le Pi en `network_mode: host` pour que le magic packet atteigne le LAN.
 
 ```bash
-curl http://100.100.0.1:11434/api/tags        # Ollama → 200 + liste des modèles
+# Sur le Pi : récupérer le code (le dossier briques/calcul suffit)
+git clone <url-du-repo> workplace && cd workplace/briques/calcul
+# Config locale du Pi :
+cat > .env.pi <<'EOF'
+REVEIL_NOEUDS=[{"id":"hp","nom":"HP 800 G4 (Proxmox)","endpoint":"http://<IP_MESH_VM>:5100","sondes":["/health"],"mac_wol":"<MAC_PHYSIQUE_HP>","broadcast_wol":"192.168.1.255","methode_reveil":["wol"],"reveil_timeout_s":240,"intervalle_sonde_s":5}]
+REVEIL_KEY=<une-clé-secrète-de-ton-choix>
+EOF
+docker compose -f docker-compose.pi.yml up -d --build
+curl -s http://127.0.0.1:5990/sante        # {"ok":true,...}
+```
+
+- `<IP_MESH_VM>` = l'IP mesh de la VM (partie B). `<MAC_PHYSIQUE_HP>` = partie D.
+- Le fichier `docker-compose.pi.yml` est fourni dans `briques/calcul/`.
+- Pas de Docker sur le Pi ? On peut lancer la brique en natif : `pip install -r requirements.txt
+  && uvicorn main:app --host 0.0.0.0 --port 5990` (avec `CALCUL_NOEUDS` exporté).
+
+**C.3 — Réveiller le HP depuis le téléphone (4G)**
+```
+# téléphone (4G) → mesh → Pi
+curl -X POST http://<IP_MESH_PI>:5990/noeuds/hp/reveiller -H "X-API-Key: <REVEIL_KEY>"
+# → envoie le WoL, attend que le Cœur réponde, verdict honnête {reveille, methode, duree_s}
+```
+Tu peux en faire un raccourci (Raccourcis iOS / widget) qui tape cette URL. La sonde
+`/health` ne passe au vert qu'une fois le HP **complètement** remonté (Proxmox + VM + Docker).
+
+---
+
+## Partie D — Prérequis Wake-on-LAN du HP physique (toi, une fois)
+Comme `192.168.1.89` est une **VM**, le WoL doit réveiller la **machine physique** (l'hôte
+Proxmox). Trois réglages :
+
+1. **MAC physique du HP** : sur l'hôte Proxmox (pas la VM), `ip -br link` → la carte Intel
+   (souvent `eno1`/`enp0s31f6`). Sa MAC = `<MAC_PHYSIQUE_HP>` à mettre dans `REVEIL_NOEUDS`.
+   ⚠️ **Pas** la MAC `bc:24:11:…` de la VM (carte virtuelle Proxmox, elle ne répond pas au WoL).
+2. **BIOS du HP** : active **« Wake On LAN »** (HP 800 G4 : *Advanced → Power Management*,
+   règle « After Power Loss »/« Remote Wakeup », et **désactive** le mode d'économie S5 max qui
+   coupe l'alimentation de la carte réseau au repos).
+3. **VM en démarrage auto** : Proxmox → la VM → *Options* → **« Start at boot » = Yes**
+   (idéalement un petit *Start/Shutdown order delay*). Ainsi, réveiller l'hôte remonte la VM
+   et tout le stack sans intervention.
+
+Vérifie le WoL depuis le Pi une fois le HP éteint proprement :
+```bash
+docker exec reveil_hp python -c "import noeud; noeud.envoyer_wol('<MAC_PHYSIQUE_HP>','192.168.1.255')"
+# le HP doit démarrer (voyant/ventilateur), puis Proxmox → VM → stack
 ```
 
 ---
 
-## 4. Câbler Workplace (côté Cœur)
-Dans le `.env` racine (cf. section « Muscle déporté » de `.env.example`) :
+## Partie E — Le téléphone (toi)
+Installe l'app **NetBird** (iOS/Android), connecte-toi au **même** compte Cloud (ou colle la
+setup key). En 4G/5G, le téléphone rejoint le mesh comme les autres. Puis :
+- **Accès distant** : ouvre `http://<IP_MESH_VM>:5100/dashboard` (ou installe-le en PWA, cf.
+  S61 — le dashboard est déjà « installable »).
+- **Réveil** : le raccourci de la partie C.3.
 
+---
+
+## Partie F — Le Mac de calcul (« le Muscle ») — plus tard
+Quand tu voudras déporter le LLM sur un Mac (grosse RAM unifiée), c'est le même mesh :
+
+```bash
+# Mac : enrôler dans le mesh + servir un LLM OpenAI-compatible
+curl -fsSL https://pkgs.netbird.io/install.sh | sh && sudo netbird up --setup-key <SETUP_KEY>
+OLLAMA_HOST=0.0.0.0:11434 ollama serve && ollama pull llama3.3
+```
+Puis, dans le `.env` **racine** de la VM (section « Muscle déporté » de `.env.example`) :
 ```ini
 MUSCLE_ACTIF=1
-# Parc lu par la brique calcul (une entrée par machine) :
-CALCUL_NOEUDS=[{"id":"mac-studio","nom":"Mac Studio","endpoint":"http://100.100.0.1:11434","mac_wol":"AA:BB:CC:DD:EE:01","methode_reveil":["wol","wakeping"],"priorite":10,"modele_gateway":"ollama/llama3.3"}]
-# Adresse mesh vue par la Gateway (doit matcher l'endpoint ci-dessus) :
-OLLAMA_URL=http://100.100.0.1:11434
-# Pour un 2ᵉ muscle non-Ollama : MUSCLE_2_URL=http://100.100.0.2:1234/v1  + modele_gateway "local/muscle-2"
+CALCUL_NOEUDS=[{"id":"mac","nom":"Mac","endpoint":"http://<IP_MESH_MAC>:11434","mac_wol":"<MAC_MAC>","methode_reveil":["wol","wakeping"],"priorite":10,"modele_gateway":"ollama/llama3.3"}]
+OLLAMA_URL=http://<IP_MESH_MAC>:11434
 ```
-
-Puis **recréer** la Gateway (l'env est figé à la création du conteneur) et (re)lancer la
-brique calcul :
-
+Recrée la Gateway et la brique calcul (l'env est figé à la création du conteneur) :
 ```bash
 cd briques/gateway && docker compose up -d --force-recreate gateway
 cd ../calcul        && docker compose up -d --force-recreate
 ```
+Dans ⚙ **Cerveau** du dashboard → coche **« Muscle déporté »**. La tuile d'état affiche le Mac
+🟢/🌙, et les réponses tombent sur lui (vérifie `modele_utilise` dans le journal d'usage).
 
-Dans le dashboard du Cœur → **⚙ Cerveau** : coche **« Muscle déporté »**. La tuile d'état
-doit afficher le Mac 🟢 (éveillé) ou 🌙 (endormi, réveillable). Premier message → la
-réponse est calculée par le Mac (vérifie `modele_utilise` dans le journal d'usage).
-
----
-
-## 5. Preuve LIVE (le test qui valide S59)
-1. Coupe le WiFi du téléphone → **4G/5G uniquement**.
-2. Ouvre le dashboard du Cœur via son **IP mesh** (`http://100.100.0.10:5100/dashboard`)
-   ou le nom NetBird.
-3. Envoie un message. Si le Mac dort, il est réveillé en fond (le 1ᵉʳ message part en mode
-   dégradé sur les gratuits, les suivants tombent sur le Mac chaud).
-4. **Vérifie qu'aucun port n'est ouvert sur la box** : depuis un réseau externe, un scan
-   de l'IP publique de la box ne doit montrer NI 5100, NI 11434, NI 4001 — tout passe par
-   le tunnel chiffré. Seuls les ports du **VPS** (80/443/10000/33073/3478) sont publics.
+> Note : sur la VM, la brique `calcul` du **stack** (parc = les Mac) est distincte de
+> l'instance `calcul` du **Pi** (parc = le HP à réveiller). Deux rôles, deux déploiements.
 
 ---
 
-## 6. Durcissement
-- **Ne mappe pas** les ports du Cœur / de la Gateway / de la brique calcul vers l'extérieur
-  de la box : ils ne doivent être joignables **que par le mesh** (et `host.docker.internal`
-  en local). Sur le Mac, `ollama serve` n'écoute que pour le mesh (pas de redirection box).
-- **CORS** : si tu exposes un front hors iframe, resserre `CORS_ORIGINS` du Cœur et les
-  `allow_origins` des briques (cf. note mémoire « CORS briques autonomes »).
-- **Auth brique calcul** : en multi-utilisateurs, pose `API_KEYS` sur la brique calcul et
-  `CALCUL_KEY` côté Cœur (le client `core/muscle.py` envoie l'en-tête `X-API-Key`).
-- **Wake-on-LAN** : fiable en LAN filaire. En WiFi/veille profonde, garde le Mac en
-  « Power Nap » + privilégie le `wakeping` (le mesh maintient l'hôte joignable), ou règle
-  le Mac pour ne pas s'endormir si la continuité prime sur l'économie d'énergie.
+## Durcissement
+- **Aucun port applicatif mappé vers l'extérieur de la box** : le dashboard (5100), la Gateway,
+  Ollama (11434) ne doivent être joignables **que par le mesh**. NetBird Cloud n'expose rien
+  côté box ; garde-le ainsi (pas de redirection de port « au cas où »).
+- **Bouton de réveil protégé** : pose `REVEIL_KEY` (partie C.2) → seul qui a la clé peut
+  réveiller le HP. En multi-utilisateur, fais de même sur la brique calcul du stack (`API_KEYS`
+  + `CALCUL_KEY` côté Cœur, le client `core/muscle.py` envoie `X-API-Key`).
+- **Access control NetBird** : dans le dashboard Cloud, restreins les *policies* pour que seuls
+  tes pairs (téléphone/Pi/HP/Mac) se voient, et supprime les setup keys inutiles après usage.
+- **CORS** : si tu exposes un front hors iframe, resserre `CORS_ORIGINS` du Cœur et des briques
+  (cf. note « CORS briques autonomes »).
+
+---
+
+## Limites honnêtes
+- **Accès distant partiel** : le dashboard du Cœur + le chat (streaming S60) marchent via l'IP
+  mesh. Mais certaines **iframes de briques** et le **WebSocket voix** pointent vers des URLs
+  internes (localhost/host.docker.internal) qui ne se résolvent pas depuis le téléphone — à
+  reprendre si tu veux l'expérience complète à distance (chantier séparé).
+- **Preuve LIVE finale** : compte + Pi + BIOS + Mac sont à dérouler sur **ton** matériel ; le
+  dépôt fournit tout le câblage (brique calcul, compose Pi, entrées Gateway, env).
 
 ---
 
 ## Dépannage
 | Symptôme | Piste |
 |---|---|
-| ⚙ Cerveau : « Brique calcul injoignable » | la brique calcul tourne-t-elle ? `CALCUL_URL` correct ? |
-| Nœud toujours 🔴 injoignable | `netbird status` des 2 côtés ; `curl http://<ip-mesh>:11434/api/tags` depuis le Cœur |
-| Réponse jamais calculée par le Mac | `modele_gateway` du nœud == un model_name réel du LiteLLM ? `MUSCLE_n_URL`/`OLLAMA_URL` recréés ? |
-| Le Mac ne se réveille pas | WoL ne traverse pas le bridge Docker → `network_mode: host` (Linux) ou compter sur `wakeping` ; vérifier la MAC |
-| Lenteur en 4G | normal au réveil (chargement du modèle) ; le streaming token (S60) améliorera le ressenti |
+| Téléphone ne joint pas le dashboard | `netbird status` des 2 côtés = « Connected » ? bon `<IP_MESH_VM>` ? le HP est-il réveillé/remonté ? |
+| `POST /noeuds/hp/reveiller` → `reveille:false` | WoL envoyé mais le Cœur ne répond pas à temps : MAC physique correcte ? BIOS WoL activé ? VM en « Start at boot » ? augmente `reveil_timeout_s`. |
+| Le HP ne démarre pas du tout au WoL | mauvaise MAC (VM au lieu du métal), WoL désactivé au BIOS, ou `network_mode: host` absent sur le Pi (le broadcast n'atteint pas le LAN). |
+| WoL ok mais la sonde reste rouge | la VM ne remonte pas (« Start at boot » ?) ou NetBird ne se relance pas dans la VM au boot (`systemctl enable netbird`). |
+| Nœud Muscle (Mac) toujours 🔴 | `netbird status` ; `curl http://<IP_MESH_MAC>:11434/api/tags` depuis la VM ; `modele_gateway` == un model_name réel du LiteLLM ? |
