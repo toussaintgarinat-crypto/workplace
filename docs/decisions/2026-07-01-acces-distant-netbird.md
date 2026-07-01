@@ -146,7 +146,8 @@ physique du HP** (pas la VM). Prérequis : MAC physique, WoL au BIOS, VM en « S
 
 ## Limites connues
 - **Iframes de briques** : ~~pointaient vers des URLs internes non résolues depuis le
-  téléphone~~ → **résolu (code) par S128** (`docs/sprints/S128-briques-embarquees-acces-distant.md`) :
+  téléphone~~ → **RÉSOLU + DÉPLOYÉ + PROUVÉ LIVE (11/11 briques HTTPS sur le mesh, LAN non
+  régressé)** par S128 (`docs/sprints/S128-briques-embarquees-acces-distant.md`) :
   les URLs d'iframe sont construites depuis le scheme + l'hôte de la requête
   (`core/urls_ui.url_brique`) et Caddy expose chaque brique en HTTPS sur son port
   (`outils/mesh-https/Caddyfile.briques`). Restent **différés** : Forge (SSO Keycloak) et
