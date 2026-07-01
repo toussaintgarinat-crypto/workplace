@@ -1,0 +1,24 @@
+# Variante « zéro avertissement » : vrai certificat Let's Encrypt via challenge DNS-01
+# DuckDNS. Fonctionne DERRIÈRE LE NAT (aucun port public) car DNS-01 valide par un
+# enregistrement TXT, pas par une connexion entrante.
+#
+# Pré-requis :
+#   1. Un sous-domaine DuckDNS gratuit (ex. monworkplace.duckdns.org) + son token.
+#   2. Pointer son A record sur l'IP MESH (non publique) :
+#        curl "https://www.duckdns.org/update?domains=monworkplace&token=<TOKEN>&ip=100.124.248.226"
+#      → le nom résout vers 100.124.248.226 ; seuls les pairs du mesh l'atteignent.
+#   3. Une image Caddy buildée AVEC le module caddy-dns/duckdns (cf. Dockerfile.duckdns)
+#      et DUCKDNS_TOKEN passé en variable d'env au conteneur.
+#
+# Bascule : remplacer le Caddyfile par celui-ci (adapter le nom + email) puis
+#   docker compose -f docker-compose.duckdns.yml up -d --build
+{
+    email ton-email@exemple.fr
+}
+
+https://monworkplace.duckdns.org {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+    reverse_proxy localhost:5100
+}

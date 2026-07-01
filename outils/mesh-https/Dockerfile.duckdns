@@ -1,0 +1,8 @@
+# Image Caddy incluant le module DNS DuckDNS (pour le challenge DNS-01, variante
+# « zéro avertissement »). L'image officielle caddy:2 ne l'embarque pas.
+#   docker compose -f docker-compose.duckdns.yml up -d --build
+FROM caddy:2-builder AS builder
+RUN xcaddy build --with github.com/caddy-dns/duckdns
+
+FROM caddy:2
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
