@@ -54,12 +54,23 @@ def url_brique(nom: str, scheme: str, host: str) -> str:
     Surcharge env `<NOM>_UI_URL` si posée (déploiement particulier / SSO), sinon
     construite depuis le scheme + l'hôte de la REQUÊTE courante — la même logique
     donne la bonne URL en LAN, sur le mesh (HTTPS/Caddy) et en dev local (S128).
+
+    Accès distant via le mesh : quand la requête arrive par l'hôte mesh (`MESH_HOST`),
+    les briques sont servies en **HTTPS par Caddy sur des ports DÉCALÉS**
+    (`MESH_PORT_OFFSET`, défaut 10000). Nécessaire car le port réel reste occupé par
+    Docker (`0.0.0.0:<port>`) → Caddy ne peut pas réutiliser le même port sur l'IP mesh.
+    En LAN / dev (MESH_HOST vide ou hôte différent), on sert le port réel en direct.
     """
     surcharge = os.environ.get(_nom_env(nom))
     if surcharge:
         return surcharge
     port, chemin = BRIQUES_UI[nom]
-    return f"{scheme}://{_hote_sans_port(host)}:{port}{chemin}"
+    hote = _hote_sans_port(host)
+    mesh_host = os.environ.get("MESH_HOST", "").strip()
+    if mesh_host and hote == mesh_host:
+        offset = int(os.environ.get("MESH_PORT_OFFSET", "10000"))
+        return f"https://{hote}:{port + offset}{chemin}"
+    return f"{scheme}://{hote}:{port}{chemin}"
 
 
 # URL publique du Générateur (liens « aperçu / télécharger » du tableau des entreprises

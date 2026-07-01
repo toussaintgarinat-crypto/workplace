@@ -151,10 +151,10 @@ physique du HP** (pas la VM). Prérequis : MAC physique, WoL au BIOS, VM en « S
   (`core/urls_ui.url_brique`) et Caddy expose chaque brique en HTTPS sur son port
   (`outils/mesh-https/Caddyfile.briques`). Restent **différés** : Forge (SSO Keycloak) et
   l'IDE dev (code-server). **Preuve LIVE** (dashboard distant + tuiles) à faire depuis un pair
-  du mesh. Contrainte de déploiement : publier les briques liées à l'IP LAN
-  (`192.168.1.89:<port>:<port>`) pour que Caddy tienne l'IP mesh sur le même port, et **retirer
-  toute surcharge `<NOM>_UI_URL=192.168.1.89:…`** côté HP (sinon la construction relative est
-  court-circuitée).
+  du mesh. Déploiement HP : **retirer les surcharges `<NOM>_UI_URL=192.168.1.89:…`** +
+  **poser `MESH_HOST=100.124.248.226`** dans `core/docker-compose.override.yml`. Caddy expose
+  chaque brique en HTTPS sur un **port décalé (+10000)** — les briques gardent `0.0.0.0` (leur
+  port réel est déjà pris sur l'IP mesh, d'où le décalage), donc rien à recréer côté briques.
 - **NetBird Cloud** : dépendance à un tiers pour l'aiguillage (pas pour le trafic). Repli
   possible = auto-héberger le plan de contrôle sur une machine costaude le jour venu.
 - **CA locale** : à installer sur **chaque** appareil (d'où la bascule DuckDNS/domaine quand

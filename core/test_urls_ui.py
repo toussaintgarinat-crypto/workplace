@@ -52,5 +52,35 @@ def test_surcharge_dev_ide_garde_son_nom_historique(monkeypatch):
 def test_sans_surcharge_pas_de_fuite_env(monkeypatch):
     """Sans env posé, on construit bien relativement (pas de résidu d'un autre test)."""
     monkeypatch.delenv("STUDIO_UI_URL", raising=False)
+    monkeypatch.delenv("MESH_HOST", raising=False)
     assert urls_ui.url_brique("STUDIO", "https", "100.124.248.226") == \
         "https://100.124.248.226:6060/atelier"
+
+
+# ── Accès mesh : ports décalés quand la requête vient de l'hôte mesh (MESH_HOST) ──
+def test_mesh_host_decale_le_port(monkeypatch):
+    """Sur le HP, MESH_HOST=IP mesh → Caddy sert la brique en HTTPS sur port+10000
+    (le port réel est occupé par Docker 0.0.0.0). Le Cœur émet ce port décalé."""
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
+    monkeypatch.setenv("MESH_HOST", "100.124.248.226")
+    assert urls_ui.url_brique("STUDIO", "https", "100.124.248.226") == \
+        "https://100.124.248.226:16060/atelier"
+    assert urls_ui.url_brique("VOIX", "https", "100.124.248.226") == \
+        "https://100.124.248.226:15985/"
+
+
+def test_mesh_offset_reglable(monkeypatch):
+    monkeypatch.delenv("GATEWAY_UI_URL", raising=False)
+    monkeypatch.setenv("MESH_HOST", "100.124.248.226")
+    monkeypatch.setenv("MESH_PORT_OFFSET", "20000")
+    assert urls_ui.url_brique("GATEWAY", "https", "100.124.248.226") == \
+        "https://100.124.248.226:24001/ui"
+
+
+def test_mesh_host_pose_mais_requete_lan_reste_directe(monkeypatch):
+    """MESH_HOST posé sur le HP, mais un navigateur LAN (Host = IP LAN) garde l'accès
+    DIRECT au port réel en http — aucune régression LAN."""
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
+    monkeypatch.setenv("MESH_HOST", "100.124.248.226")
+    assert urls_ui.url_brique("STUDIO", "http", "192.168.1.89:5100") == \
+        "http://192.168.1.89:6060/atelier"
