@@ -41,17 +41,24 @@ Pré-requis : le Cœur doit **faire confiance aux en-têtes de proxy** (uvicorn 
 / lecture `X-Forwarded-Proto`) pour connaître le bon scheme derrière Caddy. On **garde une
 surcharge env** par brique (repli / cas SSO Forge).
 
-### 2. Caddy (mesh) — exposer chaque brique en HTTPS sur son port
+### 2. Caddy (mesh) — exposer chaque brique en HTTPS sur un port DÉCALÉ (+10000)
 Sur l'IP mesh, un bloc Caddy `tls internal` par brique (le certificat racine est **déjà de
 confiance** sur les appareils, cf. décision NetBird) :
 ```
-https://100.124.248.226:6060 { tls internal; reverse_proxy localhost:6060 }   # studio
-https://100.124.248.226:6010 { tls internal; reverse_proxy localhost:6010 }   # restaurant
+https://100.124.248.226:16060 { tls internal; reverse_proxy localhost:6060 }   # studio  6060→16060
+https://100.124.248.226:16010 { tls internal; reverse_proxy localhost:6010 }   # restaurant 6010→16010
 … un bloc par port de brique …
 ```
 Même scheme (HTTPS) que le dashboard → **plus de mixed content**. Caddy gère nativement l'**upgrade
-WebSocket** (utile pour la voix). *(Le port reste le même qu'en LAN → aucune ré-écriture de
-chemin, les SPA gardent leurs assets à la racine de leur port.)*
+WebSocket** (utile pour la voix). Aucune ré-écriture de chemin : chaque brique a son **port
+dédié** (juste décalé de +10000), donc les SPA gardent leurs assets à la racine de leur port.
+
+> **Pourquoi décalé et pas le même port ?** (constaté LIVE) — les briques publient sur
+> `0.0.0.0:<port>` (Docker) : ce port est **déjà occupé sur l'IP mesh**, Caddy ne peut donc pas
+> l'écouter (`bind: address already in use`). On expose donc chaque brique sur `<port>+10000`
+> (libres) et le Cœur émet ce port décalé **uniquement** quand la requête vient de l'hôte mesh
+> (`MESH_HOST` + `MESH_PORT_OFFSET`). Avantage : **zéro changement sur les briques** (elles gardent
+> `0.0.0.0`), donc rien à recréer sur le stack live et **aucune régression LAN**.
 
 ### Alternatives écartées
 - **Chemin unique `/b/<brique>/…`** : casse les SPA (chemins d'assets absolus `/assets/…`) sans
@@ -142,13 +149,13 @@ inchangé. Le tout committé + le registre de décision à jour.
    **Seul point d'attention** = la console **Gateway/LiteLLM** (image tierce) susceptible d'envoyer
    `X-Frame-Options` → peut rester « Ouvrir dans un onglet » (à vérifier LIVE).
 
-### Déploiement requis avant la preuve LIVE (sur le HP / la VM mesh)
-- **Retirer** les surcharges `<NOM>_UI_URL=192.168.1.89:…` côté HP (sinon la construction
-  relative est court-circuitée et le mesh reste cassé). Le repo n'en fige plus aucune.
-- **Publier les briques liées à l'IP LAN** (`ports: ["192.168.1.89:<port>:<port>"]`, pas
-  `0.0.0.0`) pour que Caddy puisse tenir `100.124.248.226:<port>` sur le **même** port sans
-  conflit de bind. LAN → `192.168.1.89:<port>` (brique) ; mesh → `100.124.248.226:<port>` (Caddy).
-- `cd outils/mesh-https && docker compose up -d` (recharge Caddy avec les nouveaux sites).
+### Déploiement HP (fait le 2026-07-01)
+- `core/docker-compose.override.yml` (HP-local) : **retiré** les 12 surcharges
+  `<NOM>_UI_URL=192.168.1.89:…` (sinon la construction relative est court-circuitée) ;
+  **ajouté** `MESH_HOST=100.124.248.226`. `GENERATEUR_URL_PUBLIQUE` (liens nouvel onglet) gardé.
+- Rebuild du **seul** Cœur (`cd core && docker compose up -d --build`). Briques non touchées.
+- `cd outils/mesh-https && docker compose up -d` (Caddy recharge les 11 sites décalés).
+- **Preuve LIVE** (depuis le HP, côté mesh) : `curl -k https://100.124.248.226:1<port>/… → 200`.
 
 ### Reste (différé)
 - **Preuve LIVE** bout-en-bout depuis l'iPhone/Mac réel sur le mesh (≥ 10 iframes + voix WS),
