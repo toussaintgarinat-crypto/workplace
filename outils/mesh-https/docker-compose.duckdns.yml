@@ -1,0 +1,24 @@
+# Variante « zéro avertissement » : Caddy buildé avec le module DuckDNS + vrai cert
+# Let's Encrypt (DNS-01). À DÉPLOYER SUR LA VM. Renseigne DUCKDNS_TOKEN (.env à côté).
+#
+#   cp Caddyfile.duckdns Caddyfile   # après avoir adapté le nom de domaine + email
+#   echo "DUCKDNS_TOKEN=xxxxxxxx-...." > .env
+#   docker compose -f docker-compose.duckdns.yml up -d --build
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.duckdns
+    image: workplace/caddy-duckdns:2
+    container_name: mesh_caddy
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN:?DUCKDNS_TOKEN requis}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

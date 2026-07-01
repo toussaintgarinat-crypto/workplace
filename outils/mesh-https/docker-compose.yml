@@ -1,0 +1,20 @@
+# Caddy — terminaison HTTPS pour l'accès distant au Cœur via le mesh NetBird.
+# À DÉPLOYER SUR LA VM (192.168.1.89). network_mode: host → Caddy écoute sur l'IP mesh
+# (wt0) en 443 et joint le Cœur publié en localhost:5100.
+#
+#   docker compose up -d
+#
+# Variante « zéro avertissement » (vrai cert DuckDNS) : cf. README.md.
+services:
+  caddy:
+    image: caddy:2
+    container_name: mesh_caddy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # garde la CA interne + les certs stables entre redémarrages
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

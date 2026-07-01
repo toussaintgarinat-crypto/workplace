@@ -1,0 +1,13 @@
+# Reverse-proxy HTTPS pour l'accès distant au Cœur via le mesh NetBird.
+# Déployé SUR LA VM (192.168.1.89), écoute sur l'IP mesh (wt0), proxifie le Cœur (5100).
+# But : Safari (iOS) force le HTTPS ; le Cœur ne parle que HTTP → on termine le TLS ici.
+#
+# Variante actuelle : CA INTERNE (tls internal) — aucun domaine requis, souverain.
+# À la 1re visite Safari affiche un avertissement contournable en 1 tap.
+#
+# Variante « zéro avertissement » (à activer quand un token DuckDNS est fourni) : voir
+# Caddyfile.duckdns (vrai certificat Let's Encrypt via challenge DNS-01).
+https://100.124.248.226 {
+    tls internal
+    reverse_proxy localhost:5100
+}
