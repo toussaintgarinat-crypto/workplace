@@ -1,0 +1,68 @@
+# S128 — Terminaison HTTPS des BRIQUES EMBARQUÉES pour l'accès distant (mesh).
+# Importé par le Caddyfile principal. Un bloc par port de brique : même port qu'en LAN
+# (aucune ré-écriture de chemin → les SPA gardent leurs assets à la racine de leur port),
+# servi en HTTPS (`tls internal`, CA déjà de confiance) → plus de « mixed content » quand
+# le dashboard distant embarque la brique en iframe. Caddy fait nativement l'upgrade
+# WebSocket (utile pour la voix). reverse_proxy pose X-Forwarded-Proto=https → le Cœur
+# reconstruit les URLs d'iframe en HTTPS (cf. core/urls_ui.url_brique).
+#
+# ⚠️ CONTRAINTE DE DÉPLOIEMENT (port partagé LAN/mesh) : Caddy écoute sur l'IP MESH
+# (100.124.248.226:<port>). Pour que ce bind ne rentre pas en conflit avec la publication
+# Docker de la brique, celle-ci doit être publiée liée à l'IP LAN, PAS à 0.0.0.0 :
+#     ports: ["192.168.1.89:6060:6060"]   # et non "6060:6060"
+# Ainsi : LAN direct → 192.168.1.89:<port> (brique) ; mesh → 100.124.248.226:<port> (Caddy).
+# (Alternative si on ne peut pas toucher les publications : exposer chaque brique sur un
+# port mesh DÉCALÉ — au prix d'une ré-écriture, écartée ici.)
+
+(brique_mesh) {
+	tls internal
+	reverse_proxy localhost:{args[0]}
+}
+
+# Studio (audio-séries)
+https://100.124.248.226:6060 {
+	import brique_mesh 6060
+}
+# Personnages (atelier holistique)
+https://100.124.248.226:5900 {
+	import brique_mesh 5900
+}
+# Transcription (audio→texte)
+https://100.124.248.226:5980 {
+	import brique_mesh 5980
+}
+# Restaurant (QR & paiement)
+https://100.124.248.226:6010 {
+	import brique_mesh 6010
+}
+# Mail (boîte de réception)
+https://100.124.248.226:6030 {
+	import brique_mesh 6030
+}
+# Synopsis (résumé vidéo)
+https://100.124.248.226:6090 {
+	import brique_mesh 6090
+}
+# Voix (moteur TTS) — WebSocket (test Piper/Kokoro), upgrade géré par Caddy
+https://100.124.248.226:5985 {
+	import brique_mesh 5985
+}
+# Mémoire (graphe Memory) — SPA + proxy /api/v1 same-origin
+https://100.124.248.226:5600 {
+	import brique_mesh 5600
+}
+# Générateur (composeur de bundles embarqué)
+https://100.124.248.226:5400 {
+	import brique_mesh 5400
+}
+# Gateway (console LiteLLM) — peut refuser le framing (X-Frame-Options), cf. sprint
+https://100.124.248.226:4001 {
+	import brique_mesh 4001
+}
+# PeerTube (vidéothèque souveraine)
+https://100.124.248.226:9000 {
+	import brique_mesh 9000
+}
+
+# Différés S128 (auth/SSO propres) : Forge (3000, SSO Keycloak) et IDE dev (8744,
+# code-server) — cf. docs/sprints/S128-briques-embarquees-acces-distant.md.

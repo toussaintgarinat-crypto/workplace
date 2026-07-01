@@ -1,55 +1,73 @@
-"""URLs publiques (vues du NAVIGATEUR) des briques embarquées en iframe et clé
-du compte Studio. Partagé par le router dashboard (toutes) et usine
-(GENERATEUR_URL_PUBLIQUE, pour les liens aperçu/téléchargement).
+"""URLs (vues du NAVIGATEUR) des briques embarquées en iframe + clé du compte Studio.
+
+S128 — Les briques embarquées doivent s'afficher à la fois en LAN
+(`http://192.168.1.89:5100`) et depuis un pair du mesh (`https://100.124.248.226`),
+SANS repointer une IP figée (qui casserait l'autre accès, cf.
+`docs/sprints/S128-briques-embarquees-acces-distant.md`). On ne fige donc plus
+d'URL absolue par brique : on garde `{port, chemin}` et on préfixe, à la volée, avec
+le **scheme + l'hôte de la requête courante** (`url_brique`). Une surcharge par env
+(`<NOM>_UI_URL`) reste possible (repli / cas SSO Forge / déploiement particulier).
+
+Partagé par le router `dashboard` (iframes) et `usine` (GENERATEUR_URL_PUBLIQUE).
 """
 import os
 
-# URL publique du Générateur (vue depuis le NAVIGATEUR de l'utilisateur), pour les
-# liens « aperçu / télécharger » du tableau des entreprises livrées.
+# Table des briques embarquées : NOM -> (port hôte, chemin de la SPA). Le port reste
+# identique en LAN et sur le mesh (Caddy expose chaque port en HTTPS), donc aucune
+# ré-écriture de chemin — les SPA gardent leurs assets à la racine de leur port.
+# Port 6060 et pas 6000 pour le Studio : 6000 = X11, banni par Chrome (ERR_UNSAFE_PORT).
+BRIQUES_UI = {
+    "FORGE":         (3000, "/"),          # SPA Forge (SSO Keycloak géré DANS la SPA)
+    "STUDIO":        (6060, "/atelier"),
+    "PERSONNAGES":   (5900, "/atelier"),
+    "TRANSCRIPTION": (5980, "/atelier"),
+    "RESTAURANT":    (6010, "/"),          # multi-tenant, clé de service
+    "MAIL":          (6030, "/"),
+    "SYNOPSIS":      (6090, "/"),
+    "VOIX":          (5985, "/"),          # WebSocket (test Piper/Kokoro) — Caddy fait l'upgrade
+    "MEMOIRE":       (5600, "/memory"),    # SPA + proxy /api/v1 same-origin
+    "DEV_IDE":       (8744, "/"),          # code-server (auth propre + WS) — différé S128
+    "GATEWAY":       (4001, "/ui"),        # console LiteLLM (peut poser X-Frame-Options)
+    "GENERATEUR":    (5400, "/bundles-studio"),  # composeur de bundles embarqué (tuile Atelier)
+    "PEERTUBE":      (9000, "/"),          # hébergement vidéo souverain
+}
+
+
+def _nom_env(nom: str) -> str:
+    """Nom de la variable d'env de SURCHARGE d'une brique. Historiquement
+    `<NOM>_UI_URL`, sauf l'IDE dev, resté `DEV_IDE_URL`."""
+    return "DEV_IDE_URL" if nom == "DEV_IDE" else f"{nom}_UI_URL"
+
+
+def _hote_sans_port(host: str) -> str:
+    """Renvoie l'hôte de l'en-tête `Host` sans le `:port` éventuel
+    (`192.168.1.89:5100` -> `192.168.1.89`, `100.124.248.226` inchangé)."""
+    host = (host or "localhost").strip()
+    if host.startswith("["):                       # IPv6 littéral, ex. [::1]:5100
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def url_brique(nom: str, scheme: str, host: str) -> str:
+    """URL (vue navigateur) de la brique `nom`.
+
+    Surcharge env `<NOM>_UI_URL` si posée (déploiement particulier / SSO), sinon
+    construite depuis le scheme + l'hôte de la REQUÊTE courante — la même logique
+    donne la bonne URL en LAN, sur le mesh (HTTPS/Caddy) et en dev local (S128).
+    """
+    surcharge = os.environ.get(_nom_env(nom))
+    if surcharge:
+        return surcharge
+    port, chemin = BRIQUES_UI[nom]
+    return f"{scheme}://{_hote_sans_port(host)}:{port}{chemin}"
+
+
+# URL publique du Générateur (liens « aperçu / télécharger » du tableau des entreprises
+# livrées, ouverts dans un NOUVEL onglet — hors iframe). Reste pilotée par env : un lien
+# vers un nouvel onglet ne dépend pas de l'hôte de l'iframe courante.
 GENERATEUR_URL_PUBLIQUE = os.environ.get("GENERATEUR_URL_PUBLIQUE", "http://localhost:5400")
 
-# URL publique de la SPA Forge (vue depuis le NAVIGATEUR), reprise par l'onglet
-# « Forge » du dashboard dans une iframe (S19). Servie par la brique forge (service
-# `frontend`, port hôte FORGE_FRONTEND_PORT, défaut 3000). Le SSO se fait dans la SPA
-# elle-même (realm `oria`), pas dans le Cœur.
-FORGE_UI_URL = os.environ.get("FORGE_UI_URL", "http://localhost:3000")
-
-# URLs publiques des briques créatives (vues depuis le NAVIGATEUR), reprises par l'onglet
-# « Créations » du dashboard dans des iframes. Le Hub Créations a migré d'Oria vers le Cœur :
-# le Studio (brique autonome, port 6060) et l'atelier Personnages (port 5900) sont désormais
-# embarqués ici. Port 6060 et pas 6000 : 6000 = X11, banni par Chrome (ERR_UNSAFE_PORT).
-STUDIO_UI_URL = os.environ.get("STUDIO_UI_URL", "http://localhost:6060/atelier")
-PERSONNAGES_UI_URL = os.environ.get("PERSONNAGES_UI_URL", "http://localhost:5900/atelier")
-TRANSCRIPTION_UI_URL = os.environ.get("TRANSCRIPTION_UI_URL", "http://localhost:5980/atelier")
-# Brique « restaurant » (port 6010) : back-office restaurateur (commande & paiement à table
-# par QR, multi-tenant). Embarquée dans l'onglet « Atelier » comme les autres briques.
-RESTAURANT_UI_URL = os.environ.get("RESTAURANT_UI_URL", "http://localhost:6010/")
-# Brique « mail » (port 6030) : client mail (boîtes de réception unifiées + réponse sur
-# validation). Embarquée dans son propre onglet « Mail » (entre Agenda et Profil).
-MAIL_UI_URL = os.environ.get("MAIL_UI_URL", "http://localhost:6030/")
-# Brique « synopsis » (port 6090) : résumé de n'importe quelle vidéo (YouTube, URL, fichier)
-# par IA. Embarquée comme TUILE du hub « Atelier » (ouvrirCreation).
-SYNOPSIS_UI_URL = os.environ.get("SYNOPSIS_UI_URL", "http://localhost:6090/")
-# Brique « voix » (port 5985) : page de réglage du moteur de synthèse vocale — choisir la
-# voix de l'assistant EN UN CLIC (Piper souverain par défaut, Kokoro naturel local…) +
-# bouton « Tester ». Embarquée comme TUILE du hub « Atelier » (ouvrirCreation).
-VOIX_UI_URL = os.environ.get("VOIX_UI_URL", "http://localhost:5985/")
-# Brique « memoire » (port 5600) : le vrai front du projet Memory (graphe IPCRA, recherche
-# hybride). L'adaptateur sert le front buildé + reverse-proxy /api/v1 (S108). Embarquée
-# comme TUILE du hub « Atelier » (ouvrirCreation). Route SPA → /memory.
-MEMOIRE_UI_URL = os.environ.get("MEMOIRE_UI_URL", "http://localhost:5600/memory")
-# Brique « dev » (auto-atelier, port 5955) : IDE web code-server monté sur le dépôt (S92),
-# embarqué dans l'onglet « Atelier dev » du dashboard. On relit/édite le code et les diffs des
-# chantiers dans le navigateur, à côté du pilotage à la voix (outil Cœur `dev_demander`).
-DEV_IDE_URL = os.environ.get("DEV_IDE_URL", "http://localhost:8744/")
-# Console d'admin native de la Gateway (LiteLLM UI), reprise par l'onglet « Gateway »
-# du dashboard dans une iframe. URL vue depuis le NAVIGATEUR (port publié 4001), pas
-# l'URL interne GATEWAY_URL (host.docker.internal) qui sert aux appels du Cœur.
-GATEWAY_UI_URL = os.environ.get("GATEWAY_UI_URL", "http://localhost:4001/ui")
-# Brique « peertube » (port 6100) : hébergement vidéo souverain. Interface publique pour
-# archive, recherche, upload et live RTMP. Embarquée comme TUILE du hub « Atelier ».
-PEERTUBE_UI_URL = os.environ.get("PEERTUBE_UI_URL", "http://localhost:9000")
 # « Compte Studio » = clé de service partagée avec la brique (auth X-API-Key). Quand elle est
-# définie, l'assistant l'envoie (cf. outils.py) ET l'iframe du dashboard la transporte en
-# ?api_key= (le front Studio la lit). Vide = brique en mode ouvert.
+# définie, l'iframe du dashboard la transporte en `?api_key=` (le front Studio la lit).
+# Cockpit mono-opérateur : la clé EST l'identité (même frontière de confiance que /dashboard).
 STUDIO_KEY = os.environ.get("STUDIO_KEY", "")

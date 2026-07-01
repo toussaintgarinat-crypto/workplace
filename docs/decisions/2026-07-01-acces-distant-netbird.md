@@ -145,9 +145,16 @@ physique du HP** (pas la VM). Prérequis : MAC physique, WoL au BIOS, VM en « S
 ---
 
 ## Limites connues
-- **Accès distant partiel** : dashboard + chat OK ; certaines **iframes de briques** et le
-  **WebSocket voix** pointent vers des URLs internes (localhost/host.docker.internal) non
-  résolues depuis le téléphone → à reprendre pour l'expérience complète (chantier séparé).
+- **Iframes de briques** : ~~pointaient vers des URLs internes non résolues depuis le
+  téléphone~~ → **résolu (code) par S128** (`docs/sprints/S128-briques-embarquees-acces-distant.md`) :
+  les URLs d'iframe sont construites depuis le scheme + l'hôte de la requête
+  (`core/urls_ui.url_brique`) et Caddy expose chaque brique en HTTPS sur son port
+  (`outils/mesh-https/Caddyfile.briques`). Restent **différés** : Forge (SSO Keycloak) et
+  l'IDE dev (code-server). **Preuve LIVE** (dashboard distant + tuiles) à faire depuis un pair
+  du mesh. Contrainte de déploiement : publier les briques liées à l'IP LAN
+  (`192.168.1.89:<port>:<port>`) pour que Caddy tienne l'IP mesh sur le même port, et **retirer
+  toute surcharge `<NOM>_UI_URL=192.168.1.89:…`** côté HP (sinon la construction relative est
+  court-circuitée).
 - **NetBird Cloud** : dépendance à un tiers pour l'aiguillage (pas pour le trafic). Repli
   possible = auto-héberger le plan de contrôle sur une machine costaude le jour venu.
 - **CA locale** : à installer sur **chaque** appareil (d'où la bascule DuckDNS/domaine quand
