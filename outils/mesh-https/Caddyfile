@@ -9,5 +9,18 @@
 # Caddyfile.duckdns (vrai certificat Let's Encrypt via challenge DNS-01).
 https://100.124.248.226 {
     tls internal
-    reverse_proxy localhost:5100
+    # Sert le certificat racine de Caddy pour l'installer sur l'iPhone (→ zéro
+    # avertissement une fois la CA approuvée). Empreinte SHA256 à vérifier :
+    #   3A:2E:5C:8E:70:1F:94:AF:6D:5B:2C:46:48:F9:C0:A9:DC:9E:40:9D:D9:BD:06:2F:5B:C6:1D:B8:96:48:27:36
+    @rootca path /rootca.crt
+    handle @rootca {
+        root * /data/caddy/pki/authorities/local
+        rewrite * /root.crt
+        header Content-Type application/x-x509-ca-cert
+        header Content-Disposition "attachment; filename=workplace-mesh-ca.crt"
+        file_server
+    }
+    handle {
+        reverse_proxy localhost:5100
+    }
 }
