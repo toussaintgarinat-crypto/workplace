@@ -9,4 +9,8 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+# --proxy-headers : derrière Caddy (accès distant mesh, S128) le Cœur sert en HTTP
+# interne ; on fait confiance à X-Forwarded-Proto/-For pour reconstruire les URLs
+# d'iframe en HTTPS. --forwarded-allow-ips=* car l'IP du proxy (réseau Docker/mesh)
+# n'est pas fixe ; réseau de confiance (LAN + mesh privés).
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--proxy-headers", "--forwarded-allow-ips", "*"]

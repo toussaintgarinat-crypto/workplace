@@ -1,7 +1,7 @@
 # S128 — Rendre les briques embarquées accessibles à distance (mesh) sans casser le LAN
 
 - **Date de préparation** : 2026-07-01
-- **Statut** : 📋 Préparé (spec + plan) — pas encore implémenté
+- **Statut** : ✅ CODE-COMPLET + testé (23/23) — 🔴 preuve LIVE mesh différée (dépend d'un pair + déploiement HP)
 - **Dépend de** : accès distant NetBird + Caddy (`docs/decisions/2026-07-01-acces-distant-netbird.md`)
 - **Objectif** : depuis l'iPhone/Mac **hors du réseau local**, les tuiles du dashboard qui
   embarquent une brique en iframe (Studio, Restaurant, Mail, Mémoire, Peertube, Voix, Synopsis,
@@ -118,3 +118,39 @@ chemin, les SPA gardent leurs assets à la racine de leur port.)*
 Depuis un pair mesh (hors LAN) : dashboard HTTPS + **≥ 10 briques embarquées s'affichent** dans
 leur iframe (hors Forge/IDE dev, documentés comme différés), voix incluse (WS). Accès LAN du Mac
 inchangé. Le tout committé + le registre de décision à jour.
+
+---
+
+## Réalisation (2026-07-01)
+
+### Fait (code + tests, prouvé ICI)
+1. **Cœur — URLs relatives à l'hôte** ✅ `core/urls_ui.py` refactoré : table `BRIQUES_UI`
+   `{NOM: (port, chemin)}` + `url_brique(nom, scheme, host)` (surcharge env `<NOM>_UI_URL`
+   sinon `{scheme}://{hôte-sans-port}:{port}{chemin}`). `core/routers/dashboard.py` lit
+   `X-Forwarded-Proto` (défaut = scheme requête) + `Host` et bâtit chaque `__*_UI_URL__`.
+   `core/Dockerfile` : uvicorn `--proxy-headers --forwarded-allow-ips *`.
+   **Tests** `core/test_dashboard.py` : LAN (`Host=192.168.1.89:5100` → `http://192.168.1.89:<port>`),
+   mesh (`Host=100.124.248.226` + `XFP=https` → `https://100.124.248.226:<port>`, zéro `http://`),
+   localhost, surcharge env, clé Studio (+ `core/test_urls_ui.py` : unités du constructeur —
+   strip du port, IPv6, hôte vide, `DEV_IDE_URL`). **23/23 verts.**
+2. **Caddy (mesh) — sites par port** ✅ `outils/mesh-https/Caddyfile.briques` (snippet
+   `(brique_mesh)` + un `import` par port), inclus depuis `Caddyfile`, monté par le compose.
+   **`caddy validate` = « Valid configuration ».**
+3. **Framing/CORS** ✅ audit : **aucune brique** ne pose `X-Frame-Options` / CSP
+   `frame-ancestors` → framing autorisé par défaut. CORS n'est pas le bloqueur des iframes
+   (chaque SPA est servie *same-origin* sur son port ; la Mémoire proxifie `/api/v1` same-origin).
+   **Seul point d'attention** = la console **Gateway/LiteLLM** (image tierce) susceptible d'envoyer
+   `X-Frame-Options` → peut rester « Ouvrir dans un onglet » (à vérifier LIVE).
+
+### Déploiement requis avant la preuve LIVE (sur le HP / la VM mesh)
+- **Retirer** les surcharges `<NOM>_UI_URL=192.168.1.89:…` côté HP (sinon la construction
+  relative est court-circuitée et le mesh reste cassé). Le repo n'en fige plus aucune.
+- **Publier les briques liées à l'IP LAN** (`ports: ["192.168.1.89:<port>:<port>"]`, pas
+  `0.0.0.0`) pour que Caddy puisse tenir `100.124.248.226:<port>` sur le **même** port sans
+  conflit de bind. LAN → `192.168.1.89:<port>` (brique) ; mesh → `100.124.248.226:<port>` (Caddy).
+- `cd outils/mesh-https && docker compose up -d` (recharge Caddy avec les nouveaux sites).
+
+### Reste (différé)
+- **Preuve LIVE** bout-en-bout depuis l'iPhone/Mac réel sur le mesh (≥ 10 iframes + voix WS),
+  LAN du Mac inchangé.
+- **Forge (SSO)** et **IDE dev** : sous-sprint dédié si besoin réel à distance.

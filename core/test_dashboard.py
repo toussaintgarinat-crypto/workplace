@@ -66,32 +66,62 @@ def test_urls_briques_injectees():
     html = client.get("/dashboard").text
     assert "__STUDIO_UI_URL__" not in html
     assert "__PERSONNAGES_UI_URL__" not in html
-    # Valeurs par défaut (usage perso) injectées dans les onclick des tuiles.
-    assert "localhost:6060/atelier" in html
-    assert "localhost:5900/atelier" in html
+
+
+# ── S128 — URLs d'iframe relatives à l'hôte de la requête (LAN + mesh) ─────────────
+def test_urls_iframe_suivent_l_hote_lan(monkeypatch):
+    """En LAN (Host = l'IP du HP), les iframes pointent sur CETTE IP, même port, en http.
+    Le port du dashboard (:5100) est retiré ; on rebranche sur le port de chaque brique."""
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
+    html = client.get("/dashboard", headers={"host": "192.168.1.89:5100"}).text
+    assert "http://192.168.1.89:6060/atelier" in html      # Studio
+    assert "http://192.168.1.89:5900/atelier" in html      # Personnages
+    assert "http://192.168.1.89:6010/" in html             # Restaurant
+
+
+def test_urls_iframe_suivent_le_mesh_https(monkeypatch):
+    """Depuis un pair du mesh (Host = IP mesh) derrière Caddy (X-Forwarded-Proto=https),
+    les iframes passent en HTTPS sur la MÊME IP mesh → plus de mixed content."""
+    monkeypatch.delenv("VOIX_UI_URL", raising=False)
+    html = client.get("/dashboard", headers={
+        "host": "100.124.248.226",
+        "x-forwarded-proto": "https",
+    }).text
+    assert "https://100.124.248.226:6060/atelier" in html  # Studio
+    assert "https://100.124.248.226:5985/" in html         # Voix (WebSocket)
+    assert "http://100.124.248.226" not in html            # aucune iframe en clair
+
+
+def test_urls_iframe_localhost_dev(monkeypatch):
+    """En dev local (Host = localhost:5100), on retrouve le comportement historique."""
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
+    html = client.get("/dashboard", headers={"host": "localhost:5100"}).text
+    assert "http://localhost:6060/atelier" in html
+    assert "http://localhost:5900/atelier" in html
 
 
 def test_url_studio_surchargeable_par_env(monkeypatch):
-    """L'URL du Studio est paramétrable (déploiement) et bien réinjectée."""
-    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "https://studio.exemple.test/atelier")
+    """Une surcharge env `<NOM>_UI_URL` (déploiement particulier / SSO) prime sur la
+    construction relative à l'hôte."""
+    monkeypatch.setenv("STUDIO_UI_URL", "https://studio.exemple.test/atelier")
     monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "")
-    html = client.get("/dashboard").text
+    html = client.get("/dashboard", headers={"host": "192.168.1.89:5100"}).text
     assert "https://studio.exemple.test/atelier" in html
 
 
 def test_cle_studio_injectee_dans_iframe(monkeypatch):
     """Avec un compte Studio (STUDIO_KEY), l'iframe transporte la clé en ?api_key=."""
-    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "http://localhost:6060/atelier")
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
     monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "cle-de-service-123")
-    html = client.get("/dashboard").text
+    html = client.get("/dashboard", headers={"host": "localhost:5100"}).text
     assert "http://localhost:6060/atelier?api_key=cle-de-service-123" in html
 
 
 def test_sans_cle_pas_dapi_key(monkeypatch):
     """Sans compte Studio, l'URL de l'iframe reste nue (aucune fuite ?api_key=)."""
-    monkeypatch.setattr(dashboard_router, "STUDIO_UI_URL", "http://localhost:6060/atelier")
+    monkeypatch.delenv("STUDIO_UI_URL", raising=False)
     monkeypatch.setattr(dashboard_router, "STUDIO_KEY", "")
-    html = client.get("/dashboard").text
+    html = client.get("/dashboard", headers={"host": "localhost:5100"}).text
     assert "api_key=" not in html
 
 

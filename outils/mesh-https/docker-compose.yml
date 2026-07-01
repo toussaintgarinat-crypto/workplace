@@ -13,6 +13,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.briques:/etc/caddy/Caddyfile.briques:ro   # S128 : sites HTTPS par brique
       - caddy_data:/data          # garde la CA interne + les certs stables entre redémarrages
       - caddy_config:/config
 volumes:

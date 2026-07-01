@@ -2,10 +2,10 @@
 
 Tableau de bord visuel du Cœur (HTML embarqué + injection des URLs d'iframes).
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from etat import registre
-from urls_ui import GENERATEUR_URL_PUBLIQUE, FORGE_UI_URL, STUDIO_UI_URL, PERSONNAGES_UI_URL, TRANSCRIPTION_UI_URL, RESTAURANT_UI_URL, MAIL_UI_URL, SYNOPSIS_UI_URL, VOIX_UI_URL, MEMOIRE_UI_URL, DEV_IDE_URL, GATEWAY_UI_URL, STUDIO_KEY
+from urls_ui import GENERATEUR_URL_PUBLIQUE, STUDIO_KEY, url_brique
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
@@ -2975,28 +2975,36 @@ router = APIRouter()
 
 
 @router.get("/dashboard", tags=["système"], response_class=HTMLResponse)
-async def dashboard():
+async def dashboard(request: Request):
     """Interface visuelle du registre de briques."""
-    # __FORGE_UI_URL__ / __STUDIO_UI_URL__ / __PERSONNAGES_UI_URL__ : injectés au service
-    # (pas figés dans le template) pour que les iframes (Forge, Hub Créations) pointent sur
-    # la bonne origine selon l'environnement.
+    # S128 — Les URLs des iframes (__*_UI_URL__) sont construites depuis le scheme + l'hôte
+    # de la REQUÊTE courante (pas figées dans le template ni sur une IP), pour que les mêmes
+    # tuiles s'affichent en LAN (http://192.168.1.89:5100), sur le mesh (https://100.x via
+    # Caddy) et en dev local. X-Forwarded-Proto prime derrière Caddy (le Cœur sert en HTTP
+    # interne). Une surcharge env `<NOM>_UI_URL` reste possible (repli / SSO Forge).
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("host", "localhost")
+
+    def u(nom):
+        return url_brique(nom, scheme, host)
+
     # Si un « compte Studio » (STUDIO_KEY) est configuré, on transporte la clé dans l'URL de
     # l'iframe (?api_key=) pour que le front Studio s'authentifie. Cockpit mono-opérateur :
     # la clé EST l'identité du propriétaire (même frontière de confiance que /dashboard).
-    studio_ui = STUDIO_UI_URL
+    studio_ui = u("STUDIO")
     if STUDIO_KEY:
         sep = "&" if "?" in studio_ui else "?"
         studio_ui = f"{studio_ui}{sep}api_key={STUDIO_KEY}"
     return HTMLResponse(content=DASHBOARD_HTML
-        .replace("__FORGE_UI_URL__", FORGE_UI_URL)
+        .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
-        .replace("__PERSONNAGES_UI_URL__", PERSONNAGES_UI_URL)
-        .replace("__TRANSCRIPTION_UI_URL__", TRANSCRIPTION_UI_URL)
-        .replace("__RESTAURANT_UI_URL__", RESTAURANT_UI_URL)
-        .replace("__MAIL_UI_URL__", MAIL_UI_URL)
-        .replace("__SYNOPSIS_UI_URL__", SYNOPSIS_UI_URL)
-        .replace("__VOIX_UI_URL__", VOIX_UI_URL)
-        .replace("__MEMOIRE_UI_URL__", MEMOIRE_UI_URL)
-        .replace("__DEV_IDE_URL__", DEV_IDE_URL)
-        .replace("__GENERATEUR_BUNDLES_URL__", f"{GENERATEUR_URL_PUBLIQUE}/bundles-studio")
-        .replace("__GATEWAY_UI_URL__", GATEWAY_UI_URL))
+        .replace("__PERSONNAGES_UI_URL__", u("PERSONNAGES"))
+        .replace("__TRANSCRIPTION_UI_URL__", u("TRANSCRIPTION"))
+        .replace("__RESTAURANT_UI_URL__", u("RESTAURANT"))
+        .replace("__MAIL_UI_URL__", u("MAIL"))
+        .replace("__SYNOPSIS_UI_URL__", u("SYNOPSIS"))
+        .replace("__VOIX_UI_URL__", u("VOIX"))
+        .replace("__MEMOIRE_UI_URL__", u("MEMOIRE"))
+        .replace("__DEV_IDE_URL__", u("DEV_IDE"))
+        .replace("__GENERATEUR_BUNDLES_URL__", u("GENERATEUR"))
+        .replace("__GATEWAY_UI_URL__", u("GATEWAY")))

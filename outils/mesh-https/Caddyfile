@@ -7,6 +7,11 @@
 #
 # Variante « zéro avertissement » (à activer quand un token DuckDNS est fourni) : voir
 # Caddyfile.duckdns (vrai certificat Let's Encrypt via challenge DNS-01).
+#
+# S128 — Terminaison HTTPS des BRIQUES EMBARQUÉES (un site par port), pour que les tuiles
+# du dashboard s'affichent en iframe depuis un pair du mesh. Détail + contrainte de bind :
+import Caddyfile.briques
+
 https://100.124.248.226 {
     tls internal
     # Sert le certificat racine de Caddy pour l'installer sur l'iPhone (→ zéro
