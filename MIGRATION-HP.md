@@ -301,6 +301,14 @@ curl -s -w '\n[%{http_code}]\n' localhost:5700/agents -H "X-Forge-User-Token: Be
   401 (jamais 500 silencieux) si le JWKS est joignable ; un JWKS injoignable côté agenda
   reste un 500 **pré-existant** (n'attrape que `JWTError`) — non régressé par S120/S121.
 - **Port 5950 images/dev en conflit** : connu ; images a migré, vérifier le mapping.
+- **`workplace_dev_ide` boucle EACCES** (`mkdir /home/coder/.config/code-server`) : le
+  volume nommé `dev_dev_ide_config` est créé par Docker avec `root:root`. code-server
+  tourne en UID 1000 (`coder`) et ne peut pas y écrire. Fix one-shot après le premier
+  `docker compose up` de la brique `dev` :
+  ```bash
+  sudo chown 1000:1000 /var/lib/docker/volumes/dev_dev_ide_config/_data
+  cd ~/workplace/briques/dev && docker compose up -d --force-recreate code-server
+  ```
 
 # 10. Après les preuves
 
