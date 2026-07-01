@@ -1,0 +1,47 @@
+# Bouton « réveille le HP » — À DÉPLOYER SUR LE RASPBERRY PI (pas sur le HP).
+#
+# Réutilise TELLE QUELLE la brique calcul : son endpoint POST /noeuds/{id}/reveiller
+# envoie le magic packet Wake-on-LAN. Le Pi (allumé H24, membre du mesh NetBird) devient
+# le bouton d'allumage joignable depuis la 4G :  4G → mesh → Pi:5990 → WoL → HP démarre.
+#
+# `network_mode: host` est INDISPENSABLE : depuis le réseau bridge Docker, le broadcast
+# WoL n'atteint PAS le LAN physique. En host, le conteneur émet sur le vrai LAN ET écoute
+# sur :5990. (C'est pourquoi ce fichier N'a PAS de section `ports:` — incompatible avec host.)
+#
+# Lancement sur le Pi :
+#   cd briques/calcul && docker compose -f docker-compose.pi.yml up -d --build
+#
+# Cf. GUIDE-mesh-netbird.md (partie C).
+services:
+  reveil-hp:
+    build: .
+    container_name: reveil_hp
+    image: workplace/calcul:pi
+    network_mode: host
+    env_file:
+      # .env du Pi (à créer à côté de ce fichier). Y poser REVEIL_NOEUDS / REVEIL_KEY.
+      - path: .env.pi
+        required: false
+    environment:
+      # La brique lit son parc dans CALCUL_NOEUDS ; on l'alimente depuis REVEIL_NOEUDS
+      # (défini dans .env.pi). Exemple de valeur (une seule ligne) — le HP PHYSIQUE :
+      #   REVEIL_NOEUDS=[{"id":"hp","nom":"HP 800 G4 (Proxmox)","endpoint":"http://<IP_MESH_VM>:5100","sondes":["/health"],"mac_wol":"<MAC_PHYSIQUE_HP>","broadcast_wol":"192.168.1.255","methode_reveil":["wol"],"reveil_timeout_s":240,"intervalle_sonde_s":5}]
+      # Points de vigilance :
+      #  • `mac_wol` = MAC de la VRAIE carte réseau du HP (Intel), PAS celle de la VM
+      #    Proxmox (bc:24:11:…). Récupère-la sur l'hôte Proxmox (`ip link`) ou l'étiquette.
+      #  • `endpoint` + `sondes:["/health"]` : on réveille un SERVEUR, pas un LLM ; la sonde
+      #    vise la santé du Cœur via l'IP MESH de la VM → elle ne passe au vert qu'une fois
+      #    le HP démarré ET Proxmox+VM+stack Docker remontés.
+      #  • `broadcast_wol` = broadcast du LAN (ex. 192.168.1.255) pour un WoL dirigé fiable.
+      #  • `reveil_timeout_s:240` = laisse le temps au boot Proxmox + VM + Docker (2-4 min).
+      - CALCUL_NOEUDS=${REVEIL_NOEUDS:-}
+      # Protège le bouton (multi-usage) : pose une clé, le client devra l'envoyer en X-API-Key.
+      - API_KEYS=${REVEIL_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5990/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
