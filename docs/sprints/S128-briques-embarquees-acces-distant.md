@@ -1,7 +1,7 @@
 # S128 — Rendre les briques embarquées accessibles à distance (mesh) sans casser le LAN
 
 - **Date de préparation** : 2026-07-01
-- **Statut** : ✅ CODE-COMPLET + testé (23/23) — 🔴 preuve LIVE mesh différée (dépend d'un pair + déploiement HP)
+- **Statut** : ✅ LIVRÉ + DÉPLOYÉ HP + PROUVÉ LIVE (11/11 briques HTTPS sur le mesh, LAN non régressé) — reste la vérif visuelle sur l'iPhone réel
 - **Dépend de** : accès distant NetBird + Caddy (`docs/decisions/2026-07-01-acces-distant-netbird.md`)
 - **Objectif** : depuis l'iPhone/Mac **hors du réseau local**, les tuiles du dashboard qui
   embarquent une brique en iframe (Studio, Restaurant, Mail, Mémoire, Peertube, Voix, Synopsis,
@@ -155,7 +155,32 @@ inchangé. Le tout committé + le registre de décision à jour.
   **ajouté** `MESH_HOST=100.124.248.226`. `GENERATEUR_URL_PUBLIQUE` (liens nouvel onglet) gardé.
 - Rebuild du **seul** Cœur (`cd core && docker compose up -d --build`). Briques non touchées.
 - `cd outils/mesh-https && docker compose up -d` (Caddy recharge les 11 sites décalés).
-- **Preuve LIVE** (depuis le HP, côté mesh) : `curl -k https://100.124.248.226:1<port>/… → 200`.
+- **Preuve LIVE** (2026-07-01, depuis le HP sur l'IP mesh) :
+
+| Brique | Port mesh | Chemin | Code |
+|---|---|---|---|
+| Studio | 16060 | /atelier | **200** |
+| Personnages | 15900 | /atelier | **200** |
+| Transcription | 15980 | /atelier | **200** |
+| Restaurant | 16010 | / | **200** |
+| Mail | 16030 | / | **200** |
+| Synopsis | 16090 | / | **200** |
+| Voix (WS) | 15985 | / | **200** |
+| Mémoire | 15600 | /memory | **200** |
+| Générateur | 15400 | /bundles-studio | **200** |
+| Gateway | 14001 | /ui | **200** (aucun `X-Frame-Options` → framable) |
+| PeerTube | 19000 | / | **200** |
+
+  Le dashboard mesh (`https://100.124.248.226/dashboard`) émet bien les URLs d'iframe sur ces
+  ports décalés ; **non-régression LAN** vérifiée : le dashboard via `http://192.168.1.89:5100`
+  émet toujours les **ports réels** (6060, 5600, …), pas les décalés. Sauvegardes des configs
+  modifiées sur le HP : `core/docker-compose.override.yml.bak.s128`, `.env.bak.s128`.
+
+### Reste
+- **Vérif visuelle iPhone réel** : ouvrir `https://100.124.248.226/dashboard` (CA mesh déjà
+  installée) et cliquer les tuiles → constater le rendu des iframes.
+- **Forge (SSO)** et **IDE dev** : `url_brique` émet leurs URLs décalées (13000 / 18744) mais
+  **aucun site Caddy** ne les sert (différés) → tuiles inertes à distance, par conception.
 
 ### Reste (différé)
 - **Preuve LIVE** bout-en-bout depuis l'iPhone/Mac réel sur le mesh (≥ 10 iframes + voix WS),
