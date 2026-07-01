@@ -181,6 +181,8 @@ inchangé. Le tout committé + le registre de décision à jour.
   installée) et cliquer les tuiles → constater le rendu des iframes.
 - **Forge (SSO)** et **IDE dev** : `url_brique` émet leurs URLs décalées (13000 / 18744) mais
   **aucun site Caddy** ne les sert (différés) → tuiles inertes à distance, par conception.
+  Sprints préparés : **S129** (IDE dev — effort faible, `docs/sprints/S129-ide-dev-acces-distant.md`)
+  et **S130** (Forge SSO — effort élevé, `docs/sprints/S130-forge-sso-acces-distant.md`).
 
 ### Reste (différé)
 - **Preuve LIVE** bout-en-bout depuis l'iPhone/Mac réel sur le mesh (≥ 10 iframes + voix WS),
