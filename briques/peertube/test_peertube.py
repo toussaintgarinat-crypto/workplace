@@ -12,6 +12,9 @@ def client():
 @respx.mock
 @pytest.mark.asyncio
 async def test_lister_videos(client):
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
     respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
         200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
     ))
@@ -26,6 +29,9 @@ async def test_lister_videos(client):
 @respx.mock
 @pytest.mark.asyncio
 async def test_info_video(client):
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
     respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
         200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
     ))
@@ -39,6 +45,9 @@ async def test_info_video(client):
 @respx.mock
 @pytest.mark.asyncio
 async def test_uploader_video(client):
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
     respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
         200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
     ))
@@ -52,6 +61,9 @@ async def test_uploader_video(client):
 @respx.mock
 @pytest.mark.asyncio
 async def test_creer_live(client):
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
     respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
         200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
     ))

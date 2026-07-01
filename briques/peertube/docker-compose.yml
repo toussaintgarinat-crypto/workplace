@@ -1,6 +1,6 @@
 services:
   peertube:
-    image: chocobozzz/peertube:production-bookworm
+    image: chocobozzz/peertube:v7.2.2-bookworm
     container_name: workplace_peertube
     ports:
       - "9000:9000"
@@ -16,7 +16,7 @@ services:
       - PEERTUBE_WEBSERVER_HOSTNAME=192.168.1.89
       - PEERTUBE_WEBSERVER_PORT=9000
       - PEERTUBE_WEBSERVER_HTTPS=false
-      - PEERTUBE_SECRET=${PEERTUBE_SECRET:-changeme_en_production}
+      - PEERTUBE_SECRET=${PEERTUBE_SECRET:-changeme_min_32_chars_PLEASE_SET}
       - PEERTUBE_SMTP_HOSTNAME=
       - PT_INITIAL_ROOT_PASSWORD=${PEERTUBE_ADMIN_PASSWORD:-workplace2026}
     depends_on:
