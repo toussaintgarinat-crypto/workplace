@@ -20,10 +20,12 @@ la brique reste ouverte.
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 
 import gateway_admin as gateway_admin_mod
 import noeud as noeud_mod
@@ -97,6 +99,17 @@ def _noeud(nid: str) -> noeud_mod.Noeud:
     if not n:
         raise HTTPException(404, f"Nœud inconnu : {nid!r}")
     return n
+
+
+_BOOTSTRAP_PATH = Path(__file__).parent / "bootstrap.sh"
+
+
+@app.get("/bootstrap.sh", tags=["système"], response_class=PlainTextResponse)
+def servir_bootstrap():
+    """Sert le script d'auto-inscription du muscle. Sans auth : la clé est demandée à l'exécution."""
+    if not _BOOTSTRAP_PATH.exists():
+        raise HTTPException(404, "bootstrap.sh introuvable sur le serveur.")
+    return PlainTextResponse(_BOOTSTRAP_PATH.read_text(), media_type="text/x-sh")
 
 
 @app.get("/sante", tags=["système"])
