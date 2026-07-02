@@ -402,6 +402,19 @@ OUTILS: list[dict] = [
             "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
         }, ["serie_id"])}},
     {"type": "function", "function": {
+        "name": "personnages_fiches_lister",
+        "description": "Liste les personnages holistiques ENREGISTRÉS dans l'atelier (brique 5900). Renvoie id, nom, catégorie et archétype de chaque fiche. Lecture seule (aucune confirmation). Pour « mes personnages créés », « liste mes fiches », « quels personnages j'ai enregistrés ».",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "personnage_importer_serie",
+        "description": "Importe un personnage DÉJÀ ENREGISTRÉ dans l'atelier holistique vers une série du Studio. Récupère fiche_id via personnages_fiches_lister et serie_id via studio_series_lister. ACTION : confirme=true requis après accord.",
+        "parameters": _p({
+            "fiche_id": {"type": "string", "description": "Id de la fiche holistique (via personnages_fiches_lister)."},
+            "serie_id": {"type": "string", "description": "Id de la série cible (via studio_series_lister)."},
+            "nom_scene": {"type": "string", "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."},
+            "confirme": {"type": "boolean"},
+        }, ["fiche_id", "serie_id"])}},
+    {"type": "function", "function": {
         "name": "studio_serie_creer",
         "description": "Crée une nouvelle série audio dans le Studio. ACTION : confirme=true requis après accord.",
         "parameters": _p({

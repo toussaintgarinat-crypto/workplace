@@ -350,6 +350,35 @@ async def _personnage_holistique(client: httpx.AsyncClient, registre, args: dict
     return json.dumps(resume, ensure_ascii=False)
 
 
+async def _personnages_fiches_lister(client: httpx.AsyncClient, registre) -> str:
+    """Liste les fiches holistiques enregistrées (GET /fiches)."""
+    data = await _personnages_appel(client, registre, "GET", "/fiches", timeout=15, brut=True)
+    if not isinstance(data, list):
+        return json.dumps(data if isinstance(data, dict)
+                          else {"ok": False, "message": "Réponse inattendue de la brique personnages."},
+                          ensure_ascii=False)
+    resume = [{"id": f.get("id"), "nom": f.get("nom"), "categorie": f.get("categorie"),
+               "archetype": (f.get("portrait") or {}).get("archetype")} for f in data]
+    return json.dumps({"ok": True, "fiches": resume, "total": len(resume)}, ensure_ascii=False)
+
+
+async def _personnage_importer_serie(client: httpx.AsyncClient, registre, args: dict) -> str:
+    """Importe une fiche holistique existante dans une série du Studio."""
+    fiche_id = (args.get("fiche_id") or "").strip()
+    serie_id = (args.get("serie_id") or "").strip()
+    if not fiche_id or not serie_id:
+        return json.dumps({"ok": False, "message": "fiche_id et serie_id sont requis."}, ensure_ascii=False)
+    if not args.get("confirme"):
+        return _confirmation("importer le personnage dans la série", f"fiche {fiche_id} → série {serie_id}")
+    nom_scene = (args.get("nom_scene") or "").strip() or None
+    charge = {"fiche_id": fiche_id}
+    if nom_scene:
+        charge["nom"] = nom_scene
+    return await _studio_appel(client, registre, "POST",
+                               f"/series/{serie_id}/personnages/importer-fiche",
+                               charge=charge, timeout=30)
+
+
 async def _transcription_appel(client: httpx.AsyncClient, registre, methode: str, chemin: str,
                                charge: dict | None = None, params: dict | None = None,
                                timeout: float = 60, brut: bool = False):
