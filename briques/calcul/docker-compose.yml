@@ -20,6 +20,9 @@ services:
       # Fichier du parc persisté (nœuds inscrits dynamiquement via API). Défaut /data/noeuds.json.
       - CALCUL_PARC_FILE=${CALCUL_PARC_FILE:-/data/noeuds.json}
       # Clés API acceptées par CETTE brique (séparées par virgule). VIDE = mode ouvert (dev).
+      # C'est la MUSCLE_KEY côté bootstrap : la commande d'auto-inscription l'envoie via
+      # X-API-Key. Exemple : CALCUL_API_KEYS=ma-cle-secrete dans le .env racine.
+      - API_KEYS=${CALCUL_API_KEYS:-}
     volumes:
       - calcul_data:/data
     # Wake-on-LAN par broadcast : depuis le réseau bridge Docker, le paquet n'atteint PAS
