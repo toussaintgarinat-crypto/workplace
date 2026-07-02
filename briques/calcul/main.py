@@ -18,8 +18,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import noeud as noeud_mod
+import persistance as persistance_mod
 
-app = FastAPI(title="Calcul — réveil & santé des nœuds de calcul", version="0.1.0")
+app = FastAPI(title="Calcul — réveil & santé des nœuds de calcul", version="0.2.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -29,8 +30,10 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
 
-# Parc chargé une fois au démarrage depuis CALCUL_NOEUDS. Rechargeable via /noeuds/recharger.
-PARC: dict = noeud_mod.charger_noeuds()
+# Parc chargé au démarrage : fusion CALCUL_NOEUDS (env) + CALCUL_PARC_FILE (fichier persisté).
+# Le fichier a la priorité pour un même id → les nœuds inscrits dynamiquement via API
+# survivent aux redémarrages sans que l'opérateur ait à modifier l'env.
+PARC: dict = persistance_mod.charger_parc()
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),
@@ -54,7 +57,7 @@ def _noeud(nid: str) -> noeud_mod.Noeud:
 def sante():
     """État de la brique : nombre de nœuds déclarés + leurs états connus (sans re-sonder)."""
     return {
-        "ok": True, "service": "calcul", "version": "0.1.0",
+        "ok": True, "service": "calcul", "version": "0.2.0",
         "noeuds": len(PARC),
         "etats": {nid: n.etat for nid, n in PARC.items()},
     }
@@ -108,7 +111,7 @@ async def sonder_tous(_cle: str = Depends(cle_api)):
 
 @app.post("/noeuds/recharger", tags=["système"])
 def recharger(_cle: str = Depends(cle_api)):
-    """Recharge le parc depuis CALCUL_NOEUDS (après changement d'env / redéploiement)."""
+    """Recharge le parc depuis CALCUL_NOEUDS + fichier persisté (vue fusionnée complète)."""
     global PARC
-    PARC = noeud_mod.charger_noeuds()
+    PARC = persistance_mod.charger_parc()
     return {"ok": True, "noeuds": len(PARC)}
