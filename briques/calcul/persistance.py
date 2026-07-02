@@ -105,7 +105,9 @@ def sauver_noeud(n: noeud_mod.Noeud) -> None:
     Si le fichier n'existe pas, il est créé (y compris les répertoires parents).
     """
     chemin = _chemin_parc()
-    items = [it for it in _lire_items_bruts(chemin) if str(it.get("id") or "") != n.id]
+    # Filtre en gardant les dicts valides, ignore les éléments parasites non-dict
+    items = [it for it in _lire_items_bruts(chemin)
+             if isinstance(it, dict) and str(it.get("id") or "") != n.id]
     items.append(n.to_dict())
     _ecrire_atomique(chemin, items)
 
@@ -118,7 +120,9 @@ def retirer_noeud(nid: str) -> bool:
     chemin = _chemin_parc()
     items = _lire_items_bruts(chemin)
     avant = len(items)
-    items = [it for it in items if str(it.get("id") or "") != nid]
+    # Filtre en gardant les dicts valides, ignore les éléments parasites non-dict
+    items = [it for it in items
+             if isinstance(it, dict) and str(it.get("id") or "") != nid]
     if len(items) == avant:
         return False
     _ecrire_atomique(chemin, items)
