@@ -61,5 +61,9 @@ https://100.124.248.226:19000 {
 	import brique_mesh 9000
 }
 
-# Différés S128 (auth/SSO propres) : Forge (3000, SSO Keycloak) et IDE dev (8744,
-# code-server) — cf. docs/sprints/S128-briques-embarquees-acces-distant.md.
+# IDE dev (code-server) — WebSocket (terminal + éditeur) — 8744 -> 18744
+https://100.124.248.226:18744 {
+	import brique_mesh 8744
+}
+
+# Différé S128 (SSO propre) : Forge (3000, Keycloak) — cf. S130.
