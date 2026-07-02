@@ -576,6 +576,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             <span class="asst-projet-tag" id="asst-conv-projet" style="display:none"></span>
           </div>
           <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn" id="btn-ameliorer" onclick="taperAction('Je veux améliorer la solution.')" title="Ouvrir le workflow de développement guidé — planifier, coder, valider, pousser en prod.">🛠️ Améliorer</button>
             <button class="btn ghost" id="btn-rappels" onclick="basculerRappels()" title="Rappels">🔔<span id="rappels-pastille" class="pastille" style="display:none">0</span></button>
             <button class="btn ghost" id="btn-voix" onclick="basculerLectureVocale()" title="Lire les réponses à voix haute">🔊 Voix : off</button>
             <button class="btn ghost" id="btn-cerveau" onclick="toggleCerveau()">⚙ Cerveau</button>
