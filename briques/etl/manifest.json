@@ -15,5 +15,39 @@
     "liste_documents",
     "lecture_document"
   ],
-  "besoin": []
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "etl_ingerer_url",
+      "description": "Ingère un document depuis une URL distante (PDF en ligne, page web, article). Le texte est extrait et indexé. Utilise cette capacité quand l'utilisateur donne un lien vers un document à ajouter.",
+      "methode": "POST",
+      "chemin": "/ingerer/url",
+      "params": {
+        "url": {"type": "string", "description": "URL du document à ingérer (PDF, HTML…).", "requis": true},
+        "dossier": {"type": "string", "description": "Dossier/projet dans lequel classer le document (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "etl_documents_lister",
+      "description": "Liste les documents ingérés (texte extrait disponible). Filtrable par dossier ou statut. Utilise avant de lire ou classer un document.",
+      "methode": "GET",
+      "chemin": "/documents",
+      "params": {
+        "dossier": {"type": "string", "description": "Filtrer par dossier/projet (optionnel)."},
+        "statut": {"type": "string", "description": "Filtrer par statut : 'ok', 'erreur' (optionnel)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "etl_supprimer_document",
+      "description": "Supprime définitivement un document ingéré (par son id obtenu via etl_documents_lister). ACTION irréversible.",
+      "methode": "DELETE",
+      "chemin": "/documents/{doc_id}",
+      "params": {
+        "doc_id": {"type": "string", "description": "Identifiant du document (obtenu via etl_documents_lister).", "requis": true}
+      },
+      "action": true
+    }
+  ]
 }
