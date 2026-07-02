@@ -10,11 +10,17 @@ décider s'il met le modèle local en tête de sa cascade (cf. roadmap S58b).
 Souveraineté & honnêteté : aucun nœud n'est inventé ; un nœud non sondé est « inconnu »,
 un réveil qui échoue le dit. La config des nœuds vient de l'env ``CALCUL_NOEUDS`` (JSON),
 aucun secret en dur (motif des fournisseurs d'images / COMFY_URL).
+
+Sécurité : les endpoints d'inscription/suppression (``POST/DELETE /noeuds``) exigent une
+clé API valide. Posez une clé dans ``API_KEYS`` (env de la brique) ; la commande
+d'auto-inscription du bootstrap l'envoie via ``X-API-Key`` (variable ``MUSCLE_KEY``
+côté client — voir docker-compose.yml). En mode développement (``API_KEYS`` vide),
+la brique reste ouverte.
 """
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import noeud as noeud_mod
@@ -67,6 +73,46 @@ def sante():
 def lister_noeuds(_cle: str = Depends(cle_api)):
     """Liste les nœuds déclarés avec leur dernier état connu (n'effectue PAS de sonde)."""
     return {"noeuds": [n.vue_publique() for n in PARC.values()]}
+
+
+@app.post("/noeuds", tags=["nœuds"])
+async def inscrire_noeud(
+    descripteur: Dict[str, Any] = Body(...),
+    _cle: str = Depends(cle_api),
+):
+    """Inscrit (ou réinscrit) un nœud de calcul : valide, sonde LIVE, persiste, renvoie la vue publique.
+
+    Honnêteté : le nœud est refusé s'il ne répond pas à la sonde au moment de l'inscription.
+    Idempotent : réinscrire un id existant le met à jour sans créer de doublon (étape 4 S131).
+    Corps attendu : même format qu'un item ``CALCUL_NOEUDS`` (``id`` + ``endpoint`` obligatoires).
+    """
+    try:
+        n = noeud_mod.Noeud.from_dict(descripteur)
+    except ValueError as exc:
+        raise HTTPException(422, f"Descripteur invalide : {exc}")
+
+    ok = await noeud_mod.sonder(n)
+    if not ok:
+        raise HTTPException(
+            422,
+            f"Nœud refusé : la sonde n'a obtenu aucune réponse de {n.endpoint!r} "
+            f"(état : {n.etat!r}). Vérifiez que le service LLM tourne et est joignable "
+            "depuis cette brique avant de l'inscrire.",
+        )
+
+    PARC[n.id] = n
+    persistance_mod.sauver_noeud(n)
+    return n.vue_publique()
+
+
+@app.delete("/noeuds/{nid}", tags=["nœuds"])
+def retirer_noeud_api(nid: str, _cle: str = Depends(cle_api)):
+    """Retire un nœud du parc actif et du fichier persisté. 404 si inconnu."""
+    if nid not in PARC:
+        raise HTTPException(404, f"Nœud inconnu : {nid!r}")
+    del PARC[nid]
+    persistance_mod.retirer_noeud(nid)
+    return {"ok": True, "id": nid, "retire": True}
 
 
 @app.get("/noeuds/{nid}/pret", tags=["nœuds"])
