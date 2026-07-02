@@ -66,4 +66,8 @@ https://100.124.248.226:18744 {
 	import brique_mesh 8744
 }
 
-# Différé S128 (SSO propre) : Forge (3000, Keycloak) — cf. S130.
+# Forge (SPA + Keycloak same-origin) — 3000 → 13000 (S130)
+# nginx interne proxifie /realms/* et /resources/* vers Keycloak (:8081).
+https://100.124.248.226:13000 {
+	import brique_mesh 3000
+}
