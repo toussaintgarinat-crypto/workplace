@@ -14,5 +14,42 @@
     "stockage_enregistrements",
     "multi_tenant"
   ],
-  "besoin": []
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "donnees_modifier",
+      "description": "Modifie un enregistrement existant dans le magasin de données. Utilise consulter_donnees pour trouver l'id d'enregistrement.",
+      "methode": "PUT",
+      "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
+      "params": {
+        "app_id": {"type": "string", "description": "Identifiant de l'application (ex: 'agenda', 'crm').", "requis": true},
+        "entite_id": {"type": "string", "description": "Type d'entité (ex: 'contacts', 'taches').", "requis": true},
+        "rec_id": {"type": "string", "description": "Identifiant de l'enregistrement à modifier.", "requis": true},
+        "donnees": {"type": "object", "description": "Nouvelles valeurs (remplace les champs fournis).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "donnees_supprimer",
+      "description": "Supprime un enregistrement du magasin de données. ACTION irréversible.",
+      "methode": "DELETE",
+      "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
+      "params": {
+        "app_id": {"type": "string", "description": "Identifiant de l'application.", "requis": true},
+        "entite_id": {"type": "string", "description": "Type d'entité.", "requis": true},
+        "rec_id": {"type": "string", "description": "Identifiant de l'enregistrement à supprimer.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "donnees_resume_app",
+      "description": "Résumé d'une application : liste les entités et leur nombre d'enregistrements. Utile pour avoir une vue d'ensemble du contenu d'une app.",
+      "methode": "GET",
+      "chemin": "/apps/{app_id}/resume",
+      "params": {
+        "app_id": {"type": "string", "description": "Identifiant de l'application.", "requis": true}
+      },
+      "action": false
+    }
+  ]
 }
