@@ -21,6 +21,7 @@
     {
       "nom": "memoire_rappeler",
       "description": "Cherche dans la mémoire de la solution (recherche hybride). 'espace' = 'solution' (usine, entreprises, projets) ou 'perso' (préférences/faits sur l'utilisateur). Lecture seule.",
+      "socle": true,
       "methode": "GET",
       "chemin": "/rappeler",
       "params": {
@@ -55,6 +56,7 @@
     {
       "nom": "memoire_retenir",
       "description": "Mémorise un fait durable. 'espace' = 'solution' (par défaut) ou 'perso' (faits sur l'utilisateur). ACTION : effet de bord, confirmer avant d'écrire.",
+      "socle": true,
       "methode": "POST",
       "chemin": "/retenir",
       "params": {
