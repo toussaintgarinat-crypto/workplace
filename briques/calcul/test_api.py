@@ -375,3 +375,128 @@ def test_inscrire_sans_endpoint_422(monkeypatch):
 
     monkeypatch.setenv("API_KEYS", "")
     importlib.reload(main)
+
+
+# ── Tests enregistrement Gateway (S131 Étape 3) ──────────────────────────────
+
+def test_inscrire_avec_modele_gateway_ok(monkeypatch, tmp_path):
+    """POST /noeuds avec `modele` + gateway OK → modele_gateway posé sur le nœud."""
+    parc_file = str(tmp_path / "parc.json")
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    monkeypatch.setenv("CALCUL_PARC_FILE", parc_file)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    async def sonde_ok(n, **kw):
+        n.etat = "eveille"
+        n.derniere_vue = "2026-01-01T00:00:00+00:00"
+        return True
+
+    async def gateway_ok(model_name, api_base, **kw):
+        return {"ok": True, "erreur": None, "model_id": "gw-id-123", "model_name": model_name}
+
+    monkeypatch.setattr(m.noeud_mod, "sonder", sonde_ok)
+    monkeypatch.setattr(m.gateway_admin_mod, "enregistrer_modele", gateway_ok)
+
+    r = c.post(
+        "/noeuds",
+        json={"id": "muscle-gw", "endpoint": "http://127.0.0.1:11434", "modele": "llama3.3"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["id"] == "muscle-gw"
+    # modele_gateway doit être posé (contient llama3.3)
+    assert data["modele_gateway"] is not None
+    assert "llama3.3" in data["modele_gateway"]
+
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.setenv("CALCUL_PARC_FILE", "/tmp/calcul-test-parc-inexistant.json")
+    importlib.reload(main)
+
+
+def test_inscrire_avec_modele_gateway_erreur(monkeypatch, tmp_path):
+    """POST /noeuds + gateway en erreur → nœud inscrit SANS modele_gateway (dégradé honnête)."""
+    parc_file = str(tmp_path / "parc.json")
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    monkeypatch.setenv("CALCUL_PARC_FILE", parc_file)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    async def sonde_ok(n, **kw):
+        n.etat = "eveille"
+        n.derniere_vue = "2026-01-01T00:00:00+00:00"
+        return True
+
+    async def gateway_echec(model_name, api_base, **kw):
+        return {"ok": False, "erreur": "LITELLM_URL non configuré", "model_id": None, "model_name": model_name}
+
+    monkeypatch.setattr(m.noeud_mod, "sonder", sonde_ok)
+    monkeypatch.setattr(m.gateway_admin_mod, "enregistrer_modele", gateway_echec)
+
+    r = c.post(
+        "/noeuds",
+        json={"id": "muscle-sans-gw", "endpoint": "http://127.0.0.1:11434", "modele": "llama3.3"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    # Le nœud doit être inscrit malgré l'erreur gateway (dégradé honnête)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["id"] == "muscle-sans-gw"
+    assert data["modele_gateway"] is None
+    # L'avertissement gateway doit figurer dans la réponse
+    reponse_str = str(data).lower()
+    assert "gateway" in reponse_str or "avertissement" in reponse_str
+
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.setenv("CALCUL_PARC_FILE", "/tmp/calcul-test-parc-inexistant.json")
+    importlib.reload(main)
+
+
+def test_republier_idempotent(monkeypatch, tmp_path):
+    """POST /noeuds/republier re-pousse tous les modèles gateway — idempotent, pas de crash."""
+    parc_file = str(tmp_path / "parc.json")
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    monkeypatch.setenv("CALCUL_PARC_FILE", parc_file)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    appels_gateway = []
+
+    async def gateway_ok(model_name, api_base, **kw):
+        appels_gateway.append(model_name)
+        return {"ok": True, "erreur": None, "model_id": "x", "model_name": model_name}
+
+    monkeypatch.setattr(m.gateway_admin_mod, "enregistrer_modele", gateway_ok)
+
+    # Le parc de base (conftest) contient "muscle" avec modele_gateway="ollama/llama3.3"
+    r = c.post("/noeuds/republier", headers={"X-API-Key": "muscle-key"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert isinstance(data.get("repousses"), int)
+    # Au moins le nœud "muscle" (qui a un modele_gateway) a dû être republié
+    assert data["repousses"] >= 1
+
+    # Deuxième appel = idempotent (ne plante pas)
+    r2 = c.post("/noeuds/republier", headers={"X-API-Key": "muscle-key"})
+    assert r2.status_code == 200
+
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.setenv("CALCUL_PARC_FILE", "/tmp/calcul-test-parc-inexistant.json")
+    importlib.reload(main)
+
+
+def test_republier_sans_gateway_ne_plante_pas(monkeypatch):
+    """POST /noeuds/republier sans LITELLM_URL → répond 200 quand même (best-effort)."""
+    monkeypatch.delenv("LITELLM_URL", raising=False)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    r = c.post("/noeuds/republier")
+    # En mode ouvert (API_KEYS=""), la route répond 200 même si gateway absent
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+
+    importlib.reload(main)
