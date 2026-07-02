@@ -105,13 +105,6 @@ OUTILS: list[dict] = [
         "description": "Résume les enregistrements saisis dans une app (Données) : nombre par entité.",
         "parameters": _p({"app_id": {"type": "string"}}, ["app_id"])}},
     {"type": "function", "function": {
-        "name": "memoire_rappeler",
-        "description": "Cherche dans la mémoire. 'espace' = 'solution' (usine, entreprises, projets) ou 'perso' (préférences/faits sur l'utilisateur lui-même). Défaut : solution.",
-        "parameters": _p({
-            "requete": {"type": "string"},
-            "espace": {"type": "string", "enum": ["solution", "perso"]},
-        }, ["requete"])}},
-    {"type": "function", "function": {
         "name": "agenda_consulter",
         "description": "Liste les rendez-vous/événements de l'agenda personnel sur une période. 'debut' et 'fin' au format ISO 8601 (ex. 2026-06-06T00:00:00). Sans période, renvoie les prochains événements.",
         "parameters": _p({
@@ -121,37 +114,6 @@ OUTILS: list[dict] = [
     {"type": "function", "function": {
         "name": "agenda_lister",
         "description": "Liste les agendas (calendriers) accessibles : l'agenda perso et les agendas partagés, avec le rôle de l'utilisateur (owner/editor/viewer) et l'id de chacun. Utile avant d'inviter quelqu'un ou de voir les membres.",
-        "parameters": _p({}, [])}},
-    {"type": "function", "function": {
-        "name": "forge_capacites",
-        "description": "État et capacités de la brique Forge (agents IA, RAG, vectorisation) : ce que Forge sait faire et si son moteur est en ligne. À appeler pour répondre « que peut faire Forge ? » ou « est-ce que Forge tourne ? ». Lecture seule.",
-        "parameters": _p({}, [])}},
-    {"type": "function", "function": {
-        "name": "forge_rag_chercher",
-        "description": "Cherche dans les documents ingérés dans le RAG de Forge (recherche sémantique) et renvoie les passages pertinents. À utiliser pour « que dit le doc sur X ? » ou « cherche X dans Forge ». Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "q": {"type": "string", "description": "La question ou les termes à rechercher."},
-        }, ["q"])}},
-    {"type": "function", "function": {
-        "name": "forge_factures_lister",
-        "description": "Liste les devis et factures de Forge avec le chiffre d'affaires (encaissé, en attente). À utiliser pour « mes factures impayées », « mon CA », « liste mes devis ». Pour les impayés, utilise statut='envoyée'. Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "type": {"type": "string", "enum": ["facture", "devis"], "description": "Filtre par type (optionnel)."},
-            "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"], "description": "Filtre par statut (optionnel). 'envoyée' = impayé en attente."},
-        }, [])}},
-    {"type": "function", "function": {
-        "name": "forge_crm_lister",
-        "description": "Liste les prospects/clients du CRM de Forge avec le pipeline commercial (valeur estimée totale, ventilation par statut). À utiliser pour « mes prospects », « mon pipeline », « qui est en cours de négo ». Filtre 'statut' optionnel. Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "statut": {"type": "string", "description": "Filtre par statut (optionnel), ex. 'prospect', 'qualifié', 'gagné', 'perdu'."},
-        }, [])}},
-    {"type": "function", "function": {
-        "name": "forge_paiement_etat",
-        "description": "État du paiement en ligne Stripe : encaissement RÉEL (clé test/live configurée) ou SIMULÉ (mode mock), abonnement courant et historique des paiements. À utiliser pour « est-ce que les paiements marchent ? », « Stripe est-il configuré ? », « mes paiements ». Ne révèle jamais la clé. Lecture seule (aucune confirmation).",
-        "parameters": _p({}, [])}},
-    {"type": "function", "function": {
-        "name": "forge_relances_apercu",
-        "description": "Aperçu (dry-run) des relances de factures impayées qui SERAIENT envoyées (J+7/J+15/J+30), avec le montant total à recouvrer et les factures ignorées (sans email/échéance). N'envoie RIEN. À utiliser pour « qui dois-je relancer ? », « mes impayés à relancer ». Lecture seule (aucune confirmation).",
         "parameters": _p({}, [])}},
 
     # — ACTION (gardées par confirmation) —
@@ -198,15 +160,6 @@ OUTILS: list[dict] = [
             "donnees": {"type": "object", "description": "Champs de l'enregistrement."},
             "confirme": {"type": "boolean"},
         }, ["app_id", "entite", "donnees"])}},
-    {"type": "function", "function": {
-        "name": "memoire_retenir",
-        "description": "Mémorise un souvenir/fait/préférence. 'espace' = 'solution' (usine, entreprises) ou 'perso' (ce qui concerne l'utilisateur : ses préférences, habitudes, faits perso). Défaut : solution. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "contenu": {"type": "string"},
-            "titre": {"type": "string"},
-            "espace": {"type": "string", "enum": ["solution", "perso"]},
-            "confirme": {"type": "boolean"},
-        }, ["contenu"])}},
     {"type": "function", "function": {
         "name": "agenda_creer_evenement",
         "description": "Ajoute un rendez-vous/événement à l'agenda (effet immédiat, pas de confirmation). 'debut' et 'fin' au format ISO 8601 (utilise la date/heure courante fournie pour interpréter « demain », « lundi prochain »…). Si l'heure de fin n'est pas précisée, mets +1h.",
@@ -289,206 +242,6 @@ OUTILS: list[dict] = [
         "parameters": _p({
             "confirme": {"type": "boolean"},
         }, [])}},
-    {"type": "function", "function": {
-        "name": "forge_rag_ingerer",
-        "description": "Ingère un document dans la base RAG de Forge (vectorisation) pour pouvoir l'interroger ensuite. ACTION (écrit dans Forge) : confirme=true requis après accord.",
-        "parameters": _p({
-            "nom": {"type": "string", "description": "Nom/titre du document."},
-            "contenu": {"type": "string", "description": "Le texte du document à ingérer."},
-            "confirme": {"type": "boolean"},
-        }, ["nom", "contenu"])}},
-    {"type": "function", "function": {
-        "name": "forge_lancer_agent",
-        "description": "Lance un agent IA de Forge sur une tâche (il raisonne et peut utiliser des outils, via la Gateway). ACTION (exécution dans Forge) : confirme=true requis après accord.",
-        "parameters": _p({
-            "objectif": {"type": "string", "description": "Ce que l'agent doit accomplir."},
-            "contexte": {"type": "string", "description": "Contexte utile (optionnel)."},
-            "confirme": {"type": "boolean"},
-        }, ["objectif"])}},
-    {"type": "function", "function": {
-        "name": "forge_facture_creer",
-        "description": "Crée un devis ou une facture dans Forge (numérotation et calcul HT/TVA/TTC automatiques). ACTION (écrit dans Forge) : confirme=true requis après accord.",
-        "parameters": _p({
-            "client": {"type": "string", "description": "Nom du client."},
-            "lignes": {"type": "array", "description": "Lignes du document.", "items": {"type": "object", "properties": {
-                "description": {"type": "string"},
-                "quantite": {"type": "number"},
-                "prix_unitaire": {"type": "number"},
-                "tva": {"type": "number", "description": "Taux TVA en % (défaut 20)."},
-            }, "required": ["description", "prix_unitaire"]}},
-            "type": {"type": "string", "enum": ["facture", "devis"], "description": "Défaut : facture."},
-            "email": {"type": "string", "description": "Email du client (optionnel)."},
-            "tva_taux": {"type": "number", "description": "Taux TVA par défaut (%)."},
-            "notes": {"type": "string"},
-            "echeance": {"type": "string", "description": "Date d'échéance (ISO, optionnel)."},
-            "confirme": {"type": "boolean"},
-        }, ["client", "lignes"])}},
-    {"type": "function", "function": {
-        "name": "forge_facture_statut",
-        "description": "Change le statut d'une facture/devis : la passer 'payée' (encaissement → entre dans le CA), 'envoyée', 'annulée'. Récupère d'abord son id via forge_factures_lister. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "id": {"type": "string", "description": "Id du document (via forge_factures_lister)."},
-            "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"]},
-            "confirme": {"type": "boolean"},
-        }, ["id", "statut"])}},
-    {"type": "function", "function": {
-        "name": "forge_facture_transformer",
-        "description": "Transforme un devis accepté en facture (crée la facture, marque le devis transformé). Récupère d'abord l'id du devis via forge_factures_lister. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "id": {"type": "string", "description": "Id du devis à transformer."},
-            "confirme": {"type": "boolean"},
-        }, ["id"])}},
-    {"type": "function", "function": {
-        "name": "forge_crm_creer",
-        "description": "Ajoute un prospect/client dans le CRM de Forge. ACTION (écrit dans Forge) : confirme=true requis après accord.",
-        "parameters": _p({
-            "nom": {"type": "string", "description": "Nom du contact."},
-            "entreprise": {"type": "string"},
-            "email": {"type": "string"},
-            "telephone": {"type": "string"},
-            "statut": {"type": "string", "description": "Étape du pipeline (défaut 'prospect')."},
-            "valeur": {"type": "integer", "description": "Valeur estimée de l'affaire en euros."},
-            "notes": {"type": "string"},
-            "confirme": {"type": "boolean"},
-        }, ["nom"])}},
-    {"type": "function", "function": {
-        "name": "forge_crm_modifier",
-        "description": "Met à jour un prospect / le fait avancer dans le pipeline (changer le statut, ajuster la valeur, corriger les coordonnées). Récupère d'abord son id via forge_crm_lister. Ne passe que les champs à changer. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "id": {"type": "string", "description": "Id du prospect (via forge_crm_lister)."},
-            "statut": {"type": "string", "description": "Nouvelle étape (ex. 'qualifié', 'gagné', 'perdu')."},
-            "valeur": {"type": "integer", "description": "Valeur estimée (€)."},
-            "nom": {"type": "string"},
-            "entreprise": {"type": "string"},
-            "email": {"type": "string"},
-            "telephone": {"type": "string"},
-            "notes": {"type": "string"},
-            "confirme": {"type": "boolean"},
-        }, ["id"])}},
-    {"type": "function", "function": {
-        "name": "forge_paiement_lien",
-        "description": "Crée un lien de paiement Stripe pour un plan d'abonnement (starter/pro/enterprise), à envoyer au client pour qu'il paie en ligne. Si Stripe est configuré le lien est réel, sinon il est simulé (clairement marqué). ACTION (crée une session de paiement) : confirme=true requis après accord.",
-        "parameters": _p({
-            "plan": {"type": "string", "enum": ["starter", "pro", "enterprise"], "description": "Plan d'abonnement à facturer."},
-            "confirme": {"type": "boolean"},
-        }, ["plan"])}},
-    {"type": "function", "function": {
-        "name": "forge_relances_envoyer",
-        "description": "Lance l'envoi des relances dues pour les factures impayées (emails J+7/J+15/J+30, une seule fois par niveau et par facture). Vérifie d'abord avec forge_relances_apercu. ACTION (envoie des emails réels) : confirme=true requis après accord.",
-        "parameters": _p({"confirme": {"type": "boolean"}}, [])}},
-    {"type": "function", "function": {
-        "name": "forge_facture_envoyer",
-        "description": "Envoie une facture au client par email et la passe au statut 'envoyée' (démarre le compteur des relances). Récupère d'abord son id via forge_factures_lister. La facture doit avoir un email client. ACTION (envoie un email réel) : confirme=true requis après accord.",
-        "parameters": _p({
-            "id": {"type": "string", "description": "Id de la facture (via forge_factures_lister)."},
-            "confirme": {"type": "boolean"},
-        }, ["id"])}},
-
-    # — STUDIO (brique audio-séries 6060 ; lecture + production gardée) —
-    {"type": "function", "function": {
-        "name": "studio_series_lister",
-        "description": "Liste les séries audio du Studio (titre, langue, nb de chapitres/personnages/tomes). À utiliser pour « mes séries », « qu'est-ce qu'il y a dans le studio ». Lecture seule (aucune confirmation).",
-        "parameters": _p({}, [])}},
-    {"type": "function", "function": {
-        "name": "studio_serie_lire",
-        "description": "Détail d'une série du Studio : bible (univers, personnages, intrigue…), épisodes produits, réglages. Récupère d'abord l'id via studio_series_lister. Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-        }, ["serie_id"])}},
-    {"type": "function", "function": {
-        "name": "studio_personnages_lister",
-        "description": "Liste la distribution (personnages + voix figées) d'une série du Studio. Récupère l'id via studio_series_lister. Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-        }, ["serie_id"])}},
-    {"type": "function", "function": {
-        "name": "personnages_fiches_lister",
-        "description": "Liste les personnages holistiques ENREGISTRÉS dans l'atelier (brique 5900). Renvoie id, nom, catégorie et archétype de chaque fiche. Lecture seule (aucune confirmation). Pour « mes personnages créés », « liste mes fiches », « quels personnages j'ai enregistrés ».",
-        "parameters": _p({}, [])}},
-    {"type": "function", "function": {
-        "name": "personnage_importer_serie",
-        "description": "Importe un personnage DÉJÀ ENREGISTRÉ dans l'atelier holistique vers une série du Studio. Récupère fiche_id via personnages_fiches_lister et serie_id via studio_series_lister. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "fiche_id": {"type": "string", "description": "Id de la fiche holistique (via personnages_fiches_lister)."},
-            "serie_id": {"type": "string", "description": "Id de la série cible (via studio_series_lister)."},
-            "nom_scene": {"type": "string", "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."},
-            "confirme": {"type": "boolean"},
-        }, ["fiche_id", "serie_id"])}},
-    {"type": "function", "function": {
-        "name": "studio_serie_creer",
-        "description": "Crée une nouvelle série audio dans le Studio. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "titre": {"type": "string", "description": "Titre de la série."},
-            "idee": {"type": "string", "description": "Idée / genre de départ (optionnel)."},
-            "langue": {"type": "string", "description": "Langue de travail (ex. fr, en, es). Défaut fr."},
-            "public_cible": {"type": "string", "description": "Public visé (optionnel)."},
-            "confirme": {"type": "boolean"},
-        }, ["titre"])}},
-    {"type": "function", "function": {
-        "name": "studio_episode_produire",
-        "description": "Produit l'épisode SUIVANT d'une série (Scénariste + Script Doctor), à partir de la bible existante. Récupère l'id via studio_series_lister. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "confirme": {"type": "boolean"},
-        }, ["serie_id"])}},
-    {"type": "function", "function": {
-        "name": "studio_express",
-        "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. Idéal pour « fais-moi un épisode de telle série ». ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "idee": {"type": "string", "description": "Idée/orientation pour l'épisode (optionnel)."},
-            "confirme": {"type": "boolean"},
-        }, ["serie_id"])}},
-    {"type": "function", "function": {
-        "name": "studio_voix_lister",
-        "description": "Liste les voix disponibles pour une langue (catalogue du serveur de voix). À utiliser avant de distribuer une voix à un personnage. Lecture seule (aucune confirmation).",
-        "parameters": _p({
-            "langue": {"type": "string", "description": "Code langue (fr, en, es…). Défaut fr."},
-        }, [])}},
-    {"type": "function", "function": {
-        "name": "studio_bible_proposer",
-        "description": "Co-création de la bible : un agent créatif PROPOSE des options pour une dimension (genre, univers, personnages, intrigue, choix) — ne fige RIEN. Utilise studio_bible_decider pour retenir une option. Génératif mais non destructif (aucune confirmation).",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"],
-                          "description": "Dimension de la bible à explorer."},
-            "mon_idee": {"type": "string", "description": "Piste/contrainte de l'utilisateur à intégrer (optionnel)."},
-        }, ["serie_id", "dimension"])}},
-    {"type": "function", "function": {
-        "name": "studio_distribution_proposer",
-        "description": "Le Directeur de Casting PROPOSE une distribution (personnages + voix) cohérente avec la bible — ne stocke RIEN. Pour créer réellement un rôle, utilise studio_perso_creer. Génératif non destructif (aucune confirmation).",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "combien": {"type": "integer", "description": "Nombre de rôles à proposer (2 à 8, défaut 4)."},
-            "mon_idee": {"type": "string", "description": "Piste de l'utilisateur à intégrer (optionnel)."},
-        }, ["serie_id"])}},
-    {"type": "function", "function": {
-        "name": "studio_bible_decider",
-        "description": "Fige (retient) le contenu d'une dimension de la bible. Utilise d'abord studio_bible_proposer pour explorer. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"]},
-            "choix": {"type": "string", "description": "Le contenu retenu pour cette dimension."},
-            "confirme": {"type": "boolean"},
-        }, ["serie_id", "dimension", "choix"])}},
-    {"type": "function", "function": {
-        "name": "studio_perso_creer",
-        "description": "Ajoute un personnage à la distribution d'une série. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "nom": {"type": "string", "description": "Nom du personnage."},
-            "role": {"type": "string", "description": "Rôle (protagoniste, antagoniste, secondaire…) (optionnel)."},
-            "description": {"type": "string", "description": "Description du personnage (optionnel)."},
-            "confirme": {"type": "boolean"},
-        }, ["serie_id", "nom"])}},
-    {"type": "function", "function": {
-        "name": "studio_audio_produire",
-        "description": "Produit l'audio d'un épisode déjà écrit (voix figées par personnage). Sans numéro, prend le dernier épisode. ACTION : confirme=true requis après accord.",
-        "parameters": _p({
-            "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister)."},
-            "n": {"type": "integer", "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."},
-            "confirme": {"type": "boolean"},
-        }, ["serie_id"])}},
 
     # — TRANSCRIPTION (brique audio→texte souveraine 5980 ; notes d'appel/réunion) —
     {"type": "function", "function": {
@@ -591,15 +344,9 @@ OUTILS: list[dict] = [
 
 OUTILS_ACTION = {
     "livrer_entreprise", "decrocher_entreprise", "reprendre_entreprise",
-    "ingerer_document", "classer_document", "creer_enregistrement", "memoire_retenir",
+    "ingerer_document", "classer_document", "creer_enregistrement",
     "agenda_supprimer_evenement", "agenda_inviter",
     "timetree_connecter", "timetree_deconnecter",
-    "forge_rag_ingerer", "forge_lancer_agent",
-    "forge_facture_creer", "forge_facture_statut", "forge_facture_transformer",
-    "forge_crm_creer", "forge_crm_modifier", "forge_paiement_lien",
-    "forge_relances_envoyer", "forge_facture_envoyer",
-    "studio_serie_creer", "studio_episode_produire", "studio_express",
-    "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
     "transcription_archiver",
     "curateur_lancer", "amelioration_evaluer", "amelioration_decider", "capacite_decider",
 }

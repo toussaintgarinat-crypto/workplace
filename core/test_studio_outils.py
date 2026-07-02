@@ -1,8 +1,10 @@
 """Outils Studio de l'assistant + helper d'appel authentifié (`_studio_appel`).
 
-Vérifie que : les 6 outils studio_* sont déclarés, les 3 actions sont gardées par
-confirmation, et `_studio_appel` envoie l'en-tête X-API-Key quand STUDIO_KEY est posé,
-en dégradant proprement (401 / brique hors ligne) sans stacktrace.
+S134 : les outils studio_* sont déclarés dans briques/studio/manifest.json (plus dans
+OUTILS statique). Les tests vérifient le manifest directement.
+
+`_studio_appel` envoie l'en-tête X-API-Key quand STUDIO_KEY est posé, en dégradant
+proprement (401 / brique hors ligne) sans stacktrace.
 
 Async via asyncio.run (motif du reste de la suite core/, pas de marqueur pytest).
 """
@@ -10,6 +12,7 @@ Async via asyncio.run (motif du reste de la suite core/, pas de marqueur pytest)
 import asyncio
 import json
 import os
+import pathlib
 
 import httpx
 
@@ -17,21 +20,22 @@ os.environ.setdefault("STUDIO_URL", "http://studio.test")  # override → pas be
 
 import outils  # noqa: E402
 
+_MANIFEST = json.loads(
+    (pathlib.Path(__file__).parent.parent / "briques" / "studio" / "manifest.json").read_text()
+)
+_CAPS = {c["nom"]: c for c in _MANIFEST["capacites"]}
 
-# ── Déclaration des outils ───────────────────────────────────────────────────
-NOMS = {o["function"]["name"] for o in outils.OUTILS}
 
+# ── Déclaration des outils (manifest, pas OUTILS statique depuis S134) ───────
 
 def test_outils_studio_declares():
     attendus = {
-        # incrément 1
         "studio_series_lister", "studio_serie_lire", "studio_personnages_lister",
         "studio_serie_creer", "studio_episode_produire", "studio_express",
-        # incrément 2 : bible fine, distribution/voix, audio
         "studio_voix_lister", "studio_bible_proposer", "studio_distribution_proposer",
         "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
     }
-    assert attendus <= NOMS
+    assert attendus <= set(_CAPS)
 
 
 def test_actions_studio_gardees():
@@ -39,11 +43,12 @@ def test_actions_studio_gardees():
         "studio_serie_creer", "studio_episode_produire", "studio_express",
         "studio_bible_decider", "studio_perso_creer", "studio_audio_produire",
     }
-    assert gardees <= outils.OUTILS_ACTION
-    # Les lectures et les PROPOSITIONS (non destructives) ne sont PAS gardées.
+    for nom in gardees:
+        assert _CAPS[nom].get("action") is True, f"{nom} devrait être action=True"
+    # Les lectures et les PROPOSITIONS (non destructives) ne sont PAS des actions.
     for libre in ("studio_series_lister", "studio_voix_lister",
                   "studio_bible_proposer", "studio_distribution_proposer"):
-        assert libre not in outils.OUTILS_ACTION
+        assert not _CAPS[libre].get("action"), f"{libre} ne devrait pas être une action"
 
 
 # ── Helper _studio_appel ─────────────────────────────────────────────────────

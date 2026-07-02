@@ -143,8 +143,21 @@ async def sante():
         raise HTTPException(503, f"Backend Memory indisponible : {e}")
 
 
+def _normaliser_espace(espace: str | None) -> str | None:
+    """Normalise l'espace envoyé par le manifest : 'solution'→None (défaut), 'perso'→'Perso'."""
+    if not espace:
+        return None
+    low = espace.strip().lower()
+    if low == "solution":
+        return None
+    if low == "perso":
+        return "Perso"
+    return espace  # valeur brute pour les espaces custom
+
+
 @app.post("/retenir", summary="Mémoriser un souvenir")
 async def retenir(s: Souvenir):
+    s = s.model_copy(update={"espace": _normaliser_espace(s.espace)})
     titre = (s.titre or s.contenu[:60] or "souvenir").strip()
     type_ = _type_valide(s.type)
     # Rangement : par défaut le wing reflète le type (vue Forge = wings IPCRa) ;
@@ -182,6 +195,7 @@ async def retenir(s: Souvenir):
 @app.get("/rappeler", summary="Retrouver des souvenirs (recherche hybride)")
 async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
                    espace: str | None = None):
+    espace = _normaliser_espace(espace)
     params: dict = {"q": q, "limit": limite}
     if type:
         params["type"] = type
@@ -211,6 +225,7 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
 async def souvenirs(limite: int = 20, type: str | None = None,
                     wing: str | None = None, room: str | None = None,
                     espace: str | None = None):
+    espace = _normaliser_espace(espace)
     params: dict = {"limit": limite}
     if type:
         params["type"] = type

@@ -68,16 +68,16 @@ class _Client:
 def test_capacites_neuves_exposees_sans_les_doublons_statiques():
     dyn = outils._capacites_dynamiques(_registre())
     assert "calcul_lister_noeuds" in dyn and "calcul_etat_muscle" in dyn
-    # memoire_rappeler existe DÉJÀ en dur → jamais réexposé en dynamique (zéro régression).
-    assert "memoire_rappeler" not in dyn
+    # memoire_rappeler n'est plus en dur (S134 migration) → découvert depuis le manifest.
+    assert "memoire_rappeler" in dyn
 
 
 def test_outils_pour_fusionne_statiques_et_dynamiques():
     base = {o["function"]["name"] for o in outils.OUTILS}
     fusion = {o["function"]["name"] for o in outils.outils_pour(_registre())}
     assert base <= fusion                                    # rien perdu
-    assert {"calcul_lister_noeuds", "calcul_etat_muscle"} <= fusion   # 2 nerfs neufs
-    assert len(fusion) == len(base) + 2
+    assert {"calcul_lister_noeuds", "calcul_etat_muscle", "memoire_rappeler"} <= fusion
+    assert len(fusion) >= len(base) + 3  # calcul(2) + memoire(1) au minimum
 
 
 def test_spec_action_ajoute_confirme_et_marque_requis():
@@ -95,7 +95,9 @@ def test_est_action_distingue_lecture_et_action():
     reg = _registre()
     assert outils.est_action("calcul_etat_muscle", reg) is True
     assert outils.est_action("calcul_lister_noeuds", reg) is False
-    assert outils.est_action("memoire_retenir", reg) is True   # statique inchangé
+    # memoire_retenir est maintenant dynamique (S134) : pas dans OUTILS_ACTION, mais
+    # est_action le retrouve via les capacités dynamiques si le registre le déclare.
+    assert outils.est_action("memoire_retenir", reg) is False  # pas dans ce registre
 
 
 # ── Routage HTTP ────────────────────────────────────────────────────────────

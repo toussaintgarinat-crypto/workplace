@@ -32,6 +32,138 @@
   "taches": [],
   "capacites": [
     {
+      "nom": "studio_series_lister",
+      "description": "Liste les séries audio du Studio (titre, langue, nb de chapitres/personnages/tomes). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/series",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "studio_serie_lire",
+      "description": "Détail d'une série du Studio : bible (univers, personnages, intrigue…), épisodes produits, réglages. Récupère d'abord l'id via studio_series_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/series/{serie_id}",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_personnages_lister",
+      "description": "Liste la distribution (personnages + voix figées) d'une série du Studio. Récupère l'id via studio_series_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/series/{serie_id}/personnages",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_voix_lister",
+      "description": "Liste les voix disponibles pour une langue (catalogue du serveur de voix). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/voix",
+      "params": {
+        "langue": {"type": "string", "description": "Code langue (fr, en, es…). Défaut fr."}
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_bible_proposer",
+      "description": "Co-création de la bible : un agent créatif PROPOSE des options pour une dimension (genre, univers, personnages, intrigue, choix) — ne fige RIEN. Lecture seule (génératif mais non destructif).",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/proposer",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"], "description": "Dimension de la bible à explorer.", "requis": true},
+        "mon_idee": {"type": "string", "description": "Piste/contrainte de l'utilisateur à intégrer (optionnel)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_distribution_proposer",
+      "description": "Le Directeur de Casting PROPOSE une distribution cohérente avec la bible — ne stocke RIEN. Lecture seule (génératif non destructif).",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/personnages/proposer",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "combien": {"type": "integer", "description": "Nombre de rôles à proposer (2 à 8, défaut 4)."},
+        "mon_idee": {"type": "string", "description": "Piste à intégrer (optionnel)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_serie_creer",
+      "description": "Crée une nouvelle série audio dans le Studio. ACTION.",
+      "methode": "POST",
+      "chemin": "/series",
+      "params": {
+        "titre": {"type": "string", "description": "Titre de la série.", "requis": true},
+        "idee": {"type": "string", "description": "Idée / genre de départ (optionnel)."},
+        "langue": {"type": "string", "description": "Langue de travail (ex. fr, en, es). Défaut fr."},
+        "cible": {"type": "string", "description": "Public visé (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_episode_produire",
+      "description": "Produit l'épisode SUIVANT d'une série (Scénariste + Script Doctor), à partir de la bible existante. Récupère l'id via studio_series_lister. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/episode",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_express",
+      "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/express",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "idee": {"type": "string", "description": "Idée/orientation pour l'épisode (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_bible_decider",
+      "description": "Fige (retient) le contenu d'une dimension de la bible. Utilise d'abord studio_bible_proposer pour explorer. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/decider",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"], "requis": true},
+        "choix": {"type": "string", "description": "Le contenu retenu pour cette dimension.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_perso_creer",
+      "description": "Ajoute un personnage à la distribution d'une série. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/personnages",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "nom": {"type": "string", "description": "Nom du personnage.", "requis": true},
+        "role": {"type": "string", "description": "Rôle (protagoniste, antagoniste, secondaire…) (optionnel)."},
+        "description": {"type": "string", "description": "Description du personnage (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_audio_produire",
+      "description": "Produit l'audio d'un épisode déjà écrit (voix figées par personnage). Sans numéro, prend le dernier épisode. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/audio",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
+        "n": {"type": "integer", "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."}
+      },
+      "action": true
+    },
+    {
       "nom": "studio_serie_supprimer",
       "description": "Supprime une série audio et tout son contenu (épisodes, personnages, bible). ACTION irréversible. Récupère d'abord l'id via studio_series_lister.",
       "methode": "DELETE",
@@ -71,6 +203,18 @@
       "params": {
         "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
         "pid": {"type": "string", "description": "Identifiant du personnage.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_importer_serie",
+      "description": "Importe un personnage DÉJÀ ENREGISTRÉ dans l'atelier holistique vers une série du Studio. Récupère fiche_id via personnages_fiches_lister et serie_id via studio_series_lister. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/personnages/importer-fiche",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série cible (via studio_series_lister).", "requis": true},
+        "fiche_id": {"type": "string", "description": "Id de la fiche holistique (via personnages_fiches_lister).", "requis": true},
+        "nom": {"type": "string", "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."}
       },
       "action": true
     }
