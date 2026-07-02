@@ -35,7 +35,7 @@ import suggestions
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 6
+MAX_ITERATIONS = 20
 
 # Streaming token-par-token (S60) : l'assistant émet le texte au fil de l'eau (feel
 # ChatGPT, utile en mobilité). Kill-switch d'env : STREAM_ACTIF=0 rétablit la réponse
