@@ -26,6 +26,14 @@
   "taches": [],
   "capacites": [
     {
+      "nom": "personnages_fiches_lister",
+      "description": "Liste les personnages holistiques ENREGISTRÉS dans l'atelier (brique 5900). Renvoie id, nom, catégorie et archétype de chaque fiche. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/fiches",
+      "params": {},
+      "action": false
+    },
+    {
       "nom": "personnage_fiche_lire",
       "description": "Lit la fiche complète d'un personnage holistique enregistré (thème natal, traditions, archétype, couleur d'âme…). Utilise personnages_fiches_lister pour obtenir l'id.",
       "methode": "GET",

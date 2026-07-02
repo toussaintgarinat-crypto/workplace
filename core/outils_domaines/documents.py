@@ -1,10 +1,11 @@
 """Outils du domaine « documents » (dispatch, extrait de outils.py — S115).
 
-documents & données (ETL/Données/Mémoire) : lecture et écriture.
+documents & données (ETL/Données) : lecture et écriture.
+S134 : memoire_rappeler/memoire_retenir migrés vers briques/memoire/manifest.json.
 """
 import json
 import contexte_tenant
-from outils_communs import _confirmation, _base, _espace_memoire
+from outils_communs import _confirmation, _base
 
 
 async def dispatch(nom: str, args: dict, registre, client) -> str | None:
@@ -42,14 +43,6 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
         r = await client.get(f"{_base(registre, 'donnees')}/apps/{args.get('app_id','')}/resume")
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "Données injoignables."
 
-    if nom == "memoire_rappeler":
-        params = {"q": args.get("requete", "")}
-        esp = _espace_memoire(args.get("espace"))
-        if esp:
-            params["espace"] = esp
-        r = await client.get(f"{_base(registre, 'memoire')}/rappeler", params=params)
-        return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "Mémoire injoignable."
-
     if nom == "ingerer_document":
         url = args.get("url", "")
         if not args.get("confirme"):
@@ -77,13 +70,4 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
             json=args.get("donnees") or {}, headers=contexte_tenant.entetes_donnees())
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec : {r.text}"
 
-    if nom == "memoire_retenir":
-        if not args.get("confirme"):
-            return _confirmation("mémoriser", (args.get("titre") or args.get("contenu", ""))[:60])
-        corps_mem = {"contenu": args.get("contenu", ""), "titre": args.get("titre")}
-        esp = _espace_memoire(args.get("espace"))
-        if esp:
-            corps_mem["espace"] = esp
-        r = await client.post(f"{_base(registre, 'memoire')}/retenir", json=corps_mem)
-        return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec mémorisation : {r.text}"
     return None
