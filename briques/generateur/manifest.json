@@ -34,5 +34,47 @@
       "idempotent": true,
       "tolere_echec": true
     }
+  ],
+  "capacites": [
+    {
+      "nom": "generateur_apps_lister",
+      "description": "Liste les apps générées pour les clients (id, nom, statut de génération, date). Point d'entrée pour piloter le générateur.",
+      "methode": "GET",
+      "chemin": "/apps",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "generateur_app_lire",
+      "description": "Lit le détail d'une app générée (sections, statut, config). Utilise generateur_apps_lister pour l'id.",
+      "methode": "GET",
+      "chemin": "/apps/{app_id}",
+      "params": {
+        "app_id": {"type": "string", "description": "Identifiant de l'app générée.", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "generateur_app_generer",
+      "description": "Lance la génération d'une app HTML client depuis un audit d'entreprise existant. L'app inclut le dashboard, les données et les interfaces personnalisées. ACTION (déclenche un traitement long).",
+      "methode": "POST",
+      "chemin": "/generer",
+      "params": {
+        "audit_id": {"type": "string", "description": "Identifiant de l'audit source (obtenu via audit_lire).", "requis": true},
+        "nom_client": {"type": "string", "description": "Nom du client final pour personnaliser l'app.", "requis": true},
+        "langue": {"type": "string", "description": "Langue de l'app générée (défaut: 'fr')."}
+      },
+      "action": true
+    },
+    {
+      "nom": "generateur_app_apercu",
+      "description": "Retourne l'URL d'aperçu d'une app générée pour la prévisualiser. L'app doit avoir le statut 'généré'.",
+      "methode": "GET",
+      "chemin": "/apps/{app_id}/apercu",
+      "params": {
+        "app_id": {"type": "string", "description": "Identifiant de l'app générée.", "requis": true}
+      },
+      "action": false
+    }
   ]
 }
