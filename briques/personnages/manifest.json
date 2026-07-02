@@ -23,5 +23,61 @@
     "renommage_nom_de_serie"
   ],
   "besoin": [],
-  "taches": []
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "personnage_fiche_lire",
+      "description": "Lit la fiche complète d'un personnage holistique enregistré (thème natal, traditions, archétype, couleur d'âme…). Utilise personnages_fiches_lister pour obtenir l'id.",
+      "methode": "GET",
+      "chemin": "/fiches/{fid}",
+      "params": {
+        "fid": {"type": "string", "description": "Identifiant de la fiche (obtenu via personnages_fiches_lister).", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_fiche_modifier",
+      "description": "Modifie une fiche de personnage existante (nom de scène, catégorie, notes…). ACTION.",
+      "methode": "PATCH",
+      "chemin": "/fiches/{fid}",
+      "params": {
+        "fid": {"type": "string", "description": "Identifiant de la fiche.", "requis": true},
+        "nom_scene": {"type": "string", "description": "Nouveau nom de scène (garde le nom de naissance intact)."},
+        "categorie": {"type": "string", "description": "Catégorie libre (ex: 'Famille', 'Collègues')."}
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_fiche_supprimer",
+      "description": "Supprime définitivement une fiche de personnage. ACTION irréversible.",
+      "methode": "DELETE",
+      "chemin": "/fiches/{fid}",
+      "params": {
+        "fid": {"type": "string", "description": "Identifiant de la fiche.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_portrait_generer",
+      "description": "Génère un portrait IA d'un personnage holistique (image via la brique images). Retourne l'URL de l'image.",
+      "methode": "POST",
+      "chemin": "/holistique/portrait",
+      "params": {
+        "fid": {"type": "string", "description": "Identifiant de la fiche du personnage.", "requis": true},
+        "style": {"type": "string", "description": "Style artistique du portrait (ex: 'réaliste', 'aquarelle')."}
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_proposer",
+      "description": "Propose une distribution de personnages cohérente pour une série ou une histoire (par archétype, thème natal, complémentarité). Donne un contexte narratif pour affiner.",
+      "methode": "POST",
+      "chemin": "/distribution/proposer",
+      "params": {
+        "contexte": {"type": "string", "description": "Description de l'histoire, du genre, du nombre de personnages souhaités.", "requis": true},
+        "fiches_ids": {"type": "array", "items": {"type": "string"}, "description": "Fiches de personnages existants à inclure dans la distribution (optionnel)."}
+      },
+      "action": false
+    }
+  ]
 }
