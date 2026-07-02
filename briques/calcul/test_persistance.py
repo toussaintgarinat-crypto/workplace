@@ -177,3 +177,39 @@ def test_retirer_noeud_absent(monkeypatch, tmp_path):
 def test_retirer_noeud_fichier_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("CALCUL_PARC_FILE", str(tmp_path / "absent.json"))
     assert P.retirer_noeud("fantome") is False
+
+
+# ── Tolérance aux éléments non-dict (S131 : fichier édité manuellement) ─────────
+def test_sauver_noeud_tolere_parasite_non_dict(monkeypatch, tmp_path):
+    """Un fichier contenant un élément parasite (string, int, null, etc.) ne plante pas."""
+    chemin = str(tmp_path / "parc.json")
+    # Fichier avec un parasite string en début et un nœud valide
+    items = ["parasite", {"id": "ok", "endpoint": "http://ok:1"}]
+    p = tmp_path / "parc.json"
+    p.write_text(json.dumps(items), encoding="utf-8")
+    monkeypatch.setenv("CALCUL_PARC_FILE", chemin)
+
+    # sauver_noeud ne doit pas crasher et garder le nœud valide
+    n = _noeud("nouveau", "http://nouveau:1")
+    P.sauver_noeud(n)
+
+    data = json.loads(p.read_text(encoding="utf-8"))
+    # Le parasite a été jeté, le nœud valide et le nouveau présents
+    assert [x["id"] for x in data if isinstance(x, dict)] == ["ok", "nouveau"]
+
+
+def test_retirer_noeud_tolere_parasite_non_dict(monkeypatch, tmp_path):
+    """retirer_noeud tolère aussi les parasites et les enlève lors de l'écriture."""
+    chemin = str(tmp_path / "parc.json")
+    # Fichier avec parasite et nœuds valides
+    items = ["parasite", {"id": "a", "endpoint": "http://a:1"}, {"id": "b", "endpoint": "http://b:1"}]
+    p = tmp_path / "parc.json"
+    p.write_text(json.dumps(items), encoding="utf-8")
+    monkeypatch.setenv("CALCUL_PARC_FILE", chemin)
+
+    # Retirer le nœud "a" ne doit pas crasher
+    assert P.retirer_noeud("a") is True
+
+    data = json.loads(p.read_text(encoding="utf-8"))
+    # Le parasite a été jeté, seul "b" reste
+    assert [x["id"] for x in data] == ["b"]
