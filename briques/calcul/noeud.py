@@ -103,12 +103,68 @@ class Noeud:
             "methode_reveil": list(self.methode_reveil),
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "Noeud":
+        """Construit un Noeud depuis un dict (mêmes normalisations que charger_noeuds).
+
+        Utilisé par charger_noeuds, persistance.py et (futur) l'endpoint d'inscription API.
+        Lève ValueError si le dict n'est pas valide (pas un dict, id manquant, endpoint
+        manquant) — l'appelant décide de l'ignorer ou de propager.
+        """
+        if not isinstance(d, dict):
+            raise ValueError(f"Attendu un dict, reçu {type(d).__name__!r}")
+        nid = str(d.get("id") or "").strip()
+        endpoint = str(d.get("endpoint") or "").strip().rstrip("/")
+        if not nid or not endpoint:
+            raise ValueError(f"Nœud incomplet (id={nid!r}, endpoint={endpoint!r})")
+        methodes = d.get("methode_reveil")
+        if isinstance(methodes, str):
+            methodes = [methodes]
+        methodes = tuple(m for m in (methodes or ["wol", "wakeping"]) if m in METHODES_REVEIL)
+        sondes = d.get("sondes")
+        if isinstance(sondes, str):
+            sondes = [sondes]
+        sondes = tuple(sondes) if sondes else SONDES_DEFAUT
+        return cls(
+            id=nid, endpoint=endpoint, nom=str(d.get("nom") or ""),
+            mac_wol=(str(d["mac_wol"]).strip() if d.get("mac_wol") else None),
+            broadcast_wol=str(d.get("broadcast_wol") or "255.255.255.255"),
+            port_wol=int(d.get("port_wol") or 9),
+            methode_reveil=methodes or ("aucun",), sondes=sondes,
+            reveil_timeout_s=int(d.get("reveil_timeout_s") or 60),
+            intervalle_sonde_s=float(d.get("intervalle_sonde_s") or 2.0),
+            priorite=int(d.get("priorite") if d.get("priorite") is not None else 100),
+            modele_gateway=(str(d["modele_gateway"]).strip() if d.get("modele_gateway") else None),
+        )
+
+    def to_dict(self) -> dict:
+        """Sérialise le nœud vers un dict JSON compatible from_dict (ronde-trip).
+
+        Seuls les champs de CONFIGURATION sont inclus ; l'état transitoire (etat,
+        derniere_vue, derniere_erreur) est volontairement omis — il sera recalculé
+        par les sondes au redémarrage, ce qui garantit un verdict honnête.
+        """
+        return {
+            "id": self.id,
+            "endpoint": self.endpoint,
+            "nom": self.nom,
+            "mac_wol": self.mac_wol,
+            "broadcast_wol": self.broadcast_wol,
+            "port_wol": self.port_wol,
+            "methode_reveil": list(self.methode_reveil),
+            "sondes": list(self.sondes),
+            "reveil_timeout_s": self.reveil_timeout_s,
+            "intervalle_sonde_s": self.intervalle_sonde_s,
+            "priorite": self.priorite,
+            "modele_gateway": self.modele_gateway,
+        }
+
 
 def charger_noeuds(brut: Optional[str] = None) -> dict:
     """Parse ``CALCUL_NOEUDS`` (JSON : liste d'objets) → {id: Noeud}. Vide/illisible → {}.
 
     Tolérant : un nœud sans ``id`` ou sans ``endpoint`` est ignoré (honnêteté : on ne
-    fabrique pas un nœud bancal). ``methode_reveil``/``sondes`` deviennent des tuples."""
+    fabrique pas un nœud bancal). Délègue le parsing de chaque entrée à Noeud.from_dict."""
     brut = os.getenv("CALCUL_NOEUDS", "") if brut is None else brut
     if not (brut or "").strip():
         return {}
@@ -120,31 +176,11 @@ def charger_noeuds(brut: Optional[str] = None) -> dict:
         items = [items]
     parc: dict = {}
     for it in items or []:
-        if not isinstance(it, dict):
-            continue
-        nid = str(it.get("id") or "").strip()
-        endpoint = str(it.get("endpoint") or "").strip().rstrip("/")
-        if not nid or not endpoint:
-            continue
-        methodes = it.get("methode_reveil")
-        if isinstance(methodes, str):
-            methodes = [methodes]
-        methodes = tuple(m for m in (methodes or ["wol", "wakeping"]) if m in METHODES_REVEIL)
-        sondes = it.get("sondes")
-        if isinstance(sondes, str):
-            sondes = [sondes]
-        sondes = tuple(sondes) if sondes else SONDES_DEFAUT
-        parc[nid] = Noeud(
-            id=nid, endpoint=endpoint, nom=str(it.get("nom") or ""),
-            mac_wol=(str(it["mac_wol"]).strip() if it.get("mac_wol") else None),
-            broadcast_wol=str(it.get("broadcast_wol") or "255.255.255.255"),
-            port_wol=int(it.get("port_wol") or 9),
-            methode_reveil=methodes or ("aucun",), sondes=sondes,
-            reveil_timeout_s=int(it.get("reveil_timeout_s") or 60),
-            intervalle_sonde_s=float(it.get("intervalle_sonde_s") or 2.0),
-            priorite=int(it.get("priorite") if it.get("priorite") is not None else 100),
-            modele_gateway=(str(it["modele_gateway"]).strip() if it.get("modele_gateway") else None),
-        )
+        try:
+            n = Noeud.from_dict(it)
+            parc[n.id] = n
+        except (ValueError, TypeError):
+            continue          # nœud bancal ignoré silencieusement (honnêteté)
     return parc
 
 
