@@ -79,9 +79,12 @@ class Noeud:
     sondes: tuple = SONDES_DEFAUT
     reveil_timeout_s: int = 60
     intervalle_sonde_s: float = 2.0
-    # Pool multi-muscles : priorité d'élection (plus petit = préféré) et nom du modèle
-    # Gateway (LiteLLM) qui pointe CE nœud — c'est ce que le Cœur met en tête de cascade.
+    # Pool multi-muscles : priorité d'élection (plus petit = préféré) et noms de modèles.
+    # ``modele`` = nom brut tel que fourni lors de l'inscription (ex. "llama3.3") ; utilisé
+    # pour reconstruire la clé LiteLLM au re-push (republier). ``modele_gateway`` = nom tel
+    # qu'enregistré dans LiteLLM (ex. "ollama/llama3.3") = ce que le Cœur met en cascade.
     priorite: int = 100
+    modele: Optional[str] = None
     modele_gateway: Optional[str] = None
     # État courant (rafraîchi par les sondes) :
     etat: str = "inconnu"
@@ -134,6 +137,7 @@ class Noeud:
             reveil_timeout_s=int(d.get("reveil_timeout_s") or 60),
             intervalle_sonde_s=float(d.get("intervalle_sonde_s") or 2.0),
             priorite=int(d.get("priorite") if d.get("priorite") is not None else 100),
+            modele=(str(d["modele"]).strip() if d.get("modele") else None),
             modele_gateway=(str(d["modele_gateway"]).strip() if d.get("modele_gateway") else None),
         )
 
@@ -156,6 +160,7 @@ class Noeud:
             "reveil_timeout_s": self.reveil_timeout_s,
             "intervalle_sonde_s": self.intervalle_sonde_s,
             "priorite": self.priorite,
+            "modele": self.modele,
             "modele_gateway": self.modele_gateway,
         }
 
