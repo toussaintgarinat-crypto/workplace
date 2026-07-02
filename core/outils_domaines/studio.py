@@ -2,7 +2,8 @@
 
 Studio audio-séries et atelier de personnages holistiques.
 """
-from outils_communs import _confirmation, _studio_appel, _personnage_holistique
+from outils_communs import (_confirmation, _studio_appel, _personnage_holistique,
+                            _personnages_fiches_lister, _personnage_importer_serie)
 
 
 async def dispatch(nom: str, args: dict, registre, client) -> str | None:
@@ -101,6 +102,12 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
     # — PERSONNAGES (atelier holistique cosmique) —
     if nom == "personnage_creer_holistique":
         return await _personnage_holistique(client, registre, args)
+
+    if nom == "personnages_fiches_lister":
+        return await _personnages_fiches_lister(client, registre)
+
+    if nom == "personnage_importer_serie":
+        return await _personnage_importer_serie(client, registre, args)
 
     # — TRANSCRIPTION (notes d'appel/réunion) —
     return None
