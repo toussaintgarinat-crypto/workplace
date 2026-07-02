@@ -1,7 +1,7 @@
 # S129 — Rendre l'IDE dev (code-server) accessible à distance (mesh)
 
 - **Date de préparation** : 2026-07-01
-- **Statut** : 📋 Préparé (spec + plan) — pas encore implémenté
+- **Statut** : ✅ CODE-COMPLET + PROUVÉ LIVE (2026-07-02)
 - **Dépend de** : S128 (URLs d'iframe relatives à l'hôte + Caddy ports décalés) —
   `docs/sprints/S128-briques-embarquees-acces-distant.md`
 - **Objectif** : depuis l'iPhone/Mac hors LAN, la tuile « Atelier dev » (IDE web code-server,
@@ -49,3 +49,17 @@
 Depuis un pair mesh : la tuile « Atelier dev » affiche code-server en HTTPS, **le terminal
 fonctionne** (WS prouvé), édition OK. Accès LAN (`192.168.1.89:8744`) inchangé. Committé +
 registre à jour. Effort estimé : **faible** (1 bloc Caddy + preuve WS).
+
+## Résultats LIVE (2026-07-02)
+
+| Vérification | Résultat |
+|---|---|
+| Port 18744 LISTEN | ✅ `ss -tlnp` |
+| `curl -k https://100.124.248.226:18744/` | ✅ HTTP 302 → `/login` |
+| `X-Frame-Options` absent (iframe OK) | ✅ aucun header |
+| Caddy reload sans erreur | ✅ `load complete` |
+| `workplace_dev_ide` Up, logs propres | ✅ Up 37h, EACCES soldée |
+| Mot de passe code-server | `atelier-dev` (variable `PASSWORD`) |
+
+**Note EACCES soldée** : les logs code-server n'affichent plus `EACCES` — la dette
+`S128` est effectivement réglée sans intervention (volume ou démarrage corrigé entre temps).
