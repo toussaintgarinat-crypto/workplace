@@ -17,16 +17,56 @@ d'auto-inscription du bootstrap l'envoie via ``X-API-Key`` (variable ``MUSCLE_KE
 côté client — voir docker-compose.yml). En mode développement (``API_KEYS`` vide),
 la brique reste ouverte.
 """
+import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+import gateway_admin as gateway_admin_mod
 import noeud as noeud_mod
 import persistance as persistance_mod
 
-app = FastAPI(title="Calcul — réveil & santé des nœuds de calcul", version="0.2.0")
+_log = logging.getLogger("calcul")
+
+async def _republier_parc(parc: dict) -> dict:
+    """Re-pousse dans LiteLLM tous les nœuds du parc qui ont un modele_gateway.
+
+    Idempotent : si le modèle existe déjà dans LiteLLM, l'API renvoie 200 ou 409 → ok.
+    Best-effort : une erreur gateway ne plante pas l'opération (on continue les autres nœuds).
+    """
+    repousses = 0
+    echecs = []
+    for nid, n in parc.items():
+        if not n.modele_gateway:
+            continue
+        verdict = await gateway_admin_mod.enregistrer_modele(n.modele_gateway, n.endpoint)
+        if verdict["ok"]:
+            repousses += 1
+        else:
+            echecs.append({"id": nid, "erreur": verdict.get("erreur")})
+    return {"ok": True, "repousses": repousses, "echecs": echecs}
+
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Cycle de vie : re-push du parc dans LiteLLM au démarrage (best-effort, non bloquant)."""
+    try:
+        res = await _republier_parc(PARC)
+        if res["repousses"] > 0:
+            _log.info("calcul : %d modèle(s) re-poussé(s) dans LiteLLM au démarrage.", res["repousses"])
+    except Exception as exc:  # noqa: BLE001 — tolérant au boot
+        _log.warning("calcul : re-push LiteLLM au démarrage ignoré (%s).", exc)
+    yield  # point de séparation startup / shutdown
+
+
+app = FastAPI(
+    title="Calcul — réveil & santé des nœuds de calcul",
+    version="0.2.0",
+    lifespan=_lifespan,
+)
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
 # = comportement historique. En contexte MULTI-TENANT (même local : autre tenant/
 # assistant sur la machine), définir CORS_ORIGINS=http://localhost:5100,... pour
@@ -102,7 +142,27 @@ async def inscrire_noeud(
 
     PARC[n.id] = n
     persistance_mod.sauver_noeud(n)
+
+    # Enregistrement dans le Gateway — best-effort, ne bloque pas l'inscription.
+    if n.modele:
+        nom_gateway = n.modele_gateway or f"ollama/{n.modele}"
+        verdict = await gateway_admin_mod.enregistrer_modele(nom_gateway, n.endpoint)
+        if verdict["ok"]:
+            n.modele_gateway = verdict.get("model_name") or nom_gateway
+            persistance_mod.sauver_noeud(n)
+        else:
+            _log.warning(
+                "calcul : enregistrement gateway ignoré pour %r (%s).",
+                n.id, verdict.get("erreur"),
+            )
+
     return n.vue_publique()
+
+
+@app.post("/noeuds/republier", tags=["nœuds", "système"])
+async def republier_parc(_cle: str = Depends(cle_api)):
+    """Re-pousse dans LiteLLM tous les modèles du parc (idempotent). Utile après redémarrage."""
+    return await _republier_parc(PARC)
 
 
 @app.delete("/noeuds/{nid}", tags=["nœuds"])
