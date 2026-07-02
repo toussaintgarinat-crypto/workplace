@@ -222,7 +222,7 @@ async def converser(messages: list[dict], registre,
         # pertinents). Repli honnête : liste inchangée si le routage est inactif/indisponible.
         # La conscience de soi (plus haut) garde, elle, le compte COMPLET → anatomie honnête.
         outils_actifs = await routage_outils.filtrer_outils(
-            question, outils_actifs, client=client, toujours=outils._NOMS_STATIQUES)
+            question, outils_actifs, client=client, toujours=outils.noms_socle(registre))
 
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage

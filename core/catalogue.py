@@ -86,10 +86,10 @@ def collecter_capacites(registre) -> list[dict]:
                 "url": base + chemin,
                 "params": dict(decl.get("params") or {}),
                 "action": bool(decl.get("action", False)),
-                # S90 — porte à divulgation progressive : niveau 0 = toujours en contexte
-                # (nom+description+schéma), niveau ≥ 1 = DIFFÉRÉ derrière `competence_charger`
-                # (corps chargé à la demande). Défaut 0 → rétrocompat totale.
+                # S90 — porte à divulgation progressive
                 "niveau": _niveau(decl.get("niveau")),
+                # S134 — socle:true = toujours inclus dans le routage par embeddings
+                "socle": bool(decl.get("socle", False)),
             })
     return capacites
 

@@ -100,6 +100,22 @@ def test_est_action_distingue_lecture_et_action():
     assert outils.est_action("memoire_retenir", reg) is False  # pas dans ce registre
 
 
+def test_noms_socle_inclut_statiques_et_socle_manifest():
+    # Registre avec une capacité marquée socle:true
+    reg_socle = _Registre({
+        "memoire": {"nom": "memoire", "port": 5600, "capacites": [
+            {"nom": "memoire_rappeler", "description": "rappel", "methode": "GET",
+             "chemin": "/rappeler", "action": False, "socle": True},
+        ]},
+    })
+    socle = outils.noms_socle(reg_socle)
+    assert outils._NOMS_STATIQUES <= socle                 # tous les statiques dedans
+    assert "memoire_rappeler" in socle                     # socle:true du manifest inclus
+
+    # Sans registre → uniquement les statiques
+    assert outils.noms_socle() == outils._NOMS_STATIQUES
+
+
 # ── Routage HTTP ────────────────────────────────────────────────────────────
 
 def test_get_dynamique_route_vers_la_bonne_url():

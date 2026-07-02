@@ -354,6 +354,12 @@ OUTILS_ACTION = {
 
 _NOMS_STATIQUES = {o["function"]["name"] for o in OUTILS}
 CAPACITES_DYNAMIQUES = os.getenv("CAPACITES_DYNAMIQUES", "1").lower() not in ("0", "false", "no")
+
+
+def noms_socle(registre=None) -> set:
+    """Noms toujours inclus dans le routage par embeddings : statiques + socle:true dans les manifests."""
+    dyn = {nom for nom, cap in _capacites_dynamiques(registre).items() if cap.get("socle")} if registre else set()
+    return _NOMS_STATIQUES | dyn
 _ALLOWLIST = {s.strip() for s in os.getenv("CAPACITES_ALLOWLIST", "").split(",") if s.strip()}
 
 # ── La porte à divulgation progressive (S90) ─────────────────────────────────
