@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+import catalogue
 import config_assistant
 import conscience
 import langue as langue_mod
@@ -168,6 +169,26 @@ async def converser(messages: list[dict], registre,
     if (instructions_projet or "").strip():
         amorce.append({"role": "system",
                        "content": "Contexte du projet en cours :\n" + instructions_projet.strip()})
+
+    # Mémoire proactive : top-3 souvenirs récents injectés sans que l'assistant ait à demander.
+    # Complète l'outil memoire_rappeler (réactif) — l'assistant a toujours le contexte de base.
+    # Best-effort : brique down ou lente (>1,5 s) → silencieux, conversation non bloquée.
+    try:
+        _base_mem = catalogue.base_brique(registre, "memoire")
+        if _base_mem:
+            async with httpx.AsyncClient(timeout=1.5) as _mc:
+                _r = await _mc.get(f"{_base_mem}/rappeler", params={"q": "", "limite": 3})
+                if _r.status_code < 400:
+                    _souvenirs = _r.json().get("souvenirs", [])
+                    if _souvenirs:
+                        _lignes = "\n".join(
+                            f"- {s.get('titre') or (s.get('contenu') or '')[:80]}"
+                            for s in _souvenirs
+                        )
+                        amorce.append({"role": "system",
+                                       "content": f"Souvenirs récents :\n{_lignes}"})
+    except Exception:  # noqa: BLE001
+        pass
 
     # VOLATIL en dernier (S90a) : la date ferme le préfixe stable sans le casser.
     amorce.append({"role": "system", "content": contexte_date})
