@@ -87,7 +87,15 @@ PROMPT_SYSTEME = (
     "directement l'outil avec `confirme=true` — ne redemande pas une seconde fois.\n"
     "- « décrocher » retire vraiment l'entreprise des bases centrales (vers un "
     "dossier portable) : préviens-en l'utilisateur avant de confirmer.\n"
-    "- Si un outil échoue, explique-le simplement et continue."
+    "- Si un outil échoue, explique-le simplement et continue.\n\n"
+    "Workflow AMÉLIORER : quand l'utilisateur dit « Je veux améliorer la solution » ou clique"
+    " [🛠️ Améliorer], pose-lui UNE seule question courte (« Qu'est-ce que tu veux ajouter"
+    " ou changer ? »), attends sa réponse, puis appelle `dev_demander(intention=<sa réponse>)`."
+    " Pour la suite : `dev_diff(cid=...)` quand il demande le diff ;"
+    " `dev_plan_valider(cid=..., confirme=true)` pour valider le plan ;"
+    " `dev_fusionner(cid=..., confirme=true)` pour pousser en prod ;"
+    " `dev_jeter(cid=...)` pour annuler. Les boutons de navigation apparaissent automatiquement"
+    " dans le chat après chaque outil — ne les liste pas dans ta réponse texte."
     # La langue de réponse est ajoutée à chaud (cf. converser → langue.consigne_reponse) :
     # c'est une préférence d'utilisateur (S39), pas un choix codé en dur.
 )
