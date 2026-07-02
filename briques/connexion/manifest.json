@@ -33,5 +33,27 @@
       "idempotent": true,
       "tolere_echec": true
     }
+  ],
+  "capacites": [
+    {
+      "nom": "connexion_envoyer",
+      "description": "Envoie un message texte sur un réseau de messagerie (Telegram, WhatsApp, Discord). Utilise cette capacité pour notifier l'utilisateur ou envoyer un message de sa part sur commande. ACTION.",
+      "methode": "POST",
+      "chemin": "/envoyer",
+      "params": {
+        "reseau": {"type": "string", "description": "Réseau cible : 'telegram', 'whatsapp', 'discord'.", "requis": true},
+        "destinataire": {"type": "string", "description": "ID externe du destinataire (chat_id Telegram, numéro WhatsApp…).", "requis": true},
+        "message": {"type": "string", "description": "Texte du message à envoyer.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "connexion_etat",
+      "description": "État du pont de messagerie : réseaux actifs (Telegram connecté ? WhatsApp configuré ?), correspondances connues.",
+      "methode": "GET",
+      "chemin": "/correspondances",
+      "params": {},
+      "action": false
+    }
   ]
 }
