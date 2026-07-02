@@ -22,5 +22,34 @@
     "repli_placeholder_honnete"
   ],
   "besoin": [],
-  "taches": []
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "transcription_fichier",
+      "description": "Transcrit un fichier audio uploadé (mp3, wav, m4a, ogg…) en texte. Avec diarisation=true, identifie les locuteurs (Locuteur A, Locuteur B…) — utile pour les réunions, interviews, podcasts.",
+      "methode": "POST",
+      "chemin": "/transcrire",
+      "params": {
+        "url_fichier": {"type": "string", "description": "URL du fichier audio à transcrire (si pas d'upload direct)."},
+        "diarisation": {"type": "boolean", "description": "Identifier les locuteurs dans la transcription (défaut: false)."},
+        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en'). Auto-détecté si absent."},
+        "fournisseur": {"type": "string", "description": "Moteur de transcription : 'whisper' (local, défaut), 'groq', 'openai'."}
+      },
+      "action": true
+    },
+    {
+      "nom": "transcription_depuis_url",
+      "description": "Transcrit un fichier audio accessible via URL. Avec diarisation=true, identifie les locuteurs. Avec résumé=true, synthétise le texte et extrait les points d'action.",
+      "methode": "POST",
+      "chemin": "/transcrire-url",
+      "params": {
+        "url": {"type": "string", "description": "URL publique du fichier audio (mp3, wav, m4a, ogg…).", "requis": true},
+        "diarisation": {"type": "boolean", "description": "Identifier les locuteurs (défaut: false)."},
+        "resume": {"type": "boolean", "description": "Générer un résumé et des points d'action (défaut: false)."},
+        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en')."},
+        "fournisseur": {"type": "string", "description": "Moteur : 'whisper' (local, défaut), 'groq', 'openai'."}
+      },
+      "action": true
+    }
+  ]
 }
