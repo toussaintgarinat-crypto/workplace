@@ -29,5 +29,50 @@
     "front_studio"
   ],
   "besoin": [],
-  "taches": []
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "studio_serie_supprimer",
+      "description": "Supprime une série audio et tout son contenu (épisodes, personnages, bible). ACTION irréversible. Récupère d'abord l'id via studio_series_lister.",
+      "methode": "DELETE",
+      "chemin": "/series/{serie_id}",
+      "params": {
+        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_serie_langue_changer",
+      "description": "Change la langue de production d'une série (voix, scripts). ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/langue",
+      "params": {
+        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
+        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en', 'es').", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_personnage_portrait",
+      "description": "Génère le portrait visuel d'un personnage d'une série (image IA). Retourne l'URL du portrait.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/personnages/{pid}/portrait",
+      "params": {
+        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
+        "pid": {"type": "string", "description": "Identifiant du personnage dans la série.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_personnage_animer",
+      "description": "Anime le portrait d'un personnage de série (image → courte vidéo). Utilise la brique vidéo en coulisse.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/personnages/{pid}/animer",
+      "params": {
+        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
+        "pid": {"type": "string", "description": "Identifiant du personnage.", "requis": true}
+      },
+      "action": true
+    }
+  ]
 }
