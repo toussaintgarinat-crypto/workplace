@@ -230,3 +230,148 @@ def test_supprimer_noeud_inconnu_404(monkeypatch):
     assert r.status_code == 404
     monkeypatch.setenv("API_KEYS", "")
     importlib.reload(main)
+
+
+def test_supprimer_sans_cle_401(monkeypatch):
+    """DELETE /noeuds/{nid} sans clé API → 401 si API_KEYS configuré."""
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+    # Essayer de supprimer sans clé (les endpoints du parc de base)
+    r = c.delete("/noeuds/muscle")
+    assert r.status_code == 401
+    # Avec clé OK
+    r_ok = c.delete("/noeuds/muscle", headers={"X-API-Key": "muscle-key"})
+    assert r_ok.status_code in (200, 404)  # OK ou déjà retiré
+    monkeypatch.setenv("API_KEYS", "")
+    importlib.reload(main)
+
+
+def test_reinscription_meme_id_idempotente(monkeypatch, tmp_path):
+    """POST /noeuds avec le même id deux fois → idempotent, pas de doublon."""
+    parc_file = str(tmp_path / "parc.json")
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    monkeypatch.setenv("CALCUL_PARC_FILE", parc_file)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    async def sonde_ok(n, **kw):
+        n.etat = "eveille"
+        n.derniere_vue = "2026-01-01T00:00:00+00:00"
+        return True
+
+    monkeypatch.setattr(m.noeud_mod, "sonder", sonde_ok)
+
+    # Première inscription
+    r1 = c.post(
+        "/noeuds",
+        json={"id": "test-id", "endpoint": "http://127.0.0.1:60001"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    assert r1.status_code == 200
+    data1 = r1.json()
+    assert data1["id"] == "test-id"
+
+    # Réinscription avec le même id (endpoint identique)
+    r2 = c.post(
+        "/noeuds",
+        json={"id": "test-id", "endpoint": "http://127.0.0.1:60001"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    assert r2.status_code == 200
+    data2 = r2.json()
+    assert data2["id"] == "test-id"
+
+    # GET /noeuds : une seule entrée test-id (pas deux)
+    r_list = c.get("/noeuds", headers={"X-API-Key": "muscle-key"})
+    assert r_list.status_code == 200
+    noeuds = r_list.json()["noeuds"]
+    test_ids = [n["id"] for n in noeuds if n["id"] == "test-id"]
+    assert len(test_ids) == 1, f"Doublon détecté : {test_ids}"
+
+    # Fichier persisté : une seule entrée test-id
+    saved = json_mod.loads((tmp_path / "parc.json").read_text())
+    assert isinstance(saved, list)
+    test_items = [x for x in saved if x.get("id") == "test-id"]
+    assert len(test_items) == 1, f"Doublon dans fichier : {test_items}"
+
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.setenv("CALCUL_PARC_FILE", "/tmp/calcul-test-parc-inexistant.json")
+    importlib.reload(main)
+
+
+def test_supprimer_noeud_verifie_fichier(monkeypatch, tmp_path):
+    """DELETE /noeuds/{nid} : vérifie que le nœud est retiré du fichier persisté."""
+    parc_file = str(tmp_path / "parc.json")
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    monkeypatch.setenv("CALCUL_PARC_FILE", parc_file)
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    async def sonde_ok(n, **kw):
+        n.etat = "eveille"
+        return True
+
+    monkeypatch.setattr(m.noeud_mod, "sonder", sonde_ok)
+
+    # Inscrire d'abord
+    rep = c.post(
+        "/noeuds",
+        json={"id": "temp-file-test", "endpoint": "http://127.0.0.1:60002"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    assert rep.status_code == 200
+
+    # Vérifier dans le fichier avant suppression
+    saved_before = json_mod.loads((tmp_path / "parc.json").read_text())
+    assert any(x.get("id") == "temp-file-test" for x in saved_before)
+
+    # Supprimer
+    r = c.delete("/noeuds/temp-file-test", headers={"X-API-Key": "muscle-key"})
+    assert r.status_code == 200
+    assert r.json().get("retire") is True
+
+    # Vérifier dans le fichier après suppression
+    saved_after = json_mod.loads((tmp_path / "parc.json").read_text())
+    assert not any(x.get("id") == "temp-file-test" for x in saved_after)
+
+    # Plus dans GET /noeuds
+    r2 = c.get("/noeuds", headers={"X-API-Key": "muscle-key"})
+    ids = [n["id"] for n in r2.json()["noeuds"]]
+    assert "temp-file-test" not in ids
+
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.setenv("CALCUL_PARC_FILE", "/tmp/calcul-test-parc-inexistant.json")
+    importlib.reload(main)
+
+
+def test_inscrire_sans_endpoint_422(monkeypatch):
+    """POST /noeuds sans endpoint → 422 (validation échouée, nœud non inscrit)."""
+    monkeypatch.setenv("API_KEYS", "muscle-key")
+    m = importlib.reload(main)
+    c = TestClient(m.app)
+
+    async def sonde_ok(n, **kw):
+        n.etat = "eveille"
+        return True
+
+    monkeypatch.setattr(m.noeud_mod, "sonder", sonde_ok)
+
+    # POST sans endpoint
+    r = c.post(
+        "/noeuds",
+        json={"id": "incomplete"},
+        headers={"X-API-Key": "muscle-key"},
+    )
+    assert r.status_code == 422
+    detail = r.json().get("detail", "").lower()
+    # Le message doit mentionner le problème (endpoint manquant ou descripteur invalide)
+    assert any(word in detail for word in ("endpoint", "incomplet", "invalide", "attendu"))
+
+    # Le nœud ne devrait pas être dans le parc
+    r2 = c.get("/noeuds", headers={"X-API-Key": "muscle-key"})
+    ids = [n["id"] for n in r2.json()["noeuds"]]
+    assert "incomplete" not in ids
+
+    monkeypatch.setenv("API_KEYS", "")
+    importlib.reload(main)
