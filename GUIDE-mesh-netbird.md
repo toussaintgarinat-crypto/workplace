@@ -141,30 +141,88 @@ setup key). En 4G/5G, le téléphone rejoint le mesh comme les autres. Puis :
 
 ---
 
-## Partie F — Le Mac de calcul (« le Muscle ») — plus tard
-Quand tu voudras déporter le LLM sur un Mac (grosse RAM unifiée), c'est le même mesh :
+## Partie F — Le Mac de calcul (« le Muscle ») — UNE COMMANDE
+
+Depuis **S131**, brancher un ordinateur comme nœud de calcul ne nécessite **ni toucher au `.env`
+ni recréer un conteneur** côté serveur. Le muscle s'auto-annonce à la brique calcul, qui
+l'enregistre dans le Gateway toute seule.
+
+### F.1 — La commande (colle-la sur la machine cible)
 
 ```bash
-# Mac : enrôler dans le mesh + servir un LLM OpenAI-compatible
-curl -fsSL https://pkgs.netbird.io/install.sh | sh && sudo netbird up --setup-key <SETUP_KEY>
-OLLAMA_HOST=0.0.0.0:11434 ollama serve && ollama pull llama3.3
+curl -fsSL https://<IP_MESH_HP>:5990/muscle/bootstrap.sh | \
+  MUSCLE_KEY=<clé_api_brique_calcul> \
+  CALCUL_MESH=<IP_MESH_HP>:5990 \
+  SETUP_KEY=<SETUP_KEY_NETBIRD> \
+  sh
 ```
-Puis, dans le `.env` **racine** de la VM (section « Muscle déporté » de `.env.example`) :
-```ini
-MUSCLE_ACTIF=1
-CALCUL_NOEUDS=[{"id":"mac","nom":"Mac","endpoint":"http://<IP_MESH_MAC>:11434","mac_wol":"<MAC_MAC>","methode_reveil":["wol","wakeping"],"priorite":10,"modele_gateway":"ollama/llama3.3"}]
-OLLAMA_URL=http://<IP_MESH_MAC>:11434
-```
-Recrée la Gateway et la brique calcul (l'env est figé à la création du conteneur) :
-```bash
-cd briques/gateway && docker compose up -d --force-recreate gateway
-cd ../calcul        && docker compose up -d --force-recreate
-```
-Dans ⚙ **Cerveau** du dashboard → coche **« Muscle déporté »**. La tuile d'état affiche le Mac
-🟢/🌙, et les réponses tombent sur lui (vérifie `modele_utilise` dans le journal d'usage).
 
-> Note : sur la VM, la brique `calcul` du **stack** (parc = les Mac) est distincte de
-> l'instance `calcul` du **Pi** (parc = le HP à réveiller). Deux rôles, deux déploiements.
+**Ce que le script fait automatiquement :**
+1. **Mesh** : si la machine n'est pas dans NetBird → installe le client et la rejoint.
+2. **Runtime LLM** : détecte Ollama / LM Studio / llama.cpp déjà présent ; sinon installe
+   Ollama et choisit un modèle selon la RAM (3b < 8 Go, 8b ~16 Go, 14b ~32 Go, 70b ≥ 64 Go).
+3. **Inscription** : `POST /noeuds` sur la brique calcul — sonde live + persistance + enregistrement
+   du modèle dans LiteLLM (Gateway).
+4. **Idempotent** : relancer le script ré-inscrit le même id sans créer de doublon.
+
+**Variables disponibles :**
+| Variable | Rôle |
+|---|---|
+| `MUSCLE_KEY` | Clé API brique calcul (définie dans `API_KEYS` du stack) |
+| `CALCUL_MESH` | `<IP_MESH_HP>:<port>` de la brique calcul |
+| `SETUP_KEY` | Clé NetBird (optionnel si déjà dans le mesh) |
+| `MUSCLE_MODELE` | Override le modèle choisi automatiquement |
+| `MUSCLE_DRYRUN` | Si non vide : détecte + affiche le payload, n'installe rien |
+
+**Test à blanc (dry-run, sans réseau ni install) :**
+```bash
+MUSCLE_KEY=test CALCUL_MESH=x:5990 MUSCLE_DRYRUN=1 sh bootstrap.sh
+```
+
+### F.2 — Vérifier l'inscription
+
+Dans **⚙ Cerveau** du dashboard → tuile Calcul : le nouveau nœud doit apparaître 🟢.
+Le modèle du muscle est visible dans LiteLLM et tombe en tête de cascade du Cœur
+(vérifie `modele_utilise` dans le journal d'usage).
+
+> **MUSCLE_KEY** : définie dans l'env de la brique calcul (`API_KEYS` dans `briques/calcul/.env`
+> ou dans le `.env` racine du stack). Elle sera demandée à l'exécution du script, jamais
+> stockée sur le serveur.
+
+> Note : la brique `calcul` du **stack** (parc = les Muscles LLM) est distincte d'une
+> éventuelle instance `calcul` sur le **Pi** (parc = le HP à réveiller). Deux rôles distincts.
+
+---
+
+### Annexe F — Repli manuel (si le script ne convient pas)
+
+Si tu préfères contrôler chaque étape à la main :
+
+```bash
+# 1. Enrôler dans le mesh
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key <SETUP_KEY>
+
+# 2. Servir un LLM OpenAI-compatible
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+ollama pull llama3.3
+
+# 3. S'inscrire auprès de la brique calcul (X-API-Key = MUSCLE_KEY du stack)
+curl -X POST https://<IP_MESH_HP>:5990/muscle/noeuds \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <MUSCLE_KEY>" \
+  -d '{
+    "id": "mac-bureau",
+    "nom": "Mac Bureau",
+    "endpoint": "http://<IP_MESH_MAC>:11434",
+    "modele": "llama3.3",
+    "methode_reveil": ["wakeping"],
+    "priorite": 10
+  }'
+```
+
+Le nœud est persisté sur disque côté serveur et survivra aux redémarrages de la brique
+(plus besoin de modifier `CALCUL_NOEUDS` dans le `.env`).
 
 ---
 
