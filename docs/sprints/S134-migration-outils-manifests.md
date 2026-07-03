@@ -42,3 +42,21 @@ L'espace "perso" dans le manifest est envoyé en minuscules au brique, mais la b
 - [x] Personnages : 2 capacités dans manifest, plus dans OUTILS, dispatcher allégé
 - [x] memoire brique : normalise "perso"→"Perso" et "solution"→None
 - [x] Tests mis à jour et verts (39 passent)
+
+## Preuve LIVE (2026-07-03)
+
+Tests MCP via Cœur (port 5100) sur le HP :
+```
+forge_factures_lister → {"total": 0, "documents": [], "ca": {...}} ✅
+forge_crm_lister      → {"total": 0, "prospects": [], "pipeline": {...}} ✅
+memoire_rappeler      → 8 souvenirs retournés ✅
+studio_series_lister  → séries réelles (Histoires du soir pour Raphaël…) ✅
+personnages_fiches_lister → fiches réelles (Guillaume Brice Trotignon…) ✅
+```
+
+**Incident résolu en même temps** : NetBird VPN sur le HP interceptait les DNS courts
+(`postgres`, `db`, `etcd`) → les 2 Keycloak (standalone + Oria) crashaient en boucle →
+Forge perdait son token de service → 502. Fix : `extra_hosts` dans 2 overrides +
+`FORGE_SERVICE_SECRET` régénéré. Commité : `fix HP réseau (NetBird DNS)`.
+
+Sprint entièrement soldé.
