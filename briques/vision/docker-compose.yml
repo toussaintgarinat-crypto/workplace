@@ -13,6 +13,7 @@ services:
       # Cascade OCR. Souverains LOCAUX d'abord (gratuit/hors-ligne) : MarkItDown + Tesseract
       # sont installés dans l'image → actifs sans config. Hébergés en repli optionnel.
       # Ordre surchargeable (liste, ex. "mistral" ou "tesseract,google") :
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - VISION_PROVIDERS=${VISION_PROVIDERS:-}
       # Langues Tesseract (binaires fra+eng installés dans l'image) :
       - TESSERACT_LANG=${TESSERACT_LANG:-fra+eng}

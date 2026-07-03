@@ -12,6 +12,7 @@ services:
       - "5900:5900"
     environment:
       - PORT=5900
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       # LLM par défaut : Gateway Workplace (cost-first). Le client peut aussi passer
       # sa propre clé par appel (champ `llm` : {base_url, cle, modele}).
       - GATEWAY_URL=http://host.docker.internal:4001

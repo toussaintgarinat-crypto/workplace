@@ -10,6 +10,7 @@ services:
     volumes:
       - donnees_data:/data
     environment:
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - DB_PATH=/data/donnees.db
     restart: unless-stopped
     healthcheck:

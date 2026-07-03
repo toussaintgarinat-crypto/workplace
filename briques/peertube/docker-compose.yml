@@ -73,7 +73,7 @@ services:
       retries: 5
 
   peertube-redis:
-    image: redis:7-alpine
+    image: redis:7.4.9-alpine
     container_name: peertube-redis
     volumes:
       - peertube_redis:/data
