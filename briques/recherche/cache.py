@@ -5,6 +5,7 @@ Keyed on (user_id, query_normalized, mode, max_results). Prevents redundant
 Tavily API calls + LLM synthesis for identical recent queries. Classique mode
 is NOT cached (DDG is free + results change fast).
 """
+import os
 import time
 import threading
 from collections import OrderedDict
@@ -86,3 +87,52 @@ class TavilyCache:
 
 
 tavily_cache = TavilyCache(ttl_seconds=3600, max_entries=500)
+
+
+class RechercheCache:
+    """Cache générique TTL + LRU pour /rechercher.
+
+    Clé : (requete_normalisée, topic, n, providers_triés) — les providers actifs
+    changent à chaque redémarrage/configuration → invalidation naturelle.
+    TTL configurable via RECHERCHE_CACHE_TTL (défaut 1800 s = 30 min).
+    """
+
+    def __init__(self, ttl_seconds: int = 1800, max_entries: int = 500):
+        self.ttl = ttl_seconds
+        self.max_entries = max_entries
+        self._store: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def make_key(requete: str, topic: str, n: int, providers: list[str]) -> str:
+        q = (requete or "").strip().lower()
+        return f"{topic}|{n}|{','.join(sorted(providers))}|{q}"
+
+    def get(self, key: str) -> dict | None:
+        with self._lock:
+            entry = self._store.get(key)
+            if not entry:
+                return None
+            ts, payload = entry
+            if time.time() - ts > self.ttl:
+                self._store.pop(key, None)
+                return None
+            self._store.move_to_end(key)
+            return payload
+
+    def set(self, key: str, payload: dict) -> None:
+        with self._lock:
+            self._store[key] = (time.time(), payload)
+            self._store.move_to_end(key)
+            while len(self._store) > self.max_entries:
+                self._store.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
+
+recherche_cache = RechercheCache(
+    ttl_seconds=int(os.getenv("RECHERCHE_CACHE_TTL", "1800")),
+    max_entries=500,
+)

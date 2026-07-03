@@ -10,7 +10,7 @@ class FauxProvider:
         self.source = source
         self.urls = urls
 
-    async def search(self, query, max_results=10, topic="web"):
+    async def search(self, query, max_results=10, topic="web", langue="fr"):
         return [SearchResult(title=f"{self.source} {u}", url=u, snippet="", content="",
                              source=self.source) for u in self.urls]
 
