@@ -2818,7 +2818,7 @@ async function deposerFichier(fichier) {
     CHAT_HIST.push({ role: 'user', content: contenuMsg });
     // Demander automatiquement à l'assistant de décrire/analyser le document
     const input = document.getElementById('chat-input');
-    input.value = 'Analyse ce document et dis-moi ce qu\'il contient.';
+    input.value = "Analyse ce document et dis-moi ce qu'il contient.";
     // Passer l'image si aucun texte OCR extrait (photo) ou toujours pour la vision
     envoyerMessage(new Event('doc'), texte ? null : visionImage);
   } catch(err) {
