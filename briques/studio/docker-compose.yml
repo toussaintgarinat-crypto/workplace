@@ -16,7 +16,7 @@ services:
       - GATEWAY_URL=http://host.docker.internal:4001
       - GATEWAY_MODEL=free/google/gemma-4-31b-it
       # Briques composées (le studio les appelle ; replis honnêtes si absentes).
-      - VOIX_URL=http://host.docker.internal:5810
+      - VOIX_URL=http://host.docker.internal:5985
       - IMAGES_URL=http://host.docker.internal:5950
       - IMAGES_PUBLIC_URL=http://localhost:5950
       # Video (5970) : bande-annonce d'épisode + animation de portrait. Repli honnête si absente.
