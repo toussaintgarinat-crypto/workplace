@@ -19,6 +19,7 @@ services:
       - PEERTUBE_SECRET=${PEERTUBE_SECRET:-changeme_min_32_chars_PLEASE_SET}
       - PEERTUBE_SMTP_HOSTNAME=
       - PT_INITIAL_ROOT_PASSWORD=${PEERTUBE_ADMIN_PASSWORD:-workplace2026}
+      - PT_INITIAL_ROOT_EMAIL=${PEERTUBE_ADMIN_EMAIL:-admin@workplace.local}
     depends_on:
       peertube-db:
         condition: service_healthy
