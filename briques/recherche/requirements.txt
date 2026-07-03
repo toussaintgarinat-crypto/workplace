@@ -8,3 +8,8 @@ duckduckgo-search==7.2.1    # provider DuckDuckGo « news » (le texte passe par
 # Extraction LOCALE souveraine du contenu éditorial d'une page (page_lire).
 # Absent → la brique reste fonctionnelle avec un nettoyage HTML basique (repli honnête).
 trafilatura==2.0.0
+
+# Playwright (opt-in — pages JS/SPA) : NE PAS décommenter ici.
+# Installé conditionnellement dans le Dockerfile si --build-arg PLAYWRIGHT=1.
+# En local : pip install playwright && playwright install chromium
+# playwright

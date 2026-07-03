@@ -27,6 +27,8 @@ from pydantic import BaseModel
 
 import extraction
 import providers
+import synthese as syn
+from cache import recherche_cache
 from search_providers import VALID_TOPICS, multi_search
 from source_filters import apply_source_filters, has_active_filters
 
@@ -85,8 +87,17 @@ class Rechercher(BaseModel):
     fournisseur: Optional[str] = None          # force UN moteur (sinon : tous les actifs)
 
 
+class Synthetiser(BaseModel):
+    requete:      str
+    n:            Optional[int] = None
+    topic:        Optional[str] = None
+    langue:       Optional[str] = None
+    instructions: Optional[str] = None
+
+
 class LirePage(BaseModel):
     url: str
+    js:  Optional[bool] = None  # True = forcer Playwright, None/False = auto
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -140,20 +151,28 @@ async def rechercher(body: Rechercher, _cle: str = Depends(cle_api)):
                         "(souverain), autorisez DuckDuckGo (BROWSER_DDG=1) ou renseignez une clé "
                         "(TAVILY_API_KEY, BRAVE_API_KEY, SERPER_API_KEY…)."}
 
-    resultats = await multi_search(actifs, requete, max_results=n, topic=topic)
+    langue = (body.langue or "fr").lower().strip()
+    noms = [nom for nom, _ in actifs]
+    cache_key = recherche_cache.make_key(requete, topic, n, noms) + f"|{langue}"
+    cached = recherche_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    resultats = await multi_search(actifs, requete, max_results=n, topic=topic, langue=langue)
 
     rapport_filtre = None
     cfg = _filtres_config()
     if resultats and has_active_filters(cfg):
         resultats, rapport_filtre = apply_source_filters(resultats, cfg)
 
-    noms = [nom for nom, _ in actifs]
     sortie = [{
         "titre": r.title,
         "url": r.url,
         "extrait": r.snippet or r.content,
         "source": r.source,
         "providers": r.providers or [r.source],
+        "score": r.score,
+        "nb_providers": r.nb_providers,
     } for r in resultats]
 
     reponse = {"requete": requete, "topic": topic, "resultats": sortie,
@@ -162,6 +181,48 @@ async def rechercher(body: Rechercher, _cle: str = Depends(cle_api)):
         reponse["filtre"] = rapport_filtre
     if not sortie:
         reponse["note"] = "Moteurs essayés sans résultat : " + ", ".join(noms)
+
+    recherche_cache.set(cache_key, reponse)
+    return reponse
+
+
+@app.post("/synthétiser", tags=["recherche", "synergie"])
+async def synthetiser_endpoint(body: Synthetiser, _cle: str = Depends(cle_api)):
+    """Recherche + synthèse LLM — renvoie un texte en langage naturel + les sources."""
+    requete = (body.requete or "").strip()
+    if not requete:
+        raise HTTPException(422, "Requête vide.")
+    n = max(1, min(50, body.n or _n_defaut()))
+    topic = (body.topic or "web").lower()
+    if topic not in VALID_TOPICS:
+        topic = "web"
+    langue = (body.langue or "fr").lower().strip()
+
+    actifs = providers.actifs()
+    if not actifs:
+        return {"requete": requete, "synthese": None, "sources": [], "backend": None,
+                "nb_sources": 0,
+                "note": "Aucun moteur de recherche configuré."}
+
+    noms = [nom for nom, _ in actifs]
+    resultats = await multi_search(actifs, requete, max_results=n, topic=topic, langue=langue)
+
+    synthese_text, sources = await syn.synthetiser(
+        requete, resultats,
+        instructions=body.instructions or "",
+        langue=langue,
+        max_items=min(n, 8),
+    )
+
+    reponse: dict = {
+        "requete": requete,
+        "synthese": synthese_text,
+        "sources": sources,
+        "backend": ",".join(noms),
+        "nb_sources": len(sources),
+    }
+    if synthese_text is None:
+        reponse["note"] = "Gateway LLM indisponible — synthèse non réalisée."
     return reponse
 
 
@@ -169,6 +230,6 @@ async def rechercher(body: Rechercher, _cle: str = Depends(cle_api)):
 async def lire_page(body: LirePage, _cle: str = Depends(cle_api)):
     """Une URL → texte principal + liens de la page (pour résumer en gardant les sources)."""
     try:
-        return await extraction.lire_page(body.url)
+        return await extraction.lire_page(body.url, js=bool(body.js))
     except extraction.ErreurLecture as e:
         raise HTTPException(422, str(e))

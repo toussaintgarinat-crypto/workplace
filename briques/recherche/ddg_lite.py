@@ -24,6 +24,13 @@ _URL = "https://html.duckduckgo.com/html/"
 _TIMEOUT = 20
 
 
+def _kl_for(lang: str) -> str:
+    """Convertit un code langue (fr, en…) en locale DDG (kl=fr-fr, en-us…)."""
+    l = (lang or "fr").lower().strip()
+    country = {"en": "us", "zh": "cn", "ja": "jp", "ko": "kr"}.get(l, l)
+    return f"{l}-{country}"
+
+
 def _ua() -> str:
     return os.getenv(
         "RECHERCHE_UA",
@@ -78,11 +85,11 @@ def parser_ddg_html(page: str, n: int) -> list[dict]:
     return sortie
 
 
-async def web_search_lite(query: str, num_results: int = 10) -> dict:
+async def web_search_lite(query: str, num_results: int = 10, langue: str = "fr") -> dict:
     """Cherche sur DuckDuckGo (HTML lite) → ``{"ok", "results"[, "error"]}``."""
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as c:
-            r = await c.post(_URL, data={"q": query, "kl": "fr-fr"},
+            r = await c.post(_URL, data={"q": query, "kl": _kl_for(langue)},
                              headers={"User-Agent": _ua()})
             r.raise_for_status()
         return {"ok": True, "results": parser_ddg_html(r.text, num_results)}

@@ -1,6 +1,9 @@
 services:
   recherche:
-    build: .
+    build:
+      context: .
+      args:
+        PLAYWRIGHT: ${RECHERCHE_PLAYWRIGHT:-0}
     container_name: workplace_recherche
     image: workplace/recherche:1.0.0          # tag épinglé (pas de :latest flottant)
     env_file:
@@ -35,6 +38,13 @@ services:
       - RECHERCHE_MAX_OCTETS=${RECHERCHE_MAX_OCTETS:-3145728}     # 3 Mo
       - RECHERCHE_TIMEOUT=${RECHERCHE_TIMEOUT:-25}
       - RECHERCHE_ROBOTS=${RECHERCHE_ROBOTS:-1}                   # respecte robots.txt
+      # ── Playwright (lecture pages JS/SPA) ──────────────────────────────────────
+      # 0 = désactivé (défaut, image légère). 1 = activé (rebuild requis avec PLAYWRIGHT=1).
+      - RECHERCHE_PLAYWRIGHT=${RECHERCHE_PLAYWRIGHT:-0}
+      # ── Synthèse LLM (/synthétiser → gateway Workplace) ────────────────────────
+      - GATEWAY_URL=${GATEWAY_URL:-http://gateway:4001}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - SYNTHESE_MODEL=${SYNTHESE_MODEL:-deepseek/deepseek-v4-flash}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       # Clés API acceptées : viennent du .env racine via env_file (ne PAS redéclarer

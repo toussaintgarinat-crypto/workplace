@@ -17,12 +17,17 @@ Garde-fous (une page web est hostile par défaut) :
 
 Note : les variantes `BROWSER_*` (nommage HuntR) restent acceptées en repli.
 """
+import logging
 import os
 import re
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
+
+logger = logging.getLogger(__name__)
+
+_SEUIL_JS = 300  # nb chars en-dessous duquel on tente le rendu Playwright
 
 
 def _env(nom: str, defaut: str) -> str:
@@ -131,6 +136,32 @@ def _trafilatura_dispo() -> bool:
         return False
 
 
+def _playwright_dispo() -> bool:
+    """Playwright est-il activé ET installé ? Opt-in via RECHERCHE_PLAYWRIGHT=1."""
+    if _env("PLAYWRIGHT", "0") != "1":
+        return False
+    import importlib.util
+    try:
+        return importlib.util.find_spec("playwright") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+async def lire_page_js(url: str) -> tuple[str, str]:
+    """Lit une page JS/SPA via Playwright headless Chromium → (html, url_finale)."""
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        try:
+            page = await browser.new_page(user_agent=_ua())
+            await page.goto(url, wait_until="networkidle", timeout=30_000)
+            html = await page.content()
+            url_finale = page.url
+        finally:
+            await browser.close()
+    return html, url_finale
+
+
 def extraire_texte(page_html: str) -> tuple[str, str]:
     """(texte_principal, moteur) depuis un HTML — Trafilatura si présent, sinon basique.
 
@@ -174,15 +205,32 @@ def extraire_liens(page_html: str, url_base: str, limite: int = 50) -> list[dict
     return sortie
 
 
-async def lire_page(url: str) -> dict:
+async def lire_page(url: str, js: bool = False) -> dict:
     """Lit une page web → ``{url, url_finale, titre, texte, tronque, nb_caracteres,
-    moteur, liens}``. Lève `ErreurLecture` (URL invalide / robots interdit / réseau)."""
+    moteur, liens}``. Lève `ErreurLecture` (URL invalide / robots interdit / réseau).
+
+    Si `js=True` ou si le texte statique est < 300 chars ET Playwright est activé
+    (RECHERCHE_PLAYWRIGHT=1), effectue un retry headless Chromium silencieux.
+    """
     url = valider_url(url)
     if not await robots_autorise(url):
         raise ErreurLecture("Lecture refusée par le robots.txt du site (politesse). "
                              "Forçable côté admin via RECHERCHE_ROBOTS=0.")
     page_html, url_finale = await telecharger(url)
     texte, moteur = extraire_texte(page_html)
+
+    # Rendu JS : explicite (`js=True`) ou détection automatique (texte trop court)
+    besoin_js = js or (len(texte) < _SEUIL_JS and _playwright_dispo())
+    if besoin_js and _playwright_dispo():
+        try:
+            page_html, url_finale = await lire_page_js(url)
+            texte_js, moteur_js = extraire_texte(page_html)
+            # On n'accepte le résultat JS que s'il est meilleur que le statique
+            if len(texte_js) > len(texte):
+                texte, moteur = texte_js, f"{moteur_js}+playwright"
+        except Exception as e:
+            logger.warning(f"[Playwright] retry échoué pour {url}: {e}")
+
     limite = max_octets()
     tronque = len(page_html.encode("utf-8", errors="ignore")) >= limite
     return {

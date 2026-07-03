@@ -79,6 +79,25 @@ def _site_filter(domains: list[str]) -> str:
     return "(" + " OR ".join(f"site:{d}" for d in domains) + ")"
 
 
+def _kl_for_lang(lang: str) -> str:
+    """Code langue → locale DDG/DDGS (fr → fr-fr, en → en-us)."""
+    l = (lang or "fr").lower().strip()
+    return f"{l}-" + {"en": "us", "zh": "cn", "ja": "jp", "ko": "kr"}.get(l, l)
+
+
+def _mkt_for_lang(lang: str) -> str:
+    """Code langue → marché Bing (fr → fr-FR, en → en-US)."""
+    l = (lang or "fr").lower().strip()
+    c = {"en": "US", "zh": "CN", "ja": "JP", "ko": "KR"}.get(l, l.upper())
+    return f"{l}-{c}"
+
+
+def _country_for_lang(lang: str) -> str:
+    """Code langue → code pays Brave (en → us, autres → même code)."""
+    l = (lang or "fr").lower().strip()
+    return {"en": "us", "zh": "cn", "ja": "jp", "ko": "kr"}.get(l, l)
+
+
 @dataclass
 class SearchResult:
     """Unified search result from any provider.
@@ -94,6 +113,8 @@ class SearchResult:
     content: str  # full extracted text (Tavily only, empty otherwise)
     source: str
     providers: list[str] = field(default_factory=list)
+    score: float = 0.0
+    nb_providers: int = 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -104,27 +125,28 @@ class DDGProvider:
     """Free web search via DDG. Supports multi-topic."""
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
 
         if topic == "news":
-            return await self._search_news(query, max_results)
+            return await self._search_news(query, max_results, langue)
         if topic == "academic":
             results = await self._search_text(
-                f"{query} {_site_filter(ACADEMIC_DOMAINS)}", max_results
+                f"{query} {_site_filter(ACADEMIC_DOMAINS)}", max_results, langue
             )
             return _boost_primary_academic(results)
         if topic == "code":
             return await self._search_text(
-                f"{query} {_site_filter(CODE_DOMAINS)}", max_results
+                f"{query} {_site_filter(CODE_DOMAINS)}", max_results, langue
             )
-        return await self._search_text(query, max_results)
+        return await self._search_text(query, max_results, langue)
 
-    async def _search_text(self, query: str, max_results: int) -> list[SearchResult]:
-        """Standard DDG text search via the brique's souverain DDG client (HTML lite)."""
+    async def _search_text(self, query: str, max_results: int,
+                           langue: str = "fr") -> list[SearchResult]:
+        """Standard DDG text search via la brique souverain DDG client (HTML lite)."""
         try:
             from ddg_lite import web_search_lite
-            data = await web_search_lite(query, num_results=max_results)
+            data = await web_search_lite(query, num_results=max_results, langue=langue)
             if not data.get("ok"):
                 logger.warning(f"[HuntR][DDG] search failed: {data.get('error', 'unknown')}")
                 return []
@@ -147,7 +169,8 @@ class DDGProvider:
             logger.warning(f"[HuntR][DDG text] search failed: {e}")
             return []
 
-    async def _search_news(self, query: str, max_results: int) -> list[SearchResult]:
+    async def _search_news(self, query: str, max_results: int,
+                           langue: str = "fr") -> list[SearchResult]:
         """DDG news search — uses duckduckgo-search lib directly."""
         try:
             import asyncio
@@ -155,7 +178,9 @@ class DDGProvider:
 
             def _blocking():
                 with DDGS() as ddgs:
-                    return list(ddgs.news(query, max_results=max_results, safesearch="moderate"))
+                    return list(ddgs.news(query, max_results=max_results,
+                                         safesearch="moderate",
+                                         region=_kl_for_lang(langue)))
 
             raw = await asyncio.to_thread(_blocking)
 
@@ -185,7 +210,7 @@ class DDGProvider:
             return results
         except Exception as e:
             logger.warning(f"[HuntR][DDG news] search failed: {e}, fallback to text")
-            return await self._search_text(f"{query} actualités", max_results)
+            return await self._search_text(f"{query} actualités", max_results, langue)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -201,7 +226,8 @@ class TavilyProvider:
     async def search(self, query: str, max_results: int = 10,
                      search_depth: str = "basic",
                      topic: str = "web",
-                     news_days: int = 7) -> list[SearchResult]:
+                     news_days: int = 7,
+                     langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
@@ -212,6 +238,7 @@ class TavilyProvider:
                 "search_depth": search_depth,
                 "include_answer": False,
                 "include_raw_content": False,
+                "search_lang": (langue or "fr").lower().strip(),
             }
 
             if topic == "news":
@@ -275,7 +302,7 @@ class BraveProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
@@ -284,6 +311,7 @@ class BraveProvider:
                 "count": min(max_results, 20),
                 "safesearch": "moderate",
                 "text_decorations": "false",
+                "country": _country_for_lang(langue),
             }
             if topic == "news":
                 # Brave news subendpoint
@@ -351,7 +379,7 @@ class ExaProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
@@ -423,7 +451,7 @@ class SerperProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
@@ -439,7 +467,8 @@ class SerperProvider:
             elif topic == "code":
                 query = f"{query} {_site_filter(CODE_DOMAINS)}"
 
-            payload = {"q": query, "num": min(max_results, 20), "hl": "fr"}
+            payload = {"q": query, "num": min(max_results, 20),
+                       "hl": (langue or "fr").lower().strip()}
             headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=15)
@@ -487,7 +516,7 @@ class SerpAPIProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
@@ -496,7 +525,7 @@ class SerpAPIProvider:
                 "q": query,
                 "num": min(max_results, 20),
                 "engine": "google",
-                "hl": "fr",
+                "hl": (langue or "fr").lower().strip(),
             }
             result_key = "organic_results"
             if topic == "news":
@@ -555,7 +584,7 @@ class KagiProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         q = query
         if topic == "academic":
@@ -614,13 +643,14 @@ class BingProvider:
         self.api_key = api_key
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         try:
             import aiohttp
+            mkt = _mkt_for_lang(langue)
             if topic == "news":
                 endpoint = "https://api.bing.microsoft.com/v7.0/news/search"
-                params = {"q": query, "count": min(max_results, 20), "mkt": "fr-FR", "freshness": "Day"}
+                params = {"q": query, "count": min(max_results, 20), "mkt": mkt, "freshness": "Day"}
                 result_key = "value"
             else:
                 endpoint = "https://api.bing.microsoft.com/v7.0/search"
@@ -629,7 +659,7 @@ class BingProvider:
                     q = f"{query} {_site_filter(ACADEMIC_DOMAINS)}"
                 elif topic == "code":
                     q = f"{query} {_site_filter(CODE_DOMAINS)}"
-                params = {"q": q, "count": min(max_results, 20), "mkt": "fr-FR"}
+                params = {"q": q, "count": min(max_results, 20), "mkt": mkt}
                 result_key = None
 
             headers = {"Ocp-Apim-Subscription-Key": self.api_key}
@@ -689,7 +719,7 @@ class SearXNGProvider:
         self.api_key = api_key  # optionnel, certaines instances en exigent une
 
     async def search(self, query: str, max_results: int = 10,
-                     topic: str = "web") -> list[SearchResult]:
+                     topic: str = "web", langue: str = "fr") -> list[SearchResult]:
         topic = topic if topic in VALID_TOPICS else "web"
         if not self.base_url:
             return []
@@ -708,7 +738,7 @@ class SearXNGProvider:
 
             params = {
                 "q": q, "format": "json", "categories": categories,
-                "language": "fr", "safesearch": "1",
+                "language": (langue or "fr").lower().strip(), "safesearch": "1",
             }
             headers = {"Accept": "application/json"}
             if self.api_key:
@@ -797,6 +827,7 @@ async def multi_search(
     query: str,
     max_results: int = 10,
     topic: str = "web",
+    langue: str = "fr",
 ) -> list[SearchResult]:
     """Lance tous les providers en parallèle, dédup par URL canonique, score
     par consensus (nombre de providers × poids × 1/rang_moyen) puis tronque.
@@ -815,7 +846,8 @@ async def multi_search(
 
     async def _one(name: str, prov) -> tuple[str, list[SearchResult]]:
         try:
-            items = await prov.search(query, max_results=max_results, topic=topic)
+            items = await prov.search(query, max_results=max_results,
+                                      topic=topic, langue=langue)
             return name, items or []
         except Exception as e:
             logger.warning(f"[HuntR][multi_search] {name} crashed: {e}")
@@ -857,11 +889,13 @@ async def multi_search(
         if n > 1:
             entry["score"] *= (1.0 + 0.25 * (n - 1))  # +25% / provider supplémentaire
 
-    # Tri + hydratation du champ providers sur SearchResult
+    # Tri + hydratation des champs providers / score / nb_providers sur SearchResult
     merged: list[SearchResult] = []
     for entry in sorted(bucket.values(), key=lambda e: e["score"], reverse=True):
         best: SearchResult = entry["best"]
         best.providers = sorted(set(entry["providers"]))
+        best.score = round(entry["score"], 3)
+        best.nb_providers = len(entry["providers"])
         merged.append(best)
 
     # On garde un peu plus de résultats qu'un provider seul aurait renvoyés

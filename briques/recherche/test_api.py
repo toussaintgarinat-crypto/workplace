@@ -39,7 +39,7 @@ def test_rechercher_fusionne_les_providers(monkeypatch):
         def __init__(self, source, urls):
             self.source = source
             self.urls = urls
-        async def search(self, query, max_results=10, topic="web"):
+        async def search(self, query, max_results=10, topic="web", langue="fr"):
             return [SearchResult(title=f"T {u}", url=u, snippet="extrait", content="",
                                  source=self.source) for u in self.urls]
 
@@ -61,6 +61,66 @@ def test_rechercher_topic_invalide_retombe_sur_web(monkeypatch):
     assert r.json()["topic"] == "web"
 
 
+def test_synthetiser_sans_moteur_rend_note_honnete():
+    """Sans moteur configuré → synthese=null + note honnête, pas d'erreur 500."""
+    r = client.post("/synthétiser", json={"requete": "FastAPI"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["synthese"] is None
+    assert data["sources"] == []
+    assert "note" in data
+
+
+def test_synthetiser_gateway_indisponible(monkeypatch):
+    """Si le gateway est down, retour gracieux avec synthese=null + sources brutes."""
+    class Faux:
+        async def search(self, query, max_results=10, topic="web", langue="fr"):
+            return [SearchResult(title="T", url="https://d.test/1",
+                                 snippet="extrait", content="", source="duckduckgo")]
+
+    monkeypatch.setattr(providers, "actifs", lambda: [("duckduckgo", Faux())])
+
+    import synthese as syn_mod
+
+    async def _gateway_down(requete, resultats, instructions="", langue="fr", max_items=8):
+        _, sources = syn_mod._formater_contexte(resultats, max_items)
+        return None, sources
+
+    monkeypatch.setattr(syn_mod, "synthetiser", _gateway_down)
+
+    r = client.post("/synthétiser", json={"requete": "test gateway down"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["synthese"] is None
+    assert len(data["sources"]) == 1
+    assert "note" in data
+
+
 def test_lire_page_url_invalide_422():
     r = client.post("/lire-page", json={"url": "file:///etc/passwd"})
     assert r.status_code == 422
+
+
+def test_cache_evite_double_appel(monkeypatch):
+    """La 2e requête identique doit être servie depuis le cache (multi_search non rappelé)."""
+    call_count = 0
+
+    class Faux:
+        async def search(self, query, max_results=10, topic="web", langue="fr"):
+            nonlocal call_count
+            call_count += 1
+            return [SearchResult(title="T", url="https://c.test/1",
+                                 snippet="s", content="", source="duckduckgo")]
+
+    monkeypatch.setattr(providers, "actifs", lambda: [("duckduckgo", Faux())])
+
+    from cache import recherche_cache
+    recherche_cache.clear()
+
+    payload = {"requete": "cache_test_unique_xyz", "topic": "web", "n": 3}
+    r1 = client.post("/rechercher", json=payload)
+    r2 = client.post("/rechercher", json=payload)
+
+    assert r1.status_code == r2.status_code == 200
+    assert r1.json() == r2.json()
+    assert call_count == 1  # multi_search appelé UNE seule fois
