@@ -853,6 +853,7 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
 | 2026-06-28 | **3 guides « comment faire » ajoutés à la racine** : `GUIDE-ajouter-une-brique.md`, `GUIDE-ajouter-un-outil.md`, `GUIDE-modifier-l-auth.md`. Point d'entrée pour étendre Workplace sans relire tout le code. |
 | 2026-07-02 | **S133 — L'assistant pilote TOUTES les briques** : +22 capacités dans 7 manifests (ETL +3, Transcription +1, Personnages +5, Studio +4, Données +3, Générateur +4, Connexion +2) → ~130 outils LLM actifs. Zéro modification du Cœur. |
 | 2026-07-02 | **S134 — Migration outils statiques → manifests** : Forge (14 outils), Mémoire (2), Studio (12), Personnages (2) sortis de `outils.py` et déclarés dans leurs manifests. `socle:true` câblé pour inclusion systématique. 39 tests verts. |
+| 2026-07-03 | **S139 — CORS hardening** : `CORS_ORIGINS=*` commenté dans `.env.example` (valeur par défaut sécurisée `localhost:5100,3003`). `CORS_ORIGINS` propagé dans 9 docker-compose manquants (calcul, connexion, donnees, images, personnages, studio, transcription, video, vision). Aucune brique en production n'acceptera plus l'origine `*` si le `.env` HP est à jour. |
 
 ---
 
