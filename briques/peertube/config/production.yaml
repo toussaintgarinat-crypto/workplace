@@ -2,6 +2,9 @@ listen:
   hostname: '0.0.0.0'
   port: 9000
 
+admin:
+  email: 'admin@workplace.local'
+
 webserver:
   https: false
   hostname: '192.168.1.89'
