@@ -2,3 +2,8 @@ services:
   frontend:
     ports:
       - "3003:3000"
+  # Fix NetBird DNS : bypass DNS pour "db" (service DB Patroni Oria).
+  # NetBird intercepte les DNS courts → netbird.cloud NXDOMAIN.
+  keycloak:
+    extra_hosts:
+      - "db:192.168.240.6"

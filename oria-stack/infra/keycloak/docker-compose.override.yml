@@ -1,0 +1,7 @@
+# Fix NetBird DNS : bypass DNS pour le hostname "postgres" (service DB Keycloak).
+# NetBird intercepte les DNS courts et les route vers netbird.cloud → NXDOMAIN.
+# extra_hosts injecte dans /etc/hosts → résolution sans DNS.
+services:
+  keycloak:
+    extra_hosts:
+      - "postgres:172.27.0.2"
