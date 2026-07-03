@@ -2409,7 +2409,7 @@ function taperAction(envoi) {
   input.value = envoi;
   document.getElementById('chat-form').requestSubmit();
 }
-async function envoyerMessage(e) {
+async function envoyerMessage(e, visionImage = null) {
   e.preventDefault();
   const input = document.getElementById('chat-input');
   const texte = input.value.trim();
@@ -2430,10 +2430,12 @@ async function envoyerMessage(e) {
 
   let bulleAssist = null, texteFinal = '';
   try {
+    const _chatBody = { messages: CHAT_HIST, surface: CONV_SURFACE,
+                        interlocuteur: CONV_ID, projet_id: CONV_PROJET };
+    if (visionImage) _chatBody.vision_image = visionImage;
     const r = await fetch('/assistant/chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ messages: CHAT_HIST, surface: CONV_SURFACE,
-                             interlocuteur: CONV_ID, projet_id: CONV_PROJET })
+      body: JSON.stringify(_chatBody)
     });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
@@ -2784,6 +2786,21 @@ async function deposerFichier(fichier) {
   const tip = document.createElement('div');
   tip.className = 'typing'; tip.textContent = 'Ingestion et classement du document…';
   fil.appendChild(tip); chatEcho();
+
+  // Lire l'image en base64 pour la vision LLM (photos sans texte)
+  let visionImage = null;
+  if (fichier.type.startsWith('image/')) {
+    visionImage = await new Promise(resolve => {
+      const fr = new FileReader();
+      fr.onload = () => {
+        const m = fr.result.match(/^data:([^;]+);base64,(.+)$/);
+        resolve(m ? { data: m[2], mime_type: m[1] } : null);
+      };
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(fichier);
+    });
+  }
+
   try {
     const fd = new FormData(); fd.append('fichier', fichier);
     const r = await fetch('/assistant/document', { method:'POST', body: fd });
@@ -2796,13 +2813,14 @@ async function deposerFichier(fichier) {
     const texte = (data.texte_extrait || '').trim();
     const contenuMsg = texte
       ? `[📎 Document déposé : "${data.nom}"]\n\nContenu extrait :\n${texte}`
-      : `[📎 Image déposée : "${data.nom}" — aucun texte extrait par OCR]`;
+      : `[📎 Image déposée : "${data.nom}" — le LLM va l'analyser visuellement]`;
     if (!CONV_ID) nouvelleConversation();
     CHAT_HIST.push({ role: 'user', content: contenuMsg });
     // Demander automatiquement à l'assistant de décrire/analyser le document
     const input = document.getElementById('chat-input');
     input.value = 'Analyse ce document et dis-moi ce qu\'il contient.';
-    envoyerMessage(new Event('doc'));
+    // Passer l'image si aucun texte OCR extrait (photo) ou toujours pour la vision
+    envoyerMessage(new Event('doc'), texte ? null : visionImage);
   } catch(err) {
     tip.remove(); ajouterBulle('assistant', '⚠ Erreur : ' + err.message);
   } finally {

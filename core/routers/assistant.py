@@ -99,9 +99,34 @@ async def assistant_chat(corps: dict):
     projet_id = corps.get("projet_id") or journal_conversations.meta(fil).get("projet_id")
     instructions_projet = projets_mod.contexte_de(projet_id)
 
+    # Vision multimodale : si le client envoie une image (data + mime_type), on l'injecte
+    # dans le dernier message utilisateur au format OpenAI multimodal → LiteLLM la route.
+    vision_image = corps.get("vision_image")
+    if vision_image and vision_image.get("data"):
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                texte = messages[i].get("content") or ""
+                if isinstance(texte, str):  # ne pas ré-emballer si déjà multimodal
+                    messages[i] = {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": texte},
+                            {"type": "image_url", "image_url": {
+                                "url": f"data:{vision_image.get('mime_type', 'image/jpeg')};base64,{vision_image['data']}"
+                            }}
+                        ]
+                    }
+                break
+
     # Trace : on enregistre le DERNIER message utilisateur avant de répondre.
-    dernier_user = next((m.get("content") for m in reversed(messages)
-                     if m.get("role") == "user"), None)
+    # Si le contenu est multimodal (liste), on extrait uniquement le texte.
+    dernier_user_brut = next((m.get("content") for m in reversed(messages)
+                              if m.get("role") == "user"), None)
+    dernier_user = (
+        " ".join(p.get("text", "") for p in dernier_user_brut if isinstance(p, dict) and p.get("type") == "text")
+        if isinstance(dernier_user_brut, list)
+        else (dernier_user_brut or "")
+    )
     if dernier_user:
         journal_conversations.enregistrer(surface, interlocuteur, "user", dernier_user,
                                           utilisateur=utilisateur)
