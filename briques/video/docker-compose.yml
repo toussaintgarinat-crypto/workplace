@@ -12,7 +12,6 @@ services:
     environment:
       # Moteur vidéo PROVIDER-AGNOSTIQUE. Aucune clé embarquée : on branche par env.
       # Ordre de préférence (défaut : fal,replicate,luma,runway,gateway). VIDE = défaut.
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - VIDEO_PROVIDERS=${VIDEO_PROVIDERS:-}
       # Clés des fournisseurs hébergés (poser celles qu'on utilise ; les autres sont ignorés).
       - FAL_KEY=${FAL_KEY:-}

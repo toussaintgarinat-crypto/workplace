@@ -16,7 +16,6 @@ services:
       #     "endpoint":"http://100.x.y.z:11434","mac_wol":"AA:BB:CC:DD:EE:FF",
       #     "methode_reveil":["wol","wakeping"],"reveil_timeout_s":90}]
       # VIDE = aucun nœud (la brique tourne, /noeuds renvoie une liste vide).
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - CALCUL_NOEUDS=${CALCUL_NOEUDS:-}
       # Fichier du parc persisté (nœuds inscrits dynamiquement via API). Défaut /data/noeuds.json.
       - CALCUL_PARC_FILE=${CALCUL_PARC_FILE:-/data/noeuds.json}

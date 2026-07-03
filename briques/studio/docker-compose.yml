@@ -12,7 +12,6 @@ services:
       - "6060:6060"
     environment:
       - PORT=6060
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100,http://localhost:3003}
       # LLM par défaut : Gateway Workplace (cost-first). BYO key possible via GATEWAY_KEY.
       - GATEWAY_URL=http://host.docker.internal:4001
       - GATEWAY_MODEL=free/google/gemma-4-31b-it
