@@ -437,8 +437,10 @@ async def assistant_document(fichier: UploadFile = File(...)):
         # 4) Persistance du classement dans les métadonnées du document.
         await client.patch(f"{etl}/documents/{doc_id}/classement", json=classement)
 
+    texte_tronque = texte[:6000] + ("\n…[tronqué]" if len(texte) > 6000 else "")
     return {"doc_id": doc_id, "nom": fichier.filename,
-            "nb_caracteres": len(texte), "classement": classement}
+            "nb_caracteres": len(texte), "classement": classement,
+            "texte_extrait": texte_tronque}
 
 
 @router.get("/assistant/rappels", tags=["assistant"])

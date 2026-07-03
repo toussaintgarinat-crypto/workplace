@@ -2792,6 +2792,17 @@ async function deposerFichier(fichier) {
     const data = await r.json();
     afficherClassement(data);
     chargerDossiers().catch(()=>{});
+    // Injecter le contenu extrait dans CHAT_HIST pour que le LLM puisse l'analyser
+    const texte = (data.texte_extrait || '').trim();
+    const contenuMsg = texte
+      ? `[📎 Document déposé : "${data.nom}"]\n\nContenu extrait :\n${texte}`
+      : `[📎 Image déposée : "${data.nom}" — aucun texte extrait par OCR]`;
+    if (!CONV_ID) nouvelleConversation();
+    CHAT_HIST.push({ role: 'user', content: contenuMsg });
+    // Demander automatiquement à l'assistant de décrire/analyser le document
+    const input = document.getElementById('chat-input');
+    input.value = 'Analyse ce document et dis-moi ce qu\'il contient.';
+    envoyerMessage(new Event('doc'));
   } catch(err) {
     tip.remove(); ajouterBulle('assistant', '⚠ Erreur : ' + err.message);
   } finally {
