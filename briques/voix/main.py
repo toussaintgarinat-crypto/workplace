@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
-                     UploadFile, WebSocket)
+                     Request, UploadFile, WebSocket)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -203,7 +203,7 @@ async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
 
 
 @app.post("/rendre", tags=["synthese"])
-async def rendre(body: RequeteRendre, _cle: str = Depends(cle_api)):
+async def rendre(request: Request, body: RequeteRendre, _cle: str = Depends(cle_api)):
     """Batch TTS : liste de segments {voix, texte} → un MP3 concaténé.
     Persiste dans /data/voix/episodes/. Renvoie {url, duree, episode_id}."""
     if not body.segments:
@@ -253,7 +253,9 @@ async def rendre(body: RequeteRendre, _cle: str = Depends(cle_api)):
     except Exception:  # noqa: BLE001
         pass
 
-    url = f"http://localhost:5985/episodes/{ep_id}.mp3"
+    # URL publique construite depuis la requête entrante (host = IP réelle du HP côté client).
+    base = os.getenv("VOIX_PUBLIC_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    url = f"{base}/episodes/{ep_id}.mp3"
     return {"url": url, "duree": dur, "episode_id": ep_id}
 
 
