@@ -1,7 +1,7 @@
 # S134 — Migration des outils statiques vers les manifests
 
 **Date** : 2026-07-02  
-**Statut** : EN COURS  
+**Statut** : ✅ LIVRÉ (2026-07-03)  
 **Objectif** : Supprimer les définitions d'outils dupliquées dans `core/outils.py` au profit des manifests de briques. Après S133 (nouvelles capacités), S134 est la phase de nettoyage : chaque brique déclare ses outils dans son manifest, le Cœur n'en a aucun en dur pour ces domaines.
 
 ---
@@ -36,9 +36,9 @@ L'espace "perso" dans le manifest est envoyé en minuscules au brique, mais la b
 
 ## Définition de DONE
 
-- [ ] Forge : 14 capacités dans manifest, plus dans OUTILS, dispatcher vidé
-- [ ] Mémoire : plus dans OUTILS + OUTILS_ACTION + dispatcher
-- [ ] Studio : 12 capacités dans manifest, plus dans OUTILS, dispatcher vidé  
-- [ ] Personnages : 2 capacités dans manifest, plus dans OUTILS, dispatcher allégé
-- [ ] memoire brique : normalise "perso"→"Perso" et "solution"→None
-- [ ] Tests mis à jour et verts
+- [x] Forge : 14 capacités dans manifest, plus dans OUTILS, dispatcher vidé
+- [x] Mémoire : plus dans OUTILS + OUTILS_ACTION + dispatcher
+- [x] Studio : 12 capacités dans manifest, plus dans OUTILS, dispatcher vidé  
+- [x] Personnages : 2 capacités dans manifest, plus dans OUTILS, dispatcher allégé
+- [x] memoire brique : normalise "perso"→"Perso" et "solution"→None
+- [x] Tests mis à jour et verts (39 passent)
