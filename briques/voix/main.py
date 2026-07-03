@@ -219,6 +219,9 @@ async def rendre(body: RequeteRendre, _cle: str = Depends(cle_api)):
             if not texte:
                 continue
             res = await moteur.synthetiser(texte, seg.voix, body.langue, "wav", None, None)
+            # Repli sans nom de voix si le nom envoyé (ex. macOS "Thomas") est inconnu du moteur.
+            if (res.get("place_holder") or not res.get("audio")) and seg.voix:
+                res = await moteur.synthetiser(texte, None, body.langue, "wav", None, None)
             if res.get("place_holder") or not res.get("audio"):
                 continue
             p = tmp_path / f"seg_{i:04d}.wav"
