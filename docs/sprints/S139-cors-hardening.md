@@ -7,7 +7,7 @@
 
 - **Sprint** : S139
 - **Catégorie** : Sécurité / configuration
-- **Statut** : ✅ LIVRÉ (2026-07-03)
+- **Statut** : ✅ PROUVÉ LIVE (HP Proxmox) 2026-07-03
 - **Date de planification** : 2026-07-03
 - **Date de livraison** : 2026-07-03
 - **Briques concernées** : calcul, studio, restaurant, video, telephonie, transcription, images, mail, recherche, connexion, voix, personnages, paiements, dev, synopsis, oria, peertube-wrapper
