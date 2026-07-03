@@ -5,12 +5,14 @@ services:
       context: ../..
       dockerfile: briques/donnees/Dockerfile
     container_name: workplace_donnees
+    env_file:
+      - path: ../../.env
+        required: false
     ports:
       - "5500:5500"
     volumes:
       - donnees_data:/data
     environment:
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - DB_PATH=/data/donnees.db
     restart: unless-stopped
     healthcheck:

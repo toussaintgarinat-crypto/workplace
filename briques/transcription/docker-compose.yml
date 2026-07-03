@@ -12,7 +12,6 @@ services:
     environment:
       # Moteur PROVIDER-AGNOSTIQUE, SOUVERAIN par défaut. Ordre (défaut :
       # local,openai,deepgram,assemblyai,gateway). VIDE = défaut. Mets "local" pour 100 % souverain.
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - TRANSCRIPTION_PROVIDERS=${TRANSCRIPTION_PROVIDERS:-}
       # Moteur souverain local (Whisper). TRANSCRIPTION_LOCAL=0 pour le couper.
       - TRANSCRIPTION_LOCAL=${TRANSCRIPTION_LOCAL:-1}

@@ -17,7 +17,6 @@ services:
       # Exemple « distant d'abord, local en repli » :
       #   COMFY_URL=http://mon-gpu.exemple:8188,http://host.docker.internal:8188
       # VIDE = mode placeholder honnête (aucune fausse image).
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5100}
       - COMFY_URL=${COMFY_URL:-}
       - COMFY_CKPT=${COMFY_CKPT:-sd_xl_base_1.0.safetensors}
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo).
