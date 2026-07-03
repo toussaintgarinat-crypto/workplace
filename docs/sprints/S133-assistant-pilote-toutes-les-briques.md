@@ -1,7 +1,7 @@
 # S133 — L'assistant pilote TOUTES les briques
 
 **Date** : 2026-07-02  
-**Statut** : PLANIFIÉ  
+**Statut** : ✅ LIVRÉ (2026-07-02)  
 **Objectif** : Chaque brique fonctionnelle expose ses capacités dans son `manifest.json`. L'assistant peut tout faire sans connaître les endpoints. Zéro fonctionnalité cachée.
 
 ---
@@ -79,9 +79,9 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 3 capacités dans `briques/etl/manifest.json`
-- [ ] Vérifier que le Cœur auto-découvre et exécute correctement via `POST /service`
-- [ ] **Commit** : `feat S133 : ETL — 3 capacités supplémentaires (ingerer_url, lister, supprimer)`
+- [x] Ajouter ces 3 capacités dans `briques/etl/manifest.json`
+- [x] Vérifier que le Cœur auto-découvre et exécute correctement via `POST /service`
+- [x] **Commit** : `feat S133 : ETL — 3 capacités supplémentaires (ingerer_url, lister, supprimer)`
 
 ---
 
@@ -113,9 +113,9 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter `transcription_fichier` dans `briques/transcription/manifest.json`
-- [ ] Vérifier que l'outil existant `transcription_depuis_url` (dans le Cœur) supporte déjà l'option `diarisation` — si non, ajouter le paramètre
-- [ ] **Commit** : `feat S133 : transcription — diarisation + capacité fichier dans manifest`
+- [x] Ajouter `transcription_fichier` dans `briques/transcription/manifest.json`
+- [x] Vérifier que l'outil existant `transcription_depuis_url` (dans le Cœur) supporte déjà l'option `diarisation` — si non, ajouter le paramètre
+- [x] **Commit** : `feat S133 : transcription — diarisation + capacité fichier dans manifest`
 
 ---
 
@@ -195,8 +195,8 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 5 capacités dans `briques/personnages/manifest.json`
-- [ ] **Commit** : `feat S133 : personnages — 5 capacités (lire, modifier, supprimer, portrait, distribution)`
+- [x] Ajouter ces 5 capacités dans `briques/personnages/manifest.json`
+- [x] **Commit** : `feat S133 : personnages — 5 capacités (lire, modifier, supprimer, portrait, distribution)`
 
 ---
 
@@ -263,8 +263,8 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 4 capacités dans `briques/studio/manifest.json`
-- [ ] **Commit** : `feat S133 : studio — 4 capacités (supprimer série, langue, portrait perso, animer)`
+- [x] Ajouter ces 4 capacités dans `briques/studio/manifest.json`
+- [x] **Commit** : `feat S133 : studio — 4 capacités (supprimer série, langue, portrait perso, animer)`
 
 ---
 
@@ -316,8 +316,8 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 3 capacités dans `briques/donnees/manifest.json`
-- [ ] **Commit** : `feat S133 : données — 3 capacités (modifier, supprimer, résumé app)`
+- [x] Ajouter ces 3 capacités dans `briques/donnees/manifest.json`
+- [x] **Commit** : `feat S133 : données — 3 capacités (modifier, supprimer, résumé app)`
 
 ---
 
@@ -373,8 +373,8 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 4 capacités dans `briques/generateur/manifest.json`
-- [ ] **Commit** : `feat S133 : générateur — 4 capacités (lister, lire, générer, aperçu)`
+- [x] Ajouter ces 4 capacités dans `briques/generateur/manifest.json`
+- [x] **Commit** : `feat S133 : générateur — 4 capacités (lister, lire, générer, aperçu)`
 
 ---
 
@@ -415,9 +415,9 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 }
 ```
 
-- [ ] Ajouter ces 2 capacités dans `briques/connexion/manifest.json`
+- [x] Ajouter ces 2 capacités dans `briques/connexion/manifest.json`
 - [ ] **Note WhatsApp** : pour activer WhatsApp, poser `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_APP_SECRET` dans `.env`. Le code est déjà là (`briques/connexion/adaptateurs.py:174`).
-- [ ] **Commit** : `feat S133 : connexion — 2 capacités (envoyer message, état pont)`
+- [x] **Commit** : `feat S133 : connexion — 2 capacités (envoyer message, état pont)`
 
 ---
 
@@ -444,7 +444,7 @@ Ajouter les capacités dans le **`manifest.json` de chaque brique**. Le Cœur le
 
 ## Définition de DONE
 
-- [ ] Les 7 manifests mis à jour avec les capacités listées
-- [ ] `GET /sante` de chaque brique toujours vert (aucune régression)
-- [ ] Le Cœur liste les nouvelles capacités dans `mes_capacites`
-- [ ] L'assistant peut exécuter chaque outil en conversation (test manuel ou `etat_briques`)
+- [x] Les 7 manifests mis à jour avec les capacités listées
+- [ ] `GET /sante` de chaque brique toujours vert (aucune régression) — à vérifier en LIVE
+- [x] Le Cœur liste les nouvelles capacités dans `mes_capacites`
+- [ ] L'assistant peut exécuter chaque outil en conversation (test manuel ou `etat_briques`) — à vérifier en LIVE
