@@ -10,7 +10,11 @@ OpenAI / ElevenLabs / la Gateway en repli OPT-IN. Sans moteur, on rend un repli 
 (`place_holder: true`, pas d'audio) — jamais de fausse voix.
 """
 import os
-from typing import Optional
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+from typing import List, Optional
 
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      UploadFile, WebSocket)
@@ -38,6 +42,9 @@ API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()
 _MEDIA = {"opus": "audio/ogg", "ogg": "audio/ogg", "oga": "audio/ogg", "mp3": "audio/mpeg",
           "wav": "audio/wav", "aac": "audio/aac", "flac": "audio/flac", "pcm": "audio/L16"}
 
+# Dossier de persistance des épisodes produits par /rendre.
+_EPISODES_DIR = Path(os.getenv("VOIX_DIR", "/data/voix")) / "episodes"
+
 
 def cle_api(x_api_key: Optional[str] = Header(None),
             authorization: Optional[str] = Header(None)) -> str:
@@ -56,6 +63,17 @@ class Synthese(BaseModel):
     format:      Optional[str] = None
     fournisseur: Optional[str] = None
     usage:       Optional[str] = None            # "conversation" / "lecture" ; sinon auto (longueur)
+
+
+class SegmentRendre(BaseModel):
+    voix:  Optional[str] = None
+    texte: str
+
+
+class RequeteRendre(BaseModel):
+    episode_id: Optional[str] = None
+    segments:   List[SegmentRendre]
+    langue:     Optional[str] = None
 
 
 class ChoixMoteur(BaseModel):
@@ -182,6 +200,68 @@ async def synthetiser(body: Synthese, _cle: str = Depends(cle_api)):
     media = _MEDIA.get(res["format"], "application/octet-stream")
     return Response(res["audio"], media_type=media,
                     headers={"X-Backend": res["backend"], "X-Format": res["format"]})
+
+
+@app.post("/rendre", tags=["synthese"])
+async def rendre(body: RequeteRendre, _cle: str = Depends(cle_api)):
+    """Batch TTS : liste de segments {voix, texte} → un MP3 concaténé.
+    Persiste dans /data/voix/episodes/. Renvoie {url, duree, episode_id}."""
+    if not body.segments:
+        raise HTTPException(422, "Aucun segment fourni.")
+    _EPISODES_DIR.mkdir(parents=True, exist_ok=True)
+    ep_id = (body.episode_id or "").strip() or str(uuid.uuid4())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        fichiers = []
+        for i, seg in enumerate(body.segments):
+            texte = (seg.texte or "").strip()
+            if not texte:
+                continue
+            res = await moteur.synthetiser(texte, seg.voix, body.langue, "wav", None, None)
+            if res.get("place_holder") or not res.get("audio"):
+                continue
+            p = tmp_path / f"seg_{i:04d}.wav"
+            p.write_bytes(res["audio"])
+            fichiers.append(str(p))
+
+        if not fichiers:
+            raise HTTPException(502, "Aucun segment synthétisé (moteur voix indisponible).")
+
+        liste = tmp_path / "liste.txt"
+        liste.write_text("\n".join(f"file '{f}'" for f in fichiers))
+        sortie = _EPISODES_DIR / f"{ep_id}.mp3"
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+             "-i", str(liste), "-c:a", "libmp3lame", "-q:a", "4", str(sortie)],
+            capture_output=True, timeout=300,
+        )
+        if proc.returncode != 0:
+            raise HTTPException(502, f"ffmpeg : {proc.stderr.decode()[:300]}")
+
+    dur = None
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(sortie)],
+            capture_output=True, text=True, timeout=10,
+        )
+        dur = float(r.stdout.strip())
+    except Exception:  # noqa: BLE001
+        pass
+
+    url = f"http://localhost:5985/episodes/{ep_id}.mp3"
+    return {"url": url, "duree": dur, "episode_id": ep_id}
+
+
+@app.get("/episodes/{ep_id}.mp3", tags=["synthese"], include_in_schema=False)
+async def telecharger_episode(ep_id: str):
+    """Sert un épisode MP3 produit par /rendre."""
+    p = _EPISODES_DIR / f"{ep_id}.mp3"
+    if not p.exists():
+        raise HTTPException(404, f"Épisode {ep_id!r} introuvable.")
+    return FileResponse(str(p), media_type="audio/mpeg",
+                        headers={"Content-Disposition": f'inline; filename="{ep_id}.mp3"'})
 
 
 # ── Bibliothèque de VOIX CLONÉES (S107) — cloner une fois, rappeler partout ──
