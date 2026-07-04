@@ -114,6 +114,26 @@ def _ordonner_selon_budget(modeles: list[str]) -> tuple[list[str], bool]:
     return gratuits, True
 
 
+async def _preparer(
+    client: httpx.AsyncClient,
+    messages: list[dict],
+    modeles: list[str],
+    conf: dict,
+    tools: list[dict] | None,
+    trim_contexte: bool,
+) -> tuple[list[dict], list[str], int, str | None, str | None]:
+    """Résumé à froid, trim, routage dynamique. Factorisé entre completer() et completer_flux()."""
+    if conf.get("resume_actif"):
+        messages = await summarisation.condenser(client, messages, conf)
+    trimmed = 0
+    if trim_contexte:
+        messages, trimmed = trimming.trim(messages)
+    routed_to = complexite = None
+    if conf:
+        modeles, routed_to, complexite = routage.router(messages, modeles, conf, tools)
+    return messages, modeles, trimmed, routed_to, complexite
+
+
 async def completer(
     messages: list[dict],
     *,
@@ -148,19 +168,9 @@ async def completer(
     essayes: list[str] = []
     derniere_erreur = None
     try:
-        # [S138-3b] summarization à froid : condense l'historique ancien (appel LLM
-        # bon marché) AVANT le trim, pour ne pas perdre l'info en coupant la fenêtre.
-        if conf.get("resume_actif"):
-            messages = await summarisation.condenser(client, messages, conf)
-
-        trimmed = 0
-        if trim_contexte:
-            messages, trimmed = trimming.trim(messages)
-
-        # [S138-1] routage dynamique : rétrograde une requête triviale vers l'économe.
-        routed_to = complexite = None
-        if conf:
-            modeles, routed_to, complexite = routage.router(messages, modeles, conf, tools)
+        # [S138-3b/S138-1] résumé à froid, trim, routage dynamique.
+        messages, modeles, trimmed, routed_to, complexite = await _preparer(
+            client, messages, modeles, conf, tools, trim_contexte)
 
         # Cache jamais utilisé pour les tours à outils (la réponse a un effet de bord).
         cacheable = cache and not tools and bool(modeles)
@@ -289,14 +299,9 @@ async def completer_flux(
     essayes: list[str] = []
     derniere_erreur = None
     try:
-        if conf.get("resume_actif"):
-            messages = await summarisation.condenser(client, messages, conf)
-        trimmed = 0
-        if trim_contexte:
-            messages, trimmed = trimming.trim(messages)
-        routed_to = complexite = None
-        if conf:
-            modeles, routed_to, complexite = routage.router(messages, modeles, conf, tools)
+        # [S138-3b/S138-1] résumé à froid, trim, routage dynamique.
+        messages, modeles, trimmed, routed_to, complexite = await _preparer(
+            client, messages, modeles, conf, tools, trim_contexte)
 
         payload = {"messages": messages, "temperature": temperature,
                    "stream": True, "stream_options": {"include_usage": True}}
