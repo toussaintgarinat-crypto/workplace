@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import graphe_apprentissage
 import horloge
 import orchestrateur
 import outils
@@ -32,10 +33,16 @@ async def lifespan(app: FastAPI):
     # descriptions d'outils pour pouvoir filtrer, à chaque requête, sur les plus pertinents.
     # Best-effort : une indexation ratée (Gateway KO, numpy absent) n'empêche jamais le démarrage
     # — `filtrer_outils` laissera simplement passer tous les outils (comportement actuel).
+    _specs = outils.outils_pour(registre)
     try:
-        await routage_outils.indexer(outils.outils_pour(registre))
+        await routage_outils.indexer(_specs)
     except Exception:  # noqa: BLE001 — le routage ne doit jamais bloquer le démarrage
         logging.getLogger(__name__).warning("Routage d'outils : indexation ignorée", exc_info=True)
+    # Graphe d'apprentissage (S145) : construit après l'index embeddings, silencieux si brique absente.
+    try:
+        await graphe_apprentissage.charger_graphe(_specs)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning("Graphe apprentissage : chargement ignoré", exc_info=True)
     # Boucle proactive en tâche de fond (rappels : agenda imminent, docs à classer).
     tache_proactif = asyncio.create_task(proactif.boucle(registre))
     # Horloge : déclenche les tâches périodiques déclarées par les briques (S29).

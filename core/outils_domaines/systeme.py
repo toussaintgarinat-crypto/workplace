@@ -44,6 +44,17 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
                                 lambda n: outils.est_action(n, registre)),
             ensure_ascii=False)
 
+    if nom == "graphe_rafraichir":
+        import graphe_apprentissage
+        specs = outils.outils_pour(registre)
+        await graphe_apprentissage.charger_graphe(specs)
+        st = graphe_apprentissage._graphe.stats()
+        return json.dumps({
+            "ok": True,
+            "capacites_liees": st["capacites_liees"],
+            "top5": st["top5"],
+        }, ensure_ascii=False)
+
     if nom == "coagent_lancer":
         # Co-agent exécutif (S66) : boucle profonde autonome, bornée en tokens,
         # lecture seule. Import LOCAL — coagent importe outils, on casse le cycle.

@@ -6,7 +6,7 @@
 
 - **Sprint** : S140
 - **Catégorie** : Sécurité
-- **Statut** : À planifier (bloquer avant mise en production de la brique PeerTube)
+- **Statut** : ✅ LIVRÉ (2026-07-03) — tous les chantiers C0–C3 déjà appliqués
 - **Date de planification** : 2026-07-03
 - **Brique concernée** : `briques/peertube/`
 

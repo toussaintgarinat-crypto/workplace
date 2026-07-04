@@ -23,6 +23,7 @@ import httpx
 import catalogue
 import config_assistant
 import conscience
+import guardrails_outils
 import langue as langue_mod
 import llm_pipeline
 import muscle
@@ -32,11 +33,27 @@ import personas
 import identite
 import proprioception
 import amelioration
+import moa
 import suggestions
 
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 20
+
+_PREFIXES_ERREUR_OUTIL = (
+    "Impossible :", "Échec (", "Indisponible (", "Brique injoignable (",
+    "Erreur (", "Outil inconnu :",
+)
+
+
+def _est_erreur_outil(resultat: str) -> bool:
+    """Détecte si `outils.executer` a renvoyé un message d'erreur."""
+    if any(resultat.startswith(p) for p in _PREFIXES_ERREUR_OUTIL):
+        return True
+    try:
+        return bool(json.loads(resultat).get("erreur"))
+    except Exception:  # noqa: BLE001
+        return False
 
 # Streaming token-par-token (S60) : l'assistant émet le texte au fil de l'eau (feel
 # ChatGPT, utile en mobilité). Kill-switch d'env : STREAM_ACTIF=0 rétablit la réponse
@@ -224,6 +241,19 @@ async def converser(messages: list[dict], registre,
         outils_actifs = await routage_outils.filtrer_outils(
             question, outils_actifs, client=client, toujours=outils.noms_socle(registre))
 
+        # S143 : guardrail instancié par conversation (jamais en global).
+        guardrail = guardrails_outils.Guardrail()
+
+        # S144 MOA : conseil de modèles en parallèle sur les requêtes complexes (opt-in MOA_MODELES).
+        # Guidance éphémère — injectée pour ce seul appel, jamais persistée dans le journal.
+        config_moa = moa._depuis_env()
+        if config_moa and moa.est_complexe(question):
+            try:
+                guidance = await moa.consulter(historique, config_moa, client)
+                historique = historique + [{"role": "system", "content": f"[Conseil MOA]\n{guidance}"}]
+            except Exception:  # noqa: BLE001 — MOA jamais bloquant
+                pass
+
         for iteration in range(MAX_ITERATIONS):
             # Pipeline unifié (S138) : trimming + bascule de modèles + comptage
             # tokens/coût + journal. La logique d'outils reste ici, côté agent.
@@ -287,17 +317,41 @@ async def converser(messages: list[dict], registre,
                 except json.JSONDecodeError:
                     args = {}
                 outils_appeles.append(nom)
+
+                # S143 — guardrail : décision avant l'appel (block = pas d'appel réel).
+                g_action, g_msg = guardrail.before_call(nom, args)
+                g_note = g_msg if g_action == "warn" else None
+
                 yield {"type": "outil", "nom": nom, "args": args,
                        "action": outils.est_action(nom, registre)}
-                resultat = await outils.executer(nom, args, registre)
-                # La porte (S90) : si le LLM vient d'ouvrir une compétence différée, on
-                # l'ajoute aux outils du tour suivant (son schéma devient appelable).
-                if nom == outils.META_CHARGER and '"ok": true' in resultat:
-                    cible = (args or {}).get("nom")
-                    if cible:
-                        competences_chargees.add(cible)
-                        outils_actifs = outils.outils_pour(
-                            registre, chargees=competences_chargees, porte=True)
+
+                if g_action in ("block", "halt"):
+                    resultat = json.dumps(
+                        {"erreur": f"[GUARDRAIL] {g_msg}"}, ensure_ascii=False)
+                else:
+                    resultat = await outils.executer(nom, args, registre)
+                    # S143 — mise à jour de l'état + idempotence.
+                    guardrail.after_call(nom, args, resultat,
+                                         erreur=_est_erreur_outil(resultat))
+                    g_idem_action, g_idem_msg = guardrail.verifier_idempotence(nom, args)
+                    if g_idem_msg:
+                        g_note = (g_note + " | " + g_idem_msg) if g_note else g_idem_msg
+                    if g_note:
+                        try:
+                            _data = json.loads(resultat)
+                            _data["_guardrail"] = g_note
+                            resultat = json.dumps(_data, ensure_ascii=False)
+                        except Exception:  # noqa: BLE001
+                            resultat += f"\n[GUARDRAIL] {g_note}"
+                    # La porte (S90) : si le LLM vient d'ouvrir une compétence différée, on
+                    # l'ajoute aux outils du tour suivant (son schéma devient appelable).
+                    if nom == outils.META_CHARGER and '"ok": true' in resultat:
+                        cible = (args or {}).get("nom")
+                        if cible:
+                            competences_chargees.add(cible)
+                            outils_actifs = outils.outils_pour(
+                                registre, chargees=competences_chargees, porte=True)
+
                 confirmation = '"confirmation_requise": true' in resultat
                 yield {"type": "resultat_outil", "nom": nom,
                        "resultat": resultat, "confirmation": confirmation}

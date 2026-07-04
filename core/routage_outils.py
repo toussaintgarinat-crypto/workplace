@@ -44,6 +44,8 @@ GATEWAY_KEY = os.getenv("GATEWAY_KEY", "")
 EMBEDDING_MODEL = os.getenv("ROUTAGE_EMBEDDING_MODEL", "text-embedding-3-small")
 ACTIF = os.getenv("ROUTAGE_OUTILS", "0").lower() in ("1", "true", "yes", "on")
 TOP_K = int(os.getenv("ROUTAGE_TOP_K", "8"))
+# Poids du boost lexical (graphe d'apprentissage S145). 0 = désactivé (rétrocompat parfaite).
+ALPHA_BOOST = float(os.getenv("GRAPHE_ALPHA", "0.3"))
 
 try:  # numpy = chemin rapide ; absent → repli cosinus pur-Python (cf. en-tête)
     import numpy as _np
@@ -148,11 +150,28 @@ def _classer(vec_requete, noms: list) -> list:
     return [n for n, _ in scores]
 
 
-def selectionner(vec_requete, toutes_capacites: list, *, top_k: int = TOP_K, toujours=None) -> list:
+def selectionner(vec_requete, toutes_capacites: list, *, top_k: int = TOP_K,
+                 toujours=None, requete: str = "") -> list:
     """Cœur PUR (testable sans Gateway) : garde le socle `toujours` + les `top_k` outils les plus
-    proches de `vec_requete`, en PRÉSERVANT l'ordre d'origine (préfixe stable → cacheable S90)."""
+    proches de `vec_requete`, en PRÉSERVANT l'ordre d'origine (préfixe stable → cacheable S90).
+
+    Si `requete` est fournie ET que GRAPHE_ALPHA > 0, le score final intègre le boost lexical
+    du graphe d'apprentissage (S145) : score_final = score_cos + ALPHA_BOOST * boost_lexical.
+    """
     toujours = set(toujours or ())
-    proches = set(_classer(vec_requete, [_nom(s) for s in toutes_capacites])[:top_k])
+
+    # Scores cosinus de base
+    q = _normaliser(vec_requete)
+    noms = [_nom(s) for s in toutes_capacites]
+    scores: dict[str, float] = {n: _cos(q, _index[n]) for n in noms if n in _index}
+
+    # Boost lexical du graphe d'apprentissage (opt-in via GRAPHE_ALPHA)
+    if requete and ALPHA_BOOST > 0:
+        import graphe_apprentissage as _ga  # import local — évite cycle au module-level
+        boosts = _ga._graphe.boost(requete, toutes_capacites)
+        scores = {n: scores.get(n, 0.0) + ALPHA_BOOST * boosts.get(n, 0.0) for n in scores}
+
+    proches = set(sorted(scores, key=lambda n: -scores[n])[:top_k])
     gardes = proches | toujours
     return [s for s in toutes_capacites if _nom(s) in gardes]
 
@@ -176,4 +195,4 @@ async def filtrer_outils(requete: str, toutes_capacites: list, *,
             await client.aclose()
     if vec is None:
         return toutes_capacites
-    return selectionner(vec, toutes_capacites, top_k=top_k, toujours=toujours)
+    return selectionner(vec, toutes_capacites, top_k=top_k, toujours=toujours, requete=requete)
