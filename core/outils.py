@@ -57,6 +57,12 @@ OUTILS: list[dict] = [
                        "résultat, n'invente aucun organe ni pouvoir. Lecture seule.",
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
+        "name": "graphe_rafraichir",
+        "description": "Recharge le graphe d'apprentissage mémoires↔capacités depuis la brique mémoire. "
+                       "Utile après avoir ajouté des souvenirs importants pour que le routage en tienne "
+                       "compte immédiatement sans redémarrer le Cœur. Lecture seule (pas d'effet de bord).",
+        "parameters": _p({}, [])}},
+    {"type": "function", "function": {
         "name": "coagent_lancer",
         "description": "Lance un CO-AGENT autonome (ton « lobe frontal ») pour mener un "
                        "objectif MULTI-ÉTAPES en profondeur, sans repasser par l'utilisateur à "
