@@ -158,7 +158,7 @@ def test_vocal_repond_aussi_en_vocal(monkeypatch):
 
 
 def test_message_texte_ne_vocalise_pas(monkeypatch):
-    """Un message ÉCRIT reçoit une réponse écrite — pas de synthèse vocale inutile."""
+    """Un message ÉCRIT ordinaire reçoit une réponse écrite — pas de synthèse vocale inutile."""
     monkeypatch.setenv("CONNEXION_TTS", "1")
     faux = _brancher(monkeypatch, reponse="ok")
     appels = {"tts": 0}
@@ -172,6 +172,39 @@ def test_message_texte_ne_vocalise_pas(monkeypatch):
     r = _run(pont.traiter("faux", A.Entrant("faux", "v4", "coucou", "Garina")))
     assert r["vocalise"] is False and appels["tts"] == 0
     assert faux.audios == []
+
+
+def test_ecoute_ordinaire_ne_vocalise_pas(monkeypatch):
+    """'Écoute, j'ai un problème audio' — faux positifs évités, pas de TTS non demandé."""
+    monkeypatch.setenv("CONNEXION_TTS", "1")
+    faux = _brancher(monkeypatch, reponse="ok")
+    appels = {"tts": 0}
+
+    async def tts(*a, **k):
+        appels["tts"] += 1
+        return {"audio": b"X", "format": "ogg"}
+
+    monkeypatch.setattr(voix, "synthetiser", tts)
+    K.lier("faux", "v7", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "v7", "écoute, j'ai un problème audio", "Garina")))
+    assert r["vocalise"] is False and appels["tts"] == 0
+
+
+def test_message_texte_demande_vocale_se_vocalise(monkeypatch):
+    """Un texte demandant explicitement un vocal ('fais-moi un vocal de ça') déclenche le TTS."""
+    monkeypatch.setenv("CONNEXION_TTS", "1")
+    faux = _brancher(monkeypatch, reponse="Voici ta réponse lue.")
+
+    async def tts(texte, voix=None, langue=None, **_):
+        assert texte == "Voici ta réponse lue."
+        return {"audio": b"MP3", "format": "mp3", "backend": "piper"}
+
+    monkeypatch.setattr(voix, "synthetiser", tts)
+    K.lier("faux", "v6", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "v6", "fais-moi un vocal de ce texte", "Garina")))
+    assert r["ok"] is True and r["vocalise"] is True
+    assert faux.envoyes == [("v6", "Voici ta réponse lue.")]   # texte toujours envoyé
+    assert faux.audios == [("v6", b"MP3", "mp3")]               # + bulle vocale
 
 
 def test_vocal_repli_honnete_si_tts_indisponible(monkeypatch):

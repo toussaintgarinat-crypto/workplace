@@ -46,13 +46,16 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
 
     if nom == "graphe_rafraichir":
         import graphe_apprentissage
+        import routage_outils
         specs = outils.outils_pour(registre)
         await graphe_apprentissage.charger_graphe(specs)
+        await routage_outils.indexer(specs, client)
         st = graphe_apprentissage._graphe.stats()
         return json.dumps({
             "ok": True,
             "capacites_liees": st["capacites_liees"],
             "top5": st["top5"],
+            "index_outils": len(routage_outils._index),
         }, ensure_ascii=False)
 
     if nom == "coagent_lancer":

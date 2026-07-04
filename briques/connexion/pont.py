@@ -48,6 +48,16 @@ def _tts_actif() -> bool:
     return str(os.getenv("CONNEXION_TTS", "1")).strip().lower() in ("1", "true", "oui", "on")
 
 
+_MOTS_VOCAL = ("vocal", "à voix haute", "lis-moi", "synthèse vocale",
+               "synthétise", "mp3", "tts", "fais-moi entendre", "dis à voix")
+
+
+def _demande_vocale(texte: str) -> bool:
+    """Détecte si un message TEXTE demande explicitement une réponse en audio."""
+    t = (texte or "").lower()
+    return any(mot in t for mot in _MOTS_VOCAL)
+
+
 async def _vocaliser(ad, id_externe: str, texte: str, envoyer: bool) -> bool:
     """Synthétise `texte` (brique voix) et l'envoie en vocal. Repli HONNÊTE : moteur TTS
     indisponible (placeholder) ou réseau KO → on n'envoie rien de faux, le texte est déjà parti."""
@@ -130,10 +140,11 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
         except Exception:  # noqa: BLE001
             envoye = False
 
-    # Boucle speech-to-speech : si l'interlocuteur a PARLÉ (message vocal transcrit), on
-    # répond AUSSI en vocal (le texte reste envoyé : il sert de transcription lisible).
+    # Réponse vocale : speech-to-speech (message entrant était audio) OU demande explicite
+    # dans un texte ("fais-moi un vocal", "lis-moi ça"…). Le texte est toujours envoyé en
+    # premier : il sert de transcription lisible et de repli si la brique voix est KO.
     vocalise = False
-    if transcrit is not None and not repli and _tts_actif():
+    if (transcrit is not None or _demande_vocale(entrant.texte)) and not repli and _tts_actif():
         vocalise = await _vocaliser(ad, entrant.id_externe, reponse, envoyer)
 
     return {"ok": True, "reponse": reponse, "utilisateur": corr.get("utilisateur"),

@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+from collections import OrderedDict
 from typing import NamedTuple
 
 import httpx
@@ -49,7 +50,8 @@ def est_complexe(message_utilisateur: str) -> bool:
     return any(mot in msg for mot in MOTS_COMPLEXES)
 
 
-_cache_guidance: dict[str, str] = {}
+_CACHE_MAX = int(os.getenv("MOA_CACHE_MAX", "64"))
+_cache_guidance: OrderedDict[str, str] = OrderedDict()
 
 
 def _hash_contexte(messages: list) -> str:
@@ -116,4 +118,7 @@ async def consulter(messages: list, config: ConfigMOA,
         client,
     )
     _cache_guidance[h] = guidance
+    _cache_guidance.move_to_end(h)
+    if len(_cache_guidance) > _CACHE_MAX:
+        _cache_guidance.popitem(last=False)
     return guidance
