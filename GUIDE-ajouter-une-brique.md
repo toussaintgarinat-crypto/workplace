@@ -138,3 +138,15 @@ appelle le Cœur (ex. `connexion`).
 
 **Tu n'as touché à AUCUN fichier du Cœur.** C'est le test : si tu as dû éditer `core/`, c'est que
 ta capacité n'est pas exprimable en déclaratif — voir alors `GUIDE-ajouter-un-outil.md` (§ outil en dur).
+
+## Recherches dans le code
+
+La brique dev (5955) crée des snapshots de travail dans `.dev-ateliers/` (gitignoré, exclu du
+build Docker). Pour ne pas tripler les résultats lors d'une recherche :
+
+```bash
+grep -r "terme" . --exclude-dir=.dev-ateliers
+find . -path "./.dev-ateliers" -prune -o -name "*.py" -print
+```
+
+La variable d'env `DEV_ATELIERS` contrôle où vivent ces worktrees (voir `briques/dev/.env.example`).
