@@ -36,10 +36,19 @@ def _depuis_env() -> "ConfigMOA | None":
     return ConfigMOA(modeles_reference=modeles, agregateur=agregateur)
 
 
-MOTS_COMPLEXES = {
+_MOTS_COMPLEXES_DEFAUT = {
     "planifie", "stratégie", "décide", "compare", "analyse", "choisir",
     "architecture", "implémente", "conception", "évaluer", "risque",
+    "résume", "explique", "traduis", "décompose", "priorise", "propose",
+    "liste", "crée", "optimise", "structure",
 }
+
+
+def _mots_complexes() -> set[str]:
+    """Liste de mots-clés de complexité : défaut + MOA_MOTS_COMPLEXES (env, virgule-séparés)."""
+    extra_brut = os.getenv("MOA_MOTS_COMPLEXES", "")
+    extra = {m.strip().lower() for m in extra_brut.split(",") if m.strip()}
+    return _MOTS_COMPLEXES_DEFAUT | extra
 
 
 def est_complexe(message_utilisateur: str) -> bool:
@@ -47,7 +56,7 @@ def est_complexe(message_utilisateur: str) -> bool:
     msg = message_utilisateur.lower()
     if len(message_utilisateur) > 120:
         return True
-    return any(mot in msg for mot in MOTS_COMPLEXES)
+    return any(mot in msg for mot in _mots_complexes())
 
 
 _CACHE_MAX = int(os.getenv("MOA_CACHE_MAX", "64"))

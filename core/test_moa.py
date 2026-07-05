@@ -199,3 +199,24 @@ def test_10_cache_invalide_si_messages_changent():
 
     nb_a, nb_total = asyncio.run(_run())
     assert nb_total > nb_a, "Le cache a bloqué des appels pour un contexte différent"
+
+
+def test_mots_manquants_resumer():
+    """'résume' doit être reconnu comme complexe."""
+    assert moa.est_complexe("résume ce document")
+
+
+def test_mots_manquants_expliquer():
+    """'explique' doit déclencher MOA."""
+    assert moa.est_complexe("explique-moi comment fonctionne ce système")
+
+
+def test_env_mots_complexes(monkeypatch):
+    """MOA_MOTS_COMPLEXES depuis env fusionne avec la liste par défaut."""
+    monkeypatch.setenv("MOA_MOTS_COMPLEXES", "révolutionne,invente")
+    # Recharger la fonction pour prendre en compte l'env
+    import importlib
+    importlib.reload(moa)
+    assert moa.est_complexe("invente un nouveau produit")
+    monkeypatch.delenv("MOA_MOTS_COMPLEXES")
+    importlib.reload(moa)
