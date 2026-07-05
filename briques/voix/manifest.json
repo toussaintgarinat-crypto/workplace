@@ -1,5 +1,6 @@
 {
   "nom": "voix",
+  "famille": "collaboration",
   "version": "0.8.0",
   "description": "Brique vocale en API. (1) TTS texte→audio SOUVERAIN par défaut : moteur Piper local (CPU) en tête, puis voix LOCALES naturelles OPT-IN (Kokoro ; Coqui XTTS = voix de LECTURE haut de gamme + clonage) et fournisseurs hébergés en repli optionnel (OpenAI, ElevenLabs, ou la Gateway Workplace), repli honnête (jamais de fausse voix). Voix par USAGE : conversation rapide vs lecture belle ; comparateur côte à côte dans la page de réglage. BIBLIOTHÈQUE DE VOIX CLONÉES : enregistrer un timbre depuis un court échantillon (Coqui XTTS) sous un nom, le réutiliser partout via la convention voix=clone:<nom> (assistant, lecture, personnages des séries du Studio). (2) CHAT VOCAL TEMPS RÉEL (speech-to-speech) porté du plugin « voice » de Gungnir : relais WebSocket navigateur ↔ API temps réel d'un fournisseur (OpenAI Realtime, Gemini Live, xAI Grok), vrai audio bidirectionnel avec VAD côté fournisseur, OPT-IN et inerte sans clé. Produit autonome, composable par l'assistant et le pont messageries (connexion) pour répondre en vocal.",
   "role": "voix",
@@ -54,12 +55,23 @@
         "fournisseur": {
           "type": "string",
           "description": "Moteur voulu : piper (local souverain), kokoro (local naturel), coqui (lecture haut de gamme + clonage), openai, elevenlabs, gateway. Vide ou « auto » = revenir au défaut pour ce rôle.",
-          "enum": ["piper", "kokoro", "coqui", "openai", "elevenlabs", "gateway", "auto"]
+          "enum": [
+            "piper",
+            "kokoro",
+            "coqui",
+            "openai",
+            "elevenlabs",
+            "gateway",
+            "auto"
+          ]
         },
         "role": {
           "type": "string",
           "description": "Rôle visé : conversation (voix rapide, défaut) ou lecture (voix belle pour résumés et longs textes).",
-          "enum": ["conversation", "lecture"]
+          "enum": [
+            "conversation",
+            "lecture"
+          ]
         }
       },
       "action": true

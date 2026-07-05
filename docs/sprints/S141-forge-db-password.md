@@ -6,7 +6,7 @@
 
 - **Sprint** : S141
 - **Catégorie** : Configuration / sécurité
-- **Statut** : À planifier
+- **Statut** : ✅ LIVRÉ (2026-07-03 — voir journal WORKPLACE.md)
 - **Date de planification** : 2026-07-03
 - **Brique concernée** : `briques/forge/`
 

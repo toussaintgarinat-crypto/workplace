@@ -1,5 +1,6 @@
 {
   "nom": "noyau",
+  "famille": "generation",
   "version": "1.0.0",
   "description": "Le Cœur lui-même. Présent au registre uniquement pour déclarer ses tâches périodiques (briefing quotidien S30, pouls autonome S67) à l'horloge S29 — il n'est pas une brique séparée.",
   "role": "noyau",

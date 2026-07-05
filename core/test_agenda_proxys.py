@@ -6,6 +6,7 @@ le bon contrat de la brique (méthode + chemin) et parse la réponse.
     $ cd core && python3 test_agenda_proxys.py
 """
 import asyncio
+import logging
 import sys, os
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -93,6 +94,26 @@ def test_commentaires_lister_ajouter_supprimer():
     _run(agenda.ajouter_commentaire(None, "e1", "coucou"))
     assert ("POST", "http://agenda/events/e1/comments", {"content": "coucou"}, False) in APPELS
     assert _run(agenda.supprimer_commentaire(None, "c1")) is True
+
+
+def test_erreur_agenda_loggee(monkeypatch, caplog):
+    """Une panne de la brique agenda doit apparaître dans les logs serveur."""
+    import os
+    os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
+    os.environ.setdefault("GATEWAY_KEY", "test")
+    import main
+    from fastapi.testclient import TestClient
+    client_app = TestClient(main.app)
+
+    async def _boom(*a, **k):
+        raise RuntimeError("brique down")
+
+    monkeypatch.setattr(agenda, "lister_evenements", _boom)
+    with caplog.at_level(logging.WARNING, logger="core.routers.agenda"):
+        resp = client_app.get("/agenda/evenements")
+    assert resp.status_code == 200
+    assert resp.json()["evenements"] == []
+    assert "brique down" in caplog.text
 
 
 if __name__ == "__main__":

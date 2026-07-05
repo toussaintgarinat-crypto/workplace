@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from etat import registre
 import assistant
 import catalogue
+import familles as familles_mod
 import horloge
 import mcp as mcp_serveur
 import outils
@@ -25,9 +26,15 @@ def health():
 
 
 @router.get("/briques", tags=["briques"])
-def lister_briques():
-    """Liste toutes les briques enregistrées."""
-    return {"total": len(registre.briques), "briques": list(registre.briques.values())}
+def lister_briques(grouper: str | None = None):
+    """Liste toutes les briques enregistrées.
+
+    `?grouper=famille` → dict groupé par famille (label, icone, briques[]).
+    Sans paramètre → liste plate (comportement historique)."""
+    briques = list(registre.briques.values())
+    if grouper == "famille":
+        return familles_mod.grouper(briques)
+    return {"total": len(briques), "briques": briques}
 
 
 @router.get("/briques/{nom}", tags=["briques"])
@@ -210,14 +217,15 @@ async def sante_globale():
     async with httpx.AsyncClient(timeout=3.0) as client:
         for nom, brique in registre.briques.items():
             url = brique.get("url_sante")
+            info: dict = {"famille": brique.get("famille", "autre")}
             if not url:
-                resultats[nom] = {"statut": "non_applicable"}
+                resultats[nom] = {**info, "statut": "non_applicable"}
                 continue
             try:
                 r = await client.get(url)
-                resultats[nom] = {"statut": "ok" if r.status_code < 400 else "erreur", "code_http": r.status_code}
+                resultats[nom] = {**info, "statut": "ok" if r.status_code < 400 else "erreur", "code_http": r.status_code}
             except Exception as e:
-                resultats[nom] = {"statut": "inaccessible", "erreur": str(e)}
+                resultats[nom] = {**info, "statut": "inaccessible", "erreur": str(e)}
     return {"briques": resultats}
 
 

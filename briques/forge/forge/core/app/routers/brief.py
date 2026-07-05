@@ -12,7 +12,8 @@ import logging
 import uuid as uuidlib
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends
+from pydantic import BaseModel
 from sqlalchemy import and_, desc, select
 
 from app.auth import UserContext, get_current_user, require_org
@@ -32,18 +33,17 @@ def _uuid(v: str | None):
         return None
 
 
+class CorpsBrief(BaseModel):
+    ventureId: str | None = None
+
+
 @router.post("/brief/generate")
 async def generate_brief(
-    request: Request,
+    body: CorpsBrief = Body(default_factory=CorpsBrief),
     user: UserContext = Depends(get_current_user),
     org_id: str = Depends(require_org),
 ):
-    body = {}
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        body = {}
-    venture_id = body.get("ventureId") if isinstance(body, dict) else None
+    venture_id = body.ventureId
     since = datetime.utcnow() - timedelta(hours=24)
 
     # S18 (Chantier 1) : le blackboard n'a pas d'org_id direct — il se scope via son

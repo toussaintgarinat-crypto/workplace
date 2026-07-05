@@ -10,7 +10,7 @@ import re
 import uuid as uuidlib
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Body
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, delete as sa_delete, func, select, update
 
@@ -210,27 +210,28 @@ async def get_global(
     return llm_preset(p) if p else None
 
 
+class CorpsLlmGlobal(BaseModel):
+    provider: str
+    model: str
+
+
 @router.put("/global")
 async def put_global(
-    request: Request, response: Response,
+    body: CorpsLlmGlobal, response: Response,
     user: UserContext = Depends(get_current_user),
     org_id: str = Depends(require_org),
 ):
-    # S18 (Chantier 1) : org validée obligatoire (avant : écriture cross-org via header cru).
-    body = await request.json()
-    if not body.get("provider") or not body.get("model"):
-        raise HTTPException(status_code=400, detail="provider and model required")
     async with SessionLocal() as s:
         existing = (await s.execute(
             select(LlmPresets).where(and_(LlmPresets.scope_type == "global", LlmPresets.scope_id == org_id))
         )).scalar_one_or_none()
         if existing:
             await s.execute(update(LlmPresets).where(LlmPresets.id == existing.id).values(
-                provider=body["provider"], model=body["model"], updated_at=func.now(), updated_by=user.sub))
+                provider=body.provider, model=body.model, updated_at=func.now(), updated_by=user.sub))
             await s.commit()
             row = (await s.execute(select(LlmPresets).where(LlmPresets.id == existing.id))).scalar_one()
             return llm_preset(row)
-        row = LlmPresets(scope_type="global", scope_id=org_id, provider=body["provider"], model=body["model"], updated_by=user.sub)
+        row = LlmPresets(scope_type="global", scope_id=org_id, provider=body.provider, model=body.model, updated_by=user.sub)
         s.add(row)
         await s.commit()
         await s.refresh(row)

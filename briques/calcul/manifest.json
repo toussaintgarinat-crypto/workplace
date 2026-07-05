@@ -1,5 +1,6 @@
 {
   "nom": "calcul",
+  "famille": "metier",
   "version": "0.2.0",
   "description": "Partage de puissance de calcul — réveille (Wake-on-LAN / wake-ping mesh) et sonde des nœuds de calcul distants servant un LLM (endpoint OpenAI-compatible). Ne calcule rien : pilote « le Muscle » pour le Cœur.",
   "role": "calcul",
@@ -30,7 +31,10 @@
       "methode": "GET",
       "chemin": "/muscle",
       "params": {
-        "reveiller": {"type": "boolean", "description": "Réveiller un nœud endormi si aucun n'est prêt."}
+        "reveiller": {
+          "type": "boolean",
+          "description": "Réveiller un nœud endormi si aucun n'est prêt."
+        }
       },
       "action": true
     }

@@ -7,7 +7,7 @@
 
 - **Sprint** : S142
 - **Catégorie** : UX / architecture
-- **Statut** : À planifier
+- **Statut** : ✅ LIVRÉ (2026-07-04)
 - **Date de planification** : 2026-07-03
 - **Briques concernées** : toutes (29 manifestes) + `core/` (dashboard)
 

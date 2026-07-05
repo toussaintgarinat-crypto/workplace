@@ -1,5 +1,6 @@
 {
   "nom": "etl",
+  "famille": "ingestion",
   "version": "0.1.0",
   "description": "Ingestion de documents — extraction de texte (PDF, Word, images, Excel, HTML…) et stockage pour l'Audit",
   "role": "etl",
@@ -23,8 +24,15 @@
       "methode": "POST",
       "chemin": "/ingerer/url",
       "params": {
-        "url": {"type": "string", "description": "URL du document à ingérer (PDF, HTML…).", "requis": true},
-        "dossier": {"type": "string", "description": "Dossier/projet dans lequel classer le document (optionnel)."}
+        "url": {
+          "type": "string",
+          "description": "URL du document à ingérer (PDF, HTML…).",
+          "requis": true
+        },
+        "dossier": {
+          "type": "string",
+          "description": "Dossier/projet dans lequel classer le document (optionnel)."
+        }
       },
       "action": true
     },
@@ -34,8 +42,14 @@
       "methode": "GET",
       "chemin": "/documents",
       "params": {
-        "dossier": {"type": "string", "description": "Filtrer par dossier/projet (optionnel)."},
-        "statut": {"type": "string", "description": "Filtrer par statut : 'ok', 'erreur' (optionnel)."}
+        "dossier": {
+          "type": "string",
+          "description": "Filtrer par dossier/projet (optionnel)."
+        },
+        "statut": {
+          "type": "string",
+          "description": "Filtrer par statut : 'ok', 'erreur' (optionnel)."
+        }
       },
       "action": false
     },
@@ -45,7 +59,11 @@
       "methode": "DELETE",
       "chemin": "/documents/{doc_id}",
       "params": {
-        "doc_id": {"type": "string", "description": "Identifiant du document (obtenu via etl_documents_lister).", "requis": true}
+        "doc_id": {
+          "type": "string",
+          "description": "Identifiant du document (obtenu via etl_documents_lister).",
+          "requis": true
+        }
       },
       "action": true
     }

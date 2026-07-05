@@ -874,3 +874,26 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
   Prouvé LIVE 2026-06-28 (le conteneur generateur valide la sortie réelle du producteur).
 - **LLM de prod** : décider du modèle par défaut des briques. Local (Ollama) impossible sans GPU sur cette
   machine ; OpenRouter gratuit instable. Piste : `gpt-4o-mini`/`gemini-flash` (cheap) en défaut, gratuit en option.
+
+---
+
+## 9. Outillage développeur
+
+### Recherches dans le code
+
+La brique dev (5955) utilise des **worktrees git jetables** comme filet de sécurité pour chaque chantier.
+Ces worktrees vivent dans `/tmp/ateliers-dev/` par défaut (variable `DEV_ATELIERS` dans `briques/dev/git_atelier.py`).
+
+Le dossier `.dev-ateliers/` à la racine est un **artefact éphémère** (ignoré par git et Docker).
+Pour l'exclure des recherches manuelles :
+
+```bash
+grep -r "terme" . --exclude-dir=.dev-ateliers
+find . -path "./.dev-ateliers" -prune -o -name "*.py" -print
+```
+
+Nettoyer les worktrees orphelins (après un `git worktree prune`) :
+```bash
+git worktree list          # repérer les "prunable"
+git worktree prune         # désindexer les worktrees disparus
+```

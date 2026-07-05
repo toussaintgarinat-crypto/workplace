@@ -1,5 +1,6 @@
 {
   "nom": "personnages",
+  "famille": "metier",
   "version": "0.10.0",
   "description": "Génération de personnages : distributions structurées (LLM) + casting vocal STABLE agnostique au TTS + moteur HOLISTIQUE multi-traditions (numérologie, astro occidentale/chinoise/védique, égyptien, celte, amérindien, maya Tzolkin) avec synthèse tags→stats→archétype→pierre d'équilibrage (descendant) et recherche inverse description→signes/date (montant). Produit autonome vendable seul : stateless ET stateful (cloisonné par clé API). LLM Gateway par défaut ou Bring-Your-Own-Key. Extrait du Studio Oria (S47), étendu en S49.",
   "role": "personnages",
@@ -19,7 +20,9 @@
     "traditions_multiples",
     "recherche_inverse_caractere",
     "front_demo_holistique",
-    "export_fiche_cosmique", "lecture_symbolique_approfondie", "fiches_persistees",
+    "export_fiche_cosmique",
+    "lecture_symbolique_approfondie",
+    "fiches_persistees",
     "renommage_nom_de_serie"
   ],
   "besoin": [],
@@ -39,7 +42,11 @@
       "methode": "GET",
       "chemin": "/fiches/{fid}",
       "params": {
-        "fid": {"type": "string", "description": "Identifiant de la fiche (obtenu via personnages_fiches_lister).", "requis": true}
+        "fid": {
+          "type": "string",
+          "description": "Identifiant de la fiche (obtenu via personnages_fiches_lister).",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -49,9 +56,19 @@
       "methode": "PATCH",
       "chemin": "/fiches/{fid}",
       "params": {
-        "fid": {"type": "string", "description": "Identifiant de la fiche.", "requis": true},
-        "nom_scene": {"type": "string", "description": "Nouveau nom de scène (garde le nom de naissance intact)."},
-        "categorie": {"type": "string", "description": "Catégorie libre (ex: 'Famille', 'Collègues')."}
+        "fid": {
+          "type": "string",
+          "description": "Identifiant de la fiche.",
+          "requis": true
+        },
+        "nom_scene": {
+          "type": "string",
+          "description": "Nouveau nom de scène (garde le nom de naissance intact)."
+        },
+        "categorie": {
+          "type": "string",
+          "description": "Catégorie libre (ex: 'Famille', 'Collègues')."
+        }
       },
       "action": true
     },
@@ -61,7 +78,11 @@
       "methode": "DELETE",
       "chemin": "/fiches/{fid}",
       "params": {
-        "fid": {"type": "string", "description": "Identifiant de la fiche.", "requis": true}
+        "fid": {
+          "type": "string",
+          "description": "Identifiant de la fiche.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -71,8 +92,15 @@
       "methode": "POST",
       "chemin": "/holistique/portrait",
       "params": {
-        "fid": {"type": "string", "description": "Identifiant de la fiche du personnage.", "requis": true},
-        "style": {"type": "string", "description": "Style artistique du portrait (ex: 'réaliste', 'aquarelle')."}
+        "fid": {
+          "type": "string",
+          "description": "Identifiant de la fiche du personnage.",
+          "requis": true
+        },
+        "style": {
+          "type": "string",
+          "description": "Style artistique du portrait (ex: 'réaliste', 'aquarelle')."
+        }
       },
       "action": true
     },
@@ -82,8 +110,18 @@
       "methode": "POST",
       "chemin": "/distribution/proposer",
       "params": {
-        "contexte": {"type": "string", "description": "Description de l'histoire, du genre, du nombre de personnages souhaités.", "requis": true},
-        "fiches_ids": {"type": "array", "items": {"type": "string"}, "description": "Fiches de personnages existants à inclure dans la distribution (optionnel)."}
+        "contexte": {
+          "type": "string",
+          "description": "Description de l'histoire, du genre, du nombre de personnages souhaités.",
+          "requis": true
+        },
+        "fiches_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Fiches de personnages existants à inclure dans la distribution (optionnel)."
+        }
       },
       "action": false
     }

@@ -1,5 +1,6 @@
 {
   "nom": "mail",
+  "famille": "collaboration",
   "version": "0.6.0",
   "description": "Boîtes de réception (email ENTRANT) + réponse SUR VALIDATION + GESTION (marquer lu, déplacer, supprimer). Multi-tenant et provider-agnostique. PLUSIEURS adresses par utilisateur (perso, pro…) vues en une BOÎTE UNIFIÉE. L'assistant peut lister/filtrer (catégorie, compte, non-lus), lire, résumer (IA + repli honnête), trier les mails reçus, PRÉPARER un brouillon de réponse puis l'ENVOYER une fois validé (SMTP réel si la boîte est réelle ; envoi SIMULÉ honnête sinon), et GÉRER les messages : marquer lu/non lu, déplacer vers un dossier, supprimer (mis à la corbeille côté serveur, réversible). FILTRES PERSONNALISÉS (ex. un par entreprise, par domaine d'expéditeur ou mots-clés). Par défaut : boîte MOCK honnête (simulée, aucune connexion réseau) ; boîtes IMAP/SMTP réelles dès qu'on connecte des comptes (mot de passe d'application, chiffré au repos). Les actions d'écriture opèrent par UID (identifiant stable) en lecture-écriture ; la lecture reste read-only.",
   "role": "mail",
@@ -43,11 +44,26 @@
       "methode": "GET",
       "chemin": "/mail",
       "params": {
-        "non_lus": {"type": "boolean", "description": "Ne montrer que les messages non lus."},
-        "categorie": {"type": "string", "description": "Filtrer par type : 'newsletter' (= pubs/promos), 'facture', 'rendez_vous', 'personnel', 'notification', 'autre'. Les libellés courants (« pub », « promo », « rdv »…) sont tolérés. Omettre = tout."},
-        "compte": {"type": "string", "description": "Filtrer sur UNE adresse précise (ex. « perso@gmail.com »). Voir les adresses connectées via mail_comptes_lister. Omettre = toutes."},
-        "filtre": {"type": "string", "description": "Nom (ou id) d'un FILTRE PERSONNALISÉ pour ne voir que ses mails — typiquement UNE ENTREPRISE (ex. « Acme »). Voir les filtres existants via mail_filtres_lister. Omettre = pas de filtre perso."},
-        "limite": {"type": "integer", "description": "Nombre maximum de messages (défaut 50)."}
+        "non_lus": {
+          "type": "boolean",
+          "description": "Ne montrer que les messages non lus."
+        },
+        "categorie": {
+          "type": "string",
+          "description": "Filtrer par type : 'newsletter' (= pubs/promos), 'facture', 'rendez_vous', 'personnel', 'notification', 'autre'. Les libellés courants (« pub », « promo », « rdv »…) sont tolérés. Omettre = tout."
+        },
+        "compte": {
+          "type": "string",
+          "description": "Filtrer sur UNE adresse précise (ex. « perso@gmail.com »). Voir les adresses connectées via mail_comptes_lister. Omettre = toutes."
+        },
+        "filtre": {
+          "type": "string",
+          "description": "Nom (ou id) d'un FILTRE PERSONNALISÉ pour ne voir que ses mails — typiquement UNE ENTREPRISE (ex. « Acme »). Voir les filtres existants via mail_filtres_lister. Omettre = pas de filtre perso."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum de messages (défaut 50)."
+        }
       },
       "action": false
     },
@@ -65,9 +81,19 @@
       "methode": "POST",
       "chemin": "/filtres",
       "params": {
-        "nom": {"type": "string", "description": "Nom du filtre, ex. le nom de l'entreprise (« Acme »).", "requis": true},
-        "expediteur": {"type": "string", "description": "Sous-chaîne devant figurer dans l'expéditeur, idéalement le domaine de l'entreprise (« @acme.com »)."},
-        "mots": {"type": "array", "description": "Mots-clés (liste) ; un mail matche s'il en contient au moins un. Optionnel si 'expediteur' est fourni."}
+        "nom": {
+          "type": "string",
+          "description": "Nom du filtre, ex. le nom de l'entreprise (« Acme »).",
+          "requis": true
+        },
+        "expediteur": {
+          "type": "string",
+          "description": "Sous-chaîne devant figurer dans l'expéditeur, idéalement le domaine de l'entreprise (« @acme.com »)."
+        },
+        "mots": {
+          "type": "array",
+          "description": "Mots-clés (liste) ; un mail matche s'il en contient au moins un. Optionnel si 'expediteur' est fourni."
+        }
       },
       "action": true
     },
@@ -77,7 +103,11 @@
       "methode": "DELETE",
       "chemin": "/filtres/{filtre_id}",
       "params": {
-        "filtre_id": {"type": "string", "description": "Identifiant du filtre à supprimer.", "requis": true}
+        "filtre_id": {
+          "type": "string",
+          "description": "Identifiant du filtre à supprimer.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -95,7 +125,11 @@
       "methode": "GET",
       "chemin": "/mail/{message_id}",
       "params": {
-        "message_id": {"type": "string", "description": "Identifiant du message (champ id de mail_lister).", "requis": true}
+        "message_id": {
+          "type": "string",
+          "description": "Identifiant du message (champ id de mail_lister).",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -105,7 +139,10 @@
       "methode": "POST",
       "chemin": "/mail/resumer",
       "params": {
-        "lang": {"type": "string", "description": "Langue du résumé (fr, en, es). Défaut fr."}
+        "lang": {
+          "type": "string",
+          "description": "Langue du résumé (fr, en, es). Défaut fr."
+        }
       },
       "action": false
     },
@@ -123,9 +160,19 @@
       "methode": "POST",
       "chemin": "/mail/brouillon",
       "params": {
-        "message_id": {"type": "string", "description": "Identifiant du message auquel répondre.", "requis": true},
-        "instruction": {"type": "string", "description": "Consigne de ton/contenu (optionnel), ex. « décline poliment », « propose jeudi 14h »."},
-        "lang": {"type": "string", "description": "Langue du brouillon (fr, en, es). Défaut fr."}
+        "message_id": {
+          "type": "string",
+          "description": "Identifiant du message auquel répondre.",
+          "requis": true
+        },
+        "instruction": {
+          "type": "string",
+          "description": "Consigne de ton/contenu (optionnel), ex. « décline poliment », « propose jeudi 14h »."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Langue du brouillon (fr, en, es). Défaut fr."
+        }
       },
       "action": true
     },
@@ -135,11 +182,28 @@
       "methode": "POST",
       "chemin": "/mail/composer",
       "params": {
-        "a": {"type": "string", "description": "Destinataire du mail (adresse email).", "requis": true},
-        "dictee": {"type": "string", "description": "Ce que l'utilisateur a dicté/veut dire — sera corrigé et mis en forme.", "requis": true},
-        "sujet": {"type": "string", "description": "Objet souhaité (optionnel) ; sinon l'assistant en propose un."},
-        "compte": {"type": "string", "description": "Adresse d'envoi (optionnel) ; auto si une seule boîte réelle est connectée."},
-        "lang": {"type": "string", "description": "Langue du mail (fr, en, es). Défaut fr."}
+        "a": {
+          "type": "string",
+          "description": "Destinataire du mail (adresse email).",
+          "requis": true
+        },
+        "dictee": {
+          "type": "string",
+          "description": "Ce que l'utilisateur a dicté/veut dire — sera corrigé et mis en forme.",
+          "requis": true
+        },
+        "sujet": {
+          "type": "string",
+          "description": "Objet souhaité (optionnel) ; sinon l'assistant en propose un."
+        },
+        "compte": {
+          "type": "string",
+          "description": "Adresse d'envoi (optionnel) ; auto si une seule boîte réelle est connectée."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Langue du mail (fr, en, es). Défaut fr."
+        }
       },
       "action": true
     },
@@ -149,9 +213,19 @@
       "methode": "POST",
       "chemin": "/brouillons/{brouillon_id}/envoyer",
       "params": {
-        "brouillon_id": {"type": "string", "description": "Identifiant du brouillon à envoyer.", "requis": true},
-        "sujet": {"type": "string", "description": "Sujet validé (optionnel) qui remplace celui du brouillon."},
-        "corps": {"type": "string", "description": "Corps validé (optionnel) qui remplace celui du brouillon."}
+        "brouillon_id": {
+          "type": "string",
+          "description": "Identifiant du brouillon à envoyer.",
+          "requis": true
+        },
+        "sujet": {
+          "type": "string",
+          "description": "Sujet validé (optionnel) qui remplace celui du brouillon."
+        },
+        "corps": {
+          "type": "string",
+          "description": "Corps validé (optionnel) qui remplace celui du brouillon."
+        }
       },
       "action": true
     },
@@ -161,12 +235,33 @@
       "methode": "POST",
       "chemin": "/comptes",
       "params": {
-        "host": {"type": "string", "description": "Serveur IMAP, ex. imap.gmail.com.", "requis": true},
-        "utilisateur": {"type": "string", "description": "Adresse / identifiant IMAP.", "requis": true},
-        "mot_de_passe": {"type": "string", "description": "MOT DE PASSE D'APPLICATION (pas le mot de passe principal).", "requis": true},
-        "port": {"type": "integer", "description": "Port IMAP (défaut 993)."},
-        "smtp_host": {"type": "string", "description": "Serveur SMTP pour l'envoi (optionnel ; deviné depuis l'hôte IMAP sinon, ex. smtp.gmail.com)."},
-        "smtp_port": {"type": "integer", "description": "Port SMTP (optionnel, défaut 587 STARTTLS)."}
+        "host": {
+          "type": "string",
+          "description": "Serveur IMAP, ex. imap.gmail.com.",
+          "requis": true
+        },
+        "utilisateur": {
+          "type": "string",
+          "description": "Adresse / identifiant IMAP.",
+          "requis": true
+        },
+        "mot_de_passe": {
+          "type": "string",
+          "description": "MOT DE PASSE D'APPLICATION (pas le mot de passe principal).",
+          "requis": true
+        },
+        "port": {
+          "type": "integer",
+          "description": "Port IMAP (défaut 993)."
+        },
+        "smtp_host": {
+          "type": "string",
+          "description": "Serveur SMTP pour l'envoi (optionnel ; deviné depuis l'hôte IMAP sinon, ex. smtp.gmail.com)."
+        },
+        "smtp_port": {
+          "type": "integer",
+          "description": "Port SMTP (optionnel, défaut 587 STARTTLS)."
+        }
       },
       "action": true
     },
@@ -176,7 +271,11 @@
       "methode": "DELETE",
       "chemin": "/comptes/{compte_id}",
       "params": {
-        "compte_id": {"type": "string", "description": "Identifiant de la boîte à déconnecter (champ id de mail_comptes_lister).", "requis": true}
+        "compte_id": {
+          "type": "string",
+          "description": "Identifiant de la boîte à déconnecter (champ id de mail_comptes_lister).",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -186,8 +285,15 @@
       "methode": "POST",
       "chemin": "/mail/{message_id}/lu",
       "params": {
-        "message_id": {"type": "string", "description": "Identifiant du message (champ id de mail_lister).", "requis": true},
-        "lu": {"type": "boolean", "description": "true = marquer lu (défaut) ; false = marquer non lu."}
+        "message_id": {
+          "type": "string",
+          "description": "Identifiant du message (champ id de mail_lister).",
+          "requis": true
+        },
+        "lu": {
+          "type": "boolean",
+          "description": "true = marquer lu (défaut) ; false = marquer non lu."
+        }
       },
       "action": true
     },
@@ -197,8 +303,16 @@
       "methode": "POST",
       "chemin": "/mail/{message_id}/deplacer",
       "params": {
-        "message_id": {"type": "string", "description": "Identifiant du message à déplacer.", "requis": true},
-        "dossier": {"type": "string", "description": "Nom du dossier de destination (ex. « Archive »).", "requis": true}
+        "message_id": {
+          "type": "string",
+          "description": "Identifiant du message à déplacer.",
+          "requis": true
+        },
+        "dossier": {
+          "type": "string",
+          "description": "Nom du dossier de destination (ex. « Archive »).",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -208,7 +322,11 @@
       "methode": "DELETE",
       "chemin": "/mail/{message_id}",
       "params": {
-        "message_id": {"type": "string", "description": "Identifiant du message à supprimer.", "requis": true}
+        "message_id": {
+          "type": "string",
+          "description": "Identifiant du message à supprimer.",
+          "requis": true
+        }
       },
       "action": true
     }

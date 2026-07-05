@@ -1,5 +1,6 @@
 {
   "nom": "oria",
+  "famille": "collaboration",
   "version": "0.1.0",
   "description": "Collaboration — worlds, messagerie Matrix et visio LiveKit. Donne à l'assistant une vue sur les espaces de collaboration : lister les worlds, les membres, les rooms, inviter des gens ou créer un espace.",
   "role": "collaboration",

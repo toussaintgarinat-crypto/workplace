@@ -1,5 +1,6 @@
 {
   "nom": "studio",
+  "famille": "media",
   "version": "0.6.0",
   "description": "Studio d'audio-séries co-créées : bible (Showrunner) → épisodes (Scénariste/Script Doctor) → audio (voix figées par personnage, multilingue avec traduction au rendu) → livre (Série/Cycle/Tome/Chapitre) → arbre des choix interactif. Équipe créative de 6 agents INTERNALISÉE (prompts figés, plus de couplage au monde Oria). Compose les briques personnages (5900), images (5950), video (5970) et voix (5810) sans les absorber : portraits + couvertures (images), bande-annonce d'épisode + animation de portrait (video). Persistance JSON propre. Extrait du backend Oria en brique autonome (S51).",
   "role": "studio",
@@ -45,7 +46,11 @@
       "methode": "GET",
       "chemin": "/series/{serie_id}",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -55,7 +60,11 @@
       "methode": "GET",
       "chemin": "/series/{serie_id}/personnages",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -65,7 +74,10 @@
       "methode": "GET",
       "chemin": "/voix",
       "params": {
-        "langue": {"type": "string", "description": "Code langue (fr, en, es…). Défaut fr."}
+        "langue": {
+          "type": "string",
+          "description": "Code langue (fr, en, es…). Défaut fr."
+        }
       },
       "action": false
     },
@@ -75,9 +87,27 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/proposer",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"], "description": "Dimension de la bible à explorer.", "requis": true},
-        "mon_idee": {"type": "string", "description": "Piste/contrainte de l'utilisateur à intégrer (optionnel)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "dimension": {
+          "type": "string",
+          "enum": [
+            "genre",
+            "univers",
+            "personnages",
+            "intrigue",
+            "choix"
+          ],
+          "description": "Dimension de la bible à explorer.",
+          "requis": true
+        },
+        "mon_idee": {
+          "type": "string",
+          "description": "Piste/contrainte de l'utilisateur à intégrer (optionnel)."
+        }
       },
       "action": false
     },
@@ -87,9 +117,19 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/personnages/proposer",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "combien": {"type": "integer", "description": "Nombre de rôles à proposer (2 à 8, défaut 4)."},
-        "mon_idee": {"type": "string", "description": "Piste à intégrer (optionnel)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "combien": {
+          "type": "integer",
+          "description": "Nombre de rôles à proposer (2 à 8, défaut 4)."
+        },
+        "mon_idee": {
+          "type": "string",
+          "description": "Piste à intégrer (optionnel)."
+        }
       },
       "action": false
     },
@@ -99,10 +139,23 @@
       "methode": "POST",
       "chemin": "/series",
       "params": {
-        "titre": {"type": "string", "description": "Titre de la série.", "requis": true},
-        "idee": {"type": "string", "description": "Idée / genre de départ (optionnel)."},
-        "langue": {"type": "string", "description": "Langue de travail (ex. fr, en, es). Défaut fr."},
-        "cible": {"type": "string", "description": "Public visé (optionnel)."}
+        "titre": {
+          "type": "string",
+          "description": "Titre de la série.",
+          "requis": true
+        },
+        "idee": {
+          "type": "string",
+          "description": "Idée / genre de départ (optionnel)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de travail (ex. fr, en, es). Défaut fr."
+        },
+        "cible": {
+          "type": "string",
+          "description": "Public visé (optionnel)."
+        }
       },
       "action": true
     },
@@ -112,7 +165,11 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/episode",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -122,8 +179,15 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/express",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "idee": {"type": "string", "description": "Idée/orientation pour l'épisode (optionnel)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "idee": {
+          "type": "string",
+          "description": "Idée/orientation pour l'épisode (optionnel)."
+        }
       },
       "action": true
     },
@@ -133,9 +197,27 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/decider",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "dimension": {"type": "string", "enum": ["genre", "univers", "personnages", "intrigue", "choix"], "requis": true},
-        "choix": {"type": "string", "description": "Le contenu retenu pour cette dimension.", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "dimension": {
+          "type": "string",
+          "enum": [
+            "genre",
+            "univers",
+            "personnages",
+            "intrigue",
+            "choix"
+          ],
+          "requis": true
+        },
+        "choix": {
+          "type": "string",
+          "description": "Le contenu retenu pour cette dimension.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -145,10 +227,24 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/personnages",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "nom": {"type": "string", "description": "Nom du personnage.", "requis": true},
-        "role": {"type": "string", "description": "Rôle (protagoniste, antagoniste, secondaire…) (optionnel)."},
-        "description": {"type": "string", "description": "Description du personnage (optionnel)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom du personnage.",
+          "requis": true
+        },
+        "role": {
+          "type": "string",
+          "description": "Rôle (protagoniste, antagoniste, secondaire…) (optionnel)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description du personnage (optionnel)."
+        }
       },
       "action": true
     },
@@ -158,8 +254,15 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/audio",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série (via studio_series_lister).", "requis": true},
-        "n": {"type": "integer", "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."
+        }
       },
       "action": true
     },
@@ -169,7 +272,11 @@
       "methode": "DELETE",
       "chemin": "/series/{serie_id}",
       "params": {
-        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Identifiant de la série.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -179,8 +286,16 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/langue",
       "params": {
-        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
-        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en', 'es').", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Identifiant de la série.",
+          "requis": true
+        },
+        "langue": {
+          "type": "string",
+          "description": "Code langue ISO (ex: 'fr', 'en', 'es').",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -190,8 +305,16 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/personnages/{pid}/portrait",
       "params": {
-        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
-        "pid": {"type": "string", "description": "Identifiant du personnage dans la série.", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Identifiant de la série.",
+          "requis": true
+        },
+        "pid": {
+          "type": "string",
+          "description": "Identifiant du personnage dans la série.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -201,8 +324,16 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/personnages/{pid}/animer",
       "params": {
-        "serie_id": {"type": "string", "description": "Identifiant de la série.", "requis": true},
-        "pid": {"type": "string", "description": "Identifiant du personnage.", "requis": true}
+        "serie_id": {
+          "type": "string",
+          "description": "Identifiant de la série.",
+          "requis": true
+        },
+        "pid": {
+          "type": "string",
+          "description": "Identifiant du personnage.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -212,9 +343,20 @@
       "methode": "POST",
       "chemin": "/series/{serie_id}/personnages/importer-fiche",
       "params": {
-        "serie_id": {"type": "string", "description": "Id de la série cible (via studio_series_lister).", "requis": true},
-        "fiche_id": {"type": "string", "description": "Id de la fiche holistique (via personnages_fiches_lister).", "requis": true},
-        "nom": {"type": "string", "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."}
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série cible (via studio_series_lister).",
+          "requis": true
+        },
+        "fiche_id": {
+          "type": "string",
+          "description": "Id de la fiche holistique (via personnages_fiches_lister).",
+          "requis": true
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."
+        }
       },
       "action": true
     }

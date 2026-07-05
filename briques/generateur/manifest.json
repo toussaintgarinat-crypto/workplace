@@ -1,5 +1,6 @@
 {
   "nom": "generateur",
+  "famille": "generation",
   "version": "0.2.0",
   "description": "Générateur d'applications sur-mesure — lit un audit et génère une app HTML (Bootstrap 5) adaptée à l'entreprise via LLM, puis l'empaquette en bundle Docker reproductible livrable",
   "role": "generateur",
@@ -50,7 +51,11 @@
       "methode": "GET",
       "chemin": "/apps/{app_id}",
       "params": {
-        "app_id": {"type": "string", "description": "Identifiant de l'app générée.", "requis": true}
+        "app_id": {
+          "type": "string",
+          "description": "Identifiant de l'app générée.",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -60,9 +65,20 @@
       "methode": "POST",
       "chemin": "/generer",
       "params": {
-        "audit_id": {"type": "string", "description": "Identifiant de l'audit source (obtenu via audit_lire).", "requis": true},
-        "nom_client": {"type": "string", "description": "Nom du client final pour personnaliser l'app.", "requis": true},
-        "langue": {"type": "string", "description": "Langue de l'app générée (défaut: 'fr')."}
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit source (obtenu via audit_lire).",
+          "requis": true
+        },
+        "nom_client": {
+          "type": "string",
+          "description": "Nom du client final pour personnaliser l'app.",
+          "requis": true
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de l'app générée (défaut: 'fr')."
+        }
       },
       "action": true
     },
@@ -72,7 +88,11 @@
       "methode": "GET",
       "chemin": "/apps/{app_id}/apercu",
       "params": {
-        "app_id": {"type": "string", "description": "Identifiant de l'app générée.", "requis": true}
+        "app_id": {
+          "type": "string",
+          "description": "Identifiant de l'app générée.",
+          "requis": true
+        }
       },
       "action": false
     }

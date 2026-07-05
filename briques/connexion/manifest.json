@@ -1,5 +1,6 @@
 {
   "nom": "connexion",
+  "famille": "metier",
   "version": "0.1.0",
   "description": "Pont bidirectionnel entre les messageries du quotidien (Telegram, WhatsApp Cloud API, Discord, et plus tard SMS/email) et l'assistant du Cœur (POST :5100/assistant/chat, flux SSE, stateless). Provider-agnostique : un adaptateur branchable par réseau (modèle des fournisseurs de la brique images), repli HONNÊTE si un réseau n'est pas configuré (jamais simulé). Multi-utilisateur avec consentement (table de correspondance interlocuteur → utilisateur Workplace) et historique de conversation persisté par interlocuteur (l'assistant étant stateless). Telegram fonctionne sans URL publique (tirage getUpdates piloté par l'horloge).",
   "role": "connexion",
@@ -41,9 +42,21 @@
       "methode": "POST",
       "chemin": "/envoyer",
       "params": {
-        "reseau": {"type": "string", "description": "Réseau cible : 'telegram', 'whatsapp', 'discord'.", "requis": true},
-        "destinataire": {"type": "string", "description": "ID externe du destinataire (chat_id Telegram, numéro WhatsApp…).", "requis": true},
-        "message": {"type": "string", "description": "Texte du message à envoyer.", "requis": true}
+        "reseau": {
+          "type": "string",
+          "description": "Réseau cible : 'telegram', 'whatsapp', 'discord'.",
+          "requis": true
+        },
+        "destinataire": {
+          "type": "string",
+          "description": "ID externe du destinataire (chat_id Telegram, numéro WhatsApp…).",
+          "requis": true
+        },
+        "message": {
+          "type": "string",
+          "description": "Texte du message à envoyer.",
+          "requis": true
+        }
       },
       "action": true
     },

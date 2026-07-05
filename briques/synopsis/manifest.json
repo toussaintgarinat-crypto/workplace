@@ -1,5 +1,6 @@
 {
   "nom": "synopsis",
+  "famille": "media",
   "version": "1.1.0",
   "description": "Résumé de N'IMPORTE QUELLE vidéo par IA (YouTube, lien direct, ou fichier uploadé) — transcription, synthèse LLM, chapitrage automatique, points clés, highlight reels.",
   "role": "video",
@@ -8,7 +9,10 @@
   "chemin_source": "briques/synopsis",
   "port": 6090,
   "url_sante": "http://host.docker.internal:6090/sante",
-  "depends_on": ["gateway", "transcription"],
+  "depends_on": [
+    "gateway",
+    "transcription"
+  ],
   "capacites": [
     {
       "nom": "video_resumer",
@@ -24,7 +28,14 @@
         "langue": {
           "type": "string",
           "description": "Langue du résumé (Français, English, Español, Deutsch, Português, Italiano)",
-          "enum": ["Français", "English", "Español", "Deutsch", "Português", "Italiano"]
+          "enum": [
+            "Français",
+            "English",
+            "Español",
+            "Deutsch",
+            "Português",
+            "Italiano"
+          ]
         }
       },
       "action": false
@@ -55,7 +66,12 @@
         "export_vertical": {
           "type": "string",
           "description": "Mode d'export vertical (blur, crop, pad — vide = pas d'export)",
-          "enum": ["blur", "crop", "pad", ""]
+          "enum": [
+            "blur",
+            "crop",
+            "pad",
+            ""
+          ]
         }
       },
       "action": true

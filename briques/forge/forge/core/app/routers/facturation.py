@@ -12,7 +12,7 @@ import json
 import math
 import uuid as uuidlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, select, update
@@ -147,9 +147,8 @@ _PATCH_COLMAP = {
 
 
 @router.patch("/facturation/{did}", dependencies=[Depends(get_current_user)])
-async def update_doc(did: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def update_doc(did: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     duid = _uuid(did)
-    body = await request.json()
     if body.get("lignes"):
         total_ht, total_tva, total_ttc = _calc_totaux(body["lignes"], body.get("tvaTaux", 20))
         body["totalHt"], body["totalTva"], body["totalTtc"] = total_ht, total_tva, total_ttc

@@ -10,7 +10,7 @@ import asyncio
 import json
 import uuid as uuidlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, or_, select, update
 from sqlalchemy import delete as sa_delete
@@ -103,9 +103,8 @@ async def create_article(body: CreateArticle, response: Response, user: UserCont
 
 
 @router.patch("/kb/articles/{aid}", dependencies=[Depends(get_current_user)])
-async def update_article(aid: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def update_article(aid: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     u = _uuid(aid)
-    body = await request.json()
     if "tags" in body and body["tags"] is not None:
         body["tags"] = json.dumps(body["tags"])
     # mapping camelCase → colonnes

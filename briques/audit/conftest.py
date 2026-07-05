@@ -5,6 +5,8 @@ brique tournent NATIVEMENT depuis ce dossier. En conteneur, shared/ est copiée 
 import sys
 from pathlib import Path
 
-_RACINE = Path(__file__).resolve().parent.parent.parent
-if str(_RACINE) not in sys.path:
-    sys.path.insert(0, str(_RACINE))
+_BRIQUE = Path(__file__).resolve().parent
+_RACINE = _BRIQUE.parent.parent.parent
+for _p in (_BRIQUE, _RACINE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))

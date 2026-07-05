@@ -1,5 +1,6 @@
 {
   "nom": "forge",
+  "famille": "ia",
   "version": "1.0.0",
   "description": "Agents IA + RAG — moteur d'automatisation et base vectorielle",
   "role": "agents",
@@ -40,7 +41,11 @@
       "methode": "GET",
       "chemin": "/rag/chercher",
       "params": {
-        "q": {"type": "string", "description": "La question ou les termes à rechercher.", "requis": true}
+        "q": {
+          "type": "string",
+          "description": "La question ou les termes à rechercher.",
+          "requis": true
+        }
       },
       "action": false
     },
@@ -50,8 +55,24 @@
       "methode": "GET",
       "chemin": "/facturation",
       "params": {
-        "type": {"type": "string", "enum": ["facture", "devis"], "description": "Filtre par type (optionnel)."},
-        "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"], "description": "Filtre par statut (optionnel)."}
+        "type": {
+          "type": "string",
+          "enum": [
+            "facture",
+            "devis"
+          ],
+          "description": "Filtre par type (optionnel)."
+        },
+        "statut": {
+          "type": "string",
+          "enum": [
+            "brouillon",
+            "envoyée",
+            "payée",
+            "annulée"
+          ],
+          "description": "Filtre par statut (optionnel)."
+        }
       },
       "action": false
     },
@@ -61,7 +82,10 @@
       "methode": "GET",
       "chemin": "/crm",
       "params": {
-        "statut": {"type": "string", "description": "Filtre par statut (ex. 'prospect', 'qualifié', 'gagné', 'perdu') (optionnel)."}
+        "statut": {
+          "type": "string",
+          "description": "Filtre par statut (ex. 'prospect', 'qualifié', 'gagné', 'perdu') (optionnel)."
+        }
       },
       "action": false
     },
@@ -87,8 +111,16 @@
       "methode": "POST",
       "chemin": "/rag/ingerer",
       "params": {
-        "nom": {"type": "string", "description": "Nom/titre du document.", "requis": true},
-        "contenu": {"type": "string", "description": "Le texte du document à ingérer.", "requis": true}
+        "nom": {
+          "type": "string",
+          "description": "Nom/titre du document.",
+          "requis": true
+        },
+        "contenu": {
+          "type": "string",
+          "description": "Le texte du document à ingérer.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -98,8 +130,15 @@
       "methode": "POST",
       "chemin": "/agent/lancer",
       "params": {
-        "objectif": {"type": "string", "description": "Ce que l'agent doit accomplir.", "requis": true},
-        "contexte": {"type": "string", "description": "Contexte utile (optionnel)."}
+        "objectif": {
+          "type": "string",
+          "description": "Ce que l'agent doit accomplir.",
+          "requis": true
+        },
+        "contexte": {
+          "type": "string",
+          "description": "Contexte utile (optionnel)."
+        }
       },
       "action": true
     },
@@ -109,13 +148,39 @@
       "methode": "POST",
       "chemin": "/facturation",
       "params": {
-        "client": {"type": "string", "description": "Nom du client.", "requis": true},
-        "lignes": {"type": "array", "description": "Lignes du document (description + prix_unitaire requis par ligne).", "requis": true},
-        "type": {"type": "string", "enum": ["facture", "devis"], "description": "Défaut : facture."},
-        "email": {"type": "string", "description": "Email du client (optionnel)."},
-        "tva_taux": {"type": "number", "description": "Taux TVA par défaut en %."},
-        "notes": {"type": "string"},
-        "echeance": {"type": "string", "description": "Date d'échéance ISO (optionnel)."}
+        "client": {
+          "type": "string",
+          "description": "Nom du client.",
+          "requis": true
+        },
+        "lignes": {
+          "type": "array",
+          "description": "Lignes du document (description + prix_unitaire requis par ligne).",
+          "requis": true
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "facture",
+            "devis"
+          ],
+          "description": "Défaut : facture."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email du client (optionnel)."
+        },
+        "tva_taux": {
+          "type": "number",
+          "description": "Taux TVA par défaut en %."
+        },
+        "notes": {
+          "type": "string"
+        },
+        "echeance": {
+          "type": "string",
+          "description": "Date d'échéance ISO (optionnel)."
+        }
       },
       "action": true
     },
@@ -125,8 +190,21 @@
       "methode": "POST",
       "chemin": "/facturation/{id}/statut",
       "params": {
-        "id": {"type": "string", "description": "Id du document (via forge_factures_lister).", "requis": true},
-        "statut": {"type": "string", "enum": ["brouillon", "envoyée", "payée", "annulée"], "requis": true}
+        "id": {
+          "type": "string",
+          "description": "Id du document (via forge_factures_lister).",
+          "requis": true
+        },
+        "statut": {
+          "type": "string",
+          "enum": [
+            "brouillon",
+            "envoyée",
+            "payée",
+            "annulée"
+          ],
+          "requis": true
+        }
       },
       "action": true
     },
@@ -136,7 +214,11 @@
       "methode": "POST",
       "chemin": "/facturation/{id}/transformer",
       "params": {
-        "id": {"type": "string", "description": "Id du devis à transformer.", "requis": true}
+        "id": {
+          "type": "string",
+          "description": "Id du devis à transformer.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -146,13 +228,31 @@
       "methode": "POST",
       "chemin": "/crm",
       "params": {
-        "nom": {"type": "string", "description": "Nom du contact.", "requis": true},
-        "entreprise": {"type": "string"},
-        "email": {"type": "string"},
-        "telephone": {"type": "string"},
-        "statut": {"type": "string", "description": "Étape du pipeline (défaut 'prospect')."},
-        "valeur": {"type": "integer", "description": "Valeur estimée en euros."},
-        "notes": {"type": "string"}
+        "nom": {
+          "type": "string",
+          "description": "Nom du contact.",
+          "requis": true
+        },
+        "entreprise": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "telephone": {
+          "type": "string"
+        },
+        "statut": {
+          "type": "string",
+          "description": "Étape du pipeline (défaut 'prospect')."
+        },
+        "valeur": {
+          "type": "integer",
+          "description": "Valeur estimée en euros."
+        },
+        "notes": {
+          "type": "string"
+        }
       },
       "action": true
     },
@@ -162,14 +262,32 @@
       "methode": "POST",
       "chemin": "/crm/{id}",
       "params": {
-        "id": {"type": "string", "description": "Id du prospect (via forge_crm_lister).", "requis": true},
-        "statut": {"type": "string"},
-        "valeur": {"type": "integer"},
-        "nom": {"type": "string"},
-        "entreprise": {"type": "string"},
-        "email": {"type": "string"},
-        "telephone": {"type": "string"},
-        "notes": {"type": "string"}
+        "id": {
+          "type": "string",
+          "description": "Id du prospect (via forge_crm_lister).",
+          "requis": true
+        },
+        "statut": {
+          "type": "string"
+        },
+        "valeur": {
+          "type": "integer"
+        },
+        "nom": {
+          "type": "string"
+        },
+        "entreprise": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "telephone": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
       },
       "action": true
     },
@@ -179,7 +297,16 @@
       "methode": "POST",
       "chemin": "/paiement/lien",
       "params": {
-        "plan": {"type": "string", "enum": ["starter", "pro", "enterprise"], "description": "Plan d'abonnement.", "requis": true}
+        "plan": {
+          "type": "string",
+          "enum": [
+            "starter",
+            "pro",
+            "enterprise"
+          ],
+          "description": "Plan d'abonnement.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -197,7 +324,11 @@
       "methode": "POST",
       "chemin": "/facturation/{id}/envoyer",
       "params": {
-        "id": {"type": "string", "description": "Id de la facture.", "requis": true}
+        "id": {
+          "type": "string",
+          "description": "Id de la facture.",
+          "requis": true
+        }
       },
       "action": true
     }

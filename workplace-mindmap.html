@@ -1,0 +1,1804 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WORKPLACE — Mindmap</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f172a; color: #f1f5f9; min-height: 100vh;
+         display: flex; flex-direction: column; }
+  #topbar { background: #1e293b; border-bottom: 1px solid #334155;
+            padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+            position: sticky; top: 0; z-index: 100; flex-wrap: wrap; }
+  #logo { font-size: 18px; font-weight: 700; color: #f1f5f9; white-space: nowrap; }
+  #breadcrumb { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; }
+  .crumb { font-size: 12px; color: #94a3b8; cursor: pointer; padding: 3px 7px;
+           border-radius: 5px; transition: all .15s; white-space: nowrap; max-width: 160px;
+           overflow: hidden; text-overflow: ellipsis; }
+  .crumb:hover { background: #334155; color: #f1f5f9; }
+  .crumb.active { color: #f1f5f9; font-weight: 600; cursor: default; }
+  .crumb.active:hover { background: transparent; }
+  .sep { color: #475569; font-size: 11px; }
+  #back-btn { background: #334155; border: none; color: #cbd5e1; padding: 6px 12px;
+              border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500;
+              transition: all .15s; white-space: nowrap; }
+  #back-btn:hover { background: #475569; color: #f1f5f9; }
+  #back-btn:disabled { opacity: .3; cursor: default; }
+  #search-box { background: #334155; border: 1px solid #475569; color: #f1f5f9;
+                padding: 5px 10px; border-radius: 7px; font-size: 13px; width: 180px;
+                outline: none; }
+  #search-box::placeholder { color: #64748b; }
+  #search-box:focus { border-color: #60a5fa; }
+  #main { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 57px); }
+  #info { width: 340px; min-width: 340px; background: #1e293b;
+          border-right: 1px solid #334155; overflow-y: auto; padding: 22px; }
+  #info-icon { font-size: 36px; margin-bottom: 10px; }
+  #info-title { font-size: 20px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+  #info-port { font-size: 12px; color: #94a3b8; margin-bottom: 10px; font-family: monospace; }
+  #info-status { display: none; font-size: 11px; padding: 2px 9px;
+                 border-radius: 20px; margin-bottom: 14px; font-weight: 600; }
+  #info-desc { font-size: 13px; line-height: 1.75; color: #cbd5e1; white-space: pre-line;
+               font-family: "SF Mono", "Fira Code", monospace; }
+  #info-children-count { margin-top: 18px; padding-top: 14px; border-top: 1px solid #334155;
+                         font-size: 11px; color: #64748b; }
+  #cards-area { flex: 1; overflow-y: auto; padding: 20px; }
+  #cards-label { font-size: 11px; color: #64748b; text-transform: uppercase;
+                 letter-spacing: .08em; margin-bottom: 14px; }
+  #cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .card { background: #1e293b; border: 2px solid #334155; border-radius: 12px;
+          padding: 16px; cursor: pointer; transition: all .16s; position: relative;
+          overflow: hidden; }
+  .card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+                  background: var(--cc); }
+  .card:hover { border-color: var(--cc); transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .card-icon { font-size: 22px; margin-bottom: 8px; }
+  .card-title { font-size: 14px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; line-height: 1.3; }
+  .card-port { font-size: 10px; color: #94a3b8; font-family: monospace; margin-bottom: 6px; }
+  .card-desc { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+  .card-arrow { position: absolute; bottom: 12px; right: 12px; color: #475569; font-size: 13px;
+                transition: all .16s; }
+  .card:hover .card-arrow { color: var(--cc); transform: translateX(3px); }
+  .card-leaf { cursor: default; }
+  .card-leaf:hover { transform: none; box-shadow: none; border-color: #334155; }
+  .card-leaf .card-arrow { display: none; }
+  #empty { display: flex; flex-direction: column; align-items: center;
+           justify-content: center; padding: 60px; color: #475569; text-align: center; }
+  #search-results { display: none; padding: 12px 0; }
+  .sr-item { padding: 10px 14px; border-radius: 8px; cursor: pointer; margin-bottom: 6px;
+             background: #1e293b; border: 1px solid #334155; transition: all .14s; }
+  .sr-item:hover { border-color: #60a5fa; background: #1e3a5f; }
+  .sr-path { font-size: 10px; color: #64748b; margin-bottom: 3px; }
+  .sr-label { font-size: 14px; font-weight: 600; color: #f1f5f9; }
+  .sr-desc { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  .card { animation: fadeIn .18s ease both; }
+  /* couleurs */
+  .c-blue{--cc:#3b82f6} .c-amber{--cc:#f59e0b} .c-purple{--cc:#a855f7}
+  .c-violet{--cc:#8b5cf6} .c-cyan{--cc:#0ea5e9} .c-green{--cc:#22c55e}
+  .c-rose{--cc:#f43f5e} .c-slate{--cc:#94a3b8} .c-indigo{--cc:#6366f1}
+  .c-orange{--cc:#f97316} .c-teal{--cc:#14b8a6} .c-pink{--cc:#ec4899}
+  .c-lime{--cc:#84cc16} .c-red{--cc:#ef4444}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div id="logo">🏗️ WORKPLACE</div>
+  <div id="breadcrumb"></div>
+  <input id="search-box" type="text" placeholder="🔍 Rechercher..." oninput="search(this.value)">
+  <button id="back-btn" onclick="goBack()" disabled>← Retour</button>
+</div>
+<div id="main">
+  <div id="info">
+    <div id="info-icon"></div>
+    <div id="info-title"></div>
+    <div id="info-port"></div>
+    <div id="info-status"></div>
+    <div id="info-desc"></div>
+    <div id="info-children-count"></div>
+  </div>
+  <div id="cards-area">
+    <div id="search-results"></div>
+    <div id="cards-label"></div>
+    <div id="cards-grid"></div>
+    <div id="empty" style="display:none">
+      <div style="font-size:40px;margin-bottom:10px;opacity:.4">🍃</div>
+      <div style="font-size:14px">Nœud terminal — pas de sous-ensemble</div>
+    </div>
+  </div>
+</div>
+<script>
+const TREE = {
+  "id": "root",
+  "icon": "🏗️",
+  "label": "WORKPLACE",
+  "color": "c-blue",
+  "port": "",
+  "status": "🟢 Actif",
+  "desc": "Assistant IA modulaire + Usine à applications sur-mesure.\n\nPrincipe : noyau + briques (modèle Neovim).\nChaque brique a un manifest.json (port, description, tâches).\nLe Cœur les découvre et les branche automatiquement au démarrage.\n\nObjectif 1 : ETL → Audit → App sur-mesure\nObjectif 2 : Jarvis personnel (Cœur)\n\n~93 000 lignes de code réel au total.\nDéployé sur : Mac Intel (dev) + HP Proxmox (prod)",
+  "children": [
+    {
+      "id": "coeur",
+      "icon": "⚙️",
+      "label": "COEUR",
+      "color": "c-blue",
+      "port": "Port 5100  •  FastAPI",
+      "status": "🟢 Actif v0.2.0",
+      "desc": "Orchestrateur central. Découvre les briques via manifest.json.\nRoutes déclarées dans routers/ (refacto S114).\nCycle de vie géré dans lifespan (registre + DB + horloge + proactif).\n\nDémarrage :\n  cd ~/Desktop/Workplace/core && make up\n  docker-compose up -d (image : workplace-core)\n\nCORS : variable CORS_ORIGINS (CSV). Défaut = * (dev).\nMulti-tenant : X-User-Id / X-Org-ID propagés via contexte_tenant.py.",
+      "children": [
+        {
+          "id": "coeur-modules",
+          "icon": "📦",
+          "label": "Modules du Cœur",
+          "color": "c-blue",
+          "port": "~20 fichiers .py",
+          "status": "",
+          "desc": "Tous les modules qui tournent dans le conteneur core.",
+          "children": [
+            {
+              "id": "orch",
+              "icon": "🔄",
+              "label": "orchestrateur.py",
+              "color": "c-blue",
+              "port": "POST /livrer",
+              "status": "🟢 Actif",
+              "desc": "Pipeline complet en 1 commande : ETL → Audit → Génération → Packaging.\n\nConstantes :\n  ETAPES = [ingestion, audit, generation, packaging]\n  POLL_INTERVALLE = 3s\n  POLL_TIMEOUT   = 900s\n  BRIQUE_HOST    = host.docker.internal\n\nLogique :\n  1. POST :5200/ingerer pour chaque doc\n  2. POST :5300/auditer/tout { doc_ids }\n  3. Polling GET :5300/audits/{id} jusqu'à status=termine\n  4. POST :5400/generer { audit_id, mode }\n  5. Polling GET :5400/apps/{id}\n  6. POST packaging si activé\n\nPersistance : SQLite livraisons.db (/data/)",
+              "children": [
+                {
+                  "id": "orch-ep",
+                  "icon": "📡",
+                  "label": "Endpoints",
+                  "color": "c-blue",
+                  "port": "",
+                  "status": "",
+                  "desc": "GET  /livraisons              — liste toutes les livraisons\nGET  /livraisons/{id}         — détail + étapes\nPOST /livrer                  — lance le pipeline complet\nDELETE /livraisons/{id}       — supprime un dossier livré",
+                  "children": []
+                },
+                {
+                  "id": "orch-dep",
+                  "icon": "🔗",
+                  "label": "Dépendances",
+                  "color": "c-slate",
+                  "port": "",
+                  "status": "",
+                  "desc": "→ ETL         :5200  (ingestion)\n→ AUDIT       :5300  (4 couches LLM)\n→ GENERATEUR  :5400  (HTML + app)\n→ GATEWAY     :4001  (LLM si besoin)\n→ DONNEES     :5500  (si mode hébergé)",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "asst",
+              "icon": "🤖",
+              "label": "assistant.py  (Jarvis)",
+              "color": "c-blue",
+              "port": "POST /assistant/chat",
+              "status": "🟢 Actif",
+              "desc": "Conversation en langage naturel.\nStateless côté serveur — contexte porté par le client.\nStreaming SSE (text/event-stream).\n\nContexte : 8000 tokens max (trim auto via trimming.py).\nCo-agent async (coagent.py) : appels outils en parallèle.\nConfirmation avant toute ACTION (livrer, décrocher, etc.).\nMémoire persistante via brique :5600 (retenir/rappeler).\n\nFlux d'une requête :\n  1. Reçoit {messages, tools_allowed}\n  2. Filtre outils via routage_outils.py (embeddings)\n  3. Appel LLM via llm_pipeline.py → Gateway :4001\n  4. Si tool_call → exécute outil → boucle\n  5. Stream la réponse finale en SSE",
+              "children": [
+                {
+                  "id": "asst-outils",
+                  "icon": "🛠️",
+                  "label": "outils.py (~35 outils)",
+                  "color": "c-indigo",
+                  "port": "",
+                  "status": "🟢 Actif",
+                  "desc": "Tous les outils exposés au Jarvis. Groupés par domaine.",
+                  "children": [
+                    {
+                      "id": "o-usine",
+                      "icon": "🏭",
+                      "label": "Groupe Usine",
+                      "color": "c-green",
+                      "port": "",
+                      "status": "",
+                      "desc": "livrer(entreprise, docs)\netat_livraison(id)\nlister_livraisons()\ndecrocher(id)\nreprendre(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-etl",
+                      "icon": "📥",
+                      "label": "Groupe ETL",
+                      "color": "c-green",
+                      "port": "",
+                      "status": "",
+                      "desc": "ingerer_doc(fichier)\ningerer_url(url)\nlister_docs()\nvoir_doc(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-audit",
+                      "icon": "🔬",
+                      "label": "Groupe Audit",
+                      "color": "c-green",
+                      "port": "",
+                      "status": "",
+                      "desc": "lancer_audit(doc_ids)\nvoir_audit(id)\nresume_audit(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-gen",
+                      "icon": "⚡",
+                      "label": "Groupe Générateur",
+                      "color": "c-green",
+                      "port": "",
+                      "status": "",
+                      "desc": "generer_app(audit_id)\nvoir_app(id)\ntelecharger_html(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-mem",
+                      "icon": "🧩",
+                      "label": "Groupe Mémoire",
+                      "color": "c-purple",
+                      "port": "",
+                      "status": "",
+                      "desc": "retenir(texte, tags)\nrappeler(question)\nsupprimer_souvenir(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-forge",
+                      "icon": "🔨",
+                      "label": "Groupe Forge",
+                      "color": "c-violet",
+                      "port": "",
+                      "status": "",
+                      "desc": "lancer_agent(prompt)\nchercher_rag(question)\nlister_prospects()\navancer_prospect(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-agenda",
+                      "icon": "📅",
+                      "label": "Groupe Agenda",
+                      "color": "c-rose",
+                      "port": "",
+                      "status": "",
+                      "desc": "voir_agenda(date)\ncreer_evenement(titre,date)\nlister_rdv()\nannuler_rdv(id)",
+                      "children": []
+                    },
+                    {
+                      "id": "o-voix",
+                      "icon": "🎙️",
+                      "label": "Groupe Voix",
+                      "color": "c-rose",
+                      "port": "",
+                      "status": "",
+                      "desc": "parler(texte)\nlire_fichier(path)\nlister_voix()",
+                      "children": []
+                    },
+                    {
+                      "id": "o-rech",
+                      "icon": "🔎",
+                      "label": "Groupe Recherche",
+                      "color": "c-rose",
+                      "port": "",
+                      "status": "",
+                      "desc": "chercher_web(query)\nlire_page(url)",
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "asst-ep",
+                  "icon": "📡",
+                  "label": "Endpoints",
+                  "color": "c-blue",
+                  "port": "",
+                  "status": "",
+                  "desc": "POST /assistant/chat\n  body : { messages: [...], stream: true }\n  response : text/event-stream (SSE)\n\nGET  /assistant/etat\n  → { statut, briques_actives, memoire_ok }\n\nPOST /assistant/reset\n  → réinitialise le contexte",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "horl",
+              "icon": "⏰",
+              "label": "horloge.py  (S29)",
+              "color": "c-amber",
+              "port": "Boucle 60s",
+              "status": "🟢 Livré S29",
+              "desc": "Planificateur de tâches périodiques.\nLit les taches[] de chaque manifest.json.\nDéclenche par HTTP POST sur l'endpoint déclaré.\n\nContrat manifest :\n  taches: [{ nom, endpoint, cadence_heures, idempotent }]\n\nLogique :\n  • Boucle asyncio toutes les 60s\n  • Compare last_run + cadence → décide si déclencher\n  • POST sur endpoint (best-effort, erreur loggée)\n  • Stocke last_run dans SQLite horloge.db",
+              "children": [
+                {
+                  "id": "horl-taches",
+                  "icon": "📋",
+                  "label": "Tâches déclarées",
+                  "color": "c-amber",
+                  "port": "",
+                  "status": "",
+                  "desc": "briefing-quotidien (noyau/manifest.json)\n  → POST :5100/briefing/generer\n  → cadence : 24h (7h00)\n\nrevue-app-vivante (generateur/manifest.json)\n  → POST :5400/revues/balayage\n  → cadence : 168h (1×/semaine)\n\nrelances-impayes (forge/manifest.json)\n  → POST :5700/facturation/relances/trigger\n  → cadence : 24h\n\nsync-google-agenda (agenda/manifest.json)\n  → POST :8400/agenda/sync\n  → cadence : 1h",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "proa",
+              "icon": "🔔",
+              "label": "proactif.py",
+              "color": "c-amber",
+              "port": "Boucle async fond",
+              "status": "🟢 Actif",
+              "desc": "Boucle asyncio en tâche de fond (démarrée dans lifespan).\nChecks toutes les 5 min :\n  • Agenda imminent (<2h) → alerte\n  • Docs ingérés non encore audités\n  • Livraisons bloquées en attente\n  • Nouvelles relances impayées dues\n\nNotification → pastille 🔔 dans le dashboard.\nInit : proactif.init_db() au démarrage.\nTable : proactif_log (SQLite).",
+              "children": []
+            },
+            {
+              "id": "brie",
+              "icon": "☀️",
+              "label": "briefing.py  (S30)",
+              "color": "c-amber",
+              "port": "Déclenché horloge 7h",
+              "status": "🟢 Livré S30",
+              "desc": "Chaque matin : le Jarvis parle le premier.\nDéclenché par l'horloge (POST /briefing/generer).\n4 sources tolérantes (ne bloque pas si l'une est KO) :",
+              "children": [
+                {
+                  "id": "brie-src",
+                  "icon": "📊",
+                  "label": "Sources du briefing",
+                  "color": "c-amber",
+                  "port": "",
+                  "status": "",
+                  "desc": "1. AGENDA DU JOUR\n   GET :8400/agenda/evenements?date=today\n   → liste les RDV + rappels\n\n2. FACTURES APPROCHANT L'ÉCHÉANCE\n   GET :5700/facturation/factures?due_soon=true\n   → impayées à J+7/15/30\n\n3. PIPELINE CRM\n   GET :5700/crm/prospects?stage=actif\n   → opportunités en cours\n\n4. COÛT LLM DE LA VEILLE\n   GET :5100/journal/usage?date=yesterday\n   → tokens × coût par modèle\n\nSynthèse : LLM économe (local via shadow.py)\nDépôt : POST /assistant/notification\n",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "shad",
+              "icon": "🧭",
+              "label": "shadow.py  (S138)",
+              "color": "c-violet",
+              "port": "Routing interne",
+              "status": "🟡 Calibrage en cours",
+              "desc": "Routage économe local vs cloud. Économe = moins cher.\nScore = f(nb_tokens, coût_provider, latence_mesurée)\nSi score_local < seuil → local ; sinon → cloud.\n\nJournal d'usage → analytics coût réel.\nCache sémantique : cosinus ≥ 0.92 → pas d'appel LLM.\nObjectif : -40% coût, hit rate ≥ 25%.\n\nRESTE : mesure LIVE sur trafic réel + recalibrage des seuils.",
+              "children": [
+                {
+                  "id": "shad-cache",
+                  "icon": "💾",
+                  "label": "Cache sémantique",
+                  "color": "c-violet",
+                  "port": "",
+                  "status": "",
+                  "desc": "Fichier : cache_semantique.py\nModèle : all-minilm-l6-v2 (local, 22MB)\nDimension : 384\nSimilarité : cosinus ≥ 0.92\n\nProcessus :\n  1. Encode la question (embeddings)\n  2. Cherche dans le cache (cosinus)\n  3. Si hit → retourne directement\n  4. Sinon → appel LLM + stocke\n\nTTL : 1h (cache.py exact), pas de TTL (cache_semantique)",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "regi",
+              "icon": "📋",
+              "label": "registre.py",
+              "color": "c-slate",
+              "port": "Chargé au démarrage",
+              "status": "🟢 Actif",
+              "desc": "Charge tous les briques/*/manifest.json au démarrage.\nStructure par brique :\n  { nom, port, description, url_sante, taches[], couche }\n\nExpose dans registre.briques (dict).\nEndpoints :\n  GET /briques              → liste complète\n  GET /briques/{nom}        → détail 1 brique\n  POST /briques/reload      → rechargement à chaud\n  GET /sante-globale        → ping toutes les url_sante",
+              "children": []
+            },
+            {
+              "id": "llmp",
+              "icon": "🌊",
+              "label": "llm_pipeline.py",
+              "color": "c-slate",
+              "port": "Interne",
+              "status": "🟢 Actif",
+              "desc": "Interface LLM unifiée — tous les appels passent ici.\nJamais d'appel direct à une API LLM dans le code.",
+              "children": [
+                {
+                  "id": "llmp-flow",
+                  "icon": "🔀",
+                  "label": "Flux d'un appel",
+                  "color": "c-slate",
+                  "port": "",
+                  "status": "",
+                  "desc": "1. trimming.py : coupe si contexte > 8000 tokens\n2. summarisation.py : résumé auto si > 16000 tokens\n3. cache.py : vérifie cache exact (1h TTL)\n4. cache_semantique.py : vérifie cache cosinus\n5. Si miss → POST :4001/v1/chat/completions\n6. Streaming SSE → renvoyé au client\n7. Stocke dans journal_conversations.py\n8. Met à jour journal_usage.py (tokens + coût)",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "cycl",
+              "icon": "♻️",
+              "label": "cycle_de_vie.py  (S6)",
+              "color": "c-slate",
+              "port": "Interne",
+              "status": "🟢 Livré S6",
+              "desc": "Cycle de vie des entreprises livrées.\n\nDÉCROCHER :\n  1. Dump SQLite livraisons.db + apps.db + donnees.db\n  2. Export Oria (world + salons)\n  3. ZIP → dossier portable horodaté\n  4. Retire des tables centrales (soft delete)\n\nREPRENDRE :\n  1. Unzip du dossier portable\n  2. Réinjecte dans ETL (re-index docs)\n  3. Restaure Données (POST /seed)\n  4. Reconnecte Oria (world existant ou nouveau)\n\nAller-retour sans perte de données.\nPermet de garder la solution principale propre.",
+              "children": []
+            },
+            {
+              "id": "coeur-routers",
+              "icon": "🗂️",
+              "label": "Routers FastAPI",
+              "color": "c-slate",
+              "port": "routers/",
+              "status": "🟢 Actif",
+              "desc": "Routes HTTP déclarées dans routers/ (refacto S114).",
+              "children": [
+                {
+                  "id": "r-sys",
+                  "icon": "🏥",
+                  "label": "systeme.py",
+                  "color": "c-slate",
+                  "port": "",
+                  "status": "",
+                  "desc": "GET /sante-globale\nGET /briques\nGET /briques/{nom}\nPOST /briques/reload\nGET /version",
+                  "children": []
+                },
+                {
+                  "id": "r-usine",
+                  "icon": "🏭",
+                  "label": "usine.py",
+                  "color": "c-green",
+                  "port": "",
+                  "status": "",
+                  "desc": "POST /livrer\nGET /livraisons\nGET /livraisons/{id}\nDELETE /livraisons/{id}\nPOST /decrocher/{id}\nPOST /reprendre/{id}",
+                  "children": []
+                },
+                {
+                  "id": "r-dash",
+                  "icon": "📊",
+                  "label": "dashboard.py",
+                  "color": "c-blue",
+                  "port": "",
+                  "status": "",
+                  "desc": "GET /dashboard (HTML)\nGET /dashboard/data\nGET /assets/*",
+                  "children": []
+                },
+                {
+                  "id": "r-asst",
+                  "icon": "🤖",
+                  "label": "assistant.py",
+                  "color": "c-blue",
+                  "port": "",
+                  "status": "",
+                  "desc": "POST /assistant/chat (SSE)\nGET /assistant/etat\nPOST /assistant/reset\nPOST /briefing/generer",
+                  "children": []
+                },
+                {
+                  "id": "r-agenda",
+                  "icon": "📅",
+                  "label": "agenda.py",
+                  "color": "c-rose",
+                  "port": "",
+                  "status": "",
+                  "desc": "GET /agenda/evenements\nPOST /agenda/evenements\nDELETE /agenda/evenements/{id}\nPOST /agenda/sync",
+                  "children": []
+                },
+                {
+                  "id": "r-profil",
+                  "icon": "👤",
+                  "label": "profil.py",
+                  "color": "c-indigo",
+                  "port": "",
+                  "status": "",
+                  "desc": "GET /profil\nPUT /profil\nGET /profil/identite\nPUT /profil/identite",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "coeur-config",
+              "icon": "⚙️",
+              "label": "Config & .env",
+              "color": "c-slate",
+              "port": ".env",
+              "status": "",
+              "desc": "Variables d'environnement du Cœur.",
+              "children": [
+                {
+                  "id": "coeur-env",
+                  "icon": "📝",
+                  "label": "Variables .env",
+                  "color": "c-slate",
+                  "port": "",
+                  "status": "",
+                  "desc": "BRIQUE_HOST=host.docker.internal\nGATEWAY_URL=http://host.docker.internal:4001\nLLM_MASTER_KEY=sk-master-change-this\nETL_URL=http://host.docker.internal:5200\nAUDIT_URL=http://host.docker.internal:5300\nGENERATEUR_URL=http://host.docker.internal:5400\nDONNEES_URL=http://host.docker.internal:5500\nMEMOIRE_URL=http://host.docker.internal:5600\nFORGE_URL=http://host.docker.internal:5700\nCORS_ORIGINS=*\nLIVRAISONS_DB=/data/livraisons.db\nVAULT_SECRET=change-in-production",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "infra",
+      "icon": "🌐",
+      "label": "INFRASTRUCTURE",
+      "color": "c-cyan",
+      "port": "4 piliers",
+      "status": "🟢 Actifs",
+      "desc": "Les 4 briques fondamentales sur lesquelles s'appuie le Cœur.\nCommunication uniquement par API HTTP.\nJamais d'imbrication directe entre briques.",
+      "children": [
+        {
+          "id": "gw",
+          "icon": "🧠",
+          "label": "GATEWAY LLM",
+          "color": "c-amber",
+          "port": "Port 4001  •  LiteLLM",
+          "status": "🟢 Actif",
+          "desc": "Routeur LLM unique pour toute la solution.\nCompatible OpenAI. Clé unique côté Cœur.\n91 lignes de config LiteLLM.\n\nDémarrage :\n  cd ~/Desktop/workspace/gateway && docker compose up -d\n\nURL interne : http://host.docker.internal:4001\nClé master : sk-master-change-this (dans .env)",
+          "children": [
+            {
+              "id": "gw-providers",
+              "icon": "🔌",
+              "label": "Providers",
+              "color": "c-amber",
+              "port": "",
+              "status": "",
+              "desc": "",
+              "children": [
+                {
+                  "id": "gw-ollama",
+                  "icon": "🦙",
+                  "label": "Ollama (local)",
+                  "color": "c-green",
+                  "port": "localhost:11434",
+                  "status": "🟢 Souverain — défaut",
+                  "desc": "Modèle local sur CPU/GPU.\nModèle par défaut : ollama/llama3\nURL : http://host.docker.internal:11434\nZéro clé API — 100% souverain.\n\nLimite : Mac Intel sans GPU → ~3min/appel.\nRecommandé pour prod : HP Proxmox (i7-8700, 32GB).\nCommande : ollama pull llama3",
+                  "children": []
+                },
+                {
+                  "id": "gw-or",
+                  "icon": "🌐",
+                  "label": "OpenRouter",
+                  "color": "c-amber",
+                  "port": "api.openrouter.ai",
+                  "status": "🟡 Clé requise",
+                  "desc": "Accès à des centaines de modèles.\nClé : OPENROUTER_API_KEY dans .env\n\nModèles recommandés :\n  openai/gpt-4o-mini   → cheap + fiable (2s/appel)\n  qwen/qwen-2.5-72b    → gratuit parfois\n  kimi/moonshot-v1-128k → contexte long\n  nvidia/nemotron-120b → gratuit (instable)",
+                  "children": []
+                },
+                {
+                  "id": "gw-groq",
+                  "icon": "⚡",
+                  "label": "Groq",
+                  "color": "c-green",
+                  "port": "api.groq.com",
+                  "status": "🟢 Gratuit",
+                  "desc": "llama3-70b à très haute vitesse.\nGratuit avec compte email (console.groq.com).\nClé : GROQ_API_KEY dans .env\n~0.5s/appel sur llama3-70b.\nIdéal : briefing, tâches rapides.",
+                  "children": []
+                },
+                {
+                  "id": "gw-oai",
+                  "icon": "💰",
+                  "label": "OpenAI / Anthropic",
+                  "color": "c-slate",
+                  "port": "",
+                  "status": "🟡 Payant opt-in",
+                  "desc": "OpenAI : OPENAI_API_KEY\n  gpt-4o, gpt-4o-mini, o1...\n\nAnthropic : ANTHROPIC_API_KEY\n  claude-3-5-sonnet, claude-3-haiku...\n\nUtilisés si Ollama/Groq insuffisants.",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "gw-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-amber",
+              "port": "",
+              "status": "",
+              "desc": "POST /v1/chat/completions\n  body : { model, messages, stream, ... }\n  Compatible OpenAI SDK\n\nPOST /v1/embeddings\n  body : { model, input }\n\nGET  /health\n  → { status: \"ok\" }\n\nGET  /v1/models\n  → liste des modèles configurés",
+              "children": []
+            },
+            {
+              "id": "gw-env",
+              "icon": "📝",
+              "label": "Config .env",
+              "color": "c-amber",
+              "port": "",
+              "status": "",
+              "desc": "LITELLM_MASTER_KEY=sk-master-change-this\nPORT=4001\nOLLAMA_URL=http://host.docker.internal:11434\nOPENROUTER_API_KEY=sk-or-...\nGROQ_API_KEY=gsk_...\nOPENAI_API_KEY=sk-...  (optionnel)",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "mem",
+          "icon": "🧩",
+          "label": "MEMOIRE  (Memory)",
+          "color": "c-purple",
+          "port": "Port 5600",
+          "status": "🟢 Livré S8",
+          "desc": "Remplace MemPalace. Projet Memory open-source.\nGraphe souvenir + recherche vectorielle pgvector.\nBrique adaptatrice exposant un contrat simple.\n\nDémarrage :\n  cd ~/Desktop/Workplace/briques/memoire && make up\n\nConsommateurs : Cœur, Forge, Oria.",
+          "children": [
+            {
+              "id": "mem-graph",
+              "icon": "🕸️",
+              "label": "Graphe souvenir",
+              "color": "c-purple",
+              "port": "Postgres",
+              "status": "🟢 Actif",
+              "desc": "Nœuds : souvenirs (texte + métadonnées).\nArêtes : relations typées entre souvenirs.\n\nRecherche hybride :\n  Exacte    → texte brut (SQL LIKE)\n  Sémantique → pgvector cosinus\n  Graphe    → traversal (relations)\n\nModèle embeddings : all-minilm-l6-v2\nDimension : 384\nVolume Docker : memory_data",
+              "children": []
+            },
+            {
+              "id": "mem-ipcra",
+              "icon": "📊",
+              "label": "IPCRa Stages",
+              "color": "c-purple",
+              "port": "",
+              "status": "",
+              "desc": "Cycle de vie d'une idée/information :\n  I — Idea     (intuition brute)\n  P — Plan     (décomposition)\n  C — Code     (implémentation)\n  R — Result   (validation)\n  a — artifact (livrable final)\n\nChaque souvenir a un stage.\nPermet de filtrer par maturité.",
+              "children": []
+            },
+            {
+              "id": "mem-tiers",
+              "icon": "👥",
+              "label": "Tiers",
+              "color": "c-purple",
+              "port": "",
+              "status": "",
+              "desc": "Entités externes associées aux souvenirs :\n  • Personnes (contacts)\n  • Organisations (clients, partenaires)\n  • Projets\n\nPermet : historique par client,\n  tous les souvenirs de \"Entreprise X\".",
+              "children": []
+            },
+            {
+              "id": "mem-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-purple",
+              "port": "",
+              "status": "",
+              "desc": "POST /retenir\n  body : { contenu, tags, stage, tiers }\n  → id du souvenir créé\n\nGET  /rappeler?q=texte\n  → recherche hybride, top-5\n\nGET  /taxonomy\n  → wings + rooms disponibles\n\nDELETE /supprimer/{id}\n\nGET  /sante",
+              "children": []
+            },
+            {
+              "id": "mem-env",
+              "icon": "📝",
+              "label": "Config .env",
+              "color": "c-purple",
+              "port": "",
+              "status": "",
+              "desc": "DATABASE_URL=postgresql://memory:memory@db:5432/memory\nEMBEDDING_MODEL=all-minilm-l6-v2\nPORT=5600",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "frg",
+          "icon": "🔨",
+          "label": "FORGE",
+          "color": "c-violet",
+          "port": "Port 5700  •  Agents + RAG",
+          "status": "🟢 Fonctionnel prouvé",
+          "desc": "La plus grosse brique : ~28 400 lignes.\nAgents IA autonomes + base vectorielle Qdrant.\nAuth : Keycloak (realm oria).\n\nDémarrage :\n  cd ~/Desktop/Workplace/briques/forge && make up\n\nSprints : S17 (agents+RAG) → S22 (Stripe+Emails) → S28 (LIVE).",
+          "children": [
+            {
+              "id": "frg-rag",
+              "icon": "🔍",
+              "label": "RAG + Qdrant",
+              "color": "c-violet",
+              "port": "Qdrant interne",
+              "status": "🟢 Actif",
+              "desc": "Base vectorielle Qdrant.\nEmbeddings : all-minilm-l6-v2.\nChunking : 512 tokens / 50 overlap.\nRecherche : top-k cosinus.\nReranking : cross-encoder.\n\nIngestion : POST /rag/ingerer\nRecherche : POST /rag/chercher { question, top_k }\nCollections : 1 par organisation.",
+              "children": []
+            },
+            {
+              "id": "frg-routers",
+              "icon": "🗂️",
+              "label": "Routers métier",
+              "color": "c-violet",
+              "port": "",
+              "status": "",
+              "desc": "",
+              "children": [
+                {
+                  "id": "frg-crm",
+                  "icon": "👥",
+                  "label": "Router CRM  S20",
+                  "color": "c-rose",
+                  "port": "",
+                  "status": "🟢 Prouvé E2E",
+                  "desc": "Gestion des prospects et du pipeline commercial.\n\nEndpoints :\n  POST   /crm/prospects\n  GET    /crm/prospects?stage=...\n  PUT    /crm/prospects/{id}/avancer\n  DELETE /crm/prospects/{id}\n\nStages : lead → qualifié → devis → gagné → perdu\nProuvé E2E (S20).",
+                  "children": []
+                },
+                {
+                  "id": "frg-fact",
+                  "icon": "📄",
+                  "label": "Router Facturation  S20",
+                  "color": "c-rose",
+                  "port": "",
+                  "status": "🟢 Prouvé E2E",
+                  "desc": "Devis → Factures → Encaissement.\n\nEndpoints :\n  POST   /facturation/devis\n  GET    /facturation/devis/{id}\n  PUT    /facturation/devis/{id}/valider\n  POST   /facturation/factures\n  PUT    /facturation/factures/{id}/payer\n  POST   /facturation/relances/trigger\n  GET    /facturation/factures?due_soon=true",
+                  "children": []
+                },
+                {
+                  "id": "frg-stripe",
+                  "icon": "💳",
+                  "label": "Stripe réel  S21",
+                  "color": "c-green",
+                  "port": "api.stripe.com",
+                  "status": "🟢 Prouvé LIVE S28",
+                  "desc": "SDK Stripe officiel.\nClé au coffre chiffré (Vault, HMAC).\nWebhook signé (Stripe-Signature header).\n\nÉvénements traités :\n  payment_intent.succeeded → marque payée\n  invoice.payment_failed   → déclenche relance\n\nProuvé offline S21 + LIVE S28.\nClé test : sk_test_... (dans Vault)",
+                  "children": []
+                },
+                {
+                  "id": "frg-mail",
+                  "icon": "📧",
+                  "label": "Emails + Relances  S22",
+                  "color": "c-green",
+                  "port": "SMTP SSL",
+                  "status": "🟢 Prouvé LIVE S28",
+                  "desc": "SMTP réel avec SSL.\nRelances impayés :\n  J+7  → rappel doux (ton courtois)\n  J+15 → relance ferme\n  J+30 → mise en demeure\n\nAnti-doublon : flag envoy_le en DB.\nDéclenché par l'horloge (S29).\nProuvé offline S22 + LIVE S28 (Mailtrap).",
+                  "children": []
+                },
+                {
+                  "id": "frg-comptes",
+                  "icon": "👤",
+                  "label": "Comptes clients  S23",
+                  "color": "c-green",
+                  "port": "",
+                  "status": "🟢 Prouvé LIVE S28",
+                  "desc": "Création auto du compte client après paiement.\nLien \"définis ton mot de passe\" envoyé par email.\nProvisioning Keycloak (API admin).\n\nEndpoint :\n  POST /comptes/creer { email, nom, org }\n  → crée user Keycloak + envoie email",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "frg-auth",
+              "icon": "🔑",
+              "label": "Auth Keycloak",
+              "color": "c-amber",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Realm : oria\nService account : forge-service\nJWT Bearer validation sur chaque endpoint.\n\nProvisioning user (S19) :\n  1er login → crée org + user en DB\n  Course fix S36 : savepoint + re-select\n  (évite double-provisioning concurrent)\n\nPropagation identité S36 :\n  X-Forge-User-Token (si présent)\n  Repli : token de service\n  174 tests verts après fix.",
+              "children": []
+            },
+            {
+              "id": "frg-env",
+              "icon": "📝",
+              "label": "Config .env",
+              "color": "c-violet",
+              "port": "",
+              "status": "",
+              "desc": "FORGE_DB_URL=postgresql://forge:...@db:5432/forge\nQDRANT_URL=http://qdrant:6333\nKEYCLOAK_URL=http://host.docker.internal:8081\nKEYCLOAK_REALM=oria\nKEYCLOAK_CLIENT_ID=forge-service\nKEYCLOAK_CLIENT_SECRET=...\nVAULT_SECRET=change-in-production\nSMTP_HOST=smtp.example.com\nSMTP_PORT=465\nSMTP_USER=noreply@workplace.fr\nSMTP_PASS=...\nSTRIPE_SECRET_KEY=... (dans Vault)",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "oria",
+          "icon": "💬",
+          "label": "ORIA  — Messagerie",
+          "color": "c-cyan",
+          "port": "Port 3003 / 8000",
+          "status": "🟢 Actif (10 services)",
+          "desc": "Stack de collaboration complète. 10 services Docker.\nEspaces (worlds) par entreprise.\nSalons par domaine métier.\nSSO Keycloak partagé.\n\nDémarrage :\n  cd ~/Desktop/workspace/oria && docker compose up -d",
+          "children": [
+            {
+              "id": "oria-back",
+              "icon": "⚡",
+              "label": "Backend API  :8000",
+              "color": "c-cyan",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "FastAPI Oria. ~18 600 lignes (84 py + 50 ts).\nGestion espaces (worlds).\nGestion salons (buildings/rooms).\nWrapper API Matrix (Dendrite).\nAuth Keycloak OIDC.\n\nEndpoints clés :\n  POST /api/worlds                   → créer espace\n  POST /api/worlds/{id}/rejoindre    → adhésion\n  POST /api/worlds/{id}/buildings    → créer salon\n  GET  /api/auth/me                  → identité Matrix",
+              "children": []
+            },
+            {
+              "id": "oria-kc",
+              "icon": "🔑",
+              "label": "Keycloak  :8081",
+              "color": "c-amber",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Realm : oria\nClients configurés :\n  oria-app (public, PKCE)\n    → redirect URIs : :3003, :5400\n    → web-origins : :3003, :5400\n  workplace-provisioner (confidentiel)\n    → service account\n    → mapper audience → oria-app\n  forge-service (confidentiel)\n    → service account\n\nAdmin : http://localhost:8081/admin\nUser démo : menuiserie-demo / Demo1234!",
+              "children": []
+            },
+            {
+              "id": "oria-mat",
+              "icon": "💬",
+              "label": "Matrix/Dendrite  :8010",
+              "color": "c-cyan",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Protocole Matrix ouvert.\nHomeserver : workplace.local\nMessageie E2EE optionnelle.\nRooms provisionnées à la génération d'app.\nType room : non chiffré (widget léger).\n→ Dette : E2EE complet via embed iframe Oria.\n\nAPI Matrix :\n  GET  /_matrix/client/v3/rooms/{id}/messages\n  POST /_matrix/client/v3/rooms/{id}/send\n  POST /_matrix/client/v3/join/{roomId}",
+              "children": []
+            },
+            {
+              "id": "oria-lk",
+              "icon": "📹",
+              "label": "LiveKit  :7880",
+              "color": "c-cyan",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Visioconférence WebRTC (SFU).\nSalles par entreprise.\nToken JWT signé (secret dans .env).\nPartage d'écran supporté.\nWidget intégré dans frontend Oria.",
+              "children": []
+            },
+            {
+              "id": "oria-minio",
+              "icon": "🪣",
+              "label": "MinIO  :9106",
+              "color": "c-slate",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Stockage objets S3-compatible.\nFichiers joints, avatars, attachments Matrix.\nBuckets par espace entreprise.",
+              "children": []
+            },
+            {
+              "id": "oria-infra",
+              "icon": "🔧",
+              "label": "PgBouncer + Redis + etcd",
+              "color": "c-slate",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "PgBouncer : pool connexions Postgres\n  Max 20 conns/tenant, mode transaction.\n\nRedis : cache sessions + pub/sub temps réel\n  Présence utilisateurs, file jobs.\n\netcd : config distribuée\n  Secrets LiveKit, découverte services.",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "usine",
+      "icon": "🏭",
+      "label": "USINE À APPLICATIONS",
+      "color": "c-green",
+      "port": "Objectif 1  •  S0-S34",
+      "status": "🟢 Pipeline complet prouvé",
+      "desc": "Chaîne en 4 briques : docs → audit → app sur-mesure.\nProuvé E2E avec Menuiserie Lefèvre & Fils (S9).\nCommande unique via Cœur : POST :5100/livrer",
+      "children": [
+        {
+          "id": "etl",
+          "icon": "📥",
+          "label": "ETL / INGESTION",
+          "color": "c-green",
+          "port": "Port 5200",
+          "status": "🟢 Actif",
+          "desc": "Extraction de texte depuis tous formats.\nDémarrage : cd ~/Desktop/Workplace/briques/etl && make up\nSQLite : /data/etl.db  •  Volume : etl_data",
+          "children": [
+            {
+              "id": "etl-formats",
+              "icon": "📄",
+              "label": "Formats supportés",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "MarkItDown (principal) :\n  PDF, Word (.docx), Excel (.xlsx)\n  PowerPoint (.pptx), HTML, CSV, JSON\n  → Markdown propre en sortie\n\nPyMuPDF (fallback PDF) :\n  Si MarkItDown échoue sur le PDF\n  → texte brut page par page\n\nTesseract OCR (images) :\n  PNG, JPG, TIFF, BMP\n  Langues : fra + eng\n  → texte extrait des images scannées\n\nLimite taille : 50MB par fichier (configurable)",
+              "children": []
+            },
+            {
+              "id": "etl-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "POST /ingerer\n  Content-Type: multipart/form-data\n  field: fichier (binaire)\n  → { id, nom, taille, nb_pages, texte_extrait }\n\nPOST /ingerer/url\n  body: { url }\n  → scrape + extrait + stocke\n\nGET  /documents\n  ?page=1&limit=20\n  → { total, documents: [...] }\n\nGET  /documents/{id}\n  → { id, nom, texte_extrait, meta }\n\nDELETE /documents/{id}\n\nGET  /sante",
+              "children": []
+            },
+            {
+              "id": "etl-env",
+              "icon": "📝",
+              "label": "Config .env",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "PORT=5200\nETL_DB=/data/etl.db\nMAX_FILE_SIZE_MB=50\nTESSERACT_LANGS=fra+eng\nMARKITDOWN_TIMEOUT=30",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "audit",
+          "icon": "🔬",
+          "label": "AUDIT — IA",
+          "color": "c-green",
+          "port": "Port 5300",
+          "status": "🟢 Actif",
+          "desc": "4 couches LLM séquentielles (async).\nAppelle Gateway :4001 pour chaque couche.\n~54s par audit complet (gpt-4o-mini).\nSQLite : /data/audit.db",
+          "children": [
+            {
+              "id": "aud-c1",
+              "icon": "🗺️",
+              "label": "Couche 1 — Territoire",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "Frameworks appliqués :\n  DDD (Domain-Driven Design)\n  Business Model Canvas\n  Stakeholder Map\n  Bounded Contexts\n\nPrompt : analyse les docs + identifie les domaines métier.\nSortie JSON :\n  { domaines[], acteurs[], bounded_contexts[],\n    value_proposition, segments_clients }",
+              "children": []
+            },
+            {
+              "id": "aud-c2",
+              "icon": "🔀",
+              "label": "Couche 2 — Flux",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "Frameworks appliqués :\n  VSM (Value Stream Mapping)\n  SIPOC (Supplier-Input-Process-Output-Customer)\n  EventStorming\n  BPMN simplifié\n\nPrompt : cartographie les flux de valeur.\nSortie JSON :\n  { flux_principaux[], processus[], evenements_metier[],\n    bottlenecks[], repartition_ca[] }",
+              "children": []
+            },
+            {
+              "id": "aud-c3",
+              "icon": "⚠️",
+              "label": "Couche 3 — Problèmes",
+              "color": "c-orange",
+              "port": "",
+              "status": "",
+              "desc": "Frameworks appliqués :\n  Ishikawa (arête de poisson)\n  Pareto (80/20 des problèmes)\n  TOC (Theory of Constraints)\n  5 Pourquoi\n\nPrompt : identifie les racines des problèmes.\nSortie JSON :\n  { problemes[], causes_racines[], pareto_problemes[],\n    contraintes_principales[], quick_wins[] }",
+              "children": []
+            },
+            {
+              "id": "aud-c4",
+              "icon": "🎯",
+              "label": "Couche 4 — Priorités",
+              "color": "c-rose",
+              "port": "",
+              "status": "",
+              "desc": "Frameworks appliqués :\n  CPM / PERT (chemin critique)\n  SWOT\n  OKRs (Objectives & Key Results)\n  MoSCoW (Must/Should/Could/Won't)\n\nPrompt : priorise les actions et construit la feuille de route.\nSortie JSON :\n  { okrs[], chemin_critique[], swot{},\n    moscow{ must[], should[], could[], wont[] },\n    kpis[] }",
+              "children": []
+            },
+            {
+              "id": "aud-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "POST /auditer/tout\n  body : { doc_ids: [id1, id2, ...] }\n  → { audit_id, status: \"en_cours\" }\n\nGET  /audits/{id}\n  → { id, status, couches: { territoire, flux,\n      problemes, priorites }, duree_s }\n  status : en_cours | termine | erreur\n\nGET  /audits/{id}/resume\n  → résumé court (1 paragraph par couche)\n\nGET  /audits\n  → liste paginée\n\nDELETE /audits/{id}\n\nGET  /sante",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "gen",
+          "icon": "⚡",
+          "label": "GENERATEUR",
+          "color": "c-green",
+          "port": "Port 5400",
+          "status": "🟢 Actif + App vivante",
+          "desc": "Génère une app HTML Bootstrap 5 sur-mesure.\nLit l'audit → construit un plan LLM → assemble via registre briques_app/.\nSQLite : /data/apps.db",
+          "children": [
+            {
+              "id": "gen-reg",
+              "icon": "📦",
+              "label": "Registre briques_app/",
+              "color": "c-green",
+              "port": "Auto-découverte",
+              "status": "🟢 Actif",
+              "desc": "Tout fichier briques_app/*.py exposant\nconstruire(ctx) -> [vue] est branché automatiquement.\nctx = audit + plan + données dérivées.",
+              "children": [
+                {
+                  "id": "gen-b-dash",
+                  "icon": "📊",
+                  "label": "dashboard.py",
+                  "color": "c-green",
+                  "port": "",
+                  "status": "",
+                  "desc": "Vue d'accueil : KPIs, score santé, activité récente.\nDonnées : tirées du plan LLM (kpis, nom_app, couleurs).",
+                  "children": []
+                },
+                {
+                  "id": "gen-b-crud",
+                  "icon": "🗄️",
+                  "label": "crud_entites.py",
+                  "color": "c-green",
+                  "port": "",
+                  "status": "",
+                  "desc": "1 vue CRUD par entité métier.\nTableau + formulaire d'ajout + suppression.\nEdition inline. Persistance : Données :5500 ou localStorage.",
+                  "children": []
+                },
+                {
+                  "id": "gen-b-pareto",
+                  "icon": "📈",
+                  "label": "pareto.py",
+                  "color": "c-green",
+                  "port": "",
+                  "status": "",
+                  "desc": "Pareto CA × Temps × Pénibilité.\nGraphe Chart.js. Badge rentabilité.\nSource : audit.couches.flux.repartition_ca",
+                  "children": []
+                },
+                {
+                  "id": "gen-b-msg",
+                  "icon": "💬",
+                  "label": "messagerie.py",
+                  "color": "c-cyan",
+                  "port": "",
+                  "status": "",
+                  "desc": "Widget messagerie Oria (SSO PKCE).\nSalons par bounded_context.\nPolling Matrix 4s. Requiert mode hébergé.",
+                  "children": []
+                },
+                {
+                  "id": "gen-b-app",
+                  "icon": "📋",
+                  "label": "app_proposee.py",
+                  "color": "c-violet",
+                  "port": "",
+                  "status": "",
+                  "desc": "Vue MoSCoW : modules livrés ✓ vs proposés.\nPriorisation. Source : audit.couches.priorites.moscow",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "gen-vivante",
+              "icon": "🔄",
+              "label": "App vivante  S31-S34",
+              "color": "c-violet",
+              "port": "",
+              "status": "🟢 Prouvé LIVE S31",
+              "desc": "L'app livrée évolue dans le temps — revenu récurrent.",
+              "children": [
+                {
+                  "id": "gv-s31",
+                  "icon": "📊",
+                  "label": "Revue consentie  S31",
+                  "color": "c-violet",
+                  "port": "POST /apps/{id}/revue",
+                  "status": "🟢 Prouvé LIVE",
+                  "desc": "Mesure usage par module (consentement requis).\nCompare usage réel vs plan initial.\nPropose un incrément via LLM.\nGarde-fou : proposer ≠ valider ≠ appliquer.\nSource données : brique Données :5500 (consentie).\nModules dormants = pas de données depuis Données.",
+                  "children": []
+                },
+                {
+                  "id": "gv-s32",
+                  "icon": "✅",
+                  "label": "Appliquer l'incrément  S32",
+                  "color": "c-violet",
+                  "port": "POST /apps/{id}/revue/appliquer",
+                  "status": "🟢 Prouvé LIVE",
+                  "desc": "Injecte les modules proposés dans le plan livré.\nRégénère via generer_html (même gabarit).\nRefuse si revue non validée (409).\nAnti-double-application.\nPlan : N entités → N+X entités (X=incrément).",
+                  "children": []
+                },
+                {
+                  "id": "gv-s33",
+                  "icon": "⏰",
+                  "label": "Horloge périodique  S33",
+                  "color": "c-amber",
+                  "port": "",
+                  "status": "🟢 Prouvé LIVE",
+                  "desc": "Tâche déclarée dans generateur/manifest.json.\nCadence : 168h (1×/semaine).\nBalaye toutes les apps consentantes.\n14 apps testées : 1 proposée, 13 ignorées.\nIgnore : sans consentement, déjà validée.",
+                  "children": []
+                },
+                {
+                  "id": "gv-s34",
+                  "icon": "🧬",
+                  "label": "Schéma fin des modules  S34",
+                  "color": "c-violet",
+                  "port": "",
+                  "status": "🟢 Prouvé LIVE",
+                  "desc": "À l'application d'un incrément, demande au LLM\nle schéma de champs du module (vocabulaire métier).\nRepli générique si Gateway KO.\nExemple : module \"Rapports d'activité\" →\n  champs : séances_planifiées, séances_réalisées,\n  taux_réussite (%) — typés pour ce cabinet kiné.",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "gen-prov",
+              "icon": "🏢",
+              "label": "Oria provisioning",
+              "color": "c-cyan",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "À la génération d'une app hébergée + messagerie :\n  1. Token service account (workplace-provisioner)\n  2. Crée world (espace entreprise) dans Oria\n  3. Crée 1 salon par bounded_context de l'audit\n  4. Crée salon \"Général\"\n  5. Stocke world_id + salons dans apps.db\n\nSSO : OIDC Authorization Code + PKCE (zéro lib JS).\nSalons non chiffrés (widget léger, dette E2EE).",
+              "children": []
+            },
+            {
+              "id": "gen-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "POST /generer\n  body : { audit_id, mode, options }\n  mode : autonome | heberge\n  → { app_id, status }\n\nGET  /apps/{id}\n  → { id, nom, html_size, oria_world_id, ... }\n\nGET  /apps/{id}/html\n  → télécharge le fichier HTML\n\nGET  /apps/{id}/revue\n  → { propositions_llm, modules_dormants }\n\nPOST /apps/{id}/revue/appliquer\n  → régénère avec incrément\n\nPOST /revues/balayage\n  → horloge : balaye toutes les apps\n\nGET  /sante",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "donn",
+          "icon": "🗄️",
+          "label": "DONNÉES",
+          "color": "c-green",
+          "port": "Port 5500",
+          "status": "🟢 Actif",
+          "desc": "CRUD générique multi-tenant.\nRemplace le localStorage des apps livrées (multi-user).\nSQLite + volume Docker : donnees_data.",
+          "children": [
+            {
+              "id": "donn-schema",
+              "icon": "🏗️",
+              "label": "Schéma DB",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "Table principale : enregistrements\n  id         TEXT (uuid)\n  app_id     TEXT (identifiant de l'app)\n  entite_id  TEXT (nom de l'entité, ex: \"clients\")\n  data       JSON (données libres)\n  _cree      DATETIME\n  _maj       DATETIME\n\nTable apps :\n  id, nom, mode (autonome|heberge),\n  oria_world_id, oria_salons (JSON)",
+              "children": []
+            },
+            {
+              "id": "donn-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "GET  /enregistrements\n  ?app_id=X&entite_id=Y&page=1&limit=50\n\nPOST /enregistrements\n  body : { app_id, entite_id, data: {} }\n  → { id, _cree }\n\nPUT  /enregistrements/{id}\n  body : { data: {} }\n  → { id, _maj }\n\nDELETE /enregistrements/{id}\n\nPOST /seed\n  body : { app_id, entite_id, exemples: [...] }\n  Idempotent : ne réécrase pas si déjà peuplé.\n\nGET  /apps/{app_id}/resume\n  → { entites: { nom: nb_enreg } }\n\nDELETE /apps/{app_id}\n  → purge complète (soft delete)\n\nGET  /sante",
+              "children": []
+            },
+            {
+              "id": "donn-modes",
+              "icon": "🔀",
+              "label": "Modes de persistance",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "MODE AUTONOME (défaut) :\n  App 100% standalone.\n  Données dans localStorage du navigateur.\n  Mono-poste. Zéro dépendance serveur.\n\nMODE HÉBERGÉ (option génération) :\n  App parle à /enregistrements via fetch().\n  Données partagées entre utilisateurs.\n  Requiert brique Données active.\n  DONNEES_URL_PUBLIQUE injectée dans l'app.\n  Seed auto à la génération.",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "briq",
+      "icon": "🧩",
+      "label": "BRIQUES METIER",
+      "color": "c-rose",
+      "port": "manifest.json — branchables",
+      "status": "🟢 8 actives + futures",
+      "desc": "Briques indépendantes. Chacune a un manifest.json.\nAjouter = 1 dossier + manifest. Jamais toucher au Cœur.",
+      "children": [
+        {
+          "id": "conn",
+          "icon": "📱",
+          "label": "CONNEXION",
+          "color": "c-rose",
+          "port": "Port 5870",
+          "status": "🟢 Actif",
+          "desc": "Pont bidirectionnel messageries ↔ Jarvis.\nStateless : forward vers POST :5100/assistant/chat.\nHistorique par interlocuteur (SQLite).",
+          "children": [
+            {
+              "id": "conn-tg",
+              "icon": "✈️",
+              "label": "Telegram adapter",
+              "color": "c-cyan",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Mode : polling getUpdates (pas de webhook nécessaire).\nDéclenché par l'horloge (toutes les 10s).\nBOT_TOKEN : variable d'env.\nCommandes : /start, /aide, /oublier.\nGère : texte, photos, documents.\n→ POST :5100/assistant/chat { messages, user_id }",
+              "children": []
+            },
+            {
+              "id": "conn-wa",
+              "icon": "📲",
+              "label": "WhatsApp adapter",
+              "color": "c-green",
+              "port": "",
+              "status": "🟡 Clé requise",
+              "desc": "WhatsApp Cloud API (Meta).\nWHATSAPP_TOKEN + WHATSAPP_PHONE_ID dans .env.\nWebhook : POST /webhook/whatsapp.\nVérification token (GET /webhook/whatsapp).\nGère : text, image, document.",
+              "children": []
+            },
+            {
+              "id": "conn-discord",
+              "icon": "🎮",
+              "label": "Discord adapter",
+              "color": "c-violet",
+              "port": "",
+              "status": "🟡 Clé requise",
+              "desc": "Discord Bot Token dans .env.\nCommande slash : /jarvis <message>.\nGère les messages dans les salons configurés.\nDISCORD_TOKEN + DISCORD_GUILD_ID.",
+              "children": []
+            },
+            {
+              "id": "conn-multi",
+              "icon": "👥",
+              "label": "Multi-utilisateur",
+              "color": "c-slate",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Table de correspondance :\n  interlocuteur_id (telegram/wa/discord)\n  → utilisateur Workplace (X-User-Id)\n\nConsentement obligatoire au 1er message.\nHistorique : 20 derniers messages par interlocuteur.\nStocké dans SQLite connexion.db.",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "voix",
+          "icon": "🎙️",
+          "label": "VOIX",
+          "color": "c-rose",
+          "port": "Port 5985",
+          "status": "🟢 Actif",
+          "desc": "TTS souverain + Chat vocal temps réel.",
+          "children": [
+            {
+              "id": "voix-tts",
+              "icon": "🔊",
+              "label": "Pipeline TTS",
+              "color": "c-rose",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Ordre de priorité :\n  1. Piper  (local CPU, défaut, 100% souverain)\n     Voix fr : fr_FR-tom-medium\n     Vitesse : ~0.3s/phrase\n  2. Kokoro (naturel, local opt-in)\n  3. Coqui XTTS (clonage, local opt-in)\n  4. OpenAI TTS (hébergé, clé requise)\n  5. ElevenLabs (hébergé, clé requise)\n\nEndpoint : POST /parler { texte, voix }\nRetour : audio/wav ou audio/mp3",
+              "children": []
+            },
+            {
+              "id": "voix-clone",
+              "icon": "🎭",
+              "label": "Bibliothèque voix clonées",
+              "color": "c-rose",
+              "port": "",
+              "status": "🟡 Opt-in",
+              "desc": "Enregistrer un timbre depuis un court échantillon (Coqui XTTS).\nPOST /voix/cloner { nom, echantillon }\n→ crée voix nommée réutilisable\n\nUtilisation : voix=clone:nom dans les appels.\nUtilisé par : Studio (voix par personnage).\nStockage : /data/voix/",
+              "children": []
+            },
+            {
+              "id": "voix-chat",
+              "icon": "🎤",
+              "label": "Chat vocal temps réel",
+              "color": "c-violet",
+              "port": "WebSocket",
+              "status": "🟡 Opt-in clé",
+              "desc": "WebSocket navigateur ↔ API temps réel.\nProviders : OpenAI Realtime, Gemini Live, xAI Grok.\nVAD (Voice Activity Detection) côté fournisseur.\nAudio bidirectionnel.\nInerte sans clé configurée.",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "agen",
+          "icon": "📅",
+          "label": "AGENDA",
+          "color": "c-rose",
+          "port": "Port 8400",
+          "status": "🟢 Actif",
+          "desc": "Agenda auto-hébergé + proxy Google Calendar.",
+          "children": [
+            {
+              "id": "agen-local",
+              "icon": "🗓️",
+              "label": "Agenda hébergé",
+              "color": "c-rose",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Calendriers + Événements + Invitations.\nSQLite : agenda.db\nAPI CRUD complète.\nEndpoints :\n  GET/POST /agenda/calendriers\n  GET/POST /agenda/evenements\n  PUT/DELETE /agenda/evenements/{id}",
+              "children": []
+            },
+            {
+              "id": "agen-google",
+              "icon": "🔗",
+              "label": "Proxy Google Calendar",
+              "color": "c-green",
+              "port": "",
+              "status": "🟡 Consentement requis",
+              "desc": "Synchronisation bidirectionnelle.\nOAuth 2.0 Authorization Code.\nState signé HMAC-SHA256 (S35, anti-CSRF).\nTTL state : 10 min.\nEndpoints :\n  GET  /agenda/connect       → URL OAuth\n  GET  /agenda/callback      → échange code\n  POST /agenda/sync          → pull → local\n  POST /agenda/push/{id}     → local → Google",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "rech",
+          "icon": "🔎",
+          "label": "RECHERCHE",
+          "color": "c-rose",
+          "port": "Port 6040",
+          "status": "🟢 Actif",
+          "desc": "Moteur HuntR — 9 moteurs en parallèle.",
+          "children": [
+            {
+              "id": "rech-souverain",
+              "icon": "🏛️",
+              "label": "Moteurs souverains (sans clé)",
+              "color": "c-green",
+              "port": "",
+              "status": "🟢 Défaut",
+              "desc": "SearXNG auto-hébergé (conteneur voisin)\n  → 100% souverain, résultats agrégés\n  → Repli automatique si KO\n\nDuckDuckGo (sans clé)\n  → API non officielle\n  → Résultats web généraux",
+              "children": []
+            },
+            {
+              "id": "rech-optins",
+              "icon": "🔑",
+              "label": "Moteurs opt-in (avec clé)",
+              "color": "c-amber",
+              "port": "",
+              "status": "🟡 Clés requises",
+              "desc": "Tavily API   → TAVILY_API_KEY\nBrave Search → BRAVE_API_KEY\nExa          → EXA_API_KEY\nSerper       → SERPER_API_KEY\nSerpAPI      → SERPAPI_KEY\nKagi         → KAGI_API_KEY\nBing         → BING_API_KEY\n\nMoteurs inertes si clé absente.\nJamais d'erreur visible — repli silencieux.",
+              "children": []
+            },
+            {
+              "id": "rech-lecture",
+              "icon": "📖",
+              "label": "Lecture de page locale",
+              "color": "c-slate",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Trafilatura (extraction de contenu).\nBornée : 50 000 caractères max.\nTimeout : 10s par page.\nRespect robots.txt.\nFiltre : blocklist propagande/désinformation.\nJamais de lien inventé ni de texte généré.",
+              "children": []
+            },
+            {
+              "id": "rech-api",
+              "icon": "📡",
+              "label": "Endpoints",
+              "color": "c-rose",
+              "port": "",
+              "status": "",
+              "desc": "POST /chercher\n  body : { query, nb_resultats, theme }\n  theme : web | news | academic | code\n  → { resultats: [{titre,url,extrait}], nb_moteurs }\n\nPOST /lire\n  body : { url }\n  → { titre, contenu, auteur, date }\n\nGET  /sante",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "paie",
+          "icon": "💳",
+          "label": "PAIEMENTS",
+          "color": "c-rose",
+          "port": "Port 6020",
+          "status": "🟢 Actif",
+          "desc": "Rail d'argent multi-tenant. Stripe Connect.",
+          "children": [
+            {
+              "id": "paie-stripe",
+              "icon": "💳",
+              "label": "Stripe Connect",
+              "color": "c-green",
+              "port": "",
+              "status": "🟢 Mock + LIVE opt-in",
+              "desc": "Multi-tenant : clé API par vendeur (ou clé platform).\nComptes connectés :\n  POST /paiements/onboarding  → lien Stripe Connect\n  GET  /paiements/comptes     → liste vendeurs\n\nEncaissement avec commission :\n  POST /paiements/payer { montant, vendeur_id, article }\n  → destination charge + application_fee\n\nMock honnête : STRIPE_MODE=mock (défaut).\nStripe réel : STRIPE_SECRET_KEY=sk_test_...",
+              "children": []
+            },
+            {
+              "id": "paie-webhook",
+              "icon": "🔔",
+              "label": "Webhooks signés",
+              "color": "c-green",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Endpoint : POST /paiements/webhook\nValidation : Stripe-Signature header.\nSecret : STRIPE_WEBHOOK_SECRET dans .env.\n\nÉvénements :\n  checkout.session.completed\n  payment_intent.succeeded\n  payment_intent.payment_failed\n  account.updated  (vendeur)",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "perso",
+          "icon": "🎭",
+          "label": "PERSONNAGES",
+          "color": "c-rose",
+          "port": "Port 5900",
+          "status": "🟢 Actif",
+          "desc": "Génération de personnages structurés. Produit autonome vendable.",
+          "children": [
+            {
+              "id": "perso-llm",
+              "icon": "🤖",
+              "label": "Génération LLM",
+              "color": "c-rose",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Distributions structurées via LLM.\n  POST /personnages/generer\n  body : { contexte, archetype, univers }\n  → { nom, traits[], bio, voix, look }\n\nCasting vocal stable :\n  Attribut voix figé par personnage.\n  Compatible brique Voix :5985.",
+              "children": []
+            },
+            {
+              "id": "perso-holo",
+              "icon": "🔮",
+              "label": "Moteur holistique",
+              "color": "c-violet",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Multi-traditions numériques/astrologiques :\n  • Numérologie (prénom + nom)\n  • Astrologie occidentale (signe + ascendant)\n  • Astrologie chinoise (année)\n  • Astrologie védique (nakshatra)\n  • Tradition égyptienne\n  • Tradition celte\n  • Tradition amérindienne\n  • Maya Tzolkin (signe + ton)\n\nSynthèse : tags → stats → archétype → pierre d'équilibrage.\nRecherche inverse : description → signes/date.",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "stud",
+          "icon": "🎬",
+          "label": "STUDIO",
+          "color": "c-rose",
+          "port": "Port 6060",
+          "status": "🟢 Actif",
+          "desc": "Audio-séries co-créées. 6 agents créatifs.",
+          "children": [
+            {
+              "id": "stud-agents",
+              "icon": "👥",
+              "label": "6 agents créatifs",
+              "color": "c-rose",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Équipe internalisée (prompts figés) :\n  1. Showrunner      → vision globale de la série\n  2. Scénariste      → structure des épisodes\n  3. Script Doctor   → amélioration dialogues\n  4. Compositeur     → direction musicale\n  5. Casting Director → attribution des voix\n  6. Producteur      → cohérence + contraintes\n\nChaque agent : rôle + prompt système dédié.\nAppels séquentiels ou parallèles selon le besoin.",
+              "children": []
+            },
+            {
+              "id": "stud-flux",
+              "icon": "🔀",
+              "label": "Flux de production",
+              "color": "c-violet",
+              "port": "",
+              "status": "🟢 Actif",
+              "desc": "Bible → Épisodes → Audio → Livre → Arbre choix\n\n1. Bible (Showrunner) : univers, personnages, arc\n2. Épisodes (Scénariste + Script Doctor)\n3. Audio : voix par personnage (brique Voix :5985)\n   Traduction au rendu (multilingue)\n4. Livre : Série/Cycle/Tome/Chapitre\n5. Arbre de choix interactif\n\nCompose sans absorber :\n  Personnages :5900  (voix + traits)\n  Images :5950       (portraits + couvertures)\n  Vidéo :5970        (bande-annonce + animation)\n  Voix :5985         (audio rendu)",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "rest",
+          "icon": "🍽️",
+          "label": "RESTAURANT",
+          "color": "c-rose",
+          "port": "Port 6010",
+          "status": "🟢 Actif",
+          "desc": "Gestion de restaurant numérique.\n\nFonctionnalités :\n  • QR de table (scannables à distance)\n  • Menu digital (éditable)\n  • Commande en ligne\n  • Suivi commandes par table\n\nTunnel HTTPS (cloudflared) :\n  → RESTAURANT_PUBLIC_URL dans .env\n  → QR encodent cette URL publique\n  → Scannables depuis téléphone 4G\n\nSkill : tunnel-restaurant (relance le tunnel)\nSolution temporaire → déploiement HP Proxmox prévu.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "futurs",
+      "icon": "🚀",
+      "label": "BRIQUES EN COURS / FUTURES",
+      "color": "c-slate",
+      "port": "briques/",
+      "status": "🟡 En développement",
+      "desc": "Briques présentes dans le filesystem mais pas encore finalisées.",
+      "children": [
+        {
+          "id": "fut-images",
+          "icon": "🖼️",
+          "label": "IMAGES",
+          "color": "c-orange",
+          "port": "Port 5950",
+          "status": "🟡 En cours",
+          "desc": "Génération d'images via LLM.\nProvider-agnostique :\n  DALL-E 3, Stable Diffusion, Midjourney API...\nUtilisé par : Studio (portraits, couvertures).\nAPI : POST /images/generer { prompt, style, taille }",
+          "children": []
+        },
+        {
+          "id": "fut-video",
+          "icon": "🎥",
+          "label": "VIDEO",
+          "color": "c-orange",
+          "port": "Port 5970",
+          "status": "🟡 En cours",
+          "desc": "Génération et montage vidéo.\nUtilisé par : Studio (bande-annonce, animation portrait).\nAPI : POST /video/generer { scenes[], voix, musique }",
+          "children": []
+        },
+        {
+          "id": "fut-vision",
+          "icon": "👁️",
+          "label": "VISION",
+          "color": "c-orange",
+          "port": "Port ~5980",
+          "status": "🟡 En cours",
+          "desc": "Analyse d'images (OCR avancé, classification, description).\nComplémentaire à Tesseract (ETL).\nCas : factures, tableaux scannés, schémas.\nAPI : POST /vision/analyser { image, mode }",
+          "children": []
+        },
+        {
+          "id": "fut-transcription",
+          "icon": "🎧",
+          "label": "TRANSCRIPTION",
+          "color": "c-orange",
+          "port": "Port ~5990",
+          "status": "🟡 En cours",
+          "desc": "Audio/Vidéo → Texte.\nModèle : Whisper (local) ou API OpenAI.\nFormats : mp3, mp4, wav, m4a.\nAPI : POST /transcription/transcrire { audio, langue }",
+          "children": []
+        },
+        {
+          "id": "fut-telephonie",
+          "icon": "📞",
+          "label": "TELEPHONIE",
+          "color": "c-orange",
+          "port": "Port ~6000",
+          "status": "🟡 Planifié",
+          "desc": "Intégration téléphonie (SIP/VoIP).\nCas d'usage : Jarvis répond aux appels.\nProvider : Twilio ou FreePBX.\nLien avec brique Voix (TTS + STT).",
+          "children": []
+        },
+        {
+          "id": "fut-peertube",
+          "icon": "📺",
+          "label": "PEERTUBE",
+          "color": "c-orange",
+          "port": "Port ~9000",
+          "status": "⚠️ Secrets à changer",
+          "desc": "Hébergement vidéo auto-hébergé.\nInstance PeerTube dans le stack Docker.\nMot de passe par défaut : workplace2026 ← À CHANGER.\nSprint : sprint-peertube-secrets.md",
+          "children": []
+        },
+        {
+          "id": "fut-synopsis",
+          "icon": "📝",
+          "label": "SYNOPSIS",
+          "color": "c-orange",
+          "port": "Port ~6050",
+          "status": "🟡 Planifié",
+          "desc": "Génération de synopsis pour le Studio.\nRésumé automatique d'épisodes/séries.\nIntégré dans le flux Studio.",
+          "children": []
+        },
+        {
+          "id": "fut-ecoute",
+          "icon": "👂",
+          "label": "ECOUTE",
+          "color": "c-orange",
+          "port": "Port ~6070",
+          "status": "🟡 Planifié",
+          "desc": "Écoute passive de flux audio/radio/podcast.\nTranscription + résumé automatique.\nAlertes sur mots-clés.\nLien : Transcription + Recherche.",
+          "children": []
+        },
+        {
+          "id": "fut-calcul",
+          "icon": "🧮",
+          "label": "CALCUL",
+          "color": "c-orange",
+          "port": "Port ~6080",
+          "status": "🟡 Planifié",
+          "desc": "Moteur de calcul (tableur, simulations).\nCas : business plan, prévisionnel financier.\nIntégré dans les apps livrées par le Générateur.",
+          "children": []
+        },
+        {
+          "id": "fut-dev",
+          "icon": "💻",
+          "label": "DEV",
+          "color": "c-orange",
+          "port": "Port ~6090",
+          "status": "🟡 Planifié",
+          "desc": "Environnement de développement intégré.\nCode execution sandbox.\nUtilisé par : agents Forge pour écrire/tester du code.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "icon": "🖥️",
+      "label": "DÉPLOIEMENT",
+      "color": "c-slate",
+      "port": "HP Proxmox + Mac Intel",
+      "status": "🟢 2 environnements",
+      "desc": "Infrastructures cibles pour Workplace.",
+      "children": [
+        {
+          "id": "deploy-mac",
+          "icon": "💻",
+          "label": "Mac Intel (dev)",
+          "color": "c-slate",
+          "port": "192.168.1.X",
+          "status": "🟢 Dev actif",
+          "desc": "Machine de développement.\nmacOS Darwin 24.6.0, zsh.\nPas de GPU → Ollama lent sur Mac Intel.\nRecommandé : OpenRouter pour dev rapide.",
+          "children": [
+            {
+              "id": "mac-lancement",
+              "icon": "▶️",
+              "label": "Lancement",
+              "color": "c-slate",
+              "port": "",
+              "status": "",
+              "desc": "Script : Lancer Workplace.command\n  → lance core (make up dans core/)\n  → lance ETL, Audit, Gen, Données, Mémoire\n\nScript : Arrêter Workplace.command\n  → docker compose down sur chaque brique\n\nMakefile à la racine : make up / make down",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "deploy-hp",
+          "icon": "🖥️",
+          "label": "HP Proxmox (prod)",
+          "color": "c-cyan",
+          "port": "192.168.1.89",
+          "status": "🟢 Actif",
+          "desc": "HP 800 G4 — i7-8700, 32GB RAM, 512GB SSD.\nDebian sur VM Proxmox.\nSSH : debian@192.168.1.89\nClé SSH dédiée déjà posée.\n\nStack Docker complet déployé ici.\nSkill : /hpworkplace (gère le HP en SSH)",
+          "children": [
+            {
+              "id": "hp-deploy",
+              "icon": "🚀",
+              "label": "Déploiement",
+              "color": "c-cyan",
+              "port": "",
+              "status": "",
+              "desc": "git pull + rebuild brique par brique.\nRunbook : MIGRATION-HP.md à la racine.\n\nCommandes utiles :\n  ssh debian@192.168.1.89\n  cd ~/workplace\n  git pull\n  docker compose -f briques/etl/docker-compose.yml up -d --build\n  docker ps  (vérification)",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "secu",
+      "icon": "🔒",
+      "label": "SÉCURITÉ & DETTES",
+      "color": "c-red",
+      "port": "Avant prod publique",
+      "status": "⚠️ 3 sprints à faire",
+      "desc": "Points de sécurité à traiter avant ouverture publique.",
+      "children": [
+        {
+          "id": "secu-cors",
+          "icon": "🌐",
+          "label": "CORS  — sprint-cors-hardening",
+          "color": "c-red",
+          "port": "",
+          "status": "⚠️ Urgent avant prod",
+          "desc": "CORS=* par défaut sur 13+ briques.\nRisque : n'importe quelle origine peut appeler l'API.\n\nAction :\n  Remplacer CORS_ORIGINS=* par la liste explicite\n  des origines autorisées dans .env de chaque brique.\n  Exemple : CORS_ORIGINS=https://app.mondomaine.fr\n\nSprint : sprint-cors-hardening.md",
+          "children": []
+        },
+        {
+          "id": "secu-pt",
+          "icon": "📺",
+          "label": "Secrets PeerTube  — sprint-peertube-secrets",
+          "color": "c-red",
+          "port": "",
+          "status": "⚠️ Urgent",
+          "desc": "Mot de passe PeerTube par défaut : workplace2026.\nÀ changer avant ouverture publique.\nDB password PeerTube : idem.\n\nSprint : sprint-peertube-secrets.md",
+          "children": []
+        },
+        {
+          "id": "secu-forge",
+          "icon": "🔐",
+          "label": "FORGE_DB_PASSWORD  — sprint-forge-db-password",
+          "color": "c-red",
+          "port": "",
+          "status": "⚠️ Urgent",
+          "desc": "FORGE_DB_PASSWORD commenté dans .env.example.\nPlaceholder actif en dev.\nRisque : DB Forge sans mot de passe fort.\n\nAction : définir un mot de passe fort,\n  mettre à jour le Vault et le docker-compose.\n\nSprint : sprint-forge-db-password.md",
+          "children": []
+        },
+        {
+          "id": "secu-ok",
+          "icon": "✅",
+          "label": "Sécurités en place",
+          "color": "c-green",
+          "port": "",
+          "status": "🟢 Actif",
+          "desc": "OAuth state HMAC-SHA256 (S35) — anti-CSRF agenda Google.\nStripe webhook signature vérifiée (S21).\nForge : race condition login fix (S36).\nPropagation identité Forge (S36).\nVault chiffré pour Stripe + SMTP keys.\nKeycloak : service accounts dédiés par brique.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "sprints",
+      "icon": "📊",
+      "label": "ÉTAT SPRINTS",
+      "color": "c-slate",
+      "port": "2026-07-03",
+      "status": "🟢 S0-S36 complétés",
+      "desc": "Vue d'ensemble de tous les sprints réalisés.",
+      "children": [
+        {
+          "id": "spr-s0s8",
+          "icon": "✅",
+          "label": "S0-S8  Fondations",
+          "color": "c-green",
+          "port": "",
+          "status": "✅ Complétés",
+          "desc": "S0  — Vertical slice + app opérationnelle v1\nS1  — Architecture briques du générateur (registre briques_app/)\nS2  — Persistance serveur & multi-utilisateur (brique Données)\nS3  — Messagerie interne Oria dans l'app\nS4  — Déploiement & packaging Docker\nS5  — Cœur / orchestrateur (POST /livrer)\nS6  — Cycle de vie : décrocher / reprendre\nS7  — Assistant Jarvis (langage naturel + SSE)\nS8  — Mémoire persistante (brique Memory :5600)",
+          "children": []
+        },
+        {
+          "id": "spr-s9s20",
+          "icon": "✅",
+          "label": "S9-S20  Consolidation",
+          "color": "c-green",
+          "port": "",
+          "status": "✅ Complétés",
+          "desc": "S9   — Vertical slice complet E2E (Menuiserie Lefèvre)\nS17  — Forge : agents + RAG prouvés\nS19  — Forge UI intégrée au dashboard (iframe SSO)\nS20  — CRM + Facturation prouvés E2E",
+          "children": []
+        },
+        {
+          "id": "spr-s21s30",
+          "icon": "✅",
+          "label": "S21-S30  Paiements + IA proactive",
+          "color": "c-green",
+          "port": "",
+          "status": "✅ Complétés",
+          "desc": "S21  — Stripe réel (SDK + webhook signé)\nS22  — Emails réels + relances impayés J+7/15/30\nS23  — Comptes clients auto (Keycloak + email)\nS24  — Pont de données consenti (usage mesuré)\nS27  — Pont Google Agenda (sync bidirc.)\nS28  — Clôture LIVE groupée (Stripe+Email+Comptes)\nS29  — Horloge planificateur (contrat manifest)\nS30  — Briefing quotidien (Jarvis parle le premier)",
+          "children": []
+        },
+        {
+          "id": "spr-s31s36",
+          "icon": "✅",
+          "label": "S31-S36  App vivante + Robustesse",
+          "color": "c-green",
+          "port": "",
+          "status": "✅ Complétés",
+          "desc": "S31  — App vivante : revue consentie + proposition\nS32  — Appliquer l'incrément (régénération enrichie)\nS33  — Horloge sur la revue (autonome)\nS34  — Schéma fin des modules ajoutés\nS35  — Durcissement OAuth state (HMAC-SHA256)\nS36  — Forge : race condition + propagation identité",
+          "children": []
+        },
+        {
+          "id": "spr-next",
+          "icon": "🔧",
+          "label": "Prochains sprints",
+          "color": "c-orange",
+          "port": "",
+          "status": "🟡 À planifier",
+          "desc": "CORS Hardening (13+ briques) → avant prod publique\nSecrets PeerTube → avant prod publique\nFORGE_DB_PASSWORD → avant prod publique\nShadow routing LIVE (S138) → calibrage réel\nLong-tail Oria UX → palettes, design system\nDurcissement S27 → consentement Google live\nDette identité Forge (S20) → 2e utilisateur réel",
+          "children": []
+        }
+      ]
+    }
+  ]
+};
+
+// ── Navigation ──────────────────────────────────────────────
+let stack = [TREE];
+const IDX = {};
+function idx(n){ IDX[n.id]=n; (n.children||[]).forEach(idx); }
+idx(TREE);
+
+function cur(){ return stack[stack.length-1]; }
+function navigate(id){ const n=IDX[id]; if(n){ stack.push(n); render(); } }
+function goBack(){ if(stack.length>1){ stack.pop(); render(); } }
+function goTo(i){ stack=stack.slice(0,i+1); render(); }
+
+function render(){
+  const node=cur();
+  // breadcrumb
+  document.getElementById('breadcrumb').innerHTML=stack.map((n,i)=>{
+    const last=i===stack.length-1;
+    return (i>0?'<span class="sep">›</span>':'')+
+      `<span class="crumb${last?' active':''}" title="${n.label}"
+       onclick="${last?'':('goTo('+i+')')}">${n.icon} ${n.label}</span>`;
+  }).join('');
+  document.getElementById('back-btn').disabled=stack.length<=1;
+  // info
+  document.getElementById('info-icon').textContent=node.icon;
+  document.getElementById('info-title').textContent=node.label;
+  document.getElementById('info-port').textContent=node.port||'';
+  const st=document.getElementById('info-status');
+  if(node.status){
+    st.textContent=node.status;
+    const ok=node.status.startsWith('🟢'),warn=node.status.startsWith('🟡'),
+          err=node.status.startsWith('⚠️')||node.status.startsWith('🔴');
+    st.style.cssText=`display:inline-block;background:${ok?'#bbf7d0':warn?'#fef3c7':err?'#fee2e2':'#dbeafe'};`+
+      `color:${ok?'#14532d':warn?'#78350f':err?'#7c2d12':'#1e3a8a'};`;
+  } else st.style.display='none';
+  document.getElementById('info-desc').textContent=node.desc||'';
+  const ch=node.children||[];
+  document.getElementById('info-children-count').textContent=
+    ch.length?`${ch.length} sous-élément${ch.length>1?'s':''}  —  cliquer pour entrer`:'';
+  // cards
+  document.getElementById('search-results').style.display='none';
+  document.getElementById('search-box').value='';
+  const grid=document.getElementById('cards-grid');
+  const empty=document.getElementById('empty');
+  const lbl=document.getElementById('cards-label');
+  if(!ch.length){ grid.style.display='none'; lbl.style.display='none'; empty.style.display='flex'; }
+  else {
+    grid.style.display='grid'; lbl.style.display='block'; empty.style.display='none';
+    lbl.textContent=`${ch.length} sous-élément${ch.length>1?'s':''}`;
+    grid.innerHTML=ch.map((c,i)=>{
+      const has=(c.children||[]).length>0;
+      return `<div class="card ${c.color}${has?'':' card-leaf'}"
+           style="animation-delay:${i*.03}s"
+           onclick="${has?`navigate('${c.id}')`:''}" >
+        <div class="card-icon">${c.icon}</div>
+        <div class="card-title">${c.label}</div>
+        ${c.port?`<div class="card-port">${c.port}</div>`:''}
+        <div class="card-desc">${((c.desc||'').split('\n')[0]).slice(0,80)}</div>
+        ${has?'<div class="card-arrow">→</div>':''}
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Recherche ────────────────────────────────────────────────
+function allNodes(n, path=[]){
+  const p=[...path,n];
+  return [n,...(n.children||[]).flatMap(c=>allNodes(c,p))].map(x=>({...x,_path:p}));
+}
+const ALL=allNodes(TREE);
+
+function search(q){
+  const sr=document.getElementById('search-results');
+  const grid=document.getElementById('cards-grid');
+  const lbl=document.getElementById('cards-label');
+  const empty=document.getElementById('empty');
+  if(!q.trim()){ sr.style.display='none'; render(); return; }
+  const ql=q.toLowerCase();
+  const hits=ALL.filter(n=>
+    (n.label||'').toLowerCase().includes(ql)||
+    (n.desc||'').toLowerCase().includes(ql)||
+    (n.port||'').toLowerCase().includes(ql)
+  ).slice(0,20);
+  grid.style.display='none'; lbl.style.display='none'; empty.style.display='none';
+  sr.style.display='block';
+  sr.innerHTML=`<div style="font-size:11px;color:#64748b;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">${hits.length} résultat${hits.length>1?'s':''}</div>`+
+    hits.map(n=>`
+      <div class="sr-item" onclick="jumpTo('${n.id}')">
+        <div class="sr-path">${(n._path||[]).map(x=>x.label).join(' › ')}</div>
+        <div class="sr-label">${n.icon} ${n.label}</div>
+        ${n.port?`<div class="sr-desc" style="font-family:monospace">${n.port}</div>`:''}
+        <div class="sr-desc">${(n.desc||'').split('\n')[0].slice(0,90)}</div>
+      </div>`).join('');
+}
+
+function jumpTo(id){
+  // reconstruction du chemin
+  function findPath(node, target, path=[]){
+    if(node.id===target) return [...path,node];
+    for(const c of node.children||[]){
+      const r=findPath(c,target,[...path,node]);
+      if(r) return r;
+    }
+    return null;
+  }
+  const path=findPath(TREE,id);
+  if(path){ stack=path; render(); }
+}
+
+render();
+</script>
+</body>
+</html>

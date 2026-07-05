@@ -1,5 +1,6 @@
 {
   "nom": "gateway",
+  "famille": "ia",
   "version": "1.0.0",
   "description": "Routeur LLM — LiteLLM proxy (OpenRouter, Ollama, Groq…)",
   "role": "llm",

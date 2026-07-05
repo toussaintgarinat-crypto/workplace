@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import uuid as uuidlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy import delete as sa_delete
@@ -113,9 +113,8 @@ async def create_skill(body: CreateSkill, response: Response, user: UserContext 
 
 
 @router.patch("/skills/{sid}", dependencies=[Depends(get_current_user)])
-async def update_skill(sid: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def update_skill(sid: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     u = _uuid(sid)
-    body = await request.json()
     colmap = {"nom": "nom", "description": "description", "actif": "actif", "skillMd": "skill_md"}
     cols = {colmap[k]: v for k, v in body.items() if k in colmap}
     async with SessionLocal() as s:

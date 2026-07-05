@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid as uuidlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, delete as sa_delete, desc, func, select, update
 
@@ -169,9 +169,8 @@ async def create_agent(body: CreateAgent, response: Response, user: UserContext 
 
 
 @router.patch("/agent-factory/{agent_id}")
-async def patch_agent(agent_id: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def patch_agent(agent_id: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     au = _uuid(agent_id)
-    body = await request.json()
     # mappe les clés camelCase autorisées → colonnes
     field_map = {
         "nom": "nom", "description": "description", "instructions": "instructions",

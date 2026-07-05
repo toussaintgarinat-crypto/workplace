@@ -1,5 +1,6 @@
 {
   "nom": "transcription",
+  "famille": "collaboration",
   "version": "0.1.0",
   "description": "Brique de transcription audio→texte en API, SOUVERAINE par défaut : moteur Whisper local (CPU/Metal) en tête, puis fournisseurs hébergés en repli optionnel (OpenAI, Deepgram, AssemblyAI, ou la Gateway Workplace). Diarisation (qui parle) quand le fournisseur la donne. Résumé + points d'action synthétisés par l'économe gratuit (≈0 $), comme le briefing S30. Repli honnête : jamais de fausse transcription. Inspiré de Notta/Otter, SANS aucun appel à un tiers imposé. Produit autonome, miroir des briques images/vidéo, composable par l'assistant et le Studio.",
   "role": "transcription",
@@ -30,10 +31,22 @@
       "methode": "POST",
       "chemin": "/transcrire",
       "params": {
-        "url_fichier": {"type": "string", "description": "URL du fichier audio à transcrire (si pas d'upload direct)."},
-        "diarisation": {"type": "boolean", "description": "Identifier les locuteurs dans la transcription (défaut: false)."},
-        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en'). Auto-détecté si absent."},
-        "fournisseur": {"type": "string", "description": "Moteur de transcription : 'whisper' (local, défaut), 'groq', 'openai'."}
+        "url_fichier": {
+          "type": "string",
+          "description": "URL du fichier audio à transcrire (si pas d'upload direct)."
+        },
+        "diarisation": {
+          "type": "boolean",
+          "description": "Identifier les locuteurs dans la transcription (défaut: false)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Code langue ISO (ex: 'fr', 'en'). Auto-détecté si absent."
+        },
+        "fournisseur": {
+          "type": "string",
+          "description": "Moteur de transcription : 'whisper' (local, défaut), 'groq', 'openai'."
+        }
       },
       "action": true
     },
@@ -43,11 +56,27 @@
       "methode": "POST",
       "chemin": "/transcrire-url",
       "params": {
-        "url": {"type": "string", "description": "URL publique du fichier audio (mp3, wav, m4a, ogg…).", "requis": true},
-        "diarisation": {"type": "boolean", "description": "Identifier les locuteurs (défaut: false)."},
-        "resume": {"type": "boolean", "description": "Générer un résumé et des points d'action (défaut: false)."},
-        "langue": {"type": "string", "description": "Code langue ISO (ex: 'fr', 'en')."},
-        "fournisseur": {"type": "string", "description": "Moteur : 'whisper' (local, défaut), 'groq', 'openai'."}
+        "url": {
+          "type": "string",
+          "description": "URL publique du fichier audio (mp3, wav, m4a, ogg…).",
+          "requis": true
+        },
+        "diarisation": {
+          "type": "boolean",
+          "description": "Identifier les locuteurs (défaut: false)."
+        },
+        "resume": {
+          "type": "boolean",
+          "description": "Générer un résumé et des points d'action (défaut: false)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Code langue ISO (ex: 'fr', 'en')."
+        },
+        "fournisseur": {
+          "type": "string",
+          "description": "Moteur : 'whisper' (local, défaut), 'groq', 'openai'."
+        }
       },
       "action": true
     }

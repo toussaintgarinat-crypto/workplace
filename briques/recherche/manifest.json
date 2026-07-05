@@ -1,5 +1,6 @@
 {
   "nom": "recherche",
+  "famille": "ia",
   "version": "1.0.0",
   "description": "Recherche web + lecture de page (« les yeux du Cœur sur le web »), moteur HuntR (porté de Gungnir) : lance EN PARALLÈLE jusqu'à 9 moteurs (SearXNG souverain, DuckDuckGo, Tavily, Brave, Exa, Serper, SerpAPI, Kagi, Bing), déduplique par URL canonique et CLASSE par CONSENSUS (nb de moteurs × poids × rang). Multi-thème : web / news / academic / code. SOUVERAIN par défaut (SearXNG auto-hébergé conteneur voisin + repli DuckDuckGo sans clé) ; les moteurs à clé sont inertes tant que leur clé n'est pas renseignée. Filtres de source opt-in (blocklist propagande d'État/désinfo + allowlist). La lecture de page est LOCALE (Trafilatura), bornée en taille/temps et polie (robots.txt). Repli honnête : jamais de lien inventé, jamais de faux texte.",
   "role": "recherche",
@@ -29,10 +30,22 @@
       "methode": "POST",
       "chemin": "/rechercher",
       "params": {
-        "requete": {"type": "string", "description": "La requête à chercher (mots-clés ou question en langage naturel)."},
-        "n": {"type": "integer", "description": "Nombre de résultats voulus (défaut 8, max 50)."},
-        "topic": {"type": "string", "description": "Thème : 'web' (défaut), 'news', 'academic' ou 'code'. Oriente les moteurs et les domaines."},
-        "langue": {"type": "string", "description": "Langue de recherche (ex. 'fr', 'en'). Défaut 'fr'."}
+        "requete": {
+          "type": "string",
+          "description": "La requête à chercher (mots-clés ou question en langage naturel)."
+        },
+        "n": {
+          "type": "integer",
+          "description": "Nombre de résultats voulus (défaut 8, max 50)."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Thème : 'web' (défaut), 'news', 'academic' ou 'code'. Oriente les moteurs et les domaines."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de recherche (ex. 'fr', 'en'). Défaut 'fr'."
+        }
       },
       "action": false
     },
@@ -42,7 +55,10 @@
       "methode": "POST",
       "chemin": "/lire-page",
       "params": {
-        "url": {"type": "string", "description": "L'adresse http(s) de la page à lire."}
+        "url": {
+          "type": "string",
+          "description": "L'adresse http(s) de la page à lire."
+        }
       },
       "action": false
     }

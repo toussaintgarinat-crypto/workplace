@@ -1,5 +1,6 @@
 {
   "nom": "restaurant",
+  "famille": "metier",
   "version": "0.13.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et règle l'addition par RÉPARTITION FLEXIBLE — chacun sa part, partage égal en N, ou montant libre — avec « reste à payer » live et anti-surpaiement serveur ; paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
@@ -58,7 +59,10 @@
       "methode": "GET",
       "chemin": "/service/restaurants/{restaurant_id}/plats",
       "params": {
-        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant à consulter."}
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant à consulter."
+        }
       },
       "action": false
     },
@@ -68,7 +72,10 @@
       "methode": "GET",
       "chemin": "/service/restaurants/{restaurant_id}",
       "params": {
-        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."}
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        }
       },
       "action": false
     },
@@ -78,14 +85,38 @@
       "methode": "POST",
       "chemin": "/service/restaurants/{restaurant_id}/plats",
       "params": {
-        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
-        "nom": {"type": "string", "description": "Nom du plat."},
-        "description": {"type": "string", "description": "Description (optionnel)."},
-        "prix_cents": {"type": "integer", "description": "Prix en CENTIMES (ex. 12,50 € = 1250)."},
-        "categorie": {"type": "string", "description": "Section de carte (Entrées, Plats, Boissons…)."},
-        "plat_du_jour": {"type": "boolean", "description": "Mettre en avant comme plat du jour."},
-        "formats": {"type": "array", "description": "Tailles optionnelles : [{\"taille\":\"50cl\",\"prix_cents\":700}] (ex. bière 25cl/50cl/1L/girafe). Si fourni, le prix vient des formats."},
-        "stock": {"type": "integer", "description": "Stock initial (unités restantes). Omettre ou null = stock illimité. À 0, le plat sort automatiquement de la carte client (rupture)."}
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom du plat."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description (optionnel)."
+        },
+        "prix_cents": {
+          "type": "integer",
+          "description": "Prix en CENTIMES (ex. 12,50 € = 1250)."
+        },
+        "categorie": {
+          "type": "string",
+          "description": "Section de carte (Entrées, Plats, Boissons…)."
+        },
+        "plat_du_jour": {
+          "type": "boolean",
+          "description": "Mettre en avant comme plat du jour."
+        },
+        "formats": {
+          "type": "array",
+          "description": "Tailles optionnelles : [{\"taille\":\"50cl\",\"prix_cents\":700}] (ex. bière 25cl/50cl/1L/girafe). Si fourni, le prix vient des formats."
+        },
+        "stock": {
+          "type": "integer",
+          "description": "Stock initial (unités restantes). Omettre ou null = stock illimité. À 0, le plat sort automatiquement de la carte client (rupture)."
+        }
       },
       "action": true
     },
@@ -95,16 +126,46 @@
       "methode": "PATCH",
       "chemin": "/service/restaurants/{restaurant_id}/plats/{plat_id}",
       "params": {
-        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
-        "plat_id": {"type": "string", "description": "Identifiant du plat à modifier."},
-        "nom": {"type": "string", "description": "Nouveau nom (optionnel)."},
-        "description": {"type": "string", "description": "Nouvelle description (optionnel)."},
-        "prix_cents": {"type": "integer", "description": "Nouveau prix en CENTIMES (optionnel)."},
-        "categorie": {"type": "string", "description": "Nouvelle catégorie (optionnel)."},
-        "disponible": {"type": "boolean", "description": "Disponible (false = en rupture, invisible côté client)."},
-        "plat_du_jour": {"type": "boolean", "description": "Plat du jour (optionnel)."},
-        "formats": {"type": "array", "description": "Remplace les tailles : [{\"taille\":\"50cl\",\"prix_cents\":700}]. Liste vide = repasser en prix unique."},
-        "stock": {"type": "integer", "description": "Réapprovisionne le stock (unités restantes). null = repasser en stock illimité. À 0, le plat sort de la carte client."}
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "plat_id": {
+          "type": "string",
+          "description": "Identifiant du plat à modifier."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nouveau nom (optionnel)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Nouvelle description (optionnel)."
+        },
+        "prix_cents": {
+          "type": "integer",
+          "description": "Nouveau prix en CENTIMES (optionnel)."
+        },
+        "categorie": {
+          "type": "string",
+          "description": "Nouvelle catégorie (optionnel)."
+        },
+        "disponible": {
+          "type": "boolean",
+          "description": "Disponible (false = en rupture, invisible côté client)."
+        },
+        "plat_du_jour": {
+          "type": "boolean",
+          "description": "Plat du jour (optionnel)."
+        },
+        "formats": {
+          "type": "array",
+          "description": "Remplace les tailles : [{\"taille\":\"50cl\",\"prix_cents\":700}]. Liste vide = repasser en prix unique."
+        },
+        "stock": {
+          "type": "integer",
+          "description": "Réapprovisionne le stock (unités restantes). null = repasser en stock illimité. À 0, le plat sort de la carte client."
+        }
       },
       "action": true
     },
@@ -114,8 +175,14 @@
       "methode": "DELETE",
       "chemin": "/service/restaurants/{restaurant_id}/plats/{plat_id}",
       "params": {
-        "restaurant_id": {"type": "string", "description": "Identifiant du restaurant."},
-        "plat_id": {"type": "string", "description": "Identifiant du plat à supprimer."}
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "plat_id": {
+          "type": "string",
+          "description": "Identifiant du plat à supprimer."
+        }
       },
       "action": true
     }
