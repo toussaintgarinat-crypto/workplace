@@ -342,6 +342,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .cerveau-msg.ok { color: #4ade80; }
   .cerveau-msg.ko { color: #f87171; }
   .cerveau-msg.info { color: #94a3b8; }
+  .budget-grille { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .budget-case { background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 8px 10px; }
+  .budget-case .val { font-size: 1.1rem; font-weight: 700; color: #e2e8f0; }
+  .budget-case .lbl { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+  .budget-shadow { margin-top: 10px; font-size: 0.82rem; color: #94a3b8; }
+  .budget-shadow b { color: #4ade80; }
+  .budget-shadow .shadow-ko { color: #f87171; }
   /* ── Télécommande mobile (S61) : le dashboard devient une appli chat plein écran ── */
   @supports (padding: env(safe-area-inset-bottom)) {
     header { padding-top: calc(20px + env(safe-area-inset-top)); }
@@ -548,6 +555,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           </div>
         </div>
         <button class="btn" id="btn-voix-cfg" onclick="enregistrerVoix()">Enregistrer la voix</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:20px">
+        <div class="field" style="flex:1">
+          <label>💰 Budget LLM <span id="budget-statut" class="cerveau-pill">—</span></label>
+          <div class="budget-grille" id="budget-grille">
+            <div class="budget-case"><div class="val" id="bdg-cout-jour">—</div><div class="lbl">coût aujourd'hui (USD)</div></div>
+            <div class="budget-case"><div class="val" id="bdg-cout-mois">—</div><div class="lbl">coût ce mois (USD)</div></div>
+            <div class="budget-case"><div class="val" id="bdg-cache">—</div><div class="lbl">cache hits</div></div>
+            <div class="budget-case"><div class="val" id="bdg-trim">—</div><div class="lbl">tokens économisés (trim)</div></div>
+            <div class="budget-case"><div class="val" id="bdg-tok-jour">—</div><div class="lbl">tokens aujourd'hui</div></div>
+            <div class="budget-case"><div class="val" id="bdg-appels">—</div><div class="lbl">appels ce mois</div></div>
+          </div>
+          <div class="budget-shadow" id="budget-shadow" style="display:none"></div>
+        </div>
       </div>
       <div id="cerveau-msg" class="cerveau-msg"></div>
     </div>
@@ -1923,7 +1944,7 @@ let CERVEAU_CHARGE = false;
 function toggleCerveau() {
   const p = document.getElementById('panel-cerveau');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
-  if (p.style.display === 'block') chargerCerveau(true);
+  if (p.style.display === 'block') { chargerCerveau(true); chargerBudget(); }
 }
 function pill(el, ok, texte) {
   el.textContent = texte;
@@ -2016,6 +2037,36 @@ async function chargerCerveau(force) {
     }
     CERVEAU_CHARGE = true;
   } catch(e) { cerveauMsg('Impossible de charger la config : ' + e.message, 'ko'); }
+}
+async function chargerBudget() {
+  try {
+    const u = await fetch('/assistant/usage').then(r => r.json());
+    const j = u.jour || {}, m = u.mois || {}, b = u.budget || {};
+    const fmt = v => v === undefined ? '—' : (v < 0.001 ? '< 0.001' : v.toFixed(4));
+    document.getElementById('bdg-cout-jour').textContent = '$' + fmt(j.cout_usd);
+    document.getElementById('bdg-cout-mois').textContent = '$' + fmt(m.cout_usd);
+    document.getElementById('bdg-cache').textContent = (m.cache_hits || 0) + ' hits';
+    document.getElementById('bdg-trim').textContent = (m.tokens_economises_trim || 0).toLocaleString();
+    document.getElementById('bdg-tok-jour').textContent = ((j.tokens_in||0)+(j.tokens_out||0)).toLocaleString();
+    document.getElementById('bdg-appels').textContent = (m.appels || 0);
+    const statut = b.jour?.statut || b.mois?.statut || 'ok';
+    pill(document.getElementById('budget-statut'), statut === 'ok' ? true : statut === 'bloque' ? false : null,
+         statut === 'bloque' ? '● budget bloqué' : statut === 'alerte' ? '⚠ alerte budget' : '● ok');
+  } catch(e) { /* budget ne casse jamais */ }
+
+  try {
+    const s = await fetch('/assistant/shadow').then(r => r.json());
+    const flux = (s.flux || []).filter(f => f.echantillons >= 5);
+    const zone = document.getElementById('budget-shadow');
+    if (!flux.length) { zone.style.display = 'none'; return; }
+    zone.style.display = 'block';
+    const lignes = flux.slice(0, 3).map(f => {
+      const cls = f.recommande_retrograder ? '' : ' shadow-ko';
+      const ico = f.recommande_retrograder ? '✔' : '~';
+      return `<span class="${cls}">${ico} <b>${escHtml(f.flux)}</b> — équivalence ${Math.round(f.taux_equivalent*100)}%, économie $${f.economie_observee_usd.toFixed(4)}</span>`;
+    });
+    zone.innerHTML = '🧪 Shadow routing : ' + lignes.join(' | ');
+  } catch(e) {}
 }
 function majVisibiliteUnmute() {
   const sel = document.getElementById('cerveau-voix');
