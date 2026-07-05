@@ -3,10 +3,13 @@
 Agenda : événements, TimeTree, Google, documents, commentaires, étiquettes.
 """
 import json
+import logging
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from etat import registre
 import agenda
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -17,6 +20,7 @@ async def agenda_evenements(debut: str | None = None, fin: str | None = None):
     try:
         return {"evenements": await agenda.lister_evenements(registre, debut, fin)}
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/evenements : %s", e)
         return {"evenements": [], "detail": str(e)}
 
 
@@ -29,6 +33,7 @@ async def agenda_definir_rappels(event_id: str, request: Request):
         evt = await agenda.definir_rappels(registre, event_id, rappels)
         return {"ok": True, "rappels": evt.get("rappels") or []}
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/definir_rappels : %s", e)
         return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
 
 
@@ -39,6 +44,7 @@ async def agenda_timetree_status():
     try:
         return await agenda.timetree_etat(registre)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/timetree_status : %s", e)
         return {"connected": False, "detail": str(e)}
 
 
@@ -55,6 +61,7 @@ async def agenda_timetree_select(request: Request):
     try:
         return await agenda.timetree_choisir_calendrier(registre, corps.get("calendar_id", ""))
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/timetree_select : %s", e)
         return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
 
 
@@ -75,6 +82,7 @@ async def agenda_google_status():
     try:
         return await agenda.google_etat(registre)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/google_status : %s", e)
         return {"connected": False, "detail": str(e)}
 
 
@@ -84,6 +92,7 @@ async def agenda_google_connect():
     try:
         return await agenda.google_url_consentement(registre)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/google_connect : %s", e)
         return {"ok": False, "erreur": str(e)}
 
 
@@ -105,6 +114,7 @@ async def agenda_calendriers():
     try:
         return {"calendriers": await agenda.lister_agendas(registre)}
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/calendriers : %s", e)
         return {"calendriers": [], "detail": str(e)}
 
 
@@ -117,6 +127,7 @@ async def agenda_creer(request: Request):
     try:
         return await agenda.creer_evenement_dans(registre, cal, corps)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/creer : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 
@@ -127,6 +138,7 @@ async def agenda_modifier(event_id: str, request: Request):
     try:
         return await agenda.modifier_evenement(registre, event_id, corps)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/modifier : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 
@@ -147,6 +159,7 @@ async def agenda_document_upload(event_id: str, file: UploadFile = File(...)):
         return await agenda.televerser_document(
             registre, event_id, file.filename or "fichier", octets, file.content_type)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/document_upload : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 
@@ -178,6 +191,7 @@ async def agenda_commentaire_ajouter(event_id: str, request: Request):
     try:
         return await agenda.ajouter_commentaire(registre, event_id, contenu)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/commentaire_ajouter : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 
@@ -194,6 +208,7 @@ async def agenda_etiquettes(calendar_id: str):
     try:
         return {"etiquettes": await agenda.lister_etiquettes(registre, calendar_id)}
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/etiquettes : %s", e)
         return {"etiquettes": [], "detail": str(e)}
 
 
@@ -207,6 +222,7 @@ async def agenda_etiquette_creer(calendar_id: str, request: Request):
         return await agenda.creer_etiquette(registre, calendar_id, nom,
                                             corps.get("color") or corps.get("couleur"))
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/etiquette_creer : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 
@@ -216,6 +232,7 @@ async def agenda_etiquette_modifier(label_id: str, request: Request):
     try:
         return await agenda.modifier_etiquette(registre, label_id, corps)
     except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/etiquette_modifier : %s", e)
         return JSONResponse({"detail": str(e)}, status_code=502)
 
 

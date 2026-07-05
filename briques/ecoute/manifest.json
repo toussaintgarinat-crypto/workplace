@@ -1,5 +1,6 @@
 {
   "nom": "ecoute",
+  "famille": "collaboration",
   "version": "0.2.0",
   "description": "Mot-clé « comme Siri » (openWakeWord, ONNX/CPU) en flux WebSocket + paliers commerciaux : noms gratuits embarqués (catalogue) et noms de marque sur mesure (commande Stripe one-off + file d'entraînement pilotée par l'horloge). POC S41, brique S42, paliers S43.",
   "role": "ecoute",
@@ -32,7 +33,10 @@
       "methode": "GET",
       "chemin": "/commandes",
       "params": {
-        "statut": {"type": "string", "description": "Filtrer par état (ex. « payee », « entrainement », « livree »). Omettre = toutes."}
+        "statut": {
+          "type": "string",
+          "description": "Filtrer par état (ex. « payee », « entrainement », « livree »). Omettre = toutes."
+        }
       },
       "action": false,
       "niveau": 1

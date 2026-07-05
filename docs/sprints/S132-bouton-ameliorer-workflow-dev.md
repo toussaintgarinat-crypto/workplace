@@ -1,7 +1,7 @@
 # S132 — Bouton « 🛠️ Améliorer » : workflow dev guidé dans l'assistant
 
 **Date** : 2026-07-02  
-**Statut** : PLANIFIÉ
+**Statut** : ✅ LIVRÉ (2026-07-02 — commits bef2eb1, d24a8e0, 4ae66ac)
 
 ## Problème
 

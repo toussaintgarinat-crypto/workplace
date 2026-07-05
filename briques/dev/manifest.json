@@ -1,5 +1,6 @@
 {
   "nom": "dev",
+  "famille": "dev",
   "version": "0.7.0",
   "description": "Auto-atelier souverain : modifier les briques de Workplace et ajouter des features DEPUIS l'assistant, avec le FILET GIT comme garantie « ne casse pas la prod ». Chaque chantier vit dans un git worktree JETABLE sur une branche dédiée (jamais main) ; l'agent de code (Claude Code ou OpenCode, sinon mock honnête) y travaille ; on relit le DIFF puis on fusionne (gate humain) ou on JETTE le worktree, sans trace. PERSO SOUVERAIN : mono-user, local/self-host, JAMAIS exposé à un client (comme la brique paiements est cloisonnée exprès). v0.1.0 = incrément 1 (socle git, preuve diff SANS déploiement). v0.2.0 = S87 (fusion contrôlée : gate humain confirme=true → git merge --no-ff dans main + rebuild CIBLÉ de la seule brique modifiée, simulé honnête par défaut/réel si DEV_REBUILD=1, briques sensibles paiements/connexion/auth refusées sauf déblocage, conflit jamais forcé). v0.3.0 = S88 (flux BMAD léger opt-in : l'Architect planifie AVANT de coder — mini-PRD + stories + note DDD via LLM, repli honnête local — double gate valide-le-plan puis valide-le-diff, codage verrouillé tant que le plan n'est pas validé, plan validé injecté à l'agent codeur). v0.4.0 = S89 (task trace activable on/off : trace ON → l'agent raconte chaque pas EN FRANÇAIS — factice ses pas, Claude Code via hook PreToolUse qui traduit ses outils — archivé dans chantier.journal + diffusé EN DIRECT via SSE GET /chantiers/{id}/trace ; trace OFF → silence). v0.5.0 = S91 (création de SKILLS façon Claude Code : dossier + SKILL.md frontmatter name/description/allowed-tools/mcp, personas BMAD prêtes Analyst/Architect/Dev/QA, MCP accrochés ; POST/GET/DELETE /skills + GET /skills/{nom}/corps = instructions+MCP ; capacités dev_skills_lister/dev_skill_charger/dev_skill_creer découvertes par le Cœur → lister puis CHARGER une skill à la demande depuis l'assistant ; skills_atelier.capacite_pour rend une capacité de niveau-1 prête pour la porte S90). v0.6.0 = S92 (sprint d'intégration : POST /demander = orchestrateur en un geste — ouvre un chantier puis PLANIFIE si plan_requis sinon LANCE l'agent, s'arrête au gate du plan ou du diff, JAMAIS de fusion auto ; le manifest expose la boîte à outils de pilotage découverte par le Cœur — dev_demander niveau-0 + dev_chantiers/dev_diff/dev_plan_valider/dev_lancer/dev_fusionner/dev_jeter niveau-1 chargées à la demande par la porte S90 → on pilote tout le cycle plan→code→gate→fusion EN PARLANT à l'assistant, gate dans le chat via les boutons S76 ; côté confort un conteneur code-server monté sur le dépôt = onglet iframe « Atelier dev » au dashboard).",
   "role": "dev",
@@ -47,14 +48,39 @@
       "methode": "POST",
       "chemin": "/demander",
       "params": {
-        "intention": {"type": "string", "requis": true, "description": "Ce qu'on veut faire, en clair (ex. « ajoute un champ téléphone à la brique mail »)."},
-        "brique_cible": {"type": "string", "description": "Nom de la brique visée (ex. mail, restaurant). Sert au nom de branche et au rebuild ciblé."},
-        "agent": {"type": "string", "description": "Agent de code : claude_code, opencode, factice, ou vide pour choix auto."},
-        "trace": {"type": "boolean", "description": "true → l'agent raconte chaque pas en français (task trace S89, suivable via dev_diff/SSE)."},
-        "plan_requis": {"type": "boolean", "description": "true → exiger un plan BMAD validé AVANT de coder (double gate). false → coder directement."},
-        "lang": {"type": "string", "description": "Langue du plan de l'Architect (défaut fr)."},
-        "base": {"type": "string", "description": "Ref git de départ (défaut HEAD)."},
-        "sprint": {"type": "string", "description": "Rattachement optionnel à une story de sprint."}
+        "intention": {
+          "type": "string",
+          "requis": true,
+          "description": "Ce qu'on veut faire, en clair (ex. « ajoute un champ téléphone à la brique mail »)."
+        },
+        "brique_cible": {
+          "type": "string",
+          "description": "Nom de la brique visée (ex. mail, restaurant). Sert au nom de branche et au rebuild ciblé."
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent de code : claude_code, opencode, factice, ou vide pour choix auto."
+        },
+        "trace": {
+          "type": "boolean",
+          "description": "true → l'agent raconte chaque pas en français (task trace S89, suivable via dev_diff/SSE)."
+        },
+        "plan_requis": {
+          "type": "boolean",
+          "description": "true → exiger un plan BMAD validé AVANT de coder (double gate). false → coder directement."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Langue du plan de l'Architect (défaut fr)."
+        },
+        "base": {
+          "type": "string",
+          "description": "Ref git de départ (défaut HEAD)."
+        },
+        "sprint": {
+          "type": "string",
+          "description": "Rattachement optionnel à une story de sprint."
+        }
       },
       "action": true,
       "niveau": 0
@@ -74,7 +100,11 @@
       "methode": "GET",
       "chemin": "/chantiers/{cid}/diff",
       "params": {
-        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier (cf. dev_demander / dev_chantiers)."}
+        "cid": {
+          "type": "string",
+          "requis": true,
+          "description": "Identifiant du chantier (cf. dev_demander / dev_chantiers)."
+        }
       },
       "action": false,
       "niveau": 1
@@ -85,8 +115,16 @@
       "methode": "POST",
       "chemin": "/chantiers/{cid}/plan/valider",
       "params": {
-        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."},
-        "confirme": {"type": "boolean", "requis": true, "description": "true pour valider le plan (gate humain)."}
+        "cid": {
+          "type": "string",
+          "requis": true,
+          "description": "Identifiant du chantier."
+        },
+        "confirme": {
+          "type": "boolean",
+          "requis": true,
+          "description": "true pour valider le plan (gate humain)."
+        }
       },
       "action": true,
       "niveau": 1
@@ -97,7 +135,11 @@
       "methode": "POST",
       "chemin": "/chantiers/{cid}/lancer",
       "params": {
-        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."}
+        "cid": {
+          "type": "string",
+          "requis": true,
+          "description": "Identifiant du chantier."
+        }
       },
       "action": true,
       "niveau": 1
@@ -108,8 +150,16 @@
       "methode": "POST",
       "chemin": "/chantiers/{cid}/fusionner",
       "params": {
-        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."},
-        "confirme": {"type": "boolean", "requis": true, "description": "true pour fusionner dans main (gate humain)."}
+        "cid": {
+          "type": "string",
+          "requis": true,
+          "description": "Identifiant du chantier."
+        },
+        "confirme": {
+          "type": "boolean",
+          "requis": true,
+          "description": "true pour fusionner dans main (gate humain)."
+        }
       },
       "action": true,
       "niveau": 1
@@ -120,7 +170,11 @@
       "methode": "DELETE",
       "chemin": "/chantiers/{cid}",
       "params": {
-        "cid": {"type": "string", "requis": true, "description": "Identifiant du chantier."}
+        "cid": {
+          "type": "string",
+          "requis": true,
+          "description": "Identifiant du chantier."
+        }
       },
       "action": true,
       "niveau": 1
@@ -140,7 +194,11 @@
       "methode": "GET",
       "chemin": "/skills/{nom}/corps",
       "params": {
-        "nom": {"type": "string", "requis": true, "description": "Nom exact de la skill (cf. dev_skills_lister)."}
+        "nom": {
+          "type": "string",
+          "requis": true,
+          "description": "Nom exact de la skill (cf. dev_skills_lister)."
+        }
       },
       "action": false,
       "niveau": 0
@@ -151,11 +209,34 @@
       "methode": "POST",
       "chemin": "/skills",
       "params": {
-        "name": {"type": "string", "requis": true, "description": "Slug de la skill (a-z0-9 et tirets)."},
-        "description": {"type": "string", "requis": true, "description": "Une phrase : ce que fait la skill."},
-        "corps": {"type": "string", "description": "Les instructions pas-à-pas du workflow."},
-        "outils_autorises": {"type": "array", "items": {"type": "string"}, "description": "Outils autorisés (frontmatter allowed-tools)."},
-        "mcp": {"type": "array", "items": {"type": "string"}, "description": "MCP à accrocher à la skill."}
+        "name": {
+          "type": "string",
+          "requis": true,
+          "description": "Slug de la skill (a-z0-9 et tirets)."
+        },
+        "description": {
+          "type": "string",
+          "requis": true,
+          "description": "Une phrase : ce que fait la skill."
+        },
+        "corps": {
+          "type": "string",
+          "description": "Les instructions pas-à-pas du workflow."
+        },
+        "outils_autorises": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Outils autorisés (frontmatter allowed-tools)."
+        },
+        "mcp": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "MCP à accrocher à la skill."
+        }
       },
       "action": true,
       "niveau": 0
@@ -166,7 +247,10 @@
       "methode": "GET",
       "chemin": "/ide/tree",
       "params": {
-        "path": {"type": "string", "description": "Chemin relatif dans le workspace (vide = racine)."}
+        "path": {
+          "type": "string",
+          "description": "Chemin relatif dans le workspace (vide = racine)."
+        }
       },
       "action": false,
       "niveau": 1
@@ -177,7 +261,11 @@
       "methode": "GET",
       "chemin": "/ide/file",
       "params": {
-        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier dans le workspace."}
+        "path": {
+          "type": "string",
+          "requis": true,
+          "description": "Chemin relatif du fichier dans le workspace."
+        }
       },
       "action": false,
       "niveau": 1
@@ -188,8 +276,16 @@
       "methode": "PUT",
       "chemin": "/ide/file",
       "params": {
-        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier à écrire."},
-        "content": {"type": "string", "requis": true, "description": "Contenu texte complet du fichier."}
+        "path": {
+          "type": "string",
+          "requis": true,
+          "description": "Chemin relatif du fichier à écrire."
+        },
+        "content": {
+          "type": "string",
+          "requis": true,
+          "description": "Contenu texte complet du fichier."
+        }
       },
       "action": true,
       "niveau": 1
@@ -200,9 +296,22 @@
       "methode": "POST",
       "chemin": "/ide/run",
       "params": {
-        "path": {"type": "string", "requis": true, "description": "Chemin relatif du fichier à exécuter."},
-        "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments de ligne de commande."},
-        "timeout": {"type": "integer", "description": "Délai max en secondes (défaut 30, max 120)."}
+        "path": {
+          "type": "string",
+          "requis": true,
+          "description": "Chemin relatif du fichier à exécuter."
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments de ligne de commande."
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Délai max en secondes (défaut 30, max 120)."
+        }
       },
       "action": true,
       "niveau": 1

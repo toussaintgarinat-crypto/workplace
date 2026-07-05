@@ -1,5 +1,6 @@
 {
   "nom": "audit",
+  "famille": "ingestion",
   "version": "0.1.0",
   "description": "Audit d'entreprise IA — 4 couches : Territoire (DDD/Canvas/Stakeholders), Flux (VSM/SIPOC/EventStorming), Problèmes (Ishikawa/Pareto/TOC/5Pourquoi), Priorités (CPM/PERT/SWOT/OKRs/MoSCoW)",
   "role": "audit",
@@ -39,7 +40,11 @@
       "methode": "GET",
       "chemin": "/audits/{audit_id}",
       "params": {
-        "audit_id": {"type": "string", "description": "Identifiant de l'audit (voir audits_lister).", "requis": true}
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit (voir audits_lister).",
+          "requis": true
+        }
       },
       "action": false,
       "niveau": 1
@@ -50,7 +55,11 @@
       "methode": "POST",
       "chemin": "/auditer",
       "params": {
-        "doc_ids": {"type": "array", "description": "Liste des identifiants de documents à auditer (voir les documents via la brique etl).", "requis": true}
+        "doc_ids": {
+          "type": "array",
+          "description": "Liste des identifiants de documents à auditer (voir les documents via la brique etl).",
+          "requis": true
+        }
       },
       "action": true,
       "niveau": 0

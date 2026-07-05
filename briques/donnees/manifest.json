@@ -1,5 +1,6 @@
 {
   "nom": "donnees",
+  "famille": "dev",
   "version": "0.1.0",
   "description": "Persistance serveur générique multi-tenant — magasin CRUD (app × entité → enregistrements avec identifiants serveur) qui remplace le localStorage des apps générées",
   "role": "persistance",
@@ -22,10 +23,26 @@
       "methode": "PUT",
       "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
       "params": {
-        "app_id": {"type": "string", "description": "Identifiant de l'application (ex: 'agenda', 'crm').", "requis": true},
-        "entite_id": {"type": "string", "description": "Type d'entité (ex: 'contacts', 'taches').", "requis": true},
-        "rec_id": {"type": "string", "description": "Identifiant de l'enregistrement à modifier.", "requis": true},
-        "donnees": {"type": "object", "description": "Nouvelles valeurs (remplace les champs fournis).", "requis": true}
+        "app_id": {
+          "type": "string",
+          "description": "Identifiant de l'application (ex: 'agenda', 'crm').",
+          "requis": true
+        },
+        "entite_id": {
+          "type": "string",
+          "description": "Type d'entité (ex: 'contacts', 'taches').",
+          "requis": true
+        },
+        "rec_id": {
+          "type": "string",
+          "description": "Identifiant de l'enregistrement à modifier.",
+          "requis": true
+        },
+        "donnees": {
+          "type": "object",
+          "description": "Nouvelles valeurs (remplace les champs fournis).",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -35,9 +52,21 @@
       "methode": "DELETE",
       "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
       "params": {
-        "app_id": {"type": "string", "description": "Identifiant de l'application.", "requis": true},
-        "entite_id": {"type": "string", "description": "Type d'entité.", "requis": true},
-        "rec_id": {"type": "string", "description": "Identifiant de l'enregistrement à supprimer.", "requis": true}
+        "app_id": {
+          "type": "string",
+          "description": "Identifiant de l'application.",
+          "requis": true
+        },
+        "entite_id": {
+          "type": "string",
+          "description": "Type d'entité.",
+          "requis": true
+        },
+        "rec_id": {
+          "type": "string",
+          "description": "Identifiant de l'enregistrement à supprimer.",
+          "requis": true
+        }
       },
       "action": true
     },
@@ -47,7 +76,11 @@
       "methode": "GET",
       "chemin": "/apps/{app_id}/resume",
       "params": {
-        "app_id": {"type": "string", "description": "Identifiant de l'application.", "requis": true}
+        "app_id": {
+          "type": "string",
+          "description": "Identifiant de l'application.",
+          "requis": true
+        }
       },
       "action": false
     }

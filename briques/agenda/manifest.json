@@ -1,5 +1,6 @@
 {
   "nom": "agenda",
+  "famille": "metier",
   "version": "1.0.0",
   "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
   "role": "agenda",
@@ -24,7 +25,9 @@
       "chemin": "/google/sync",
       "cadence_heures": 6,
       "idempotent": true,
-      "entetes": {"X-User-Id": "perso"},
+      "entetes": {
+        "X-User-Id": "perso"
+      },
       "entete_token_env": "CALENDAR_SERVICE_TOKEN",
       "tolere_echec": true
     },
@@ -35,7 +38,9 @@
       "chemin": "/timetree/sync",
       "cadence_heures": 1,
       "idempotent": true,
-      "entetes": {"X-User-Id": "perso"},
+      "entetes": {
+        "X-User-Id": "perso"
+      },
       "entete_token_env": "CALENDAR_SERVICE_TOKEN",
       "tolere_echec": true
     }

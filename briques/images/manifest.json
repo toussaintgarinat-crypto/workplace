@@ -1,5 +1,6 @@
 {
   "nom": "images",
+  "famille": "media",
   "version": "0.1.0",
   "description": "Moteur de génération d'images en API, PROVIDER-AGNOSTIQUE (fal, Replicate, Stable Diffusion local, ou la Gateway Workplace), avec repli placeholder honnête (jamais de fausse image silencieuse). Primitif texte→image + deux synergies : portrait de personnage (depuis une fiche) et couverture de série/épisode. Produit autonome, miroir des briques video/vision, composé par le Studio et l'assistant sans être absorbé.",
   "role": "images",
@@ -33,12 +34,31 @@
       "methode": "POST",
       "chemin": "/generer",
       "params": {
-        "prompt": {"type": "string", "description": "Description de l'image voulue (en clair).", "requis": true},
-        "negatif": {"type": "string", "description": "Ce qu'il faut ÉVITER dans l'image (optionnel)."},
-        "largeur": {"type": "integer", "description": "Largeur en pixels (défaut 1024)."},
-        "hauteur": {"type": "integer", "description": "Hauteur en pixels (défaut 1024)."},
-        "seed": {"type": "integer", "description": "Graine pour reproduire/varier le rendu (optionnel)."},
-        "fournisseur": {"type": "string", "description": "Forcer un moteur précis (voir images_fournisseurs). Omettre = ordre de préférence."}
+        "prompt": {
+          "type": "string",
+          "description": "Description de l'image voulue (en clair).",
+          "requis": true
+        },
+        "negatif": {
+          "type": "string",
+          "description": "Ce qu'il faut ÉVITER dans l'image (optionnel)."
+        },
+        "largeur": {
+          "type": "integer",
+          "description": "Largeur en pixels (défaut 1024)."
+        },
+        "hauteur": {
+          "type": "integer",
+          "description": "Hauteur en pixels (défaut 1024)."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Graine pour reproduire/varier le rendu (optionnel)."
+        },
+        "fournisseur": {
+          "type": "string",
+          "description": "Forcer un moteur précis (voir images_fournisseurs). Omettre = ordre de préférence."
+        }
       },
       "action": true,
       "niveau": 0
@@ -49,11 +69,27 @@
       "methode": "POST",
       "chemin": "/portrait",
       "params": {
-        "fiche": {"type": "object", "description": "Fiche du personnage : {nom, role, description, archetype, tags…}.", "requis": true},
-        "style": {"type": "string", "description": "Style visuel souhaité (ex. « aquarelle », « photoréaliste »)."},
-        "largeur": {"type": "integer", "description": "Largeur en pixels (défaut 768)."},
-        "hauteur": {"type": "integer", "description": "Hauteur en pixels (défaut 1024, portrait vertical)."},
-        "fournisseur": {"type": "string", "description": "Forcer un moteur précis. Omettre = préférence."}
+        "fiche": {
+          "type": "object",
+          "description": "Fiche du personnage : {nom, role, description, archetype, tags…}.",
+          "requis": true
+        },
+        "style": {
+          "type": "string",
+          "description": "Style visuel souhaité (ex. « aquarelle », « photoréaliste »)."
+        },
+        "largeur": {
+          "type": "integer",
+          "description": "Largeur en pixels (défaut 768)."
+        },
+        "hauteur": {
+          "type": "integer",
+          "description": "Hauteur en pixels (défaut 1024, portrait vertical)."
+        },
+        "fournisseur": {
+          "type": "string",
+          "description": "Forcer un moteur précis. Omettre = préférence."
+        }
       },
       "action": true,
       "niveau": 1
@@ -64,13 +100,34 @@
       "methode": "POST",
       "chemin": "/couverture",
       "params": {
-        "titre": {"type": "string", "description": "Titre à mettre en avant (optionnel)."},
-        "synopsis": {"type": "string", "description": "Résumé/ambiance pour guider la composition (optionnel)."},
-        "style": {"type": "string", "description": "Style visuel souhaité (optionnel)."},
-        "personnages": {"type": "array", "description": "Personnages à représenter (optionnel)."},
-        "largeur": {"type": "integer", "description": "Largeur en pixels (défaut 1024)."},
-        "hauteur": {"type": "integer", "description": "Hauteur en pixels (défaut 1024)."},
-        "fournisseur": {"type": "string", "description": "Forcer un moteur précis. Omettre = préférence."}
+        "titre": {
+          "type": "string",
+          "description": "Titre à mettre en avant (optionnel)."
+        },
+        "synopsis": {
+          "type": "string",
+          "description": "Résumé/ambiance pour guider la composition (optionnel)."
+        },
+        "style": {
+          "type": "string",
+          "description": "Style visuel souhaité (optionnel)."
+        },
+        "personnages": {
+          "type": "array",
+          "description": "Personnages à représenter (optionnel)."
+        },
+        "largeur": {
+          "type": "integer",
+          "description": "Largeur en pixels (défaut 1024)."
+        },
+        "hauteur": {
+          "type": "integer",
+          "description": "Hauteur en pixels (défaut 1024)."
+        },
+        "fournisseur": {
+          "type": "string",
+          "description": "Forcer un moteur précis. Omettre = préférence."
+        }
       },
       "action": true,
       "niveau": 1

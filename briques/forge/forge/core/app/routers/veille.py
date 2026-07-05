@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import uuid as uuidlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, select, update
 from sqlalchemy import delete as sa_delete
@@ -59,9 +59,8 @@ async def create_source(body: CreateSource, response: Response, user: UserContex
 
 
 @router.patch("/veille/sources/{sid}", dependencies=[Depends(get_current_user)])
-async def update_source(sid: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def update_source(sid: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     u = _uuid(sid)
-    body = await request.json()
     colmap = {"nom": "nom", "url": "url", "type": "type", "enabled": "enabled"}
     cols = {colmap[k]: v for k, v in body.items() if k in colmap}
     async with SessionLocal() as s:
@@ -103,9 +102,8 @@ async def list_articles(request: Request, user: UserContext = Depends(get_curren
 
 
 @router.patch("/veille/articles/{aid}", dependencies=[Depends(get_current_user)])
-async def update_article(aid: str, request: Request, user: UserContext = Depends(get_current_user)):
+async def update_article(aid: str, body: dict = Body(default={}), user: UserContext = Depends(get_current_user)):
     u = _uuid(aid)
-    body = await request.json()
     colmap = {"lu": "lu", "resume": "resume", "titre": "titre", "url": "url"}
     cols = {colmap[k]: v for k, v in body.items() if k in colmap}
     async with SessionLocal() as s:

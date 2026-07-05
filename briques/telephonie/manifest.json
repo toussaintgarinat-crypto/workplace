@@ -1,5 +1,6 @@
 {
   "nom": "telephonie",
+  "famille": "collaboration",
   "version": "0.1.0",
   "description": "Canal téléphonique multi-tenant et provider-agnostique (SMS + voix). Donne à l'assistant un vrai téléphone : acheter un numéro, envoyer/recevoir des SMS, passer des appels vocaux. Chaque solution est isolée par sa clé API. Fournisseur MOCK honnête par défaut (rien ne part sur le réseau), Twilio réel dès qu'une clé est fournie (envois facturés). Brique Workplace native inspirée du pattern AgentPhone-MCP : capacités au manifest → outils du Cœur, plutôt qu'un serveur MCP externe.",
   "role": "telephonie",
@@ -61,7 +62,10 @@
       "methode": "POST",
       "chemin": "/numeros",
       "params": {
-        "pays": {"type": "string", "description": "Code pays à 2 lettres du numéro voulu (défaut FR)."}
+        "pays": {
+          "type": "string",
+          "description": "Code pays à 2 lettres du numéro voulu (défaut FR)."
+        }
       },
       "action": true,
       "niveau": 1
@@ -72,9 +76,21 @@
       "methode": "POST",
       "chemin": "/sms",
       "params": {
-        "de": {"type": "string", "description": "Numéro émetteur au format E.164 (ex. +33612345678) — doit être possédé par la solution.", "requis": true},
-        "vers": {"type": "string", "description": "Numéro destinataire au format E.164.", "requis": true},
-        "corps": {"type": "string", "description": "Texte du message (max 1600 caractères).", "requis": true}
+        "de": {
+          "type": "string",
+          "description": "Numéro émetteur au format E.164 (ex. +33612345678) — doit être possédé par la solution.",
+          "requis": true
+        },
+        "vers": {
+          "type": "string",
+          "description": "Numéro destinataire au format E.164.",
+          "requis": true
+        },
+        "corps": {
+          "type": "string",
+          "description": "Texte du message (max 1600 caractères).",
+          "requis": true
+        }
       },
       "action": true,
       "niveau": 1
@@ -85,9 +101,20 @@
       "methode": "POST",
       "chemin": "/appels",
       "params": {
-        "de": {"type": "string", "description": "Numéro émetteur au format E.164 — doit être possédé par la solution.", "requis": true},
-        "vers": {"type": "string", "description": "Numéro destinataire au format E.164.", "requis": true},
-        "message": {"type": "string", "description": "Texte énoncé à voix haute au décroché (optionnel)."}
+        "de": {
+          "type": "string",
+          "description": "Numéro émetteur au format E.164 — doit être possédé par la solution.",
+          "requis": true
+        },
+        "vers": {
+          "type": "string",
+          "description": "Numéro destinataire au format E.164.",
+          "requis": true
+        },
+        "message": {
+          "type": "string",
+          "description": "Texte énoncé à voix haute au décroché (optionnel)."
+        }
       },
       "action": true,
       "niveau": 1

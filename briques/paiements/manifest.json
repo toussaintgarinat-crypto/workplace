@@ -1,5 +1,6 @@
 {
   "nom": "paiements",
+  "famille": "metier",
   "version": "0.1.0",
   "description": "Rail d'argent multi-tenant et provider-agnostique (Stripe Connect). Possède les comptes connectés des vendeurs (onboarding hébergé), l'encaissement avec COMMISSION PLATEFORME (destination charge + application_fee), les remboursements et les webhooks signés. Réutilisable par plusieurs solutions (restaurant, Forge, marketplaces), chacune isolée par sa clé API. Le SPLIT/addition partagée reste dans la brique appelante. Fournisseur MOCK honnête par défaut (aucun argent ne bouge), Stripe réel dès qu'une clé est fournie (test puis live = étape externe : validation plateforme + KYC vendeurs).",
   "role": "paiements",
@@ -53,7 +54,11 @@
       "methode": "GET",
       "chemin": "/comptes-connectes/{compte_id}",
       "params": {
-        "compte_id": {"type": "string", "description": "Identifiant du compte connecté (voir paiements_comptes_lister).", "requis": true}
+        "compte_id": {
+          "type": "string",
+          "description": "Identifiant du compte connecté (voir paiements_comptes_lister).",
+          "requis": true
+        }
       },
       "action": false,
       "niveau": 1
@@ -64,7 +69,11 @@
       "methode": "GET",
       "chemin": "/paiements/{paiement_id}",
       "params": {
-        "paiement_id": {"type": "string", "description": "Identifiant du paiement (voir paiements_lister).", "requis": true}
+        "paiement_id": {
+          "type": "string",
+          "description": "Identifiant du paiement (voir paiements_lister).",
+          "requis": true
+        }
       },
       "action": false,
       "niveau": 1
@@ -75,9 +84,18 @@
       "methode": "POST",
       "chemin": "/comptes-connectes",
       "params": {
-        "nom": {"type": "string", "description": "Nom du vendeur / de la boutique."},
-        "email": {"type": "string", "description": "Email du vendeur."},
-        "pays": {"type": "string", "description": "Code pays à 2 lettres (défaut FR)."}
+        "nom": {
+          "type": "string",
+          "description": "Nom du vendeur / de la boutique."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email du vendeur."
+        },
+        "pays": {
+          "type": "string",
+          "description": "Code pays à 2 lettres (défaut FR)."
+        }
       },
       "action": true,
       "niveau": 1
@@ -88,12 +106,32 @@
       "methode": "POST",
       "chemin": "/paiements",
       "params": {
-        "compte_connecte_id": {"type": "string", "description": "Compte vendeur destinataire (voir paiements_comptes_lister).", "requis": true},
-        "montant_cents": {"type": "integer", "description": "Montant total à encaisser, en CENTIMES (12,50 € = 1250).", "requis": true},
-        "devise": {"type": "string", "description": "Devise (défaut EUR)."},
-        "commission_bps": {"type": "integer", "description": "Commission plateforme en points de base (250 = 2,5 %). 0 = aucune."},
-        "commission_cents": {"type": "integer", "description": "…ou commission en montant fixe (centimes). Prioritaire sur commission_bps si fournie."},
-        "description": {"type": "string", "description": "Libellé du paiement (optionnel)."}
+        "compte_connecte_id": {
+          "type": "string",
+          "description": "Compte vendeur destinataire (voir paiements_comptes_lister).",
+          "requis": true
+        },
+        "montant_cents": {
+          "type": "integer",
+          "description": "Montant total à encaisser, en CENTIMES (12,50 € = 1250).",
+          "requis": true
+        },
+        "devise": {
+          "type": "string",
+          "description": "Devise (défaut EUR)."
+        },
+        "commission_bps": {
+          "type": "integer",
+          "description": "Commission plateforme en points de base (250 = 2,5 %). 0 = aucune."
+        },
+        "commission_cents": {
+          "type": "integer",
+          "description": "…ou commission en montant fixe (centimes). Prioritaire sur commission_bps si fournie."
+        },
+        "description": {
+          "type": "string",
+          "description": "Libellé du paiement (optionnel)."
+        }
       },
       "action": true,
       "niveau": 1
@@ -104,7 +142,11 @@
       "methode": "POST",
       "chemin": "/paiements/{paiement_id}/rembourser",
       "params": {
-        "paiement_id": {"type": "string", "description": "Identifiant du paiement à rembourser (voir paiements_lister).", "requis": true}
+        "paiement_id": {
+          "type": "string",
+          "description": "Identifiant du paiement à rembourser (voir paiements_lister).",
+          "requis": true
+        }
       },
       "action": true,
       "niveau": 1

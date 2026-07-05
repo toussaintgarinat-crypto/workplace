@@ -1,5 +1,6 @@
 {
   "nom": "app-builder",
+  "famille": "generation",
   "version": "2.8.0",
   "description": "Générateur d'application — Studio de création d'apps sur-mesure",
   "role": "generateur",

@@ -2202,37 +2202,30 @@ async function charger() {
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('loading');
   try {
-    const [bData, sData] = await Promise.all([
-      fetch('/briques').then(r => r.json()),
+    const [gData, sData] = await Promise.all([
+      fetch('/briques?grouper=famille').then(r => r.json()),
       fetch('/sante-globale').then(r => r.json()).catch(() => ({briques:{}}))
     ]);
-    document.getElementById('nb-briques').textContent = bData.total;
+    // Compter toutes les briques (toutes familles confondues)
+    const total = Object.values(gData).reduce((acc, f) => acc + (f.briques || []).length, 0);
+    document.getElementById('nb-briques').textContent = total;
     document.getElementById('last-check').textContent =
       'Mis à jour ' + new Date().toLocaleTimeString('fr-FR');
     const groupes = document.getElementById('groupes-briques');
     groupes.innerHTML = '';
     BRIQUES_MAP = {};
-    // On répartit les briques par couche : frontend (interface utilisateur) /
-    // backend (service API pur). Toute couche inconnue retombe sur « backend ».
-    const parCouche = { frontend: [], backend: [] };
-    (bData.briques || []).forEach(b => {
-      const h = (sData.briques || {})[b.nom] || {};
-      BRIQUES_MAP[b.nom] = { b, h };   // mémorisé pour le panneau de détail
-      const couche = b.couche === 'frontend' ? 'frontend' : 'backend';
-      parCouche[couche].push({ b, h });
-    });
-    const AIDE_COUCHE = {
-      frontend: "Les briques qui ont un écran ou une page à ouvrir et utiliser directement (ex. l'agenda, le mail, le studio).",
-      backend:  "Les briques « moteurs » : elles travaillent en coulisse pour les autres (mémoire, voix, recherche…), sans écran à elles."
-    };
-    [['frontend', 'Frontend'], ['backend', 'Backend']].forEach(([cle, titre]) => {
-      const items = parCouche[cle];
+    Object.entries(gData).forEach(([slug, famille]) => {
+      const items = (famille.briques || []).map(b => {
+        const h = (sData.briques || {})[b.nom] || {};
+        BRIQUES_MAP[b.nom] = { b, h };
+        return { b, h };
+      });
       if (!items.length) return;
+      const actives = items.filter(({b}) => b.statut === 'actif').length;
       const cartes = items.map(({ b, h }) => carteHTML(b, h)).join('');
-      const aide = `<span class="aide aide-clair" tabindex="0">i<span class="aide-txt">${AIDE_COUCHE[cle]}</span></span>`;
       groupes.insertAdjacentHTML('beforeend',
-        `<div class="groupe-couche"><h3 class="groupe-titre">${titre}${aide}` +
-        `<span class="groupe-compteur">${items.length}</span></h3>` +
+        `<div class="groupe-couche"><h3 class="groupe-titre">${famille.icone || ''} ${famille.label}` +
+        `<span class="groupe-compteur">${actives}/${items.length}</span></h3>` +
         `<div class="grid">${cartes}</div></div>`);
     });
   } catch(e) {

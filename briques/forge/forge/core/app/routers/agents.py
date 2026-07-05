@@ -6,7 +6,8 @@ executor (remplace l'orchestrateur VoltAgent — supprimé).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.auth import UserContext, get_current_user
 from app.react_executor import run_react
@@ -41,12 +42,14 @@ async def list_agents(user: UserContext = Depends(get_current_user)):
     return {"agents": _AGENTS}
 
 
+class CorpsRunAgent(BaseModel):
+    task: str = ""
+
+
 @router.post("/run")
-async def run_agent(request: Request, user: UserContext = Depends(get_current_user)):
-    body = await request.json()
-    task = body.get("task", "")
+async def run_agent(body: CorpsRunAgent, user: UserContext = Depends(get_current_user)):
     result = await run_react(
-        task, session_id=f"agents-run:{user.sub}", user_id=user.sub,
+        body.task, session_id=f"agents-run:{user.sub}", user_id=user.sub,
         personality_prompt=_ORCHESTRATOR_PROMPT, agent_name="Orchestrator",
     )
     return {"result": result.answer}

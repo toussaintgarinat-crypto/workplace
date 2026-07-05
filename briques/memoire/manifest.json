@@ -1,5 +1,6 @@
 {
   "nom": "memoire",
+  "famille": "ia",
   "version": "0.2.0",
   "description": "Mémoire de la solution — souvenirs en graphe (projet Memory : nœuds/arêtes, stages IPCRa, tiers, recherche hybride). Brique adaptatrice exposant un contrat simple retenir/rappeler/taxonomy/supprimer (rangements wing/room natifs). Consommée par le Cœur, Forge et Oria.",
   "role": "memoire",
@@ -25,9 +26,23 @@
       "methode": "GET",
       "chemin": "/rappeler",
       "params": {
-        "q": {"type": "string", "description": "Termes recherchés.", "requis": true},
-        "limite": {"type": "integer", "description": "Nombre max de souvenirs (défaut 8)."},
-        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+        "q": {
+          "type": "string",
+          "description": "Termes recherchés.",
+          "requis": true
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre max de souvenirs (défaut 8)."
+        },
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso"
+          ],
+          "description": "Espace mémoire ciblé."
+        }
       },
       "action": false
     },
@@ -37,9 +52,22 @@
       "methode": "GET",
       "chemin": "/souvenirs",
       "params": {
-        "limite": {"type": "integer", "description": "Nombre max (défaut 20)."},
-        "type": {"type": "string", "description": "Filtre par type de souvenir."},
-        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+        "limite": {
+          "type": "integer",
+          "description": "Nombre max (défaut 20)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Filtre par type de souvenir."
+        },
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso"
+          ],
+          "description": "Espace mémoire ciblé."
+        }
       },
       "action": false
     },
@@ -49,7 +77,14 @@
       "methode": "GET",
       "chemin": "/taxonomy",
       "params": {
-        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso"
+          ],
+          "description": "Espace mémoire ciblé."
+        }
       },
       "action": false
     },
@@ -60,10 +95,27 @@
       "methode": "POST",
       "chemin": "/retenir",
       "params": {
-        "contenu": {"type": "string", "description": "Le fait à mémoriser.", "requis": true},
-        "titre": {"type": "string", "description": "Titre court (sinon dérivé du contenu)."},
-        "type": {"type": "string", "description": "Type de souvenir (stage IPCRa)."},
-        "espace": {"type": "string", "enum": ["solution", "perso"], "description": "Espace mémoire ciblé."}
+        "contenu": {
+          "type": "string",
+          "description": "Le fait à mémoriser.",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Titre court (sinon dérivé du contenu)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Type de souvenir (stage IPCRa)."
+        },
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso"
+          ],
+          "description": "Espace mémoire ciblé."
+        }
       },
       "action": true
     }
