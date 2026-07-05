@@ -150,6 +150,35 @@ def test_10_stats_retourne_top5():
     assert len(st["top5"]) == 5
 
 
+def test_11_noter_usage_incremente_boost():
+    """noter_usage() augmente le boost d'une capacité déjà dans le graphe.
+
+    Deux capacités pour que la normalisation laisse agenda_lister < 1.0,
+    ce qui permet à noter_usage() d'incrémenter sans être bloqué par min(1.0)."""
+    g = _graphe_neuf()
+    specs = [
+        _spec("agenda_lister", "lister les événements agenda"),
+        _spec("calcul_faire", "calcul nombre addition résultat"),
+    ]
+    # agenda_lister obtient 1 correspondance, calcul_faire en obtient 3 → normalisé < 1.0
+    g.construire(
+        ["j'ai consulté mon agenda", "calcul nombre addition"],
+        specs,
+    )
+    boost_avant = g._boost.get("agenda_lister", 0)
+    assert 0 < boost_avant < 1.0, f"précondition : boost_avant={boost_avant} doit être entre 0 et 1"
+    g.noter_usage("agenda_lister")
+    boost_apres = g._boost.get("agenda_lister", 0)
+    assert boost_apres > boost_avant
+
+
+def test_12_noter_usage_capacite_inconnue_silencieux():
+    """noter_usage() sur une capacité absente du graphe ne lève pas d'exception."""
+    g = _graphe_neuf()
+    g.construire([], [])
+    g.noter_usage("capacite_inexistante")  # ne doit pas lever
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):

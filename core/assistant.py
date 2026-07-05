@@ -333,6 +333,12 @@ async def converser(messages: list[dict], registre,
                     # S143 — mise à jour de l'état + idempotence.
                     guardrail.after_call(nom, args, resultat,
                                          erreur=_est_erreur_outil(resultat))
+                    if not _est_erreur_outil(resultat):
+                        import graphe_apprentissage as _ga  # import local — évite cycle potentiel
+                        try:
+                            _ga._graphe.noter_usage(nom)
+                        except Exception:  # noqa: BLE001 — jamais bloquant
+                            pass
                     g_idem_action, g_idem_msg = guardrail.verifier_idempotence(nom, args)
                     if g_idem_msg:
                         g_note = (g_note + " | " + g_idem_msg) if g_note else g_idem_msg

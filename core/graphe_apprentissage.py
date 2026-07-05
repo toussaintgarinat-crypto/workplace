@@ -108,6 +108,17 @@ class GrapheApprentissage:
             "top5": sorted(self._boost.items(), key=lambda x: -x[1])[:5],
         }
 
+    def noter_usage(self, nom_capacite: str) -> None:
+        """Renforce le boost d'une capacité utilisée avec succès en cours de session.
+
+        Incrémente de 10 % du maximum actuel (ou de 0.1 si graphe vide).
+        Jamais bloquant : si la capacité n'est pas dans le graphe, no-op."""
+        if not self._construit or nom_capacite not in self._boost:
+            return
+        max_actuel = max(self._boost.values()) if self._boost else 1.0
+        increment = 0.1 * max_actuel if max_actuel else 0.1
+        self._boost[nom_capacite] = min(1.0, self._boost[nom_capacite] + increment)
+
 
 # Singleton module-level — reconstruit au démarrage, jamais persisté sur disque
 _graphe = GrapheApprentissage()
