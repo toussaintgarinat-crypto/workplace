@@ -6,8 +6,6 @@ import asyncio
 import os
 import sys
 import time
-from pathlib import Path
-import tempfile
 
 os.environ.setdefault("GATEWAY_KEY", "test")
 sys.path.insert(0, os.path.dirname(__file__))
