@@ -137,13 +137,15 @@ def bbox_union(boites: list[tuple[float, float, float, float]]) \
             max(b[2] for b in boites), max(b[3] for b in boites))
 
 
-def normaliser_entreprise(brute: dict) -> dict | None:
+def normaliser_entreprise(brute: dict, type_: str = "entreprise") -> dict | None:
     """Payload brut recherche-entreprises.api.gouv.fr → objet `geo_objects`, ou None si
     inexploitable. PIÈGE vérifié LIVE : l'API apparie les ÉTABLISSEMENTS proches
     (`matching_etablissements`) — c'est LUI qu'on géolocalise et date, pas le siège
     (le bureau de poste de Castres appartient à un siège… parisien). On écarte les
-    établissements FERMÉS (etat_administratif ≠ A). Coordonnées en CHAÎNES.
-    L'identité d'upsert = SIRET de l'établissement (le SIREN en repli)."""
+    établissements FERMÉS (etat_administratif ≠ A) et les coordonnées protégées
+    (« [NON-DIFFUSIBLE] », vu LIVE sur des associations). Coordonnées en CHAÎNES.
+    L'identité d'upsert = SIRET de l'établissement (le SIREN en repli).
+    `type_` : « entreprise » ou « association » (même payload Sirene)."""
     etab = (brute.get("matching_etablissements") or [{}])[0]
     if not etab:
         etab = brute.get("siege") or {}
@@ -158,7 +160,7 @@ def normaliser_entreprise(brute: dict) -> dict | None:
     nom = (etab.get("nom_commercial") or brute.get("nom_complet")
            or brute.get("nom_raison_sociale") or "")
     return {
-        "type": "entreprise",
+        "type": type_,
         "latitude": latitude,
         "longitude": longitude,
         "date_reference": etab.get("date_creation") or brute.get("date_creation"),

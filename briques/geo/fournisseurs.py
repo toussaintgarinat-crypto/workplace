@@ -40,7 +40,9 @@ class Mock:
     id de zone) : deux ingestions produisent les MÊMES points → l'upsert dédoublonne
     et la 2e passe compte honnêtement 0 nouveau."""
     nom = "mock"
-    requiert_naf = False
+
+    def peut_traiter(self, zone: dict) -> str | None:
+        return None   # le simulé traite tout
 
     def entreprises_recentes(self, zone: dict, depuis: str | None = None) -> list[dict]:
         alea = random.Random(zone["id"])
@@ -50,7 +52,7 @@ class Mock:
             lat = alea.uniform(zone["lat_min"], zone["lat_max"])
             lon = alea.uniform(zone["lon_min"], zone["lon_max"])
             objets.append({
-                "type": "entreprise", "latitude": lat, "longitude": lon,
+                "type": zone.get("type") or "entreprise", "latitude": lat, "longitude": lon,
                 "date_reference": (maintenant - timedelta(days=age)).date().isoformat(),
                 "ref_externe": f"simule-{zone['id'][:8]}-{i}",
                 "source": "simule",
@@ -67,15 +69,31 @@ class RechercheEntreprises:
     par SIRET fait le tri — la 1re passe SÈME la carte, les passes suivantes ne
     comptent « nouveau » que ce qui vient d'apparaître au répertoire. Deux modes :
     zone à COMMUNES → `/search?code_commune=…` (ciblage exact au village, NAF
-    facultatif) ; sinon → `/near_point` (point+rayon, NAF requis)."""
+    facultatif, filtre associations disponible) ; sinon → `/near_point`
+    (point+rayon, NAF requis, pas de filtre associations — vérifié LIVE)."""
     nom = "recherche-entreprises"
-    requiert_naf = True   # sans NAF NI communes, la zone n'est pas énumérable (cap 10 000)
+
+    def peut_traiter(self, zone: dict) -> str | None:
+        """None si la zone est traitable ; sinon le message d'avertissement HONNÊTE
+        (la zone sera ignorée par l'ingestion plutôt que mal servie)."""
+        if zone.get("communes"):
+            return None   # /search : énumérable, tous filtres disponibles
+        if (zone.get("type") or "entreprise") == "association":
+            return (f"zone « {zone['nom']} » ignorée : les ASSOCIATIONS ne se filtrent "
+                    "que par communes (le filtre n'existe pas sur point+rayon).")
+        if not zone.get("naf"):
+            return (f"zone « {zone['nom']} » ignorée : le fournisseur {self.nom} requiert "
+                    "un filtre NAF ou des communes (sinon la zone n'est pas énumérable).")
+        return None
 
     def entreprises_recentes(self, zone: dict, depuis: str | None = None) -> list[dict]:
+        type_ = zone.get("type") or "entreprise"
         codes = ",".join(c["code"] for c in (zone.get("communes") or []))
         if codes:
             chemin = "/search"
             params = {"code_commune": codes}
+            if type_ == "association":
+                params["est_association"] = "true"
         else:
             bbox = (zone["lat_min"], zone["lon_min"], zone["lat_max"], zone["lon_max"])
             lat, lon, rayon_km = domaine.centre_et_rayon(bbox)
@@ -93,7 +111,7 @@ class RechercheEntreprises:
                 r.raise_for_status()
                 d = r.json()
                 for brute in d.get("results", []):
-                    objet = domaine.normaliser_entreprise(brute)
+                    objet = domaine.normaliser_entreprise(brute, type_=type_)
                     if objet:
                         objets.append(objet)
                 total_pages = d.get("total_pages", 1)
