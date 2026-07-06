@@ -30,6 +30,28 @@ def test_creer_zone_par_bbox():
     assert r.status_code == 201
 
 
+def test_zone_porte_son_filtre_naf():
+    r = client.post("/zones", json={"nom": "Restos Castres", "naf": "56.10A",
+                                    "lat": 43.606, "lon": 2.241, "rayon_km": 15},
+                    headers=CLE)
+    assert r.status_code == 201 and r.json()["naf"] == "56.10A"
+
+
+def test_fournisseur_reel_ignore_les_zones_sans_naf(monkeypatch):
+    """En réel, une zone sans NAF n'est PAS énumérable (cap API) : ignorée avec un
+    avertissement honnête, sans aucun appel réseau."""
+    monkeypatch.setenv("GEO_FOURNISSEUR", "reel")
+    monkeypatch.setattr(
+        main.fournisseurs.RechercheEntreprises, "entreprises_recentes",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("appel réseau interdit")))
+    cle = {"X-API-Key": "reel-sans-naf"}
+    client.post("/zones", json={"nom": "Sans filtre", "lat": 43.6, "lon": 2.2,
+                                "rayon_km": 10}, headers=cle)
+    res = client.post("/ingestion/executer", headers=cle).json()
+    assert res["nouveaux"] == 0 and res["fournisseur"] == "recherche-entreprises"
+    assert len(res["avertissements"]) == 1 and "NAF" in res["avertissements"][0]
+
+
 def test_zone_sans_geometrie_renvoie_400():
     assert client.post("/zones", json={"nom": "Nulle part"},
                        headers=CLE).status_code == 400
@@ -75,7 +97,8 @@ def test_ingestion_sans_zone_ne_fait_rien(monkeypatch):
                         lambda t: (_ for _ in ()).throw(AssertionError("pas de push")))
     res = client.post("/ingestion/executer",
                       headers={"X-API-Key": "personne"}).json()
-    assert res == {"zones": 0, "nouveaux": 0, "maj": 0, "fournisseur": "mock"}
+    assert res == {"zones": 0, "nouveaux": 0, "maj": 0, "fournisseur": "mock",
+                   "avertissements": []}
 
 
 def test_push_connexion_absente_reste_silencieux(monkeypatch):

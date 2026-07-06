@@ -114,25 +114,36 @@ def centre_et_rayon(bbox: tuple[float, float, float, float]) -> tuple[float, flo
 
 def normaliser_entreprise(brute: dict) -> dict | None:
     """Payload brut recherche-entreprises.api.gouv.fr → objet `geo_objects`, ou None si
-    l'entreprise n'est pas exploitable (pas de géolocalisation du siège). Les coordonnées
-    arrivent en CHAÎNES ; la date de référence = date de création (siège d'abord)."""
-    siege = brute.get("siege") or {}
+    inexploitable. PIÈGE vérifié LIVE : l'API apparie les ÉTABLISSEMENTS proches
+    (`matching_etablissements`) — c'est LUI qu'on géolocalise et date, pas le siège
+    (le bureau de poste de Castres appartient à un siège… parisien). On écarte les
+    établissements FERMÉS (etat_administratif ≠ A). Coordonnées en CHAÎNES.
+    L'identité d'upsert = SIRET de l'établissement (le SIREN en repli)."""
+    etab = (brute.get("matching_etablissements") or [{}])[0]
+    if not etab:
+        etab = brute.get("siege") or {}
+    if (etab.get("etat_administratif") or "A") != "A":
+        return None
     try:
-        latitude = float(siege.get("latitude"))
-        longitude = float(siege.get("longitude"))
+        latitude = float(etab.get("latitude"))
+        longitude = float(etab.get("longitude"))
         valider_point(latitude, longitude)
     except (TypeError, ValueError):
         return None
+    nom = (etab.get("nom_commercial") or brute.get("nom_complet")
+           or brute.get("nom_raison_sociale") or "")
     return {
         "type": "entreprise",
         "latitude": latitude,
         "longitude": longitude,
-        "date_reference": siege.get("date_creation") or brute.get("date_creation"),
-        "ref_externe": brute.get("siren"),
+        "date_reference": etab.get("date_creation") or brute.get("date_creation"),
+        "ref_externe": etab.get("siret") or brute.get("siren"),
         "source": "recherche-entreprises",
         "metadata": {
-            "nom": brute.get("nom_complet") or brute.get("nom_raison_sociale") or "",
-            "naf": siege.get("activite_principale") or brute.get("activite_principale") or "",
-            "adresse": siege.get("adresse") or "",
+            "nom": nom,
+            "naf": etab.get("activite_principale") or brute.get("activite_principale") or "",
+            "adresse": etab.get("adresse") or "",
+            "commune": etab.get("libelle_commune") or "",
+            "siren": brute.get("siren") or "",
         },
     }

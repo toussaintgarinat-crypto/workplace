@@ -9,10 +9,13 @@ metadata) — l'ingestion (main.py) n'a plus qu'à upserter.
   démo, les tests et le dev souverain sans un seul appel réseau.
 - `RechercheEntreprises` : l'API publique recherche-entreprises.api.gouv.fr (données
   Sirene, SANS clé — d'où la bascule par env EXPLICITE `GEO_FOURNISSEUR=reel`, pas de
-  détection par secret). Les payloads bruts passent par `domaine.normaliser_entreprise`
-  (pur, testé hors-ligne sur payload figé)."""
+  détection par secret). Vérifié LIVE (2026-07-06) : `/near_point` apparie les
+  ÉTABLISSEMENTS proches, l'API ne filtre PAS par date de création et plafonne à
+  10 000 résultats → une zone n'est ÉNUMÉRABLE (donc la veille honnête : nouveaux
+  SIRET = vraies découvertes) qu'avec un filtre d'activité NAF (`requiert_naf`)."""
 from __future__ import annotations
 
+import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -21,9 +24,9 @@ import httpx
 
 import domaine
 
+logger = logging.getLogger("geo.fournisseurs")
+
 _API_URL = os.getenv("GEO_RECHERCHE_URL", "https://recherche-entreprises.api.gouv.fr")
-# Fenêtre de veille : au-delà, une entreprise n'est plus une « création récente ».
-_FENETRE_JOURS = int(os.getenv("GEO_FENETRE_JOURS", "90"))
 
 _NOMS_SIMULES = ["Boulangerie du Pont", "Atelier Vélo Cité", "SARL Toit & Charpente",
                  "Café des Halles", "Menuiserie Lacaze", "Studio Photo Lumen",
@@ -37,6 +40,7 @@ class Mock:
     id de zone) : deux ingestions produisent les MÊMES points → l'upsert dédoublonne
     et la 2e passe compte honnêtement 0 nouveau."""
     nom = "mock"
+    requiert_naf = False
 
     def entreprises_recentes(self, zone: dict, depuis: str | None = None) -> list[dict]:
         alea = random.Random(zone["id"])
@@ -56,30 +60,41 @@ class Mock:
 
 
 class RechercheEntreprises:
-    """API publique recherche-entreprises.api.gouv.fr : recherche par point+rayon
-    (`/near_point`), puis normalisation + filtre sur la fenêtre de veille."""
+    """API publique recherche-entreprises.api.gouv.fr, `/near_point` (point + rayon).
+
+    Stratégie ÉNUMÉRATION (pas de filtre par date côté API) : on liste tous les
+    établissements ACTIFS du couple zone×NAF (pages bornées par GEO_PAGES_MAX), et
+    l'upsert par SIRET fait le tri — la 1re passe SÈME la carte, les passes suivantes
+    ne comptent « nouveau » que ce qui vient d'apparaître au répertoire."""
     nom = "recherche-entreprises"
+    requiert_naf = True   # sans NAF, la zone n'est pas énumérable (cap API 10 000)
 
     def entreprises_recentes(self, zone: dict, depuis: str | None = None) -> list[dict]:
         bbox = (zone["lat_min"], zone["lon_min"], zone["lat_max"], zone["lon_max"])
         lat, lon, rayon_km = domaine.centre_et_rayon(bbox)
-        maintenant = datetime.now(timezone.utc)
-        date_min = (maintenant - timedelta(days=_FENETRE_JOURS)).date().isoformat()
+        pages_max = int(os.getenv("GEO_PAGES_MAX", "12"))   # 12 × 25 = 300 étabs/zone/nuit
         objets: list[dict] = []
         with httpx.Client(timeout=30) as client:
-            for page in range(1, 5):   # 4 pages × 25 = borne raisonnable par zone/nuit
+            for page in range(1, pages_max + 1):
                 r = client.get(f"{_API_URL}/near_point",
                                params={"lat": lat, "long": lon,
-                                       "radius": min(rayon_km, 50), "per_page": 25,
-                                       "page": page})
+                                       "radius": min(rayon_km, 50),
+                                       "activite_principale": zone.get("naf") or "",
+                                       "sort_by_size": "false",
+                                       "per_page": 25, "page": page})
                 r.raise_for_status()
-                resultats = r.json().get("results", [])
-                for brute in resultats:
+                d = r.json()
+                for brute in d.get("results", []):
                     objet = domaine.normaliser_entreprise(brute)
-                    if objet and (objet["date_reference"] or "") >= date_min:
+                    if objet:
                         objets.append(objet)
-                if len(resultats) < 25:
+                total_pages = d.get("total_pages", 1)
+                if page >= total_pages:
                     break
+            else:
+                logger.warning("Geo zone « %s » : %s pages > borne %s — énumération "
+                               "TRONQUÉE, resserrer la zone ou le NAF.",
+                               zone.get("nom"), total_pages, pages_max)
         return objets
 
 
@@ -88,7 +103,8 @@ def etat_config() -> dict:
     choix EXPLICITE (`GEO_FOURNISSEUR=reel`), jamais une détection silencieuse."""
     if os.getenv("GEO_FOURNISSEUR", "").strip().lower() == "reel":
         return {"configure": True, "fournisseur": RechercheEntreprises.nom,
-                "message": "Données RÉELLES : recherche-entreprises.api.gouv.fr (Sirene)."}
+                "message": "Données RÉELLES : recherche-entreprises.api.gouv.fr (Sirene). "
+                           "Veille par zone×NAF (filtre d'activité requis)."}
     return {"configure": False, "fournisseur": Mock.nom,
             "message": "Données SIMULÉES (mock honnête) : posez GEO_FOURNISSEUR=reel "
                        "pour brancher l'API Sirene publique."}
