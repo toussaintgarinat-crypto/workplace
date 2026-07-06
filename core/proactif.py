@@ -218,7 +218,31 @@ async def _check_documents(registre) -> int:
     return 0
 
 
-CHECKS = [_check_agenda, _check_documents]
+async def _check_geo(registre) -> int:
+    """Nouveautés de la veille GeoHub (S160) : nouvelles entreprises découvertes sur
+    les zones surveillées → pastille 🔔 (motif `_check_documents` : poll de la brique,
+    une clé datée = un seul rappel par jour)."""
+    try:
+        base = orchestrateur._brique_base(registre, "geo")
+        entetes = {}
+        cle_api = os.getenv("GEO_KEY", "")
+        if cle_api:
+            entetes["X-API-Key"] = cle_api
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{base}/nouveautes", params={"jours": 1}, headers=entetes)
+        nouveautes = r.json().get("nouveautes", []) if r.status_code < 400 else []
+        if nouveautes:
+            titre = f"{len(nouveautes)} nouveauté(s) sur tes zones de veille"
+            corps = ", ".join((o.get("metadata") or {}).get("nom", "?")
+                              for o in nouveautes[:5])
+            cle = "geo-nouveautes:" + datetime.utcnow().strftime("%Y-%m-%d")
+            return 1 if _ajouter("geo", titre, corps, cle) else 0
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("Proactif geo : %s", ex)
+    return 0
+
+
+CHECKS = [_check_agenda, _check_documents, _check_geo]
 
 
 async def run_check(registre) -> int:
