@@ -78,6 +78,7 @@ class ObjetEntree(BaseModel):
 class ZoneEntree(BaseModel):
     nom: str
     type: str = "entreprise"
+    naf: Optional[str] = None              # filtre d'activité (REQUIS en fournisseur réel)
     bbox: Optional[str] = None             # « lat_min,lon_min,lat_max,lon_max »…
     lat: Optional[float] = None            # …ou centre + rayon (converti en bbox)
     lon: Optional[float] = None
@@ -156,7 +157,7 @@ def creer_zone(corps: ZoneEntree, tenant: str = Depends(tenant_actuel)):
             raise ValueError("Zone attendue : « bbox » OU « lat + lon + rayon_km ».")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return stockage.creer_zone(tenant, corps.nom, boite, type_=corps.type)
+    return stockage.creer_zone(tenant, corps.nom, boite, type_=corps.type, naf=corps.naf)
 
 
 @app.delete("/zones/{zone_id}")
@@ -192,7 +193,13 @@ def executer_ingestion(tenant: str = Depends(tenant_actuel)):
     prov = fournisseurs.fournisseur()
     zones = stockage.lister_zones(tenant, seulement_actives=True)
     nouveaux, maj = 0, 0
+    avertissements: list[str] = []
     for zone in zones:
+        if getattr(prov, "requiert_naf", False) and not zone.get("naf"):
+            avertissements.append(
+                f"zone « {zone['nom']} » ignorée : le fournisseur {prov.nom} requiert "
+                "un filtre NAF (sans lui la zone n'est pas énumérable — cap API).")
+            continue
         try:
             trouves = prov.entreprises_recentes(zone, depuis=zone["derniere_ingestion"])
         except Exception as ex:  # noqa: BLE001 — une zone en échec ne bloque pas les autres
@@ -211,7 +218,7 @@ def executer_ingestion(tenant: str = Depends(tenant_actuel)):
         _pousser_connexion(f"🗺️ Veille geo : {nouveaux} nouvelle(s) entreprise(s) "
                            f"détectée(s) sur {len(zones)} zone(s).")
     return {"zones": len(zones), "nouveaux": nouveaux, "maj": maj,
-            "fournisseur": prov.nom}
+            "fournisseur": prov.nom, "avertissements": avertissements}
 
 
 @app.get("/nouveautes")

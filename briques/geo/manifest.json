@@ -111,6 +111,10 @@
         "bbox": {
           "type": "string",
           "description": "…ou zone explicite « lat_min,lon_min,lat_max,lon_max »."
+        },
+        "naf": {
+          "type": "string",
+          "description": "Filtre d'activité NAF (ex. « 56.10A » restaurants) — REQUIS en fournisseur réel (Sirene), sinon la zone est ignorée par la veille."
         }
       },
       "action": true,
