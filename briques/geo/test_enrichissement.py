@@ -47,6 +47,19 @@ def test_choisir_site_exige_la_commune_quand_connue():
         "https://restaurant-origine.fr/"
 
 
+def test_choisir_site_nom_generique_exige_le_domaine():
+    # 2e cas RÉEL : la page Wikipédia de Castres contient « origine » + « castres ».
+    # Un nom à UN jeton n'est retenu que si le DOMAINE le porte ; et les sous-domaines
+    # des exclus (fr.wikipedia.org) tombent aussi.
+    pieges = [
+        {"titre": "Castres — Wikipédia", "extrait": "…l'origine de la ville…",
+         "url": "https://fr.wikipedia.org/wiki/Castres"},
+        {"titre": "Castres : l'origine du festival", "extrait": "actualité locale",
+         "url": "https://www.journal-local.fr/article-123"},
+    ]
+    assert enrichissement.choisir_site(pieges, "ORIGINE", commune="CASTRES") is None
+
+
 def test_choisir_site_rend_none_sans_correspondance():
     resultats = [{"titre": "Tout autre chose", "url": "https://autre-domaine.fr/"}]
     assert enrichissement.choisir_site(resultats, "Boulangerie Test") is None
