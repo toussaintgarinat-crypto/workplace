@@ -35,6 +35,18 @@ def test_choisir_site_ecarte_les_annuaires():
     assert enrichissement.choisir_site(resultats, "Boulangerie Test") == "https://boulangerie-test.fr/"
 
 
+def test_choisir_site_exige_la_commune_quand_connue():
+    # Cas RÉEL (preuve LIVE HP) : le resto « ORIGINE » matchait un article persee.fr
+    # contenant le mot « origine ». Avec la commune connue, ce faux positif tombe.
+    resultats = [{"titre": "Origine et diffusion — revue", "extrait": "…l'origine des…",
+                  "url": "https://www.persee.fr/doc/rio_1971"}]
+    assert enrichissement.choisir_site(resultats, "ORIGINE", commune="CASTRES") is None
+    corrobore = [{"titre": "ORIGINE — restaurant à Castres", "extrait": "bistrot",
+                  "url": "https://restaurant-origine.fr/"}]
+    assert enrichissement.choisir_site(corrobore, "ORIGINE", commune="CASTRES") == \
+        "https://restaurant-origine.fr/"
+
+
 def test_choisir_site_rend_none_sans_correspondance():
     resultats = [{"titre": "Tout autre chose", "url": "https://autre-domaine.fr/"}]
     assert enrichissement.choisir_site(resultats, "Boulangerie Test") is None
