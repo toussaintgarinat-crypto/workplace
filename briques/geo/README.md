@@ -39,10 +39,19 @@ si `API_KEYS` est défini au `.env` racine ; sinon espace « public » (dev).
 calculées serveur, filtres, recherche de commune (BAN). Embarquée dans l'onglet
 « Carte » du dashboard du Cœur (mesh : port 16110 via Caddy).
 
+## Enrichissement opt-in (S161, RGPD-prudent)
+
+`POST /objets/{id}/enrichir` : trouve le **site officiel** d'UNE entreprise (via la
+brique recherche souveraine, annuaires écartés) et en extrait les coordonnées qu'elle
+**affiche elle-même** (email/téléphone, page contact incluse). Jamais en masse ;
+chaque tentative — succès, introuvable ou erreur — est **journalisée**
+(`GET /enrichissements`). Idempotent (`force=true` pour re-tenter).
+
 ## Capacités assistant
 
-6 outils auto-découverts via le manifest : `geo_chercher`, `geo_nouveautes` (niveau 0),
-`geo_zones_lister`, `geo_zone_ajouter`, `geo_objet_ajouter`, `geo_ingestion_lancer`
+8 outils auto-découverts via le manifest : `geo_chercher`, `geo_nouveautes` (niveau 0),
+`geo_zones_lister`, `geo_zone_ajouter`, `geo_objet_ajouter`, `geo_enrichir`,
+`geo_enrichissements_journal`, `geo_ingestion_lancer`
 (niveau 1, actions gardées par confirmation).
 
 ## Tests

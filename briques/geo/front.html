@@ -119,6 +119,9 @@ function popupDe(o) {
   if (m.naf) meta.push("NAF " + m.naf);
   if (o.date_reference) meta.push("créé le " + o.date_reference);
   if (m.adresse) meta.push(m.adresse);
+  if (m.site) meta.push(`<a href="${m.site}" target="_blank" rel="noopener">site</a>`);
+  if (m.email) meta.push(m.email);
+  if (m.telephone) meta.push(m.telephone);
   if (o.source === "simule") meta.push("⚠︎ simulé");
   morceaux.push(`<div class="popup-meta">${meta.join("<br>")}</div>`);
   return morceaux.join("");
