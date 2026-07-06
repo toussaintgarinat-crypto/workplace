@@ -112,6 +112,31 @@ def centre_et_rayon(bbox: tuple[float, float, float, float]) -> tuple[float, flo
     return (lat_c, lon_c, math.hypot(d_lat_km, d_lon_km))
 
 
+def bbox_depuis_contour(contour: dict | None) -> tuple[float, float, float, float] | None:
+    """Bbox englobant un contour GeoJSON de commune (Polygon ou MultiPolygon,
+    coordonnées [lon, lat]). None si le contour est absent/illisible."""
+    if not contour or not contour.get("coordinates"):
+        return None
+    anneaux = contour["coordinates"]
+    if contour.get("type") == "Polygon":
+        anneaux = [anneaux]
+    points = [pt for poly in anneaux for anneau in poly for pt in anneau]
+    if not points:
+        return None
+    lons = [p[0] for p in points]
+    lats = [p[1] for p in points]
+    return (min(lats), min(lons), max(lats), max(lons))
+
+
+def bbox_union(boites: list[tuple[float, float, float, float]]) \
+        -> tuple[float, float, float, float]:
+    """La bbox englobant plusieurs bboxes (zone multi-villages)."""
+    if not boites:
+        raise ValueError("Aucune bbox à unir.")
+    return (min(b[0] for b in boites), min(b[1] for b in boites),
+            max(b[2] for b in boites), max(b[3] for b in boites))
+
+
 def normaliser_entreprise(brute: dict) -> dict | None:
     """Payload brut recherche-entreprises.api.gouv.fr → objet `geo_objects`, ou None si
     inexploitable. PIÈGE vérifié LIVE : l'API apparie les ÉTABLISSEMENTS proches

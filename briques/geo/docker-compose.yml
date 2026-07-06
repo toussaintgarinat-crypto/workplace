@@ -2,7 +2,7 @@ services:
   geo:
     build: .
     container_name: workplace_geo
-    image: workplace/geo:0.2.0   # tag épinglé (pas de :latest flottant)
+    image: workplace/geo:0.3.0   # tag épinglé (pas de :latest flottant)
     env_file:
       # Secrets/réglages partagés à la racine — source unique.
       - path: ../../.env

@@ -63,25 +63,33 @@ class RechercheEntreprises:
     """API publique recherche-entreprises.api.gouv.fr, `/near_point` (point + rayon).
 
     Stratégie ÉNUMÉRATION (pas de filtre par date côté API) : on liste tous les
-    établissements ACTIFS du couple zone×NAF (pages bornées par GEO_PAGES_MAX), et
-    l'upsert par SIRET fait le tri — la 1re passe SÈME la carte, les passes suivantes
-    ne comptent « nouveau » que ce qui vient d'apparaître au répertoire."""
+    établissements ACTIFS de la zone (pages bornées par GEO_PAGES_MAX), et l'upsert
+    par SIRET fait le tri — la 1re passe SÈME la carte, les passes suivantes ne
+    comptent « nouveau » que ce qui vient d'apparaître au répertoire. Deux modes :
+    zone à COMMUNES → `/search?code_commune=…` (ciblage exact au village, NAF
+    facultatif) ; sinon → `/near_point` (point+rayon, NAF requis)."""
     nom = "recherche-entreprises"
-    requiert_naf = True   # sans NAF, la zone n'est pas énumérable (cap API 10 000)
+    requiert_naf = True   # sans NAF NI communes, la zone n'est pas énumérable (cap 10 000)
 
     def entreprises_recentes(self, zone: dict, depuis: str | None = None) -> list[dict]:
-        bbox = (zone["lat_min"], zone["lon_min"], zone["lat_max"], zone["lon_max"])
-        lat, lon, rayon_km = domaine.centre_et_rayon(bbox)
-        pages_max = int(os.getenv("GEO_PAGES_MAX", "12"))   # 12 × 25 = 300 étabs/zone/nuit
+        codes = ",".join(c["code"] for c in (zone.get("communes") or []))
+        if codes:
+            chemin = "/search"
+            params = {"code_commune": codes}
+        else:
+            bbox = (zone["lat_min"], zone["lon_min"], zone["lat_max"], zone["lon_max"])
+            lat, lon, rayon_km = domaine.centre_et_rayon(bbox)
+            chemin = "/near_point"
+            params = {"lat": lat, "long": lon, "radius": min(rayon_km, 50),
+                      "sort_by_size": "false"}
+        if zone.get("naf"):
+            params["activite_principale"] = zone["naf"]
+        pages_max = int(os.getenv("GEO_PAGES_MAX", "40"))   # 40 × 25 = 1 000 étabs/zone/nuit
         objets: list[dict] = []
         with httpx.Client(timeout=30) as client:
             for page in range(1, pages_max + 1):
-                r = client.get(f"{_API_URL}/near_point",
-                               params={"lat": lat, "long": lon,
-                                       "radius": min(rayon_km, 50),
-                                       "activite_principale": zone.get("naf") or "",
-                                       "sort_by_size": "false",
-                                       "per_page": 25, "page": page})
+                r = client.get(f"{_API_URL}{chemin}",
+                               params={**params, "per_page": 25, "page": page})
                 r.raise_for_status()
                 d = r.json()
                 for brute in d.get("results", []):
