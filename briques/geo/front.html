@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoHub — carte de veille</title>
+<link rel="stylesheet" href="/static/leaflet.css">
+<link rel="stylesheet" href="/static/MarkerCluster.css">
+<link rel="stylesheet" href="/static/MarkerCluster.Default.css">
+<style>
+  html, body { margin:0; height:100%; font-family:-apple-system, "Segoe UI", Roboto, sans-serif; }
+  #carte { position:absolute; inset:0; }
+  /* Panneau latéral de filtres */
+  #panneau {
+    position:absolute; top:12px; left:12px; z-index:1000; width:230px;
+    background:#fff; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,.25);
+    padding:12px 14px; font-size:13px;
+  }
+  #panneau h1 { font-size:15px; margin:0 0 8px; }
+  #panneau label { display:block; margin:8px 0 2px; color:#555; }
+  #panneau input, #panneau select {
+    width:100%; box-sizing:border-box; padding:5px 7px; border:1px solid #ccc;
+    border-radius:6px; font-size:13px;
+  }
+  #statut { margin-top:10px; color:#666; font-size:12px; min-height:16px; }
+  #badge-simule {
+    display:none; margin-top:8px; padding:3px 8px; border-radius:6px;
+    background:#fef3cd; color:#8a6d1d; font-size:12px;
+  }
+  .legende { margin-top:10px; font-size:12px; color:#444; }
+  .pastille { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+  .p-rouge { background:#e0392b; } .p-orange { background:#f39c12; } .p-bleu { background:#3572b0; }
+  .popup-nom { font-weight:600; margin-bottom:2px; }
+  .popup-meta { color:#555; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="carte"></div>
+
+<div id="panneau">
+  <h1>🗺️ GeoHub</h1>
+  <label for="commune">Aller à (commune)</label>
+  <input id="commune" placeholder="ex. Viviers-lès-Montagnes ⏎">
+  <label for="f-type">Type d'objet</label>
+  <select id="f-type">
+    <option value="">Tous</option>
+    <option value="entreprise" selected>Entreprises</option>
+  </select>
+  <label for="f-fraicheur">Fraîcheur</label>
+  <select id="f-fraicheur">
+    <option value="">Toutes</option>
+    <option value="rouge">🔴 Urgent (&lt; 30 j)</option>
+    <option value="orange">🟠 Nouveau (&lt; 90 j)</option>
+  </select>
+  <label for="f-naf">Code NAF (préfixe)</label>
+  <input id="f-naf" placeholder="ex. 4675">
+  <label for="f-q">Nom contient</label>
+  <input id="f-q" placeholder="ex. boulangerie">
+  <div class="legende">
+    <span class="pastille p-rouge"></span>&lt; 30 j
+    <span class="pastille p-orange" style="margin-left:8px"></span>&lt; 90 j
+    <span class="pastille p-bleu" style="margin-left:8px"></span>établi
+  </div>
+  <div id="statut">…</div>
+  <div id="badge-simule">⚠︎ Données simulées (mock)</div>
+</div>
+
+<script src="/static/leaflet.js"></script>
+<script src="/static/leaflet.markercluster.js"></script>
+<script>
+"use strict";
+// Clé API optionnelle (?api_key=…) : posée en X-API-Key sur chaque appel de données.
+const CLE_API = new URLSearchParams(location.search).get("api_key") || "";
+const ENTETES = CLE_API ? { "X-API-Key": CLE_API } : {};
+const COULEURS = { rouge: "#e0392b", orange: "#f39c12", bleu: "#3572b0" };
+
+// ── Fonds de carte : OSM par défaut + IGN (Géoplateforme, souverain, sans clé) ──
+const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { maxZoom: 19, attribution: "© OpenStreetMap" });
+const wmts = (couche, format) =>
+  L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+    "&LAYER=" + couche + "&STYLE=normal&TILEMATRIXSET=PM" +
+    "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + encodeURIComponent(format),
+    { maxZoom: 19, attribution: "© IGN — Géoplateforme" });
+const planIgn = wmts("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", "image/png");
+const ortho = wmts("ORTHOIMAGERY.ORTHOPHOTOS", "image/jpeg");
+
+const carte = L.map("carte", { layers: [osm] }).setView([46.6, 2.4], 6); // France
+L.control.layers({ "OpenStreetMap": osm, "Plan IGN": planIgn, "Satellite (IGN)": ortho })
+  .addTo(carte);
+
+const grappe = L.markerClusterGroup({ disableClusteringAtZoom: 15 });
+carte.addLayer(grappe);
+
+// ── Chargement des objets de la zone visible (moveend, debounce 300 ms) ──
+const statut = document.getElementById("statut");
+let minuterie = null;
+
+function filtres() {
+  const p = new URLSearchParams();
+  const b = carte.getBounds();
+  p.set("bbox", [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]
+    .map(n => n.toFixed(5)).join(","));
+  const type = document.getElementById("f-type").value;
+  const fraicheur = document.getElementById("f-fraicheur").value;
+  const naf = document.getElementById("f-naf").value.trim();
+  const q = document.getElementById("f-q").value.trim();
+  if (type) p.set("type", type);
+  if (fraicheur) p.set("fraicheur", fraicheur);
+  if (naf) p.set("naf", naf);
+  if (q) p.set("q", q);
+  return p;
+}
+
+function popupDe(o) {
+  const m = o.metadata || {};
+  const morceaux = [`<div class="popup-nom">${(m.nom || "(sans nom)")}</div>`];
+  const meta = [];
+  if (m.naf) meta.push("NAF " + m.naf);
+  if (o.date_reference) meta.push("créé le " + o.date_reference);
+  if (m.adresse) meta.push(m.adresse);
+  if (o.source === "simule") meta.push("⚠︎ simulé");
+  morceaux.push(`<div class="popup-meta">${meta.join("<br>")}</div>`);
+  return morceaux.join("");
+}
+
+async function charger() {
+  try {
+    const r = await fetch("/objets?" + filtres(), { headers: ENTETES });
+    if (!r.ok) { statut.textContent = "Erreur " + r.status; return; }
+    const res = await r.json();
+    grappe.clearLayers();
+    for (const o of res.objets) {
+      grappe.addLayer(L.circleMarker([o.latitude, o.longitude], {
+        radius: 7, weight: 1.5, color: "#fff", fillOpacity: 0.92,
+        fillColor: COULEURS[o.fraicheur] || COULEURS.bleu,
+      }).bindPopup(popupDe(o)));
+    }
+    statut.textContent = res.nb_total + " objet(s) dans la zone"
+      + (res.tronque ? " — zone tronquée, zoomez" : "");
+  } catch (e) { statut.textContent = "Brique injoignable"; }
+}
+
+function chargerBientot() { clearTimeout(minuterie); minuterie = setTimeout(charger, 300); }
+carte.on("moveend", chargerBientot);
+for (const id of ["f-type", "f-fraicheur"])
+  document.getElementById(id).addEventListener("change", chargerBientot);
+for (const id of ["f-naf", "f-q"])
+  document.getElementById(id).addEventListener("input", chargerBientot);
+
+// ── Recherche de commune (BAN — api-adresse.data.gouv.fr, sans clé) ──
+document.getElementById("commune").addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || !e.target.value.trim()) return;
+  try {
+    const r = await fetch("https://api-adresse.data.gouv.fr/search/?type=municipality&q="
+      + encodeURIComponent(e.target.value.trim()));
+    const geo = (await r.json()).features?.[0];
+    if (geo) carte.setView([geo.geometry.coordinates[1], geo.geometry.coordinates[0]], 13);
+    else statut.textContent = "Commune introuvable";
+  } catch { statut.textContent = "Recherche d'adresse injoignable"; }
+});
+
+// ── Honnêteté : afficher le badge si les données sont simulées ──
+fetch("/config", { headers: ENTETES }).then(r => r.json()).then(cfg => {
+  if (cfg.fournisseur === "mock")
+    document.getElementById("badge-simule").style.display = "block";
+}).catch(() => {});
+
+charger();
+</script>
+</body>
+</html>
