@@ -19,6 +19,8 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import domaine
@@ -37,6 +39,16 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
 
 # Le schéma est créé à l'import de `stockage` (idempotent) — rien à faire au démarrage.
+
+_ICI = os.path.dirname(os.path.abspath(__file__))
+app.mount("/static", StaticFiles(directory=os.path.join(_ICI, "static")), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def accueil():
+    """La carte (front autoporté, Leaflet vendoré — zéro CDN). La page est publique ;
+    les DONNÉES restent derrière l'auth (le front pose ?api_key= en X-API-Key)."""
+    return FileResponse(os.path.join(_ICI, "front.html"))
 
 
 # ── Multi-tenant : la clé API identifie le TENANT ────────────────
