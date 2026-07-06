@@ -27,6 +27,7 @@ DOMAINES_ANNUAIRES = {
     "tripadvisor.fr", "tripadvisor.com", "thefork.fr", "lafourchette.com",
     "ubereats.com", "deliveroo.fr", "leboncoin.fr", "yelp.fr", "yelp.com",
     "google.com", "google.fr", "mappy.com", "petitfute.com",
+    "autour-de-moi.com",   # agrégateur de fiches restos (repéré LIVE)
 }
 _MOTS_VIDES = {"sarl", "sas", "sasu", "eurl", "sci", "les", "des", "chez", "the", "et"}
 
