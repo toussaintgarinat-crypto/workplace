@@ -96,6 +96,30 @@ def test_bascule_fournisseur_par_env(monkeypatch):
     assert isinstance(fournisseurs.fournisseur(), fournisseurs.RechercheEntreprises)
 
 
-def test_le_reel_requiert_un_naf_le_mock_non():
-    assert fournisseurs.RechercheEntreprises.requiert_naf is True
-    assert fournisseurs.Mock.requiert_naf is False
+def test_peut_traiter_le_mock_traite_tout_le_reel_est_exigeant():
+    reel, mock = fournisseurs.RechercheEntreprises(), fournisseurs.Mock()
+    rayon_sans_naf = {**ZONE}
+    assert mock.peut_traiter(rayon_sans_naf) is None
+    assert "NAF" in reel.peut_traiter(rayon_sans_naf)
+    assert reel.peut_traiter({**ZONE, "naf": "56.10A"}) is None
+    assert reel.peut_traiter({**ZONE, "communes": [{"code": "81325", "nom": "V"}]}) is None
+    # Associations : le filtre n'existe que sur /search → communes obligatoires.
+    asso_rayon = {**ZONE, "type": "association", "naf": "94.99Z"}
+    assert "associations" in reel.peut_traiter(asso_rayon).lower()
+    asso_communes = {**asso_rayon, "communes": [{"code": "81065", "nom": "Castres"}]}
+    assert reel.peut_traiter(asso_communes) is None
+
+
+def test_mock_respecte_le_type_de_la_zone():
+    objets = fournisseurs.Mock().entreprises_recentes({**ZONE, "type": "association"})
+    assert {o["type"] for o in objets} == {"association"}
+
+
+def test_normaliser_type_association_et_coordonnees_protegees():
+    assert domaine.normaliser_entreprise(PAYLOAD_SIRENE,
+                                         type_="association")["type"] == "association"
+    # Vu LIVE sur des associations : coordonnées « [NON-DIFFUSIBLE] » → écarté, honnête.
+    protege = {**PAYLOAD_SIRENE, "matching_etablissements": [
+        {**PAYLOAD_SIRENE["matching_etablissements"][0],
+         "latitude": "[NON-DIFFUSIBLE]", "longitude": "[NON-DIFFUSIBLE]"}]}
+    assert domaine.normaliser_entreprise(protege) is None

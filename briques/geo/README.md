@@ -27,7 +27,9 @@ si `API_KEYS` est défini au `.env` racine ; sinon espace « public » (dev).
 - `GET/POST /zones`, `DELETE /zones/{id}` : zones surveillées, trois ciblages —
   **communes** (noms ou codes postaux, un ou plusieurs villages, exact, NAF facultatif),
   **centre + rayon km** (NAF requis en réel), ou bbox. Résolution des communes via
-  geo.api.gouv.fr (code INSEE + contour → bbox).
+  geo.api.gouv.fr (code INSEE + contour → bbox). Deux types de veille :
+  `type=entreprise` (défaut) ou `type=association` (filtre Sirene `est_association`,
+  mode communes uniquement — le filtre n'existe pas sur point+rayon).
 - `POST /ingestion/executer` : passe de veille (fournisseur → upsert par SIREN) ; déclenchée
   chaque nuit par l'horloge du Cœur (tâche `ingestion-quotidienne` du manifest, Bearer `GEO_KEY`).
 - `GET /nouveautes?jours=` : les découvertes récentes ; push 🗺️ Telegram best-effort

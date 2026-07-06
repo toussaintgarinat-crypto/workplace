@@ -31,7 +31,7 @@ import stockage
 
 logger = logging.getLogger("geo")
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 app = FastAPI(title="Geo — GeoHub cartographique multi-tenant", version=VERSION)
 
@@ -253,11 +253,9 @@ def executer_ingestion(tenant: str = Depends(tenant_actuel)):
     nouveaux, maj = 0, 0
     avertissements: list[str] = []
     for zone in zones:
-        if (getattr(prov, "requiert_naf", False) and not zone.get("naf")
-                and not zone.get("communes")):
-            avertissements.append(
-                f"zone « {zone['nom']} » ignorée : le fournisseur {prov.nom} requiert "
-                "un filtre NAF ou des communes (sinon la zone n'est pas énumérable).")
+        message = prov.peut_traiter(zone)
+        if message:
+            avertissements.append(message)
             continue
         try:
             trouves = prov.entreprises_recentes(zone, depuis=zone["derniere_ingestion"])

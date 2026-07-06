@@ -131,7 +131,8 @@ def test_fournisseur_reel_cible_par_code_commune(monkeypatch):
 
     faux = _FauxSirene()
     monkeypatch.setattr(fournisseurs.httpx, "Client", faux)
-    zone = {"id": "z1", "nom": "V", "naf": None, "lat_min": 43.52, "lon_min": 2.15,
+    zone = {"id": "z1", "nom": "V", "naf": None, "type": "entreprise",
+            "lat_min": 43.52, "lon_min": 2.15,
             "lat_max": 43.57, "lon_max": 2.21, "derniere_ingestion": None,
             "communes": [{"code": "81325", "nom": "Viviers-lès-Montagnes"},
                          {"code": "81092", "nom": "Escoussens"}]}
@@ -139,9 +140,31 @@ def test_fournisseur_reel_cible_par_code_commune(monkeypatch):
     url, params = faux.requetes[0]
     assert url.endswith("/search")
     assert params["code_commune"] == "81325,81092"
-    assert "activite_principale" not in params
+    assert "activite_principale" not in params and "est_association" not in params
+    # Zone ASSOCIATIONS → même /search, avec le filtre est_association.
+    fournisseurs.RechercheEntreprises().entreprises_recentes({**zone, "type": "association"})
+    _, params_asso = faux.requetes[-1]
+    assert params_asso["est_association"] == "true"
     # …et la zone à rayon garde le near_point.
     zone_rayon = {**zone, "communes": [], "naf": "56.10A"}
     fournisseurs.RechercheEntreprises().entreprises_recentes(zone_rayon)
     url2, params2 = faux.requetes[-1]
     assert url2.endswith("/near_point") and params2["activite_principale"] == "56.10A"
+
+
+def test_ingestion_reelle_associations_exigent_des_communes(monkeypatch):
+    """Zone associations à RAYON en réel : ignorée avec un avertissement honnête
+    (le filtre n'existe pas sur near_point) ; à COMMUNES : acceptée."""
+    monkeypatch.setenv("GEO_FOURNISSEUR", "reel")
+    monkeypatch.setattr(geographie.httpx, "Client", _FauxGeoAPI())
+    appels = []
+    monkeypatch.setattr(main.fournisseurs.RechercheEntreprises, "entreprises_recentes",
+                        lambda self, zone, depuis=None: appels.append(zone["nom"]) or [])
+    cle = {"X-API-Key": "assos"}
+    client.post("/zones", headers=cle, json={"nom": "Assos rayon", "type": "association",
+                                             "lat": 43.6, "lon": 2.2, "rayon_km": 10})
+    client.post("/zones", headers=cle, json={"nom": "Assos village", "type": "association",
+                                             "communes": ["Viviers-lès-Montagnes"]})
+    res = client.post("/ingestion/executer", headers=cle).json()
+    assert len(res["avertissements"]) == 1 and "associations" in res["avertissements"][0].lower()
+    assert appels == ["Assos village"]
