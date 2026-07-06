@@ -113,11 +113,13 @@ def init() -> None:
                 ON geo_enrichissements(tenant, quand);
             """
         )
-        # Migration douce (bases créées avant la colonne `naf`) — idempotent.
-        try:
-            c.execute("ALTER TABLE geo_zones ADD COLUMN naf TEXT")
-        except sqlite3.OperationalError:
-            pass  # colonne déjà présente
+        # Migrations douces (bases créées avant ces colonnes) — idempotentes.
+        for alter in ("ALTER TABLE geo_zones ADD COLUMN naf TEXT",
+                      "ALTER TABLE geo_zones ADD COLUMN communes TEXT"):
+            try:
+                c.execute(alter)
+            except sqlite3.OperationalError:
+                pass  # colonne déjà présente
 
 
 # Schéma prêt dès l'import (idempotent) : robuste même sans événement de démarrage (TestClient).
@@ -254,19 +256,21 @@ def lister_enrichissements(tenant: str, limite: int = 50) -> list[dict]:
 def _zone_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nom": r["nom"], "lat_min": r["lat_min"], "lon_min": r["lon_min"],
             "lat_max": r["lat_max"], "lon_max": r["lon_max"], "type": r["type"],
-            "naf": r["naf"], "active": bool(r["active"]), "cree_le": r["cree_le"],
+            "naf": r["naf"], "communes": json.loads(r["communes"] or "[]"),
+            "active": bool(r["active"]), "cree_le": r["cree_le"],
             "derniere_ingestion": r["derniere_ingestion"]}
 
 
 def creer_zone(tenant: str, nom: str, bbox: tuple[float, float, float, float],
-               type_: str = "entreprise", naf: str | None = None) -> dict:
+               type_: str = "entreprise", naf: str | None = None,
+               communes: list[dict] | None = None) -> dict:
     zid = _id()
     with _conn() as c:
         c.execute(
             "INSERT INTO geo_zones (id, tenant, nom, lat_min, lon_min, lat_max, lon_max,"
-            " type, naf, cree_le) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " type, naf, communes, cree_le) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (zid, tenant, nom, bbox[0], bbox[1], bbox[2], bbox[3], type_, naf,
-             _maintenant()))
+             json.dumps(communes or [], ensure_ascii=False), _maintenant()))
         r = c.execute("SELECT * FROM geo_zones WHERE id = ?", (zid,)).fetchone()
     return _zone_dict(r)
 

@@ -1,7 +1,7 @@
 {
   "nom": "geo",
   "famille": "metier",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GeoHub — cartographie modulaire multi-tenant. Stocke et sert N'IMPORTE QUEL objet géolocalisé (entreprises aujourd'hui ; immobilier, événements, jeu demain) dans un modèle générique geo_objects + metadata JSON, indexé spatialement (SQLite R*Tree). Recherche par bounding box, pastilles de FRAÎCHEUR par type (entreprise : rouge <30j, orange <90j, bleu sinon). Fournisseur MOCK honnête par défaut (points simulés étiquetés), API recherche-entreprises.api.gouv.fr (Sirene, sans clé) en réel.",
   "role": "geo",
   "couche": "backend",
@@ -87,7 +87,7 @@
     },
     {
       "nom": "geo_zone_ajouter",
-      "description": "Ajoute une ZONE DE VEILLE : l'ingestion nocturne y cherchera les créations d'entreprises. Donner un centre + rayon (« surveille 20 km autour de Castres ») ou une bbox. ACTION : confirme=true requis.",
+      "description": "Ajoute une ZONE DE VEILLE : l'ingestion nocturne y cherchera les créations d'entreprises. Trois façons de cibler : des COMMUNES précises (« surveille Viviers-lès-Montagnes », un ou plusieurs villages, NAF facultatif) ; un centre + rayon (« 20 km autour de Castres », NAF requis) ; ou une bbox. ACTION : confirme=true requis.",
       "methode": "POST",
       "chemin": "/zones",
       "params": {
@@ -95,6 +95,10 @@
           "type": "string",
           "description": "Nom parlant de la zone (ex. « Castres et alentours »).",
           "requis": true
+        },
+        "communes": {
+          "type": "array",
+          "description": "Noms de communes ou codes postaux (ex. [\"Viviers-lès-Montagnes\", \"81290\"]) — cible EXACTEMENT ces villages, sans déborder. NAF facultatif dans ce mode."
         },
         "lat": {
           "type": "number",
@@ -114,7 +118,7 @@
         },
         "naf": {
           "type": "string",
-          "description": "Filtre d'activité NAF (ex. « 56.10A » restaurants) — REQUIS en fournisseur réel (Sirene), sinon la zone est ignorée par la veille."
+          "description": "Filtre d'activité NAF (ex. « 56.10A » restaurants) — requis en fournisseur réel pour les zones à rayon/bbox ; FACULTATIF pour les zones à communes."
         }
       },
       "action": true,

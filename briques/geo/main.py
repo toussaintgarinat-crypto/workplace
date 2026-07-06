@@ -26,11 +26,12 @@ from pydantic import BaseModel
 import domaine
 import enrichissement
 import fournisseurs
+import geographie
 import stockage
 
 logger = logging.getLogger("geo")
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 app = FastAPI(title="Geo — GeoHub cartographique multi-tenant", version=VERSION)
 
@@ -79,8 +80,9 @@ class ObjetEntree(BaseModel):
 class ZoneEntree(BaseModel):
     nom: str
     type: str = "entreprise"
-    naf: Optional[str] = None              # filtre d'activité (REQUIS en fournisseur réel)
-    bbox: Optional[str] = None             # « lat_min,lon_min,lat_max,lon_max »…
+    naf: Optional[str] = None              # filtre d'activité (requis en réel SANS communes)
+    communes: Optional[list[str]] = None   # noms ou codes postaux : cible CES villages…
+    bbox: Optional[str] = None             # …ou « lat_min,lon_min,lat_max,lon_max »…
     lat: Optional[float] = None            # …ou centre + rayon (converti en bbox)
     lon: Optional[float] = None
     rayon_km: Optional[float] = None
@@ -192,17 +194,28 @@ def lister_zones(tenant: str = Depends(tenant_actuel)):
 @app.post("/zones", status_code=201)
 def creer_zone(corps: ZoneEntree, tenant: str = Depends(tenant_actuel)):
     """Ajoute une zone de VEILLE : l'ingestion (nocturne ou manuelle) y cherchera les
-    créations récentes. Au choix : une bbox explicite, ou centre + rayon en km."""
+    créations récentes. Au choix : une ou plusieurs COMMUNES (noms ou codes postaux —
+    ciblage exact au village, NAF facultatif), une bbox, ou centre + rayon en km."""
+    communes: list[dict] = []
     try:
-        if corps.bbox:
+        if corps.communes:
+            try:
+                communes = geographie.resoudre_communes(corps.communes)
+            except httpx.HTTPError as e:
+                raise HTTPException(502, f"Annuaire des communes injoignable : {e}")
+            boite = domaine.bbox_union([c["bbox"] for c in communes])
+        elif corps.bbox:
             boite = domaine.valider_bbox(corps.bbox)
         elif corps.lat is not None and corps.lon is not None and corps.rayon_km:
             boite = domaine.bbox_depuis_rayon(corps.lat, corps.lon, corps.rayon_km)
         else:
-            raise ValueError("Zone attendue : « bbox » OU « lat + lon + rayon_km ».")
+            raise ValueError("Zone attendue : « communes » (noms/codes postaux) OU "
+                             "« bbox » OU « lat + lon + rayon_km ».")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return stockage.creer_zone(tenant, corps.nom, boite, type_=corps.type, naf=corps.naf)
+    return stockage.creer_zone(
+        tenant, corps.nom, boite, type_=corps.type, naf=corps.naf,
+        communes=[{"code": c["code"], "nom": c["nom"]} for c in communes])
 
 
 @app.delete("/zones/{zone_id}")
@@ -240,10 +253,11 @@ def executer_ingestion(tenant: str = Depends(tenant_actuel)):
     nouveaux, maj = 0, 0
     avertissements: list[str] = []
     for zone in zones:
-        if getattr(prov, "requiert_naf", False) and not zone.get("naf"):
+        if (getattr(prov, "requiert_naf", False) and not zone.get("naf")
+                and not zone.get("communes")):
             avertissements.append(
                 f"zone « {zone['nom']} » ignorée : le fournisseur {prov.nom} requiert "
-                "un filtre NAF (sans lui la zone n'est pas énumérable — cap API).")
+                "un filtre NAF ou des communes (sinon la zone n'est pas énumérable).")
             continue
         try:
             trouves = prov.entreprises_recentes(zone, depuis=zone["derniere_ingestion"])
