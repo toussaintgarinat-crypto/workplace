@@ -65,6 +65,12 @@ def _domaine(url: str) -> str:
     return hote.removeprefix("www.")
 
 
+def _est_annuaire(url: str) -> bool:
+    """Vrai si le domaine (ou un de ses parents : fr.wikipedia.org) est exclu."""
+    d = _domaine(url)
+    return any(d == a or d.endswith("." + a) for a in DOMAINES_ANNUAIRES)
+
+
 def choisir_site(resultats: list[dict], nom: str, commune: str = "") -> str | None:
     """Le SITE OFFICIEL probable parmi les résultats de recherche : premier lien qui
     n'est PAS un annuaire/plateforme, dont titre/extrait/domaine portent un mot
@@ -78,13 +84,17 @@ def choisir_site(resultats: list[dict], nom: str, commune: str = "") -> str | No
     jeton_commune = _normaliser(commune).strip()
     for r in resultats or []:
         url = r.get("url") or ""
-        if not url or _domaine(url) in DOMAINES_ANNUAIRES:
+        if not url or _est_annuaire(url):
             continue
         botte = _normaliser(" ".join(
             (r.get("titre") or "", r.get("extrait") or "", url)))
         if not any(j in botte for j in jetons):
             continue
         if jeton_commune and jeton_commune not in botte:
+            continue
+        # Nom à UN seul jeton (« ORIGINE ») = trop générique : seul un domaine qui le
+        # porte fait foi (prouvé LIVE : Wikipédia Castres contenait « origine »).
+        if len(jetons) == 1 and jetons[0] not in _normaliser(_domaine(url)):
             continue
         return url
     return None
