@@ -21,5 +21,16 @@
     "mock_honnete_par_defaut"
   ],
   "capacites": [],
-  "taches": []
+  "taches": [
+    {
+      "nom": "ingestion-quotidienne",
+      "description": "Veille nocturne : récupère les créations d'entreprises récentes sur les zones de veille et met la carte à jour (upsert par SIREN, push 🗺️ si découvertes).",
+      "methode": "POST",
+      "chemin": "/ingestion/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "entete_token_env": "GEO_KEY",
+      "tolere_echec": true
+    }
+  ]
 }

@@ -11,16 +11,21 @@ Voir `fournisseurs.py` (S157)."""
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import domaine
+import fournisseurs
 import stockage
+
+logger = logging.getLogger("geo")
 
 VERSION = "0.1.0"
 
@@ -58,6 +63,15 @@ class ObjetEntree(BaseModel):
     metadata: dict = {}
 
 
+class ZoneEntree(BaseModel):
+    nom: str
+    type: str = "entreprise"
+    bbox: Optional[str] = None             # « lat_min,lon_min,lat_max,lon_max »…
+    lat: Optional[float] = None            # …ou centre + rayon (converti en bbox)
+    lon: Optional[float] = None
+    rayon_km: Optional[float] = None
+
+
 # ── Santé & config ───────────────────────────────────────────────
 @app.get("/sante")
 def sante():
@@ -66,10 +80,9 @@ def sante():
 
 @app.get("/config")
 def config(_tenant: str = Depends(tenant_actuel)):
-    """État honnête de la brique : quel fournisseur alimente la carte (S157 branchera
-    le réel) — jamais de secret en clair."""
-    return {"fournisseur": "mock", "configure": False,
-            "message": "Données SIMULÉES (mock honnête) : aucune source réelle branchée."}
+    """État honnête de la brique : quel fournisseur alimente la carte (mock simulé ou
+    API Sirene publique) — jamais de secret en clair."""
+    return fournisseurs.etat_config()
 
 
 # ── Objets géolocalisés ──────────────────────────────────────────
@@ -110,3 +123,90 @@ def creer_objet(corps: ObjetEntree, tenant: str = Depends(tenant_actuel)):
                                 longitude=corps.longitude,
                                 date_reference=corps.date_reference,
                                 source="manuel", metadata=corps.metadata)
+
+
+# ── Zones de veille ──────────────────────────────────────────────
+@app.get("/zones")
+def lister_zones(tenant: str = Depends(tenant_actuel)):
+    return {"zones": stockage.lister_zones(tenant)}
+
+
+@app.post("/zones", status_code=201)
+def creer_zone(corps: ZoneEntree, tenant: str = Depends(tenant_actuel)):
+    """Ajoute une zone de VEILLE : l'ingestion (nocturne ou manuelle) y cherchera les
+    créations récentes. Au choix : une bbox explicite, ou centre + rayon en km."""
+    try:
+        if corps.bbox:
+            boite = domaine.valider_bbox(corps.bbox)
+        elif corps.lat is not None and corps.lon is not None and corps.rayon_km:
+            boite = domaine.bbox_depuis_rayon(corps.lat, corps.lon, corps.rayon_km)
+        else:
+            raise ValueError("Zone attendue : « bbox » OU « lat + lon + rayon_km ».")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return stockage.creer_zone(tenant, corps.nom, boite, type_=corps.type)
+
+
+@app.delete("/zones/{zone_id}")
+def supprimer_zone(zone_id: str, tenant: str = Depends(tenant_actuel)):
+    if not stockage.supprimer_zone(tenant, zone_id):
+        raise HTTPException(404, "Zone introuvable.")   # cloisonnement : on ne révèle rien
+    return {"ok": True}
+
+
+# ── Ingestion & nouveautés ───────────────────────────────────────
+def _pousser_connexion(texte: str) -> None:
+    """Push best-effort vers la messagerie (brique connexion → Telegram). Silencieux si
+    la brique est absente/injoignable : le pull `/nouveautes` reste la source de vérité.
+    Motif copié de core/proactif.py::_pousser_messagerie. Ne lève jamais."""
+    base = os.getenv("CONNEXION_URL", "http://host.docker.internal:5870").rstrip("/")
+    entetes = {}
+    cle = os.getenv("CONNEXION_KEY", "")
+    if cle:
+        entetes["X-API-Key"] = cle
+    corps = {"utilisateur": os.getenv("GEO_NOTIF_UTILISATEUR", "perso"), "texte": texte}
+    try:
+        httpx.post(f"{base}/pousser", json=corps, headers=entetes, timeout=10)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("Geo push messagerie : %s", ex)
+
+
+@app.post("/ingestion/executer")
+def executer_ingestion(tenant: str = Depends(tenant_actuel)):
+    """Passe la veille sur toutes les zones ACTIVES du tenant : fournisseur (mock ou
+    Sirene public) → upsert par référence externe (SIREN) → décompte honnête
+    nouveaux/mis-à-jour. Appelée par l'horloge du Cœur (tâche quotidienne, Bearer
+    GEO_KEY → même tenant que les outils LLM) ou à la main. Push 🗺️ si découvertes."""
+    prov = fournisseurs.fournisseur()
+    zones = stockage.lister_zones(tenant, seulement_actives=True)
+    nouveaux, maj = 0, 0
+    for zone in zones:
+        try:
+            trouves = prov.entreprises_recentes(zone, depuis=zone["derniere_ingestion"])
+        except Exception as ex:  # noqa: BLE001 — une zone en échec ne bloque pas les autres
+            logger.warning("Geo ingestion zone « %s » : %s", zone["nom"], ex)
+            continue
+        for objet in trouves:
+            _, est_nouveau = stockage.upsert_objet(
+                tenant, type_=objet["type"], latitude=objet["latitude"],
+                longitude=objet["longitude"], date_reference=objet["date_reference"],
+                source=objet["source"], ref_externe=objet["ref_externe"],
+                metadata=objet["metadata"])
+            nouveaux += est_nouveau
+            maj += not est_nouveau
+        stockage.maj_derniere_ingestion(zone["id"])
+    if nouveaux:
+        _pousser_connexion(f"🗺️ Veille geo : {nouveaux} nouvelle(s) entreprise(s) "
+                           f"détectée(s) sur {len(zones)} zone(s).")
+    return {"zones": len(zones), "nouveaux": nouveaux, "maj": maj,
+            "fournisseur": prov.nom}
+
+
+@app.get("/nouveautes")
+def nouveautes(jours: int = Query(7, ge=1, le=365), limite: int = Query(50, ge=1, le=500),
+               tenant: str = Depends(tenant_actuel)):
+    """Les objets DÉCOUVERTS récemment (date d'entrée dans le système, pas la date
+    métier) — le « quoi de neuf sur mes zones » de l'assistant et du proactif."""
+    depuis = (datetime.now(timezone.utc) - timedelta(days=jours)).isoformat()
+    objets = stockage.nouveaux_depuis(tenant, depuis, limite)
+    return {"nouveautes": objets, "depuis": depuis}
