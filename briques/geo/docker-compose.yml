@@ -1,0 +1,30 @@
+services:
+  geo:
+    build: .
+    container_name: workplace_geo
+    image: workplace/geo:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Secrets/réglages partagés à la racine — source unique.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6110:6110"
+    environment:
+      - PORT=6110
+      - GEO_DB=/data/geo.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # API_KEYS, GEO_KEY, GEO_FOURNISSEUR, CONNEXION_KEY : hérités du .env racine via
+      # env_file — ne PAS les redéclarer en `=${VAR:-}` (piège « env shadow » : ils
+      # seraient écrasés par du VIDE). Sans GEO_FOURNISSEUR : fournisseur MOCK honnête.
+    volumes:
+      - geo_data:/data   # objets géolocalisés + zones de veille
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6110/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  geo_data:

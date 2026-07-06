@@ -1,0 +1,6 @@
+# Brique geo — GeoHub cartographique. Dépendances minces et épinglées.
+# Le métier (fraîcheur, validations, normalisation) est en Python pur (domaine.py) ;
+# l'index spatial est le R*Tree du sqlite3 de la stdlib : aucun service de plus.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
