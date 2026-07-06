@@ -88,6 +88,16 @@ def init() -> None:
             CREATE TRIGGER IF NOT EXISTS geo_ad AFTER DELETE ON geo_objects BEGIN
                 DELETE FROM geo_rtree WHERE id = old.rowid;
             END;
+
+            -- Zones de VEILLE : les bbox que l'ingestion nocturne surveille, par tenant.
+            CREATE TABLE IF NOT EXISTS geo_zones (
+                id TEXT PRIMARY KEY, tenant TEXT NOT NULL, nom TEXT NOT NULL,
+                lat_min REAL NOT NULL, lon_min REAL NOT NULL,
+                lat_max REAL NOT NULL, lon_max REAL NOT NULL,
+                type TEXT NOT NULL DEFAULT 'entreprise',
+                active INTEGER NOT NULL DEFAULT 1,
+                cree_le TEXT NOT NULL, derniere_ingestion TEXT);
+            CREATE INDEX IF NOT EXISTS idx_zones_tenant ON geo_zones(tenant);
             """
         )
 
@@ -181,6 +191,47 @@ def chercher_bbox(tenant: str, bbox: tuple[float, float, float, float], *,
             params + [limite]).fetchall()
     return {"objets": [_objet_dict(r) for r in lignes],
             "nb_total": nb_total, "tronque": nb_total > limite}
+
+
+# ── Zones de veille ──────────────────────────────────────────────
+def _zone_dict(r: sqlite3.Row) -> dict:
+    return {"id": r["id"], "nom": r["nom"], "lat_min": r["lat_min"], "lon_min": r["lon_min"],
+            "lat_max": r["lat_max"], "lon_max": r["lon_max"], "type": r["type"],
+            "active": bool(r["active"]), "cree_le": r["cree_le"],
+            "derniere_ingestion": r["derniere_ingestion"]}
+
+
+def creer_zone(tenant: str, nom: str, bbox: tuple[float, float, float, float],
+               type_: str = "entreprise") -> dict:
+    zid = _id()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO geo_zones (id, tenant, nom, lat_min, lon_min, lat_max, lon_max,"
+            " type, cree_le) VALUES (?,?,?,?,?,?,?,?,?)",
+            (zid, tenant, nom, bbox[0], bbox[1], bbox[2], bbox[3], type_, _maintenant()))
+        r = c.execute("SELECT * FROM geo_zones WHERE id = ?", (zid,)).fetchone()
+    return _zone_dict(r)
+
+
+def lister_zones(tenant: str, seulement_actives: bool = False) -> list[dict]:
+    sql = "SELECT * FROM geo_zones WHERE tenant = ?"
+    if seulement_actives:
+        sql += " AND active = 1"
+    with _conn() as c:
+        return [_zone_dict(r) for r in c.execute(sql + " ORDER BY cree_le", (tenant,))]
+
+
+def supprimer_zone(tenant: str, zone_id: str) -> bool:
+    with _conn() as c:
+        cur = c.execute("DELETE FROM geo_zones WHERE tenant = ? AND id = ?",
+                        (tenant, zone_id))
+        return cur.rowcount > 0
+
+
+def maj_derniere_ingestion(zone_id: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE geo_zones SET derniere_ingestion = ? WHERE id = ?",
+                  (_maintenant(), zone_id))
 
 
 def nouveaux_depuis(tenant: str, depuis_iso: str, limite: int = 50) -> list[dict]:

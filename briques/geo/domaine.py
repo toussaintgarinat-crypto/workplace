@@ -2,10 +2,11 @@
 toujours passé en paramètre) : tout est testable hors-ligne à la microseconde.
 
 Porte : les règles de FRAÎCHEUR par type d'objet (la pastille de couleur de la carte),
-les validations géométriques (bounding box, point), et — à partir de S157 — la
+les validations géométriques (bounding box, point, conversions rayon↔bbox) et la
 normalisation des payloads fournisseurs vers le modèle `geo_objects`."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
 PASTILLE_DEFAUT = "bleu"
@@ -82,3 +83,56 @@ def valider_bbox(brut: str) -> tuple[float, float, float, float]:
     if lat_min >= lat_max or lon_min >= lon_max:
         raise ValueError("bbox inversée : min doit être strictement inférieur à max.")
     return (lat_min, lon_min, lat_max, lon_max)
+
+
+_KM_PAR_DEGRE = 111.0   # approximation sphérique, largement suffisante pour la veille
+
+
+def bbox_depuis_rayon(latitude: float, longitude: float,
+                      rayon_km: float) -> tuple[float, float, float, float]:
+    """Bbox englobant un cercle centre+rayon (l'utilisateur dit « autour de Castres,
+    20 km » ; la carte et le R*Tree parlent en boîtes). Bornée aux limites terrestres."""
+    valider_point(latitude, longitude)
+    if rayon_km <= 0:
+        raise ValueError(f"Rayon invalide (km > 0 attendu) : {rayon_km}")
+    d_lat = rayon_km / _KM_PAR_DEGRE
+    d_lon = rayon_km / (_KM_PAR_DEGRE * max(math.cos(math.radians(latitude)), 0.01))
+    return (max(latitude - d_lat, -90.0), max(longitude - d_lon, -180.0),
+            min(latitude + d_lat, 90.0), min(longitude + d_lon, 180.0))
+
+
+def centre_et_rayon(bbox: tuple[float, float, float, float]) -> tuple[float, float, float]:
+    """L'inverse : centre + rayon (km) COUVRANT la bbox — pour les API qui cherchent
+    par point+rayon (recherche-entreprises /near_point)."""
+    lat_min, lon_min, lat_max, lon_max = bbox
+    lat_c = (lat_min + lat_max) / 2
+    lon_c = (lon_min + lon_max) / 2
+    d_lat_km = (lat_max - lat_c) * _KM_PAR_DEGRE
+    d_lon_km = (lon_max - lon_c) * _KM_PAR_DEGRE * max(math.cos(math.radians(lat_c)), 0.01)
+    return (lat_c, lon_c, math.hypot(d_lat_km, d_lon_km))
+
+
+def normaliser_entreprise(brute: dict) -> dict | None:
+    """Payload brut recherche-entreprises.api.gouv.fr → objet `geo_objects`, ou None si
+    l'entreprise n'est pas exploitable (pas de géolocalisation du siège). Les coordonnées
+    arrivent en CHAÎNES ; la date de référence = date de création (siège d'abord)."""
+    siege = brute.get("siege") or {}
+    try:
+        latitude = float(siege.get("latitude"))
+        longitude = float(siege.get("longitude"))
+        valider_point(latitude, longitude)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "type": "entreprise",
+        "latitude": latitude,
+        "longitude": longitude,
+        "date_reference": siege.get("date_creation") or brute.get("date_creation"),
+        "ref_externe": brute.get("siren"),
+        "source": "recherche-entreprises",
+        "metadata": {
+            "nom": brute.get("nom_complet") or brute.get("nom_raison_sociale") or "",
+            "naf": siege.get("activite_principale") or brute.get("activite_principale") or "",
+            "adresse": siege.get("adresse") or "",
+        },
+    }
