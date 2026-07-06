@@ -5,7 +5,7 @@ Tableau de bord visuel du Cœur (HTML embarqué + injection des URLs d'iframes).
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from etat import registre
-from urls_ui import GENERATEUR_URL_PUBLIQUE, STUDIO_KEY, url_brique
+from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, STUDIO_KEY, url_brique
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
@@ -389,6 +389,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Tes conversations et tes projets vivent ici, comme dans Claude ou Perplexity. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
       <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
       <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
+      <button class="tab" data-vue="geo" onclick="switchVue('geo')" title="La carte de veille : entreprises récentes et objets géolocalisés sur tes zones surveillées, avec pastilles de fraîcheur.">Carte</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -797,6 +798,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- VUE GEO (GeoHub, brique 6110) -->
+  <div class="view" id="vue-geo">
+    <div class="topbar">
+      <h2>Carte<span class="aide" tabindex="0">i<span class="aide-txt">Ta carte de veille : les créations d'entreprises récentes sur tes zones surveillées (🔴 &lt; 30 j, 🟠 &lt; 90 j), et tout objet géolocalisé. Demande à l'assistant « surveille 20 km autour de Castres ».</span></span></h2>
+      <a class="btn ghost" href="__GEO_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+    </div>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <iframe id="geo-iframe" title="Carte de veille"
+        style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"></iframe>
+    </div>
+  </div>
+
   <!-- Synopsis (brique 6090) et Voix (brique 5985) sont désormais des TUILES de l'Atelier
        (ouvrirCreation) plutôt que des onglets dédiés — cf. la grille du hub Atelier. -->
 
@@ -957,6 +970,7 @@ function switchVue(v) {
   }
   if (v === 'agenda') { chargerAgenda(); chargerGoogle(); chargerTimeTree(); }
   if (v === 'mail') chargerMail();
+  if (v === 'geo') chargerGeo();
   if (v === 'dev') chargerDev();
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
@@ -1345,6 +1359,16 @@ function chargerMail() {
   if (mailCharge) return;
   const f = document.getElementById('mail-iframe');
   if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
+}
+
+// ── GeoHub (carte de veille, brique 6110) ──────────────────────────────────────
+// Chargement paresseux de l'iframe au 1er affichage de l'onglet.
+const GEO_UI_URL = '__GEO_UI_URL__';
+let geoCharge = false;
+function chargerGeo() {
+  if (geoCharge) return;
+  const f = document.getElementById('geo-iframe');
+  if (f) { f.src = GEO_UI_URL; geoCharge = true; }
 }
 
 
@@ -3069,6 +3093,11 @@ async def dashboard(request: Request):
     if STUDIO_KEY:
         sep = "&" if "?" in studio_ui else "?"
         studio_ui = f"{studio_ui}{sep}api_key={STUDIO_KEY}"
+    # Même motif pour GeoHub : le front carte lit `?api_key=` (X-API-Key sur ses fetch).
+    geo_ui = u("GEO")
+    if GEO_KEY:
+        sep = "&" if "?" in geo_ui else "?"
+        geo_ui = f"{geo_ui}{sep}api_key={GEO_KEY}"
     return HTMLResponse(content=DASHBOARD_HTML
         .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
@@ -3076,6 +3105,7 @@ async def dashboard(request: Request):
         .replace("__TRANSCRIPTION_UI_URL__", u("TRANSCRIPTION"))
         .replace("__RESTAURANT_UI_URL__", u("RESTAURANT"))
         .replace("__MAIL_UI_URL__", u("MAIL"))
+        .replace("__GEO_UI_URL__", geo_ui)
         .replace("__SYNOPSIS_UI_URL__", u("SYNOPSIS"))
         .replace("__VOIX_UI_URL__", u("VOIX"))
         .replace("__MEMOIRE_UI_URL__", u("MEMOIRE"))

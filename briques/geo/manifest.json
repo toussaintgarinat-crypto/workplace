@@ -20,7 +20,144 @@
     "fraicheur_par_type",
     "mock_honnete_par_defaut"
   ],
-  "capacites": [],
+  "capacites": [
+    {
+      "nom": "geo_chercher",
+      "description": "Cherche les objets GÉOLOCALISÉS (entreprises…) dans une zone rectangulaire. Sert « quelles entreprises récentes autour de Castres », « montre les créations dans cette zone ». bbox = « lat_min,lon_min,lat_max,lon_max ». Chaque objet revient avec sa pastille de fraîcheur (rouge <30j, orange <90j, bleu). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/objets",
+      "params": {
+        "bbox": {
+          "type": "string",
+          "description": "Zone « lat_min,lon_min,lat_max,lon_max » (ex. « 43.55,2.10,43.70,2.35 » pour Castres).",
+          "requis": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Filtrer par type d'objet (ex. « entreprise »)."
+        },
+        "fraicheur": {
+          "type": "string",
+          "description": "« rouge » = créations < 30 j ; « orange » = < 90 j (inclut les rouges)."
+        },
+        "naf": {
+          "type": "string",
+          "description": "Préfixe de code NAF/activité (ex. « 4675 »)."
+        },
+        "q": {
+          "type": "string",
+          "description": "Texte contenu dans le nom."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Max d'objets renvoyés (défaut 2000)."
+        }
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "geo_nouveautes",
+      "description": "Ce que la VEILLE a découvert récemment (nouvelles entreprises sur les zones surveillées). Sert « quoi de neuf sur mes zones », « des nouvelles entreprises cette semaine ? ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/nouveautes",
+      "params": {
+        "jours": {
+          "type": "integer",
+          "description": "Fenêtre en jours (défaut 7)."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Max de résultats (défaut 50)."
+        }
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "geo_zones_lister",
+      "description": "Liste les ZONES DE VEILLE surveillées chaque nuit (nom, rectangle, dernière passe). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/zones",
+      "params": {},
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "geo_zone_ajouter",
+      "description": "Ajoute une ZONE DE VEILLE : l'ingestion nocturne y cherchera les créations d'entreprises. Donner un centre + rayon (« surveille 20 km autour de Castres ») ou une bbox. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/zones",
+      "params": {
+        "nom": {
+          "type": "string",
+          "description": "Nom parlant de la zone (ex. « Castres et alentours »).",
+          "requis": true
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude du centre."
+        },
+        "lon": {
+          "type": "number",
+          "description": "Longitude du centre."
+        },
+        "rayon_km": {
+          "type": "number",
+          "description": "Rayon de veille en km (avec lat+lon)."
+        },
+        "bbox": {
+          "type": "string",
+          "description": "…ou zone explicite « lat_min,lon_min,lat_max,lon_max »."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "geo_objet_ajouter",
+      "description": "Épingle MANUELLEMENT un point sur la carte (un prospect repéré, un lieu à retenir). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/objets",
+      "params": {
+        "latitude": {
+          "type": "number",
+          "description": "Latitude du point.",
+          "requis": true
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude du point.",
+          "requis": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Type d'objet (défaut « entreprise »)."
+        },
+        "date_reference": {
+          "type": "string",
+          "description": "Date métier ISO (ex. date de création) — pilote la pastille de fraîcheur."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Détails libres : {\"nom\": …, \"naf\": …, \"adresse\": …}."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "geo_ingestion_lancer",
+      "description": "Force une passe de VEILLE immédiate sur toutes les zones (sinon elle tourne automatiquement chaque nuit). Sert « mets à jour la carte maintenant ». ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/ingestion/executer",
+      "params": {},
+      "action": true,
+      "niveau": 1
+    }
+  ],
   "taches": [
     {
       "nom": "ingestion-quotidienne",

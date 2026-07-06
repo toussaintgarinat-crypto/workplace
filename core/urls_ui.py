@@ -30,6 +30,7 @@ BRIQUES_UI = {
     "GATEWAY":       (4001, "/ui"),        # console LiteLLM (peut poser X-Frame-Options)
     "GENERATEUR":    (5400, "/bundles-studio"),  # composeur de bundles embarqué (tuile Atelier)
     "PEERTUBE":      (9000, "/"),          # hébergement vidéo souverain
+    "GEO":           (6110, "/"),          # GeoHub : carte de veille (Leaflet autoporté)
 }
 
 
@@ -82,3 +83,7 @@ GENERATEUR_URL_PUBLIQUE = os.environ.get("GENERATEUR_URL_PUBLIQUE", "http://loca
 # définie, l'iframe du dashboard la transporte en `?api_key=` (le front Studio la lit).
 # Cockpit mono-opérateur : la clé EST l'identité (même frontière de confiance que /dashboard).
 STUDIO_KEY = os.environ.get("STUDIO_KEY", "")
+
+# Même motif pour GeoHub : le front carte lit `?api_key=` et la pose en X-API-Key sur
+# ses appels de données (nécessaire dès que API_KEYS est fail-closed au .env racine).
+GEO_KEY = os.environ.get("GEO_KEY", "")

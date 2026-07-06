@@ -22,6 +22,29 @@ objets de jeu s'ajoutent sans migration (modèle générique `geo_objects` + `me
 Auth multi-tenant : header `X-API-Key` (ou Bearer) → tenant = empreinte sha256. Fail-closed
 si `API_KEYS` est défini au `.env` racine ; sinon espace « public » (dev).
 
+## Veille (zones + ingestion)
+
+- `GET/POST /zones`, `DELETE /zones/{id}` : zones surveillées (bbox ou centre+rayon).
+- `POST /ingestion/executer` : passe de veille (fournisseur → upsert par SIREN) ; déclenchée
+  chaque nuit par l'horloge du Cœur (tâche `ingestion-quotidienne` du manifest, Bearer `GEO_KEY`).
+- `GET /nouveautes?jours=` : les découvertes récentes ; push 🗺️ Telegram best-effort
+  (brique connexion) quand la veille trouve du neuf.
+- Fournisseurs : **Mock honnête** par défaut (déterministe, étiqueté `simule`) ;
+  `GEO_FOURNISSEUR=reel` → recherche-entreprises.api.gouv.fr (Sirene public, sans clé).
+
+## Front
+
+`GET /` : carte Leaflet **vendorée** (zéro CDN) — fonds OSM + Plan IGN + ortho
+(Géoplateforme WMTS sans clé), rafraîchissement par bbox au déplacement, pastilles
+calculées serveur, filtres, recherche de commune (BAN). Embarquée dans l'onglet
+« Carte » du dashboard du Cœur (mesh : port 16110 via Caddy).
+
+## Capacités assistant
+
+6 outils auto-découverts via le manifest : `geo_chercher`, `geo_nouveautes` (niveau 0),
+`geo_zones_lister`, `geo_zone_ajouter`, `geo_objet_ajouter`, `geo_ingestion_lancer`
+(niveau 1, actions gardées par confirmation).
+
 ## Tests
 
 ```bash
