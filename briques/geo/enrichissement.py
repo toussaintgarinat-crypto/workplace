@@ -65,21 +65,28 @@ def _domaine(url: str) -> str:
     return hote.removeprefix("www.")
 
 
-def choisir_site(resultats: list[dict], nom: str) -> str | None:
+def choisir_site(resultats: list[dict], nom: str, commune: str = "") -> str | None:
     """Le SITE OFFICIEL probable parmi les résultats de recherche : premier lien qui
-    n'est PAS un annuaire/plateforme et dont le titre ou le domaine porte un mot
-    significatif du nom de l'entreprise. None si rien de convaincant — honnête."""
+    n'est PAS un annuaire/plateforme, dont titre/extrait/domaine portent un mot
+    significatif du nom de l'entreprise ET — si on la connaît — sa COMMUNE (prouvé
+    LIVE : « ORIGINE » seul matche n'importe quel article contenant le mot ; la
+    commune corrobore). Précision avant rappel : None plutôt qu'un faux site."""
     jetons = [j for j in _normaliser(nom).split()
               if len(j) >= 3 and j not in _MOTS_VIDES]
     if not jetons:
         return None
+    jeton_commune = _normaliser(commune).strip()
     for r in resultats or []:
         url = r.get("url") or ""
         if not url or _domaine(url) in DOMAINES_ANNUAIRES:
             continue
-        botte = _normaliser((r.get("titre") or "") + " " + url)
-        if any(j in botte for j in jetons):
-            return url
+        botte = _normaliser(" ".join(
+            (r.get("titre") or "", r.get("extrait") or "", url)))
+        if not any(j in botte for j in jetons):
+            continue
+        if jeton_commune and jeton_commune not in botte:
+            continue
+        return url
     return None
 
 
@@ -117,7 +124,8 @@ def enrichir(objet: dict) -> dict:
         r = client.post(f"{_base_recherche()}/rechercher",
                         json={"requete": requete, "n": 8}, headers=_entetes())
         r.raise_for_status()
-        site = choisir_site(r.json().get("resultats", []), nom)
+        site = choisir_site(r.json().get("resultats", []), nom,
+                            commune=meta.get("commune") or "")
         if not site:
             return {"statut": "introuvable", "requete": requete,
                     "detail": "Aucun site officiel identifié (annuaires écartés)."}
