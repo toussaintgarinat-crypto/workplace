@@ -1,0 +1,25 @@
+{
+  "nom": "geo",
+  "famille": "metier",
+  "version": "0.1.0",
+  "description": "GeoHub — cartographie modulaire multi-tenant. Stocke et sert N'IMPORTE QUEL objet géolocalisé (entreprises aujourd'hui ; immobilier, événements, jeu demain) dans un modèle générique geo_objects + metadata JSON, indexé spatialement (SQLite R*Tree). Recherche par bounding box, pastilles de FRAÎCHEUR par type (entreprise : rouge <30j, orange <90j, bleu sinon). Fournisseur MOCK honnête par défaut (points simulés étiquetés), API recherche-entreprises.api.gouv.fr (Sirene, sans clé) en réel.",
+  "role": "geo",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/geo",
+  "port": 6110,
+  "url_sante": "http://host.docker.internal:6110/sante",
+  "url_ui": "http://localhost:6110/",
+  "vue_dashboard": "geo",
+  "depends_on": [],
+  "offre": [
+    "multi_tenant_par_cle",
+    "objets_geolocalises_generiques",
+    "index_spatial_rtree",
+    "recherche_bounding_box",
+    "fraicheur_par_type",
+    "mock_honnete_par_defaut"
+  ],
+  "capacites": [],
+  "taches": []
+}
