@@ -101,6 +101,18 @@ def init() -> None:
             CREATE INDEX IF NOT EXISTS idx_zones_tenant ON geo_zones(tenant);
             """
         )
+        c.executescript(
+            """
+            -- Journal RGPD des enrichissements (S161) : chaque tentative, réussie ou
+            -- non, laisse une trace consultable — opt-in prouvable, jamais de masse.
+            CREATE TABLE IF NOT EXISTS geo_enrichissements (
+                id TEXT PRIMARY KEY, tenant TEXT NOT NULL, objet_id TEXT NOT NULL,
+                quand TEXT NOT NULL, statut TEXT NOT NULL,
+                requete TEXT, source_url TEXT, resultat TEXT NOT NULL DEFAULT '{}');
+            CREATE INDEX IF NOT EXISTS idx_enrich_tenant
+                ON geo_enrichissements(tenant, quand);
+            """
+        )
         # Migration douce (bases créées avant la colonne `naf`) — idempotent.
         try:
             c.execute("ALTER TABLE geo_zones ADD COLUMN naf TEXT")
@@ -197,6 +209,45 @@ def chercher_bbox(tenant: str, bbox: tuple[float, float, float, float], *,
             params + [limite]).fetchall()
     return {"objets": [_objet_dict(r) for r in lignes],
             "nb_total": nb_total, "tronque": nb_total > limite}
+
+
+def lire_objet(tenant: str, objet_id: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM geo_objects WHERE tenant = ? AND id = ?",
+                      (tenant, objet_id)).fetchone()
+    return _objet_dict(r) if r else None
+
+
+def maj_metadata(tenant: str, objet_id: str, metadata: dict) -> dict | None:
+    with _conn() as c:
+        c.execute("UPDATE geo_objects SET metadata = ?, maj_le = ?"
+                  " WHERE tenant = ? AND id = ?",
+                  (json.dumps(metadata, ensure_ascii=False), _maintenant(),
+                   tenant, objet_id))
+    return lire_objet(tenant, objet_id)
+
+
+# ── Journal des enrichissements (transparence RGPD) ──────────────
+def journaliser_enrichissement(tenant: str, objet_id: str, *, statut: str,
+                               requete: str = "", source_url: str = "",
+                               resultat: dict | None = None) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO geo_enrichissements (id, tenant, objet_id, quand, statut,"
+            " requete, source_url, resultat) VALUES (?,?,?,?,?,?,?,?)",
+            (_id(), tenant, objet_id, _maintenant(), statut, requete, source_url,
+             json.dumps(resultat or {}, ensure_ascii=False)))
+
+
+def lister_enrichissements(tenant: str, limite: int = 50) -> list[dict]:
+    with _conn() as c:
+        lignes = c.execute(
+            "SELECT * FROM geo_enrichissements WHERE tenant = ?"
+            " ORDER BY quand DESC LIMIT ?", (tenant, limite)).fetchall()
+    return [{"id": r["id"], "objet_id": r["objet_id"], "quand": r["quand"],
+             "statut": r["statut"], "requete": r["requete"],
+             "source_url": r["source_url"],
+             "resultat": json.loads(r["resultat"] or "{}")} for r in lignes]
 
 
 # ── Zones de veille ──────────────────────────────────────────────

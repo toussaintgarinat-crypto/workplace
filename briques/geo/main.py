@@ -24,12 +24,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import domaine
+import enrichissement
 import fournisseurs
 import stockage
 
 logger = logging.getLogger("geo")
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 app = FastAPI(title="Geo — GeoHub cartographique multi-tenant", version=VERSION)
 
@@ -136,6 +137,50 @@ def creer_objet(corps: ObjetEntree, tenant: str = Depends(tenant_actuel)):
                                 longitude=corps.longitude,
                                 date_reference=corps.date_reference,
                                 source="manuel", metadata=corps.metadata)
+
+
+# ── Enrichissement opt-in (S161, RGPD-prudent) ───────────────────
+@app.post("/objets/{objet_id}/enrichir")
+def enrichir_objet(objet_id: str, force: bool = False,
+                   tenant: str = Depends(tenant_actuel)):
+    """Enrichit UNE entreprise, À LA DEMANDE (jamais en masse) : trouve son site
+    OFFICIEL via la brique recherche (souveraine, annuaires écartés), lit la page —
+    et sa page contact — et en extrait les coordonnées que l'entreprise AFFICHE
+    elle-même. Chaque tentative est JOURNALISÉE (voir /enrichissements). Idempotent :
+    déjà enrichi → renvoyé tel quel, sauf force=true."""
+    objet = stockage.lire_objet(tenant, objet_id)
+    if not objet:
+        raise HTTPException(404, "Objet introuvable.")   # cloisonnement : rien révélé
+    meta = objet["metadata"]
+    if not force and (meta.get("email") or meta.get("site")):
+        return {"statut": "deja_enrichi", "objet": objet}
+    try:
+        rapport = enrichissement.enrichir(objet)
+    except httpx.HTTPError as e:
+        stockage.journaliser_enrichissement(tenant, objet_id, statut="erreur",
+                                            resultat={"detail": str(e)})
+        raise HTTPException(502, f"Brique recherche injoignable : {e}")
+    stockage.journaliser_enrichissement(
+        tenant, objet_id, statut=rapport["statut"], requete=rapport.get("requete", ""),
+        source_url=rapport.get("source_url", ""), resultat=rapport)
+    if rapport["statut"] == "ok":
+        meta["site"] = rapport["site"]
+        if rapport["emails"]:
+            meta["email"] = rapport["emails"][0]
+        if rapport["telephones"]:
+            meta["telephone"] = rapport["telephones"][0]
+        meta["enrichi_le"] = datetime.now(timezone.utc).isoformat()
+        meta["enrichi_source"] = rapport["source_url"]
+        objet = stockage.maj_metadata(tenant, objet_id, meta)
+    return {"statut": rapport["statut"], "rapport": rapport, "objet": objet}
+
+
+@app.get("/enrichissements")
+def journal_enrichissements(limite: int = Query(50, ge=1, le=500),
+                            tenant: str = Depends(tenant_actuel)):
+    """Le journal des enrichissements (transparence RGPD) : qui a été enrichi, quand,
+    depuis quelle source, avec quel résultat — y compris les échecs."""
+    return {"enrichissements": stockage.lister_enrichissements(tenant, limite)}
 
 
 # ── Zones de veille ──────────────────────────────────────────────
