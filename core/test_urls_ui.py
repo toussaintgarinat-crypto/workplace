@@ -35,6 +35,17 @@ def test_host_vide_repli_localhost():
     assert urls_ui.url_brique("MAIL", "http", "") == "http://localhost:6030/"
 
 
+def test_geo_lan_et_mesh(monkeypatch):
+    """GeoHub (S159) : port 6110 en LAN direct, 16110 via Caddy sur le mesh."""
+    monkeypatch.delenv("GEO_UI_URL", raising=False)
+    monkeypatch.delenv("MESH_HOST", raising=False)
+    assert urls_ui.url_brique("GEO", "http", "192.168.1.89:5100") == \
+        "http://192.168.1.89:6110/"
+    monkeypatch.setenv("MESH_HOST", "100.124.248.226")
+    assert urls_ui.url_brique("GEO", "https", "100.124.248.226") == \
+        "https://100.124.248.226:16110/"
+
+
 def test_surcharge_env_prime(monkeypatch):
     """Une surcharge `<NOM>_UI_URL` (déploiement / SSO) court-circuite la construction."""
     monkeypatch.setenv("STUDIO_UI_URL", "https://studio.exemple.test/atelier")

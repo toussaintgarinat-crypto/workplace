@@ -60,6 +60,10 @@ https://100.124.248.226:14001 {
 https://100.124.248.226:19000 {
 	import brique_mesh 9000
 }
+# GeoHub (carte de veille) — 6110 -> 16110
+https://100.124.248.226:16110 {
+	import brique_mesh 6110
+}
 
 # IDE dev (code-server) — WebSocket (terminal + éditeur) — 8744 -> 18744
 https://100.124.248.226:18744 {

@@ -73,6 +73,7 @@ BRIQUES=(
   "telephonie|$RACINE/briques/telephonie|http://localhost:6050/sante"
   "synopsis|$RACINE/briques/synopsis|http://localhost:6090/sante"
   "peertube|$RACINE/briques/peertube|http://localhost:6100/sante"
+  "geo|$RACINE/briques/geo|http://localhost:6110/sante"
   # Atelier dev : code/améliore les briques depuis l'assistant. Avant le Cœur
   # pour qu'il la découvre via son manifest au démarrage.
   "dev|$RACINE/briques/dev|http://localhost:5955/sante"
