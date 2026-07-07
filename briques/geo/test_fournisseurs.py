@@ -1,4 +1,7 @@
 """Fournisseurs : mock déterministe, normalisation Sirene (payload figé), bascule env."""
+import httpx
+import pytest
+
 import fournisseurs
 import domaine
 
@@ -94,6 +97,36 @@ def test_bascule_fournisseur_par_env(monkeypatch):
     etat = fournisseurs.etat_config()
     assert etat["fournisseur"] == "recherche-entreprises" and etat["configure"]
     assert isinstance(fournisseurs.fournisseur(), fournisseurs.RechercheEntreprises)
+
+
+def test_get_poliment_attend_sur_429_puis_reussit(monkeypatch):
+    """Vu LIVE : l'API rend 429 après ~26 pages d'affilée. On attend (Retry-After)
+    et on réessaie au lieu d'abandonner la zone."""
+    import types
+    attentes = []
+    monkeypatch.setattr(fournisseurs.time, "sleep", attentes.append)
+    reponses = [types.SimpleNamespace(status_code=429, headers={"Retry-After": "3"}),
+                types.SimpleNamespace(status_code=429, headers={}),
+                types.SimpleNamespace(status_code=200, headers={},
+                                      raise_for_status=lambda: None)]
+    client = types.SimpleNamespace(get=lambda url, params=None: reponses.pop(0))
+    r = fournisseurs._get_poliment(client, "https://x/search", {"page": 1})
+    assert r.status_code == 200
+    assert attentes[0] == 3.0          # Retry-After respecté
+    assert attentes[1] == 4.0          # backoff progressif (2 × tentative)
+    assert attentes[-1] == fournisseurs._PAUSE_S   # pause de politesse après succès
+
+
+def test_get_poliment_429_persistant_leve(monkeypatch):
+    import types
+    monkeypatch.setattr(fournisseurs.time, "sleep", lambda s: None)
+
+    def _leve():
+        raise httpx.HTTPStatusError("429", request=None, response=None)
+    client = types.SimpleNamespace(get=lambda url, params=None: types.SimpleNamespace(
+        status_code=429, headers={}, raise_for_status=_leve))
+    with pytest.raises(httpx.HTTPStatusError):
+        fournisseurs._get_poliment(client, "https://x/search", {"page": 1})
 
 
 def test_peut_traiter_le_mock_traite_tout_le_reel_est_exigeant():
