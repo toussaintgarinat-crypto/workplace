@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -27,6 +28,27 @@ import domaine
 logger = logging.getLogger("geo.fournisseurs")
 
 _API_URL = os.getenv("GEO_RECHERCHE_URL", "https://recherche-entreprises.api.gouv.fr")
+# Politesse : l'API publique limite le débit (429 vu LIVE dès ~26 pages d'affilée).
+_PAUSE_S = float(os.getenv("GEO_PAUSE_S", "0.25"))       # entre deux pages
+_RETRIES_429 = int(os.getenv("GEO_RETRIES_429", "4"))    # tentatives sur 429
+
+
+def _get_poliment(client: httpx.Client, url: str, params: dict) -> httpx.Response:
+    """GET qui respecte le rythme de l'API : pause entre pages, et sur 429 on ATTEND
+    (Retry-After s'il est fourni, sinon backoff progressif) puis on réessaie — la
+    veille est nocturne, mieux vaut lent que refoulé."""
+    for tentative in range(1, _RETRIES_429 + 1):
+        r = client.get(url, params=params)
+        if r.status_code != 429:
+            r.raise_for_status()
+            time.sleep(_PAUSE_S)
+            return r
+        attente = float(r.headers.get("Retry-After") or 2 * tentative)
+        logger.warning("Geo : 429 sur %s (page %s) — attente %.1fs (tentative %s/%s)",
+                       url, params.get("page"), attente, tentative, _RETRIES_429)
+        time.sleep(attente)
+    r.raise_for_status()   # toujours 429 après les tentatives → erreur honnête
+    return r
 
 _NOMS_SIMULES = ["Boulangerie du Pont", "Atelier Vélo Cité", "SARL Toit & Charpente",
                  "Café des Halles", "Menuiserie Lacaze", "Studio Photo Lumen",
@@ -106,9 +128,8 @@ class RechercheEntreprises:
         objets: list[dict] = []
         with httpx.Client(timeout=30) as client:
             for page in range(1, pages_max + 1):
-                r = client.get(f"{_API_URL}{chemin}",
-                               params={**params, "per_page": 25, "page": page})
-                r.raise_for_status()
+                r = _get_poliment(client, f"{_API_URL}{chemin}",
+                                  {**params, "per_page": 25, "page": page})
                 d = r.json()
                 for brute in d.get("results", []):
                     objet = domaine.normaliser_entreprise(brute, type_=type_)
