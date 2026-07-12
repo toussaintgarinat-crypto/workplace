@@ -471,6 +471,15 @@ def est_action(nom: str, registre) -> bool:
     return bool(cap and cap.get("action"))
 
 
+def brique_de(nom: str, registre) -> str:
+    """Brique d'origine d'un outil, pour le fil d'activité (S165).
+
+    Capacité découverte → la brique déclarante de son manifest ; outil câblé en dur
+    (ou nom inconnu) → « cœur » : c'est le Cœur qui l'exécute, pas une brique."""
+    cap = _capacites_dynamiques(registre).get(nom)
+    return cap["brique"] if cap else "cœur"
+
+
 # ── Exécution : routage vers les dispatchers par domaine (S115) ──────────────────
 import outils_domaines as _dom
 # Ré-exports d'API attendus par les tests / autres modules (les helpers vivent dans communs).

@@ -110,6 +110,34 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .actions button.primaire { background: #7c83ff; border-color: #7c83ff; color: #0f1117; font-weight: 600; }
   .actions button.primaire:hover { background: #9298ff; }
   .actions.fait { opacity: 0.45; pointer-events: none; }
+  /* S165 — fil d'activité : la « task trace » de l'assistant (brique › outil, statut) */
+  .fil-activite { display: none; border-top: 1px solid #2d3148; background: #141722; max-height: 130px; overflow-y: auto; padding: 8px 14px; font-size: 0.76rem; }
+  .fil-activite.ouvert { display: block; }
+  .fa-tete { color: #64748b; font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .fa-tete .fa-vider { cursor: pointer; font-weight: 400; }
+  .fa-tete .fa-vider:hover { color: #e2e8f0; }
+  .fa-entree { display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 2px 0; }
+  .fa-entree .pic { width: 7px; height: 7px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 6px #22d3ee88; flex-shrink: 0; animation: pulse 1.2s infinite; }
+  .fa-entree.ok .pic { background: #34d399; box-shadow: 0 0 6px #34d39988; animation: none; }
+  .fa-entree.err .pic { background: #f87171; box-shadow: 0 0 6px #f8717188; animation: none; }
+  .fa-entree.gate .pic { background: #f59e0b; box-shadow: 0 0 6px #f59e0b88; animation: none; }
+  .fa-entree .fa-brique { color: #7c83ff; font-weight: 600; }
+  #btn-stop { display: none; }
+  #btn-stop.actif { display: inline-flex; background: #ef4444; border-color: #ef4444; color: #fff; }
+  /* S165 — jeton assistant ciblable : « pose-le où il doit travailler » */
+  .jeton-assistant { position: fixed; right: 18px; bottom: 18px; z-index: 60; width: 44px; height: 44px; border-radius: 50%;
+    background: #232838; border: 1px solid #7c83ff88; display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; cursor: grab; touch-action: none; user-select: none; box-shadow: 0 2px 10px #0008; }
+  .jeton-assistant.saisi { cursor: grabbing; opacity: 0.4; }
+  .jeton-assistant.a-cible { border-color: #34d399; box-shadow: 0 0 12px #34d39966; }
+  .jeton-ghost { position: fixed; z-index: 9999; pointer-events: none; width: 44px; height: 44px; border-radius: 50%;
+    background: #232838ee; border: 1px solid #7c83ff; display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; box-shadow: 0 0 16px #7c83ffaa; }
+  body.jeton-drag [data-cible-brique] { outline: 2px dashed #7c83ff; outline-offset: 2px; }
+  body.jeton-drag [data-cible-brique].survolee { outline-color: #34d399; background: rgba(52,211,153,0.14); }
+  .chip-cible { display: inline-flex; align-items: center; gap: 6px; align-self: center; font-size: 0.78rem; color: #a7f3d0;
+    background: #103528; border: 1px solid #34d39966; border-radius: 999px; padding: 6px 12px; white-space: nowrap; }
+  .chip-cible b { cursor: pointer; color: #6ee7b7; }
   .chat-saisie { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #2d3148; }
   .chat-saisie input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
   .chat-saisie input:focus { outline: none; border-color: #7c83ff; }
@@ -387,14 +415,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab active" data-vue="briques" onclick="switchVue('briques')" title="La liste de tous les modules de ton assistant (agenda, mail, recherche web…). Chaque carte est une fonction, avec une pastille verte si elle marche.">Registre de briques</button>
       <button class="tab" data-vue="atelier" onclick="switchVue('atelier')" title="Pour fabriquer et gérer tes outils : créer une app d'entreprise, gérer un restaurant, créer des personnages, ou éditer le code.">Atelier</button>
       <button class="tab" data-vue="assistant" onclick="switchVue('assistant')" title="Parle à ton assistant en langage normal. Tes conversations et tes projets vivent ici, comme dans Claude ou Perplexity. Il cherche sur le web, lit tes mails, gère ton agenda… et te demande confirmation avant toute action importante.">Assistant</button>
-      <button class="tab" data-vue="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
-      <button class="tab" data-vue="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
-      <button class="tab" data-vue="geo" onclick="switchVue('geo')" title="La carte de veille : entreprises récentes et objets géolocalisés sur tes zones surveillées, avec pastilles de fraîcheur.">Carte</button>
+      <button class="tab" data-vue="agenda" data-cible-brique="agenda" onclick="switchVue('agenda')" title="Ton calendrier : voir tes rendez-vous, en ajouter, recevoir des rappels.">Agenda</button>
+      <button class="tab" data-vue="mail" data-cible-brique="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
+      <button class="tab" data-vue="geo" data-cible-brique="geo" onclick="switchVue('geo')" title="La carte de veille : entreprises récentes et objets géolocalisés sur tes zones surveillées, avec pastilles de fraîcheur.">Carte</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
   </div>
 </header>
+<!-- S165 — jeton assistant ciblable : glisse-le sur un onglet (Agenda/Mail/Carte) ou une
+     carte du Registre pour dire à l'assistant OÙ travailler. Le dépôt ouvre le chat avec
+     la brique en cible ; ça donne du contexte, jamais un pouvoir (gates inchangés). -->
+<div class="jeton-assistant" id="jeton-assistant" title="Glisse-moi sur une brique (onglet ou carte du Registre) pour cibler l'assistant dessus.">🎯</div>
 <main>
   <!-- VUE BRIQUES -->
   <div class="view active" id="vue-briques">
@@ -610,10 +642,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div id="chat-fil" class="chat-fil">
             <div class="msg assistant"><div class="bulle">Bonjour 👋 Je pilote toute la solution. Demandez-moi « où en sont les entreprises ? », déposez un document (je le range), ou cliquez sur 🎤 pour me parler. Pour toute action, je vous demanderai confirmation.</div></div>
           </div>
+          <!-- S165 — fil d'activité : ce que fait l'assistant, brique par brique, en direct -->
+          <div class="fil-activite" id="fil-activite">
+            <div class="fa-tete"><span>🧭 Activité de l'assistant</span><span class="fa-vider" onclick="viderTrace()">effacer</span></div>
+            <div id="fa-corps"></div>
+          </div>
           <form id="chat-form" class="chat-saisie" onsubmit="return envoyerMessage(event)">
             <button class="btn ghost icone" type="button" id="btn-fichier" title="Déposer un document" onclick="document.getElementById('fichier-input').click()">📎</button>
             <button class="btn ghost icone" type="button" id="btn-micro" title="Parler à l'assistant" onclick="basculerMicro()">🎤</button>
+            <span class="chip-cible" id="chip-cible" style="display:none"></span>
             <input type="text" id="chat-input" placeholder="Écrivez, ou cliquez sur 🎤 pour parler…" autocomplete="off">
+            <button class="btn ghost icone" type="button" id="btn-stop" title="Stopper l'assistant en cours de route" onclick="stopperTour()">⏹</button>
             <button class="btn" type="submit" id="chat-btn">Envoyer</button>
           </form>
           <input type="file" id="fichier-input" style="display:none" onchange="deposerFichier(this.files[0])">
@@ -2426,6 +2465,10 @@ async function supprimerApp(id) {
 
 // ── Assistant ───────────────────────────────────────────────────────────────
 const CHAT_HIST = [];
+// S165 — intervention : AbortController du tour en cours (⏹ stoppe le flux SSE,
+// le serveur annule la boucle d'outils à la déconnexion) + brique ciblée par le jeton.
+let TOUR_ABORT = null;
+let CIBLE_BRIQUE = null;
 const LABELS_OUTILS = {
   lister_entreprises:'consulte les entreprises', details_entreprise:'consulte le détail',
   etat_briques:'vérifie les briques', livrer_entreprise:'lance une livraison',
@@ -2477,6 +2520,110 @@ function taperAction(envoi) {
   input.value = envoi;
   document.getElementById('chat-form').requestSubmit();
 }
+// ── S165 : fil d'activité — la task trace de l'assistant (brique › outil, statut) ──
+// Les outils d'un tour s'exécutent séquentiellement côté Cœur : la file FIFO suffit
+// pour marier chaque `resultat_outil` à son entrée « en cours ».
+const TRACE_ATTENTE = [];
+function traceOutil(evt) {
+  document.getElementById('fil-activite').classList.add('ouvert');
+  const corps = document.getElementById('fa-corps');
+  const e = document.createElement('div');
+  e.className = 'fa-entree';
+  e.dataset.nom = evt.nom;
+  e.innerHTML = '<span class="pic"></span><span class="fa-brique"></span><span class="fa-txt"></span>';
+  e.querySelector('.fa-brique').textContent = evt.brique || 'cœur';
+  e.querySelector('.fa-txt').textContent = '› ' + (LABELS_OUTILS[evt.nom] || evt.nom);
+  corps.appendChild(e);
+  corps.scrollTop = corps.scrollHeight;
+  TRACE_ATTENTE.push(e);
+}
+function traceResultat(evt) {
+  const i = TRACE_ATTENTE.findIndex(x => x.dataset.nom === evt.nom);
+  if (i < 0) return;
+  const e = TRACE_ATTENTE.splice(i, 1)[0];
+  const txt = e.querySelector('.fa-txt');
+  if (evt.confirmation) { e.classList.add('gate'); txt.textContent += ' — confirmation requise'; }
+  else if (evt.ok === false) { e.classList.add('err'); txt.textContent += ' — échec'; }
+  else e.classList.add('ok');
+}
+function traceInterrompue() {
+  // Fin de flux sans résultat (⏹ ou coupure) : on le dit tel quel, pas de faux ✓.
+  while (TRACE_ATTENTE.length) {
+    const e = TRACE_ATTENTE.pop();
+    e.classList.add('err');
+    e.querySelector('.fa-txt').textContent += ' — interrompu';
+  }
+}
+function viderTrace() {
+  document.getElementById('fa-corps').innerHTML = '';
+  document.getElementById('fil-activite').classList.remove('ouvert');
+  TRACE_ATTENTE.length = 0;
+}
+function stopperTour() { if (TOUR_ABORT) TOUR_ABORT.abort(); }
+// ── S165 : ciblage — le jeton déposé sur une brique dit à l'assistant OÙ travailler ──
+function cibler(brique) {
+  CIBLE_BRIQUE = (brique || '').trim() || null;
+  const chip = document.getElementById('chip-cible');
+  const jeton = document.getElementById('jeton-assistant');
+  if (CIBLE_BRIQUE) {
+    chip.textContent = '';
+    chip.append('🎯 ' + CIBLE_BRIQUE + ' ');
+    const x = document.createElement('b');
+    x.textContent = '✕'; x.title = 'Retirer la cible';
+    x.onclick = () => cibler(null);
+    chip.appendChild(x);
+    chip.style.display = 'inline-flex';
+    if (jeton) jeton.classList.add('a-cible');
+    switchVue('assistant');                       // cibler, c'est parler → on ouvre le chat
+    setTimeout(() => document.getElementById('chat-input').focus(), 60);
+  } else {
+    chip.style.display = 'none';
+    if (jeton) jeton.classList.remove('a-cible');
+  }
+}
+// Drag du jeton en Pointer Events + setPointerCapture (même pilier que le socle
+// manipulation_directe) : le curseur reste capturé même au-dessus des iframes.
+function initJetonAssistant() {
+  const jeton = document.getElementById('jeton-assistant');
+  if (!jeton) return;
+  jeton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { jeton.setPointerCapture(e.pointerId); } catch (_) {}
+    jeton.classList.add('saisi');
+    document.body.classList.add('jeton-drag');
+    const ghost = document.createElement('div');
+    ghost.className = 'jeton-ghost'; ghost.textContent = '🎯';
+    document.body.appendChild(ghost);
+    let survolee = null;
+    const bouge = (ev) => {
+      ghost.style.left = (ev.clientX - 22) + 'px';
+      ghost.style.top = (ev.clientY - 22) + 'px';
+      const sous = document.elementFromPoint(ev.clientX, ev.clientY);
+      const cible = sous && sous.closest('[data-cible-brique]');
+      if (survolee && survolee !== cible) survolee.classList.remove('survolee');
+      survolee = cible || null;
+      if (survolee) survolee.classList.add('survolee');
+    };
+    const lache = (ev) => {
+      try { jeton.releasePointerCapture(ev.pointerId); } catch (_) {}
+      jeton.removeEventListener('pointermove', bouge);
+      jeton.removeEventListener('pointerup', lache);
+      jeton.removeEventListener('pointercancel', lache);
+      jeton.classList.remove('saisi');
+      document.body.classList.remove('jeton-drag');
+      ghost.remove();
+      if (survolee) {
+        const nom = survolee.getAttribute('data-cible-brique');
+        survolee.classList.remove('survolee');
+        cibler(nom);
+      }
+    };
+    bouge(e);
+    jeton.addEventListener('pointermove', bouge);
+    jeton.addEventListener('pointerup', lache);
+    jeton.addEventListener('pointercancel', lache);
+  });
+}
 async function envoyerMessage(e, visionImage = null) {
   e.preventDefault();
   const input = document.getElementById('chat-input');
@@ -2487,6 +2634,10 @@ async function envoyerMessage(e, visionImage = null) {
   if (!CONV_ID) nouvelleConversation();
   const premierMessage = CHAT_HIST.length === 0;
   document.getElementById('chat-btn').classList.add('loading');
+  // S165 — le ⏹ apparaît pendant le tour ; l'abandon coupe le flux (le Cœur annule
+  // la boucle d'outils à la déconnexion du client).
+  TOUR_ABORT = new AbortController();
+  document.getElementById('btn-stop').classList.add('actif');
   ajouterBulle('user', texte);
   CHAT_HIST.push({ role:'user', content: texte });
   if (premierMessage) majEnteteConversation(texte.length > 48 ? texte.slice(0, 48) + '…' : texte);
@@ -2501,9 +2652,10 @@ async function envoyerMessage(e, visionImage = null) {
     const _chatBody = { messages: CHAT_HIST, surface: CONV_SURFACE,
                         interlocuteur: CONV_ID, projet_id: CONV_PROJET };
     if (visionImage) _chatBody.vision_image = visionImage;
+    if (CIBLE_BRIQUE) _chatBody.cible = CIBLE_BRIQUE;   // S165 : brique ciblée par le jeton
     const r = await fetch('/assistant/chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(_chatBody)
+      body: JSON.stringify(_chatBody), signal: TOUR_ABORT.signal
     });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
@@ -2518,8 +2670,8 @@ async function envoyerMessage(e, visionImage = null) {
         const m = ligne.match(/^data: (.*)$/s);
         if (!m) continue;
         const evt = JSON.parse(m[1]);
-        if (evt.type === 'outil') { ajouterOutil(evt.nom, evt.action, false); }
-        else if (evt.type === 'resultat_outil') { if (evt.confirmation) ajouterOutil(evt.nom, true, true); }
+        if (evt.type === 'outil') { ajouterOutil(evt.nom, evt.action, false); traceOutil(evt); }
+        else if (evt.type === 'resultat_outil') { if (evt.confirmation) ajouterOutil(evt.nom, true, true); traceResultat(evt); }
         else if (evt.type === 'actions') { ajouterActions(evt.actions); }
         else if (evt.type === 'texte_delta' && evt.contenu) {   // S60 : tokens au fil de l'eau
           if (!bulleAssist) { tip.remove(); bulleAssist = ajouterBulle('assistant', ''); }
@@ -2535,10 +2687,14 @@ async function envoyerMessage(e, visionImage = null) {
       }
     }
   } catch(err) {
-    ajouterBulle('assistant', '⚠ Erreur de connexion : ' + err.message);
+    if (err && err.name === 'AbortError') ajouterBulle('assistant', '⏹ Stoppé — je te laisse la main.');
+    else ajouterBulle('assistant', '⚠ Erreur de connexion : ' + err.message);
   } finally {
     if (document.body.contains(tip)) tip.remove();
     document.getElementById('chat-btn').classList.remove('loading');
+    document.getElementById('btn-stop').classList.remove('actif');
+    TOUR_ABORT = null;
+    traceInterrompue();   // outils restés « en cours » (⏹/coupure) marqués tels quels
     if (texteFinal) {
       CHAT_HIST.push({ role:'assistant', content: texteFinal });
       if (LECTURE_VOCALE) VOIX.parler(texteFinal);   // lit la réponse à voix haute
@@ -2985,7 +3141,7 @@ function carteHTML(b, h) {
   }
   const statutClass = 'statut statut-' + b.statut;
   const statutLabel = {actif:'Actif', setup_requis:'Setup requis', a_tester:'À tester'}[b.statut] || b.statut;
-  return `<div class="card">
+  return `<div class="card" data-cible-brique="${b.nom}">
     <div class="card-header">
       <div>
         <div class="card-title">${b.nom}</div>
@@ -3056,6 +3212,7 @@ function fermerBrique() { document.getElementById('modal-brique').style.display 
 
 charger();
 rafraichirPastilleRappels();
+initJetonAssistant();   // S165 — le jeton ciblable est actif dès le chargement
 setInterval(charger, 30000);
 setInterval(rafraichirPastilleRappels, 60000);
 // L'usine évolue vite (étapes async) : on rafraîchit toutes les 4 s quand la vue est ouverte.
