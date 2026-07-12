@@ -322,8 +322,11 @@ async def converser(messages: list[dict], registre,
                 g_action, g_msg = guardrail.before_call(nom, args)
                 g_note = g_msg if g_action == "warn" else None
 
+                # S165 — fil d'activité : la brique d'origine accompagne l'appel, le
+                # front peut afficher « brique › outil » dans la task trace.
                 yield {"type": "outil", "nom": nom, "args": args,
-                       "action": outils.est_action(nom, registre)}
+                       "action": outils.est_action(nom, registre),
+                       "brique": outils.brique_de(nom, registre)}
 
                 if g_action in ("block", "halt"):
                     resultat = json.dumps(
@@ -359,8 +362,10 @@ async def converser(messages: list[dict], registre,
                                 registre, chargees=competences_chargees, porte=True)
 
                 confirmation = '"confirmation_requise": true' in resultat
+                # S165 — `ok` dit au fil d'activité si l'appel a réussi (statut ✓/✖).
                 yield {"type": "resultat_outil", "nom": nom,
-                       "resultat": resultat, "confirmation": confirmation}
+                       "resultat": resultat, "confirmation": confirmation,
+                       "ok": not _est_erreur_outil(resultat)}
                 # Actions suggérées (S76) : boutons d'action génériques (web + Mini App).
                 # Le tap injecte un message ; il ne court-circuite jamais le gate humain.
                 sugg = suggestions.pour_resultat(nom, args, resultat, confirmation=confirmation)

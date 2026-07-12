@@ -12,6 +12,7 @@ import agenda
 import assistant
 import briefing
 import catalogue
+import ciblage
 import classer
 import config_assistant
 import contexte_tenant
@@ -82,7 +83,10 @@ async def assistant_chat(corps: dict):
 
     Champs optionnels pour la TRACE unifiée (S78) : `surface` (web/telegram/…),
     `interlocuteur` (qui), `utilisateur` (compte). La conversation est journalisée côté
-    Cœur quelle que soit la surface — best-effort, jamais bloquant."""
+    Cœur quelle que soit la surface — best-effort, jamais bloquant.
+
+    Champ optionnel `cible` (S165) : nom de la brique sur laquelle l'utilisateur a
+    déposé le jeton assistant — son contexte est injecté dans la zone volatile."""
     messages = corps.get("messages") or []
     surface = corps.get("surface") or "web"
     interlocuteur = corps.get("interlocuteur") or "dashboard"
@@ -98,6 +102,12 @@ async def assistant_chat(corps: dict):
     # si fourni, sinon celui déjà rattaché au fil ; ses instructions nourrissent le prompt.
     projet_id = corps.get("projet_id") or journal_conversations.meta(fil).get("projet_id")
     instructions_projet = projets_mod.contexte_de(projet_id)
+
+    # Ciblage (S165) : l'utilisateur a déposé le jeton assistant sur une brique →
+    # son contexte (rôle + capacités) rejoint la zone volatile. Contexte, pas pouvoir :
+    # les gates de confirmation restent inchangés.
+    instructions_projet = ciblage.fusionner_instructions(
+        instructions_projet, corps.get("cible"), registre)
 
     # Vision multimodale : si le client envoie une image (data + mime_type), on l'injecte
     # dans le dernier message utilisateur au format OpenAI multimodal → LiteLLM la route.
