@@ -86,7 +86,9 @@ async def assistant_chat(corps: dict):
     Cœur quelle que soit la surface — best-effort, jamais bloquant.
 
     Champ optionnel `cible` (S165) : nom de la brique sur laquelle l'utilisateur a
-    déposé le jeton assistant — son contexte est injecté dans la zone volatile."""
+    déposé le jeton assistant — son contexte est injecté dans la zone volatile.
+    Champ optionnel `capture` (S165 « yeux ») : {"data": <base64>} — capture d'écran
+    de la zone ciblée, lue par la brique vision (OCR) puis injectée au même endroit."""
     messages = corps.get("messages") or []
     surface = corps.get("surface") or "web"
     interlocuteur = corps.get("interlocuteur") or "dashboard"
@@ -108,6 +110,12 @@ async def assistant_chat(corps: dict):
     # les gates de confirmation restent inchangés.
     instructions_projet = ciblage.fusionner_instructions(
         instructions_projet, corps.get("cible"), registre)
+
+    # Yeux (S165 phase 2) : la capture de la zone déposée est lue par la brique vision
+    # (OCR souverain 5960) → l'assistant LIT ce qui est à l'écran, pas seulement le
+    # manifest. Échec de lecture = note honnête, jamais un texte inventé.
+    instructions_projet = await ciblage.fusionner_capture(
+        instructions_projet, corps.get("capture"), registre)
 
     # Vision multimodale : si le client envoie une image (data + mime_type), on l'injecte
     # dans le dernier message utilisateur au format OpenAI multimodal → LiteLLM la route.

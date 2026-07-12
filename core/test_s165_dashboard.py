@@ -71,6 +71,23 @@ def test_cible_envoyee_au_coeur():
     assert 'id="chip-cible"' in html
 
 
+def test_yeux_bouton_et_capture():
+    """Phase « yeux » : le 👁 du chip capture la zone ciblée (getDisplayMedia)."""
+    html = _html()
+    assert "donnerLesYeux" in html
+    assert "getDisplayMedia" in html
+    assert "preferCurrentTab" in html
+    # Surface sans capture (ex. Mini App) : message honnête, pas d'échec silencieux.
+    assert "pas disponible sur cette surface" in html
+
+
+def test_capture_envoyee_une_seule_fois():
+    """La capture part avec le prochain message, puis est consommée (one-shot)."""
+    html = _html()
+    assert "_chatBody.capture = CAPTURE_CIBLE" in html
+    assert "CAPTURE_CIBLE = null" in html   # reset à l'envoi ET au changement de cible
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
