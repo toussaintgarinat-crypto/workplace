@@ -7,19 +7,32 @@ correspondant — ce que fait la brique et ses capacités appelables — inject�
 l'amorce à côté des instructions de projet (zone volatile S90a, après le préfixe
 stable mis en cache).
 
+Phase « yeux » (S165 phase 2) : en plus du manifest, l'utilisateur peut MONTRER la
+zone ciblée — le front capture l'écran de la zone (bouton 👁 du chip) et l'envoie en
+base64 ; ce module la fait lire par la brique vision 5960 (OCR souverain, POST /lire)
+et injecte le texte extrait dans la même zone volatile.
+
 Le ciblage donne du CONTEXTE, jamais un pouvoir : les gates de confirmation des
 actions restent strictement inchangés. Honnêteté : une brique inconnue du registre
-n'est pas inventée — on le dit à l'assistant tel quel.
+n'est pas inventée — on le dit à l'assistant tel quel ; de même, une capture que
+l'OCR n'a pas pu lire donne une note qui LE DIT, jamais un texte inventé.
 """
 import logging
+import os
+
+import httpx
 
 import catalogue
+import orchestrateur
 
 logger = logging.getLogger(__name__)
 
 # Les capacités listées dans le contexte sont plafonnées : une brique très riche
 # (ex. Forge, 15 capacités) ne doit pas gonfler la zone volatile (coût LLM, S138).
 MAX_CAPACITES = 12
+# Le texte OCR d'une capture est plafonné lui aussi, et pour la même raison : la zone
+# volatile est réinjectée à chaque tour du fil.
+MAX_TEXTE_CAPTURE = 1500
 
 
 def contexte_de(brique: str | None, registre) -> str:
@@ -64,4 +77,63 @@ def fusionner_instructions(instructions_projet: str | None, cible: str | None,
         return instructions_projet
     if instructions_projet and instructions_projet.strip():
         return instructions_projet.rstrip() + "\n\n" + ctx
+    return ctx
+
+
+# ── Phase « yeux » : la capture de la zone déposée, lue par la brique vision ─────
+
+
+async def contexte_capture(capture: dict | None, registre) -> str:
+    """Texte des « yeux » à injecter dans l'amorce, ou '' sans capture.
+
+    `capture` = {"data": <base64>, "nom_fichier"?} envoyé par le front après le 👁.
+    La brique vision (5960) fait l'OCR ; chaque échec (brique absente, injoignable,
+    rien lu) donne une note honnête — l'assistant sait qu'il n'a PAS vu la zone."""
+    donnees = ((capture or {}).get("data") or "").strip()
+    if not donnees:
+        return ""
+    try:
+        base = orchestrateur._brique_base(registre, "vision")
+    except RuntimeError:
+        return ("Yeux : l'utilisateur a capturé la zone ciblée pour te la montrer, mais "
+                "la brique vision (OCR) est absente du registre — tu n'as PAS pu la lire. "
+                "Dis-le-lui simplement s'il s'y réfère.")
+    cle = os.environ.get("VISION_KEY")  # clé de service X-API-Key (motif muscle.py)
+    entetes = {"X-API-Key": cle} if cle else None
+    charge = {"contenu_base64": donnees,
+              "nom_fichier": (capture or {}).get("nom_fichier") or "capture-zone.png"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(f"{base}/lire", json=charge, headers=entetes)
+        doc = r.json() if r.status_code < 400 else None
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning("Yeux : brique vision injoignable (%s)", e)
+        doc = None
+    if doc is None:
+        return ("Yeux : l'utilisateur a capturé la zone ciblée pour te la montrer, mais "
+                "la brique vision (OCR) n'a pas répondu — tu n'as PAS pu la lire. "
+                "Dis-le-lui simplement s'il s'y réfère.")
+    texte = (doc.get("texte") or "").strip()
+    if not texte:
+        note = (doc.get("note") or "").strip()
+        return ("Yeux : l'utilisateur a capturé la zone ciblée, mais l'OCR n'y a rien lu"
+                + (f" ({note})" if note else "")
+                + " — tu ne sais donc PAS ce qui s'y affiche. Dis-le-lui simplement.")
+    if len(texte) > MAX_TEXTE_CAPTURE:
+        texte = texte[:MAX_TEXTE_CAPTURE].rstrip() + " …[tronqué]"
+    return ("Yeux : l'utilisateur t'a montré la zone ciblée — voici ce que l'OCR y a lu "
+            "(lecture automatique, il peut y avoir des erreurs) :\n" + texte)
+
+
+async def fusionner_capture(instructions: str | None, capture: dict | None,
+                            registre) -> str | None:
+    """Ajoute le texte des « yeux » aux instructions volatiles déjà fusionnées.
+
+    Même contrat que `fusionner_instructions` : une ligne côté routeur, la logique
+    testable ici. Sans capture, les instructions repassent strictement inchangées."""
+    ctx = await contexte_capture(capture, registre)
+    if not ctx:
+        return instructions
+    if instructions and instructions.strip():
+        return instructions.rstrip() + "\n\n" + ctx
     return ctx

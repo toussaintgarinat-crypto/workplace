@@ -138,6 +138,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .chip-cible { display: inline-flex; align-items: center; gap: 6px; align-self: center; font-size: 0.78rem; color: #a7f3d0;
     background: #103528; border: 1px solid #34d39966; border-radius: 999px; padding: 6px 12px; white-space: nowrap; }
   .chip-cible b { cursor: pointer; color: #6ee7b7; }
+  /* S165 phase « yeux » : 👁 sur le chip = capturer la zone ciblée pour que l'assistant la lise */
+  .chip-cible .oeil { cursor: pointer; opacity: 0.8; }
+  .chip-cible .oeil:hover { opacity: 1; }
+  .chip-cible .oeil.pris { opacity: 1; text-shadow: 0 0 8px #34d399; }
   .chat-saisie { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #2d3148; }
   .chat-saisie input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
   .chat-saisie input:focus { outline: none; border-color: #7c83ff; }
@@ -2469,6 +2473,7 @@ const CHAT_HIST = [];
 // le serveur annule la boucle d'outils à la déconnexion) + brique ciblée par le jeton.
 let TOUR_ABORT = null;
 let CIBLE_BRIQUE = null;
+let CAPTURE_CIBLE = null;   // S165 « yeux » : capture one-shot de la zone ciblée (👁 du chip)
 const LABELS_OUTILS = {
   lister_entreprises:'consulte les entreprises', details_entreprise:'consulte le détail',
   etat_briques:'vérifie les briques', livrer_entreprise:'lance une livraison',
@@ -2563,11 +2568,18 @@ function stopperTour() { if (TOUR_ABORT) TOUR_ABORT.abort(); }
 // ── S165 : ciblage — le jeton déposé sur une brique dit à l'assistant OÙ travailler ──
 function cibler(brique) {
   CIBLE_BRIQUE = (brique || '').trim() || null;
+  CAPTURE_CIBLE = null;                           // la capture appartient à UNE cible
   const chip = document.getElementById('chip-cible');
   const jeton = document.getElementById('jeton-assistant');
   if (CIBLE_BRIQUE) {
     chip.textContent = '';
     chip.append('🎯 ' + CIBLE_BRIQUE + ' ');
+    const oeil = document.createElement('b');
+    oeil.className = 'oeil'; oeil.textContent = '👁';
+    oeil.title = "Donner les yeux : capturer la zone ciblée pour que l'assistant lise ce qui s'y affiche (OCR local).";
+    oeil.onclick = donnerLesYeux;
+    chip.appendChild(oeil);
+    chip.append(' ');
     const x = document.createElement('b');
     x.textContent = '✕'; x.title = 'Retirer la cible';
     x.onclick = () => cibler(null);
@@ -2579,6 +2591,43 @@ function cibler(brique) {
   } else {
     chip.style.display = 'none';
     if (jeton) jeton.classList.remove('a-cible');
+  }
+}
+// ── S165 phase « yeux » : capturer la zone ciblée pour que l'assistant la LISE ──
+// getDisplayMedia (l'utilisateur choisit quoi partager — l'onglet suffit) → on bascule
+// sur la vue de la brique ciblée le temps d'une frame → jpeg base64 envoyé avec le
+// prochain message (`capture`), lu par la brique vision (OCR) côté Cœur. One-shot :
+// une capture = un instant, elle ne survit pas au message ni à un changement de cible.
+const VUE_PAR_BRIQUE = { agenda:'agenda', mail:'mail', geo:'geo' };
+async function donnerLesYeux() {
+  if (!CIBLE_BRIQUE) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    // Surface sans capture d'écran (ex. Mini App) : on le dit, le ciblage manifest reste.
+    ajouterBulle('assistant', "👁 La capture d'écran n'est pas disponible sur cette surface — je garde le rôle et les capacités de la brique, sans voir la zone.");
+    return;
+  }
+  let flux = null;
+  try {
+    flux = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false, preferCurrentTab: true });
+    switchVue(VUE_PAR_BRIQUE[CIBLE_BRIQUE] || 'briques');   // montrer la zone ciblée
+    await new Promise(r => setTimeout(r, 700));             // laisse la vue (iframe) s'afficher
+    const video = document.createElement('video');
+    video.srcObject = flux; video.muted = true;
+    await video.play();
+    await new Promise(r => setTimeout(r, 250));             // première frame stable
+    const echelle = Math.min(1, 1600 / (video.videoWidth || 1600));
+    const c = document.createElement('canvas');
+    c.width = Math.round(video.videoWidth * echelle);
+    c.height = Math.round(video.videoHeight * echelle);
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    CAPTURE_CIBLE = { data: c.toDataURL('image/jpeg', 0.85).split(',')[1], nom_fichier: 'capture-zone.jpg' };
+    const oeil = document.querySelector('#chip-cible .oeil');
+    if (oeil) { oeil.classList.add('pris'); oeil.title = 'Zone capturée — elle partira avec le prochain message.'; }
+  } catch (err) {
+    if (!err || err.name !== 'NotAllowedError') console.warn('capture yeux :', err);
+  } finally {
+    if (flux) flux.getTracks().forEach(t => t.stop());
+    switchVue('assistant');
   }
 }
 // Drag du jeton en Pointer Events + setPointerCapture (même pilier que le socle
@@ -2653,6 +2702,12 @@ async function envoyerMessage(e, visionImage = null) {
                         interlocuteur: CONV_ID, projet_id: CONV_PROJET };
     if (visionImage) _chatBody.vision_image = visionImage;
     if (CIBLE_BRIQUE) _chatBody.cible = CIBLE_BRIQUE;   // S165 : brique ciblée par le jeton
+    if (CAPTURE_CIBLE) {                                // S165 « yeux » : la capture part UNE fois
+      _chatBody.capture = CAPTURE_CIBLE;
+      CAPTURE_CIBLE = null;
+      const oeil = document.querySelector('#chip-cible .oeil');
+      if (oeil) { oeil.classList.remove('pris'); oeil.title = "Donner les yeux : capturer la zone ciblée pour que l'assistant lise ce qui s'y affiche (OCR local)."; }
+    }
     const r = await fetch('/assistant/chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(_chatBody), signal: TOUR_ABORT.signal
