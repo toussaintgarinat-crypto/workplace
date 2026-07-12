@@ -213,6 +213,18 @@ def chercher_bbox(tenant: str, bbox: tuple[float, float, float, float], *,
             "nb_total": nb_total, "tronque": nb_total > limite}
 
 
+def chercher_nom(tenant: str, q: str, limite: int = 10) -> list[dict]:
+    """Objets du tenant dont le NOM contient `q`, SANS bbox — sert la barre de
+    recherche du front (retrouver un point où qu'il soit, puis zoomer dessus)."""
+    with _conn() as c:
+        lignes = c.execute(
+            "SELECT * FROM geo_objects WHERE tenant = ?"
+            " AND json_extract(metadata, '$.nom') LIKE ?"
+            " ORDER BY date_reference DESC LIMIT ?",
+            (tenant, f"%{q}%", limite)).fetchall()
+    return [_objet_dict(r) for r in lignes]
+
+
 def lire_objet(tenant: str, objet_id: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM geo_objects WHERE tenant = ? AND id = ?",

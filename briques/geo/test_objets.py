@@ -90,6 +90,27 @@ def test_limite_et_troncature_annoncee():
     assert res["nb_total"] >= 5 and res["tronque"] is True
 
 
+def test_recherche_par_nom_sans_bbox():
+    """La barre de recherche du front : retrouver un point PAR NOM, où qu'il soit."""
+    client.post("/objets", json={"latitude": 48.853, "longitude": 2.35,  # Paris
+                                 "metadata": {"nom": "Fromagerie Introuvable"}})
+    res = client.get("/recherche", params={"q": "introuvable"}).json()
+    noms = [o["metadata"].get("nom") for o in res["objets"]]
+    assert "Fromagerie Introuvable" in noms
+    assert all("fraicheur" in o for o in res["objets"])
+
+
+def test_recherche_cloisonnee_par_tenant():
+    client.post("/objets", json={**CASTRES, "metadata": {"nom": "Secret Public"}})
+    autre = client.get("/recherche", params={"q": "Secret Public"},
+                       headers={"X-API-Key": "un-autre-tenant"}).json()
+    assert autre["objets"] == []
+
+
+def test_recherche_trop_courte_refusee():
+    assert client.get("/recherche", params={"q": "a"}).status_code == 422
+
+
 def test_bbox_invalide_renvoie_400():
     assert client.get("/objets", params={"bbox": "n-importe-quoi"}).status_code == 400
     assert client.get("/objets", params={"bbox": "43.7,2.0,43.5,2.4"}).status_code == 400
