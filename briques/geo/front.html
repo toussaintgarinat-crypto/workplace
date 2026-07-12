@@ -12,16 +12,40 @@
   #carte { position:absolute; inset:0; }
   /* Panneau latéral de filtres */
   #panneau {
-    position:absolute; top:12px; left:12px; z-index:1000; width:230px;
+    position:absolute; top:12px; left:12px; z-index:1000; width:250px;
     background:#fff; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,.25);
-    padding:12px 14px; font-size:13px;
+    padding:12px 14px; font-size:13px; max-height:calc(100% - 48px); overflow-y:auto;
   }
-  #panneau h1 { font-size:15px; margin:0 0 8px; }
+  #panneau h1 { font-size:15px; margin:0; }
+  #entete { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
   #panneau label { display:block; margin:8px 0 2px; color:#555; }
   #panneau input, #panneau select {
     width:100%; box-sizing:border-box; padding:5px 7px; border:1px solid #ccc;
     border-radius:6px; font-size:13px;
   }
+  #panneau button {
+    border:1px solid #ccc; background:#f7f7f7; border-radius:6px; padding:4px 8px;
+    font-size:13px; cursor:pointer;
+  }
+  #panneau button:hover { background:#eee; }
+  #panneau button:disabled { opacity:.5; cursor:wait; }
+  #btn-veille { font-size:15px; line-height:1; }
+  /* Résultats de recherche (points + lieux) */
+  #resultats { margin-top:4px; }
+  #resultats .res {
+    display:block; width:100%; text-align:left; border:0; background:none;
+    padding:4px 6px; border-radius:6px; font-size:12.5px; cursor:pointer;
+  }
+  #resultats .res:hover { background:#eef4fb; }
+  #resultats .res small { color:#777; }
+  /* Zones de veille */
+  details { margin-top:10px; }
+  summary { cursor:pointer; color:#333; font-weight:600; font-size:13px; }
+  .zone { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .zone .z-nom { flex:1; min-width:0; }
+  .zone .z-meta { color:#777; font-size:11.5px; }
+  .zone .z-suppr { border:0; background:none; color:#b33; font-size:14px; padding:0 4px; }
+  #zone-form button[type=submit] { margin-top:8px; width:100%; }
   #statut { margin-top:10px; color:#666; font-size:12px; min-height:16px; }
   #badge-simule {
     display:none; margin-top:8px; padding:3px 8px; border-radius:6px;
@@ -38,9 +62,14 @@
 <div id="carte"></div>
 
 <div id="panneau">
-  <h1>🗺️ GeoHub</h1>
-  <label for="commune">Aller à (commune)</label>
-  <input id="commune" placeholder="ex. Viviers-lès-Montagnes ⏎">
+  <div id="entete">
+    <h1>🗺️ GeoHub</h1>
+    <button id="btn-veille" title="Relancer la veille : interroge le fournisseur sur tes zones puis recharge la carte">🔄</button>
+  </div>
+  <label for="recherche">Chercher (point détecté, adresse, commune)</label>
+  <input id="recherche" placeholder="ex. boulangerie dupont, 81290… ⏎">
+  <div id="resultats"></div>
+
   <label for="f-type">Type d'objet</label>
   <select id="f-type">
     <option value="" selected>Tous</option>
@@ -57,6 +86,45 @@
   <input id="f-naf" placeholder="ex. 4675">
   <label for="f-q">Nom contient</label>
   <input id="f-q" placeholder="ex. boulangerie">
+
+  <details id="zones-bloc">
+    <summary>📡 Mes zones de veille (<span id="zones-nb">…</span>)</summary>
+    <div id="zones-liste"></div>
+    <details id="zone-ajout">
+      <summary>＋ Ajouter une zone</summary>
+      <form id="zone-form">
+        <label for="z-nom">Nom de la zone</label>
+        <input id="z-nom" required placeholder="ex. Restos Castres">
+        <label for="z-type">Type</label>
+        <select id="z-type">
+          <option value="entreprise" selected>Entreprises</option>
+          <option value="association">Associations</option>
+        </select>
+        <label for="z-mode">Cibler par</label>
+        <select id="z-mode">
+          <option value="communes" selected>Commune(s) / code(s) postal(aux)</option>
+          <option value="rayon">Latitude / longitude + rayon</option>
+        </select>
+        <div id="z-champs-communes">
+          <label for="z-communes">Communes ou codes postaux (virgules)</label>
+          <input id="z-communes" placeholder="ex. 81290, Verdalle">
+        </div>
+        <div id="z-champs-rayon" style="display:none">
+          <label for="z-lat">Latitude</label>
+          <input id="z-lat" type="number" step="any" min="-90" max="90" placeholder="ex. 43.606">
+          <label for="z-lon">Longitude</label>
+          <input id="z-lon" type="number" step="any" min="-180" max="180" placeholder="ex. 2.24">
+          <label for="z-rayon">Rayon (km)</label>
+          <input id="z-rayon" type="number" step="any" min="0.1" max="50" placeholder="ex. 10">
+          <button type="button" id="z-centre" style="margin-top:6px">📍 Prendre le centre de la carte</button>
+        </div>
+        <label for="z-naf">Code NAF (requis en mode rayon pour les entreprises)</label>
+        <input id="z-naf" placeholder="ex. 56.10A">
+        <button type="submit">Créer la zone</button>
+      </form>
+    </details>
+  </details>
+
   <div class="legende">
     <span class="pastille p-rouge"></span>&lt; 30 j
     <span class="pastille p-orange" style="margin-left:8px"></span>&lt; 90 j
@@ -73,6 +141,7 @@
 // Clé API optionnelle (?api_key=…) : posée en X-API-Key sur chaque appel de données.
 const CLE_API = new URLSearchParams(location.search).get("api_key") || "";
 const ENTETES = CLE_API ? { "X-API-Key": CLE_API } : {};
+const ENTETES_JSON = { ...ENTETES, "Content-Type": "application/json" };
 const COULEURS = { rouge: "#e0392b", orange: "#f39c12", bleu: "#3572b0" };
 
 // ── Fonds de carte : OSM par défaut + IGN (Géoplateforme, souverain, sans clé) ──
@@ -152,16 +221,163 @@ for (const id of ["f-type", "f-fraicheur"])
 for (const id of ["f-naf", "f-q"])
   document.getElementById(id).addEventListener("input", chargerBientot);
 
-// ── Recherche de commune (BAN — api-adresse.data.gouv.fr, sans clé) ──
-document.getElementById("commune").addEventListener("keydown", async (e) => {
-  if (e.key !== "Enter" || !e.target.value.trim()) return;
+// ── Rafraîchir : relance la VEILLE (ingestion) puis recharge la carte ──
+const btnVeille = document.getElementById("btn-veille");
+btnVeille.addEventListener("click", async () => {
+  btnVeille.disabled = true;
+  statut.textContent = "Veille en cours (peut prendre du temps : l'API est ménagée)…";
   try {
-    const r = await fetch("https://api-adresse.data.gouv.fr/search/?type=municipality&q="
-      + encodeURIComponent(e.target.value.trim()));
-    const geo = (await r.json()).features?.[0];
-    if (geo) carte.setView([geo.geometry.coordinates[1], geo.geometry.coordinates[0]], 13);
-    else statut.textContent = "Commune introuvable";
-  } catch { statut.textContent = "Recherche d'adresse injoignable"; }
+    const r = await fetch("/ingestion/executer", { method: "POST", headers: ENTETES });
+    if (!r.ok) { statut.textContent = "Veille : erreur " + r.status; return; }
+    const res = await r.json();
+    let msg = `Veille : ${res.nouveaux} nouveau(x), ${res.maj} mis à jour `
+      + `(${res.zones} zone(s), ${res.fournisseur})`;
+    if ((res.avertissements || []).length) msg += " — ⚠︎ " + res.avertissements.join(" ; ");
+    statut.textContent = msg;
+    await charger();
+  } catch { statut.textContent = "Brique injoignable"; }
+  finally { btnVeille.disabled = false; }
+});
+
+// ── Barre de recherche unifiée : points DÉTECTÉS (par nom) + lieux (BAN) ──
+const resultats = document.getElementById("resultats");
+let halo = null;   // repère temporaire posé sur le point trouvé
+
+function poserHalo(lat, lon) {
+  if (halo) carte.removeLayer(halo);
+  halo = L.circleMarker([lat, lon], { radius: 16, weight: 3, color: "#e0392b",
+                                      fillOpacity: 0.08 });
+  halo.addTo(carte);
+  setTimeout(() => { if (halo) { carte.removeLayer(halo); halo = null; } }, 6000);
+}
+
+function ligneResultat(texte, sousTexte, action) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "res";
+  b.innerHTML = texte + (sousTexte ? ` <small>${sousTexte}</small>` : "");
+  b.addEventListener("click", () => { resultats.innerHTML = ""; action(); });
+  resultats.appendChild(b);
+}
+
+async function rechercher(q) {
+  resultats.innerHTML = "<span class='z-meta'>Recherche…</span>";
+  const enc = encodeURIComponent(q);
+  const [points, lieux] = await Promise.all([
+    fetch("/recherche?q=" + enc, { headers: ENTETES })
+      .then(r => r.ok ? r.json() : { objets: [] }).catch(() => ({ objets: [] })),
+    fetch("https://api-adresse.data.gouv.fr/search/?limit=3&q=" + enc)
+      .then(r => r.json()).catch(() => ({ features: [] })),
+  ]);
+  resultats.innerHTML = "";
+  for (const o of points.objets || []) {
+    const m = o.metadata || {};
+    ligneResultat("📍 " + (m.nom || "(sans nom)"), m.commune || m.adresse || "",
+      () => { carte.setView([o.latitude, o.longitude], 16); poserHalo(o.latitude, o.longitude); });
+  }
+  for (const f of (lieux.features || [])) {
+    const p = f.properties || {};
+    const zoom = p.type === "municipality" ? 13 : 17;
+    ligneResultat("🏘 " + (p.label || "(lieu)"), p.context || "",
+      () => carte.setView([f.geometry.coordinates[1], f.geometry.coordinates[0]], zoom));
+  }
+  if (!resultats.childElementCount)
+    resultats.innerHTML = "<span class='z-meta'>Aucun résultat (point, adresse ou commune).</span>";
+}
+
+document.getElementById("recherche").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value.trim();
+  if (q.length < 2) return;
+  rechercher(q).catch(() => { statut.textContent = "Recherche injoignable"; });
+});
+
+// ── Zones de veille : lister, créer (communes/CP ou lat-lon+rayon), supprimer ──
+const zonesListe = document.getElementById("zones-liste");
+const zonesNb = document.getElementById("zones-nb");
+
+async function chargerZones() {
+  try {
+    const r = await fetch("/zones", { headers: ENTETES });
+    if (!r.ok) { zonesNb.textContent = "?"; return; }
+    const zones = (await r.json()).zones || [];
+    zonesNb.textContent = zones.length;
+    zonesListe.innerHTML = "";
+    for (const z of zones) {
+      const div = document.createElement("div");
+      div.className = "zone";
+      const cible = (z.communes || []).length
+        ? z.communes.map(c => c.nom).join(", ")
+        : "zone géographique";
+      const derniere = z.derniere_ingestion
+        ? "veille du " + z.derniere_ingestion.slice(0, 10) : "jamais veillée — 🔄";
+      div.innerHTML = `<div class="z-nom">${z.nom}
+          <div class="z-meta">${z.type}${z.naf ? " · NAF " + z.naf : ""} · ${cible} · ${derniere}</div>
+        </div>`;
+      const voir = document.createElement("button");
+      voir.textContent = "👁";
+      voir.title = "Voir la zone sur la carte";
+      voir.addEventListener("click", () =>
+        carte.fitBounds([[z.lat_min, z.lon_min], [z.lat_max, z.lon_max]]));
+      const suppr = document.createElement("button");
+      suppr.className = "z-suppr";
+      suppr.textContent = "✕";
+      suppr.title = "Supprimer cette zone de veille";
+      suppr.addEventListener("click", async () => {
+        if (!confirm(`Supprimer la zone « ${z.nom} » ?`)) return;
+        await fetch("/zones/" + z.id, { method: "DELETE", headers: ENTETES });
+        chargerZones();
+      });
+      div.append(voir, suppr);
+      zonesListe.appendChild(div);
+    }
+  } catch { zonesNb.textContent = "?"; }
+}
+
+document.getElementById("z-mode").addEventListener("change", (e) => {
+  const rayon = e.target.value === "rayon";
+  document.getElementById("z-champs-communes").style.display = rayon ? "none" : "";
+  document.getElementById("z-champs-rayon").style.display = rayon ? "" : "none";
+});
+
+document.getElementById("z-centre").addEventListener("click", () => {
+  const c = carte.getCenter();
+  document.getElementById("z-lat").value = c.lat.toFixed(5);
+  document.getElementById("z-lon").value = c.lng.toFixed(5);
+});
+
+document.getElementById("zone-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const corps = { nom: document.getElementById("z-nom").value.trim(),
+                  type: document.getElementById("z-type").value };
+  const naf = document.getElementById("z-naf").value.trim();
+  if (naf) corps.naf = naf;
+  if (document.getElementById("z-mode").value === "communes") {
+    corps.communes = document.getElementById("z-communes").value
+      .split(",").map(s => s.trim()).filter(Boolean);
+    if (!corps.communes.length) { statut.textContent = "Indique au moins une commune ou un code postal."; return; }
+  } else {
+    corps.lat = parseFloat(document.getElementById("z-lat").value);
+    corps.lon = parseFloat(document.getElementById("z-lon").value);
+    corps.rayon_km = parseFloat(document.getElementById("z-rayon").value);
+    if ([corps.lat, corps.lon, corps.rayon_km].some(Number.isNaN)) {
+      statut.textContent = "Latitude, longitude et rayon sont requis."; return;
+    }
+  }
+  try {
+    const r = await fetch("/zones", { method: "POST", headers: ENTETES_JSON,
+                                      body: JSON.stringify(corps) });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      statut.textContent = "Zone refusée : " + (d.detail || r.status);
+      return;
+    }
+    const z = await r.json();
+    statut.textContent = `Zone « ${z.nom} » créée — 🔄 pour lancer la veille dessus.`;
+    document.getElementById("zone-form").reset();
+    carte.fitBounds([[z.lat_min, z.lon_min], [z.lat_max, z.lon_max]]);
+    chargerZones();
+  } catch { statut.textContent = "Brique injoignable"; }
 });
 
 // ── Honnêteté : afficher le badge si les données sont simulées ──
@@ -171,6 +387,7 @@ fetch("/config", { headers: ENTETES }).then(r => r.json()).then(cfg => {
 }).catch(() => {});
 
 charger();
+chargerZones();
 </script>
 </body>
 </html>

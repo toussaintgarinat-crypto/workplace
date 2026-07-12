@@ -1,7 +1,7 @@
 {
   "nom": "geo",
   "famille": "metier",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "GeoHub — cartographie modulaire multi-tenant. Stocke et sert N'IMPORTE QUEL objet géolocalisé (entreprises aujourd'hui ; immobilier, événements, jeu demain) dans un modèle générique geo_objects + metadata JSON, indexé spatialement (SQLite R*Tree). Recherche par bounding box, pastilles de FRAÎCHEUR par type (entreprise : rouge <30j, orange <90j, bleu sinon). Fournisseur MOCK honnête par défaut (points simulés étiquetés), API recherche-entreprises.api.gouv.fr (Sirene, sans clé) en réel.",
   "role": "geo",
   "couche": "backend",

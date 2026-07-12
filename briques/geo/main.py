@@ -31,7 +31,7 @@ import stockage
 
 logger = logging.getLogger("geo")
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 app = FastAPI(title="Geo — GeoHub cartographique multi-tenant", version=VERSION)
 
@@ -125,6 +125,19 @@ def lister_objets(bbox: str,
     for o in res["objets"]:
         o["fraicheur"] = domaine.pastille_fraicheur(o["type"], o["date_reference"], maintenant)
     return res
+
+
+@app.get("/recherche")
+def rechercher_objets(q: str = Query(..., min_length=2),
+                      limite: int = Query(10, ge=1, le=50),
+                      tenant: str = Depends(tenant_actuel)):
+    """Retrouve des points PAR NOM sur tout le tenant, SANS bbox — la barre de
+    recherche de la carte : taper un nom d'entreprise/asso détectée → zoomer dessus."""
+    maintenant = datetime.now(timezone.utc)
+    objets = stockage.chercher_nom(tenant, q, limite)
+    for o in objets:
+        o["fraicheur"] = domaine.pastille_fraicheur(o["type"], o["date_reference"], maintenant)
+    return {"objets": objets}
 
 
 @app.post("/objets", status_code=201)
