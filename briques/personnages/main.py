@@ -34,7 +34,13 @@ _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
+# `API_KEYS` = vente standalone (BYO). `PERSONNAGES_KEY` = clé d'intégration Workplace,
+# injectée par le Cœur en X-API-Key (motif `_entetes_brique`, style « clé fusionnée » de
+# l'ADR surface-de-service, S167) : on l'ajoute aux clés acceptées pour que l'assistant
+# pilote la brique MÊME quand l'auth BYO est activée (sinon il serait rejeté).
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
+if os.getenv("PERSONNAGES_KEY", "").strip():
+    API_KEYS.add(os.getenv("PERSONNAGES_KEY").strip())
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),

@@ -1,7 +1,7 @@
 {
   "nom": "restaurant",
   "famille": "metier",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Commande & paiement à table par QR code, multi-tenant. Chaque restaurateur a un COMPTE (login) et gère un ou plusieurs restaurants, totalement cloisonnés (un resto ne voit jamais les données d'un autre). Le client scanne le QR de sa table, commande par convive (prénom/siège), la commande part en cuisine en temps réel (WebSocket), et règle l'addition par RÉPARTITION FLEXIBLE — chacun sa part, partage égal en N, ou montant libre — avec « reste à payer » live et anti-surpaiement serveur ; paiement en ligne (mock honnête en incrément 1) ou espèces validées au comptoir. Produit autonome vendable seul. Stripe Connect réel = incrément suivant.",
   "role": "restaurant",
   "couche": "backend",
@@ -41,7 +41,10 @@
     "front_client",
     "import_carte_ocr",
     "generation_carte_ia",
-    "carte_pilotable_assistant"
+    "carte_pilotable_assistant",
+    "back_office_pilotable_assistant",
+    "setup_restaurant_assistant",
+    "cuisine_pilotable_assistant"
   ],
   "besoin": [],
   "capacites": [
@@ -185,6 +188,294 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "restaurant_creer",
+      "description": "Crée un NOUVEAU restaurant (setup à la voix) : renvoie son identifiant. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants",
+      "params": {
+        "nom": {
+          "type": "string",
+          "description": "Nom du restaurant."
+        },
+        "devise": {
+          "type": "string",
+          "description": "Devise ISO (défaut EUR)."
+        },
+        "tva_taux": {
+          "type": "number",
+          "description": "Taux de TVA en pourcentage (défaut 10)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_editer",
+      "description": "Modifie les réglages d'un restaurant (nom, devise, taux de TVA, exiger un PIN pour rejoindre une table). ACTION : confirme=true requis.",
+      "methode": "PATCH",
+      "chemin": "/service/restaurants/{restaurant_id}",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nouveau nom (optionnel)."
+        },
+        "devise": {
+          "type": "string",
+          "description": "Nouvelle devise (optionnel)."
+        },
+        "tva_taux": {
+          "type": "number",
+          "description": "Nouveau taux de TVA en % (optionnel)."
+        },
+        "pin_requis": {
+          "type": "boolean",
+          "description": "Exiger un code partagé pour rejoindre une table (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_rail_etat",
+      "description": "État HONNÊTE des paiements en ligne du restaurant : rail configuré ? compte vendeur connecté ? peut-il encaisser en réel, ou est-on en démo (mock) ? Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/rail",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_rail_activer",
+      "description": "Active les paiements en ligne RÉELS : crée le compte vendeur et renvoie un LIEN d'onboarding (onboarding_url) que l'humain termine au navigateur (vérification d'identité chez le prestataire — pas d'encaissement magique). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/rail/activer",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_carte_generer",
+      "description": "GÉNÈRE une PROPOSITION de carte à partir d'un concept (ex. « une carte de pizzeria napolitaine »). Ne persiste RIEN : renvoie des plats à valider, à ajouter ensuite via restaurant_carte_importer_lot. Repli honnête (plats vides + note) si l'IA est indisponible.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/carte/generer",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "concept": {
+          "type": "string",
+          "description": "Description du restaurant (cuisine, ambiance, gamme de prix)."
+        },
+        "sections": {
+          "type": "array",
+          "description": "Catégories voulues (ex. [\"Entrées\",\"Pizzas\",\"Desserts\"]). Optionnel : sinon l'IA choisit."
+        },
+        "par_section": {
+          "type": "integer",
+          "description": "Nombre de plats par section (défaut 6, borné côté serveur)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_carte_importer_lot",
+      "description": "Ajoute EN UNE FOIS une liste de plats VALIDÉS (la carte générée/importée retenue). ACTION : confirme=true requis (persiste et change la carte vue par les clients).",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/plats/lot",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "plats": {
+          "type": "array",
+          "description": "Plats à créer : [{nom, description, prix_cents, categorie, plat_du_jour, formats, stock}]. Les entrées sans nom sont ignorées."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_plat_reordonner",
+      "description": "Réordonne les plats de la carte selon la suite d'identifiants fournie (le 1er devient le premier affiché). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/plats/reordonner",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "ids": {
+          "type": "array",
+          "description": "Nouvelle suite ordonnée des identifiants de plats."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_table_creer",
+      "description": "Crée une table (numéro visible) et son code d'accès (pour le QR). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/tables",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "numero": {
+          "type": "string",
+          "description": "Numéro/nom de la table (ex. « 12 », « Terrasse 3 »)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_table_lister",
+      "description": "Liste les tables du restaurant (id, numéro, code). Sert à retrouver l'id d'une table avant de la supprimer ou de lire son addition. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/tables",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_table_supprimer",
+      "description": "Supprime une table. Récupère d'abord l'id via restaurant_table_lister. ACTION irréversible : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/service/restaurants/{restaurant_id}/tables/{table_id}",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "table_id": {
+          "type": "string",
+          "description": "Identifiant de la table à supprimer."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_cuisine_lister",
+      "description": "File de la cuisine : commandes en cours (ou toutes si toutes=true), avec leur id et statut. À appeler pour retrouver l'id d'une commande avant de la passer « prête » ou de l'annuler. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/cuisine",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "toutes": {
+          "type": "boolean",
+          "description": "Inclure aussi les commandes déjà servies (défaut false = actives seulement)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_commande_statut",
+      "description": "Change le statut d'une commande en cuisine : en_cuisine → prete → servie (ex. « passe la commande 12 en prêt »). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/service/restaurants/{restaurant_id}/commandes/{commande_id}/statut",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "commande_id": {
+          "type": "string",
+          "description": "Identifiant de la commande (via restaurant_cuisine_lister)."
+        },
+        "statut": {
+          "type": "string",
+          "description": "Nouveau statut : en_cuisine, prete ou servie."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_commande_annuler",
+      "description": "Annule une commande envoyée en cuisine (erreur) : la retire de la file ET de l'addition. ACTION irréversible : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/service/restaurants/{restaurant_id}/commandes/{commande_id}",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "commande_id": {
+          "type": "string",
+          "description": "Identifiant de la commande à annuler."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "restaurant_addition_lire",
+      "description": "Addition en cours d'une table : détail des consommations et reste à payer. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/tables/{table_id}/addition",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "table_id": {
+          "type": "string",
+          "description": "Identifiant de la table (via restaurant_table_lister)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_ventes_du_jour",
+      "description": "Ventes / historique : tickets archivés aux clôtures de table (montants, horodatage). Sert la compta du restaurateur. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/tickets",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum de tickets à renvoyer (défaut 50)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "restaurant_avis_lire",
+      "description": "Synthèse des avis clients : note moyenne, nombre d'avis, derniers commentaires. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/restaurants/{restaurant_id}/avis",
+      "params": {
+        "restaurant_id": {
+          "type": "string",
+          "description": "Identifiant du restaurant."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum d'avis récents à renvoyer (défaut 50)."
+        }
+      },
+      "action": false
     }
   ],
   "taches": []

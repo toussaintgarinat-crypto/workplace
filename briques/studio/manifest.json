@@ -1,7 +1,7 @@
 {
   "nom": "studio",
   "famille": "media",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Studio d'audio-séries co-créées : bible (Showrunner) → épisodes (Scénariste/Script Doctor) → audio (voix figées par personnage, multilingue avec traduction au rendu) → livre (Série/Cycle/Tome/Chapitre) → arbre des choix interactif. Équipe créative de 6 agents INTERNALISÉE (prompts figés, plus de couplage au monde Oria). Compose les briques personnages (5900), images (5950), video (5970) et voix (5810) sans les absorber : portraits + couvertures (images), bande-annonce d'épisode + animation de portrait (video). Persistance JSON propre. Extrait du backend Oria en brique autonome (S51).",
   "role": "studio",
   "couche": "backend",
@@ -356,6 +356,241 @@
         "nom": {
           "type": "string",
           "description": "Nom de scène dans la série (optionnel : défaut = nom de la fiche)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_series_reordonner",
+      "description": "Réordonne les séries du Studio selon la suite d'identifiants fournie (la 1re devient la première affichée). ACTION.",
+      "methode": "POST",
+      "chemin": "/series/reordonner",
+      "params": {
+        "ids": {
+          "type": "array",
+          "description": "Nouvelle suite ordonnée des identifiants de séries.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_cycle_creer",
+      "description": "Crée un cycle (regroupe des tomes) dans une série. Récupère serie_id via studio_series_lister. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/cycles",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Titre du cycle (optionnel : défaut « Cycle N »)."
+        },
+        "resume": {
+          "type": "string",
+          "description": "Résumé du cycle (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_cycle_renommer",
+      "description": "Renomme ou réécrit le résumé d'un cycle. Récupère les ids via studio_serie_lire. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/series/{serie_id}/cycles/{cycle_id}",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "cycle_id": {
+          "type": "string",
+          "description": "Id du cycle (via studio_serie_lire).",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Nouveau titre (optionnel)."
+        },
+        "resume": {
+          "type": "string",
+          "description": "Nouveau résumé (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_cycle_supprimer",
+      "description": "Supprime un cycle VIDE. Refuse (409) si c'est le dernier cycle ou s'il contient des chapitres. Récupère cycle_id via studio_serie_lire. ACTION irréversible.",
+      "methode": "DELETE",
+      "chemin": "/series/{serie_id}/cycles/{cycle_id}",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "cycle_id": {
+          "type": "string",
+          "description": "Id du cycle à supprimer (via studio_serie_lire).",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_tome_creer",
+      "description": "Crée un tome dans un cycle et le rend « actif » (les prochains chapitres s'y rangent). Récupère cycle_id via studio_serie_lire. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/cycles/{cycle_id}/tomes",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "cycle_id": {
+          "type": "string",
+          "description": "Id du cycle parent (via studio_serie_lire).",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Titre du tome (optionnel : défaut « Tome N »)."
+        },
+        "resume": {
+          "type": "string",
+          "description": "Résumé du tome (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_tome_renommer",
+      "description": "Renomme un tome, réécrit son résumé, ou change son statut (en_cours / termine). Récupère tome_id via studio_serie_lire. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/series/{serie_id}/tomes/{tome_id}",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "tome_id": {
+          "type": "string",
+          "description": "Id du tome (via studio_serie_lire).",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Nouveau titre (optionnel)."
+        },
+        "resume": {
+          "type": "string",
+          "description": "Nouveau résumé (optionnel)."
+        },
+        "statut": {
+          "type": "string",
+          "description": "Nouveau statut : en_cours ou termine (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_tome_supprimer",
+      "description": "Supprime un tome VIDE. Refuse (409) si c'est le dernier tome ou s'il contient des chapitres. Récupère tome_id via studio_serie_lire. ACTION irréversible.",
+      "methode": "DELETE",
+      "chemin": "/series/{serie_id}/tomes/{tome_id}",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "tome_id": {
+          "type": "string",
+          "description": "Id du tome à supprimer (via studio_serie_lire).",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_tome_actif_definir",
+      "description": "Définit le tome ACTIF d'une série (celui où se rangent les prochains chapitres écrits). Récupère tome_id via studio_serie_lire. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/tome-actif",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "tome_id": {
+          "type": "string",
+          "description": "Id du tome à activer (via studio_serie_lire).",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_tome_bilan",
+      "description": "Fait le BILAN d'un tome : arc prévu vs chapitres réellement écrits, fils narratifs non résolus, verdict « fini normalement ? ». Analyse, ne modifie rien. Récupère tome_id via studio_serie_lire.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/tomes/{tome_id}/bilan",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "tome_id": {
+          "type": "string",
+          "description": "Id du tome à analyser (via studio_serie_lire).",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_episode_couverture",
+      "description": "Génère la COUVERTURE illustrée d'un chapitre (compose la brique images). Repli honnête (placeholder annoncé) si la brique images est injoignable. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/episode/{n}/couverture",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro du chapitre/épisode.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_episode_teaser",
+      "description": "Génère la BANDE-ANNONCE (clip teaser) d'un chapitre (compose la brique video). Repli honnête (placeholder annoncé) si la brique video est injoignable. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/episode/{n}/teaser",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro du chapitre/épisode.",
+          "requis": true
         }
       },
       "action": true
