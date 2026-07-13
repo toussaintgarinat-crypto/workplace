@@ -63,8 +63,11 @@ def _url_dynamique(cap: dict, args: dict) -> str:
 async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     """Exécute une capacité découverte : gate de confirmation si action, puis appel HTTP.
 
-    GET → query params ; autres méthodes → corps JSON. Les params consommés par le chemin
-    ne sont pas renvoyés en double. Verdict honnête sur refus/injoignable."""
+    GET → query params ; autres méthodes → corps JSON ET query params (certains endpoints
+    d'écriture, ex. DELETE, lisent un filtre en query — l'envoyer aux deux est sans risque :
+    un endpoint à modèle de corps ignore les query en trop, un endpoint à query ignore le
+    corps). Les params consommés par le chemin ne sont pas renvoyés en double. Verdict
+    honnête sur refus/injoignable."""
     args = dict(args or {})
     confirme = args.pop("confirme", None)
     if cap.get("action") and not confirme:
@@ -76,7 +79,7 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     if cap["methode"] == "GET":
         r = await client.request("GET", url, params=charge, headers=entetes)
     else:
-        r = await client.request(cap["methode"], url, json=charge, headers=entetes)
+        r = await client.request(cap["methode"], url, json=charge, params=charge, headers=entetes)
     if r.status_code >= 400:
         return json.dumps({"ok": False, "brique": cap["brique"],
                            "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
