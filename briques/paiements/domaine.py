@@ -67,6 +67,45 @@ def compte_peut_encaisser(statut: str) -> bool:
     return statut == COMPTE_ACTIF
 
 
+# ── Cagnotte universelle par ID (S166, « OMNI-SPLIT épuré ») ─────
+# Une cagnotte est AVEUGLE au métier : un id partageable, une cible, des contributions.
+# Deux sortes de contributions :
+#   • « digitale » : passe par le RAIL (paiement + commission → compte connecté) ;
+#   • « externe »  : le client RÉFRACTAIRE — quelqu'un a payé en espèces/CB physique
+#     hors du rail (le POS/la caisse notifie) → la cible effective DESCEND pour les
+#     payeurs digitaux, sans qu'un centime ne transite ici. On le dit tel quel.
+CAGNOTTE_OUVERTE = "ouverte"
+CAGNOTTE_ANNULEE = "annulee"
+CAGNOTTE_ATTEINTE = "atteinte"   # état DÉRIVÉ (reste = 0), jamais stocké : rien à désynchroniser
+
+CONTRIB_DIGITALE = "digitale"
+CONTRIB_EXTERNE = "externe"
+
+
+def reste_cagnotte(cible_cents: int, solde_cents: int) -> int:
+    """Ce qui manque encore pour atteindre la cible, borné ≥ 0 (jamais de reste négatif,
+    même si la caisse a encaissé plus que prévu). Pur."""
+    return max(0, max(0, int(cible_cents)) - max(0, int(solde_cents)))
+
+
+def statut_effectif(statut: str, reste_cents: int) -> str:
+    """Statut PRÉSENTÉ d'une cagnotte : « atteinte » est dérivé du reste (source unique
+    de vérité = les contributions), « annulée » prime toujours."""
+    if statut == CAGNOTTE_ANNULEE:
+        return CAGNOTTE_ANNULEE
+    return CAGNOTTE_ATTEINTE if reste_cents <= 0 else CAGNOTTE_OUVERTE
+
+
+def contribution_bornee(reste_cents: int, montant_cents: int) -> int:
+    """Montant réellement admissible d'une contribution : borné au RESTE de la cagnotte
+    (anti-surpaiement, même invariant que `montant_a_encaisser` du resto S83). 0 → rien
+    à contribuer (cagnotte déjà atteinte / saisie vide ou négative). Pur."""
+    reste = max(0, int(reste_cents))
+    if reste <= 0:
+        return 0
+    return min(max(0, int(montant_cents)), reste)
+
+
 # ── Service de domaine : commission plateforme ───────────────────
 def calculer_commission(montant_cents: int, *, commission_bps: int = 0,
                         commission_cents: int | None = None) -> dict:

@@ -51,6 +51,21 @@ def init() -> None:
                 cree_le TEXT, maj_le TEXT);
             CREATE INDEX IF NOT EXISTS idx_paie_solution ON paiements(solution);
             CREATE INDEX IF NOT EXISTS idx_paie_ref ON paiements(ref_externe);
+
+            CREATE TABLE IF NOT EXISTS cagnottes (
+                id TEXT PRIMARY KEY, solution TEXT NOT NULL,
+                cible_cents INTEGER NOT NULL, devise TEXT NOT NULL DEFAULT 'EUR',
+                description TEXT DEFAULT '', compte_id TEXT,
+                commission_bps INTEGER NOT NULL DEFAULT 0,
+                statut TEXT NOT NULL DEFAULT 'ouverte', cree_le TEXT);
+            CREATE INDEX IF NOT EXISTS idx_cag_solution ON cagnottes(solution);
+
+            CREATE TABLE IF NOT EXISTS contributions (
+                id TEXT PRIMARY KEY, cagnotte_id TEXT NOT NULL,
+                sorte TEXT NOT NULL, montant_cents INTEGER NOT NULL,
+                nom TEXT DEFAULT '', source TEXT DEFAULT '', note TEXT DEFAULT '',
+                paiement_id TEXT, cree_le TEXT);
+            CREATE INDEX IF NOT EXISTS idx_contrib_cagnotte ON contributions(cagnotte_id);
             """
         )
 
@@ -155,3 +170,89 @@ def paiement_par_ref(ref_externe: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM paiements WHERE ref_externe=?", (ref_externe,)).fetchone()
     return (_paiement_dict(r) | {"solution": r["solution"]}) if r else None
+
+
+# ── Cagnottes (S166) ─────────────────────────────────────────────
+# Le SOLDE n'est jamais stocké : il est recalculé par jointure à chaque lecture
+# (contributions externes + contributions digitales dont le paiement est PAYÉ).
+# Rien à désynchroniser quand un webhook Stripe fait passer un paiement à « payé ».
+_SQL_SOLDE = """
+    SELECT COALESCE(SUM(co.montant_cents), 0) FROM contributions co
+    LEFT JOIN paiements p ON p.id = co.paiement_id
+    WHERE co.cagnotte_id = ?
+      AND (co.sorte = 'externe' OR p.statut = 'paye')
+"""
+
+
+def _cagnotte_dict(c: sqlite3.Connection, r: sqlite3.Row) -> dict:
+    solde = c.execute(_SQL_SOLDE, (r["id"],)).fetchone()[0]
+    return {"id": r["id"], "cible_cents": r["cible_cents"], "devise": r["devise"],
+            "description": r["description"] or "", "compte_id": r["compte_id"],
+            "commission_bps": r["commission_bps"], "statut": r["statut"],
+            "solde_cents": int(solde), "cree_le": r["cree_le"]}
+
+
+def creer_cagnotte(solution: str, cible_cents: int, devise: str, description: str,
+                   compte_id: str | None, commission_bps: int, statut: str) -> dict:
+    cid = _id()
+    with _conn() as c:
+        c.execute("INSERT INTO cagnottes (id, solution, cible_cents, devise, description, "
+                  "compte_id, commission_bps, statut, cree_le) VALUES (?,?,?,?,?,?,?,?,?)",
+                  (cid, solution, cible_cents, devise, description, compte_id,
+                   commission_bps, statut, _maintenant()))
+        r = c.execute("SELECT * FROM cagnottes WHERE id=?", (cid,)).fetchone()
+        return _cagnotte_dict(c, r)
+
+
+def lire_cagnotte(solution: str, cagnotte_id: str) -> dict | None:
+    """Cloisonné : la cagnotte d'une AUTRE solution renvoie None (invisible)."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM cagnottes WHERE id=? AND solution=?",
+                      (cagnotte_id, solution)).fetchone()
+        return _cagnotte_dict(c, r) if r else None
+
+
+def cagnotte_par_id(cagnotte_id: str) -> dict | None:
+    """Lecture par capability (la connaissance de l'id) : sert la vue PUBLIQUE des payeurs
+    et la contribution digitale — la `solution` est renvoyée pour l'usage interne, à ne
+    JAMAIS exposer telle quelle."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM cagnottes WHERE id=?", (cagnotte_id,)).fetchone()
+        return (_cagnotte_dict(c, r) | {"solution": r["solution"]}) if r else None
+
+
+def lister_cagnottes(solution: str) -> list:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM cagnottes WHERE solution=? ORDER BY cree_le DESC",
+                         (solution,)).fetchall()
+        return [_cagnotte_dict(c, r) for r in rows]
+
+
+def maj_statut_cagnotte(cagnotte_id: str, statut: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE cagnottes SET statut=? WHERE id=?", (statut, cagnotte_id))
+
+
+def ajouter_contribution(cagnotte_id: str, sorte: str, montant_cents: int, *, nom: str = "",
+                         source: str = "", note: str = "", paiement_id: str | None = None) -> dict:
+    coid = _id()
+    with _conn() as c:
+        c.execute("INSERT INTO contributions (id, cagnotte_id, sorte, montant_cents, nom, "
+                  "source, note, paiement_id, cree_le) VALUES (?,?,?,?,?,?,?,?,?)",
+                  (coid, cagnotte_id, sorte, montant_cents, nom, source, note,
+                   paiement_id, _maintenant()))
+    return {"id": coid, "cagnotte_id": cagnotte_id, "sorte": sorte,
+            "montant_cents": montant_cents, "nom": nom, "source": source, "note": note,
+            "paiement_id": paiement_id}
+
+
+def lister_contributions(cagnotte_id: str) -> list:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT co.*, p.statut AS statut_paiement FROM contributions co "
+            "LEFT JOIN paiements p ON p.id = co.paiement_id "
+            "WHERE co.cagnotte_id=? ORDER BY co.cree_le", (cagnotte_id,)).fetchall()
+    return [{"id": r["id"], "sorte": r["sorte"], "montant_cents": r["montant_cents"],
+             "nom": r["nom"] or "", "source": r["source"] or "", "note": r["note"] or "",
+             "paiement_id": r["paiement_id"], "statut_paiement": r["statut_paiement"],
+             "cree_le": r["cree_le"]} for r in rows]

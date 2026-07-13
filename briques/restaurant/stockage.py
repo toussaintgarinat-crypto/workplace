@@ -128,6 +128,11 @@ def _conn() -> sqlite3.Connection:
         # Réglage opt-in : exiger un code partagé pour rejoindre une table (S82). Défaut 0
         # = table ouverte (comportement historique : tout scan du QR rejoint directement).
         c.execute("ALTER TABLE restaurants ADD COLUMN pin_requis INTEGER NOT NULL DEFAULT 0")
+    if "rail_compte_id" not in _colonnes("restaurants"):
+        # Compte connecté du restaurant dans la brique paiements (rail 6020, S166). None =
+        # rail non activé → le paiement en ligne reste le MOCK local honnête (comportement
+        # historique). Renseigné via /restaurants/{id}/rail/activer.
+        c.execute("ALTER TABLE restaurants ADD COLUMN rail_compte_id TEXT")
     tcol = _colonnes("tables")
     if "session_courante" not in tcol:
         c.execute("ALTER TABLE tables ADD COLUMN session_courante INTEGER NOT NULL DEFAULT 1")
@@ -298,6 +303,27 @@ def restaurant_public(restaurant_id: str) -> dict | None:
         r = c.execute("SELECT id, nom, devise, tva_taux, pin_requis FROM restaurants WHERE id=?",
                       (restaurant_id,)).fetchone()
     return _resto_dict(r) if r else None
+
+
+# ── Branchement du rail de paiement (S166) ───────────────────────
+def definir_rail_compte(compte_id: str, restaurant_id: str, rail_compte_id: str) -> bool:
+    """Rattache le compte connecté du rail (brique paiements) au restaurant. Cloisonné :
+    n'agit que sur un resto que le compte POSSÈDE (sinon False, resto d'autrui invisible)."""
+    with _conn() as c:
+        if not _possede(c, compte_id, restaurant_id):
+            return False
+        c.execute("UPDATE restaurants SET rail_compte_id=? WHERE id=? AND compte_id=?",
+                  (rail_compte_id, restaurant_id, compte_id))
+    return True
+
+
+def rail_compte_de(restaurant_id: str) -> str | None:
+    """Compte connecté du rail pour ce restaurant, ou None (rail non activé). Non scopé :
+    sert le chemin CLIENT de `/t/{code}/payer` (le code de table est la capability)."""
+    with _conn() as c:
+        r = c.execute("SELECT rail_compte_id FROM restaurants WHERE id=?",
+                      (restaurant_id,)).fetchone()
+    return r["rail_compte_id"] if r and r["rail_compte_id"] else None
 
 
 def compte_du_restaurant(restaurant_id: str) -> str | None:
@@ -795,11 +821,27 @@ def etat_table(restaurant_id: str, table_id: str) -> dict:
             "pourboire_cents": pourboire, "tva": _ventilation_tva(total, tva_taux)}
 
 
+def prevoir_paiement(restaurant_id: str, table_id: str, convive: str, mode: str = "part",
+                     parts: int = 0, montant_cents: int = 0) -> tuple[str, int]:
+    """Calcule, SANS rien enregistrer, ce qu'un paiement encaisserait : (payeur normalisé,
+    montant borné au reste global). Extrait la logique de `enregistrer_paiement` pour que le
+    branchement du RAIL (S166) sache combien charger AVANT d'écrire le paiement local, sans
+    dupliquer la règle anti-surpaiement. 0 → rien à encaisser."""
+    convive = domaine.Convive.normaliser(convive)   # jamais de payeur anonyme « vide »
+    etat = etat_table(restaurant_id, table_id)
+    part = next((c for c in etat["convives"] if c["convive"] == convive), None)
+    a_encaisser = domaine.montant_a_encaisser(
+        etat["reste_cents"], mode,
+        du_convive_cents=(part["reste_cents"] if part else 0),
+        total_cents=etat["total_cents"], parts=parts, montant_cents=montant_cents)
+    return convive, a_encaisser
+
+
 def enregistrer_paiement(restaurant_id: str, table_id: str, convive: str, moyen: str,
                          pourboire_cents: int = 0, mode: str = "part",
                          parts: int = 0, montant_cents: int = 0) -> dict | None:
-    """Encaisse un paiement par `moyen` (« mock » en ligne / « especes » au comptoir), avec un
-    pourboire optionnel, selon le `mode` de RÉPARTITION (S83) :
+    """Encaisse un paiement par `moyen` (« mock » ou « rail » en ligne / « especes » au comptoir),
+    avec un pourboire optionnel, selon le `mode` de RÉPARTITION (S83) :
 
     - `part`  : règle le reste dû PROPRE au convive (« chacun ses plats », défaut historique) ;
     - `egal`  : règle une part d'un partage ÉGAL du total en `parts` personnes (« on divise à 4 ») ;
@@ -810,16 +852,10 @@ def enregistrer_paiement(restaurant_id: str, table_id: str, convive: str, moyen:
     sur-créditer ni d'encaisser plus que ce que la table doit. Idempotent par construction :
     si plus rien n'est dû (ou saisie vide), renvoie None. Le pourboire (≥ 0) reste un extra,
     hors « reste dû ». `convive` = le PAYEUR (porte le paiement, pour le ticket)."""
-    if moyen not in ("mock", "especes"):
+    if moyen not in ("mock", "especes", "rail"):
         return None
-    convive = domaine.Convive.normaliser(convive)   # jamais de payeur anonyme « vide »
     pourboire_cents = max(0, int(pourboire_cents or 0))
-    etat = etat_table(restaurant_id, table_id)
-    part = next((c for c in etat["convives"] if c["convive"] == convive), None)
-    a_encaisser = domaine.montant_a_encaisser(
-        etat["reste_cents"], mode,
-        du_convive_cents=(part["reste_cents"] if part else 0),
-        total_cents=etat["total_cents"], parts=parts, montant_cents=montant_cents)
+    convive, a_encaisser = prevoir_paiement(restaurant_id, table_id, convive, mode, parts, montant_cents)
     if a_encaisser <= 0:
         return None
     with _conn() as c:

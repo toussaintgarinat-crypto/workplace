@@ -1,8 +1,8 @@
 {
   "nom": "paiements",
   "famille": "metier",
-  "version": "0.1.0",
-  "description": "Rail d'argent multi-tenant et provider-agnostique (Stripe Connect). Possède les comptes connectés des vendeurs (onboarding hébergé), l'encaissement avec COMMISSION PLATEFORME (destination charge + application_fee), les remboursements et les webhooks signés. Réutilisable par plusieurs solutions (restaurant, Forge, marketplaces), chacune isolée par sa clé API. Le SPLIT/addition partagée reste dans la brique appelante. Fournisseur MOCK honnête par défaut (aucun argent ne bouge), Stripe réel dès qu'une clé est fournie (test puis live = étape externe : validation plateforme + KYC vendeurs).",
+  "version": "0.2.0",
+  "description": "Rail d'argent multi-tenant et provider-agnostique (Stripe Connect). Possède les comptes connectés des vendeurs (onboarding hébergé), l'encaissement avec COMMISSION PLATEFORME (destination charge + application_fee), les remboursements et les webhooks signés. CAGNOTTE universelle par ID (S166) : objectif partageable où plusieurs payeurs contribuent en ligne (via le rail) ET où la caisse/POS notifie les paiements en espèces/CB physiques (« client réfractaire ») pour faire baisser le reste en temps réel, sans surpaiement. Réutilisable par plusieurs solutions (restaurant, Forge, marketplaces), chacune isolée par sa clé API. Le SPLIT/addition partagée reste dans la brique appelante. Fournisseur MOCK honnête par défaut (aucun argent ne bouge), Stripe réel dès qu'une clé est fournie (test puis live = étape externe : validation plateforme + KYC vendeurs).",
   "role": "paiements",
   "couche": "backend",
   "statut": "a_tester",
@@ -18,7 +18,9 @@
     "remboursement",
     "webhooks_signes",
     "mock_honnete_par_defaut",
-    "stripe_connect_reel"
+    "stripe_connect_reel",
+    "cagnotte_universelle_par_id",
+    "contribution_pos_client_refractaire"
   ],
   "capacites": [
     {
@@ -145,6 +147,104 @@
         "paiement_id": {
           "type": "string",
           "description": "Identifiant du paiement à rembourser (voir paiements_lister).",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "cagnottes_lister",
+      "description": "Liste les CAGNOTTES du tenant (id, cible, solde, reste, statut). Une cagnotte = un objectif d'argent partageable où plusieurs personnes contribuent. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/cagnottes",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "cagnotte_lire",
+      "description": "Détail d'une cagnotte avec ses contributions (qui a payé quoi, en ligne ou à la caisse). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/cagnottes/{cagnotte_id}",
+      "params": {
+        "cagnotte_id": {
+          "type": "string",
+          "description": "Identifiant de la cagnotte (voir cagnottes_lister).",
+          "requis": true
+        }
+      },
+      "action": false,
+      "niveau": 1
+    },
+    {
+      "nom": "cagnotte_creer",
+      "description": "Ouvre une CAGNOTTE par ID partageable : un objectif (montant_cible_cents) que plusieurs payeurs remplissent en ligne. compte_connecte_id (optionnel) = où va l'argent digital ; sans lui, seule la caisse peut y contribuer. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/cagnottes",
+      "params": {
+        "montant_cible_cents": {
+          "type": "integer",
+          "description": "Objectif total à atteindre, en CENTIMES (50 € = 5000).",
+          "requis": true
+        },
+        "devise": {
+          "type": "string",
+          "description": "Devise (défaut EUR)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Libellé de la cagnotte (ex. « Table 12 », « Cadeau de Léa »)."
+        },
+        "compte_connecte_id": {
+          "type": "string",
+          "description": "Compte vendeur qui reçoit l'argent des contributions en ligne (voir paiements_comptes_lister). Sans lui : cagnotte POS seule."
+        },
+        "commission_bps": {
+          "type": "integer",
+          "description": "Commission plateforme des contributions en ligne, en points de base (250 = 2,5 %). 0 = aucune."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "cagnotte_pos",
+      "description": "CLIENT RÉFRACTAIRE : notifie qu'un paiement a été encaissé en espèces/CB physique À LA CAISSE (hors rail), pour faire BAISSER le reste de la cagnotte en temps réel. Aucun argent ne transite par la brique pour cette part (c'est dit honnêtement). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/cagnottes/{cagnotte_id}/pos",
+      "params": {
+        "cagnotte_id": {
+          "type": "string",
+          "description": "Identifiant de la cagnotte (voir cagnottes_lister).",
+          "requis": true
+        },
+        "montant_cents": {
+          "type": "integer",
+          "description": "Montant encaissé à la caisse, en CENTIMES.",
+          "requis": true
+        },
+        "source": {
+          "type": "string",
+          "description": "Qui a encaissé hors rail (défaut « caisse »)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Note libre (optionnel)."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "cagnotte_annuler",
+      "description": "Ferme une cagnotte : plus aucune contribution possible. Les paiements déjà encaissés restent (remboursement à la main via paiement_rembourser). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/cagnottes/{cagnotte_id}/annuler",
+      "params": {
+        "cagnotte_id": {
+          "type": "string",
+          "description": "Identifiant de la cagnotte (voir cagnottes_lister).",
           "requis": true
         }
       },

@@ -24,7 +24,7 @@ import domaine
 import fournisseurs
 import stockage
 
-app = FastAPI(title="Paiements — rail multi-tenant (Connect)", version="0.1.0")
+app = FastAPI(title="Paiements — rail multi-tenant (Connect)", version="0.2.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -65,10 +65,29 @@ class PaiementEntree(BaseModel):
     description: str = ""
 
 
+class CagnotteEntree(BaseModel):
+    montant_cible_cents: int
+    devise: str = "EUR"
+    description: str = ""
+    compte_connecte_id: Optional[str] = None  # où va l'argent digital ; sans lui, POS seul
+    commission_bps: int = 0                   # commission plateforme des contributions digitales
+
+
+class ContributionEntree(BaseModel):
+    montant_cents: int
+    nom: str = ""                      # qui contribue (affichage, optionnel)
+
+
+class ContributionPOS(BaseModel):
+    montant_cents: int
+    source: str = "caisse"             # qui a encaissé hors rail (caisse, POS, serveur…)
+    note: str = ""
+
+
 # ── Santé & config ───────────────────────────────────────────────
 @app.get("/sante")
 def sante():
-    return {"ok": True, "brique": "paiements", "version": "0.1.0"}
+    return {"ok": True, "brique": "paiements", "version": "0.2.0"}
 
 
 @app.get("/config")
@@ -183,6 +202,136 @@ def rembourser(paiement_id: str, sol: str = Depends(solution_actuelle)):
     fournisseurs.fournisseur().rembourser(p)
     stockage.maj_statut_paiement(paiement_id, domaine.PAIEMENT_REMBOURSE)
     return stockage.lire_paiement(sol, paiement_id)
+
+
+# ── Cagnottes universelles par ID (S166) ─────────────────────────
+# Une cagnotte est AVEUGLE au métier : id partageable + cible + contributions. La gestion
+# (créer, lister, annuler, notifier la caisse) est au TENANT (clé API) ; la consultation et
+# la contribution digitale sont OUVERTES par capability — connaître l'id (uuid imprévisible,
+# porté par un lien/QR), même motif que l'onboarding mock. On n'y expose RIEN du tenant.
+
+
+def _presenter_cagnotte(cag: dict, avec_contributions: bool = False) -> dict:
+    """Vue calculée d'une cagnotte : reste + statut effectif dérivés du solde (source de
+    vérité = les contributions), jamais stockés."""
+    reste = domaine.reste_cagnotte(cag["cible_cents"], cag["solde_cents"])
+    vue = {"id": cag["id"], "cible_cents": cag["cible_cents"], "solde_cents": cag["solde_cents"],
+           "reste_cents": reste, "devise": cag["devise"], "description": cag["description"],
+           "statut": domaine.statut_effectif(cag["statut"], reste)}
+    if avec_contributions:
+        vue["contributions"] = stockage.lister_contributions(cag["id"])
+    return vue
+
+
+@app.post("/cagnottes", status_code=201)
+def creer_cagnotte(corps: CagnotteEntree, sol: str = Depends(solution_actuelle)):
+    """Ouvre une cagnotte par ID partageable (lien/QR côté appelant). `compte_connecte_id`
+    optionnel = où part l'argent DIGITAL ; sans lui, seule la caisse (POS) peut contribuer."""
+    if int(corps.montant_cible_cents) <= 0:
+        raise HTTPException(400, "Cible invalide (montant_cible_cents > 0 requis).")
+    if corps.compte_connecte_id and not stockage.lire_compte(sol, corps.compte_connecte_id):
+        raise HTTPException(404, "Compte connecté introuvable.")
+    cag = stockage.creer_cagnotte(sol, int(corps.montant_cible_cents), corps.devise,
+                                  corps.description, corps.compte_connecte_id,
+                                  max(0, int(corps.commission_bps)), domaine.CAGNOTTE_OUVERTE)
+    return _presenter_cagnotte(cag)
+
+
+@app.get("/cagnottes")
+def lister_cagnottes(sol: str = Depends(solution_actuelle)):
+    return {"cagnottes": [_presenter_cagnotte(c) for c in stockage.lister_cagnottes(sol)]}
+
+
+@app.get("/cagnottes/{cagnotte_id}")
+def lire_cagnotte(cagnotte_id: str, sol: str = Depends(solution_actuelle)):
+    """Vue TENANT : tout, contributions comprises (qui a payé quoi, caisse incluse)."""
+    cag = stockage.lire_cagnotte(sol, cagnotte_id)
+    if not cag:
+        raise HTTPException(404, "Cagnotte introuvable.")
+    return _presenter_cagnotte(cag, avec_contributions=True)
+
+
+@app.get("/cagnottes/{cagnotte_id}/public")
+def cagnotte_publique(cagnotte_id: str):
+    """Vue PUBLIQUE pour les payeurs (capability = l'id) : la cible, le solde, le reste —
+    de quoi afficher « il manque X € » en direct. Aucune info tenant ni détail nominatif."""
+    cag = stockage.cagnotte_par_id(cagnotte_id)
+    if not cag:
+        raise HTTPException(404, "Cagnotte introuvable.")
+    return _presenter_cagnotte(cag)
+
+
+def _cagnotte_contribuable(cag: dict | None, montant_cents: int) -> int:
+    """Garde commune des contributions : cagnotte existante, non annulée, non atteinte,
+    montant borné au reste (anti-surpaiement). Renvoie le montant admis, ou lève."""
+    if not cag:
+        raise HTTPException(404, "Cagnotte introuvable.")
+    reste = domaine.reste_cagnotte(cag["cible_cents"], cag["solde_cents"])
+    statut = domaine.statut_effectif(cag["statut"], reste)
+    if statut == domaine.CAGNOTTE_ANNULEE:
+        raise HTTPException(409, "Cagnotte annulée : plus aucune contribution possible.")
+    if statut == domaine.CAGNOTTE_ATTEINTE:
+        raise HTTPException(409, "Cagnotte déjà atteinte : rien ne reste à payer.")
+    admis = domaine.contribution_bornee(reste, montant_cents)
+    if admis <= 0:
+        raise HTTPException(400, "Montant invalide (rien à contribuer).")
+    return admis
+
+
+@app.post("/cagnottes/{cagnotte_id}/contribuer", status_code=201)
+def contribuer(cagnotte_id: str, corps: ContributionEntree):
+    """Contribution DIGITALE d'un payeur (capability = l'id) : passe par le RAIL — paiement
+    avec la commission de la cagnotte, vers son compte connecté. Montant borné au reste :
+    on ne collecte jamais plus que la cible, même si deux payeurs cliquent en même temps."""
+    cag = stockage.cagnotte_par_id(cagnotte_id)
+    admis = _cagnotte_contribuable(cag, corps.montant_cents)
+    if not cag["compte_id"]:
+        raise HTTPException(409, "Cagnotte sans compte vendeur : le paiement en ligne est "
+                                 "impossible ici — seule la caisse (POS) peut y contribuer.")
+    compte = stockage.lire_compte(cag["solution"], cag["compte_id"])
+    if not compte or not domaine.compte_peut_encaisser(compte["statut"]):
+        raise HTTPException(409, "Le compte vendeur ne peut pas encore encaisser "
+                                 "(onboarding non terminé).")
+    rep = domaine.calculer_commission(admis, commission_bps=cag["commission_bps"])
+    res = fournisseurs.fournisseur().creer_paiement(
+        compte, rep["brut"], cag["devise"], rep["commission"],
+        cag["description"] or f"Cagnotte {cagnotte_id}")
+    paiement = stockage.creer_paiement(
+        cag["solution"], compte["id"], res["ref_externe"], rep["brut"], rep["commission"],
+        rep["net"], cag["devise"], res["statut"], f"cagnotte:{cagnotte_id}")
+    contrib = stockage.ajouter_contribution(cagnotte_id, domaine.CONTRIB_DIGITALE, admis,
+                                            nom=corps.nom, paiement_id=paiement["id"])
+    extras = {k: res[k] for k in ("client_secret", "mode", "message") if k in res}
+    return {"contribution": contrib, "paiement": paiement | extras,
+            "cagnotte": _presenter_cagnotte(stockage.cagnotte_par_id(cagnotte_id))}
+
+
+@app.post("/cagnottes/{cagnotte_id}/pos", status_code=201)
+def contribution_pos(cagnotte_id: str, corps: ContributionPOS,
+                     sol: str = Depends(solution_actuelle)):
+    """Le CLIENT RÉFRACTAIRE : quelqu'un a payé en espèces/CB physique à la caisse, HORS du
+    rail — le POS le notifie ici (clé API du tenant) et la cible effective DESCEND pour les
+    payeurs digitaux. Aucun argent ne transite par la brique pour cette part : c'est dit."""
+    cag = stockage.lire_cagnotte(sol, cagnotte_id)
+    admis = _cagnotte_contribuable(cag, corps.montant_cents)
+    contrib = stockage.ajouter_contribution(
+        cagnotte_id, domaine.CONTRIB_EXTERNE, admis,
+        source=corps.source or "caisse", note=corps.note)
+    return {"contribution": contrib,
+            "cagnotte": _presenter_cagnotte(stockage.lire_cagnotte(sol, cagnotte_id)),
+            "message": "Part encaissée HORS rail (caisse) : enregistrée pour faire baisser "
+                       "le reste — aucun mouvement d'argent dans la brique pour cette part."}
+
+
+@app.post("/cagnottes/{cagnotte_id}/annuler")
+def annuler_cagnotte(cagnotte_id: str, sol: str = Depends(solution_actuelle)):
+    """Ferme une cagnotte (plus aucune contribution). Les paiements déjà encaissés restent :
+    leur remboursement éventuel passe par /paiements/{id}/rembourser, à la main."""
+    cag = stockage.lire_cagnotte(sol, cagnotte_id)
+    if not cag:
+        raise HTTPException(404, "Cagnotte introuvable.")
+    stockage.maj_statut_cagnotte(cagnotte_id, domaine.CAGNOTTE_ANNULEE)
+    return _presenter_cagnotte(stockage.lire_cagnotte(sol, cagnotte_id))
 
 
 # ── Webhooks Stripe (signature vérifiée) ─────────────────────────
