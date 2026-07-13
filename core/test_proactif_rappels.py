@@ -21,10 +21,12 @@ import proactif  # noqa: E402
 
 
 def _reset():
-    # Repart d'une base de rappels vierge à chaque test.
-    db = os.environ["RAPPELS_DB"]
-    if os.path.exists(db):
-        os.remove(db)
+    # Repart d'une base de rappels vierge à chaque test. On vide `proactif.DB` (le chemin que
+    # le module utilise vraiment, figé à son import), pas `os.environ["RAPPELS_DB"]` : en suite
+    # complète, proactif peut être importé plus tôt et gelé sur le chemin du conftest — nettoyer
+    # via l'env viderait un autre fichier et laisserait la vraie base accumuler.
+    if os.path.exists(proactif.DB):
+        os.remove(proactif.DB)
     proactif.init_db()
 
 

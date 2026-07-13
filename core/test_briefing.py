@@ -14,6 +14,8 @@ import sys
 import tempfile
 from datetime import datetime
 
+import pytest
+
 # Isole les journaux et fournit le secret requis AVANT les imports du Cœur.
 _tmp = tempfile.mkdtemp()
 os.environ["RAPPELS_DB"] = os.path.join(_tmp, "rappels.db")
@@ -27,6 +29,24 @@ import llm_pipeline        # noqa: E402
 import proactif            # noqa: E402
 
 JOUR = datetime(2026, 6, 11, 8, 0, 0)  # un mercredi matin
+
+
+@pytest.fixture(autouse=True)
+def _restaurer_globaux_partages():
+    """`_reset()` remplace des attributs de modules PARTAGÉS (httpx.AsyncClient,
+    llm_pipeline.completer, config_assistant.chaine_modeles, agenda.lister_evenements)
+    pour simuler réseau et LLM. Sans restauration, ces doublures FUITENT vers les tests
+    suivants de la suite complète (pollution d'ordre : c'est ce mock de chaine_modeles qui
+    faisait échouer test_repli_souverain / test_muscle / test_s138). On photographie l'état
+    avant chaque test et on le rétablit après. Sans effet en exécution standalone (bloc
+    __main__), qui n'utilise pas les fixtures pytest."""
+    snapshot = (briefing.httpx.AsyncClient, briefing.llm_pipeline.completer,
+                briefing.config_assistant.chaine_modeles, briefing.agenda.lister_evenements)
+    try:
+        yield
+    finally:
+        (briefing.httpx.AsyncClient, briefing.llm_pipeline.completer,
+         briefing.config_assistant.chaine_modeles, briefing.agenda.lister_evenements) = snapshot
 
 
 # ── Doublures ────────────────────────────────────────────────────────────────

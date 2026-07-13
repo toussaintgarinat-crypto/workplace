@@ -21,8 +21,12 @@ import proprioception  # noqa: E402
 
 
 def _reset():
+    # On vide `proprioception.TRACE_PATH` (le chemin que le module utilise vraiment, figé à
+    # son import), pas `os.environ["PROPRIOCEPTION_PATH"]` : en suite complète le module peut
+    # être importé plus tôt et gelé sur le chemin du conftest — nettoyer via l'env viderait un
+    # autre fichier et laisserait les traces s'accumuler (moyennes faussées, pollution d'ordre).
     try:
-        os.remove(os.environ["PROPRIOCEPTION_PATH"])
+        os.remove(proprioception.TRACE_PATH)
     except FileNotFoundError:
         pass
 
