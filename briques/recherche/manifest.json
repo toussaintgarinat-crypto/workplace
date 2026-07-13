@@ -61,6 +61,35 @@
         }
       },
       "action": false
+    },
+    {
+      "nom": "recherche_synthetiser",
+      "description": "Cherche sur le WEB puis RÉDIGE une réponse en langage naturel citant ses sources — en UN seul appel. Sert « fais-moi une synthèse sur… », « résume-moi ce qui se dit de… », « réponds en cherchant sur internet ». À préférer à recherche_web quand l'utilisateur veut une RÉPONSE rédigée plutôt qu'une liste de liens ; enchaîne recherche + lecture + synthèse LLM côté brique. Lecture seule.",
+      "methode": "POST",
+      "chemin": "/synthétiser",
+      "params": {
+        "requete": {
+          "type": "string",
+          "description": "La question ou le sujet à synthétiser (langage naturel)."
+        },
+        "n": {
+          "type": "integer",
+          "description": "Nombre de sources à consulter (défaut 8, max 50)."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Thème : 'web' (défaut), 'news', 'academic' ou 'code'."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de recherche et de réponse (ex. 'fr', 'en'). Défaut 'fr'."
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Consigne optionnelle de cadrage de la synthèse (ton, angle, format)."
+        }
+      },
+      "action": false
     }
   ],
   "taches": []
