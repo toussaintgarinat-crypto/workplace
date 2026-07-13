@@ -32,8 +32,11 @@ class _Reg:
 
 
 def _reset():
-    for p in (os.environ["CAPACITES_PROPOSEES_PATH"], os.environ["AMELIORATION_PATH"],
-              os.environ["RAPPELS_DB"]):
+    # On vide les fichiers que les modules utilisent VRAIMENT (globals figés à l'import), pas
+    # `os.environ` : en suite complète, un module importé plus tôt gèle son chemin sur celui du
+    # conftest — nettoyer via l'env viderait d'autres fichiers et laisserait les stores
+    # (capacités proposées, propositions d'amélioration, rappels) accumuler d'un test à l'autre.
+    for p in (curateur.CAPACITES_PATH, amelioration.STORE_PATH, proactif.DB):
         try:
             os.remove(p)
         except FileNotFoundError:

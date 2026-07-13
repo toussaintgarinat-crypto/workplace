@@ -23,8 +23,14 @@ import proactif  # noqa: E402
 
 
 def _reset():
-    """Repart d'un journal et d'une base de rappels vierges entre les cas."""
-    for p in (os.environ["RAPPELS_DB"], os.environ["USAGE_LLM_PATH"]):
+    """Repart d'un journal et d'une base de rappels vierges entre les cas.
+
+    On vide les fichiers que les modules utilisent VRAIMENT (`proactif.DB`,
+    `journal_usage.JOURNAL_PATH`), pas `os.environ` : ces chemins sont figés au premier
+    import du module. En suite complète, un module importé plus tôt gèle son chemin sur
+    celui du conftest ; nettoyer via `os.environ` viderait un autre fichier et laisserait
+    la vraie base accumuler (pollution d'ordre)."""
+    for p in (proactif.DB, journal_usage.JOURNAL_PATH):
         try:
             os.remove(p)
         except FileNotFoundError:

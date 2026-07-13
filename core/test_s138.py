@@ -22,10 +22,25 @@ sys.path.insert(0, os.path.dirname(__file__))
 import cache_semantique  # noqa: E402
 import journal_usage  # noqa: E402
 import llm_pipeline  # noqa: E402
+import pytest  # noqa: E402
 import routage  # noqa: E402
 import shadow  # noqa: E402
 import summarisation  # noqa: E402
 import trimming  # noqa: E402
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _journal_vierge_au_demarrage():
+    """Ce fichier suppose (comme en exécution standalone) un journal d'usage VIERGE au départ,
+    puis une accumulation ORDONNÉE entre ses tests (parité de coût → garde-fou budget). En suite
+    complète, `journal_usage.JOURNAL_PATH` est partagé et déjà rempli par des fichiers de test
+    antérieurs. On repart donc d'un journal vide une seule fois, avant les tests du module —
+    l'accumulation interne (dont dépendent les tests budget) reste intacte."""
+    try:
+        os.remove(journal_usage.JOURNAL_PATH)
+    except FileNotFoundError:
+        pass
+    yield
 
 
 def _vecteur(texte: str) -> list[float]:

@@ -23,8 +23,12 @@ import proprioception  # noqa: E402
 
 
 def _reset():
+    # On vide le store que le module utilise vraiment (`amelioration.STORE_PATH`, figé à son
+    # import), pas `os.environ["AMELIORATION_PATH"]` : en suite complète le module peut être
+    # importé plus tôt et gelé sur le chemin du conftest — nettoyer via l'env viderait un autre
+    # fichier et laisserait des propositions d'autres tests s'accumuler (pollution d'ordre).
     try:
-        os.remove(os.environ["AMELIORATION_PATH"])
+        os.remove(amelioration.STORE_PATH)
     except FileNotFoundError:
         pass
 
