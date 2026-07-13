@@ -201,6 +201,21 @@
       "params": {},
       "action": true,
       "niveau": 1
+    },
+    {
+      "nom": "geo_zone_supprimer",
+      "description": "Supprime une ZONE DE VEILLE : l'ingestion nocturne cessera de la surveiller. Sert « arrête de surveiller X », « supprime la zone Castres ». Récupère l'id via geo_zones_lister. ACTION : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/zones/{zone_id}",
+      "params": {
+        "zone_id": {
+          "type": "string",
+          "description": "Identifiant de la zone à supprimer (voir geo_zones_lister).",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 1
     }
   ],
   "taches": [

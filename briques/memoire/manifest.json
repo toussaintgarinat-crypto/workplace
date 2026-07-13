@@ -118,6 +118,28 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "memoire_oublier",
+      "description": "Supprime DÉFINITIVEMENT un souvenir par son identifiant. Sert « oublie ce souvenir », « efface cette note de ta mémoire ». Récupère l'id via memoire_lister_souvenirs ou memoire_rappeler. ACTION IRRÉVERSIBLE : confirmer avant de supprimer.",
+      "methode": "DELETE",
+      "chemin": "/souvenir/{souvenir_id}",
+      "params": {
+        "souvenir_id": {
+          "type": "string",
+          "description": "Identifiant du souvenir à supprimer (voir memoire_lister_souvenirs / memoire_rappeler).",
+          "requis": true
+        },
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso"
+          ],
+          "description": "Espace mémoire où se trouve le souvenir (défaut 'solution')."
+        }
+      },
+      "action": true
     }
   ]
 }
