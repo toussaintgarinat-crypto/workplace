@@ -22,6 +22,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
@@ -29,11 +30,12 @@ from pydantic import BaseModel
 
 import auth
 import carte_ia
+import rail
 import souvenir
 import stockage
 from temps_reel import diffuseur
 
-app = FastAPI(title="Restaurant — commande & paiement à table", version="0.11.0")
+app = FastAPI(title="Restaurant — commande & paiement à table", version="0.12.0")
 
 # Origines navigateur autorisées (CSV via CORS_ORIGINS). Défaut "*" = dev/démo.
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -329,6 +331,52 @@ def _exige_resto(compte_id: str, restaurant_id: str) -> dict:
 @app.get("/restaurants/{restaurant_id}")
 def lire_restaurant(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
     return _exige_resto(compte_id, restaurant_id)
+
+
+# ── Rail de paiement (branchement sur la brique paiements 6020, S166) ─
+@app.get("/restaurants/{restaurant_id}/rail")
+def etat_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
+    """État HONNÊTE du branchement du rail pour ce restaurant : le rail est-il configuré
+    (URL + clé) ? un compte connecté est-il rattaché ? peut-il déjà encaisser ? Sert le
+    bandeau du back-office (« paiements en ligne réels » vs « démo mock »). Lecture seule."""
+    _exige_resto(compte_id, restaurant_id)
+    rail_compte = stockage.rail_compte_de(restaurant_id)
+    if not rail.configure():
+        return {"configure": False, "compte_id": rail_compte, "peut_encaisser": False,
+                "message": "Rail non configuré (PAIEMENTS_URL / PAIEMENTS_API_KEY absents) : "
+                           "les paiements en ligne restent en démo (mock honnête)."}
+    etat = rail.statut_compte(rail_compte) if rail_compte else None
+    return {"configure": True, "compte_id": rail_compte,
+            "statut": (etat or {}).get("statut"),
+            "peut_encaisser": bool(etat and etat.get("peut_encaisser")),
+            "message": "Rail configuré." if rail_compte else
+                       "Rail configuré, mais aucun compte vendeur : activez le rail pour "
+                       "encaisser en ligne pour de vrai."}
+
+
+@app.post("/restaurants/{restaurant_id}/rail/activer")
+def activer_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
+    """Active les paiements en ligne RÉELS : crée le compte connecté du restaurant dans le
+    rail et renvoie son lien d'onboarding hébergé (KYC chez le prestataire, pas ici). Tant
+    que l'onboarding n'est pas terminé, `/t/{code}/payer` reste en mock honnête."""
+    resto = _exige_resto(compte_id, restaurant_id)
+    if not rail.configure():
+        raise HTTPException(503, "Rail non configuré (PAIEMENTS_URL / PAIEMENTS_API_KEY absents).")
+    existant = stockage.rail_compte_de(restaurant_id)
+    if existant:
+        etat = rail.statut_compte(existant) or {}
+        return {"compte_id": existant, "statut": etat.get("statut"),
+                "peut_encaisser": bool(etat.get("peut_encaisser")),
+                "message": "Rail déjà activé pour ce restaurant."}
+    try:
+        cree = rail.creer_compte(resto["nom"])
+    except httpx.HTTPError:
+        raise HTTPException(502, "Le rail de paiement est injoignable — réessayez plus tard.")
+    stockage.definir_rail_compte(compte_id, restaurant_id, cree["compte_id"])
+    return {"compte_id": cree["compte_id"], "statut": cree["statut"],
+            "onboarding_url": cree["onboarding_url"],
+            "message": "Compte de paiement créé. Terminez l'onboarding via le lien pour "
+                       "encaisser en ligne pour de vrai."}
 
 
 # ── Tables (+ QR) ────────────────────────────────────────────────
@@ -763,19 +811,40 @@ def addition_client(code: str, x_table_session: Optional[str] = Header(None)):
 @app.post("/t/{code}/payer")
 async def payer(code: str, corps: PayerPart, x_table_session: Optional[str] = Header(None)):
     """Le client règle en ligne, selon la RÉPARTITION choisie (sa part / partage égal / montant
-    libre — S83). Incrément 1 : paiement MOCK (démo, sans flux réel). Montant borné serveur."""
+    libre — S83). Montant borné serveur. Si le RAIL de paiement est activé pour ce restaurant
+    (compte connecté qui peut encaisser, S166), l'encaissement passe par la brique paiements
+    (argent réel en mode Stripe) ; sinon, repli MOCK honnête (démo). Le repli est SILENCIEUX
+    côté flux mais explicite dans la réponse (`demo`) : jamais de faux encaissement réel."""
     t = _table_par_code(code)
     _exige_adhesion(t, x_table_session)
-    res = stockage.enregistrer_paiement(t["restaurant_id"], t["id"], corps.convive, "mock",
+    rid = t["restaurant_id"]
+
+    # Branchement rail : si activé, on charge d'ABORD le rail (le vrai argent), PUIS on écrit
+    # le paiement local. Le montant est calculé une fois (règle anti-surpaiement partagée).
+    via_rail = False
+    rail_compte = stockage.rail_compte_de(rid)
+    if rail_compte and rail.configure():
+        _, montant = stockage.prevoir_paiement(rid, t["id"], corps.convive, corps.mode,
+                                               corps.parts, corps.montant_cents)
+        if montant <= 0:
+            raise HTTPException(400, "Rien à payer (déjà réglé, table soldée ou montant nul).")
+        try:
+            rail.encaisser(rail_compte, montant, f"Restaurant — table {t['id']}")
+            via_rail = True
+        except (httpx.HTTPError, ValueError):
+            via_rail = False   # rail injoignable / compte pas prêt → repli mock honnête
+
+    res = stockage.enregistrer_paiement(rid, t["id"], corps.convive,
+                                        "rail" if via_rail else "mock",
                                         corps.pourboire_cents, corps.mode, corps.parts,
                                         corps.montant_cents)
     if not res:
         raise HTTPException(400, "Rien à payer (déjà réglé, table soldée ou montant nul).")
-    etat = stockage.etat_table(t["restaurant_id"], t["id"])
+    etat = stockage.etat_table(rid, t["id"])
     await diffuseur.diffuser(diffuseur.canal_table(t["id"]), {"type": "paiement", "etat": etat})
-    await diffuseur.diffuser(diffuseur.canal_cuisine(t["restaurant_id"]),
+    await diffuseur.diffuser(diffuseur.canal_cuisine(rid),
                              {"type": "paiement", "table_id": t["id"], "etat": etat})
-    return {"paiement": res, "etat": etat, "demo": True}
+    return {"paiement": res, "etat": etat, "demo": not via_rail}
 
 
 @app.post("/t/{code}/nommer")
