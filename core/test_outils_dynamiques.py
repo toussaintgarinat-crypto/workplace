@@ -150,9 +150,21 @@ def test_cle_de_service_envoyee_en_entete():
         cli = _Client(_Resp(200, {"ok": True}))
         cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
         asyncio.run(outils._appel_dynamique(cli, cap, {}))
-        assert cli.dernier["headers"] == {"X-API-Key": "secret"}
+        # Clé de service (X-API-Key) + identité de l'appelant (X-Compte-Id, S167).
+        assert cli.dernier["headers"]["X-API-Key"] == "secret"
+        assert cli.dernier["headers"]["X-Compte-Id"] == "admin"
     finally:
         os.environ.pop("CALCUL_KEY", None)
+
+
+def test_identite_appelant_toujours_envoyee_sans_cle():
+    """Même sans {BRIQUE}_KEY, le Cœur transmet l'identité de l'appelant (X-Compte-Id) :
+    la brique peut décider du périmètre par rôle sans exiger de clé (S167)."""
+    os.environ.pop("CALCUL_KEY", None)
+    cli = _Client(_Resp(200, {"ok": True}))
+    cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
+    asyncio.run(outils._appel_dynamique(cli, cap, {}))
+    assert cli.dernier["headers"] == {"X-Compte-Id": "admin"}
 
 
 def test_refus_brique_message_honnete():
@@ -160,6 +172,22 @@ def test_refus_brique_message_honnete():
     cap = outils._capacites_dynamiques(_registre())["calcul_lister_noeuds"]
     out = json.loads(asyncio.run(outils._appel_dynamique(cli, cap, {})))
     assert out["ok"] is False and "refusé" in out["message"].lower()
+
+
+def test_succes_204_sans_corps_renvoie_ok_explicite():
+    """Une réponse 2xx sans corps JSON (204 No Content des suppressions REST) ne doit PAS
+    renvoyer une chaîne vide à l'assistant, mais un succès honnête et lisible (S167 T5)."""
+    class _Resp204:
+        status_code = 204
+        text = ""
+
+        def json(self):
+            raise ValueError("No content")
+
+    cli = _Client(_Resp204())
+    cap = outils._capacites_dynamiques(_registre())["calcul_etat_muscle"]  # action:true
+    out = json.loads(asyncio.run(outils._appel_dynamique(cli, cap, {"confirme": True})))
+    assert out["ok"] is True and out["status"] == 204 and out["brique"] == "calcul"
 
 
 # ── Garde-fous du plan de contrôle ────────────────────────────────────────────

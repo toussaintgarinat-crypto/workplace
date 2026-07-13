@@ -1,7 +1,7 @@
 {
   "nom": "personnages",
   "famille": "metier",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Génération de personnages : distributions structurées (LLM) + casting vocal STABLE agnostique au TTS + moteur HOLISTIQUE multi-traditions (numérologie, astro occidentale/chinoise/védique, égyptien, celte, amérindien, maya Tzolkin) avec synthèse tags→stats→archétype→pierre d'équilibrage (descendant) et recherche inverse description→signes/date (montant). Produit autonome vendable seul : stateless ET stateful (cloisonné par clé API). LLM Gateway par défaut ou Bring-Your-Own-Key. Extrait du Studio Oria (S47), étendu en S49.",
   "role": "personnages",
   "couche": "backend",
@@ -124,6 +124,326 @@
         }
       },
       "action": false
+    },
+    {
+      "nom": "personnage_fiche_ranger",
+      "description": "Range une fiche de personnage dans une catégorie libre (« Famille », « Collègues »…). Une catégorie vide retire le rangement. Récupère fid via personnages_fiches_lister. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/fiches/{fid}/categorie",
+      "params": {
+        "fid": {
+          "type": "string",
+          "description": "Id de la fiche (via personnages_fiches_lister).",
+          "requis": true
+        },
+        "categorie": {
+          "type": "string",
+          "description": "Catégorie de rangement (vide = retirer le rangement)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_holistique_traditions",
+      "description": "Calcule les données brutes des 10 traditions (astrologie, numérologie…) pour une date de naissance. Analyse déterministe, ne persiste rien. Repli honnête : chaque champ manquant désactive juste la lecture qui en dépend.",
+      "methode": "POST",
+      "chemin": "/holistique/traditions",
+      "params": {
+        "date_naissance": {
+          "type": "string",
+          "description": "Date de naissance AAAA-MM-JJ.",
+          "requis": true
+        },
+        "prenoms": {
+          "type": "string",
+          "description": "Prénom(s) (pour la numérologie)."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom de famille (optionnel)."
+        },
+        "heure_naissance": {
+          "type": "string",
+          "description": "Heure de naissance HH:MM (affine l'astrologie ; optionnel)."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude du lieu de naissance (optionnel)."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude EST-positive du lieu de naissance (optionnel)."
+        },
+        "systeme_numerologie": {
+          "type": "string",
+          "description": "« classique » (défaut) ou « pythagoricien »."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_holistique_lecture",
+      "description": "Rédige une LECTURE APPROFONDIE (portrait de personnage narratif) à partir des traditions, dans la langue voulue. Analyse, ne persiste rien.",
+      "methode": "POST",
+      "chemin": "/holistique/lecture-approfondie",
+      "params": {
+        "date_naissance": {
+          "type": "string",
+          "description": "Date de naissance AAAA-MM-JJ.",
+          "requis": true
+        },
+        "prenoms": {
+          "type": "string",
+          "description": "Prénom(s)."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom de famille (optionnel)."
+        },
+        "heure_naissance": {
+          "type": "string",
+          "description": "Heure de naissance HH:MM (optionnel)."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude du lieu de naissance (optionnel)."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude EST-positive (optionnel)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de rédaction (défaut « français »)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_recherche_inverse",
+      "description": "Recherche INVERSE : à partir d'une description de personnalité, propose des profils cosmiques plausibles (dates/traits). Analyse, ne persiste rien.",
+      "methode": "POST",
+      "chemin": "/holistique/recherche-inverse",
+      "params": {
+        "description": {
+          "type": "string",
+          "description": "Description du tempérament / des traits recherchés.",
+          "requis": true
+        },
+        "combien": {
+          "type": "integer",
+          "description": "Nombre de profils à proposer (défaut 3)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnages_distributions_lister",
+      "description": "Liste les distributions (castings) enregistrées : id, titre, langue, nb de personnages. À appeler EN PREMIER pour découvrir l'id d'une distribution avant toute autre action. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/distributions",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "personnage_distribution_lire",
+      "description": "Détail d'une distribution : personnages, voix figées, prémisse. Récupère did via personnages_distributions_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/distributions/{did}",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution (via personnages_distributions_lister).",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_distribution_creer",
+      "description": "Crée une distribution (casting) vide, à peupler ensuite. ACTION.",
+      "methode": "POST",
+      "chemin": "/distributions",
+      "params": {
+        "titre": {
+          "type": "string",
+          "description": "Titre de la distribution."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue par défaut du casting (défaut « fr »)."
+        },
+        "premisse": {
+          "type": "string",
+          "description": "Prémisse/contexte de l'histoire (guide les propositions de personnages)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_modifier",
+      "description": "Modifie les réglages d'une distribution (titre, langue, prémisse). Récupère did via personnages_distributions_lister. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/distributions/{did}",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Nouveau titre (optionnel)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Nouvelle langue (optionnel)."
+        },
+        "premisse": {
+          "type": "string",
+          "description": "Nouvelle prémisse (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_supprimer",
+      "description": "Supprime une distribution entière. Récupère did via personnages_distributions_lister. ACTION irréversible : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/distributions/{did}",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution à supprimer.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_proposer_dans",
+      "description": "PROPOSE des personnages cohérents avec une distribution existante (ne les ajoute PAS : l'ajout se fait via personnage_distribution_perso_ajouter). Récupère did via personnages_distributions_lister.",
+      "methode": "POST",
+      "chemin": "/distributions/{did}/proposer",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "premisse": {
+          "type": "string",
+          "description": "Prémisse (optionnel : défaut celle de la distribution)."
+        },
+        "combien": {
+          "type": "integer",
+          "description": "Nombre de personnages à proposer (défaut 4)."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_distribution_perso_ajouter",
+      "description": "Ajoute un personnage à une distribution. Récupère did via personnages_distributions_lister. ACTION.",
+      "methode": "POST",
+      "chemin": "/distributions/{did}/personnages",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom du personnage.",
+          "requis": true
+        },
+        "role": {
+          "type": "string",
+          "description": "Rôle dans l'histoire (optionnel)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description du personnage (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_perso_modifier",
+      "description": "Modifie un personnage d'une distribution (nom, rôle, description). Récupère les ids via personnage_distribution_lire. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/distributions/{did}/personnages/{pid}",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "pid": {
+          "type": "string",
+          "description": "Id du personnage (via personnage_distribution_lire).",
+          "requis": true
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nouveau nom (optionnel)."
+        },
+        "role": {
+          "type": "string",
+          "description": "Nouveau rôle (optionnel)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Nouvelle description (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_perso_retirer",
+      "description": "Retire un personnage d'une distribution. Récupère les ids via personnage_distribution_lire. ACTION irréversible : confirme=true requis.",
+      "methode": "DELETE",
+      "chemin": "/distributions/{did}/personnages/{pid}",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "pid": {
+          "type": "string",
+          "description": "Id du personnage à retirer.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "personnage_distribution_caster",
+      "description": "Caste un script avec la distribution STOCKÉE (attribue une voix à chaque intervenant) et fige/persiste les voix retenues. Récupère did via personnages_distributions_lister. ACTION.",
+      "methode": "POST",
+      "chemin": "/distributions/{did}/casting",
+      "params": {
+        "did": {
+          "type": "string",
+          "description": "Id de la distribution.",
+          "requis": true
+        },
+        "repliques": {
+          "type": "array",
+          "description": "Répliques du script : [{perso, texte}] ou liste de noms d'intervenants."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue du casting (défaut « fr »)."
+        },
+        "pool_voix": {
+          "type": "array",
+          "description": "Identifiants de voix disponibles côté TTS (optionnel)."
+        }
+      },
+      "action": true
     }
   ]
 }

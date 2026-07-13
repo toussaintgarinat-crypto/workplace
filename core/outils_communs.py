@@ -46,9 +46,21 @@ def _espace_memoire(espace: str | None) -> str | None:
 
 
 def _entetes_brique(brique: str) -> dict:
-    """Auth optionnelle : clé de service ``{BRIQUE}_KEY`` → en-tête X-API-Key (motif muscle.py)."""
+    """En-têtes de service pour piloter une brique au nom de l'appelant (S167).
+
+    - ``{BRIQUE}_KEY`` → ``X-API-Key`` : prouve qu'on a le droit d'emprunter la surface
+      ``/service`` (motif muscle.py). Sans clé, la brique reste en mode ouvert.
+    - ``ADMIN_COMPTE_ID`` (défaut ``admin``) → ``X-Compte-Id`` : identité de l'appelant.
+      La brique lit le ``role`` de ce compte EN BASE pour décider du périmètre (admin =
+      accès total ; tenant = ses ressources). Mono-user aujourd'hui → toujours l'admin ;
+      multi-user demain → l'id de l'utilisateur courant, sans rien changer côté brique.
+      Cf. ADR docs/decisions/2026-07-13-surface-de-service-role-admin.md.
+    """
+    entetes: dict = {"X-Compte-Id": os.environ.get("ADMIN_COMPTE_ID", "admin")}
     cle = os.environ.get(f"{brique.upper()}_KEY")
-    return {"X-API-Key": cle} if cle else {}
+    if cle:
+        entetes["X-API-Key"] = cle
+    return entetes
 
 
 def _url_dynamique(cap: dict, args: dict) -> str:
@@ -87,7 +99,14 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     try:
         return json.dumps(r.json(), ensure_ascii=False)
     except ValueError:
-        return (r.text or "")[:1000]
+        # Réponse 2xx sans corps JSON. Cas fréquent : 204 No Content (suppressions REST,
+        # ex. studio/personnages) → sans ça l'assistant recevrait une chaîne VIDE et ne
+        # saurait pas si l'action a réussi. On renvoie un succès honnête et explicite.
+        texte = (r.text or "").strip()
+        if not texte:
+            return json.dumps({"ok": True, "brique": cap["brique"], "status": r.status_code},
+                              ensure_ascii=False)
+        return texte[:1000]
 
 
 # ── Répartiteur ──────────────────────────────────────────────────────────────

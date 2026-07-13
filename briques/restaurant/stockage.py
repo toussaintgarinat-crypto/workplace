@@ -122,6 +122,11 @@ def _conn() -> sqlite3.Connection:
         return {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
     if "jeton_version" not in _colonnes("comptes"):
         c.execute("ALTER TABLE comptes ADD COLUMN jeton_version INTEGER NOT NULL DEFAULT 1")
+    if "role" not in _colonnes("comptes"):
+        # Rôle du compte (S167) : 'admin' = accès total via la surface /service (peut viser
+        # n'importe quel restaurant) ; 'tenant' (défaut) = cloisonné à ses propres restos.
+        # Le Cœur transmet l'identité de l'appelant en X-Compte-Id ; service_garde lit ce rôle.
+        c.execute("ALTER TABLE comptes ADD COLUMN role TEXT NOT NULL DEFAULT 'tenant'")
     if "tva_taux" not in _colonnes("restaurants"):
         c.execute("ALTER TABLE restaurants ADD COLUMN tva_taux REAL NOT NULL DEFAULT 10.0")
     if "pin_requis" not in _colonnes("restaurants"):
@@ -187,9 +192,36 @@ def compte_par_email(email: str) -> dict | None:
 
 def compte_par_id(compte_id: str) -> dict | None:
     with _conn() as c:
-        r = c.execute("SELECT id, email, nom, jeton_version, cree_le FROM comptes WHERE id=?",
+        r = c.execute("SELECT id, email, nom, jeton_version, role, cree_le FROM comptes WHERE id=?",
                       (compte_id,)).fetchone()
     return dict(r) if r else None
+
+
+def role_du_compte(compte_id: str) -> str | None:
+    """Rôle d'un compte ('admin' ou 'tenant'), ou None si le compte n'existe pas (S167)."""
+    with _conn() as c:
+        r = c.execute("SELECT role FROM comptes WHERE id=?", (compte_id,)).fetchone()
+    return r["role"] if r else None
+
+
+def ensure_admin(compte_id: str) -> None:
+    """Garantit au boot un compte 'admin' d'id DÉTERMINISTE (S167).
+
+    Idempotent : ne crée le compte que s'il manque (le Cœur et la brique s'accordent sur
+    le même id via ADMIN_COMPTE_ID, sans jamais se copier d'identifiant). C'est un
+    PRINCIPAL DE SERVICE (god-mode par bypass, il n'a pas besoin de posséder des restos) :
+    email synthétique dédié (jamais l'email réel de l'utilisateur → pas de collision avec
+    un compte restaurateur), mot de passe non utilisable (l'admin pilote par la clé de
+    service, pas par login). Si l'id existe déjà (ex. promu à la main), on force role='admin'."""
+    with _conn() as c:
+        existe = c.execute("SELECT id FROM comptes WHERE id=?", (compte_id,)).fetchone()
+        if existe:
+            c.execute("UPDATE comptes SET role='admin' WHERE id=?", (compte_id,))
+        else:
+            c.execute(
+                "INSERT INTO comptes (id, email, mot_de_passe, nom, role, cree_le) "
+                "VALUES (?,?,?,?, 'admin', ?)",
+                (compte_id, f"{compte_id}@service.local", "!", "Admin (service)", _maintenant()))
 
 
 def version_compte(compte_id: str) -> int | None:

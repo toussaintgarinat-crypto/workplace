@@ -17,6 +17,7 @@ Paiement : MOCK assumé pour l'incrément 1 (marqué « démo » côté UI, aucu
 promesse). Stripe Connect réel = incrément suivant.
 """
 import io
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -48,6 +49,9 @@ _ICI = Path(__file__).parent
 def _verifier_prod():
     # Refuse de démarrer en prod avec le secret de dev (sessions forgeables).
     auth.verifier_secret_pour_prod()
+    # Garantit le compte admin de service (id déterministe = ADMIN_COMPTE_ID), pour que
+    # l'assistant soit reconnu god-mode dès le premier appel /service (S167). Idempotent.
+    stockage.ensure_admin(os.getenv("ADMIN_COMPTE_ID", "admin"))
 
 
 # ── Anti-brute-force minimal (en mémoire) sur les routes d'auth ──
@@ -87,24 +91,61 @@ def compte_actuel(authorization: Optional[str] = Header(None),
     return s["compte_id"]
 
 
-# ── Authentification de SERVICE (capacités du Cœur) ──────────────
-def service_ok(x_api_key: Optional[str] = Header(None)) -> bool:
-    """Garde le chemin `/service/...` piloté par le Cœur (capacités découvertes au manifest).
+# ── Authentification de SERVICE role-aware (capacités du Cœur, S167) ──────────────
+# service_garde garde le chemin `/service/*` piloté par le Cœur. Au-delà de la CLÉ DE
+# SERVICE (RESTAURANT_KEY → X-API-Key, le droit d'emprunter la surface — fail-closed 503 si
+# absente), il lit l'IDENTITÉ de l'appelant (X-Compte-Id, injecté par le Cœur) et son RÔLE
+# en base pour décider du périmètre : admin = accès total (bypass) ; tenant = ses restos.
+# Fini le « clé unique = tout ouvert ». Cf. ADR docs/decisions/2026-07-13-surface-de-service-role-admin.md.
+_log = logging.getLogger("restaurant.service")
+_ADMIN_ID = os.getenv("ADMIN_COMPTE_ID", "admin")
 
-    Le Cœur s'authentifie avec une CLÉ DE SERVICE (RESTAURANT_KEY → en-tête X-API-Key,
-    motif `_entetes_brique` du Cœur), pas avec le mot de passe d'un restaurateur. Fail-closed :
-    si RESTAURANT_KEY n'est pas défini, le chemin de service est ÉTEINT (503), pas ouvert.
 
-    Limite honnête (mono-utilisateur aujourd'hui) : qui détient cette clé peut viser
-    n'importe quel restaurant_id. L'isolation par restaurateur côté Cœur reste l'épopée
-    multi-tenant à venir ; ici on tient le cloisonnement EN BASE (chaque opération passe
-    par le compte propriétaire dérivé du restaurant_id)."""
+class ContexteService:
+    """Identité résolue d'un appel /service : qui appelle et avec quel rôle."""
+    def __init__(self, compte_id: str, role: str):
+        self.compte_id = compte_id
+        self.role = role
+
+    @property
+    def est_admin(self) -> bool:
+        return self.role == "admin"
+
+
+def service_garde(x_api_key: Optional[str] = Header(None),
+                  x_compte_id: Optional[str] = Header(None)) -> ContexteService:
+    """Garde role-aware du chemin `/service/*`. Vérifie la clé de service PUIS résout
+    l'appelant : X-Compte-Id → rôle en base → contexte {compte_id, role}.
+
+    Fail-closed : pas de clé configurée → 503 ; clé fausse → 401 ; compte appelant inconnu
+    → 403. Repli DÉPRÉCIÉ (rollout mono-user) : X-Compte-Id absent = admin + log d'alerte
+    (à retirer avant le multi-user, cf. runbook C de l'ADR)."""
     attendue = os.getenv("RESTAURANT_KEY")
     if not attendue:
         raise HTTPException(503, "Chemin de service non configuré (RESTAURANT_KEY absent).")
     if x_api_key != attendue:
         raise HTTPException(401, "Clé de service invalide.")
-    return True
+    if not x_compte_id:
+        _log.warning("Appel /service sans X-Compte-Id : repli admin déprécié (S167).")
+        return ContexteService(compte_id=_ADMIN_ID, role="admin")
+    role = stockage.role_du_compte(x_compte_id)
+    if role is None:
+        raise HTTPException(403, "Compte appelant inconnu.")
+    return ContexteService(compte_id=x_compte_id, role=role)
+
+
+def resoudre_compte_resto(ctx: ContexteService, restaurant_id: str) -> str:
+    """Résout le compte AU NOM DUQUEL agir sur `restaurant_id`, selon le rôle (S167).
+
+    - admin  → bypass : agit comme le PROPRIÉTAIRE du resto (peut viser n'importe lequel) ;
+    - tenant → doit POSSÉDER le resto, sinon 404 (on ne divulgue pas l'existence d'un resto
+      d'autrui). Renvoie le compte_id à passer aux fonctions `stockage.*`."""
+    proprietaire = stockage.compte_du_restaurant(restaurant_id)
+    if not proprietaire:
+        raise HTTPException(404, "Restaurant introuvable.")
+    if not ctx.est_admin and proprietaire != ctx.compte_id:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return proprietaire
 
 
 # ── Diffusion d'un changement de carte ───────────────────────────
@@ -334,12 +375,10 @@ def lire_restaurant(restaurant_id: str, compte_id: str = Depends(compte_actuel))
 
 
 # ── Rail de paiement (branchement sur la brique paiements 6020, S166) ─
-@app.get("/restaurants/{restaurant_id}/rail")
-def etat_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
-    """État HONNÊTE du branchement du rail pour ce restaurant : le rail est-il configuré
-    (URL + clé) ? un compte connecté est-il rattaché ? peut-il déjà encaisser ? Sert le
-    bandeau du back-office (« paiements en ligne réels » vs « démo mock »). Lecture seule."""
-    _exige_resto(compte_id, restaurant_id)
+# Règle métier partagée entre le back-office (login) et le chemin /service (assistant) :
+# une seule implémentation, deux portes.
+def _etat_rail_payload(restaurant_id: str) -> dict:
+    """État HONNÊTE du rail pour ce resto (configuré ? compte connecté ? encaisse ?)."""
     rail_compte = stockage.rail_compte_de(restaurant_id)
     if not rail.configure():
         return {"configure": False, "compte_id": rail_compte, "peut_encaisser": False,
@@ -354,12 +393,9 @@ def etat_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
                        "encaisser en ligne pour de vrai."}
 
 
-@app.post("/restaurants/{restaurant_id}/rail/activer")
-def activer_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
-    """Active les paiements en ligne RÉELS : crée le compte connecté du restaurant dans le
-    rail et renvoie son lien d'onboarding hébergé (KYC chez le prestataire, pas ici). Tant
-    que l'onboarding n'est pas terminé, `/t/{code}/payer` reste en mock honnête."""
-    resto = _exige_resto(compte_id, restaurant_id)
+def _activer_rail_payload(compte_id: str, restaurant_id: str, nom_resto: str) -> dict:
+    """Crée (ou retrouve) le compte connecté du resto dans le rail et renvoie le lien
+    d'onboarding hébergé (KYC chez le prestataire, pas ici)."""
     if not rail.configure():
         raise HTTPException(503, "Rail non configuré (PAIEMENTS_URL / PAIEMENTS_API_KEY absents).")
     existant = stockage.rail_compte_de(restaurant_id)
@@ -369,7 +405,7 @@ def activer_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
                 "peut_encaisser": bool(etat.get("peut_encaisser")),
                 "message": "Rail déjà activé pour ce restaurant."}
     try:
-        cree = rail.creer_compte(resto["nom"])
+        cree = rail.creer_compte(nom_resto)
     except httpx.HTTPError:
         raise HTTPException(502, "Le rail de paiement est injoignable — réessayez plus tard.")
     stockage.definir_rail_compte(compte_id, restaurant_id, cree["compte_id"])
@@ -377,6 +413,23 @@ def activer_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
             "onboarding_url": cree["onboarding_url"],
             "message": "Compte de paiement créé. Terminez l'onboarding via le lien pour "
                        "encaisser en ligne pour de vrai."}
+
+
+@app.get("/restaurants/{restaurant_id}/rail")
+def etat_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
+    """État HONNÊTE du branchement du rail pour ce restaurant. Sert le bandeau du back-office
+    (« paiements en ligne réels » vs « démo mock »). Lecture seule."""
+    _exige_resto(compte_id, restaurant_id)
+    return _etat_rail_payload(restaurant_id)
+
+
+@app.post("/restaurants/{restaurant_id}/rail/activer")
+def activer_rail(restaurant_id: str, compte_id: str = Depends(compte_actuel)):
+    """Active les paiements en ligne RÉELS : crée le compte connecté du restaurant dans le
+    rail et renvoie son lien d'onboarding hébergé. Tant que l'onboarding n'est pas terminé,
+    `/t/{code}/payer` reste en mock honnête."""
+    resto = _exige_resto(compte_id, restaurant_id)
+    return _activer_rail_payload(compte_id, restaurant_id, resto["nom"])
 
 
 # ── Tables (+ QR) ────────────────────────────────────────────────
@@ -512,13 +565,11 @@ async def generer_carte(restaurant_id: str, corps: GenererCarte,
     return await carte_ia.generer(corps.concept, corps.sections or None, corps.par_section)
 
 
-@app.post("/restaurants/{restaurant_id}/plats/lot")
-async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
-                            compte_id: str = Depends(compte_actuel)):
-    """Ajoute en une fois une liste de plats VALIDÉS (l'« Ajouter à ma carte » de l'import)."""
-    _exige_resto(compte_id, restaurant_id)
+async def _ajouter_plats_lot(compte_id: str, restaurant_id: str, plats: list) -> dict:
+    """Ajoute une liste de plats validés (règle partagée back-office / service). Ignore les
+    entrées sans nom ; diffuse un rafraîchissement de carte si au moins un plat est créé."""
     crees = []
-    for p in (corps.plats or []):
+    for p in (plats or []):
         if not isinstance(p, dict) or not str(p.get("nom") or "").strip():
             continue
         plat = stockage.creer_plat(
@@ -533,27 +584,35 @@ async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
     return {"ajoutes": len(crees), "plats": crees}
 
 
-# ── Chemin de SERVICE : carte pilotée par le Cœur (capacités MCP) ──
-# Authentifié par clé de service (RESTAURANT_KEY), scoppé par restaurant_id. Le Cœur (et
-# tout client MCP via le Cœur) gère la carte à la voix / au chat sans le mot de passe du
-# restaurateur. Cloisonnement tenu en base : on dérive le compte propriétaire du resto.
-def _compte_de_service(restaurant_id: str) -> str:
-    compte_id = stockage.compte_du_restaurant(restaurant_id)
-    if not compte_id:
-        raise HTTPException(404, "Restaurant introuvable.")
-    return compte_id
+@app.post("/restaurants/{restaurant_id}/plats/lot")
+async def ajouter_plats_lot(restaurant_id: str, corps: PlatsEnLot,
+                            compte_id: str = Depends(compte_actuel)):
+    """Ajoute en une fois une liste de plats VALIDÉS (l'« Ajouter à ma carte » de l'import)."""
+    _exige_resto(compte_id, restaurant_id)
+    return await _ajouter_plats_lot(compte_id, restaurant_id, corps.plats)
 
 
+# ── Chemin de SERVICE : back-office piloté par le Cœur (capacités MCP, S166→S167) ──
+# Gardé par service_garde : clé de service RESTAURANT_KEY + IDENTITÉ de l'appelant
+# (X-Compte-Id → rôle en base). admin = accès à TOUT resto (bypass) ; tenant = SES restos.
+# resoudre_compte_resto tranche le périmètre et renvoie le compte propriétaire au nom
+# duquel agir (404 hors périmètre). Ainsi l'assistant gère tout le back-office à la voix
+# sans mot de passe. Cf. ADR docs/decisions/2026-07-13-surface-de-service-role-admin.md.
+
+# ---- Découverte & contexte (lecture) ----
 @app.get("/service/restaurants")
-def service_lister_restaurants(_: bool = Depends(service_ok)):
-    """Liste des restaurants (id, nom, devise, TVA) — pour que l'assistant DÉCOUVRE seul les
-    ids sans qu'on les lui fournisse (S103). Chemin de service (clé opérateur)."""
-    return {"restaurants": stockage.lister_tous_restaurants()}
+def service_lister_restaurants(ctx: ContexteService = Depends(service_garde)):
+    """Liste les restaurants visibles par l'appelant (admin = tous ; tenant = les siens) —
+    pour que l'assistant DÉCOUVRE seul les ids sans qu'on les lui fournisse (S103). Lecture."""
+    restos = stockage.lister_tous_restaurants() if ctx.est_admin \
+        else stockage.lister_restaurants(ctx.compte_id)
+    return {"restaurants": restos}
 
 
 @app.get("/service/restaurants/{restaurant_id}")
-def service_infos_resto(restaurant_id: str, _: bool = Depends(service_ok)):
-    """Infos d'un resto (nom, devise, TVA) — donne le contexte à l'assistant."""
+def service_infos_resto(restaurant_id: str, ctx: ContexteService = Depends(service_garde)):
+    """Infos d'un resto (nom, devise, TVA) — donne le contexte à l'assistant. Lecture."""
+    resoudre_compte_resto(ctx, restaurant_id)   # garde de périmètre
     r = stockage.restaurant_public(restaurant_id)
     if not r:
         raise HTTPException(404, "Restaurant introuvable.")
@@ -561,16 +620,88 @@ def service_infos_resto(restaurant_id: str, _: bool = Depends(service_ok)):
 
 
 @app.get("/service/restaurants/{restaurant_id}/plats")
-def service_lister_plats(restaurant_id: str, _: bool = Depends(service_ok)):
+def service_lister_plats(restaurant_id: str, ctx: ContexteService = Depends(service_garde)):
     """Carte complète (vue restaurateur) — pour que l'assistant sache ce qui existe déjà."""
-    compte_id = _compte_de_service(restaurant_id)
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
     return {"plats": stockage.lister_plats(compte_id, restaurant_id) or []}
 
 
+# ---- Setup restaurant (création & réglages) ----
+@app.post("/service/restaurants")
+def service_creer_restaurant(corps: CreerRestaurant, ctx: ContexteService = Depends(service_garde)):
+    """CRÉE un restaurant (setup complet à la voix). Rattaché au compte appelant (admin de
+    service en mono-user ; le tenant crée pour lui-même). ACTION : confirme=true requis."""
+    return stockage.creer_restaurant(ctx.compte_id, corps.nom, corps.devise, corps.tva_taux)
+
+
+@app.patch("/service/restaurants/{restaurant_id}")
+def service_editer_restaurant(restaurant_id: str, corps: MajRestaurant,
+                              ctx: ContexteService = Depends(service_garde)):
+    """Modifie un restaurant (nom, devise, taux de TVA, PIN de table). ACTION."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    r = stockage.maj_restaurant(compte_id, restaurant_id, corps.model_dump(exclude_unset=True))
+    if not r:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return r
+
+
+@app.get("/service/restaurants/{restaurant_id}/rail")
+def service_etat_rail(restaurant_id: str, ctx: ContexteService = Depends(service_garde)):
+    """État HONNÊTE du rail de paiement (configuré ? compte connecté ? encaisse en ligne ?).
+    Lecture seule — dit franchement si l'on est en démo (mock) ou en réel."""
+    resoudre_compte_resto(ctx, restaurant_id)
+    return _etat_rail_payload(restaurant_id)
+
+
+@app.post("/service/restaurants/{restaurant_id}/rail/activer")
+def service_activer_rail(restaurant_id: str, ctx: ContexteService = Depends(service_garde)):
+    """Active les paiements en ligne RÉELS : crée le compte connecté et renvoie le LIEN
+    d'onboarding (le KYC se finit au navigateur, chez le prestataire — pas d'encaissement
+    magique). Tant que l'onboarding n'est pas terminé, le paiement reste en mock. ACTION."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    r = stockage.restaurant_public(restaurant_id)
+    return _activer_rail_payload(compte_id, restaurant_id, r["nom"])
+
+
+# ---- Carte (générer, importer un lot, réordonner, plats CRUD) ----
+@app.post("/service/restaurants/{restaurant_id}/carte/generer")
+async def service_generer_carte(restaurant_id: str, corps: GenererCarte,
+                                ctx: ContexteService = Depends(service_garde)):
+    """GÉNÈRE une proposition de carte depuis un concept (« une carte de pizzeria ») via l'IA
+    — ne PERSISTE rien. L'assistant présente les plats, puis persiste ceux retenus via
+    restaurant_carte_importer_lot. Repli honnête si l'IA est éteinte (plats vide + note)."""
+    resoudre_compte_resto(ctx, restaurant_id)
+    if not corps.concept.strip():
+        raise HTTPException(422, "Décris le concept du restaurant à générer.")
+    return await carte_ia.generer(corps.concept, corps.sections or None, corps.par_section)
+
+
+@app.post("/service/restaurants/{restaurant_id}/plats/lot")
+async def service_importer_lot(restaurant_id: str, corps: PlatsEnLot,
+                               ctx: ContexteService = Depends(service_garde)):
+    """Ajoute EN UNE FOIS une liste de plats validés (la carte générée/importée, retenue).
+    ACTION : confirme=true requis (persiste et change la carte vue par les clients)."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return await _ajouter_plats_lot(compte_id, restaurant_id, corps.plats)
+
+
+@app.post("/service/restaurants/{restaurant_id}/plats/reordonner")
+async def service_reordonner_plats(restaurant_id: str, corps: ReordonnerPlats,
+                                   ctx: ContexteService = Depends(service_garde)):
+    """Réordonne les plats de la carte (`ids` = nouvelle suite). ACTION."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    plats = stockage.reordonner_plats(compte_id, restaurant_id, corps.ids)
+    if plats is None:
+        raise HTTPException(404, "Restaurant introuvable.")
+    await _diffuser_carte_modifiee(restaurant_id, {"type": "carte_reordonnee"})
+    return {"plats": plats}
+
+
 @app.post("/service/restaurants/{restaurant_id}/plats")
-async def service_creer_plat(restaurant_id: str, corps: PlatEntree, _: bool = Depends(service_ok)):
+async def service_creer_plat(restaurant_id: str, corps: PlatEntree,
+                             ctx: ContexteService = Depends(service_garde)):
     """Ajoute un plat (action). Diffuse aux tables pour rafraîchir la carte."""
-    compte_id = _compte_de_service(restaurant_id)
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
     p = stockage.creer_plat(compte_id, restaurant_id, corps.nom, corps.description,
                             corps.prix_cents, corps.photo, corps.plat_du_jour, corps.categorie,
                             corps.formats, corps.stock)
@@ -582,9 +713,9 @@ async def service_creer_plat(restaurant_id: str, corps: PlatEntree, _: bool = De
 
 @app.patch("/service/restaurants/{restaurant_id}/plats/{plat_id}")
 async def service_maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
-                           _: bool = Depends(service_ok)):
+                           ctx: ContexteService = Depends(service_garde)):
     """Modifie un plat (prix, dispo, plat du jour…) (action)."""
-    compte_id = _compte_de_service(restaurant_id)
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
     p = stockage.maj_plat(compte_id, restaurant_id, plat_id, corps.model_dump(exclude_unset=True))
     if not p:
         raise HTTPException(404, "Plat introuvable.")
@@ -593,12 +724,98 @@ async def service_maj_plat(restaurant_id: str, plat_id: str, corps: MajPlat,
 
 
 @app.delete("/service/restaurants/{restaurant_id}/plats/{plat_id}")
-def service_supprimer_plat(restaurant_id: str, plat_id: str, _: bool = Depends(service_ok)):
+def service_supprimer_plat(restaurant_id: str, plat_id: str,
+                           ctx: ContexteService = Depends(service_garde)):
     """Supprime un plat (action)."""
-    compte_id = _compte_de_service(restaurant_id)
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
     if not stockage.supprimer_plat(compte_id, restaurant_id, plat_id):
         raise HTTPException(404, "Plat introuvable.")
     return {"supprime": True}
+
+
+# ---- Tables (créer, lister, supprimer) ----
+@app.post("/service/restaurants/{restaurant_id}/tables")
+def service_creer_table(restaurant_id: str, corps: CreerTable,
+                        ctx: ContexteService = Depends(service_garde)):
+    """Crée une table (numéro visible) + son code d'accès. ACTION."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    t = stockage.creer_table(compte_id, restaurant_id, corps.numero)
+    if not t:
+        raise HTTPException(404, "Restaurant introuvable.")
+    return t
+
+
+@app.get("/service/restaurants/{restaurant_id}/tables")
+def service_lister_tables(restaurant_id: str, ctx: ContexteService = Depends(service_garde)):
+    """Liste les tables (id, numéro, code) — pour retrouver une table avant de la supprimer
+    ou de lire son addition. Lecture seule."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return {"tables": stockage.lister_tables(compte_id, restaurant_id) or []}
+
+
+@app.delete("/service/restaurants/{restaurant_id}/tables/{table_id}")
+def service_supprimer_table(restaurant_id: str, table_id: str,
+                            ctx: ContexteService = Depends(service_garde)):
+    """Supprime une table. ACTION irréversible : confirme=true requis."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    if not stockage.supprimer_table(compte_id, restaurant_id, table_id):
+        raise HTTPException(404, "Table introuvable.")
+    return {"supprime": True}
+
+
+# ---- Cuisine (file, statut, annulation) ----
+@app.get("/service/restaurants/{restaurant_id}/cuisine")
+def service_cuisine(restaurant_id: str, toutes: bool = False,
+                    ctx: ContexteService = Depends(service_garde)):
+    """File cuisine (commandes actives, ou toutes si `toutes=true`) — pour retrouver l'id
+    d'une commande avant de la passer « prête » ou de l'annuler. Lecture seule."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    cmds = stockage.lister_commandes_cuisine(compte_id, restaurant_id, actives_seulement=not toutes)
+    return {"commandes": cmds or []}
+
+
+@app.post("/service/restaurants/{restaurant_id}/commandes/{commande_id}/statut")
+async def service_statut_commande(restaurant_id: str, commande_id: str, corps: StatutCommande,
+                                  ctx: ContexteService = Depends(service_garde)):
+    """Change le statut d'une commande (en_cuisine → prete → servie) (« passe la 12 en prêt »).
+    ACTION. Diffuse en direct à la cuisine et à la table."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return await _changer_statut_commande(compte_id, restaurant_id, commande_id, corps.statut)
+
+
+@app.delete("/service/restaurants/{restaurant_id}/commandes/{commande_id}")
+async def service_annuler_commande(restaurant_id: str, commande_id: str,
+                                   ctx: ContexteService = Depends(service_garde)):
+    """Annule une commande envoyée en cuisine (erreur). ACTION irréversible : confirme=true."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return await _annuler_commande(compte_id, restaurant_id, commande_id)
+
+
+# ---- Consultation (addition, ventes du jour, avis) ----
+@app.get("/service/restaurants/{restaurant_id}/tables/{table_id}/addition")
+def service_addition(restaurant_id: str, table_id: str,
+                     ctx: ContexteService = Depends(service_garde)):
+    """Addition en cours d'une table (détail + reste à payer). Lecture seule."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    if not any(t["id"] == table_id for t in (stockage.lister_tables(compte_id, restaurant_id) or [])):
+        raise HTTPException(404, "Table introuvable.")
+    return stockage.etat_table(restaurant_id, table_id)
+
+
+@app.get("/service/restaurants/{restaurant_id}/tickets")
+def service_tickets(restaurant_id: str, limite: int = 50,
+                    ctx: ContexteService = Depends(service_garde)):
+    """Ventes du jour / historique : tickets archivés aux clôtures (compta). Lecture seule."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return {"tickets": stockage.lister_tickets(compte_id, restaurant_id, limite) or []}
+
+
+@app.get("/service/restaurants/{restaurant_id}/avis")
+def service_avis(restaurant_id: str, limite: int = 50,
+                 ctx: ContexteService = Depends(service_garde)):
+    """Synthèse des avis clients (moyenne, nombre, derniers commentaires). Lecture seule."""
+    compte_id = resoudre_compte_resto(ctx, restaurant_id)
+    return stockage.resume_avis(compte_id, restaurant_id, limite)
 
 
 # ── Cuisine (vue restaurateur) ───────────────────────────────────
@@ -609,11 +826,10 @@ def file_cuisine(restaurant_id: str, toutes: bool = False, compte_id: str = Depe
     return {"commandes": cmds or []}
 
 
-@app.post("/restaurants/{restaurant_id}/commandes/{commande_id}/statut")
-async def changer_statut(restaurant_id: str, commande_id: str, corps: StatutCommande,
-                         compte_id: str = Depends(compte_actuel)):
-    _exige_resto(compte_id, restaurant_id)
-    res = stockage.maj_statut_commande(compte_id, restaurant_id, commande_id, corps.statut)
+async def _changer_statut_commande(compte_id: str, restaurant_id: str,
+                                   commande_id: str, statut: str) -> dict:
+    """Change le statut d'une commande (règle partagée) + diffusion cuisine & table."""
+    res = stockage.maj_statut_commande(compte_id, restaurant_id, commande_id, statut)
     if not res:
         raise HTTPException(404, "Commande introuvable ou statut invalide.")
     await diffuseur.diffuser(diffuseur.canal_cuisine(restaurant_id),
@@ -623,15 +839,9 @@ async def changer_statut(restaurant_id: str, commande_id: str, corps: StatutComm
     return res
 
 
-@app.delete("/restaurants/{restaurant_id}/commandes/{commande_id}")
-async def annuler_commande(restaurant_id: str, commande_id: str,
-                           compte_id: str = Depends(compte_actuel)):
-    """Annule une commande déjà envoyée en cuisine (erreur/annulation) — RÉSERVÉ AU STAFF.
-
-    Retrait simple : la commande sort de la file cuisine ET de l'addition (stock non
-    recrédité, pas de trace conservée — choix produit). Diffuse aux écrans cuisine et à la
-    table pour qu'ils se rafraîchissent en direct."""
-    _exige_resto(compte_id, restaurant_id)
+async def _annuler_commande(compte_id: str, restaurant_id: str, commande_id: str) -> dict:
+    """Annule une commande (règle partagée) : la retire de la file ET de l'addition (stock
+    non recrédité, pas de trace — choix produit) + diffusion cuisine & table."""
     res = stockage.supprimer_commande(compte_id, restaurant_id, commande_id)
     if not res:
         raise HTTPException(404, "Commande introuvable.")
@@ -642,6 +852,21 @@ async def annuler_commande(restaurant_id: str, commande_id: str,
     await diffuseur.diffuser(diffuseur.canal_table(res["table_id"]),
                              {"type": "commande_supprimee", "etat": etat})
     return {"supprime": True, "etat": etat}
+
+
+@app.post("/restaurants/{restaurant_id}/commandes/{commande_id}/statut")
+async def changer_statut(restaurant_id: str, commande_id: str, corps: StatutCommande,
+                         compte_id: str = Depends(compte_actuel)):
+    _exige_resto(compte_id, restaurant_id)
+    return await _changer_statut_commande(compte_id, restaurant_id, commande_id, corps.statut)
+
+
+@app.delete("/restaurants/{restaurant_id}/commandes/{commande_id}")
+async def annuler_commande(restaurant_id: str, commande_id: str,
+                           compte_id: str = Depends(compte_actuel)):
+    """Annule une commande déjà envoyée en cuisine (erreur/annulation) — RÉSERVÉ AU STAFF."""
+    _exige_resto(compte_id, restaurant_id)
+    return await _annuler_commande(compte_id, restaurant_id, commande_id)
 
 
 # ── Tablette d'addition (vue restaurateur) ───────────────────────
