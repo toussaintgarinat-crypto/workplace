@@ -2,8 +2,21 @@ services:
   frontend:
     ports:
       - "3003:3000"
-  # Fix NetBird DNS : bypass DNS pour "db" (service DB Patroni Oria).
-  # NetBird intercepte les DNS courts → netbird.cloud NXDOMAIN.
   keycloak:
-    extra_hosts:
-      - "db:192.168.240.6"
+    # NOTE (2026-07-14) : ancien hack "extra_hosts: db:192.168.240.6" retire.
+    # Il figeait une IP Docker dynamique (db = Patroni Oria) -> casse apres reboot :
+    # db repasse a .8, tandis que .6 = etcd, d ou "connection refused" sur 5432.
+    # keycloak resout desormais "db" via le DNS Docker (127.0.0.11), comme dendrite
+    # et backend. La panne d origine etait un /etc/resolv.conf herite de l hote au
+    # boot ; recreer le conteneur regenere le resolver correct (127.0.0.11).
+    #
+    # Healthcheck sans curl : l image keycloak:26.2.5 (UBI-micro) n embarque pas
+    # curl -> l ancien "curl -sf http://127.0.0.1:8080/" echouait toujours (exit 127)
+    # et keycloak restait a jamais "starting", bloquant backend (depends_on healthy).
+    # bash est present -> test TCP via /dev/tcp sur le port 8080.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
