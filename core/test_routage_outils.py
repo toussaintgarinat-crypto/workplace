@@ -18,7 +18,7 @@ import routage_outils as r
 # Chaque texte devient un vecteur multi-hot ; deux textes partageant des mots ont un
 # cosinus élevé. Suffisant pour piloter le classement top_k de façon déterministe.
 _VOCAB = ["calcul", "nombre", "additionne", "facture", "paiement", "agenda",
-          "rendez", "vous", "mémoire", "note", "voix", "audio"]
+          "rendez", "vous", "mémoire", "note", "voix", "audio", "supprime", "serie"]
 
 
 def _vecteur(texte: str) -> list:
@@ -119,6 +119,62 @@ def test_filtre_preserve_lordre_dorigine():
         gardes = _noms(out)
         attendu = [n for n in _noms(_outils()) if n in gardes]
         assert gardes == attendu              # ordre d'entrée conservé → préfixe cacheable
+    finally:
+        r.reinitialiser()
+
+
+# ── Requête de routage : contexte pour les confirmations de gate ─────────────
+
+def test_requete_message_seul():
+    assert r.requete_depuis_messages(
+        [{"role": "user", "content": "additionne ces nombre"}]) == "additionne ces nombre"
+
+
+def test_requete_enrichie_par_assistant_precedent():
+    # « oui » seul n'a aucun mot-clé ; l'invite de l'assistant restate l'action → conservée.
+    msgs = [
+        {"role": "user", "content": "supprime la serie X"},
+        {"role": "assistant", "content": "Je vais supprimer la serie X. Confirmes-tu ?"},
+        {"role": "user", "content": "oui"},
+    ]
+    req = r.requete_depuis_messages(msgs)
+    assert "supprimer" in req and "serie" in req and "oui" in req
+
+
+def test_requete_ignore_precedent_non_assistant():
+    msgs = [{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]
+    assert r.requete_depuis_messages(msgs) == "b"      # précédent = user → pas d'enrichissement
+
+
+def test_requete_gere_multimodal():
+    msgs = [{"role": "user", "content": [
+        {"type": "text", "text": "regarde"},
+        {"type": "image_url", "image_url": {"url": "data:..."}}]}]
+    assert r.requete_depuis_messages(msgs) == "regarde"
+
+
+def test_requete_vide():
+    assert r.requete_depuis_messages([]) == ""
+
+
+def test_confirmation_gate_garde_loutil_en_attente():
+    """LE correctif : au « oui » de confirmation, l'outil de suppression EN ATTENTE reste présenté
+    grâce au contexte du message assistant précédent (sinon il tombe hors du top_k)."""
+    outils = _outils() + [_spec("supprimer_serie", "supprime une serie du studio")]
+    try:
+        _indexer(outils)
+        msgs = [
+            {"role": "user", "content": "supprime la serie X"},
+            {"role": "assistant", "content": "Je vais supprimer la serie. Confirmes-tu ?"},
+            {"role": "user", "content": "oui"},
+        ]
+        # AVANT correctif (requête = « oui » seul) : l'outil tombe.
+        sans = asyncio.run(r.filtrer_outils("oui", outils, client=object(), top_k=1, toujours=set()))
+        assert "supprimer_serie" not in _noms(sans)
+        # APRÈS (requête enrichie) : l'outil en attente est conservé.
+        avec = asyncio.run(r.filtrer_outils(
+            r.requete_depuis_messages(msgs), outils, client=object(), top_k=1, toujours=set()))
+        assert "supprimer_serie" in _noms(avec)
     finally:
         r.reinitialiser()
 
