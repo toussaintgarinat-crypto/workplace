@@ -28,6 +28,10 @@ services:
       # Service-token S2S vers la brique Agenda. Requis seulement quand l'agenda
       # tourne avec AUTH_ENABLED=true (doit valoir le même CALENDAR_SERVICE_TOKEN).
       - CALENDAR_SERVICE_TOKEN=${CALENDAR_SERVICE_TOKEN:-}
+      # NB (S168) : AGENDA_KEY (clé envoyée à la brique agenda en X-API-Key pour piloter
+      # ses 8 capacités /service : consulter/créer/déplacer/… d'événements) vient du .env
+      # racine via env_file — NE PAS la redéclarer en `AGENDA_KEY=${AGENDA_KEY:-}` (piège
+      # « env shadow » : chaîne VIDE qui écrase la vraie valeur → agenda vu vide/401).
       # Dossiers portables des entreprises décrochées (cycle de vie S6).
       - EXPORT_DIR=/export
       # LLM de l'assistant du Cœur (S7) — même Gateway que les autres briques.
