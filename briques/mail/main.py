@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -454,6 +455,129 @@ def envoyer_brouillon(brouillon_id: str, corps: EnvoiEntree = EnvoiEntree(),
     stockage.marquer_brouillon_envoye(tenant, brouillon_id)
     return {"ok": True, "envoye": True, "mode": res["mode"], "de": res["de"],
             "a": br["a"], "message": res["message"]}
+
+
+# ── Démarchage : brouillons en lot, conformes, gardés (S170) ─────────────────
+# Le socle du DÉMARCHAGE B2B. On PRÉPARE des brouillons personnalisés (jamais envoyés :
+# l'utilisateur relit puis envoie via mail_brouillon_envoyer, gate inchangé), avec deux
+# garde-fous de CONFORMITÉ non négociables :
+#   • identité de l'expéditeur + phrase de désinscription OBLIGATOIRES dans chaque email
+#     (mentions LCEN/RGPD) — l'endpoint refuse sans identité ;
+#   • un REGISTRE de cadence + opt-out : plafond de contacts par destinataire, délai mini
+#     entre deux, et « STOP » qui fige à ne plus jamais contacter. Relancer = rappeler ce
+#     même endpoint : le registre garantit qu'on ne sur-sollicite pas et qu'un désinscrit
+#     n'est jamais recontacté.
+class DemarchageEntree(BaseModel):
+    prospects: list[dict]          # [{email, nom?, entreprise?, ville?/commune?}]
+    sujet: str                     # objet (gabarit : {nom}/{entreprise}/{ville})
+    message: str                   # corps (gabarit : mêmes variables)
+    expediteur: str                # identité de l'expéditeur (LCEN) — OBLIGATOIRE
+    compte: str = ""               # boîte d'envoi (auto si une seule boîte réelle)
+    cooldown_jours: int = 7        # délai mini entre deux contacts d'un même email
+    max_contacts: int = 3          # plafond de cadence (démarchage initial + relances)
+
+
+class DesinscrireEntree(BaseModel):
+    email: str
+
+
+def _personnaliser(gabarit: str, p: dict) -> str:
+    """Remplit les variables {nom}/{entreprise}/{ville} d'un gabarit pour un prospect."""
+    ville = p.get("ville") or p.get("commune") or ""
+    nom = str(p.get("nom") or p.get("entreprise") or "")
+    entreprise = str(p.get("entreprise") or p.get("nom") or "")
+    return (str(gabarit).replace("{nom}", nom)
+            .replace("{entreprise}", entreprise).replace("{ville}", str(ville)))
+
+
+def _pied_lcen(expediteur: str) -> str:
+    """Mentions légales obligatoires en bas de tout email de démarchage (identité + opt-out)."""
+    return ("\n\n—\n" + expediteur.strip() +
+            "\nVous recevez ce message à titre professionnel. Pour ne plus être "
+            "contacté(e), répondez « STOP » à cet email.")
+
+
+def _trop_recent(dernier_iso: str, maintenant: datetime, cooldown_jours: int) -> bool:
+    try:
+        d = datetime.fromisoformat(dernier_iso)
+    except (ValueError, TypeError):
+        return False
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return (maintenant - d) < timedelta(days=max(0, cooldown_jours))
+
+
+@app.post("/demarchage/preparer", status_code=201)
+def demarchage_preparer(corps: DemarchageEntree, tenant: str = Depends(tenant_actuel)):
+    """PRÉPARE en lot des brouillons de démarchage personnalisés (NON envoyés). Chaque email
+    reçoit l'identité de l'expéditeur + une mention de désinscription (conformité). Le
+    registre de cadence/opt-out est respecté : un désinscrit, un destinataire au plafond de
+    contacts, ou contacté trop récemment est SAUTÉ (compté dans « ignores »). Rappeler cet
+    endpoint plus tard = préparer les RELANCES dues, sans jamais sur-solliciter."""
+    exp = corps.expediteur.strip()
+    if not exp:
+        raise HTTPException(422, "Identité de l'expéditeur requise (conformité LCEN/RGPD : "
+                                 "un email de démarchage doit dire qui l'envoie).")
+    if not corps.prospects:
+        raise HTTPException(422, "Aucun prospect à démarcher.")
+    comptes = stockage.lister_comptes(tenant)
+    compte_addr = corps.compte.strip()
+    if not compte_addr and len(comptes) == 1:
+        compte_addr = comptes[0]["utilisateur"]
+    if compte_addr and not any(c["utilisateur"] == compte_addr for c in comptes):
+        raise HTTPException(404, f"Boîte « {compte_addr} » non connectée.")
+    maintenant = datetime.now(timezone.utc)
+    prepares: list[dict] = []
+    ignores = {"sans_email": 0, "desinscrit": 0, "cadence_atteinte": 0, "trop_recent": 0}
+    for p in corps.prospects:
+        email = (p.get("email") or "").strip()
+        if not email:
+            ignores["sans_email"] += 1
+            continue
+        etat = stockage.demarchage_lire(tenant, email)
+        if etat and etat["opt_out"]:
+            ignores["desinscrit"] += 1
+            continue
+        if etat and etat["nb_contacts"] >= corps.max_contacts:
+            ignores["cadence_atteinte"] += 1
+            continue
+        if etat and _trop_recent(etat["dernier_contact"], maintenant, corps.cooldown_jours):
+            ignores["trop_recent"] += 1
+            continue
+        sujet = _personnaliser(corps.sujet, p)
+        corps_txt = _personnaliser(corps.message, p) + _pied_lcen(exp)
+        br = stockage.enregistrer_brouillon(tenant, en_reponse_a="", a=email,
+                                            sujet=sujet, corps=corps_txt, compte=compte_addr)
+        maj = stockage.demarchage_enregistrer_contact(tenant, email)
+        prepares.append({"brouillon_id": br["id"], "a": email, "sujet": sujet,
+                         "numero_contact": maj["nb_contacts"],
+                         "relance": maj["nb_contacts"] > 1})
+    note = "" if compte_addr else (" Aucune boîte réelle : l'envoi de ces brouillons sera "
+                                   "SIMULÉ tant qu'une boîte n'est pas connectée.")
+    return {"ok": True, "envoye": False, "prepares": len(prepares), "brouillons": prepares,
+            "ignores": ignores,
+            "message": f"{len(prepares)} brouillon(s) de démarchage préparé(s) (NON envoyés)."
+                       f"{note} Relis-les, puis envoie ceux que tu valides "
+                       "(mail_brouillon_envoyer)."}
+
+
+@app.post("/demarchage/desinscrire")
+def demarchage_desinscrire_route(corps: DesinscrireEntree, tenant: str = Depends(tenant_actuel)):
+    """Inscrit un destinataire en OPT-OUT (« STOP ») : il ne sera plus jamais démarché.
+    À utiliser dès qu'un contact demande à ne plus être sollicité."""
+    email = corps.email.strip()
+    if not email:
+        raise HTTPException(422, "Email requis.")
+    etat = stockage.demarchage_desinscrire(tenant, email)
+    return {"ok": True, "email": etat["email"],
+            "message": f"« {etat['email']} » désinscrit : il ne sera plus démarché."}
+
+
+@app.get("/demarchage/registre")
+def demarchage_registre(tenant: str = Depends(tenant_actuel)):
+    """Le registre de démarchage (transparence) : qui a été contacté, combien de fois, quand,
+    et qui s'est désinscrit. Lecture seule."""
+    return {"registre": stockage.demarchage_lister(tenant)}
 
 
 # ── Front-end : un vrai client mail (liste + lecture + réponse + gestion comptes) ─
