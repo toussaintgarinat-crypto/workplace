@@ -176,6 +176,33 @@ def selectionner(vec_requete, toutes_capacites: list, *, top_k: int = TOP_K,
     return [s for s in toutes_capacites if _nom(s) in gardes]
 
 
+def _texte_contenu(contenu) -> str:
+    """Texte plat d'un `content` de message OpenAI (gère le multimodal = liste de parts)."""
+    if isinstance(contenu, list):
+        return " ".join(p.get("text", "") for p in contenu
+                        if isinstance(p, dict) and p.get("type") == "text")
+    return contenu or ""
+
+
+def requete_depuis_messages(messages: list) -> str:
+    """Requête de routage à partir de l'historique : le DERNIER message, enrichi du message
+    ASSISTANT qui le précède (tronqué).
+
+    Motif clé — les confirmations de gate : « supprime la série X » → *(gate)* → « **oui** ».
+    Le « oui » n'a aucun mot-clé ; mais l'invite de confirmation de l'assistant juste avant
+    RESTATE l'action (« Je vais supprimer la série X… ») → l'inclure garde l'outil EN ATTENTE
+    dans le top_k. Sans ce contexte, « oui » écarterait l'outil (ex. `studio_serie_supprimer`)
+    et l'assistant improviserait un mauvais outil. N'affecte QUE la sélection d'outils.
+    """
+    if not messages:
+        return ""
+    dernier = _texte_contenu(messages[-1].get("content"))
+    precedent = ""
+    if len(messages) >= 2 and messages[-2].get("role") == "assistant":
+        precedent = _texte_contenu(messages[-2].get("content"))[:600]
+    return (precedent + "\n" + dernier).strip() if precedent else dernier.strip()
+
+
 async def filtrer_outils(requete: str, toutes_capacites: list, *,
                          client: httpx.AsyncClient | None = None,
                          top_k: int = TOP_K, toujours=None) -> list:

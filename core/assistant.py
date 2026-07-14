@@ -238,8 +238,12 @@ async def converser(messages: list[dict], registre,
         # outils PERTINENTS pour la requête courante + le socle des outils en dur (toujours
         # pertinents). Repli honnête : liste inchangée si le routage est inactif/indisponible.
         # La conscience de soi (plus haut) garde, elle, le compte COMPLET → anatomie honnête.
+        # ⚠ La requête de routage inclut le message assistant PRÉCÉDENT (pas seulement `question`) :
+        # sinon une confirmation de gate (« oui ») perd ses mots-clés et l'outil EN ATTENTE tombe
+        # hors du top_k → l'assistant improviserait un mauvais outil (cf. requete_depuis_messages).
         outils_actifs = await routage_outils.filtrer_outils(
-            question, outils_actifs, client=client, toujours=outils.noms_socle(registre))
+            routage_outils.requete_depuis_messages(messages), outils_actifs,
+            client=client, toujours=outils.noms_socle(registre))
 
         # S143 : guardrail instancié par conversation (jamais en global).
         guardrail = guardrails_outils.Guardrail()
