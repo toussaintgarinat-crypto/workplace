@@ -155,30 +155,24 @@ def creer_objet(corps: ObjetEntree, tenant: str = Depends(tenant_actuel)):
 
 
 # ── Enrichissement opt-in (S161, RGPD-prudent) ───────────────────
-@app.post("/objets/{objet_id}/enrichir")
-def enrichir_objet(objet_id: str, force: bool = False,
-                   tenant: str = Depends(tenant_actuel)):
-    """Enrichit UNE entreprise, À LA DEMANDE (jamais en masse) : trouve son site
-    OFFICIEL via la brique recherche (souveraine, annuaires écartés), lit la page —
-    et sa page contact — et en extrait les coordonnées que l'entreprise AFFICHE
-    elle-même. Chaque tentative est JOURNALISÉE (voir /enrichissements). Idempotent :
-    déjà enrichi → renvoyé tel quel, sauf force=true."""
-    objet = stockage.lire_objet(tenant, objet_id)
-    if not objet:
-        raise HTTPException(404, "Objet introuvable.")   # cloisonnement : rien révélé
-    meta = objet["metadata"]
-    if not force and (meta.get("email") or meta.get("site")):
-        return {"statut": "deja_enrichi", "objet": objet}
-    try:
-        rapport = enrichissement.enrichir(objet)
-    except httpx.HTTPError as e:
-        stockage.journaliser_enrichissement(tenant, objet_id, statut="erreur",
-                                            resultat={"detail": str(e)})
-        raise HTTPException(502, f"Brique recherche injoignable : {e}")
+# Plafond du lot (S169) : la prospection B2B enrichit PLUSIEURS objets d'un coup —
+# assouplissement ASSUMÉ du « une à la fois » — mais borné pour rester honnête (pas
+# d'aspirateur) et tenir dans le budget temps d'un appel outil (chaque objet = ~2 lectures
+# web réelles, lentes). Relever via GEO_ENRICHIR_LOT_MAX si besoin.
+PLAFOND_ENRICHIR_LOT = int(os.getenv("GEO_ENRICHIR_LOT_MAX", "50"))
+
+
+def _enrichir_et_enregistrer(tenant: str, objet: dict) -> tuple[dict, dict]:
+    """Enrichit UN objet, journalise la tentative, applique les coordonnées trouvées à ses
+    metadata. Renvoie (rapport, objet_maj). Lève httpx.HTTPError si la brique recherche est
+    injoignable — le caller tranche : 502 pour l'unitaire, « continuer » pour le lot."""
+    objet_id = objet["id"]
+    rapport = enrichissement.enrichir(objet)   # peut lever httpx.HTTPError
     stockage.journaliser_enrichissement(
         tenant, objet_id, statut=rapport["statut"], requete=rapport.get("requete", ""),
         source_url=rapport.get("source_url", ""), resultat=rapport)
     if rapport["statut"] == "ok":
+        meta = dict(objet["metadata"])
         meta["site"] = rapport["site"]
         if rapport["emails"]:
             meta["email"] = rapport["emails"][0]
@@ -186,8 +180,87 @@ def enrichir_objet(objet_id: str, force: bool = False,
             meta["telephone"] = rapport["telephones"][0]
         meta["enrichi_le"] = datetime.now(timezone.utc).isoformat()
         meta["enrichi_source"] = rapport["source_url"]
-        objet = stockage.maj_metadata(tenant, objet_id, meta)
+        objet = stockage.maj_metadata(tenant, objet_id, meta) or objet
+    return rapport, objet
+
+
+def _prospect_crm(objet: dict) -> dict:
+    """Vue « prête pour le CRM » d'un objet enrichi : ce dont la Forge a besoin pour créer
+    un prospect (nom, coordonnées publiques trouvées, site, référence pour dé-doublonner)."""
+    m = objet.get("metadata") or {}
+    return {"objet_id": objet["id"], "nom": m.get("nom"), "entreprise": m.get("nom"),
+            "email": m.get("email"), "telephone": m.get("telephone"),
+            "site": m.get("site"), "naf": m.get("naf"), "commune": m.get("commune"),
+            "ref_externe": objet.get("ref_externe"), "source": objet.get("source")}
+
+
+@app.post("/objets/{objet_id}/enrichir")
+def enrichir_objet(objet_id: str, force: bool = False,
+                   tenant: str = Depends(tenant_actuel)):
+    """Enrichit UNE entreprise, À LA DEMANDE : trouve son site OFFICIEL via la brique
+    recherche (souveraine, annuaires écartés), lit la page — et sa page contact — et en
+    extrait les coordonnées que l'entreprise AFFICHE elle-même. Chaque tentative est
+    JOURNALISÉE (voir /enrichissements). Idempotent : déjà enrichi → renvoyé tel quel,
+    sauf force=true. Pour enrichir toute une zone d'un coup : /prospection/enrichir-lot."""
+    objet = stockage.lire_objet(tenant, objet_id)
+    if not objet:
+        raise HTTPException(404, "Objet introuvable.")   # cloisonnement : rien révélé
+    meta = objet["metadata"]
+    if not force and (meta.get("email") or meta.get("site")):
+        return {"statut": "deja_enrichi", "objet": objet}
+    try:
+        rapport, objet = _enrichir_et_enregistrer(tenant, objet)
+    except httpx.HTTPError as e:
+        stockage.journaliser_enrichissement(tenant, objet_id, statut="erreur",
+                                            resultat={"detail": str(e)})
+        raise HTTPException(502, f"Brique recherche injoignable : {e}")
     return {"statut": rapport["statut"], "rapport": rapport, "objet": objet}
+
+
+class ProspecterLotEntree(BaseModel):
+    bbox: str                              # zone « lat_min,lon_min,lat_max,lon_max »
+    type: str = "entreprise"
+    naf: Optional[str] = None              # préfixe d'activité pour cibler la prospection
+    limite: int = 8                        # petit par défaut (enrichissement web = lent)
+    force: bool = False                    # ré-enrichir même les objets déjà enrichis
+
+
+@app.post("/prospection/enrichir-lot")
+def enrichir_lot(corps: ProspecterLotEntree, tenant: str = Depends(tenant_actuel)):
+    """Enrichit EN LOT (borné) les objets d'une zone — le socle de la PROSPECTION : pour
+    chaque objet, trouve le site officiel + les coordonnées publiques (même moteur que
+    l'unitaire, mêmes garde-fous : uniquement ce que l'entité affiche, chaque tentative
+    journalisée). Assouplissement ASSUMÉ du « une à la fois » pour du démarchage B2B, gardé
+    BORNÉ (plafond GEO_ENRICHIR_LOT_MAX). Synchrone et lent (lectures web réelles) → garde
+    les lots petits. Renvoie un décompte honnête + les prospects prêts pour le CRM."""
+    try:
+        boite = domaine.valider_bbox(corps.bbox)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    plafond = max(1, min(corps.limite, PLAFOND_ENRICHIR_LOT))
+    res = stockage.chercher_bbox(tenant, boite, type_=corps.type, naf=corps.naf, limite=plafond)
+    objets = res["objets"]
+    compte = {"ok": 0, "deja_enrichi": 0, "introuvable": 0, "impossible": 0, "erreur": 0}
+    prospects: list[dict] = []
+    for objet in objets:
+        meta = objet["metadata"]
+        if not corps.force and (meta.get("email") or meta.get("site")):
+            compte["deja_enrichi"] += 1
+        else:
+            try:
+                rapport, objet = _enrichir_et_enregistrer(tenant, objet)
+                compte[rapport["statut"]] = compte.get(rapport["statut"], 0) + 1
+            except httpx.HTTPError as e:
+                stockage.journaliser_enrichissement(tenant, objet["id"], statut="erreur",
+                                                    resultat={"detail": str(e)})
+                compte["erreur"] += 1
+            meta = objet["metadata"]
+        # Un objet devient « prospect » dès qu'on a de quoi le contacter ou un site.
+        if meta.get("email") or meta.get("telephone") or meta.get("site"):
+            prospects.append(_prospect_crm(objet))
+    return {"zone_objets": res["nb_total"], "traites": len(objets), "plafond": plafond,
+            "tronque": res["nb_total"] > plafond, "compte": compte,
+            "prospects": prospects}
 
 
 @app.get("/enrichissements")
