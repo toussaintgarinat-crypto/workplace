@@ -584,6 +584,93 @@ async def crm_creer(corps: dict = Body(...)):
             "message": f"Prospect « {nom} » ajouté (statut : {lead.get('statut')})."}
 
 
+# ── Import en lot depuis la prospection geo (S169) ──────────────────────────────
+# NB : cette route STATIQUE doit être déclarée AVANT « /crm/{lead_id} » — sinon FastAPI
+# (qui matche par ordre de déclaration) capterait « /crm/import-lot » comme un lead_id.
+def _norm(s: str | None) -> str:
+    return (s or "").strip().lower()
+
+
+def _signatures(lead: dict) -> set[str]:
+    """Empreintes de dé-doublonnage d'un prospect : l'email (fort) et le nom d'entreprise
+    (repli). Deux prospects qui partagent l'un ou l'autre sont considérés identiques —
+    l'import est ainsi ré-exécutable sans empiler des doublons."""
+    sigs: set[str] = set()
+    if lead.get("email"):
+        sigs.add("email:" + _norm(lead["email"]))
+    ent = lead.get("entreprise") or lead.get("nom")
+    if ent:
+        sigs.add("ent:" + _norm(ent))
+    return sigs
+
+
+def _prospect_vers_lead(p: dict, statut: str) -> dict:
+    """Traduit un prospect enrichi par geo (geo_prospecter_lot) en lead CRM. Les infos de
+    veille (site, NAF, commune, SIREN) enrichissent les `notes` — utiles pour démarcher."""
+    ent = (p.get("entreprise") or p.get("nom") or "").strip()
+    notes = []
+    if p.get("site"):
+        notes.append(f"Site : {p['site']}")
+    if p.get("naf"):
+        notes.append(f"NAF : {p['naf']}")
+    if p.get("commune"):
+        notes.append(f"Commune : {p['commune']}")
+    if p.get("ref_externe"):
+        notes.append(f"SIREN : {p['ref_externe']}")
+    notes.append("Importé depuis la veille geo")
+    if (p.get("notes") or "").strip():
+        notes.append(p["notes"].strip())
+    charge = {"nom": (p.get("nom") or ent), "entreprise": ent,
+              "email": p.get("email"), "telephone": p.get("telephone"),
+              "statut": statut, "notes": " · ".join(notes)}
+    return {k: v for k, v in charge.items() if v is not None}
+
+
+@app.post("/crm/import-lot", summary="Importer une liste de prospects dans le CRM (action)")
+async def crm_importer_lot(corps: dict = Body(...)):
+    """Verse EN LOT des prospects (issus de la veille geo, `geo_prospecter_lot`) dans le
+    CRM. ACTION (écrit dans Forge). Dé-doublonne contre les prospects DÉJÀ présents et à
+    l'intérieur du lot lui-même (par email, sinon par nom d'entreprise) ⇒ ré-exécutable
+    sans créer de doublons. `statut` par défaut « à contacter » (première étape du
+    pipeline de démarchage).
+
+    Entrée : ``{prospects: [{nom|entreprise, email?, telephone?, site?, naf?, commune?,
+    ref_externe?, notes?}], statut?}``.
+    """
+    prospects = corps.get("prospects")
+    if not isinstance(prospects, list) or not prospects:
+        raise HTTPException(422, "Champ requis : 'prospects' (liste non vide).")
+    statut = (corps.get("statut") or "à contacter").strip() or "à contacter"
+    async with await _client(timeout=60) as client:
+        pole_id = await _resoudre_pole_crm(client)
+        existants = _json_ou_erreur(
+            await _appel_protege(client, "GET", f"/api/poles/{pole_id}/crm")) or []
+        vus: set[str] = set()
+        for lead in existants:
+            vus |= _signatures(lead)
+        crees, doublons, ignores = [], 0, 0
+        for p in prospects:
+            if not isinstance(p, dict):
+                ignores += 1
+                continue
+            if not (p.get("nom") or p.get("entreprise")):
+                ignores += 1                       # rien pour nommer le prospect
+                continue
+            sigs = _signatures(p)
+            if sigs & vus:
+                doublons += 1                      # déjà au CRM ou déjà vu dans ce lot
+                continue
+            lead = _json_ou_erreur(await _appel_protege(
+                client, "POST", f"/api/poles/{pole_id}/crm",
+                json=_prospect_vers_lead(p, statut)))
+            crees.append(_resume_lead(lead))
+            vus |= sigs
+    return {"ok": True, "crees": len(crees), "doublons": doublons, "ignores": ignores,
+            "statut": statut, "prospects": crees,
+            "message": f"{len(crees)} prospect(s) ajouté(s) au CRM (statut « {statut} »), "
+                       f"{doublons} doublon(s) ignoré(s)."}
+
+
 @app.post("/crm/{lead_id}", summary="Mettre à jour un prospect / le faire avancer (action)")
 async def crm_modifier(lead_id: str, corps: dict = Body(...)):
     """Proxy authentifié → `PATCH /api/crm/{id}`. ACTION (écrit dans Forge).

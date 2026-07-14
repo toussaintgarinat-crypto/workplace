@@ -1,0 +1,150 @@
+"""Prospection : enrichissement EN LOT d'une zone (S169). Recherche mockée, zéro réseau.
+
+On vérifie le socle du démarchage : enrichir plusieurs entités d'un coup, borner le lot,
+sauter les déjà-enrichies, rester honnête (décompte + journal) et cloisonné par tenant.
+
+Chaque test utilise sa PROPRE clé API → son propre tenant (empreinte) → une base vierge de
+son point de vue, sans dépendre de l'ordre d'exécution (la DB de test est partagée).
+"""
+import re
+from urllib.parse import urlparse
+
+import httpx
+from fastapi.testclient import TestClient
+
+import enrichissement
+import main
+
+client = TestClient(main.app)
+
+BBOX = "43.55,2.10,43.70,2.35"   # englobe Castres (lat 43.60, lon 2.24)
+
+
+class _Rep:
+    def __init__(self, status_code, corps):
+        self.status_code, self._corps = status_code, corps
+
+    def json(self):
+        return self._corps
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("erreur", request=None, response=None)
+
+
+class _FauxRecherche:
+    """Simule la brique recherche pour un LOT : à chaque requête, fabrique un site
+    officiel plausible dérivé du nom cherché + une page contact. `sans_site` = noms pour
+    lesquels aucun site n'est trouvé (on ne renvoie qu'un annuaire, donc « introuvable »)."""
+
+    def __init__(self, sans_site=()):
+        self.sans_site = set(sans_site)
+
+    def __call__(self, *a, **k):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def post(self, url, json=None, headers=None):
+        corps = json or {}
+        if url.endswith("/rechercher"):
+            requete = corps.get("requete", "")
+            if any(s in requete for s in self.sans_site):
+                return _Rep(200, {"resultats":
+                                  [{"titre": "PagesJaunes", "url": "https://www.pagesjaunes.fr/x"}]})
+            slug = re.sub(r"[^a-z0-9]+", "-", requete.lower()).strip("-")[:40]
+            return _Rep(200, {"resultats":
+                              [{"titre": requete + " — site officiel", "url": f"https://{slug}.fr/"}]})
+        dom = urlparse(corps.get("url", "")).netloc
+        return _Rep(200, {"texte": f"Contactez-nous : contact@{dom}", "liens": []})
+
+
+def _objet(cle, nom, metadata=None):
+    meta = {"nom": nom, "commune": "CASTRES"}
+    meta.update(metadata or {})
+    r = client.post("/objets", headers=cle,
+                    json={"latitude": 43.606, "longitude": 2.24, "metadata": meta})
+    return r.json()["id"]
+
+
+def test_prospecter_lot_enrichit_plusieurs_et_rend_prospects(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    cle = {"X-API-Key": "lot-multi"}
+    for nom in ("Boulangerie du Sidobre", "Restaurant Le Causse", "Garage des Monts"):
+        _objet(cle, nom)
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 10})
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["compte"]["ok"] == 3
+    assert corps["traites"] == 3 and corps["tronque"] is False
+    assert len(corps["prospects"]) == 3
+    p = corps["prospects"][0]
+    assert p["nom"] and p["entreprise"] == p["nom"]
+    assert p["email"] and p["email"].startswith("contact@")
+    assert p["site"] and p["objet_id"]
+
+
+def test_prospecter_lot_est_borne(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    cle = {"X-API-Key": "lot-borne"}
+    for i in range(5):
+        _objet(cle, f"Entreprise Numero {i}")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 2}).json()
+    assert r["traites"] == 2 and r["plafond"] == 2
+    assert r["zone_objets"] == 5 and r["tronque"] is True
+    assert r["compte"]["ok"] == 2
+
+
+def test_prospecter_lot_saute_deja_enrichi_sauf_force(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    cle = {"X-API-Key": "lot-deja"}
+    _objet(cle, "Cabinet Deja Vu", metadata={"email": "dejavu@exemple.fr"})
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 10}).json()
+    assert r["compte"]["deja_enrichi"] == 1 and r["compte"]["ok"] == 0
+    # Il reste un prospect valable (il a déjà un email) même sans nouvelle recherche.
+    assert len(r["prospects"]) == 1
+    forcee = client.post("/prospection/enrichir-lot", headers=cle,
+                         json={"bbox": BBOX, "limite": 10, "force": True}).json()
+    assert forcee["compte"]["ok"] == 1
+
+
+def test_prospecter_lot_recherche_injoignable_continue_et_journalise(monkeypatch):
+    class _Casse:
+        def __call__(self, *a, **k):
+            raise httpx.ConnectError("refus de connexion")
+    monkeypatch.setattr(enrichissement.httpx, "Client", _Casse())
+    cle = {"X-API-Key": "lot-panne"}
+    _objet(cle, "Societe Injoignable Un")
+    _objet(cle, "Societe Injoignable Deux")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 10})
+    assert r.status_code == 200          # une panne réseau ne fait pas planter le lot
+    assert r.json()["compte"]["erreur"] == 2
+    journal = client.get("/enrichissements", headers=cle).json()["enrichissements"]
+    assert journal[0]["statut"] == "erreur"
+
+
+def test_prospecter_lot_introuvable_pas_de_faux_prospect(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client",
+                        _FauxRecherche(sans_site=("Fantome",)))
+    cle = {"X-API-Key": "lot-introuvable"}
+    _objet(cle, "Fantome Sans Site")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 10}).json()
+    assert r["compte"]["introuvable"] == 1
+    assert r["prospects"] == []          # aucun contact → aucun prospect inventé
+
+
+def test_prospecter_lot_cloisonne_par_tenant(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    _objet({"X-API-Key": "lot-prive"}, "Prospect Prive")
+    autre = client.post("/prospection/enrichir-lot", headers={"X-API-Key": "lot-voisin"},
+                        json={"bbox": BBOX, "limite": 10}).json()
+    assert autre["traites"] == 0 and autre["prospects"] == []

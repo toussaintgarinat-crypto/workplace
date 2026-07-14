@@ -180,6 +180,37 @@
       "niveau": 1
     },
     {
+      "nom": "geo_prospecter_lot",
+      "description": "PROSPECTION : enrichit EN LOT (borné) toutes les entreprises/associations d'une zone d'un coup — pour chacune, trouve le site officiel + les coordonnées publiques (email/téléphone qu'elle affiche). Sert « trouve-moi les coordonnées des restos récents autour de Lyon pour les démarcher ». Renvoie un décompte + les prospects prêts à verser au CRM (forge_crm_importer_lot). Lent (lectures web réelles) → garde les lots petits. Chaque tentative journalisée (RGPD). ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/prospection/enrichir-lot",
+      "params": {
+        "bbox": {
+          "type": "string",
+          "description": "Zone « lat_min,lon_min,lat_max,lon_max » où prospecter (ex. « 45.70,4.75,45.80,4.90 » pour le centre de Lyon).",
+          "requis": true
+        },
+        "type": {
+          "type": "string",
+          "description": "« entreprise » (défaut) ou « association »."
+        },
+        "naf": {
+          "type": "string",
+          "description": "Préfixe de code NAF/activité pour cibler (ex. « 56.10 » restaurants)."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre max d'entités à enrichir dans cette passe (défaut 8, plafonné). Garde petit : chaque enrichissement lit le web en direct."
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Ré-enrichir même les entités déjà enrichies (défaut false)."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
       "nom": "geo_enrichissements_journal",
       "description": "Le JOURNAL des enrichissements (transparence RGPD) : qui a été enrichi, quand, depuis quelle source, avec quel résultat — échecs inclus. Lecture seule.",
       "methode": "GET",

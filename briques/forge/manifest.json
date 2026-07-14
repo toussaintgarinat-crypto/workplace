@@ -257,6 +257,24 @@
       "action": true
     },
     {
+      "nom": "forge_crm_importer_lot",
+      "description": "Verse EN LOT une liste de prospects dans le CRM — typiquement le résultat de geo_prospecter_lot (démarchage). Dé-doublonne contre l'existant ET dans le lot (par email, sinon nom d'entreprise) : ré-exécutable sans doublons. statut par défaut « à contacter ». Sert « mets ces prospects dans mon CRM ». ACTION.",
+      "methode": "POST",
+      "chemin": "/crm/import-lot",
+      "params": {
+        "prospects": {
+          "type": "array",
+          "description": "Liste d'objets prospect : [{nom|entreprise, email?, telephone?, site?, naf?, commune?, ref_externe?, notes?}]. Passe directement le champ « prospects » renvoyé par geo_prospecter_lot.",
+          "requis": true
+        },
+        "statut": {
+          "type": "string",
+          "description": "Étape de départ dans le pipeline (défaut « à contacter »)."
+        }
+      },
+      "action": true
+    },
+    {
       "nom": "forge_crm_modifier",
       "description": "Met à jour un prospect (statut, valeur, coordonnées). Récupère l'id via forge_crm_lister. Ne passe que les champs à changer. ACTION.",
       "methode": "POST",
