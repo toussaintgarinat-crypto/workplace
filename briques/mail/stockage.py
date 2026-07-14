@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS filtres (
     id TEXT PRIMARY KEY, tenant TEXT NOT NULL, nom TEXT NOT NULL,
     mots TEXT, expediteur TEXT, cree_le TEXT);
 CREATE INDEX IF NOT EXISTS idx_filtres_tenant ON filtres(tenant);
+
+-- Registre de DÉMARCHAGE (S170) : cadence + opt-out par destinataire. Chaque prépa de
+-- démarchage incrémente nb_contacts ; le opt-out (« STOP ») fige à ne plus jamais contacter.
+-- C'est le garde-fou conformité (LCEN/RGPD) : plafond de relances + liste de suppression.
+CREATE TABLE IF NOT EXISTS demarchage (
+    tenant TEXT NOT NULL, email TEXT NOT NULL,
+    nb_contacts INTEGER NOT NULL DEFAULT 0, dernier_contact TEXT,
+    opt_out INTEGER NOT NULL DEFAULT 0, cree_le TEXT NOT NULL, maj_le TEXT NOT NULL,
+    PRIMARY KEY (tenant, email));
 """
 
 
@@ -419,3 +428,58 @@ def supprimer_filtre(tenant: str, filtre_id: str) -> bool:
     with _conn() as c:
         cur = c.execute("DELETE FROM filtres WHERE id=? AND tenant=?", (filtre_id, tenant))
         return cur.rowcount > 0
+
+
+# ── Registre de démarchage : cadence + opt-out (S170) ────────────────────────
+def _demarchage_dict(r: sqlite3.Row) -> dict:
+    return {"email": r["email"], "nb_contacts": r["nb_contacts"],
+            "dernier_contact": r["dernier_contact"], "opt_out": bool(r["opt_out"]),
+            "cree_le": r["cree_le"], "maj_le": r["maj_le"]}
+
+
+def demarchage_lire(tenant: str, email: str) -> dict | None:
+    """État de démarchage d'un destinataire (nb de contacts, dernier envoi, opt-out) ou None."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM demarchage WHERE tenant=? AND email=?",
+                      (tenant, (email or "").strip().lower())).fetchone()
+    return _demarchage_dict(r) if r else None
+
+
+def demarchage_enregistrer_contact(tenant: str, email: str) -> dict:
+    """Compte un contact de plus pour ce destinataire (upsert : +1 et dernier_contact=maintenant).
+    Ne réactive JAMAIS un opt-out (la ligne garde opt_out=1 si elle l'était)."""
+    email = (email or "").strip().lower()
+    now = _maintenant()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO demarchage (tenant, email, nb_contacts, dernier_contact, cree_le, maj_le)"
+            " VALUES (?,?,1,?,?,?)"
+            " ON CONFLICT(tenant, email) DO UPDATE SET"
+            " nb_contacts = nb_contacts + 1, dernier_contact = excluded.dernier_contact,"
+            " maj_le = excluded.maj_le",
+            (tenant, email, now, now, now))
+        r = c.execute("SELECT * FROM demarchage WHERE tenant=? AND email=?", (tenant, email)).fetchone()
+    return _demarchage_dict(r)
+
+
+def demarchage_desinscrire(tenant: str, email: str) -> dict:
+    """Marque un destinataire en opt-out (« STOP ») : il ne sera plus jamais démarché. Upsert."""
+    email = (email or "").strip().lower()
+    now = _maintenant()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO demarchage (tenant, email, nb_contacts, opt_out, cree_le, maj_le)"
+            " VALUES (?,?,0,1,?,?)"
+            " ON CONFLICT(tenant, email) DO UPDATE SET opt_out = 1, maj_le = excluded.maj_le",
+            (tenant, email, now, now))
+        r = c.execute("SELECT * FROM demarchage WHERE tenant=? AND email=?", (tenant, email)).fetchone()
+    return _demarchage_dict(r)
+
+
+def demarchage_lister(tenant: str, limite: int = 500) -> list[dict]:
+    """Le registre de démarchage du tenant (transparence : qui a été contacté, combien de fois,
+    qui s'est désinscrit) — plus récemment mis à jour d'abord."""
+    with _conn() as c:
+        lignes = c.execute("SELECT * FROM demarchage WHERE tenant=? ORDER BY maj_le DESC LIMIT ?",
+                           (tenant, limite)).fetchall()
+    return [_demarchage_dict(r) for r in lignes]

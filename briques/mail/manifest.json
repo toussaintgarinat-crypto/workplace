@@ -230,6 +230,69 @@
       "action": true
     },
     {
+      "nom": "mail_demarchage_preparer",
+      "description": "DÉMARCHAGE : prépare EN LOT des brouillons d'emails personnalisés (jamais envoyés) à partir d'une liste de prospects — typiquement issue du CRM (forge_crm_lister) ou de geo_prospecter_lot. Le message est un gabarit avec {nom}/{entreprise}/{ville}. Chaque email reçoit AUTOMATIQUEMENT l'identité de l'expéditeur + une mention de désinscription (conformité LCEN/RGPD). Un REGISTRE de cadence/opt-out est respecté : les désinscrits, ceux déjà contactés au plafond, ou contactés trop récemment sont sautés. Rappeler cet outil plus tard = préparer les RELANCES dues, sans sur-solliciter. L'utilisateur relit puis envoie via mail_brouillon_envoyer. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/demarchage/preparer",
+      "params": {
+        "prospects": {
+          "type": "array",
+          "description": "Liste [{email (requis), nom?, entreprise?, ville?}]. Passe directement les prospects du CRM ou de geo_prospecter_lot (les champs email/nom/entreprise/commune sont reconnus).",
+          "requis": true
+        },
+        "sujet": {
+          "type": "string",
+          "description": "Objet de l'email (gabarit : peut contenir {nom}/{entreprise}/{ville}).",
+          "requis": true
+        },
+        "message": {
+          "type": "string",
+          "description": "Corps de l'email (gabarit : {nom}/{entreprise}/{ville}). Le pied de conformité (identité + désinscription) est ajouté automatiquement.",
+          "requis": true
+        },
+        "expediteur": {
+          "type": "string",
+          "description": "Identité de l'expéditeur affichée en bas (nom + société/contact) — OBLIGATOIRE (conformité).",
+          "requis": true
+        },
+        "compte": {
+          "type": "string",
+          "description": "Boîte d'envoi (optionnel ; auto si une seule boîte réelle connectée)."
+        },
+        "cooldown_jours": {
+          "type": "integer",
+          "description": "Délai minimum en jours entre deux contacts d'un même destinataire (défaut 7)."
+        },
+        "max_contacts": {
+          "type": "integer",
+          "description": "Nombre maximum de contacts par destinataire, relances comprises (défaut 3)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_demarchage_desinscrire",
+      "description": "OPT-OUT : marque un destinataire comme désinscrit (« STOP ») — il ne sera plus jamais démarché ni relancé. À utiliser dès qu'un contact demande à ne plus être sollicité. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/demarchage/desinscrire",
+      "params": {
+        "email": {
+          "type": "string",
+          "description": "Adresse email à désinscrire du démarchage.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_demarchage_registre",
+      "description": "Le REGISTRE de démarchage (transparence) : qui a été contacté, combien de fois, quand, et qui s'est désinscrit. Sert « qui ai-je déjà démarché », « qui reste à relancer ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/demarchage/registre",
+      "params": {},
+      "action": false
+    },
+    {
       "nom": "mail_compte_connecter",
       "description": "AJOUTE une boîte IMAP réelle (lecture seule) — on peut en connecter plusieurs (perso, pro…). ASTUCE : il vaut MIEUX le faire depuis la page back-office de la brique que par message (le mot de passe transiterait dans la conversation). À n'utiliser que si l'utilisateur fournit explicitement ses identifiants. ACTION (manipule un secret) : confirme=true requis.",
       "methode": "POST",
