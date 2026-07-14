@@ -14,6 +14,12 @@ import proprioception
 
 router = APIRouter()
 
+# Le refactor S114 a déplacé ces routes ici mais laissé `_lire_profil`/`profil_get`/`profil_post`
+# référencer PROFIL_PATH/PROFIL_DEFAUT_PATH sans les définir → NameError, /profil en 500. On les
+# (re)définit ici, mêmes valeurs que le router assistant (env, sinon volume /data et défaut baké).
+PROFIL_PATH = os.getenv("PROFIL_PATH", "/data/profil.md")
+PROFIL_DEFAUT_PATH = os.getenv("PROFIL_DEFAUT_PATH", "/app/profil_defaut.md")
+
 
 @router.get("/amelioration", tags=["assistant"])
 async def amelioration_lister():
