@@ -1,7 +1,7 @@
 {
   "nom": "agenda",
   "famille": "metier",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
   "role": "agenda",
   "couche": "backend",
@@ -17,6 +17,100 @@
     "invitations"
   ],
   "besoin": [],
+  "capacites": [
+    {
+      "nom": "agenda_consulter",
+      "description": "Liste les rendez-vous/événements de l'agenda personnel sur une période (agrège perso + Google + TimeTree + partagés). 'debut' et 'fin' au format ISO 8601 (ex. 2026-06-06T00:00:00). Sans période, renvoie tout. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/events",
+      "params": {
+        "debut": {"type": "string", "description": "Début de la plage (ISO 8601)."},
+        "fin": {"type": "string", "description": "Fin de la plage (ISO 8601)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "agenda_lister",
+      "description": "Liste les agendas (calendriers) accessibles : l'agenda perso et les agendas partagés, avec l'id de chacun et s'il est le calendrier par défaut. Utile avant d'inviter quelqu'un ou de cibler un calendrier précis. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/calendars",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "agenda_creer_evenement",
+      "description": "Ajoute un rendez-vous/événement à l'agenda (effet immédiat, pas de confirmation). 'debut' et 'fin' au format ISO 8601 (utilise la date/heure courante fournie pour interpréter « demain », « lundi prochain »…). Si l'heure de fin n'est pas précisée, mets +1h.",
+      "methode": "POST",
+      "chemin": "/service/events",
+      "params": {
+        "titre": {"type": "string", "description": "Titre de l'événement.", "requis": true},
+        "debut": {"type": "string", "description": "Date/heure de début (ISO 8601).", "requis": true},
+        "fin": {"type": "string", "description": "Date/heure de fin (ISO 8601). Si non précisée, mets +1h.", "requis": true},
+        "lieu": {"type": "string", "description": "Lieu (optionnel)."},
+        "description": {"type": "string", "description": "Notes (optionnel)."},
+        "rappels": {"type": "array", "items": {"type": "integer"}, "description": "Rappels = liste de MINUTES AVANT le début. « à l'heure »=0, « 10 min avant »=10, « 30 min avant »=30, « 1 h avant »=60, « la veille / 1 jour avant »=1440, « 1 semaine avant »=10080. Plusieurs possibles, ex. [30,1440]. Omettre = aucun rappel."}
+      },
+      "action": false
+    },
+    {
+      "nom": "agenda_definir_rappels",
+      "description": "Définit/modifie les rappels d'un événement EXISTANT (effet immédiat, pas de confirmation). Retrouve d'abord l'event_id via agenda_consulter. Remplace la liste complète ; passe une liste VIDE [] pour retirer tous les rappels.",
+      "methode": "PATCH",
+      "chemin": "/service/events/{event_id}",
+      "params": {
+        "event_id": {"type": "string", "description": "Id de l'événement (via agenda_consulter).", "requis": true},
+        "rappels": {"type": "array", "items": {"type": "integer"}, "description": "Liste de MINUTES AVANT le début (0=à l'heure, 10, 30, 60=1h, 1440=1j, 10080=1sem). Liste vide = aucun rappel.", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "agenda_deplacer_evenement",
+      "description": "Replanifie un événement existant (nouvelles dates, effet immédiat). Retrouve d'abord son event_id via agenda_consulter.",
+      "methode": "PATCH",
+      "chemin": "/service/events/{event_id}",
+      "params": {
+        "event_id": {"type": "string", "description": "Id de l'événement (via agenda_consulter).", "requis": true},
+        "debut": {"type": "string", "description": "Nouveau début (ISO 8601).", "requis": true},
+        "fin": {"type": "string", "description": "Nouvelle fin (ISO 8601).", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "agenda_supprimer_evenement",
+      "description": "Annule (supprime) un événement de l'agenda. Retrouve d'abord son event_id via agenda_consulter. ACTION DESTRUCTRICE : confirme=true requis après accord.",
+      "methode": "DELETE",
+      "chemin": "/service/events/{event_id}",
+      "params": {
+        "event_id": {"type": "string", "description": "Id de l'événement (via agenda_consulter).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "agenda_creer_partage",
+      "description": "Crée un nouvel agenda (calendrier) partageable, distinct de l'agenda perso (effet immédiat, pas de confirmation). Le créateur en est propriétaire et peut ensuite inviter des personnes via agenda_inviter. Renvoie l'id de l'agenda créé.",
+      "methode": "POST",
+      "chemin": "/service/calendars",
+      "params": {
+        "nom": {"type": "string", "description": "Nom de l'agenda (ex. « Famille », « Équipe chantier »).", "requis": true},
+        "description": {"type": "string", "description": "Description (optionnel)."},
+        "couleur": {"type": "string", "description": "Couleur hex, ex. #3B82F6 (optionnel)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "agenda_inviter",
+      "description": "Génère un lien d'invitation à un agenda partagé pour donner l'accès à quelqu'un. Récupère d'abord le calendar_id via agenda_lister. Renvoie un lien et un token à transmettre à l'invité. ACTION (donne un accès) : confirme=true requis après accord.",
+      "methode": "POST",
+      "chemin": "/service/calendars/{calendar_id}/invitations",
+      "params": {
+        "calendar_id": {"type": "string", "description": "Id de l'agenda à partager (via agenda_lister).", "requis": true},
+        "role": {"type": "string", "enum": ["viewer", "editor"], "description": "viewer = lecture seule ; editor = peut modifier. Défaut viewer."},
+        "expire_heures": {"type": "integer", "description": "Durée de validité du lien en heures (défaut 72)."},
+        "email": {"type": "string", "description": "Email de l'invité (optionnel, informatif)."}
+      },
+      "action": true
+    }
+  ],
   "taches": [
     {
       "nom": "sync-google",

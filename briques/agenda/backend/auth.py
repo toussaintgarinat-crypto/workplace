@@ -29,8 +29,29 @@ _KC = KeycloakSettings(
 async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     x_user_id: str | None = Header(None),
+    x_api_key: str | None = Header(None),
+    x_compte_id: str | None = Header(None),
 ) -> dict:
-    """Accepte un JWT Keycloak (frontend) ou un service token + X-User-Id (S2S)."""
+    """Trois dialectes d'identité, dans l'ordre :
+
+    (a) **S2S Workplace (S168)** : `X-API-Key == AGENDA_KEY` (+ `X-Compte-Id`), injecté
+        par le Cœur via `_entetes_brique`. Vérifié EN PREMIER, indépendamment
+        d'`AUTH_ENABLED` : la clé prouve le droit d'emprunter la surface de service.
+        L'utilisateur de calendrier reste **pinné sur `AGENDA_USER_ID`** (« perso »
+        mono-user) — toutes les données ET le coffre OAuth/TimeTree sont keyés sur cet
+        id, donc pinner = ne rien perdre à la bascule. `X-Compte-Id` est tracé comme
+        crochet multi-tenant futur (cf. ADR agenda-surface-de-service).
+    (b) **JWT Keycloak** (frontend).
+    (c) **service token historique** (`CALENDAR_SERVICE_TOKEN`) + `X-User-Id` (S2S d'origine).
+    """
+    # (a) S2S Workplace — la présence d'une clé de service configurée + d'un X-API-Key
+    # engage ce dialecte : soit la clé matche (identité pinnée), soit on refuse (401).
+    if settings.AGENDA_KEY and x_api_key is not None:
+        if x_api_key != settings.AGENDA_KEY:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid service key")
+        return {"sub": settings.AGENDA_USER_ID, "service_call": True, "compte_id": x_compte_id}
+
     if not settings.AUTH_ENABLED:
         return {"sub": x_user_id or "anonymous"}
 

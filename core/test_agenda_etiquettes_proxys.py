@@ -88,18 +88,11 @@ def test_supprimer_etiquette():
     assert ("DELETE", "http://agenda/labels/lab1") in APPELS
 
 
-def test_enrichissement_nom_et_couleur():
-    _setup()
-    evts = _run(agenda.lister_evenements(None))
-    by = {e["id"]: e for e in evts}
-    # e1 a une étiquette → nom résolu + couleur de l'étiquette prime sur la couleur libre.
-    assert by["e1"]["etiquette"] == "Famille"
-    assert by["e1"]["couleur"] == "#ff0000"
-    # e2 sans étiquette → couleur libre de l'événement.
-    assert by["e2"]["etiquette"] is None
-    assert by["e2"]["couleur"] == "#abcdef"
-    # e3 ni étiquette ni couleur → repli sur la couleur du calendrier.
-    assert by["e3"]["couleur"] == "#111111"
+# NB (S168) : l'enrichissement des événements (résolution étiquette → nom + couleur, replis
+# couleur libre puis couleur du calendrier) a migré du Cœur vers la brique — il est désormais
+# testé dans briques/agenda/backend/tests/test_service_agenda.py (agrégation /service/events).
+# Côté Cœur, `lister_evenements` ne fait qu'un GET et renvoie le payload déjà enrichi
+# (délégation testée dans test_timetree_outils.py::test_lister_evenements_delegue_a_service).
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ from routers.invitations import router as invitations_router
 from routers.labels import router as labels_router
 from routers.members import router as members_router
 from routers.participants import router as participants_router
+from routers.service import router as service_router
 from routers.sse import router as sse_router
 from routers.timetree import router as timetree_router
 
@@ -47,6 +48,7 @@ app.include_router(events_router)
 app.include_router(members_router)
 app.include_router(invitations_router)
 app.include_router(participants_router)
+app.include_router(service_router)
 app.include_router(comments_router)
 app.include_router(attachments_router)
 app.include_router(sse_router)

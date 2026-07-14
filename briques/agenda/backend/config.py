@@ -19,6 +19,21 @@ class Settings(BaseSettings):
     # Token partagé pour les appels S2S inter-services (assistant → calendar, etc.)
     CALENDAR_SERVICE_TOKEN: str = ""
 
+    # ── Dialecte S2S Workplace (S168) ──────────────────────────────────────────
+    # Clé de service que le Cœur injecte en `X-API-Key` (via `_entetes_brique`,
+    # motif {BRIQUE}_KEY) pour piloter l'agenda par le manifest, sans JWT. Vide ⇒
+    # le dialecte est désactivé (on retombe sur JWT / CALENDAR_SERVICE_TOKEN).
+    AGENDA_KEY: str = ""
+    # Utilisateur de calendrier effectif pour les appels S2S Workplace. Mono-user
+    # aujourd'hui : « perso ». TOUTES les données (calendriers, événements) ET le
+    # coffre OAuth/TimeTree sont keyés sur cet id — on le PINNE pour ne rien perdre
+    # à la bascule (le `X-Compte-Id` reçu est tracé comme crochet multi-tenant futur
+    # mais ne repartitionne pas encore les données). Cf. ADR agenda-surface-de-service.
+    AGENDA_USER_ID: str = "perso"
+    # Racine PUBLIQUE (joignable par un invité) pour les liens d'invitation. Vide ⇒
+    # on retombe sur l'URL de la requête (interne). En déploiement : https://agenda.${DOMAIN}.
+    AGENDA_URL_PUBLIQUE: str = ""
+
     # Stockage pièces jointes (local filesystem)
     ATTACHMENTS_DIR: str = "/data/calendar/attachments"
 

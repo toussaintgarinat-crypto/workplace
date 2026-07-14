@@ -9,6 +9,15 @@ services:
     # Nom fixe : permet à Traefik de router par nom de conteneur sur proxy_net
     # (cf. oria-stack/infra/traefik/dynamic/agenda.yml → http://agenda:8400).
     container_name: agenda
+    env_file:
+      # Secrets/réglages partagés à la racine — source UNIQUE de la clé de service
+      # (S168) : AGENDA_KEY (pilotage /service par le Cœur en X-API-Key) et
+      # AGENDA_URL_PUBLIQUE (racine des liens d'invitation) viennent d'ICI, pas
+      # redéclarés dans `environment` (les redéclarer en `VAR=${VAR:-}` les écraserait
+      # par du vide — piège « env shadow »). ⚠ AGENDA_KEY vide ⇒ la surface /service
+      # traite l'appel du Cœur comme « anonymous » → agenda vu VIDE par l'assistant.
+      - path: ../../.env
+        required: false
     ports:
       - "8400:8400"
     environment:

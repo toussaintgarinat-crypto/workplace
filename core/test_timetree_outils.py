@@ -73,7 +73,10 @@ def test_deconnecter_gate():
     assert r2["deconnecte"] is True
 
 
-# ── Agrégation multi-calendriers de lister_evenements ────────────────────────
+# ── Délégation de lister_evenements vers la surface /service (S168) ───────────
+# L'agrégation multi-calendriers + la jointure étiquette/couleur vivent DÉSORMAIS dans la
+# brique (surface /service/events, testée dans briques/agenda) : côté Cœur, le client ne
+# fait plus qu'un GET et renvoie le payload déjà enrichi. On vérifie ici cette délégation.
 
 class _Resp:
     def __init__(self, payload):
@@ -84,7 +87,9 @@ class _Resp:
 
 
 class _FakeClient:
-    """Stub httpx.AsyncClient : /calendars → 2 calendriers, puis events par calendrier."""
+    """Stub httpx.AsyncClient : /service/events → payload déjà agrégé + enrichi par la brique."""
+    dernier = {}
+
     def __init__(self, *a, **k):
         pass
     async def __aenter__(self):
@@ -92,23 +97,25 @@ class _FakeClient:
     async def __aexit__(self, *a):
         return False
     async def get(self, url, headers=None, params=None):
-        if url.endswith("/calendars"):
-            return _Resp([{"id": "perso", "name": "Perso", "color": "#fff"},
-                          {"id": "tt", "name": "TimeTree", "color": "#4CD2C0"}])
-        if url.endswith("/calendars/perso/events"):
-            return _Resp([{"id": "e1", "title": "Perso RDV", "color": None}])
-        if url.endswith("/calendars/tt/events"):
-            return _Resp([{"id": "e2", "title": "Marina", "color": None}])
+        _FakeClient.dernier = {"url": url, "params": params}
+        if url.endswith("/service/events"):
+            return _Resp([
+                {"id": "e1", "title": "Perso RDV", "calendrier": "Perso", "couleur": "#fff"},
+                {"id": "e2", "title": "Marina", "calendrier": "TimeTree", "couleur": "#4CD2C0"},
+            ])
         return _Resp([])
 
 
-def test_lister_evenements_agrege():
+def test_lister_evenements_delegue_a_service():
     agenda._base = lambda registre: "http://agenda"
     agenda.httpx.AsyncClient = _FakeClient
-    evts = _run(agenda.lister_evenements(None))
+    evts = _run(agenda.lister_evenements(None, "2026-07-14T00:00:00", "2026-07-21T00:00:00"))
+    # Un seul appel, vers la surface agrégée de la brique, avec les bornes en params.
+    assert _FakeClient.dernier["url"] == "http://agenda/service/events"
+    assert _FakeClient.dernier["params"] == {"debut": "2026-07-14T00:00:00", "fin": "2026-07-21T00:00:00"}
+    # Le payload enrichi par la brique est renvoyé tel quel (calendrier + couleur préservés).
     titres = {e["title"] for e in evts}
     assert titres == {"Perso RDV", "Marina"}
-    # Chaque événement porte le nom et la couleur de son calendrier.
     marina = next(e for e in evts if e["title"] == "Marina")
     assert marina["calendrier"] == "TimeTree" and marina["couleur"] == "#4CD2C0"
 

@@ -110,17 +110,9 @@ OUTILS: list[dict] = [
         "name": "consulter_donnees",
         "description": "Résume les enregistrements saisis dans une app (Données) : nombre par entité.",
         "parameters": _p({"app_id": {"type": "string"}}, ["app_id"])}},
-    {"type": "function", "function": {
-        "name": "agenda_consulter",
-        "description": "Liste les rendez-vous/événements de l'agenda personnel sur une période. 'debut' et 'fin' au format ISO 8601 (ex. 2026-06-06T00:00:00). Sans période, renvoie les prochains événements.",
-        "parameters": _p({
-            "debut": {"type": "string", "description": "Début de la plage (ISO 8601)."},
-            "fin": {"type": "string", "description": "Fin de la plage (ISO 8601)."},
-        }, [])}},
-    {"type": "function", "function": {
-        "name": "agenda_lister",
-        "description": "Liste les agendas (calendriers) accessibles : l'agenda perso et les agendas partagés, avec le rôle de l'utilisateur (owner/editor/viewer) et l'id de chacun. Utile avant d'inviter quelqu'un ou de voir les membres.",
-        "parameters": _p({}, [])}},
+    # NB (S168) : les 8 outils d'agenda (consulter/lister/creer_evenement/definir_rappels/
+    # deplacer/supprimer/creer_partage/inviter) ne sont PLUS câblés ici — ils sont découverts
+    # depuis le manifest agenda (capacités → surface `/service`). Cf. ADR agenda-surface-de-service.
 
     # — ACTION (gardées par confirmation) —
     {"type": "function", "function": {
@@ -166,59 +158,8 @@ OUTILS: list[dict] = [
             "donnees": {"type": "object", "description": "Champs de l'enregistrement."},
             "confirme": {"type": "boolean"},
         }, ["app_id", "entite", "donnees"])}},
-    {"type": "function", "function": {
-        "name": "agenda_creer_evenement",
-        "description": "Ajoute un rendez-vous/événement à l'agenda (effet immédiat, pas de confirmation). 'debut' et 'fin' au format ISO 8601 (utilise la date/heure courante fournie pour interpréter « demain », « lundi prochain »…). Si l'heure de fin n'est pas précisée, mets +1h.",
-        "parameters": _p({
-            "titre": {"type": "string"},
-            "debut": {"type": "string", "description": "Date/heure de début (ISO 8601)."},
-            "fin": {"type": "string", "description": "Date/heure de fin (ISO 8601). Si non précisée, mets +1h."},
-            "lieu": {"type": "string"},
-            "description": {"type": "string"},
-            "rappels": {"type": "array", "items": {"type": "integer"},
-                        "description": "Rappels = liste de MINUTES AVANT le début. Convertis le langage : « à l'heure »=0, « 10 min avant »=10, « 30 min avant »=30, « 1 h avant »=60, « la veille / 1 jour avant »=1440, « 1 semaine avant »=10080. Plusieurs possibles, ex. « 30 min avant et la veille »=[30,1440]. Omettre = aucun rappel."},
-        }, ["titre", "debut", "fin"])}},
-    {"type": "function", "function": {
-        "name": "agenda_definir_rappels",
-        "description": "Définit/modifie les rappels d'un événement EXISTANT (effet immédiat, pas de confirmation). Retrouve d'abord l'event_id via agenda_consulter. Remplace la liste complète ; passe une liste VIDE [] pour retirer tous les rappels.",
-        "parameters": _p({
-            "event_id": {"type": "string"},
-            "rappels": {"type": "array", "items": {"type": "integer"},
-                        "description": "Liste de MINUTES AVANT le début (0=à l'heure, 10, 30, 60=1h, 1440=1j, 10080=1sem). Liste vide = aucun rappel."},
-        }, ["event_id", "rappels"])}},
-    {"type": "function", "function": {
-        "name": "agenda_deplacer_evenement",
-        "description": "Replanifie un événement existant (nouvelles dates, effet immédiat). Retrouve d'abord son event_id via agenda_consulter.",
-        "parameters": _p({
-            "event_id": {"type": "string"},
-            "debut": {"type": "string", "description": "Nouveau début (ISO 8601)."},
-            "fin": {"type": "string", "description": "Nouvelle fin (ISO 8601)."},
-        }, ["event_id", "debut", "fin"])}},
-    {"type": "function", "function": {
-        "name": "agenda_supprimer_evenement",
-        "description": "Annule (supprime) un événement de l'agenda. Retrouve d'abord son event_id via agenda_consulter. ACTION DESTRUCTRICE : confirme=true requis après accord.",
-        "parameters": _p({
-            "event_id": {"type": "string"},
-            "confirme": {"type": "boolean"},
-        }, ["event_id"])}},
-    {"type": "function", "function": {
-        "name": "agenda_creer_partage",
-        "description": "Crée un nouvel agenda (calendrier) partageable, distinct de l'agenda perso (effet immédiat, pas de confirmation). Le créateur en est propriétaire et peut ensuite inviter des personnes via agenda_inviter. Renvoie l'id de l'agenda créé.",
-        "parameters": _p({
-            "nom": {"type": "string", "description": "Nom de l'agenda (ex. « Famille », « Équipe chantier »)."},
-            "description": {"type": "string"},
-            "couleur": {"type": "string", "description": "Couleur hex, ex. #3B82F6."},
-        }, ["nom"])}},
-    {"type": "function", "function": {
-        "name": "agenda_inviter",
-        "description": "Génère un lien d'invitation à un agenda partagé pour donner l'accès à quelqu'un. Récupère d'abord le calendar_id via agenda_lister. Renvoie un lien et un token à transmettre à l'invité. ACTION (donne un accès) : confirme=true requis après accord.",
-        "parameters": _p({
-            "calendar_id": {"type": "string", "description": "Id de l'agenda à partager (via agenda_lister)."},
-            "role": {"type": "string", "enum": ["viewer", "editor"], "description": "viewer = lecture seule ; editor = peut modifier. Défaut viewer."},
-            "expire_heures": {"type": "integer", "description": "Durée de validité du lien en heures (défaut 72)."},
-            "email": {"type": "string", "description": "Email de l'invité (optionnel, informatif)."},
-            "confirme": {"type": "boolean"},
-        }, ["calendar_id"])}},
+    # (S168) agenda_creer_evenement / definir_rappels / deplacer / supprimer / creer_partage /
+    # inviter : migrés au manifest agenda (surface `/service`). Voir la note plus haut.
     {"type": "function", "function": {
         "name": "timetree_etat",
         "description": "État du pont TimeTree : connecté ? quel calendrier partagé est synchronisé ? À consulter avant de connecter ou synchroniser.",
@@ -351,7 +292,8 @@ OUTILS: list[dict] = [
 OUTILS_ACTION = {
     "livrer_entreprise", "decrocher_entreprise", "reprendre_entreprise",
     "ingerer_document", "classer_document", "creer_enregistrement",
-    "agenda_supprimer_evenement", "agenda_inviter",
+    # (S168) agenda_supprimer_evenement / agenda_inviter : gate porté par le manifest
+    # (capacité action:true) désormais, plus par cette liste statique.
     "timetree_connecter", "timetree_deconnecter",
     "transcription_archiver",
     "curateur_lancer", "amelioration_evaluer", "amelioration_decider", "capacite_decider",
