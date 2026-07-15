@@ -43,7 +43,12 @@ Gaps constatés :
 S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cutting)
 ```
 
-## S174 — Notifications par personne + présence/chat exposés + journal d'activité
+## S174 — Notifications par personne + présence/chat exposés + journal d'activité — ✅ CODE-COMPLET 2026-07-15 (LIVE différé)
+
+- **Statut** : code-complet, suites vertes (agenda 138 passed, `make test-core` 438
+  passed) — voir `briques/agenda/backend/README.md#s174--rappels-par-personne` pour le
+  comportement livré. Vérification LIVE différée à la fin du roadmap (fin S180, cf.
+  mémoire « LIVE différé jusqu'à fin S180 »).
 
 - Migrer `Event.rappels` (global) → réglage par participant (`EventParticipant.rappels`
   ou table dédiée), sans casser les events existants (migration Alembic + valeur par
