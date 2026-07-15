@@ -1,7 +1,7 @@
 # S171 — Login Keycloak réel pour le dashboard du Cœur
 
 Sous-sprint 1/3 de [[epopee-identite-multiutilisateur-coeur]] (`docs/sprints/S171-S173-epopee-identite-multiutilisateur-coeur.md`),
-préalable bloquant du roadmap agenda `docs/sprints/S171-S177-roadmap-agenda-best-in-class.md`.
+préalable bloquant du roadmap agenda `docs/sprints/S174-S180-roadmap-agenda-best-in-class.md`.
 
 ## But
 
