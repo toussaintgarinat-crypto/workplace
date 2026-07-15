@@ -10,6 +10,7 @@ from auth import get_current_user
 from db import get_db
 from models.orm import Event, EventComment
 from models.schemas import CommentCreate, CommentOut, CommentUpdate
+from services.journal import consigner
 
 router = APIRouter(tags=["comments"])
 
@@ -44,6 +45,7 @@ async def create_comment(
     await _get_event(event_id, db)
     c = EventComment(event_id=event_id, user_id=user["sub"], content=body.content)
     db.add(c)
+    await consigner(db, event_id, user["sub"], "comment", {"extrait": body.content[:80]})
     await db.commit()
     await db.refresh(c)
     return c

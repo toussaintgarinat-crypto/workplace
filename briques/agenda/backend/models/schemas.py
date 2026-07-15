@@ -321,3 +321,18 @@ class ProfileOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Journal d'activité (S174) ─────────────────────────────────────────────────
+
+class ActivityLogOut(BaseModel):
+    id: str
+    event_id: str
+    user_id: str
+    user_nom: str
+    action: str
+    details: Optional[dict] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -15,6 +15,7 @@ from db import get_db
 from models.orm import Event
 from models.schemas import EventOut, EventUpdate
 from services.horaires import vers_utc_naif
+from services.journal import consigner
 from services.pubsub import publish_change
 from utils.access import require_calendar_access
 
@@ -63,6 +64,7 @@ async def create_event(
     await db.flush()  # matérialise evt.id (default=_uuid appliqué au flush)
     from services.participants_auto import assurer_participant
     await assurer_participant(db, evt.id, user["sub"])
+    await consigner(db, evt.id, user["sub"], "event_created", {"titre": evt.title})
     await db.commit()
     await db.refresh(evt)
     out = EventOut.model_validate(evt)
@@ -99,6 +101,7 @@ async def update_event(
         data["label_id"] = None
     for k, v in data.items():
         setattr(evt, k, v)
+    await consigner(db, evt.id, user["sub"], "event_updated", {"champs": list(data.keys())})
     await db.commit()
     await db.refresh(evt)
     out = EventOut.model_validate(evt)

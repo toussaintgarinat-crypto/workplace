@@ -12,6 +12,7 @@ from auth import get_current_user
 from db import get_db
 from models.orm import Event, EventParticipant
 from models.schemas import ParticipantAdd, ParticipantOut, ParticipantStatusUpdate
+from services.journal import consigner
 
 router = APIRouter(tags=["participants"])
 
@@ -80,6 +81,7 @@ async def update_participant_status(
     if "status" in fournis and fournis["status"] is not None:
         p.status = fournis["status"]
         p.responded_at = datetime.now(timezone.utc)
+        await consigner(db, event_id, user["sub"], "rsvp", {"statut": p.status})
     if "rappels" in fournis:  # présent (même []) = réglage explicite ; absent = inchangé
         p.rappels = fournis["rappels"]
     await db.commit()

@@ -9,6 +9,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from agent_personnel_shared.fastapi_setup import setup_cors, setup_logging
 from config import settings
 from db import init_db
+from routers.activity import router as activity_router
 from routers.app_web import router as app_web_router
 from routers.attachments import router as attachments_router
 from routers.calendars import router as calendars_router
@@ -55,6 +56,7 @@ Instrumentator().instrument(app).expose(app, include_in_schema=False)
 setup_cors(app, settings.CORS_ORIGINS, default=["http://localhost:8300"])
 
 app.include_router(health_router)
+app.include_router(activity_router)
 app.include_router(app_web_router)
 app.include_router(calendars_router)
 app.include_router(labels_router)
