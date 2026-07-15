@@ -66,13 +66,22 @@ S171 (login Keycloak réel pour le dashboard du Cœur)
   Plan : `docs/superpowers/plans/2026-07-15-s171-login-keycloak-coeur.md`.
   RESTE : vérification manuelle LIVE (Keycloak + Cœur en local), merge de la PR.
 
-## S172 — Provisioning du second compte (Marina)
+## S172 — L'agenda comme application autonome + invitation de Marina — reformulé 2026-07-15
 
-- Créer le compte Keycloak de Marina + flux d'invitation, en réutilisant le gabarit
-  `client_provisioning.py` (S23) adapté à un usage interne/foyer plutôt que B2B.
-- Modéliser le lien « plusieurs personnes, mêmes données partagées » (pas de vrai
-  multi-tenant façon Forge/org_id — Marina doit voir le même agenda, pas un agenda
-  séparé) : concept à concevoir de zéro, aucun précédent dans le repo.
+Cadrage initial (provisioning Keycloak de Marina côté Cœur, `client_provisioning.py`
+adapté) abandonné après découverte : `briques/agenda/backend/` contient déjà un système
+`CalendarMember`/`CalendarInvitation` complet (rôles owner/editor/viewer, client
+Keycloak dédié `calendar-app`, page d'acceptation d'invitation) — présent depuis le
+commit initial du repo, jamais exercé ni exposé. Nouveau cadrage :
+
+- Extraire l'UI agenda (aujourd'hui codée en dur dans `core/routers/dashboard.py`) en
+  application autonome servie par la brique agenda elle-même (port `8400`, déjà réservé
+  à `calendar-app`), authentifiée indépendamment du Cœur.
+- Réutiliser tel quel le système d'invitation existant pour Marina (pas de nouveau
+  provisioning Keycloak) ; onglet dashboard remplacé par une iframe.
+- Script one-off pour relier le compte Keycloak réel de l'utilisateur principal aux
+  calendriers actuellement épinglés `"perso"` (sans toucher au pinning S2S assistant).
+- Détail complet : `docs/superpowers/specs/2026-07-15-s172-agenda-application-autonome-design.md`.
 
 ## S173 — Routage S2S par utilisateur réel
 
