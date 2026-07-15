@@ -184,7 +184,7 @@ function rendreBarre() {
     `<select id="sel-cal">${options}</select>` +
     (role === "owner" ? '<button id="btn-inviter">Inviter</button>' : "") +
     '</div><div id="zone-vue"></div>';
-  document.getElementById("sel-cal").onchange = (e) => { CAL_ACTIF = e.target.value; chargerVue(); };
+  document.getElementById("sel-cal").onchange = (e) => { CAL_ACTIF = e.target.value; rendreBarre(); chargerVue(); };
   const btnInviter = document.getElementById("btn-inviter");
   if (btnInviter) btnInviter.onclick = ouvrirModaleInviter;
 }
