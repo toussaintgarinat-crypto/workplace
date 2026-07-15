@@ -65,6 +65,22 @@ def _ajouter(type_: str, titre: str, corps: str, cle: str) -> bool:
     return True
 
 
+def _dedup_pousse(cle: str) -> bool:
+    """Vrai (et enregistre) si ce push n'a pas encore été effectué pour cette clé.
+
+    Trace un rappel « déjà vu » (invisible dans le panneau du propriétaire) : sert
+    uniquement à ne pas re-pousser un rappel à un participant non-propriétaire (Marina)
+    à chaque passage de la boucle. Le propriétaire, lui, passe par `_ajouter` (badge visible)."""
+    with _conn() as c:
+        if c.execute("SELECT 1 FROM rappels WHERE cle = ? LIMIT 1", (cle,)).fetchone():
+            return False
+        c.execute(
+            "INSERT INTO rappels (id, type, titre, corps, cle, cree, vu) VALUES (?,?,?,?,?,?,1)",
+            (str(uuid.uuid4()), "agenda-push", "", "", cle, datetime.utcnow().isoformat()),
+        )
+    return True
+
+
 def lister(non_lus: bool = False, limite: int = 50) -> list[dict]:
     with _conn() as c:
         sql = "SELECT * FROM rappels"
@@ -150,12 +166,9 @@ def _rappels_dus(evt: dict, maintenant: datetime):
 
 
 async def _check_agenda(registre) -> int:
-    """Lève un 🔔 (et un push messagerie) pour chaque rappel configuré devenu dû.
-
-    Les rappels sont configurés PAR ÉVÉNEMENT dans la brique agenda (liste de minutes
-    avant le début). Aucun rappel par défaut : un événement sans `rappels` ne sonne pas.
-    Dédoublonnage par (événement, minutes) → chaque rappel ne sonne qu'une fois.
-    """
+    """Lève un rappel PAR PARTICIPANT dû. Chaque personne reçoit un push messagerie sur
+    SES canaux (le pont route par utilisateur) ; seul le propriétaire local (`agenda.USER_ID`)
+    a en plus une pastille 🔔. Dédoublonnage par (événement, personne, minutes)."""
     n = 0
     try:
         maintenant = datetime.now()
@@ -166,32 +179,46 @@ async def _check_agenda(registre) -> int:
             titre_evt = e.get("title", "(sans titre)")
             heure = (e.get("start_at") or "")[11:16]
             lieu = f" — {e.get('location')}" if e.get("location") else ""
-            for m, _debut in _rappels_dus(e, maintenant):
-                titre = f"Rappel : {titre_evt}"
-                corps = f"{_delai_lisible(m).capitalize()} (à {heure}){lieu}"
-                if _ajouter("agenda", titre, corps, f"agenda:{e.get('id')}:{m}"):
-                    n += 1
-                    await _pousser_messagerie(registre, titre, corps)
+            # Repli rétro-compat : event sans participants → propriétaire + event.rappels.
+            participants = e.get("participants") or [
+                {"user_id": agenda.USER_ID, "rappels_effectifs": e.get("rappels") or []}
+            ]
+            for p in participants:
+                uid = p.get("user_id") or agenda.USER_ID
+                evt_perso = dict(e)
+                evt_perso["rappels"] = p.get("rappels_effectifs") or []
+                for m, _debut in _rappels_dus(evt_perso, maintenant):
+                    titre = f"Rappel : {titre_evt}"
+                    corps = f"{_delai_lisible(m).capitalize()} (à {heure}){lieu}"
+                    cle = f"agenda:{e.get('id')}:{uid}:{m}"
+                    if uid == agenda.USER_ID:
+                        if _ajouter("agenda", titre, corps, cle):
+                            n += 1
+                            await _pousser_messagerie(registre, titre, corps, utilisateur=uid)
+                    else:
+                        if _dedup_pousse(cle):
+                            n += 1
+                            await _pousser_messagerie(registre, titre, corps, utilisateur=uid)
     except Exception as ex:  # noqa: BLE001
         logger.warning("Proactif agenda : %s", ex)
     return n
 
 
-async def _pousser_messagerie(registre, titre: str, corps: str) -> None:
-    """Pousse un rappel vers les messageries de l'utilisateur (Telegram…) via le pont.
+async def _pousser_messagerie(registre, titre: str, corps: str, utilisateur: str | None = None) -> None:
+    """Pousse un rappel vers les messageries d'un utilisateur (Telegram…) via le pont.
 
-    Best-effort : si la brique « connexion » est absente du registre ou injoignable, on
-    ignore silencieusement — le 🔔 du dashboard reste, lui, en place. Ne lève jamais.
-    """
+    `utilisateur` défaut = `agenda.USER_ID` (propriétaire local, rétro-compat). Le pont
+    (`/pousser`) résout LUI-MÊME tous les canaux liés de cette personne. Best-effort :
+    brique absente / injoignable → ignoré. Ne lève jamais."""
     try:
         base = orchestrateur._brique_base(registre, "connexion")
-    except Exception:  # noqa: BLE001 — brique non déclarée → pas de push, c'est tout
+    except Exception:  # noqa: BLE001
         return
     entetes = {}
     cle = os.getenv("CONNEXION_KEY", "")
     if cle:
         entetes["X-API-Key"] = cle
-    corps_push = {"utilisateur": agenda.USER_ID, "texte": f"🔔 {titre}\n{corps}"}
+    corps_push = {"utilisateur": utilisateur or agenda.USER_ID, "texte": f"🔔 {titre}\n{corps}"}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(f"{base}/pousser", json=corps_push, headers=entetes)
