@@ -64,3 +64,78 @@ finale (fin de S180).
 - `GET /invitations/{token}/page` — page d'acceptation (standalone)
 - `POST /invitations/{token}/accept` — accepter l'invitation, devenir membre
 - `GET /app` — page HTML/JS de l'appli autonome (vanilla, PKCE, localStorage refresh_token)
+
+## S174 — Rappels par personne
+
+Un événement a un défaut de rappels (`Event.rappels`, minutes avant le début), mais
+chaque participant peut avoir SON propre réglage. C'est `EventParticipant.rappels`
+(colonne JSON nullable) qui porte ce override, à trois états :
+
+- **`NULL`** — hérite du défaut de l'événement (`Event.rappels`). État initial d'un
+  participant fraîchement ajouté.
+- **`[]`** — aucun rappel, choix explicite (« ne me préviens pas pour celui-là »).
+- **`[m, …]`** — override personnel (liste de minutes avant le début, propre à cette
+  personne).
+
+`services/rappels.py::rappels_effectifs(participant_rappels, event_rappels)` résout ces
+trois états en la liste réellement due — `participant_rappels` s'il n'est pas `None`,
+sinon `event_rappels`. C'est cette valeur résolue (`rappels_effectifs`) qui apparaît
+dans `participants[].rappels_effectifs` de `/service/events` (`services/agregation.py`),
+consommée par le proactif du Cœur.
+
+**Participants**
+
+- Le créateur d'un événement est **auto-ajouté comme participant** (`status="accepted"`)
+  à la création, quel que soit le chemin d'écriture (`POST /calendars/{id}/events` ou
+  `/service/events`) — voir `services/participants_auto.py::assurer_participant`
+  (idempotent, sans commit propre, composé dans la transaction de création).
+- `POST /events/{id}/participants/all` invite d'un coup **tous les membres du
+  calendrier** de l'événement comme participants `status="pending"` (rappels hérités,
+  `rappels=NULL`) — idempotent, n'ajoute que les manquants.
+- Le réglage personnel des rappels se pose via
+  `PATCH /events/{id}/participants/{user_id}` avec un champ `rappels` (présent, même
+  `[]`, = réglage explicite ; absent du corps = inchangé). Le même endpoint accepte aussi
+  `status` pour le RSVP (accepted/declined/maybe), qui journalise une entrée `rsvp`.
+
+**Profils affichables (`UserProfile`)**
+
+Table `user_profiles` (clé primaire `user_id` = sub Keycloak ou `"perso"`) qui résout un
+identifiant technique en nom lisible + couleur de pastille, sans aucun appel réseau au
+runtime :
+
+- `POST /profiles/me` sème/rafraîchit le profil de l'appelant à partir des claims de SON
+  propre token (`name` > `preferred_username` > `sub`). Appelé par l'appli `/app` juste
+  après le login.
+- `GET /profiles?user_ids=…` (CSV) résout une liste d'identifiants en
+  `{user_id, display_name, avatar_color}` — avec des défauts honnêtes pour les inconnus
+  (« Toi » pour le propriétaire local `AGENDA_USER_ID`, sinon l'id brut ; couleur dérivée
+  d'un hash stable de l'id sur une palette commune au front).
+
+**Journal d'activité (`event_activity_log`)**
+
+Table `event_activity_log` (FK `event_id` en CASCADE) qui journalise qui a fait quoi sur
+un événement, avec `user_nom` **snapshoté** au moment de l'action (robuste si le profil
+change ou disparaît ensuite). `GET /events/{id}/activity` expose le fil, le plus récent
+en premier (`services/journal.py::consigner`, actions : `event_created`, `event_updated`,
+`rsvp`, `comment`…).
+
+⚠️ **La suppression d'un événement n'est PAS journalisée** (pas d'entrée
+`event_deleted`) : le fil est *par événement*, et la suppression retire l'événement (donc
+son propre fil, par CASCADE) en même temps — il n'y a nulle part où afficher une entrée
+« supprimé » une fois l'événement parti.
+
+**Rappels poussés par le Cœur — pastille 🔔 vs canaux liés**
+
+Le proactif du Cœur (`core/proactif.py::_check_agenda`) lève un rappel **par
+participant** dû (dédoublonné par `(événement, personne, minutes)`), pas seulement pour
+le propriétaire local :
+
+- Le propriétaire local (`agenda.USER_ID`, alias `"perso"`) est le seul à recevoir la
+  **pastille 🔔** visible (mémoire proactive locale, `_ajouter`).
+- Pour les autres participants, le rappel part uniquement via
+  `_pousser_messagerie(registre, titre, corps, utilisateur=uid)`, qui appelle
+  `POST /pousser` sur la brique connexion. C'est **la brique connexion qui résout** les
+  canaux liés de cette personne (`correspondance.cibles_pour`) et envoie sur chacun
+  d'eux. Repli honnête : si la personne n'a **aucun** canal lié/configuré, la réponse est
+  `envoyes: 0` (pas une erreur) — le rappel n'est simplement poussé nulle part, sans
+  jamais planter le proactif.
