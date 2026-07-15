@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # S174 : rend le modèle « destinataire = participant » uniforme pour les events
+    # d'avant le sprint. Idempotent — quasi no-op après le premier démarrage.
+    try:
+        from db import AsyncSessionLocal
+        from services.backfill import creer_participants_createurs
+        async with AsyncSessionLocal() as _db:
+            n = await creer_participants_createurs(_db)
+            if n:
+                logger.info("S174 backfill : %d participant(s) créateur(s) posé(s)", n)
+    except Exception as ex:  # noqa: BLE001 — un backfill KO ne doit pas empêcher le boot
+        logger.warning("S174 backfill ignoré : %s", ex)
     logger.info("Calendar service started on port 8400")
     yield
     logger.info("Calendar service shutting down")
