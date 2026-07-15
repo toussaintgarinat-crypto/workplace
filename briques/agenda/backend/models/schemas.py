@@ -301,3 +301,14 @@ class AttachmentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Profils (S174) ────────────────────────────────────────────────────────────
+
+class ProfileOut(BaseModel):
+    user_id: str
+    display_name: str
+    avatar_color: str
+
+    class Config:
+        from_attributes = True
