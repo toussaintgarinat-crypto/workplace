@@ -13,9 +13,10 @@ from datetime import datetime
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.orm import Calendar, CalendarMember, Event, Label
+from models.orm import Calendar, CalendarMember, Event, EventParticipant, Label
 from models.schemas import EventOut
 from services.horaires import vers_utc_naif
+from services.rappels import rappels_effectifs
 
 
 async def calendriers_accessibles(db: AsyncSession, user_id: str) -> list[Calendar]:
@@ -62,6 +63,14 @@ async def evenements_agreges(db: AsyncSession, user_id: str,
             d["calendrier"] = c.name
             d["etiquette"] = lab.name if lab else None
             d["couleur"] = (lab.color if lab else None) or e.color or c.color
+            parts = (await db.execute(
+                select(EventParticipant).where(EventParticipant.event_id == e.id)
+            )).scalars().all()
+            d["participants"] = [
+                {"user_id": p.user_id, "status": p.status,
+                 "rappels_effectifs": rappels_effectifs(p.rappels, e.rappels)}
+                for p in parts
+            ]
             evts.append(d)
     return evts
 
