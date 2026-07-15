@@ -150,6 +150,10 @@ class EventParticipant(Base):
         default="pending",
     )
     responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Override personnel des rappels (minutes avant le début). NULL = hérite de
+    # Event.rappels (le défaut de l'événement) ; [] = aucun rappel (choix explicite) ;
+    # [10, 1440] = réglage propre à cette personne. Voir services/rappels.py.
+    rappels: Mapped[list[int] | None] = mapped_column(JSON, nullable=True, default=None)
 
     event: Mapped["Event"] = relationship(back_populates="participants")
 
@@ -202,3 +206,32 @@ class UserToken(Base):
     scope: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class UserProfile(Base):
+    """Profil affichable d'un utilisateur (S174) : résout un user_id (sub Keycloak ou
+    « perso ») en nom lisible + pastille couleur. Semé au login depuis les claims du
+    token ; résolution 100 % locale (aucun appel réseau au runtime)."""
+
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    avatar_color: Mapped[str] = mapped_column(String(20), nullable=False, default="#3B82F6")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class EventActivityLog(Base):
+    """Journal d'activité d'un événement (S174) : qui a changé quoi, quand. Gabarit
+    repris d'AuditLogs (brique Forge). user_nom est un SNAPSHOT du nom au moment de
+    l'action (robuste si le profil change/disparaît ensuite)."""
+
+    __tablename__ = "event_activity_log"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_nom: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
