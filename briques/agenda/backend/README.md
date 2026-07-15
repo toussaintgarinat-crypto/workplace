@@ -32,9 +32,26 @@ Le `<sub-keycloak>` s'obtient après une première connexion à `/app` → copie
 
 **Idempotent** : peut être relancé plusieurs fois sans dupliquer les lignes.
 
-## Dialecte S2S (inchangé)
+## Deux chemins S2S distincts depuis le Cœur (S173)
 
-L'assistant Cœur continue d'accéder l'agenda via `X-API-Key: {AGENDA_KEY}`, pinné sur `AGENDA_USER_ID="perso"`. Aucune modification ici, aucun impact sur ce chemin.
+1. **Outils câblés de l'assistant** (`core/agenda.py`, ex. `agenda_creer_evenement`) — envoie
+   `X-User-Id` (identité réelle posée par `contexte_tenant`, S121/S173 : sub Keycloak si
+   connu — web via la session S171, Telegram via `briques/connexion` déjà câblé — sinon
+   `"perso"`), et `Authorization: Bearer {CALENDAR_SERVICE_TOKEN}` si ce dernier est
+   configuré. **C'est ce chemin que S173 rend « par utilisateur réel ».**
+2. **Capacités dynamiques par manifest** (S168, `core/outils_communs.py::_entetes_brique`)
+   — 8 capacités agenda découvertes automatiquement, envoie `X-API-Key: {AGENDA_KEY}` +
+   `X-Compte-Id: {ADMIN_COMPTE_ID}` (défaut `"admin"`). **Reste pinné**, hors périmètre de
+   S173 (ADR `docs/decisions/2026-07-13-surface-de-service-role-admin.md`, sert toutes les
+   briques pilotables par manifest, pas seulement l'agenda).
+
+⚠️ **Risque croisé à surveiller à l'activation LIVE** : une fois `AUTH_ENABLED=true` posé
+(prérequis de la section précédente, pour que `/app` authentifie réellement), le chemin 1
+(`X-User-Id` seul, sans `X-API-Key`) exigera un token — si `CALENDAR_SERVICE_TOKEN` n'est
+**pas aussi** configuré à ce moment-là, les appels agenda de l'assistant/Telegram
+échoueront en 401. Poser les trois variables ensemble (`AUTH_ENABLED`,
+`KEYCLOAK_AUDIENCE`, `CALENDAR_SERVICE_TOKEN`) au même moment, à la vérification LIVE
+finale (fin de S180).
 
 ## Routes principales
 
