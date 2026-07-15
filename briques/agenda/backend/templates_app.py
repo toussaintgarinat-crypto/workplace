@@ -271,6 +271,7 @@ function ouvrirModaleEvent(id, dateYMD) {
     `<div style="display:flex;gap:8px;margin-bottom:10px"><input id="ev-debut" type="datetime-local" value="${dStart}"><input id="ev-fin" type="datetime-local" value="${dEnd}"></div>` +
     `<div style="margin-bottom:10px"><input id="ev-lieu" placeholder="Lieu (optionnel)" style="width:100%" value="${ev && ev.location ? esc(ev.location) : ""}"></div>` +
     `<div style="margin-bottom:10px"><label class="muted">Étiquette</label><select id="ev-label" style="width:100%">${labelOptions}</select></div>` +
+    `<div style="margin-bottom:10px"><label><input type="checkbox" id="ev-allday" ${ev && ev.all_day ? "checked" : ""}> Journée entière</label></div>` +
     `<div style="margin-bottom:14px">${palette}</div>` +
     '<div style="display:flex;gap:8px;justify-content:flex-end">' +
     (ev ? '<button id="btn-suppr" style="background:#ef4444">Supprimer</button>' : "") +
@@ -295,7 +296,7 @@ async function enregistrerEvent(id) {
     location: document.getElementById("ev-lieu").value.trim() || null,
     color: modalCouleur,
     label_id: document.getElementById("ev-label").value || "",
-    all_day: false,
+    all_day: document.getElementById("ev-allday").checked,
   };
   if (!corps.title) { alert("Donne un titre."); return; }
   try {
