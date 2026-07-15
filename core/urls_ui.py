@@ -31,6 +31,7 @@ BRIQUES_UI = {
     "GENERATEUR":    (5400, "/bundles-studio"),  # composeur de bundles embarqué (tuile Atelier)
     "PEERTUBE":      (9000, "/"),          # hébergement vidéo souverain
     "GEO":           (6110, "/"),          # GeoHub : carte de veille (Leaflet autoporté)
+    "AGENDA":        (8400, "/app"),       # appli agenda autonome (calendar-app, S172)
 }
 
 
