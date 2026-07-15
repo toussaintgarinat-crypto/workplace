@@ -323,7 +323,7 @@ function ouvrirModaleInviter() {
   const html =
     '<div id="modale" style="position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:10">' +
     '<div class="card" style="width:100%;max-width:420px">' +
-    '<h3 style="margin-top:0">Inviter quelqu\\'un</h3>' +
+    '<h3 style="margin-top:0">Inviter quelqu\'un</h3>' +
     '<div style="margin-bottom:10px"><input id="inv-email" placeholder="Email (optionnel, pour info)" style="width:100%"></div>' +
     '<div style="margin-bottom:14px"><select id="inv-role" style="width:100%"><option value="viewer">Lecture seule</option><option value="editor">Lecture et écriture</option></select></div>' +
     '<div id="inv-resultat"></div>' +
