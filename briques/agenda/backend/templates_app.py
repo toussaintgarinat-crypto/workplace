@@ -56,9 +56,10 @@ const rand = (n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); re
 const sha256 = (s) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
 const esc = (s) => (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-function afficherLogin() {
+function afficherLogin(erreur) {
   document.getElementById("main").innerHTML =
     '<div class="centre"><div class="card" style="text-align:center">' +
+    (erreur ? '<p class="err">' + esc(erreur) + '</p>' : '') +
     '<p>Connecte-toi pour voir ton agenda.</p>' +
     '<button id="btn-login">Se connecter</button></div></div>';
   document.getElementById("btn-login").onclick = login;
@@ -126,10 +127,13 @@ async function demarrer() {
   const code = params.get("code"), state = params.get("state");
 
   if (code) {
-    if (state !== sessionStorage.getItem("pkce_state")) { afficherLogin(); return; }
-    const tokens = await echangerCode(code);
     history.replaceState({}, "", REDIRECT);
-    if (!tokens) { afficherLogin(); return; }
+    if (state !== sessionStorage.getItem("pkce_state")) {
+      afficherLogin("Échec de la connexion. Réessayez.");
+      return;
+    }
+    const tokens = await echangerCode(code);
+    if (!tokens) { afficherLogin("Échec de la connexion. Réessayez."); return; }
     poserSession(tokens);
     await chargerApp();
     return;
@@ -138,7 +142,7 @@ async function demarrer() {
   const refresh = localStorage.getItem(LS_REFRESH);
   if (!refresh) { afficherLogin(); return; }
   const tokens = await rafraichir(refresh);
-  if (!tokens) { afficherLogin(); return; }
+  if (!tokens) { afficherLogin("Session expirée. Reconnecte-toi."); return; }
   poserSession(tokens);
   await chargerApp();
 }
@@ -150,7 +154,7 @@ async function chargerApp() {
   await chargerCalendriers();
 }
 
-demarrer();
+demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </script>
 </body>
 </html>"""
