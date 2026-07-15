@@ -151,11 +151,29 @@ async function chargerApp() {
   document.getElementById("entete-droite").innerHTML =
     '<button class="ghost" id="btn-logout">Se déconnecter</button>';
   document.getElementById("btn-logout").onclick = deconnecter;
+  try { await api("/profiles/me", { method: "POST" }); } catch (e) { /* best-effort */ }
   await chargerCalendriers();
 }
 
 let CALENDARS = [];
 let CAL_ACTIF = null;
+
+let PROFILS = {};
+async function resoudreProfils(userIds) {
+  const manquants = userIds.filter((u) => !PROFILS[u]);
+  if (manquants.length) {
+    try {
+      const arr = await api("/profiles?user_ids=" + encodeURIComponent(manquants.join(",")));
+      for (const p of arr) PROFILS[p.user_id] = p;
+    } catch (e) { /* défaut ci-dessous */ }
+  }
+  const out = {};
+  for (const u of userIds) out[u] = PROFILS[u] || { user_id: u, display_name: u, avatar_color: "#64748b" };
+  return out;
+}
+function pastille(color) {
+  return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>`;
+}
 
 async function chargerCalendriers() {
   try {
@@ -283,9 +301,107 @@ function ouvrirModaleEvent(id, dateYMD) {
     modalCouleur = el.dataset.c;
     document.querySelectorAll("#modale [data-c]").forEach((s) => s.style.borderColor = s.dataset.c===modalCouleur ? "#fff" : "transparent");
   });
+  if (ev) {
+    document.querySelector("#modale .card").insertAdjacentHTML("beforeend",
+      '<hr style="border-color:#2d3148;margin:14px 0">' +
+      '<div id="zone-presence"></div>' +
+      '<div id="zone-rappels" style="margin-top:12px"></div>' +
+      '<div id="zone-chat" style="margin-top:12px"></div>' +
+      '<div id="zone-activite" style="margin-top:12px"></div>');
+    chargerDetailsEvent(ev.id);
+  }
   document.getElementById("btn-annuler").onclick = fermerModaleEvent;
   document.getElementById("btn-enregistrer").onclick = () => enregistrerEvent(id);
   if (ev) document.getElementById("btn-suppr").onclick = () => supprimerEvent(id);
+}
+
+function moiSub() {
+  try { return JSON.parse(atob(ACCESS_TOKEN.split(".")[1])).sub; } catch (e) { return null; }
+}
+
+const STATUT_LABEL = { accepted: "✓ vient", declined: "✗ absent", maybe: "? peut-être", pending: "⏳ en attente" };
+
+async function chargerDetailsEvent(eventId) {
+  let parts = [], comments = [], activite = [];
+  try {
+    parts = await api(`/events/${encodeURIComponent(eventId)}/participants`);
+    comments = await api(`/events/${encodeURIComponent(eventId)}/comments`);
+    activite = await api(`/events/${encodeURIComponent(eventId)}/activity`);
+  } catch (e) { /* best-effort */ }
+  const ids = Array.from(new Set(parts.map((p) => p.user_id)
+    .concat(comments.map((c) => c.user_id)).concat(activite.map((a) => a.user_id))));
+  const profils = await resoudreProfils(ids);
+  const moi = moiSub();
+
+  // Présence
+  const lignesP = parts.map((p) => {
+    const pr = profils[p.user_id];
+    return `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">${pastille(pr.avatar_color)}<span>${esc(pr.display_name)}</span><span class="muted" style="margin-left:auto">${STATUT_LABEL[p.status] || p.status}</span></div>`;
+  }).join("");
+  document.getElementById("zone-presence").innerHTML =
+    '<strong>Présence</strong>' + (lignesP || '<p class="muted">Personne pour l\'instant.</p>') +
+    '<div style="display:flex;gap:6px;margin-top:6px">' +
+    '<button class="ghost" id="btn-inviter-tous">Inviter tous les membres</button>' +
+    '<button class="ghost" data-rsvp="accepted">Je viens</button>' +
+    '<button class="ghost" data-rsvp="maybe">Peut-être</button>' +
+    '<button class="ghost" data-rsvp="declined">Absent</button></div>';
+  document.getElementById("btn-inviter-tous").onclick = async () => {
+    try { await api(`/events/${encodeURIComponent(eventId)}/participants/all`, { method: "POST" }); chargerDetailsEvent(eventId); } catch (e) { alert("Échec : " + e.message); }
+  };
+  document.querySelectorAll("#zone-presence [data-rsvp]").forEach((b) => b.onclick = async () => {
+    try {
+      await api(`/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(moi)}`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: b.dataset.rsvp }) });
+      chargerDetailsEvent(eventId);
+    } catch (e) { alert("Échec (es-tu participant ?) : " + e.message); }
+  });
+
+  // Mon rappel personnel
+  const moiPart = parts.find((p) => p.user_id === moi);
+  const rappelActuel = moiPart && moiPart.rappels ? moiPart.rappels.join(",") : (moiPart && moiPart.rappels === null ? "" : "");
+  document.getElementById("zone-rappels").innerHTML = moiPart
+    ? '<strong>Mon rappel</strong>' +
+      '<div style="display:flex;gap:6px;margin-top:4px"><input id="mon-rappel" placeholder="minutes avant, ex. 10,60 (vide = hérite)" style="flex:1" value="' + esc(rappelActuel) + '">' +
+      '<button id="btn-mon-rappel">OK</button></div>' +
+      '<p class="muted" style="font-size:11px">Vide = comme l\'événement · « 0 » = à l\'heure · plusieurs séparés par des virgules.</p>'
+    : '<p class="muted">Rejoins l\'événement pour régler ton rappel.</p>';
+  const btnR = document.getElementById("btn-mon-rappel");
+  if (btnR) btnR.onclick = async () => {
+    const v = document.getElementById("mon-rappel").value.trim();
+    const rappels = v === "" ? null : v.split(",").map((x) => parseInt(x.trim(), 10)).filter((x) => !isNaN(x));
+    try {
+      await api(`/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(moi)}`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rappels }) });
+      chargerDetailsEvent(eventId);
+    } catch (e) { alert("Échec : " + e.message); }
+  };
+
+  // Chat
+  const lignesC = comments.map((c) => {
+    const pr = profils[c.user_id];
+    return `<div style="margin:4px 0">${pastille(pr.avatar_color)}<strong style="font-size:12px">${esc(pr.display_name)}</strong> <span>${esc(c.content)}</span></div>`;
+  }).join("");
+  document.getElementById("zone-chat").innerHTML =
+    '<strong>Discussion</strong><div style="max-height:140px;overflow:auto;margin:4px 0">' +
+    (lignesC || '<p class="muted">Aucun message.</p>') + '</div>' +
+    '<div style="display:flex;gap:6px"><input id="chat-input" placeholder="Un mot…" style="flex:1"><button id="btn-chat">Envoyer</button></div>';
+  document.getElementById("btn-chat").onclick = async () => {
+    const content = document.getElementById("chat-input").value.trim();
+    if (!content) return;
+    try {
+      await api(`/events/${encodeURIComponent(eventId)}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) });
+      chargerDetailsEvent(eventId);
+    } catch (e) { alert("Échec : " + e.message); }
+  };
+
+  // Fil d'activité
+  const ACT_LABEL = { event_created: "a créé l'événement", event_updated: "a modifié l'événement", rsvp: "a répondu", comment: "a écrit un message" };
+  const lignesA = activite.map((a) => {
+    const nom = (profils[a.user_id] || {}).display_name || a.user_nom;
+    return `<div class="muted" style="font-size:11px">• ${esc(nom)} ${esc(ACT_LABEL[a.action] || a.action)}</div>`;
+  }).join("");
+  document.getElementById("zone-activite").innerHTML =
+    '<strong>Activité</strong>' + (lignesA || '<p class="muted">—</p>');
 }
 
 async function enregistrerEvent(id) {
