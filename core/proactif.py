@@ -83,9 +83,12 @@ def _dedup_pousse(cle: str) -> bool:
 
 def lister(non_lus: bool = False, limite: int = 50) -> list[dict]:
     with _conn() as c:
-        sql = "SELECT * FROM rappels"
+        # Les lignes de dédup internes (type "agenda-push", posées par _dedup_pousse pour
+        # ne pas re-pousser un rappel à un participant non-propriétaire) sont invisibles :
+        # elles ne doivent jamais remonter dans le panneau 🔔 de l'utilisateur.
+        sql = "SELECT * FROM rappels WHERE type != 'agenda-push'"
         if non_lus:
-            sql += " WHERE vu = 0"
+            sql += " AND vu = 0"
         sql += " ORDER BY vu ASC, cree DESC LIMIT ?"
         rows = c.execute(sql, (limite,)).fetchall()
     return [dict(r) for r in rows]
