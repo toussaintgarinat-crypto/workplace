@@ -76,11 +76,38 @@ async def update_participant_status(
     p = result.scalar_one_or_none()
     if not p:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
-    p.status = body.status
-    p.responded_at = datetime.now(timezone.utc)
+    fournis = body.model_dump(exclude_unset=True)
+    if "status" in fournis and fournis["status"] is not None:
+        p.status = fournis["status"]
+        p.responded_at = datetime.now(timezone.utc)
+    if "rappels" in fournis:  # présent (même []) = réglage explicite ; absent = inchangé
+        p.rappels = fournis["rappels"]
     await db.commit()
     await db.refresh(p)
     return p
+
+
+@router.post("/events/{event_id}/participants/all", response_model=list[ParticipantOut], status_code=status.HTTP_201_CREATED)
+async def add_all_members(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Ajoute d'un tap tous les membres du calendrier de l'event comme participants
+    (status=pending, rappels hérités). Idempotent : n'ajoute que les manquants."""
+    from services.membres import membres_du_calendrier
+    evt = await _get_event(event_id, db)
+    membres = await membres_du_calendrier(db, evt.calendar_id)
+    existants = set((await db.execute(
+        select(EventParticipant.user_id).where(EventParticipant.event_id == event_id)
+    )).scalars().all())
+    for uid in membres - existants:
+        db.add(EventParticipant(event_id=event_id, user_id=uid, status="pending"))
+    await db.commit()
+    result = await db.execute(
+        select(EventParticipant).where(EventParticipant.event_id == event_id)
+    )
+    return result.scalars().all()
 
 
 @router.delete("/events/{event_id}/participants/{participant_user_id}", status_code=status.HTTP_204_NO_CONTENT)
