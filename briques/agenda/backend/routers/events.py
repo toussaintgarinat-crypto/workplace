@@ -60,6 +60,9 @@ async def create_event(
         data["label_id"] = None
     evt = Event(**data, calendar_id=cal_id, created_by=user["sub"])
     db.add(evt)
+    await db.flush()  # matérialise evt.id (default=_uuid appliqué au flush)
+    from services.participants_auto import assurer_participant
+    await assurer_participant(db, evt.id, user["sub"])
     await db.commit()
     await db.refresh(evt)
     out = EventOut.model_validate(evt)

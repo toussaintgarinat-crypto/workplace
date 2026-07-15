@@ -245,14 +245,22 @@ class ParticipantAdd(BaseModel):
 
 
 class ParticipantStatusUpdate(BaseModel):
-    status: str
+    status: Optional[str] = None
+    # None = champ non fourni (rappels/status inchangés) ; pour rappels, [] = aucun,
+    # [m,…] = override perso. Un PATCH peut ne toucher que l'un des deux.
+    rappels: Optional[list[int]] = None
 
     @field_validator("status")
     @classmethod
-    def valid_status(cls, v: str) -> str:
-        if v not in ("accepted", "declined", "maybe"):
+    def valid_status(cls, v):
+        if v is not None and v not in ("accepted", "declined", "maybe"):
             raise ValueError("status must be accepted, declined or maybe")
         return v
+
+    @field_validator("rappels")
+    @classmethod
+    def _rappels(cls, v):
+        return normaliser_rappels(v)
 
 
 class ParticipantOut(BaseModel):
@@ -260,6 +268,7 @@ class ParticipantOut(BaseModel):
     event_id: str
     user_id: str
     status: str
+    rappels: Optional[list[int]] = None
     responded_at: Optional[datetime]
 
     class Config:
