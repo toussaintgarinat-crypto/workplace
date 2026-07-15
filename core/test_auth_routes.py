@@ -73,3 +73,40 @@ def test_logout_supprime_le_cookie_de_session():
     # httpx TestClient expose la suppression via un cookie expiré (Max-Age=0) dans les headers.
     set_cookie = r.headers.get("set-cookie", "")
     assert auth.COOKIE_SESSION in set_cookie
+
+
+def test_dashboard_accessible_sans_session_quand_auth_desactivee():
+    """Non-régression : AUTH_ENABLED=false (défaut) — comportement historique inchangé,
+    /dashboard reste accessible en accès direct (core/test_dashboard.py doit continuer
+    de passer sans modification)."""
+    assert auth.AUTH_ENABLED is False
+    r = client.get("/dashboard")
+    assert r.status_code == 200
+
+
+def test_dashboard_redirige_vers_login_quand_auth_activee():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    try:
+        r = client.get("/dashboard", follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"] == "/auth/login"
+    finally:
+        auth.AUTH_ENABLED = ancien
+
+
+def test_dashboard_accessible_avec_session_valide_quand_auth_activee():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth._cache_access_token.clear()
+    try:
+        cookie = auth.chiffrer_cookie({
+            "sub": "marina", "refresh_token": "rt-1", "nom": "Marina", "avatarEmoji": "🌙",
+        })
+        import time
+        auth._cache_access_token["marina"] = ("at-cache", time.time() + 60)
+        r = client.get("/dashboard", cookies={auth.COOKIE_SESSION: cookie})
+        assert r.status_code == 200
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth._cache_access_token.clear()
