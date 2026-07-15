@@ -97,7 +97,7 @@ Marina                      Toi (primaire)                  Assistant (LLM)
 - `briques/agenda/backend/templates_app.py` — le gabarit HTML/JS : login PKCE, liste
   calendriers, vue mois/semaine, formulaire créer/éditer événement, étiquettes, bouton
   inviter (visible seulement si rôle `owner`).
-- `briques/agenda/backend/scripts/lier_compte_perso.py` — script one-off : prend le
+- `briques/agenda/backend/lier_compte_perso.py` — script one-off : prend le
   `sub` Keycloak réel de l'utilisateur principal (obtenu après sa première connexion) et
   ajoute une ligne `CalendarMember(role="owner")` sur chaque calendrier actuellement
   épinglé `"perso"`. Idempotent (vérifie l'absence de ligne avant insertion, même motif
