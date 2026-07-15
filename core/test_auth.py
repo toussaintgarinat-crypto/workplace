@@ -113,3 +113,115 @@ def test_rafraichir_access_token_appelle_le_bon_endpoint():
     url, data = APPELS[0]
     assert data["grant_type"] == "refresh_token"
     assert data["refresh_token"] == "rt-123"
+
+
+from fastapi import HTTPException
+from starlette.requests import Request
+
+
+def _fake_request(cookies: dict) -> Request:
+    cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
+    scope = {
+        "type": "http",
+        "headers": [(b"cookie", cookie_header.encode())] if cookies else [],
+    }
+    return Request(scope)
+
+
+def test_exiger_session_auth_desactivee_renvoie_anonyme():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = False
+    try:
+        r = _run(auth.exiger_session(_fake_request({})))
+        assert r == {"sub": "anonymous", "nom": None, "avatarEmoji": None}
+    finally:
+        auth.AUTH_ENABLED = ancien
+
+
+def test_exiger_session_sans_cookie_redirige_vers_login():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    try:
+        try:
+            _run(auth.exiger_session(_fake_request({})))
+            assert False, "devait lever HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 303
+            assert exc.headers["Location"] == "/auth/login"
+    finally:
+        auth.AUTH_ENABLED = ancien
+
+
+def test_exiger_session_cookie_valide_rafraichit_et_verifie():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-123"})
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r == {"sub": "marina", "nom": "Marina", "avatarEmoji": "🌙"}
+        assert "marina" in auth._cache_access_token
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
+
+
+def test_exiger_session_cache_chaud_ne_rafraichit_pas():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth._cache_access_token.clear()
+    import time
+    auth._cache_access_token["marina"] = ("at-cache", time.time() + 60)
+    try:
+        cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-123", "nom": "Marina", "avatarEmoji": "🌙"})
+
+        class _ClientQuiEchoue:
+            def __init__(self, *a, **k):
+                raise AssertionError("ne doit pas être appelé : cache chaud")
+
+        auth.httpx.AsyncClient = _ClientQuiEchoue
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r == {"sub": "marina", "nom": "Marina", "avatarEmoji": "🌙"}
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth._cache_access_token.clear()
+
+
+def test_exiger_session_refresh_echoue_redirige_vers_login():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth._cache_access_token.clear()
+
+    class _ClientQuiEchoue:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None):
+            return _Resp({"error": "invalid_grant"}, status=400)
+
+    auth.httpx.AsyncClient = _ClientQuiEchoue
+    try:
+        cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-revoque"})
+        try:
+            _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+            assert False, "devait lever HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 303
+            assert exc.headers["Location"] == "/auth/login"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth._cache_access_token.clear()

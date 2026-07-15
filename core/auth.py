@@ -24,10 +24,12 @@ import base64
 import hashlib
 import json
 import os
+import time
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import httpx
+from fastapi import HTTPException, Request
 
 from shared.workplace_auth import KeycloakSettings, verify_token
 
@@ -126,3 +128,41 @@ async def rafraichir_access_token(refresh_token: str) -> dict:
         })
     r.raise_for_status()
     return r.json()
+
+
+_cache_access_token: dict[str, tuple[str, float]] = {}
+
+
+async def exiger_session(request: Request) -> dict:
+    """Dépendance FastAPI : exige une session Cœur valide.
+
+    AUTH_ENABLED=false (défaut dev/tests) : identité factice, comportement historique
+    inchangé. AUTH_ENABLED=true : lit le cookie de session chiffré, rafraîchit l'access
+    token si le cache mémoire est froid ou absent — ce rafraîchissement sert aussi de
+    vérification de révocation (seule attache vers l'autorité Keycloak une fois le cookie
+    posé). Absence de session ou échec ⇒ 303 vers /auth/login (une HTTPException avec un
+    header Location fonctionne pour une navigation top-level : Starlette inclut les
+    `headers` de l'exception dans la réponse renvoyée au navigateur)."""
+    if not AUTH_ENABLED:
+        return {"sub": "anonymous", "nom": None, "avatarEmoji": None}
+
+    session = dechiffrer_cookie(request.cookies.get(COOKIE_SESSION))
+    sub = session.get("sub") if session else None
+    refresh_token = session.get("refresh_token") if session else None
+    if not sub or not refresh_token:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+
+    maintenant = time.time()
+    cache = _cache_access_token.get(sub)
+    if not cache or cache[1] <= maintenant:
+        try:
+            tokens = await rafraichir_access_token(refresh_token)
+            payload = await verify_token(tokens["access_token"], KC)
+        except Exception:
+            raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+        expire_a = maintenant + tokens.get("expires_in", 60) - 10
+        _cache_access_token[sub] = (tokens["access_token"], expire_a)
+        session["nom"] = payload.get("nom", session.get("nom"))
+        session["avatarEmoji"] = payload.get("avatarEmoji", session.get("avatarEmoji"))
+
+    return {"sub": sub, "nom": session.get("nom"), "avatarEmoji": session.get("avatarEmoji")}
