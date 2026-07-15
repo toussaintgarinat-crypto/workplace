@@ -1248,7 +1248,15 @@ git commit -m "refactor(core): onglet agenda du dashboard -> iframe vers l'appli
 
 ## Vérification manuelle LIVE (non automatisable)
 
-Comme pour S171, le flux OIDC PKCE navigateur ne s'automatise pas sans navigateur réel. À vérifier manuellement une fois Keycloak + l'agenda + le Cœur lancés :
+### Prérequis avant vérification
+
+Pour que `/app` fonctionne correctement, la brique agenda doit être lancée avec les variables d'environnement suivantes (sinon elle utilisera les defaults, et l'authentification sera désactivée) :
+
+- **`AUTH_ENABLED=true`** — active la vérification du JWT du navigateur (sans cela, `get_current_user` traite tout le monde comme `"anonymous"` et `/app` affiche une liste vide de calendriers, même après le script `lier_compte_perso.py`).
+- **`KEYCLOAK_AUDIENCE=calendar-app`** — sécurise l'isolation d'audience du JWT (defaults à `""`, qui désactive la vérification — définir explicitement pour que seul un token `calendar-app` soit accepté, comme le fait le Cœur pour `assistant-app`).
+- **`KEYCLOAK_URL`** / **`KEYCLOAK_REALM`** — valeurs par défaut `http://localhost:8080` / `forge` (confirmer/ajuster selon votre déploiement).
+
+Comme pour S171, le flux OIDC PKCE navigateur ne s'automatise pas sans navigateur réel. À vérifier manuellement une fois Keycloak + l'agenda + le Cœur lancés avec les env vars ci-dessus :
 
 1. Ouvrir `http://localhost:8400/app` directement → écran de login → connexion Keycloak (`calendar-app`) → liste de calendriers vide (normal, avant le script one-off).
 2. Lancer `cd briques/agenda/backend && python3 lier_compte_perso.py <ton-sub-reel>` → recharger `/app` → le(s) calendrier(s) `"perso"` apparaissent, rôle `owner`.
