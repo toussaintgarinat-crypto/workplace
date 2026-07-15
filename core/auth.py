@@ -43,11 +43,17 @@ KEYCLOAK_AUDIENCE = os.environ.get("KEYCLOAK_AUDIENCE", "assistant-app")
 # dashboard reste accessible en accès direct — comportement historique inchangé.
 AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 AUTH_SESSION_SECRET = os.environ.get("AUTH_SESSION_SECRET", "")
+# Défaut prudent (cookies Secure) — à mettre à `false` en dev local http://localhost,
+# sinon le navigateur n'envoie jamais les cookies (Secure exige TLS) et le login boucle.
 AUTH_COOKIE_SECURE = os.environ.get("AUTH_COOKIE_SECURE", "true").lower() == "true"
 
 COOKIE_SESSION = "wp_session"
 COOKIE_PENDING = "wp_auth_pending"
-SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 jours ; la vraie limite est le refresh Keycloak
+# 30 jours : plafond du cookie, pas la vraie durée de session. La vraie limite est côté
+# Keycloak (`ssoSessionMaxLifespan: 36000` = 10h dans forge-realm.json, + idle timeout du
+# realm) — le refresh token meurt bien avant ces 30 jours en pratique, et `exiger_session`
+# redirige alors normalement vers /auth/login à l'échec du rafraîchissement.
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 PENDING_COOKIE_MAX_AGE = 600  # 10 min pour boucler le callback OIDC
 
 KC = KeycloakSettings(url=KEYCLOAK_URL, realm=KEYCLOAK_REALM, audience=KEYCLOAK_AUDIENCE, jwks_ttl=600)
@@ -156,6 +162,12 @@ async def exiger_session(request: Request) -> dict:
     cache = _cache_access_token.get(sub)
     if not cache or cache[1] <= maintenant:
         try:
+            # `tokens["refresh_token"]` ci-dessous n'est PAS repersisté dans le cookie (la
+            # dépendance n'a que `Request`, pas `Response`) : ça marche seulement parce que
+            # le realm forge n'active pas la rotation des refresh tokens (l'ancien reste
+            # valide). Si un opérateur active cette option de durcissement Keycloak un
+            # jour, la session tombera toutes les ~5 min (durée de l'access token) — à
+            # revoir alors (répercuter le nouveau refresh token via un cookie de réponse).
             tokens = await rafraichir_access_token(refresh_token)
             payload = await verify_token(tokens["access_token"], KC)
         except Exception:

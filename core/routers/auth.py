@@ -52,14 +52,24 @@ async def auth_callback(request: Request, code: str, state: str):
     if pending is None or pending.get("state") != state:
         raise HTTPException(status_code=400, detail="Requête d'authentification invalide ou expirée")
 
-    tokens = await auth.echanger_code(code, pending["code_verifier"], pending["redirect_uri"])
-    payload = await auth.verify_token(tokens["access_token"], auth.KC)
+    try:
+        tokens = await auth.echanger_code(code, pending["code_verifier"], pending["redirect_uri"])
+        payload = await auth.verify_token(tokens["access_token"], auth.KC)
+        sub = payload["sub"]
+        refresh_token = tokens["refresh_token"]
+    except Exception:
+        # Code expiré/déjà utilisé (retour arrière, double-soumission), Keycloak
+        # injoignable, JWT invalide, ou réponse/JWT de forme inattendue (clé manquante) :
+        # jamais de 500 nu sur ce chemin facilement atteignable (spec S171, cf.
+        # `exiger_session` dans core/auth.py qui suit déjà exactement ce motif) — on
+        # renvoie vers le point d'entrée normal plutôt que de laisser fuiter l'exception.
+        return RedirectResponse("/auth/login", status_code=303)
 
     session = {
-        "sub": payload["sub"],
+        "sub": sub,
         "nom": payload.get("nom"),
         "avatarEmoji": payload.get("avatarEmoji"),
-        "refresh_token": tokens["refresh_token"],
+        "refresh_token": refresh_token,
     }
     resp = RedirectResponse("/dashboard", status_code=307)
     resp.set_cookie(
