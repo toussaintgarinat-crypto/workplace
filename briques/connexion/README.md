@@ -13,11 +13,13 @@ stateless).
 - **Historique persisté par interlocuteur** (`conversations.py`) : l'assistant étant
   stateless, c'est la brique qui tient le fil de chaque conversation (fenêtre bornée).
 
-> ⚠️ **Limite honnête (v0.1.0).** `/assistant/chat` n'isole pas les permissions par
-> utilisateur (pas de paramètre d'utilisateur, identité globale). Le mapping multi-utilisateur
-> sert au routage / journal / consentement **côté brique**, et on injecte un message *système*
-> « qui parle » au début de chaque conversation. Une vraie isolation par utilisateur côté
-> noyau est un sprint ultérieur.
+> **Depuis S173** : le champ `utilisateur` envoyé à `/assistant/chat` est bien lu par le
+> Cœur (`contexte_tenant`) et détermine l'identité utilisée pour les appels S2S vers
+> l'agenda (`X-User-Id`) — les rappels/événements créés via l'assistant sont donc
+> attribués à la bonne personne, pas seulement mentionnés dans un message système. Reste
+> vrai : ceci ne remplace pas un contrôle d'accès complet par utilisateur sur toutes les
+> briques (agenda seulement pour l'instant), et le mapping ci-dessous sert toujours de
+> point d'entrée pour ça.
 
 ## Lancer
 
@@ -56,14 +58,17 @@ HMAC `X-Hub-Signature-256`). Demande un compte Meta Business.
 ## Relier un interlocuteur (consentement)
 
 ```bash
-# par (réseau, id) :
+# `utilisateur` doit être le vrai sub Keycloak `calendar-app` de la personne (obtenu
+# après sa 1re connexion à l'agenda /app, cf. briques/agenda/backend/README.md) — pas
+# une étiquette libre : c'est ce qui permet à un rappel créé via Telegram de rejoindre
+# le bon compte agenda (S173).
 curl -X POST localhost:5870/correspondances \
   -H 'Content-Type: application/json' \
-  -d '{"reseau":"telegram","id_externe":"123456","utilisateur":"toi@workplace"}'
+  -d '{"reseau":"telegram","id_externe":"123456","utilisateur":"<sub-keycloak-reel>"}'
 
 # ou par code de liaison communiqué par l'interlocuteur :
 curl -X POST localhost:5870/correspondances \
-  -d '{"code":"A1B2C3","utilisateur":"toi@workplace"}'
+  -d '{"code":"A1B2C3","utilisateur":"<sub-keycloak-reel>"}'
 
 curl localhost:5870/correspondances     # lister
 ```
