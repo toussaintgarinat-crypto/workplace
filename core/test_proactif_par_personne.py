@@ -107,6 +107,25 @@ def test_repli_event_sans_participants():
     assert len(badges) == 1
 
 
+def test_dedup_pousse_invisible_dans_lister():
+    # Bug S174 Task 7 : _dedup_pousse trace une ligne "agenda-push" (vu=1, titre/corps
+    # vides) pour ne pas re-pousser à un participant non-propriétaire (marina). Cette
+    # ligne de bookkeeping ne doit JAMAIS remonter dans lister() — c'est ce que
+    # /assistant/rappels et le panneau 🔔 du dashboard appellent (args par défaut).
+    _reset()
+    _capturer_push()
+    _mock_evts([_evt_participants(9, [
+        {"user_id": "perso", "status": "accepted", "rappels_effectifs": [10]},
+        {"user_id": "marina", "status": "accepted", "rappels_effectifs": [10]},
+    ])])
+    _run(proactif._check_agenda(None))
+    rows = proactif.lister()  # args par défaut, comme /assistant/rappels
+    dedup = [r for r in rows if r.get("type") == "agenda-push"]
+    assert dedup == []  # la ligne de dédup de marina ne doit jamais apparaître
+    badges = [r for r in rows if r.get("type") == "agenda"]
+    assert len(badges) == 1  # le vrai rappel du propriétaire reste visible
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
