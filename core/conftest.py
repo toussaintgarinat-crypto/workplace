@@ -26,8 +26,18 @@ soit reprise, soit sans effet mais inoffensive) ; surtout, plus aucun chemin ne 
 « /data ». Les secrets factices requis à l'import (coffre, Gateway) sont fournis en
 `setdefault` pour que `pytest core` tourne même sans passer par le Makefile.
 """
-import os
 import sys
+from pathlib import Path
+
+# core/conftest.py → racine du monorepo = 1 niveau au-dessus. Rend `shared.*` importable
+# quand les tests tournent nativement (make test-core exécute `pytest core` depuis la
+# racine, mais core/ n'a pas de __init__.py : pytest insère core/ sur sys.path, pas la
+# racine — même piège et même correctif que briques/agenda/backend/conftest.py).
+_RACINE = Path(__file__).resolve().parents[1]
+if str(_RACINE) not in sys.path:
+    sys.path.insert(0, str(_RACINE))
+
+import os
 import tempfile
 
 import pytest

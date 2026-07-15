@@ -2,10 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Lib partagée du monorepo (S120 : shared.workplace_auth), importable en `shared` — même
+# motif que briques/agenda/backend/Dockerfile.
+COPY shared/ /app/shared/
+
+COPY core/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY core/ .
 
 EXPOSE 5000
 

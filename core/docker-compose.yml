@@ -1,7 +1,9 @@
 services:
 
   core:
-    build: .
+    build:
+      context: ..
+      dockerfile: core/Dockerfile
     env_file:
       # Secrets partagés (GATEWAY_KEY…) — source unique à la racine du projet.
       - path: ../.env

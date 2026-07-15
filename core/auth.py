@@ -27,6 +27,10 @@ import os
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+import httpx
+
+from shared.workplace_auth import KeycloakSettings, verify_token
+
 # ── Configuration (motif `os.environ.get` au niveau module — core/ n'a pas de config.py,
 # contrairement à l'agenda ; cf. core/urls_ui.py pour le même motif). ──────────────────
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
@@ -43,6 +47,8 @@ COOKIE_SESSION = "wp_session"
 COOKIE_PENDING = "wp_auth_pending"
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 jours ; la vraie limite est le refresh Keycloak
 PENDING_COOKIE_MAX_AGE = 600  # 10 min pour boucler le callback OIDC
+
+KC = KeycloakSettings(url=KEYCLOAK_URL, realm=KEYCLOAK_REALM, audience=KEYCLOAK_AUDIENCE, jwks_ttl=600)
 
 
 def jeton_aleatoire(taille: int = 32) -> str:
@@ -89,3 +95,34 @@ def dechiffrer_cookie(valeur: str | None) -> dict | None:
         return json.loads(brut)
     except Exception:
         return None
+
+
+def _token_endpoint() -> str:
+    return f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+
+
+async def echanger_code(code: str, code_verifier: str, redirect_uri: str) -> dict:
+    """Échange un code d'autorisation contre un couple access/refresh token."""
+    async with httpx.AsyncClient() as client:
+        r = await client.post(_token_endpoint(), data={
+            "grant_type": "authorization_code",
+            "client_id": KEYCLOAK_CLIENT_ID,
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": code_verifier,
+        })
+    r.raise_for_status()
+    return r.json()
+
+
+async def rafraichir_access_token(refresh_token: str) -> dict:
+    """Échange un refresh token contre un nouveau couple access/refresh token — c'est ce
+    rafraîchissement, tenté contre Keycloak, qui sert de vérification de révocation."""
+    async with httpx.AsyncClient() as client:
+        r = await client.post(_token_endpoint(), data={
+            "grant_type": "refresh_token",
+            "client_id": KEYCLOAK_CLIENT_ID,
+            "refresh_token": refresh_token,
+        })
+    r.raise_for_status()
+    return r.json()
