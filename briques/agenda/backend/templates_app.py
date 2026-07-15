@@ -154,6 +154,45 @@ async function chargerApp() {
   await chargerCalendriers();
 }
 
+let CALENDARS = [];
+let CAL_ACTIF = null;
+
+async function chargerCalendriers() {
+  try {
+    CALENDARS = await api("/calendars");
+  } catch (e) {
+    document.getElementById("main").innerHTML = '<p class="err">Erreur : ' + esc(e.message) + "</p>";
+    return;
+  }
+  if (!CALENDARS.length) {
+    document.getElementById("main").innerHTML =
+      '<div class="card"><p class="muted">Aucun agenda partagé avec toi pour l\'instant.</p></div>';
+    return;
+  }
+  if (!CAL_ACTIF || !CALENDARS.some((c) => c.id === CAL_ACTIF)) CAL_ACTIF = CALENDARS[0].id;
+  rendreBarre();
+  await chargerVue();
+}
+
+function rendreBarre() {
+  const options = CALENDARS.map((c) =>
+    `<option value="${esc(c.id)}" ${c.id === CAL_ACTIF ? "selected" : ""}>${esc(c.name)} (${esc(c.role)})</option>`
+  ).join("");
+  const role = (CALENDARS.find((c) => c.id === CAL_ACTIF) || {}).role;
+  document.getElementById("main").innerHTML =
+    '<div class="barre">' +
+    `<select id="sel-cal">${options}</select>` +
+    (role === "owner" ? '<button id="btn-inviter">Inviter</button>' : "") +
+    '</div><div id="zone-vue"></div>';
+  document.getElementById("sel-cal").onchange = (e) => { CAL_ACTIF = e.target.value; chargerVue(); };
+  const btnInviter = document.getElementById("btn-inviter");
+  if (btnInviter) btnInviter.onclick = ouvrirModaleInviter;
+}
+
+async function chargerVue() {
+  document.getElementById("zone-vue").innerHTML = '<p class="muted">À venir.</p>';
+}
+
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </script>
 </body>

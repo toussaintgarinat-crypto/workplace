@@ -14,3 +14,11 @@ async def test_app_page_contient_la_config_keycloak():
     corps = resp.body.decode()
     assert "calendar-app" in corps
     assert "<title>" in corps
+
+
+@pytest.mark.asyncio
+async def test_app_page_contient_le_chargement_des_calendriers():
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "chargerCalendriers" in corps
+    assert "/calendars" in corps
