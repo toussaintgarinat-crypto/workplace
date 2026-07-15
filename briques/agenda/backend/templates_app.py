@@ -319,6 +319,38 @@ async function supprimerEvent(id) {
   } catch (e) { alert("Échec : " + e.message); }
 }
 
+function ouvrirModaleInviter() {
+  const html =
+    '<div id="modale" style="position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:10">' +
+    '<div class="card" style="width:100%;max-width:420px">' +
+    '<h3 style="margin-top:0">Inviter quelqu\\'un</h3>' +
+    '<div style="margin-bottom:10px"><input id="inv-email" placeholder="Email (optionnel, pour info)" style="width:100%"></div>' +
+    '<div style="margin-bottom:14px"><select id="inv-role" style="width:100%"><option value="viewer">Lecture seule</option><option value="editor">Lecture et écriture</option></select></div>' +
+    '<div id="inv-resultat"></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">' +
+    '<button class="ghost" id="btn-annuler">Fermer</button>' +
+    '<button id="btn-creer-invit">Créer le lien</button>' +
+    "</div></div></div>";
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("btn-annuler").onclick = fermerModaleEvent;
+  document.getElementById("btn-creer-invit").onclick = creerInvitation;
+}
+
+async function creerInvitation() {
+  const email = document.getElementById("inv-email").value.trim() || null;
+  const role = document.getElementById("inv-role").value;
+  try {
+    const inv = await api(`/calendars/${encodeURIComponent(CAL_ACTIF)}/invitations`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role }),
+    });
+    const lien = location.origin + "/invitations/" + inv.token + "/page";
+    document.getElementById("inv-resultat").innerHTML =
+      '<p class="muted">Envoie ce lien à la personne invitée :</p>' +
+      `<input readonly style="width:100%" value="${esc(lien)}" onclick="this.select()">`;
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </script>
 </body>

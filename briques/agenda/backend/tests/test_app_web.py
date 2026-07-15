@@ -30,3 +30,11 @@ async def test_app_page_contient_la_modale_evenement():
     corps = resp.body.decode()
     assert "ouvrirModaleEvent" in corps
     assert "enregistrerEvent" in corps
+
+
+@pytest.mark.asyncio
+async def test_app_page_contient_le_bouton_inviter():
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "ouvrirModaleInviter" in corps
+    assert "/invitations" in corps
