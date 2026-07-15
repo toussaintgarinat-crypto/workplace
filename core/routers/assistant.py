@@ -5,11 +5,12 @@ Assistant : chat, conversations, projets, config, briefing, pouls, rappels.
 import os
 import json
 import httpx
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from etat import registre
 import agenda
 import assistant
+import auth
 import briefing
 import catalogue
 import ciblage
@@ -74,8 +75,18 @@ async def proprioception_rapport(limite: int = 15):
 # ── Auto-amélioration des prompts (S69) : proposer → évaluer → gate humain ───
 
 
+def _resoudre_utilisateur(corps: dict, request: Request) -> str | None:
+    """Identité à poser dans `contexte_tenant` pour ce tour de conversation.
+
+    Priorité : `utilisateur` explicite du corps (Telegram/S2S, S78 — déjà résolu par
+    `briques/connexion` ou un appelant S2S) > sub de la session web S171 si présente >
+    `None` (défaut `"perso"` inchangé côté agenda). Jamais bloquant : une session
+    absente/corrompue ne fait pas échouer le chat, elle retombe simplement au défaut."""
+    return corps.get("utilisateur") or auth.sub_session_optionnel(request)
+
+
 @router.post("/assistant/chat", tags=["assistant"])
-async def assistant_chat(corps: dict):
+async def assistant_chat(corps: dict, request: Request):
     """Conversation avec l'assistant. Corps : {"messages": [{role, content}, …]}.
 
     Répond en `text/event-stream` : chaque ligne `data:` est un événement JSON
@@ -92,7 +103,7 @@ async def assistant_chat(corps: dict):
     messages = corps.get("messages") or []
     surface = corps.get("surface") or "web"
     interlocuteur = corps.get("interlocuteur") or "dashboard"
-    utilisateur = corps.get("utilisateur")
+    utilisateur = _resoudre_utilisateur(corps, request)
     # Le champ `utilisateur` du corps (surfaces Telegram/Mini App, S78) raffine le
     # contexte de tenant déjà posé par la dépendance depuis les en-têtes (S121) : les
     # appels d'outils du tour (agenda/donnees/forge) porteront cette identité.
