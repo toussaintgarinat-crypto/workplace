@@ -178,3 +178,14 @@ async def exiger_session(request: Request) -> dict:
         session["avatarEmoji"] = payload.get("avatarEmoji", session.get("avatarEmoji"))
 
     return {"sub": sub, "nom": session.get("nom"), "avatarEmoji": session.get("avatarEmoji")}
+
+
+def sub_session_optionnel(request: Request) -> str | None:
+    """Sub Keycloak de la session S171 si le cookie est présent et valide, sinon `None`.
+
+    Volontairement léger : pas de vérification de fraîcheur du token (pas un point de
+    sécurité — sert seulement à attribuer « pour qui » dans le chat de l'assistant ; le
+    vrai contrôle d'accès reste `require_calendar_access` côté agenda, inchangé).
+    Cookie absent ou corrompu ⇒ `None`, jamais d'exception ni de blocage (S173)."""
+    session = dechiffrer_cookie(request.cookies.get(COOKIE_SESSION))
+    return session.get("sub") if session else None

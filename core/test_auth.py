@@ -225,3 +225,18 @@ def test_exiger_session_refresh_echoue_redirige_vers_login():
     finally:
         auth.AUTH_ENABLED = ancien
         auth._cache_access_token.clear()
+
+
+def test_sub_session_optionnel_cookie_valide():
+    cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-1"})
+    r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: cookie}))
+    assert r == "marina"
+
+
+def test_sub_session_optionnel_pas_de_cookie():
+    assert auth.sub_session_optionnel(_fake_request({})) is None
+
+
+def test_sub_session_optionnel_cookie_corrompu():
+    r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: "pas-un-cookie-valide"}))
+    assert r is None
