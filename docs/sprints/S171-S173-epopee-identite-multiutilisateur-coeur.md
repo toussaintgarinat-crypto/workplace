@@ -2,13 +2,15 @@
 
 But : donner à Marina (et à d'autres personnes futures) une vraie identité distincte de
 l'utilisateur principal, pour que les briques puissent enfin dire « qui » fait quoi —
-préalable bloquant pour le roadmap agenda S171→S177 (rappels par personne, présence,
-journal d'activité), voir [[roadmap-s171-s177-agenda-best-in-class]].
+préalable bloquant pour le roadmap agenda S174→S180 (rappels par personne, présence,
+journal d'activité), voir [[roadmap-s174-s180-agenda-best-in-class]].
 
-Statut : **PLANIFIÉ, lancement immédiat** (décidé avec l'utilisateur 2026-07-15). Chaque
-sous-sprint sera brainstormé en détail à son lancement, comme les autres épopées du
-projet (Organisme vivant S63→S71, refactor clarté S114→S124, etc.) — ce document fixe le
-découpage et l'ordre, pas les specs fines.
+Statut : **EN COURS** (décidé avec l'utilisateur 2026-07-15). S171 CODE-COMPLET le même
+jour (PR #3, branche `worktree-s171-login-keycloak-coeur`, non mergée). Chaque sous-sprint
+est brainstormé en détail à son lancement, comme les autres épopées du projet (Organisme
+vivant S63→S71, refactor clarté S114→S124, etc.) — ce document fixe le découpage et
+l'ordre, pas les specs fines. Numérotation : cette épopée occupe **S171→S173** en tête de
+séquence (contigu, pas de collision), le roadmap agenda démarre juste après à **S174**.
 
 État constaté au moment du cadrage (à revérifier au lancement de chaque sous-sprint) :
 
@@ -48,16 +50,21 @@ S171 (login Keycloak réel pour le dashboard du Cœur)
         └─> S173 (routage S2S par utilisateur réel, agenda en priorité)
 ```
 
-## S171 — Login Keycloak réel pour le dashboard du Cœur
+## S171 — Login Keycloak réel pour le dashboard du Cœur — ✅ CODE-COMPLET (PR #3)
 
-- Poser une vraie session utilisateur sur `core/routers/dashboard.py` (aujourd'hui
-  accès direct) : écran de connexion, cookie/JWT de session, déconnexion.
-- Choix du realm (`oria` vide vs `forge` qui a déjà `calendar-app` prêt) et de son
-  périmètre (uniquement le dashboard humain, ou aussi les endpoints REST du Cœur) à
-  trancher au brainstorm dédié.
-- Contrainte forte : ne pas casser les chemins automatisés existants qui tournent en
-  mono-user pinné (Telegram, proactif, outils LLM S2S) — l'assistant garde son identité
-  de service, seul l'accès humain au dashboard change.
+- Vraie session utilisateur sur `core/routers/dashboard.py` (était en accès direct) :
+  flux OAuth Authorization Code + PKCE, cookie de session chiffré AES-GCM, déconnexion.
+- Realm retenu : `forge` (pas `oria`, resté vide), client `assistant-app` — pas
+  `calendar-app` qui sert uniquement la page d'invitation agenda. `redirectUris`
+  obsolètes (`localhost:8300`) corrigées vers le vrai port du Cœur (`localhost:5100`).
+- Portée : uniquement `dashboard.router`. Chemins automatisés (Telegram, proactif,
+  outils LLM S2S) inchangés — `core/contexte_tenant.py` (S121) assurait déjà la
+  propagation d'identité par requête, seule l'authentification manquait.
+- Livré : `core/auth.py`, `core/routers/auth.py`, 6 tâches TDD + revue finale de branche
+  (1 fix Important : `/auth/callback` renvoyait un 500 nu au lieu du repli 303 attendu).
+  Suite 426/426. Spec : `docs/superpowers/specs/2026-07-15-s171-login-keycloak-coeur-design.md`.
+  Plan : `docs/superpowers/plans/2026-07-15-s171-login-keycloak-coeur.md`.
+  RESTE : vérification manuelle LIVE (Keycloak + Cœur en local), merge de la PR.
 
 ## S172 — Provisioning du second compte (Marina)
 
@@ -71,7 +78,7 @@ S171 (login Keycloak réel pour le dashboard du Cœur)
 
 - Remplacer le pinning en dur (`AGENDA_USER_ID="perso"`, `ADMIN_COMPTE_ID="admin"`) par
   l'identité de session captée en S171/S172, propagée du Cœur vers les briques.
-- Périmètre S173 : agenda en priorité (bloque le roadmap S171→S177 agenda) ; restaurant
+- Périmètre S173 : agenda en priorité (bloque le roadmap S174→S180 agenda) ; restaurant
   si le temps le permet, sinon reporté à un sprint dédié plus tard.
 
 ## Hors périmètre / à clarifier au lancement
