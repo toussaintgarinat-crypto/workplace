@@ -48,11 +48,14 @@ def test_noms_de_capacites_uniques():
     assert not doublons, f"Noms en double : {doublons}"
 
 
-def test_les_huit_capacites_attendues():
+def test_les_capacites_attendues():
     attendues = {
+        # Agenda (S168)
         "agenda_consulter", "agenda_lister", "agenda_creer_evenement",
         "agenda_definir_rappels", "agenda_deplacer_evenement",
         "agenda_supprimer_evenement", "agenda_creer_partage", "agenda_inviter",
+        # Listes de courses/tâches (S176)
+        "courses_consulter", "courses_creer_liste", "courses_ajouter", "courses_cocher",
     }
     assert {c["nom"] for c in _CAPS} == attendues
 

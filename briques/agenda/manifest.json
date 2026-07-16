@@ -1,7 +1,7 @@
 {
   "nom": "agenda",
   "famille": "metier",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
   "role": "agenda",
   "couche": "backend",
@@ -109,6 +109,49 @@
         "email": {"type": "string", "description": "Email de l'invité (optionnel, informatif)."}
       },
       "action": true
+    },
+    {
+      "nom": "courses_consulter",
+      "description": "Liste les listes de courses/tâches et le nombre d'articles restant à prendre dans chacune. Utile avant d'ajouter ou de cocher un article. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/lists",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "courses_creer_liste",
+      "description": "Crée une nouvelle liste de courses (ou de tâches). Renvoie son id. Effet immédiat, pas de confirmation.",
+      "methode": "POST",
+      "chemin": "/service/lists",
+      "params": {
+        "nom": {"type": "string", "description": "Nom de la liste (ex. « Courses de la semaine »).", "requis": true},
+        "kind": {"type": "string", "enum": ["courses", "taches"], "description": "Type de liste (défaut courses)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "courses_ajouter",
+      "description": "Ajoute un article à une liste de courses. Récupère d'abord le list_id via courses_consulter (ou crée une liste via courses_creer_liste). Effet immédiat.",
+      "methode": "POST",
+      "chemin": "/service/lists/{list_id}/items",
+      "params": {
+        "list_id": {"type": "string", "description": "Id de la liste (via courses_consulter).", "requis": true},
+        "nom": {"type": "string", "description": "Article à ajouter (ex. « lait », « pommes »).", "requis": true},
+        "note": {"type": "string", "description": "Précision/quantité (optionnel, ex. « x2 », « bio »)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "courses_cocher",
+      "description": "Coche (ou décoche) un article d'une liste comme pris. Retrouve d'abord item_id + list_id via courses_consulter. Effet immédiat.",
+      "methode": "PATCH",
+      "chemin": "/service/lists/{list_id}/items/{item_id}",
+      "params": {
+        "list_id": {"type": "string", "description": "Id de la liste.", "requis": true},
+        "item_id": {"type": "string", "description": "Id de l'article.", "requis": true},
+        "checked": {"type": "boolean", "description": "true = pris, false = à reprendre. Défaut true."}
+      },
+      "action": false
     }
   ],
   "taches": [
