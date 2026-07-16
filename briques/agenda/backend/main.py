@@ -19,6 +19,10 @@ from routers.google_sync import router as google_router
 from routers.health import router as health_router
 from routers.invitations import router as invitations_router
 from routers.labels import router as labels_router
+from routers.list_catalog import router as list_catalog_router
+from routers.list_items import router as list_items_router
+from routers.lists import router as lists_router
+from routers.loyalty import router as loyalty_router
 from routers.members import router as members_router
 from routers.participants import router as participants_router
 from routers.profiles import router as profiles_router
@@ -44,6 +48,16 @@ async def lifespan(app: FastAPI):
                 logger.info("S174 backfill : %d participant(s) créateur(s) posé(s)", n)
     except Exception as ex:  # noqa: BLE001 — un backfill KO ne doit pas empêcher le boot
         logger.warning("S174 backfill ignoré : %s", ex)
+    # S176 : sème le catalogue FR intégré (idempotent — no-op après le 1er démarrage).
+    try:
+        from db import AsyncSessionLocal
+        from services.catalogue import semer_catalogue
+        async with AsyncSessionLocal() as _db:
+            n = await semer_catalogue(_db)
+            if n:
+                logger.info("S176 catalogue : %d items intégrés semés", n)
+    except Exception as ex:  # noqa: BLE001 — un seed KO ne doit pas empêcher le boot
+        logger.warning("S176 seed catalogue ignoré : %s", ex)
     logger.info("Calendar service started on port 8400")
     yield
     logger.info("Calendar service shutting down")
@@ -71,3 +85,16 @@ app.include_router(attachments_router)
 app.include_router(sse_router)
 app.include_router(google_router)
 app.include_router(timetree_router)
+app.include_router(lists_router)
+app.include_router(list_items_router)
+app.include_router(list_catalog_router)
+app.include_router(loyalty_router)
+
+# S176 : sert le générateur de code-barres embarqué (static/barcode.js), sans CDN.
+import os as _os
+
+from fastapi.staticfiles import StaticFiles
+
+_STATIC = _os.path.join(_os.path.dirname(__file__), "static")
+if _os.path.isdir(_STATIC):
+    app.mount("/static", StaticFiles(directory=_STATIC), name="static")
