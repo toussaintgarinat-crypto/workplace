@@ -194,3 +194,49 @@ du maître) pour cibler la bonne occurrence.
 
 **Hors périmètre (fast-follow)** : `scope=this_and_following` (scission de série) ;
 RRULE exotiques (`BYSETPOS`, `BYMONTHDAY` multiples, `BYWEEKNO`) ; fuseau par événement.
+
+## S176 — Listes de courses/tâches partagées + cartes de fidélité
+
+Sous-système **autonome** façon Bring! (migration `0008`, 6 tables). Une liste
+(`ShoppingList`, `kind` = `courses` | `taches`) n'est **pas** rattachée à un calendrier :
+elle a ses propres membres (`ShoppingListMember`, owner/editor/viewer), ses invitations par
+lien (`ShoppingListInvitation`, miroir des calendriers), ses articles (`ShoppingItem`) et son
+catalogue tap-to-add (`CatalogItem`). Accès gaté par `require_list_access` (404 si insuffisant).
+
+**Catalogue** : ~55 items FR intégrés (emoji + rayon) semés **une fois** au démarrage
+(`services/catalogue.py::semer_catalogue`, idempotent). Le catalogue d'une liste =
+intégrés ∪ items perso mémorisés (taper un article hors catalogue le mémorise → tap-to-add
+la fois suivante). Rayons FR fixes (ordre d'affichage dans `RAYONS`).
+
+**Endpoints** :
+- `GET/POST /lists`, `GET/PATCH/DELETE /lists/{id}`, `GET /lists/{id}/members`,
+  `POST /lists/{id}/invitations`, `POST /lists/invitations/{token}/accept`.
+- `GET/POST /lists/{id}/items`, `PATCH/DELETE /lists/{id}/items/{item_id}` (cochage pose
+  `checked_by`/`checked_at`), `POST /lists/{id}/items/clear-checked` (anti-doublon façon
+  Bring! : un article actif de même nom n'est pas dupliqué).
+- `GET /lists/{id}/catalog` (groupé par rayon), `GET /sse/lists/{id}` (temps réel).
+- `GET/POST/GET/PATCH/DELETE /loyalty-cards` (cartes personnelles, isolées par propriétaire).
+
+**Temps réel** : canal SSE dédié `list:{id}:changes` (`publish_list_change`) ; le front
+(onglet « Listes ») branche un `EventSource` — l'auth SSE passe le JWT en query
+(`?access_token=`, `get_current_user_sse`) car `EventSource` ne peut pas poser d'en-tête.
+
+**Push par personne** : sur ajout/cochage, la brique émet best-effort vers `connexion
+/pousser` pour les autres membres (voir ADR `2026-07-16-listes-push-evenementiel`).
+Config au déploiement : `CONNEXION_URL` (base du pont, ex.
+`http://host.docker.internal:5870`) + `CONNEXION_KEY` (X-API-Key). Vides ⇒ push désactivé
+(repli honnête, jamais bloquant).
+
+**Cartes de fidélité** : `LoyaltyCard` (personnelle : `user_id`, `enseigne`, `numero`,
+`format`, `couleur`). Le front (onglet « Cartes ») affiche le code-barres plein écran via un
+générateur **vanilla embarqué** `static/barcode.js` (Code128 + EAN-13 en SVG, **aucun CDN**).
+`qr` reste dans l'enum mais retombe sur l'affichage du numéro (génération QR = fast-follow).
+
+**Outils LLM** (manifest v1.2.0, identité pinnée `perso`) : `courses_consulter`,
+`courses_creer_liste`, `courses_ajouter`, `courses_cocher` sous `/service/lists…`.
+
+**⚠️ Migration 0008** : les tests unitaires utilisent `create_all` (pas Alembic). Smoke-tester
+`alembic upgrade 0008` / `downgrade` sur **Postgres** avant déploiement (comme pour 0007).
+
+**Hors périmètre (fast-follow)** : génération QR des cartes ; outils LLM pour les cartes ;
+import de recettes ; templates de listes sauvegardées ; quantités structurées.
