@@ -22,3 +22,18 @@ async def publish_change(calendar_id: str, event_type: str, payload: dict) -> No
         await r.aclose()
     except Exception as exc:
         logger.warning("Redis publish failed: %s", exc)
+
+
+async def publish_list_change(list_id: str, event_type: str, payload: dict) -> None:
+    """Broadcast d'un changement de liste vers les clients SSE (canal dédié). Best-effort."""
+    if not settings.REDIS_URL:
+        return
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        msg = json.dumps({"type": event_type, "data": payload})
+        await r.publish(f"list:{list_id}:changes", msg)
+        await r.aclose()
+    except Exception as exc:
+        logger.warning("Redis publish (list) failed: %s", exc)
