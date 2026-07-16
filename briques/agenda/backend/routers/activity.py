@@ -10,6 +10,7 @@ from auth import get_current_user
 from db import get_db
 from models.orm import Event, EventActivityLog
 from models.schemas import ActivityLogOut
+from utils.access import require_calendar_access
 
 router = APIRouter(tags=["activity"])
 
@@ -23,6 +24,7 @@ async def list_activity(
     evt = await db.get(Event, event_id)
     if not evt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="viewer")
     rows = (await db.execute(
         select(EventActivityLog)
         .where(EventActivityLog.event_id == event_id)

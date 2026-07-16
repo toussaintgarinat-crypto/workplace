@@ -21,6 +21,7 @@ def upgrade() -> None:
         "event_participants",
         sa.Column("rappels", sa.JSON(), nullable=True),
     )
+    op.create_unique_constraint("uq_event_participant", "event_participants", ["event_id", "user_id"])
     op.create_table(
         "user_profiles",
         sa.Column("user_id", sa.String(length=255), primary_key=True),
@@ -43,4 +44,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("event_activity_log")
     op.drop_table("user_profiles")
+    op.drop_constraint("uq_event_participant", "event_participants", type_="unique")
     op.drop_column("event_participants", "rappels")
