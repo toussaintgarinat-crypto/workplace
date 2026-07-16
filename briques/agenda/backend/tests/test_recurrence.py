@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from services.recurrence import valider_rrule, expanser, Occurrence
+from services.recurrence import valider_rrule, expanser, Occurrence, MAX_OCCURRENCES
 
 
 def test_valide_weekly_byday():
@@ -76,3 +76,31 @@ def test_count_et_cap():
     m = _maitre("FREQ=DAILY", jour=1)
     occ = expanser(m, None, None, set(), {})   # série sans fin → cap
     assert len(occ) == 366
+
+
+def test_borne_unique_debut_seul_sans_fin():
+    """S175 fix : `fin=None` ne doit pas faire perdre la borne basse `debut` —
+    avant fix, ce cas tombait dans la branche non bornée et repartait du dtstart."""
+    m = _maitre("FREQ=DAILY", jour=1)  # dtstart 2026-06-01 09:00, série sans fin
+    debut = datetime(2026, 8, 1)
+    occ = expanser(m, debut, None, set(), {})
+    assert occ, "aucune occurrence retournée"
+    assert all(o.start >= debut for o in occ)
+    assert occ[0].start == datetime(2026, 8, 1, 9, 0)
+    assert len(occ) < MAX_OCCURRENCES  # le cap borne l'itération, pas seulement la sortie
+
+
+def test_borne_unique_fin_seule_sans_debut():
+    """S175 fix : `debut=None` avec `fin` posé doit borner par le haut dès le dtstart."""
+    m = _maitre("FREQ=WEEKLY", jour=1)  # lundi 1er juin 2026
+    fin = datetime(2026, 6, 30)
+    occ = expanser(m, None, fin, set(), {})
+    debuts = [o.start for o in occ]
+    assert debuts == [datetime(2026, 6, d, 9, 0) for d in (1, 8, 15, 22, 29)]
+    assert all(o.start <= fin for o in occ)
+
+
+def test_non_recurrent_hors_fenetre_borne_unique():
+    m = _maitre(None, jour=1)  # 2026-06-01 09h-10h, non récurrent
+    occ = expanser(m, datetime(2026, 7, 1), None, set(), {})
+    assert occ == []
