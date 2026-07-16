@@ -319,3 +319,85 @@ async def service_inviter(
     return {"id": inv.id, "token": inv.token, "role": inv.role,
             "expire_le": inv.expires_at.isoformat() if inv.expires_at else None,
             "lien": _lien_invitation(request, inv.token)}
+
+
+# ── S176 : listes de courses/tâches (surface LLM, identité pinnée perso) ───────
+
+from sqlalchemy import func as _func, select as _select  # noqa: E402
+from models.orm import ShoppingItem, ShoppingList  # noqa: E402
+from services.pubsub import publish_list_change  # noqa: E402
+
+
+class ServiceListeCreate(BaseModel):
+    nom: str
+    kind: str = "courses"
+
+
+class ServiceItemAjout(BaseModel):
+    nom: str
+    note: Optional[str] = None
+
+
+class ServiceItemCoche(BaseModel):
+    checked: bool = True
+
+
+@router.get("/lists")
+async def service_lister_listes(db: AsyncSession = Depends(get_db),
+                                user: dict = Depends(get_current_user)):
+    """Liste les listes de courses/tâches de l'utilisateur pinné + le nb d'articles à prendre."""
+    uid = user["sub"]
+    owned = (await db.execute(_select(ShoppingList).where(ShoppingList.created_by == uid))).scalars().all()
+    sortie = []
+    for l in owned:
+        nb = await db.scalar(_select(_func.count()).select_from(ShoppingItem).where(
+            ShoppingItem.list_id == l.id, ShoppingItem.checked.is_(False)))
+        sortie.append({"id": l.id, "name": l.name, "kind": l.kind, "a_prendre": nb or 0})
+    return sortie
+
+
+@router.post("/lists", status_code=status.HTTP_201_CREATED)
+async def service_creer_liste(corps: ServiceListeCreate, db: AsyncSession = Depends(get_db),
+                              user: dict = Depends(get_current_user)):
+    """Crée une liste de courses (ou tâches). Effet immédiat."""
+    kind = corps.kind if corps.kind in ("courses", "taches") else "courses"
+    l = ShoppingList(name=corps.nom, kind=kind, created_by=user["sub"])
+    db.add(l)
+    await db.commit()
+    await db.refresh(l)
+    return {"id": l.id, "name": l.name, "kind": l.kind, "created_by": l.created_by}
+
+
+@router.post("/lists/{list_id}/items", status_code=status.HTTP_201_CREATED)
+async def service_ajouter_item(list_id: str, corps: ServiceItemAjout,
+                               db: AsyncSession = Depends(get_db),
+                               user: dict = Depends(get_current_user)):
+    """Ajoute un article à une liste. Effet immédiat."""
+    l = await db.get(ShoppingList, list_id)
+    if l is None or l.created_by != user["sub"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Liste introuvable")
+    it = ShoppingItem(list_id=list_id, name=corps.nom.strip(), note=corps.note, added_by=user["sub"])
+    db.add(it)
+    await db.commit()
+    await db.refresh(it)
+    await publish_list_change(list_id, "item.added", {"id": it.id, "name": it.name})
+    return {"id": it.id, "name": it.name, "checked": it.checked}
+
+
+@router.patch("/lists/{list_id}/items/{item_id}")
+async def service_cocher_item(list_id: str, item_id: str, corps: ServiceItemCoche,
+                              db: AsyncSession = Depends(get_db),
+                              user: dict = Depends(get_current_user)):
+    """Coche/décoche un article comme pris. Effet immédiat."""
+    l = await db.get(ShoppingList, list_id)
+    if l is None or l.created_by != user["sub"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Liste introuvable")
+    it = await db.get(ShoppingItem, item_id)
+    if it is None or it.list_id != list_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article introuvable")
+    it.checked = corps.checked
+    await db.commit()
+    await db.refresh(it)
+    await publish_list_change(list_id, "item.checked" if it.checked else "item.unchecked",
+                              {"id": it.id, "name": it.name})
+    return {"id": it.id, "name": it.name, "checked": it.checked}
