@@ -81,7 +81,11 @@ S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cuttin
 
 ## S176 — Liste de courses/tâches partagée (façon Bring!) — ✅ CODE-COMPLET 2026-07-16 (LIVE différé)
 
-- **Statut** : code-complet, suite agenda **242 passed** (+ 1 skip redis), migration `0008`.
+- **Statut** : code-complet, suite agenda **243 passed** (+ 1 skip redis), migration `0008`.
+  Revue finale (high) : 1 correctif retenu — motif de **stop Code128** tronqué (`233111`→
+  `2331112`, barre terminale manquante = symbole inscannable), corrigé + test de largeur
+  de modules. 3 findings mineurs laissés en fast-follow (N+1 count `list_lists` ; notif/SSE
+  émis sur ajout d'un doublon no-op ; repli d'accents majuscules SQLite dans l'anti-doublon).
   Design `docs/superpowers/specs/2026-07-16-s176-liste-courses-partagee-design.md`, plan
   `docs/superpowers/plans/2026-07-16-s176-liste-courses-cartes-fidelite.md`, ADR push
   événementiel `docs/decisions/2026-07-16-listes-push-evenementiel.md`. Voir
