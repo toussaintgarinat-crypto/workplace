@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Secret signant le `state` OAuth (anti-CSRF, S35). Vide ⇒ dérivé de VAULT_SECRET.
     GOOGLE_STATE_SECRET: str = ""
 
+    # ── Push par personne des listes (S176) ────────────────────────────────────
+    # Base du pont messagerie `connexion` (ex. http://host.docker.internal:5870) vers
+    # lequel la brique émet /pousser sur ajout/cochage d'item. Vide ⇒ push désactivé
+    # (repli honnête). CONNEXION_KEY = X-API-Key du pont, si défini.
+    CONNEXION_URL: str = ""
+    CONNEXION_KEY: str = ""
+
     class Config:
         env_file = ".env"
 
