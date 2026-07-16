@@ -39,6 +39,17 @@ async def test_app_page_contient_la_modale_evenement():
 
 
 @pytest.mark.asyncio
+async def test_app_page_contient_identite_occurrence_dans_la_grille():
+    """Fix critique : chaque pill de la grille porte data-occ (occurrence_start) en plus
+    de data-evt (id du maître), pour désambiguïser les occurrences d'une série récurrente
+    qui partagent toutes le même id — sinon le clic résout toujours la 1re occurrence."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "data-occ" in corps
+    assert "el.dataset.occ" in corps
+
+
+@pytest.mark.asyncio
 async def test_app_page_contient_le_bouton_inviter():
     resp = await app_page()
     corps = resp.body.decode()
