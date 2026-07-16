@@ -356,19 +356,36 @@ async function chargerDetailsEvent(eventId) {
     } catch (e) { alert("Échec (es-tu participant ?) : " + e.message); }
   });
 
-  // Mon rappel personnel
+  // Mon rappel personnel — trois états : hériter (null) / aucun ([]) / personnalisé ([m,...])
   const moiPart = parts.find((p) => p.user_id === moi);
-  const rappelActuel = moiPart && moiPart.rappels ? moiPart.rappels.join(",") : (moiPart && moiPart.rappels === null ? "" : "");
+  const rappelsMoi = moiPart ? moiPart.rappels : undefined;
+  const modeInitial = !Array.isArray(rappelsMoi) ? "inherit" : (rappelsMoi.length === 0 ? "none" : "custom");
+  const minutesInitiales = Array.isArray(rappelsMoi) ? rappelsMoi.join(",") : "";
   document.getElementById("zone-rappels").innerHTML = moiPart
     ? '<strong>Mon rappel</strong>' +
-      '<div style="display:flex;gap:6px;margin-top:4px"><input id="mon-rappel" placeholder="minutes avant, ex. 10,60 (vide = hérite)" style="flex:1" value="' + esc(rappelActuel) + '">' +
+      '<div style="display:flex;gap:6px;margin-top:4px">' +
+      '<select id="mon-rappel-mode" style="flex:1">' +
+      `<option value="inherit"${modeInitial === "inherit" ? " selected" : ""}>Comme l'événement</option>` +
+      `<option value="none"${modeInitial === "none" ? " selected" : ""}>Aucun rappel</option>` +
+      `<option value="custom"${modeInitial === "custom" ? " selected" : ""}>Personnalisé</option>` +
+      '</select>' +
+      `<input id="mon-rappel-min" placeholder="minutes, ex. 10,60" style="flex:1" value="${esc(minutesInitiales)}"${modeInitial === "custom" ? "" : " disabled"}>` +
       '<button id="btn-mon-rappel">OK</button></div>' +
-      '<p class="muted" style="font-size:11px">Vide = comme l\'événement · « 0 » = à l\'heure · plusieurs séparés par des virgules.</p>'
+      '<p class="muted" style="font-size:11px">« Comme l\'événement » = hérite des rappels par défaut · « Aucun rappel » = tu ne seras pas prévenu(e) · « Personnalisé » = minutes avant séparées par des virgules (0 = à l\'heure).</p>'
     : '<p class="muted">Rejoins l\'événement pour régler ton rappel.</p>';
+  const modeSel = document.getElementById("mon-rappel-mode");
+  const minInput = document.getElementById("mon-rappel-min");
+  if (modeSel) modeSel.onchange = () => { minInput.disabled = modeSel.value !== "custom"; };
   const btnR = document.getElementById("btn-mon-rappel");
   if (btnR) btnR.onclick = async () => {
-    const v = document.getElementById("mon-rappel").value.trim();
-    const rappels = v === "" ? null : v.split(",").map((x) => parseInt(x.trim(), 10)).filter((x) => !isNaN(x));
+    const mode = document.getElementById("mon-rappel-mode").value;
+    let rappels;
+    if (mode === "inherit") rappels = null;
+    else if (mode === "none") rappels = [];
+    else {
+      const v = document.getElementById("mon-rappel-min").value.trim();
+      rappels = v === "" ? [] : v.split(",").map((x) => parseInt(x.trim(), 10)).filter((x) => !isNaN(x));
+    }
     try {
       await api(`/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(moi)}`,
         { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rappels }) });
