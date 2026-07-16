@@ -53,7 +53,10 @@ async def evenements_agreges(db: AsyncSession, user_id: str,
         occ = await occurrences_calendrier(db, c.id, debut, fin)
         # Participants chargés EN LOT pour tous les events sources (maîtres + overrides) de
         # ce calendrier — évite le N+1 qu'aggraverait l'expansion (une requête par occurrence).
-        src_ids = {o.source.id for o in occ}
+        # FIX I2 : les lignes EventParticipant vivent sur le MAÎTRE, jamais sur l'override
+        # (son id propre) — on clé donc par `recurrence_parent_id or id` pour qu'une
+        # occurrence remplacée par un override résolve quand même les participants hérités.
+        src_ids = {o.source.recurrence_parent_id or o.source.id for o in occ}
         parts_par_event: dict[str, list] = {}
         if src_ids:
             for p in (await db.execute(
@@ -70,7 +73,7 @@ async def evenements_agreges(db: AsyncSession, user_id: str,
             d["participants"] = [
                 {"user_id": p.user_id, "status": p.status,
                  "rappels_effectifs": rappels_effectifs(p.rappels, e.rappels)}
-                for p in parts_par_event.get(e.id, [])
+                for p in parts_par_event.get(e.recurrence_parent_id or e.id, [])
             ]
             evts.append(d)
     return evts

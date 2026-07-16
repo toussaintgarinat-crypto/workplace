@@ -109,6 +109,27 @@ async def test_delete_scope_this_supprime_l_override_orphelin(db):
 
 
 @pytest.mark.asyncio
+async def test_patch_scope_this_ne_propage_pas_la_recurrence_rule(db):
+    """FIX I1 : le front envoie TOUJOURS `recurrence_rule` dans le corps PATCH. Un
+    scope=this sur une série hebdomadaire ne doit jamais créer un override qui porte
+    la règle du maître — l'invariant est `override.recurrence_rule IS NULL`."""
+    c, m = await _serie(db)
+    occ_dt = datetime(2026, 6, 8, 9, 0)
+    await E.update_event(
+        event_id=m.id,
+        body=EventUpdate(title="X", recurrence_rule="FREQ=DAILY"),
+        scope="this", occurrence=occ_dt, db=db, user=USER,
+    )
+    ov = (await db.execute(
+        select(Event).where(Event.recurrence_parent_id == m.id, Event.recurrence_date == occ_dt)
+    )).scalar_one_or_none()
+    assert ov is not None
+    assert ov.title == "X"
+    assert ov.recurrence_rule is None
+    assert ov.recurrence_parent_id == m.id
+
+
+@pytest.mark.asyncio
 async def test_creer_ou_maj_override_deux_fois_une_seule_ligne(db):
     """Deux appels sur la même occurrence = MAJ de la même ligne (contrainte unique
     recurrence_parent_id+recurrence_date), jamais deux overrides."""

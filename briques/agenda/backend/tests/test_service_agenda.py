@@ -13,8 +13,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from models.orm import Calendar, CalendarMember, Event, Label
+from models.orm import Calendar, CalendarMember, Event, EventParticipant, Label
 from routers import service as S
+from services.occurrences import creer_ou_maj_override
 
 USER = {"sub": "perso", "service_call": True}
 DEBUT = datetime(2026, 7, 14, 0, 0)
@@ -102,6 +103,27 @@ async def test_agrege_deplie_recurrence(db):
     assert {e["occurrence_start"][:10] for e in hebdo} == {
         f"2026-07-{d:02d}" for d in range(14, 21)}
     assert all(e["recurrent"] and e["participants"] is not None for e in hebdo)
+
+
+@pytest.mark.asyncio
+async def test_agrege_override_herite_les_participants_du_maitre(db):
+    """FIX I2 : les participants (S174) vivent sur l'event MAÎTRE ; une occurrence
+    remplacée par un override (source.id != maître.id) doit quand même résoudre les
+    participants du maître dans l'agrégation, pas une liste vide."""
+    perso = await _cal(db, name="Perso", is_default=True)
+    m = Event(calendar_id=perso.id, title="Hebdo", created_by="perso", rappels=[10],
+              start_at=datetime(2026, 7, 14, 12, 0), end_at=datetime(2026, 7, 14, 13, 0),
+              recurrence_rule="FREQ=WEEKLY", exdates=[])
+    db.add(m); await db.flush()
+    db.add(EventParticipant(event_id=m.id, user_id="alice"))
+    db.add(EventParticipant(event_id=m.id, user_id="bob"))
+    await db.commit()
+    occ_dt = datetime(2026, 7, 14, 12, 0)
+    await creer_ou_maj_override(db, m, occ_dt, {"title": "Déplacée"})
+
+    evts = await S.service_lister_evenements(debut=DEBUT, fin=FIN, db=db, user=USER)
+    deplacee = next(e for e in evts if e["title"] == "Déplacée")
+    assert {p["user_id"] for p in deplacee["participants"]} == {"alice", "bob"}
 
 
 # ── Création (calendrier par défaut) ─────────────────────────────────────────
