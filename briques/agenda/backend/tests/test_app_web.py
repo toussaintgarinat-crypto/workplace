@@ -47,6 +47,35 @@ async def test_app_page_contient_le_bouton_inviter():
 
 
 @pytest.mark.asyncio
+async def test_app_page_contient_editeur_recurrence():
+    """S175 — la modale event propose un sélecteur de fréquence RRULE."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "ev-recurrence" in corps  # sélecteur de fréquence présent
+    assert "FREQ=" in corps  # composition RRULE côté front
+
+
+@pytest.mark.asyncio
+async def test_app_page_contient_le_dialogue_de_portee():
+    """S175 — édition/suppression d'une occurrence récurrente demande la portée."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "Toute la série" in corps
+    assert "Cet événement" in corps
+    assert "scope=this" in corps
+    assert "scope=all" in corps
+
+
+@pytest.mark.asyncio
+async def test_app_page_contient_le_badge_recurrence():
+    """S175 — badge ↻ préfixant le titre des occurrences récurrentes dans la grille."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "e.recurrent" in corps
+    assert "↻" in corps
+
+
+@pytest.mark.asyncio
 async def test_app_page_le_script_est_du_js_syntaxiquement_valide():
     """Filet de sécurité : les tests ci-dessus ne vérifient que la présence de sous-chaînes,
     pas que le <script> inline soit du JS valide (cf. bug quelqu\\'un double-backslash S172
