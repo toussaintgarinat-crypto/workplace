@@ -103,6 +103,18 @@ async def exclure_occurrence(db: AsyncSession, maitre: Event, occurrence: dateti
     await db.commit()
 
 
+def occurrence_naive(occurrence: datetime | None) -> datetime | None:
+    """`occurrence` (query ?scope=this) IDENTIFIE une occurrence déjà stockée — ce
+    n'est pas une saisie humaine. Un client réel le renvoie AWARE (l'ISO Europe/Paris
+    exposé par `occurrence_en_dict`/`vers_paris`) : on le reconvertit alors en naïf UTC
+    via `vers_utc_naif`. Un naïf reçu tel quel (appel direct hors HTTP, ex. tests) est
+    déjà dans la convention de stockage et n'est PAS réinterprété comme heure murale
+    Paris — sinon un décalage DST (été/hiver) le ferait manquer sa propre occurrence."""
+    if occurrence is None:
+        return None
+    return vers_utc_naif(occurrence) if occurrence.tzinfo is not None else occurrence
+
+
 async def creer_ou_maj_override(db: AsyncSession, maitre: Event, occurrence: datetime,
                                 champs: dict) -> Event:
     """Crée (ou met à jour) l'event-override d'une occurrence. `champs` = colonnes ORM à
