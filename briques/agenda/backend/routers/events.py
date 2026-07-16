@@ -16,6 +16,7 @@ from models.orm import Event
 from models.schemas import EventOut, EventUpdate
 from services.horaires import vers_utc_naif
 from services.journal import consigner
+from services.occurrences import occurrence_en_dict, occurrences_calendrier
 from services.pubsub import publish_change
 from utils.access import require_calendar_access
 
@@ -23,7 +24,7 @@ router = APIRouter(tags=["events"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/calendars/{cal_id}/events", response_model=list[EventOut])
+@router.get("/calendars/{cal_id}/events", response_model=None)
 async def list_events(
     cal_id: str,
     start: Optional[datetime] = Query(None),
@@ -32,17 +33,8 @@ async def list_events(
     user: dict = Depends(get_current_user),
 ):
     await require_calendar_access(db, cal_id, user["sub"], min_role="viewer")
-    filters = [Event.calendar_id == cal_id]
-    # Les bornes arrivent en UTC (front) ou en heure locale → naïf UTC pour comparer
-    # au stockage (lui aussi naïf UTC) ; sinon naïf vs aware fausse le filtre.
-    if start:
-        filters.append(Event.end_at >= vers_utc_naif(start))
-    if end:
-        filters.append(Event.start_at <= vers_utc_naif(end))
-    result = await db.execute(
-        select(Event).where(and_(*filters)).order_by(Event.start_at)
-    )
-    return result.scalars().all()
+    occ = await occurrences_calendrier(db, cal_id, start, end)
+    return [occurrence_en_dict(o) for o in occ]
 
 
 @router.post("/calendars/{cal_id}/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
