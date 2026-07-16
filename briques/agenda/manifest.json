@@ -1,7 +1,7 @@
 {
   "nom": "agenda",
   "famille": "metier",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
   "role": "agenda",
   "couche": "backend",
@@ -152,6 +152,39 @@
         "checked": {"type": "boolean", "description": "true = pris, false = à reprendre. Défaut true."}
       },
       "action": false
+    },
+    {
+      "nom": "sondage_consulter",
+      "description": "Liste mes sondages de disponibilité (façon Doodle) avec, pour chacun, le nombre de créneaux proposés et de personnes ayant voté, et le créneau retenu s'il est finalisé. Utile avant de finaliser. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/polls",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "sondage_creer",
+      "description": "Crée un sondage de disponibilité : propose plusieurs créneaux, chacun votera (oui/si besoin/non) via un lien public (pas de compte requis). Renvoie l'id du sondage et le lien à transmettre aux personnes à sonder. Effet immédiat.",
+      "methode": "POST",
+      "chemin": "/service/polls",
+      "params": {
+        "titre": {"type": "string", "description": "Objet du sondage (ex. « Dîner de famille »).", "requis": true},
+        "creneaux": {"type": "array", "description": "Créneaux proposés au vote. Chaque créneau = {debut, fin} en ISO 8601. Au moins un.", "items": {"type": "object", "properties": {"debut": {"type": "string"}, "fin": {"type": "string"}}}, "requis": true},
+        "description": {"type": "string", "description": "Précisions (optionnel)."},
+        "lieu": {"type": "string", "description": "Lieu (optionnel)."}
+      },
+      "action": false
+    },
+    {
+      "nom": "sondage_finaliser",
+      "description": "Retient le créneau gagnant d'un sondage : crée l'événement dans l'agenda (avec les votants « oui » ayant un compte pré-ajoutés) et clôture le sondage. Récupère d'abord poll_id via sondage_consulter, et le creneau_id via le détail du sondage. ACTION : confirme=true requis après accord.",
+      "methode": "POST",
+      "chemin": "/service/polls/{poll_id}/finalize",
+      "params": {
+        "poll_id": {"type": "string", "description": "Id du sondage (via sondage_consulter).", "requis": true},
+        "creneau_id": {"type": "string", "description": "Id du créneau retenu.", "requis": true},
+        "calendrier_id": {"type": "string", "description": "Calendrier cible (optionnel, sinon l'agenda par défaut)."}
+      },
+      "action": true
     }
   ],
   "taches": [

@@ -347,3 +347,73 @@ class LoyaltyCard(Base):
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ── S177 : sondages de disponibilité (façon Doodle) ───────────────────────────
+
+class AvailabilityPoll(Base):
+    """Sondage de disponibilité : l'organisateur propose des créneaux (`PollSlot`),
+    chacun vote par créneau (`PollVote`), puis on finalise sur un créneau — ce qui crée
+    un `Event` dans l'agenda. Le vote passe par `share_token` (capacité du lien public) :
+    un invité vote sans compte, un membre connecté voit son vote attribué."""
+
+    __tablename__ = "availability_polls"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # Calendrier cible pour la finalisation. SET NULL : supprimer le calendrier ne
+    # détruit pas le sondage — on retombe sur le calendrier par défaut à la finalisation.
+    calendar_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("calendars.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(
+        Enum("open", "closed", name="poll_status"), nullable=False, default="open")
+    final_slot_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    final_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    share_token: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=_uuid)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    slots: Mapped[list["PollSlot"]] = relationship(
+        back_populates="poll", cascade="all, delete-orphan")
+    votes: Mapped[list["PollVote"]] = relationship(
+        back_populates="poll", cascade="all, delete-orphan")
+
+
+class PollSlot(Base):
+    __tablename__ = "poll_slots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    poll_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("availability_polls.id", ondelete="CASCADE"), nullable=False, index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    poll: Mapped["AvailabilityPoll"] = relationship(back_populates="slots")
+
+
+class PollVote(Base):
+    """Vote d'une personne sur un créneau. Identité = `voter_id` (membre connecté) OU
+    `guest_key` (invité anonyme). Un bulletin remplace tous les votes de l'identité pour
+    le sondage (voir routers/polls.py) — pas de contrainte unique fragile côté anonyme."""
+
+    __tablename__ = "poll_votes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    poll_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("availability_polls.id", ondelete="CASCADE"), nullable=False, index=True)
+    slot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("poll_slots.id", ondelete="CASCADE"), nullable=False, index=True)
+    voter_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    voter_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    guest_key: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    value: Mapped[str] = mapped_column(
+        Enum("oui", "si_besoin", "non", name="poll_vote_value"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    poll: Mapped["AvailabilityPoll"] = relationship(back_populates="votes")

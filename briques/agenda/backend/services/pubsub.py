@@ -37,3 +37,18 @@ async def publish_list_change(list_id: str, event_type: str, payload: dict) -> N
         await r.aclose()
     except Exception as exc:
         logger.warning("Redis publish (list) failed: %s", exc)
+
+
+async def publish_poll_change(poll_id: str, event_type: str, payload: dict) -> None:
+    """Broadcast d'un changement de sondage (vote/finalisation) aux clients SSE. Best-effort."""
+    if not settings.REDIS_URL:
+        return
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        msg = json.dumps({"type": event_type, "data": payload})
+        await r.publish(f"poll:{poll_id}:changes", msg)
+        await r.aclose()
+    except Exception as exc:
+        logger.warning("Redis publish (poll) failed: %s", exc)

@@ -240,3 +240,42 @@ générateur **vanilla embarqué** `static/barcode.js` (Code128 + EAN-13 en SVG,
 
 **Hors périmètre (fast-follow)** : génération QR des cartes ; outils LLM pour les cartes ;
 import de recettes ; templates de listes sauvegardées ; quantités structurées.
+
+## S177 — Sondages de disponibilité (façon Doodle)
+
+Sous-système **autonome** (migration `0009`, 3 tables : `AvailabilityPoll`, `PollSlot`,
+`PollVote`). L'organisateur propose des créneaux, chacun vote par créneau
+(`oui` / `si_besoin` / `non`), puis on **finalise** sur un créneau — ce qui **crée un
+`Event`** dans l'agenda (le plus vs Doodle : la boucle sondage→agenda) avec les votants
+« oui » ayant un compte pré-ajoutés comme participants.
+
+**Participation = lien public à jeton + membres**. Le vote passe par `share_token` (la
+capacité du lien) : un invité vote sans compte en donnant juste un nom, un membre connecté
+voit son vote attribué à son profil (`get_optional_user` = auth facultative). Un **bulletin**
+couvre tout le sondage : à la soumission on **remplace** tous les votes de l'identité
+(`voter_id` membre, sinon `guest_key` invité renvoyé pour rééditer) → un bulletin par personne.
+
+**Endpoints** :
+- Gestion (organisateur, `require_owned_poll` → 404 sinon) : `GET/POST /polls`,
+  `GET/PATCH/DELETE /polls/{id}`, `POST /polls/{id}/slots`, `DELETE /polls/{id}/slots/{slot_id}`,
+  `POST /polls/{id}/finalize` `{slot_id, calendar_id?}`.
+- Vote public par jeton : `GET /polls/token/{share_token}` (grille + tallies, ne renvoie
+  jamais le token), `POST /polls/token/{share_token}/vote` `{nom?, guest_key?, votes:[…]}`.
+- Page HTML de vote autonome (sans compte) : `GET /polls/p/{share_token}` (`page_sondage`,
+  sur le modèle de `page_invitation`).
+- Temps réel : `GET /sse/polls/{share_token}` (jeton = capacité, pas d'auth) sur le canal
+  `poll:{id}:changes` (`publish_poll_change`) — la grille se met à jour en direct.
+
+**Outils LLM** (manifest **v1.3.0**) : `sondage_consulter`, `sondage_creer`,
+`sondage_finaliser` (gaté `action:true`) sous `/service/polls…`.
+
+**Front** : onglet « 📊 Sondages » (liste, création, grille de résultats, copier le lien,
+retenir un créneau) dans `/app`.
+
+**⚠️ Migration 0009** : tests = `create_all` ; smoke-tester `alembic upgrade 0009` /
+`downgrade` sur **Postgres** avant déploiement (comme 0007/0008).
+
+**Hors périmètre (fast-follow)** : notifier les votants à la finalisation (push par
+personne façon S174/S176) ; tri auto pondérant `si_besoin` ; créneaux journée entière ;
+fermeture auto à `expires_at` (aujourd'hui le lien expire pour voter, le sondage reste
+consultable).

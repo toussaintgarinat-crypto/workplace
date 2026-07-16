@@ -401,3 +401,65 @@ async def service_cocher_item(list_id: str, item_id: str, corps: ServiceItemCoch
     await publish_list_change(list_id, "item.checked" if it.checked else "item.unchecked",
                               {"id": it.id, "name": it.name})
     return {"id": it.id, "name": it.name, "checked": it.checked}
+
+
+# ── S177 : sondages de disponibilité (façon Doodle) ───────────────────────────
+from routers import polls as _polls  # noqa: E402
+from routers.polls import FinalizeIn as _FinalizeIn  # noqa: E402
+
+
+class _CreneauServiceIn(BaseModel):
+    debut: datetime
+    fin: datetime
+
+
+class ServiceSondageFinalize(BaseModel):
+    creneau_id: str
+    calendrier_id: Optional[str] = None
+
+
+class ServiceSondageCreate(BaseModel):
+    titre: str
+    creneaux: list[_CreneauServiceIn] = []
+    description: Optional[str] = None
+    lieu: Optional[str] = None
+
+
+def _lien_sondage(request: Request, token: str) -> str:
+    base = (settings.AGENDA_URL_PUBLIQUE or str(request.base_url)).rstrip("/")
+    return f"{base}/polls/p/{token}"
+
+
+@router.get("/polls")
+async def service_lister_sondages(db: AsyncSession = Depends(get_db),
+                                  user: dict = Depends(get_current_user)):
+    """Liste mes sondages de disponibilité + nb de créneaux/votants. Lecture seule."""
+    resu = await _polls.list_polls(db=db, user=user)
+    return [{"id": p.id, "titre": p.title, "statut": p.status, "nb_creneaux": p.nb_slots,
+             "nb_votants": p.nb_voters, "final_creneau_id": p.final_slot_id} for p in resu]
+
+
+@router.post("/polls", status_code=status.HTTP_201_CREATED)
+async def service_creer_sondage(corps: ServiceSondageCreate, request: Request,
+                                db: AsyncSession = Depends(get_db),
+                                user: dict = Depends(get_current_user)):
+    """Crée un sondage de disponibilité (créneaux à proposer). Renvoie l'id + le lien
+    public à transmettre aux personnes à sonder. Effet immédiat."""
+    from models.schemas import PollCreate as _PollCreate, PollSlotIn as _PollSlotIn
+    slots = [_PollSlotIn(start_at=c.debut, end_at=c.fin) for c in corps.creneaux]
+    out = await _polls.create_poll(
+        _PollCreate(title=corps.titre, description=corps.description, location=corps.lieu,
+                    slots=slots), db=db, user=user)
+    return {"id": out.id, "titre": out.title, "share_token": out.share_token,
+            "lien": _lien_sondage(request, out.share_token)}
+
+
+@router.post("/polls/{poll_id}/finalize")
+async def service_finaliser_sondage(poll_id: str, corps: ServiceSondageFinalize,
+                                    db: AsyncSession = Depends(get_db),
+                                    user: dict = Depends(get_current_user)):
+    """Retient un créneau gagnant : crée l'événement agenda et clôture le sondage.
+    ACTION : confirme=true requis côté Cœur. Récupère creneau_id via sondage_consulter."""
+    return await _polls.finalize_poll(
+        poll_id, _FinalizeIn(slot_id=corps.creneau_id, calendar_id=corps.calendrier_id),
+        db=db, user=user)
