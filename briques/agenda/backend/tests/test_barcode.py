@@ -72,6 +72,15 @@ def test_js_code128_rend_des_barres():
     assert r["ok"] is True and r["rects"] > 5
 
 
+def test_js_code128_largeur_modules_stop_complet():
+    """Code128 « A » = Start B + 1 donnée + checksum + stop = 4×11 + 2 (barre finale du
+    stop) = 46 modules. Verrouille le motif de stop complet « 2331112 » (régression :
+    un stop tronqué « 233111 » donnerait 44 → symbole inscannable)."""
+    r = _node_dessine("A", "code128")
+    total = int(r["viewBox"].split(" ")[2])  # "0 0 TOTAL 100", unité=2, marges 20
+    assert (total - 20) // 2 == 46
+
+
 def test_js_ean13_refuse_longueur_invalide():
     r = _node_dessine("12345", "ean13")   # ni 12 ni 13 chiffres
     assert r["ok"] is False
