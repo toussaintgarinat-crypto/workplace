@@ -13,12 +13,12 @@ from auth import get_current_user
 from db import get_db
 from models.orm import Event
 from models.schemas import EventOut, EventUpdate
-from services.horaires import vers_utc_naif
 from services.journal import consigner
 from services.occurrences import (
     creer_ou_maj_override,
     exclure_occurrence,
     occurrence_en_dict,
+    occurrence_naive,
     occurrence_valide,
     occurrences_calendrier,
 )
@@ -83,18 +83,6 @@ async def get_event(
     return evt
 
 
-def _occurrence_naive(occurrence: Optional[datetime]) -> Optional[datetime]:
-    """`occurrence` (query ?scope=this) IDENTIFIE une occurrence déjà stockée — ce
-    n'est pas une saisie humaine. Un client réel le renvoie AWARE (l'ISO Europe/Paris
-    exposé par `occurrence_en_dict`/`vers_paris`) : on le reconvertit alors en naïf UTC
-    via `vers_utc_naif`. Un naïf reçu tel quel (appel direct hors HTTP, ex. tests) est
-    déjà dans la convention de stockage et n'est PAS réinterprété comme heure murale
-    Paris — sinon un décalage DST (été/hiver) le ferait manquer sa propre occurrence."""
-    if occurrence is None:
-        return None
-    return vers_utc_naif(occurrence) if occurrence.tzinfo is not None else occurrence
-
-
 @router.patch("/events/{event_id}", response_model=None)
 async def update_event(
     event_id: str,
@@ -116,7 +104,7 @@ async def update_event(
     if scope == "this" and evt.recurrence_rule:
         # Portée « cette occurrence » : crée/maj un event-override, le maître (la
         # série) reste intact. L'occurrence doit être produite par la règle.
-        occ = _occurrence_naive(occurrence)
+        occ = occurrence_naive(occurrence)
         if not occ or not occurrence_valide(evt, occ):
             raise HTTPException(status_code=422, detail="occurrence invalide")
         ov = await creer_ou_maj_override(db, evt, occ, data)
@@ -156,7 +144,7 @@ async def delete_event(
     cal_id = evt.calendar_id
     if scope == "this" and evt.recurrence_rule:
         # Portée « cette occurrence » : EXDATE sur le maître, la série survit.
-        occ = _occurrence_naive(occurrence)
+        occ = occurrence_naive(occurrence)
         if not occ or not occurrence_valide(evt, occ):
             raise HTTPException(status_code=422, detail="occurrence invalide")
         await exclure_occurrence(db, evt, occ)

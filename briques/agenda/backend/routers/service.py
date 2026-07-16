@@ -22,12 +22,12 @@ from config import settings
 from db import get_db
 from models.orm import Calendar, CalendarInvitation, Event
 from models.schemas import EventOut, normaliser_rappels
-from routers.events import _occurrence_naive
 from services import agregation
 from services.occurrences import (
     creer_ou_maj_override,
     exclure_occurrence,
     occurrence_en_dict,
+    occurrence_naive,
     occurrence_valide,
 )
 from services.pubsub import publish_change
@@ -180,7 +180,7 @@ async def service_modifier_evenement(
     if scope == "this" and evt.recurrence_rule:
         # Portée « cette occurrence » : crée/maj un event-override, le maître (la
         # série) reste intact. L'occurrence doit être produite par la règle.
-        occ = _occurrence_naive(occurrence)
+        occ = occurrence_naive(occurrence)
         if not occ or not occurrence_valide(evt, occ):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail="occurrence invalide")
@@ -230,7 +230,7 @@ async def service_supprimer_evenement(
     cal_id = evt.calendar_id
     if scope == "this" and evt.recurrence_rule:
         # Portée « cette occurrence » : EXDATE sur le maître, la série survit.
-        occ = _occurrence_naive(occurrence)
+        occ = occurrence_naive(occurrence)
         if not occ or not occurrence_valide(evt, occ):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail="occurrence invalide")
