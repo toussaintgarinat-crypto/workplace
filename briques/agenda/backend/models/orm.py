@@ -101,6 +101,10 @@ class CalendarInvitation(Base):
 
 class Event(Base):
     __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("recurrence_parent_id", "recurrence_date",
+                         name="uq_event_override"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     calendar_id: Mapped[str] = mapped_column(String(36), ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False)
@@ -116,6 +120,13 @@ class Event(Base):
     label_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("labels.id", ondelete="SET NULL"), nullable=True, index=True)
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     recurrence_rule: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Récurrence (S175). exdates = occurrences exclues de la série (naïf UTC, JSON).
+    # recurrence_parent_id non-NULL ⇒ cet event est un OVERRIDE d'une occurrence du
+    # maître ; recurrence_date = la date d'occurrence d'origine qu'il remplace.
+    exdates: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    recurrence_parent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=True, index=True)
+    recurrence_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Rappels configurables : liste de « minutes avant le début » (ex. [10, 1440] =
     # 10 min + 1 jour avant). Modèle commun à Google Agenda / Apple Calendar / VALARM.
     # Le Cœur (proactif.py) déclenche le 🔔 + le push Telegram ; ici on ne stocke que
