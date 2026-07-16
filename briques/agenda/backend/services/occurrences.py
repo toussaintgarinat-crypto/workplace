@@ -90,7 +90,15 @@ def occurrence_valide(maitre, occurrence: datetime) -> bool:
 
 async def exclure_occurrence(db: AsyncSession, maitre: Event, occurrence: datetime) -> None:
     """Ajoute `occurrence` aux exdates du maître (réassignation : SQLAlchemy ne traque
-    pas la mutation en place d'une colonne JSON)."""
+    pas la mutation en place d'une colonne JSON). Supprime aussi un éventuel override
+    de cette occurrence : sans ça il resterait une ligne morte (invisible car l'exdate
+    prime dans l'expansion) qui ressurgirait si l'exdate était un jour retirée."""
+    ov = (await db.execute(
+        select(Event).where(and_(Event.recurrence_parent_id == maitre.id,
+                                 Event.recurrence_date == occurrence))
+    )).scalar_one_or_none()
+    if ov is not None:
+        await db.delete(ov)
     maitre.exdates = list(maitre.exdates or []) + [occurrence.isoformat()]
     await db.commit()
 

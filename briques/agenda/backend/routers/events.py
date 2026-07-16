@@ -99,7 +99,7 @@ def _occurrence_naive(occurrence: Optional[datetime]) -> Optional[datetime]:
 async def update_event(
     event_id: str,
     body: EventUpdate,
-    scope: str = Query("all"),
+    scope: str = "all",
     occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -108,6 +108,8 @@ async def update_event(
     if not evt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
+    if scope not in ("all", "this"):
+        raise HTTPException(status_code=422, detail="scope doit être 'all' ou 'this'")
     data = body.model_dump(exclude_unset=True)
     if data.get("label_id") == "":  # chaîne vide = « aucune étiquette » explicite
         data["label_id"] = None
@@ -140,7 +142,7 @@ async def update_event(
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
     event_id: str,
-    scope: str = Query("all"),
+    scope: str = "all",
     occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -149,6 +151,8 @@ async def delete_event(
     if not evt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
+    if scope not in ("all", "this"):
+        raise HTTPException(status_code=422, detail="scope doit être 'all' ou 'this'")
     cal_id = evt.calendar_id
     if scope == "this" and evt.recurrence_rule:
         # Portée « cette occurrence » : EXDATE sur le maître, la série survit.
