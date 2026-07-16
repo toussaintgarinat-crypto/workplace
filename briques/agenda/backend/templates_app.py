@@ -254,7 +254,7 @@ async function chargerVue() {
       `<div style="font-size:11px;color:${memeJour(d, today) ? "#5865F2" : "#94a3b8"}">${d.getDate()}</div>`;
     for (const e of jevts.slice(0, 3)) {
       const c = e.color || "#5865F2";
-      h += `<div data-evt="${e.id}" style="background:${c};color:#fff;font-size:11px;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.all_day ? "" : esc(fmtHeure(e.start_at))+" "}${esc(e.title)}</div>`;
+      h += `<div data-evt="${e.id}" style="background:${c};color:#fff;font-size:11px;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.all_day ? "" : esc(fmtHeure(e.start_at))+" "}${e.recurrent ? "↻ " : ""}${esc(e.title)}</div>`;
     }
     if (jevts.length > 3) h += `<div style="font-size:10px;color:#64748b">+${jevts.length-3}</div>`;
     h += "</div>";
@@ -281,6 +281,11 @@ function ouvrirModaleEvent(id, dateYMD) {
   modalLabelId = (ev && ev.label_id) || "";
   const palette = COULEURS.map((c) => `<span data-c="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===modalCouleur?"#fff":"transparent"}"></span>`).join(" ");
   const labelOptions = '<option value="">Aucune</option>' + LABELS_CACHE.map((l) => `<option value="${esc(l.id)}" ${l.id===modalLabelId?"selected":""}>${esc(l.name)}</option>`).join("");
+  // Récurrence : compose une RRULE simple (FREQ), préremplie depuis ev.recurrence_rule.
+  const FREQS = [["", "Ne se répète pas"], ["FREQ=DAILY", "Chaque jour"], ["FREQ=WEEKLY", "Chaque semaine"], ["FREQ=MONTHLY", "Chaque mois"], ["FREQ=YEARLY", "Chaque année"]];
+  const recurrenceMatch = ev && ev.recurrence_rule ? ev.recurrence_rule.match(/FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/) : null;
+  const recurrenceValeur = recurrenceMatch ? recurrenceMatch[0] : "";
+  const recurrenceOptions = FREQS.map(([v, lbl]) => `<option value="${v}" ${v===recurrenceValeur?"selected":""}>${lbl}</option>`).join("");
   const html =
     '<div id="modale" style="position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:10">' +
     '<div class="card" style="width:100%;max-width:420px">' +
@@ -290,6 +295,7 @@ function ouvrirModaleEvent(id, dateYMD) {
     `<div style="margin-bottom:10px"><input id="ev-lieu" placeholder="Lieu (optionnel)" style="width:100%" value="${ev && ev.location ? esc(ev.location) : ""}"></div>` +
     `<div style="margin-bottom:10px"><label class="muted">Étiquette</label><select id="ev-label" style="width:100%">${labelOptions}</select></div>` +
     `<div style="margin-bottom:10px"><label><input type="checkbox" id="ev-allday" ${ev && ev.all_day ? "checked" : ""}> Journée entière</label></div>` +
+    `<div style="margin-bottom:10px"><label class="muted">Répétition</label><select id="ev-recurrence" style="width:100%">${recurrenceOptions}</select></div>` +
     `<div style="margin-bottom:14px">${palette}</div>` +
     '<div style="display:flex;gap:8px;justify-content:flex-end">' +
     (ev ? '<button id="btn-suppr" style="background:#ef4444">Supprimer</button>' : "") +
@@ -421,6 +427,38 @@ async function chargerDetailsEvent(eventId) {
     '<strong>Activité</strong>' + (lignesA || '<p class="muted">—</p>');
 }
 
+// Dialogue de portée : pour une occurrence d'une série récurrente, demande si le
+// changement (enregistrement ou suppression) s'applique à « Cet événement » (l'occurrence
+// seule, via override) ou « Toute la série » (le maître). Renvoie "this"|"all"|null (annulé).
+function demanderPortee() {
+  return new Promise((resolve) => {
+    const html =
+      '<div id="modale-portee" style="position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:20">' +
+      '<div class="card" style="width:100%;max-width:360px">' +
+      '<h3 style="margin-top:0">Événement récurrent</h3>' +
+      '<p class="muted">Appliquer le changement à…</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
+      '<button class="ghost" id="btn-portee-annuler">Annuler</button>' +
+      '<button class="ghost" id="btn-portee-this">Cet événement</button>' +
+      '<button id="btn-portee-all">Toute la série</button>' +
+      "</div></div></div>";
+    document.body.insertAdjacentHTML("beforeend", html);
+    const m = document.getElementById("modale-portee");
+    const fermer = (v) => { m.remove(); resolve(v); };
+    document.getElementById("btn-portee-annuler").onclick = () => fermer(null);
+    document.getElementById("btn-portee-this").onclick = () => fermer("this");
+    document.getElementById("btn-portee-all").onclick = () => fermer("all");
+  });
+}
+
+// Compose la query string de portée pour un event récurrent, ou "" pour un event simple.
+async function requeterPortee(ev) {
+  if (!ev || !ev.recurrent) return "";
+  const portee = await demanderPortee();
+  if (!portee) return null;
+  return portee === "this" ? `?scope=this&occurrence=${encodeURIComponent(ev.occurrence_start)}` : "?scope=all";
+}
+
 async function enregistrerEvent(id) {
   const corps = {
     title: document.getElementById("ev-titre").value.trim(),
@@ -430,11 +468,15 @@ async function enregistrerEvent(id) {
     color: modalCouleur,
     label_id: document.getElementById("ev-label").value || "",
     all_day: document.getElementById("ev-allday").checked,
+    recurrence_rule: document.getElementById("ev-recurrence").value || null,
   };
   if (!corps.title) { alert("Donne un titre."); return; }
+  const ev = id ? EVENTS_CACHE.find((e) => e.id === id) : null;
+  const qs = await requeterPortee(ev);
+  if (qs === null) return;
   try {
     if (id) {
-      await api(`/events/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      await api(`/events/${encodeURIComponent(id)}${qs}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
     } else {
       await api(`/calendars/${encodeURIComponent(CAL_ACTIF)}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
     }
@@ -444,9 +486,12 @@ async function enregistrerEvent(id) {
 }
 
 async function supprimerEvent(id) {
-  if (!confirm("Supprimer cet événement ?")) return;
+  const ev = EVENTS_CACHE.find((e) => e.id === id);
+  const qs = await requeterPortee(ev);
+  if (qs === null) return;
+  if (!qs && !confirm("Supprimer cet événement ?")) return;
   try {
-    await api(`/events/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await api(`/events/${encodeURIComponent(id)}${qs}`, { method: "DELETE" });
     fermerModaleEvent();
     await chargerVue();
   } catch (e) { alert("Échec : " + e.message); }
