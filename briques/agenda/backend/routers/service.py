@@ -22,8 +22,16 @@ from config import settings
 from db import get_db
 from models.orm import Calendar, CalendarInvitation, Event
 from models.schemas import EventOut, normaliser_rappels
+from routers.events import _occurrence_naive
 from services import agregation
+from services.occurrences import (
+    creer_ou_maj_override,
+    exclure_occurrence,
+    occurrence_en_dict,
+    occurrence_valide,
+)
 from services.pubsub import publish_change
+from services.recurrence import Occurrence, valider_rrule
 from utils.access import require_calendar_access
 
 router = APIRouter(prefix="/service", tags=["service"])
@@ -42,11 +50,17 @@ class EvenementServiceIn(BaseModel):
     journee_entiere: bool = False
     rappels: Optional[list[int]] = None
     calendrier_id: Optional[str] = None
+    recurrence: Optional[str] = None
 
     @field_validator("rappels")
     @classmethod
     def _rappels(cls, v):
         return normaliser_rappels(v)
+
+    @field_validator("recurrence")
+    @classmethod
+    def _rrule(cls, v):
+        return valider_rrule(v) if v else v
 
 
 @router.get("/events")
@@ -83,6 +97,7 @@ async def service_creer_evenement(
         location=corps.lieu, description=corps.description, color=corps.couleur,
         label_id=corps.etiquette_id or None, all_day=corps.journee_entiere,
         rappels=corps.rappels or [], created_by=user["sub"],
+        recurrence_rule=corps.recurrence,
     )
     db.add(evt)
     await db.flush()  # matérialise evt.id (default=_uuid appliqué au flush)
@@ -107,17 +122,23 @@ class EvenementPatchIn(BaseModel):
     couleur: Optional[str] = None
     etiquette_id: Optional[str] = None
     rappels: Optional[list[int]] = None
+    recurrence: Optional[str] = None
 
     @field_validator("rappels")
     @classmethod
     def _rappels(cls, v):
         return normaliser_rappels(v)
 
+    @field_validator("recurrence")
+    @classmethod
+    def _rrule(cls, v):
+        return valider_rrule(v) if v else v
+
 
 # Champ français → colonne ORM (seuls les champs fournis sont appliqués).
 _PATCH_MAP = {"titre": "title", "debut": "start_at", "fin": "end_at", "lieu": "location",
               "description": "description", "couleur": "color", "etiquette_id": "label_id",
-              "rappels": "rappels"}
+              "rappels": "rappels", "recurrence": "recurrence_rule"}
 
 
 async def _charger_event_editable(db: AsyncSession, event_id: str, user_id: str) -> Event:
@@ -132,12 +153,19 @@ async def _charger_event_editable(db: AsyncSession, event_id: str, user_id: str)
 async def service_modifier_evenement(
     event_id: str,
     corps: EvenementPatchIn,
+    scope: str = "all",
+    occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
     """Replanifie (debut/fin) ou re-règle les rappels d'un événement existant. Effet
-    immédiat (choix produit). `etiquette_id`/`couleur` vides explicites = « aucune »."""
+    immédiat (choix produit). `etiquette_id`/`couleur` vides explicites = « aucune ».
+    `scope="this"` sur une série récurrente isole une occurrence (event-override), le
+    maître reste intact ; `scope="all"` (défaut) modifie la série/l'événement entier."""
     evt = await _charger_event_editable(db, event_id, user["sub"])
+    if scope not in ("all", "this"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="scope doit être 'all' ou 'this'")
     # exclude_unset : uniquement les champs RÉELLEMENT fournis (rappels:[] = effacement
     # explicite, distinct de « non fourni » qui laisse les rappels inchangés).
     fournis = corps.model_dump(exclude_unset=True)
@@ -149,6 +177,26 @@ async def service_modifier_evenement(
     if debut and fin and debut >= fin:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail="fin doit être après debut")
+    if scope == "this" and evt.recurrence_rule:
+        # Portée « cette occurrence » : crée/maj un event-override, le maître (la
+        # série) reste intact. L'occurrence doit être produite par la règle.
+        occ = _occurrence_naive(occurrence)
+        if not occ or not occurrence_valide(evt, occ):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="occurrence invalide")
+        champs = {}
+        for champ_fr, valeur in fournis.items():
+            col = _PATCH_MAP[champ_fr]
+            if champ_fr == "etiquette_id":
+                champs[col] = valeur or None            # "" ⇒ « aucune étiquette »
+            elif champ_fr == "rappels":
+                champs[col] = valeur if isinstance(valeur, list) else []
+            else:
+                champs[col] = valeur
+        ov = await creer_ou_maj_override(db, evt, occ, champs)
+        out = occurrence_en_dict(Occurrence(ov, ov.start_at, ov.end_at, occ, True))
+        await publish_change(evt.calendar_id, "event.updated", out)
+        return out
     for champ_fr, valeur in fournis.items():
         col = _PATCH_MAP[champ_fr]
         if champ_fr == "etiquette_id":
@@ -167,12 +215,28 @@ async def service_modifier_evenement(
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def service_supprimer_evenement(
     event_id: str,
+    scope: str = "all",
+    occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Annule (supprime) un événement. Destructif → gate de confirmation côté Cœur."""
+    """Annule (supprime) un événement. Destructif → gate de confirmation côté Cœur.
+    `scope="this"` sur une série récurrente exclut seulement cette occurrence (EXDATE),
+    la série survit ; `scope="all"` (défaut) supprime l'événement entier."""
     evt = await _charger_event_editable(db, event_id, user["sub"])
+    if scope not in ("all", "this"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="scope doit être 'all' ou 'this'")
     cal_id = evt.calendar_id
+    if scope == "this" and evt.recurrence_rule:
+        # Portée « cette occurrence » : EXDATE sur le maître, la série survit.
+        occ = _occurrence_naive(occurrence)
+        if not occ or not occurrence_valide(evt, occ):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="occurrence invalide")
+        await exclure_occurrence(db, evt, occ)
+        await publish_change(cal_id, "event.updated", {"id": event_id})
+        return
     await db.delete(evt)
     await db.commit()
     await publish_change(cal_id, "event.deleted", {"id": event_id})
