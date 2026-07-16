@@ -19,12 +19,21 @@ qu'aucun fournisseur n'est branché).
 """
 import hashlib
 import hmac
+import json
 import os
 from dataclasses import dataclass
 from typing import Optional
 
 import httpx
 
+try:
+    from pywebpush import webpush, WebPushException
+except Exception:  # noqa: BLE001 — dépendance optionnelle, repli honnête
+    webpush = None
+    class WebPushException(Exception):  # type: ignore
+        pass
+
+import appareils
 import stockage
 
 
@@ -294,15 +303,50 @@ class EmailSms(Adaptateur):
         return False
 
 
+# ── Web Push (S178) ─────────────────────────────────────────────────────────────
+class WebPush(Adaptateur):
+    """Notifications push web (navigateur / PWA). `id_externe` = endpoint de l'appareil ;
+    les clés sont résolues dans le magasin `appareils`. VAPID = identité du serveur push."""
+    nom = "webpush"
+
+    def _cle_privee(self):
+        return os.getenv("VAPID_PRIVATE_KEY") or None
+
+    def configure(self) -> bool:
+        return bool(webpush and self._cle_privee() and os.getenv("VAPID_SUBJECT"))
+
+    async def envoyer(self, id_externe: str, texte: str) -> bool:
+        app = appareils.par_endpoint(id_externe)
+        if not app or webpush is None:
+            return False
+        titre, _, corps = texte.partition("\n")
+        payload = json.dumps({"titre": titre.strip(), "corps": corps.strip(),
+                              "url": "/app", "tag": "workplace"})
+        info = {"endpoint": app["endpoint"], "keys": app.get("keys") or {}}
+        try:
+            webpush(subscription_info=info, data=payload,
+                    vapid_private_key=self._cle_privee(),
+                    vapid_claims={"sub": os.getenv("VAPID_SUBJECT")})
+            return True
+        except WebPushException as ex:  # noqa: BLE001
+            code = getattr(getattr(ex, "response", None), "status_code", None)
+            if code in (404, 410):
+                appareils.retirer(id_externe)   # appareil mort → purge
+            return False
+        except Exception:  # noqa: BLE001 — best-effort
+            return False
+
+
 # ── Registre ───────────────────────────────────────────────────────────────────
 REGISTRE: dict[str, Adaptateur] = {
     "telegram": Telegram(),
     "whatsapp": WhatsApp(),
     "discord": Discord(),
     "email_sms": EmailSms(),
+    "webpush": WebPush(),
 }
 
-_ORDRE_DEFAUT = ["telegram", "whatsapp", "discord", "email_sms"]
+_ORDRE_DEFAUT = ["telegram", "whatsapp", "discord", "email_sms", "webpush"]
 
 
 def ordre() -> list:

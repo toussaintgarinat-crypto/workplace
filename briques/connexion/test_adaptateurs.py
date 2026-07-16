@@ -6,7 +6,7 @@ import adaptateurs as A
 
 # ── Registre / ordre / disponibilité ───────────────────────────────────────────
 def test_registre_quatre_reseaux():
-    assert set(A.REGISTRE) == {"telegram", "whatsapp", "discord", "email_sms"}
+    assert set(A.REGISTRE) == {"telegram", "whatsapp", "discord", "email_sms", "webpush"}
 
 
 def test_disponibles_vide_par_defaut():
@@ -15,7 +15,7 @@ def test_disponibles_vide_par_defaut():
 
 
 def test_ordre_defaut():
-    assert A.ordre() == ["telegram", "whatsapp", "discord", "email_sms"]
+    assert A.ordre() == ["telegram", "whatsapp", "discord", "email_sms", "webpush"]
 
 
 def test_ordre_env(monkeypatch):

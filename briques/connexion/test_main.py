@@ -11,7 +11,7 @@ def test_sante():
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
-    assert set(data["reseaux"]) == {"telegram", "whatsapp", "discord", "email_sms"}
+    assert set(data["reseaux"]) == {"telegram", "whatsapp", "discord", "email_sms", "webpush"}
     assert data["configures"] == []                    # aucun token en test
     assert data["mode_ouvert"] is False
 
