@@ -73,7 +73,7 @@ S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cuttin
   clé de dédup par occurrence), API portée `?scope=all|this&occurrence=` sur `/events` et
   `/service`, front (sélecteur récurrence + badge ↻ + dialogue de portée). Design
   `docs/superpowers/specs/2026-07-16-s175-recurrence-rrule-design.md`, plan
-  `docs/superpowers/plans/2026-07-16-s175-recurrence-rrule.md`. Suites : agenda 189,
+  `docs/superpowers/plans/2026-07-16-s175-recurrence-rrule.md`. Suites : agenda 194,
   cœur 439.
 - **Fast-follow** : `scope=this_and_following` (scission de série) ; RRULE exotiques
   (`BYSETPOS`, `BYMONTHDAY` multiples) ; smoke `alembic upgrade/downgrade` de 0007 sur
