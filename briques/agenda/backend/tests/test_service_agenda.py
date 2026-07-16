@@ -89,6 +89,21 @@ async def test_filtre_hors_fenetre_exclu(db):
     assert {e["title"] for e in evts} == {"Dans la fenêtre"}
 
 
+@pytest.mark.asyncio
+async def test_agrege_deplie_recurrence(db):
+    perso = await _cal(db, name="Perso", is_default=True)
+    m = Event(calendar_id=perso.id, title="Hebdo", created_by="perso", rappels=[10],
+              start_at=datetime(2026, 7, 14, 12, 0), end_at=datetime(2026, 7, 14, 13, 0),
+              recurrence_rule="FREQ=DAILY", exdates=[])
+    db.add(m); await db.commit()
+    evts = await S.service_lister_evenements(debut=DEBUT, fin=FIN, db=db, user=USER)
+    hebdo = [e for e in evts if e["title"] == "Hebdo"]
+    assert len(hebdo) == 7                                  # 14→20 juillet inclus
+    assert {e["occurrence_start"][:10] for e in hebdo} == {
+        f"2026-07-{d:02d}" for d in range(14, 21)}
+    assert all(e["recurrent"] and e["participants"] is not None for e in hebdo)
+
+
 # ── Création (calendrier par défaut) ─────────────────────────────────────────
 
 @pytest.mark.asyncio

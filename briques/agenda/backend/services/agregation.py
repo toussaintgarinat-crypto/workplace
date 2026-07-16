@@ -10,12 +10,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.orm import Calendar, CalendarMember, Event, EventParticipant, Label
-from models.schemas import EventOut
-from services.horaires import vers_utc_naif
+from models.orm import Calendar, CalendarMember, EventParticipant, Label
+from services.occurrences import occurrence_en_dict, occurrences_calendrier
 from services.rappels import rappels_effectifs
 
 
@@ -35,12 +34,15 @@ async def calendriers_accessibles(db: AsyncSession, user_id: str) -> list[Calend
 
 async def evenements_agreges(db: AsyncSession, user_id: str,
                              debut: datetime | None, fin: datetime | None) -> list[dict]:
-    """Événements de TOUS les calendriers accessibles sur [debut, fin], enrichis de
-    `calendrier` (nom), `etiquette` (nom) et `couleur` (étiquette > event > calendrier).
+    """Occurrences (maîtres + récurrences dépliées + overrides) de TOUS les calendriers
+    accessibles sur [debut, fin], enrichies de `calendrier` (nom), `etiquette` (nom) et
+    `couleur` (étiquette > event > calendrier).
 
-    Miroir fidèle de l'ancien `core/agenda.lister_evenements` : sans l'agrégation, les
-    événements rapatriés (Google, TimeTree — qui vivent dans un calendrier dédié) seraient
-    invisibles au dashboard ET au briefing proactif."""
+    Miroir fidèle de l'ancien `core/agenda.lister_evenements`, augmenté S175 de l'expansion
+    de récurrence (`services.occurrences`) : sans l'agrégation, les événements rapatriés
+    (Google, TimeTree — qui vivent dans un calendrier dédié) seraient invisibles au
+    dashboard ET au briefing proactif ; sans l'expansion, une série récurrente n'apparaîtrait
+    qu'une fois (son maître)."""
     cals = await calendriers_accessibles(db, user_id)
     evts: list[dict] = []
     for c in cals:
@@ -48,28 +50,27 @@ async def evenements_agreges(db: AsyncSession, user_id: str,
         labels = {l.id: l for l in (await db.execute(
             select(Label).where(Label.calendar_id == c.id)
         )).scalars().all()}
-        # Bornes en UTC naïf pour comparer au stockage (lui aussi naïf UTC).
-        filtres = [Event.calendar_id == c.id]
-        if debut:
-            filtres.append(Event.end_at >= vers_utc_naif(debut))
-        if fin:
-            filtres.append(Event.start_at <= vers_utc_naif(fin))
-        rows = (await db.execute(
-            select(Event).where(and_(*filtres)).order_by(Event.start_at)
-        )).scalars().all()
-        for e in rows:
-            d = EventOut.model_validate(e).model_dump(mode="json")
+        occ = await occurrences_calendrier(db, c.id, debut, fin)
+        # Participants chargés EN LOT pour tous les events sources (maîtres + overrides) de
+        # ce calendrier — évite le N+1 qu'aggraverait l'expansion (une requête par occurrence).
+        src_ids = {o.source.id for o in occ}
+        parts_par_event: dict[str, list] = {}
+        if src_ids:
+            for p in (await db.execute(
+                select(EventParticipant).where(EventParticipant.event_id.in_(src_ids))
+            )).scalars().all():
+                parts_par_event.setdefault(p.event_id, []).append(p)
+        for o in occ:
+            e = o.source
+            d = occurrence_en_dict(o)
             lab = labels.get(e.label_id)
             d["calendrier"] = c.name
             d["etiquette"] = lab.name if lab else None
             d["couleur"] = (lab.color if lab else None) or e.color or c.color
-            parts = (await db.execute(
-                select(EventParticipant).where(EventParticipant.event_id == e.id)
-            )).scalars().all()
             d["participants"] = [
                 {"user_id": p.user_id, "status": p.status,
                  "rappels_effectifs": rappels_effectifs(p.rappels, e.rappels)}
-                for p in parts
+                for p in parts_par_event.get(e.id, [])
             ]
             evts.append(d)
     return evts
