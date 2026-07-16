@@ -139,3 +139,58 @@ le propriétaire local :
   d'eux. Repli honnête : si la personne n'a **aucun** canal lié/configuré, la réponse est
   `envoyes: 0` (pas une erreur) — le rappel n'est simplement poussé nulle part, sans
   jamais planter le proactif.
+
+## S175 — Récurrence (RRULE)
+
+Un événement porte une règle de récurrence iCalendar dans `Event.recurrence_rule`
+(ex. `FREQ=WEEKLY;BYDAY=MO`, `FREQ=DAILY;INTERVAL=2`). La règle est **expansée à la
+lecture** (occurrences virtuelles, jamais matérialisées en base) — modèle standard
+Google/CalDAV : la série se modifie d'un coup, aucune duplication, pas de dérive.
+
+**Expansion (`services/recurrence.py`, pur + `services/occurrences.py`, orchestration).**
+`valider_rrule` normalise/valide la règle à la création/modification (rejette une FREQ
+absente ou trop fine — `SECONDLY`/`MINUTELY`/`HOURLY`). `expanser(maitre, debut, fin,
+exdates, overrides)` déplie le maître sur la fenêtre demandée (`dateutil.rrule`), borné
+par `MAX_OCCURRENCES=366` pour une série sans fin. Chaque occurrence porte son propre
+`start_at` **et** un `occurrence_start` (le RECURRENCE-ID) qui l'identifie. Les trois
+chemins de lecture passent par là : `GET /calendars/{id}/events`, l'agrégation
+`/service/events` (dashboard + briefing) et — indirectement — le proactif du Cœur.
+
+**Exceptions.** Deux mécanismes, portés par le maître :
+
+- **EXDATE** (`Event.exdates`, liste JSON d'ISO) : occurrences sautées.
+- **Override** (`Event.recurrence_parent_id` + `recurrence_date`) : un event-exception qui
+  remplace UNE occurrence (déplacée/renommée). Contrainte unique
+  `(recurrence_parent_id, recurrence_date)` = au plus un override par occurrence ; il
+  n'est jamais listé directement, seulement réinjecté par l'expansion. Un EXDATE sur une
+  occurrence déjà « override » supprime aussi l'override (pas de ligne morte).
+
+**Portée d'édition.** `PATCH`/`DELETE` sur `/events/{id}` et `/service/events/{id}`
+acceptent `?scope=all|this` (+ `?occurrence=<ISO>` pour `this`) :
+
+| scope | PATCH | DELETE |
+|-------|-------|--------|
+| `all` (défaut) | modifie le maître → toute la série | supprime maître + overrides (CASCADE) |
+| `this` | crée/maj un override de l'occurrence | ajoute la date aux `exdates` |
+
+`scope` hors `{all, this}` → **422** (une faute de frappe ne retombe jamais sur « toute la
+série »). L'`occurrence` est un identifiant *aware* (renvoyé par l'API en Europe/Paris) :
+recoercé en naïf UTC seulement s'il est aware (`services/occurrences.occurrence_naive`),
+pour ne pas décaler l'identité d'une occurrence au changement d'heure été/hiver.
+
+**Sous-ressources par série.** Participants, rappels perso (S174), RSVP, chat, journal
+d'activité restent portés par le maître et valent pour toutes ses occurrences (un fil par
+série, comme TimeTree). Un override hérite des sous-ressources de son parent.
+
+**Proactif.** La clé de dédoublonnage inclut désormais l'occurrence
+(`agenda:{id}:{occurrence_start}:{personne}:{minutes}`) — sinon deux occurrences d'une
+même série se dédoubleraient entre elles et une seule notifierait.
+
+**Front (`/app`).** Sélecteur de répétition (`#ev-recurrence` :
+jamais/jour/semaine/mois/année), badge ↻ sur les occurrences récurrentes, et un dialogue
+de portée « Cet événement / Toute la série » à l'enregistrement/suppression. L'identité de
+l'occurrence cliquée est tracée via `data-occ` (les occurrences virtuelles partagent l'id
+du maître) pour cibler la bonne occurrence.
+
+**Hors périmètre (fast-follow)** : `scope=this_and_following` (scission de série) ;
+RRULE exotiques (`BYSETPOS`, `BYMONTHDAY` multiples, `BYWEEKNO`) ; fuseau par événement.
