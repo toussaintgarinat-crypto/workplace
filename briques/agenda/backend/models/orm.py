@@ -247,3 +247,103 @@ class EventActivityLog(Base):
     action: Mapped[str] = mapped_column(String(30), nullable=False)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ── S176 : listes de courses/tâches partagées ─────────────────────────────────
+
+class ShoppingList(Base):
+    __tablename__ = "shopping_lists"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(
+        Enum("courses", "taches", name="list_kind"), nullable=False, default="courses")
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    members: Mapped[list["ShoppingListMember"]] = relationship(back_populates="liste", cascade="all, delete-orphan")
+    invitations: Mapped[list["ShoppingListInvitation"]] = relationship(back_populates="liste", cascade="all, delete-orphan")
+    items: Mapped[list["ShoppingItem"]] = relationship(back_populates="liste", cascade="all, delete-orphan")
+
+
+class ShoppingListMember(Base):
+    __tablename__ = "shopping_list_members"
+    __table_args__ = (UniqueConstraint("list_id", "user_id", name="uq_list_member"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    list_id: Mapped[str] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(
+        Enum("owner", "editor", "viewer", name="list_member_role"), nullable=False, default="viewer")
+    joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    liste: Mapped["ShoppingList"] = relationship(back_populates="members")
+
+
+class ShoppingListInvitation(Base):
+    __tablename__ = "shopping_list_invitations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    list_id: Mapped[str] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=False)
+    token: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=_uuid)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    liste: Mapped["ShoppingList"] = relationship(back_populates="invitations")
+
+
+class ShoppingItem(Base):
+    __tablename__ = "shopping_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    list_id: Mapped[str] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    emoji: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    rayon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    checked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    added_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    liste: Mapped["ShoppingList"] = relationship(back_populates="items")
+
+
+class CatalogItem(Base):
+    """Catalogue tap-to-add. list_id NULL = entrée intégrée (catalogue FR par défaut,
+    partagé) ; non-NULL = entrée perso mémorisée pour une liste précise."""
+
+    __tablename__ = "catalog_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    list_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False, default="🛒")
+    rayon: Mapped[str] = mapped_column(String(50), nullable=False, default="Autre")
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class LoyaltyCard(Base):
+    """Carte de fidélité personnelle (scope user_id). Pas de collaboration."""
+
+    __tablename__ = "loyalty_cards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    enseigne: Mapped[str] = mapped_column(String(255), nullable=False)
+    numero: Mapped[str] = mapped_column(String(255), nullable=False)
+    format: Mapped[str] = mapped_column(
+        Enum("code128", "ean13", "qr", name="barcode_format"), nullable=False, default="code128")
+    couleur: Mapped[str] = mapped_column(String(20), nullable=False, default="#3B82F6")
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

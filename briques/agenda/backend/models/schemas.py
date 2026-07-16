@@ -45,6 +45,121 @@ class CalendarWithRoleOut(CalendarOut):
     role: str  # "owner" | "editor" | "viewer"
 
 
+# ── S176 : listes de courses/tâches ───────────────────────────────────────────
+
+class ShoppingListCreate(BaseModel):
+    name: str
+    kind: str = "courses"  # "courses" | "taches"
+
+
+class ShoppingListUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class ShoppingListOut(BaseModel):
+    id: str
+    kind: str
+    name: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ShoppingListWithMetaOut(ShoppingListOut):
+    role: str
+    nb_a_prendre: int = 0  # items non cochés
+
+
+class ShoppingItemCreate(BaseModel):
+    name: Optional[str] = None
+    catalog_item_id: Optional[str] = None
+    emoji: Optional[str] = None
+    rayon: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ShoppingItemUpdate(BaseModel):
+    name: Optional[str] = None
+    emoji: Optional[str] = None
+    rayon: Optional[str] = None
+    note: Optional[str] = None
+    checked: Optional[bool] = None
+
+
+class ShoppingItemOut(BaseModel):
+    id: str
+    list_id: str
+    name: str
+    emoji: Optional[str]
+    rayon: Optional[str]
+    note: Optional[str]
+    checked: bool
+    checked_by: Optional[str]
+    checked_at: Optional[datetime]
+    added_by: str
+    position: int
+
+    class Config:
+        from_attributes = True
+
+
+class ListInvitationCreate(BaseModel):
+    role: str = "viewer"
+    email: Optional[str] = None
+    expire_heures: int = 72
+
+
+class ListMemberOut(BaseModel):
+    user_id: str
+    role: str
+    display_name: Optional[str] = None
+    avatar_color: Optional[str] = None
+
+
+class CatalogItemOut(BaseModel):
+    id: str
+    name: str
+    emoji: str
+    rayon: str
+
+    class Config:
+        from_attributes = True
+
+
+# ── S176 : cartes de fidélité ─────────────────────────────────────────────────
+
+class LoyaltyCardCreate(BaseModel):
+    enseigne: str
+    numero: str
+    format: str = "code128"  # "code128" | "ean13" | "qr"
+    couleur: str = "#3B82F6"
+    note: Optional[str] = None
+
+
+class LoyaltyCardUpdate(BaseModel):
+    enseigne: Optional[str] = None
+    numero: Optional[str] = None
+    format: Optional[str] = None
+    couleur: Optional[str] = None
+    note: Optional[str] = None
+
+
+class LoyaltyCardOut(BaseModel):
+    id: str
+    enseigne: str
+    numero: str
+    format: str
+    couleur: str
+    note: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ── Labels (étiquettes nommées / catégories) ──────────────────────────────────
 
 class LabelCreate(BaseModel):
