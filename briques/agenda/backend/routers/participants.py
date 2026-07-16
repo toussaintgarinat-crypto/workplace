@@ -13,6 +13,7 @@ from db import get_db
 from models.orm import Event, EventParticipant
 from models.schemas import ParticipantAdd, ParticipantOut, ParticipantStatusUpdate
 from services.journal import consigner
+from utils.access import require_calendar_access
 
 router = APIRouter(tags=["participants"])
 
@@ -68,6 +69,11 @@ async def update_participant_status(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    evt = await _get_event(event_id, db)
+    # On édite sa propre ligne (RSVP / rappels perso) → viewer suffit.
+    # On édite la ligne de quelqu'un d'autre → il faut editor.
+    min_role = "viewer" if participant_user_id == user["sub"] else "editor"
+    await require_calendar_access(db, evt.calendar_id, user["sub"], min_role=min_role)
     result = await db.execute(
         select(EventParticipant).where(
             EventParticipant.event_id == event_id,
@@ -99,6 +105,7 @@ async def add_all_members(
     (status=pending, rappels hérités). Idempotent : n'ajoute que les manquants."""
     from services.membres import membres_du_calendrier
     evt = await _get_event(event_id, db)
+    await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
     membres = await membres_du_calendrier(db, evt.calendar_id)
     existants = set((await db.execute(
         select(EventParticipant.user_id).where(EventParticipant.event_id == event_id)

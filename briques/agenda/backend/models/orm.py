@@ -140,6 +140,7 @@ class Event(Base):
 
 class EventParticipant(Base):
     __tablename__ = "event_participants"
+    __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_participant"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
