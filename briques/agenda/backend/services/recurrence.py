@@ -64,19 +64,26 @@ def expanser(maitre, debut, fin, exdates, overrides) -> list[Occurrence]:
 
     duree = maitre.end_at - maitre.start_at
     regle = rrulestr(maitre.recurrence_rule, dtstart=maitre.start_at)
-    # rrule.between est inclusif ; sans fenêtre on prend les MAX premières.
-    if debut and fin:
-        dates = regle.between(debut - duree, fin, inc=True)
+    # rrule.between est inclusif ; chaque borne est indépendante (`debut`/`fin` peuvent
+    # être None séparément). Si `fin` est posé on peut appeler .between directement (borne
+    # basse = debut - durée si `debut` posé, sinon le dtstart). Si `fin` est absent on doit
+    # itérer nous-mêmes avec le cap MAX_OCCURRENCES, en sautant les occurrences qui se
+    # terminent avant `debut` pour ne pas perdre cette borne-là.
+    if fin is not None:
+        borne_basse = (debut - duree) if debut is not None else maitre.start_at
+        dates = regle.between(borne_basse, fin, inc=True)
     else:
         dates = []
         for i, d in enumerate(regle):
             if i >= MAX_OCCURRENCES:
                 break
+            if debut is not None and d + duree < debut:
+                continue
             dates.append(d)
     occ: list[Occurrence] = []
     for d in dates[:MAX_OCCURRENCES]:
         if d in exdates:
-            continue
+            continue  # une exdate l'emporte sur un override à la même date (précédence voulue)
         ov = overrides.get(d)
         if ov is not None:
             occ.append(Occurrence(ov, ov.start_at, ov.end_at, d, True))
