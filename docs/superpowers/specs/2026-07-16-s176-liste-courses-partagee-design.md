@@ -33,6 +33,12 @@ courses dans la brique plutôt que dans une app tierce, sans friction d'adoption
    capacités au manifest).
 6. **Partage par lien d'invitation** — miroir exact de `CalendarInvitation` (token +
    accept).
+7. **Cartes de fidélité incluses** — module Bring! à part entière : stocker ses cartes
+   magasin (personnelles) et afficher le code-barres à scanner en caisse. Générateur de
+   code-barres **vanilla JS embarqué** (aucun CDN — contrainte self-hosted) couvrant
+   **Code128 + EAN-13** en SVG ; `qr` reste dans l'enum pour compat mais retombe sur
+   l'affichage du numéro en grand (génération QR = fast-follow, trop lourde à vendoriser
+   maintenant). Cartes **non collaboratives** : scope `user_id`, pas de membres/SSE/push.
 
 ## Modèle de données — migration Alembic `0008`
 
@@ -85,6 +91,14 @@ str(255) **nullable** (NULL pour les intégrés). Le catalogue vu par une liste 
 Contrainte unique partielle non portable SQLite→Postgres : on l'assure **applicativement**
 (vérif « existe déjà (scope, name lower) ? » avant insert), pas par contrainte DB, pour
 rester portable (SQLite tests / Postgres prod).
+
+### `LoyaltyCard`  (`loyalty_cards`)
+Cartes de fidélité **personnelles** (pas de collaboration). `id` str(36) PK ; `user_id`
+str(255) index (le propriétaire = `user["sub"]`) ; `enseigne` str(255) (Carrefour, Leclerc…) ;
+`numero` str(255) (contenu du code-barres) ; `format` Enum(`code128`,`ean13`,`qr`,
+name=`barcode_format`) défaut `code128` ; `couleur` str(20) défaut `#3B82F6` (pastille de la
+tuile) ; `note` str(255) nullable ; `created_at` / `updated_at`. Aucune FK vers les listes —
+module indépendant dans la même migration `0008`.
 
 ### Rayons (constante, pas une table)
 Liste FR fixe dans `services/catalogue.py` :
@@ -183,6 +197,36 @@ Cœur introduirait un délai et ne saurait pas *quel* changement notifier. La br
 optionnelle et config-gatée vers `connexion`. À consigner :
 `docs/decisions/2026-07-16-listes-push-evenementiel.md`.
 
+## Cartes de fidélité — `routers/loyalty.py` (module indépendant)
+
+Personnelles, scope `user_id`. Pas de membres, pas de SSE, pas de push, pas d'outil LLM
+(fast-follow si besoin de « ajoute ma carte Carrefour en parlant »).
+
+| méthode | chemin | effet |
+|---|---|---|
+| GET | `/loyalty-cards` | mes cartes (triées enseigne) |
+| POST | `/loyalty-cards` | `{enseigne, numero, format?, couleur?, note?}` |
+| GET | `/loyalty-cards/{id}` | une carte — 404 si pas propriétaire |
+| PATCH | `/loyalty-cards/{id}` | édite |
+| DELETE | `/loyalty-cards/{id}` | supprime |
+
+**Accès** : une carte n'appartient qu'à `user_id == user["sub"]` ; tout accès par un autre
+user → 404 (même sémantique que les listes). Helper local `require_owned_card(db, id, uid)`.
+
+### Générateur de code-barres — `static/barcode.js` (vendored, vanilla, sans CDN)
+
+Fonction pure `dessiner_codebarres(svg_el, texte, format)` :
+- `code128` : encodage Code128 (jeu B par défaut, bascule C pour les runs numériques),
+  checksum modulo 103, quiet zone, rendu en `<rect>` SVG. Couvre l'alphanumérique.
+- `ean13` : encodage EAN-13 (parité L/G/R, chiffre de contrôle mod 10), rendu SVG.
+- `qr` : **non généré** ce sprint → repli = numéro affiché en très grand + libellé « (QR à
+  venir, saisie manuelle) ». L'enum garde `qr` pour compat ascendante.
+
+Le SVG est *inline* dans la page (CSP self-hosted OK, aucun asset externe). Vue « carte plein
+écran » = fond clair + code-barres SVG + numéro en clair dessous (repli si le scan échoue).
+Le fichier est servi statiquement par la brique (ou inliné dans `templates_app.py`) — décision
+d'implémentation laissée au plan, tant qu'aucune ressource externe n'est requise.
+
 ## Outils LLM — `manifest.json` + `routers/service.py`
 
 Nouvelles capacités (préfixe `courses_`), toutes sur `/service/lists…`, avec la même
@@ -219,6 +263,12 @@ Nouvel onglet **« Listes »** dans l'appli web existante (`GET /app`, login PKC
 Style aligné sur l'appli agenda existante (même palette, même auth PKCE, même helper fetch
 avec bearer).
 
+### Sous-onglet « Cartes » (fidélité)
+Dans l'onglet Listes (ou onglet frère) : grille de tuiles (enseigne + pastille couleur),
+bouton `+` (enseigne, numéro, format). Tap sur une tuile → **vue plein écran** : code-barres
+SVG (via `barcode.js`) + numéro en clair, luminosité max implicite (fond clair). Bouton
+fermer. Édition/suppression depuis la tuile.
+
 ## Tests — TDD, subagent-driven
 
 Une suite ciblée par unité (chacune verte avant la suivante) :
@@ -234,12 +284,22 @@ Une suite ciblée par unité (chacune verte avant la suivante) :
    l'acteur, no-op si `CONNEXION_URL` absent, ne lève jamais (connexion injoignable mockée).
 8. `test_service_courses.py` — capacités `/service/lists…` (identité perso) + cohérence
    manifest (le test manifest existant `test_manifest_capacites.py` doit rester vert).
-9. Front : au moins un smoke `test_app_web` (l'onglet Listes rend, JS présent).
+9. `test_loyalty.py` — CRUD cartes, isolation par propriétaire (404 pour un autre user),
+   format par défaut.
+10. `test_barcode.py` — encodage `code128` et `ean13` : vecteurs de test connus (checksum
+    Code128 mod 103, chiffre de contrôle EAN-13 mod 10) via un mini-harnais Node **ou** un
+    test de la logique d'encodage portée en Python de référence (au choix du plan) ; a
+    minima : le SVG produit contient le bon nombre de barres pour un intrant connu.
+11. Front : au moins un smoke `test_app_web` (onglets Listes + Cartes rendent, JS présent).
 
 Objectif : suite agenda reste verte (194 → +N), `make test-core` reste à 439.
 
 ## Hors périmètre (fast-follow)
 
+- **Génération QR** des cartes de fidélité (Reed-Solomon lourd à vendoriser) — l'enum
+  `format` garde `qr` pour compat, mais le rendu QR arrive en fast-follow ; d'ici là repli
+  numéro-en-grand.
+- Outils LLM pour les cartes de fidélité (« ajoute ma carte Carrefour ») — fast-follow.
 - Import de recettes en un clic (roadmap : « optionnel »).
 - Templates de listes sauvegardées (« courses hebdo type ») — YAGNI pour l'instant ;
   le catalogue perso couvre déjà le *tap-to-add* récurrent.
@@ -255,6 +315,9 @@ Objectif : suite agenda reste verte (194 → +N), `make test-core` reste à 439.
 - **Dépendance sortante `connexion`** : nouvelle, mais optionnelle et best-effort — un push
   KO ne casse jamais une mutation. Config `CONNEXION_URL`/`CONNEXION_KEY` à documenter au
   déploiement (README brique).
+- **Code-barres self-hosted** : le générateur `barcode.js` est vendoré (vanilla, aucun
+  CDN) — la CSP self-hosted interdit tout script externe. Encodages Code128/EAN-13 à
+  tester sur vecteurs connus (un code-barres faux = inscannable en caisse = bug visible).
 - **Identité S2S `perso`** sur `/service` : les outils LLM créent/cochent en tant que `perso`
   (cohérent ADR agenda-surface-de-service) — le multi-user réel des listes passe par l'appli
   web PKCE, pas par l'assistant.
