@@ -190,6 +190,7 @@ async function chargerApp() {
   nav.innerHTML =
     '<button data-vue="agenda" onclick="montrerVue(\'agenda\')">📅 Agenda</button>' +
     '<button data-vue="listes" onclick="montrerVue(\'listes\')">🛒 Listes</button>' +
+    '<button data-vue="sondages" onclick="montrerVue(\'sondages\')">📊 Sondages</button>' +
     '<button data-vue="cartes" onclick="montrerVue(\'cartes\')">💳 Cartes</button>';
   montrerVue("agenda");
 }
@@ -200,6 +201,7 @@ function montrerVue(nom) {
   if (nom !== "listes" && SSE_LISTE) { SSE_LISTE.close(); SSE_LISTE = null; }
   if (nom === "agenda") chargerCalendriers();
   else if (nom === "listes") vueListes();
+  else if (nom === "sondages") vueSondages();
   else if (nom === "cartes") vueCartes();
 }
 
@@ -760,6 +762,106 @@ function ouvrirCarte(i) {
 }
 
 function fermerCarte() { document.getElementById("carte-modal").style.display = "none"; }
+
+// ── Sondages de disponibilité (S177) ────────────────────────────────────────
+const V_LBL = { oui: "Oui", si_besoin: "Si besoin", non: "Non" };
+const V_COL = { oui: "#16a34a", si_besoin: "#d97706", non: "#ef4444" };
+
+function fmtCreneau(iso) {
+  try { return new Date(iso).toLocaleString("fr-FR",
+    { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+  catch (e) { return iso; }
+}
+
+async function vueSondages() {
+  document.getElementById("main").innerHTML =
+    '<div class="barre"><strong>Mes sondages</strong>' +
+    '<button onclick="creerSondage()">+ Nouveau sondage</button></div>' +
+    '<div id="sondages-liste"></div>';
+  await chargerSondages();
+}
+
+async function chargerSondages() {
+  let polls; try { polls = await api("/polls"); } catch (e) { return; }
+  document.getElementById("sondages-liste").innerHTML = polls.length ? polls.map((p) =>
+    `<button class="ligne" style="display:block;width:100%;text-align:left;margin:6px 0;padding:12px;` +
+    `border:1px solid #334155;border-radius:10px;background:transparent;color:inherit;cursor:pointer" ` +
+    `onclick="ouvrirSondage('${p.id}')">` +
+    `<strong>${esc(p.title)}</strong>` +
+    `<span class="muted"> — ${p.nb_slots} créneau(x) · ${p.nb_voters} votant(s)` +
+    `${p.status === "closed" ? " · ✅ finalisé" : ""}</span></button>`).join("")
+    : '<p class="muted">Aucun sondage. Créez-en un pour trouver une date à plusieurs.</p>';
+}
+
+async function creerSondage() {
+  const titre = prompt("Objet du sondage ? (ex. Dîner de famille)"); if (!titre) return;
+  const lieu = prompt("Lieu ? (optionnel)") || null;
+  const creneaux = [];
+  while (true) {
+    const d = prompt(`Créneau ${creneaux.length + 1} — début (AAAA-MM-JJ HH:MM). Vide = terminer.`);
+    if (!d) break;
+    const f = prompt("Fin (AAAA-MM-JJ HH:MM)"); if (!f) break;
+    const debut = new Date(d.replace(" ", "T")), fin = new Date(f.replace(" ", "T"));
+    if (isNaN(debut) || isNaN(fin) || debut >= fin) { alert("Dates invalides."); continue; }
+    creneaux.push({ start_at: debut.toISOString(), end_at: fin.toISOString() });
+  }
+  if (!creneaux.length) { alert("Au moins un créneau."); return; }
+  try {
+    const p = await api("/polls", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: titre, location: lieu, slots: creneaux }) });
+    await chargerSondages();
+    ouvrirSondage(p.id);
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+async function ouvrirSondage(id) {
+  let p; try { p = await api("/polls/" + encodeURIComponent(id)); } catch (e) { return; }
+  const lien = location.origin + "/polls/p/" + p.share_token;
+  const clos = p.status !== "open";
+  let h = `<div class="barre"><button class="ghost" onclick="vueSondages()">‹ Retour</button>` +
+    `<strong>${esc(p.title)}</strong></div>`;
+  if (p.location) h += `<p class="muted">📍 ${esc(p.location)}</p>`;
+  h += `<p class="muted">Lien de vote : <code>${esc(lien)}</code> ` +
+    `<button class="ghost" onclick="navigator.clipboard&&navigator.clipboard.writeText('${lien}')">Copier</button></p>`;
+  h += '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">';
+  h += "<tr><th style='text-align:left;padding:6px'>Créneau</th>" +
+    "<th style='padding:6px'>✔</th><th style='padding:6px'>~</th><th style='padding:6px'>✕</th>" +
+    (clos ? "" : "<th></th>") + "</tr>";
+  for (const s of p.slots) {
+    const t = p.tallies[s.id] || { oui: 0, si_besoin: 0, non: 0};
+    const gagne = p.final_slot_id === s.id;
+    h += `<tr style="border-top:1px solid #334155">` +
+      `<td style="padding:6px">${gagne ? "✅ " : ""}${fmtCreneau(s.start_at)} → ${fmtCreneau(s.end_at)}</td>` +
+      `<td style="padding:6px;text-align:center;color:${V_COL.oui}">${t.oui}</td>` +
+      `<td style="padding:6px;text-align:center;color:${V_COL.si_besoin}">${t.si_besoin}</td>` +
+      `<td style="padding:6px;text-align:center;color:${V_COL.non}">${t.non}</td>`;
+    if (!clos) h += `<td style="padding:6px"><button class="ghost" ` +
+      `onclick="finaliserSondage('${p.id}','${s.id}')">Retenir</button></td>`;
+    h += "</tr>";
+  }
+  h += "</table></div>";
+  if (p.voters.length) {
+    h += "<h4>Réponses</h4>";
+    for (const v of p.voters) {
+      const reps = p.slots.map((s) => {
+        const val = v.votes[s.id];
+        return val ? `<span style="color:${V_COL[val]}">${V_LBL[val]}</span>` : "<span class='muted'>—</span>";
+      }).join(" · ");
+      h += `<div style="padding:4px 0">${esc(v.voter_name)}${v.is_guest ? " (invité)" : ""} : ${reps}</div>`;
+    }
+  }
+  document.getElementById("main").innerHTML = h;
+}
+
+async function finaliserSondage(id, slotId) {
+  if (!confirm("Retenir ce créneau ? Cela crée l'événement dans l'agenda et clôture le sondage.")) return;
+  try {
+    await api("/polls/" + encodeURIComponent(id) + "/finalize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot_id: slotId }) });
+    ouvrirSondage(id);
+  } catch (e) { alert("Échec : " + e.message); }
+}
 
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </script>

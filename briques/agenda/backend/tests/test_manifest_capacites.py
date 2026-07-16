@@ -56,12 +56,15 @@ def test_les_capacites_attendues():
         "agenda_supprimer_evenement", "agenda_creer_partage", "agenda_inviter",
         # Listes de courses/tâches (S176)
         "courses_consulter", "courses_creer_liste", "courses_ajouter", "courses_cocher",
+        # Sondages de disponibilité (S177)
+        "sondage_consulter", "sondage_creer", "sondage_finaliser",
     }
     assert {c["nom"] for c in _CAPS} == attendues
 
 
 def test_politique_de_gates_agenda():
-    """Divergence produit ASSUMÉE (cf. ADR) : seules 2 capacités sont gardées."""
+    """Divergence produit ASSUMÉE (cf. ADR) : seules les actions à effet lourd sont gardées
+    (suppression d'event, octroi d'accès par lien, finalisation qui crée un événement)."""
     gardees = {c["nom"] for c in _CAPS if c["action"]}
-    assert gardees == {"agenda_supprimer_evenement", "agenda_inviter"}, \
+    assert gardees == {"agenda_supprimer_evenement", "agenda_inviter", "sondage_finaliser"}, \
         f"Politique de gates inattendue : {gardees}"

@@ -103,11 +103,25 @@ S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cuttin
   cartes ; import de recettes ; templates de listes ; quantités structurées ; smoke
   `alembic upgrade/downgrade 0008` sur **Postgres** avant déploiement (tests = `create_all`).
 
-## S177 — Sondages de disponibilité
+## S177 — Sondages de disponibilité — ✅ CODE-COMPLET 2026-07-16 (LIVE différé)
 
-- Nouveau sous-système façon Doodle/TimeTree : `Poll` + `PollOption` + `PollVote`,
-  conversion directe d'un sondage validé en `Event`.
-- Réutilise `EventParticipant`/invitations existants pour le ciblage des votants.
+Design détaillé : `docs/superpowers/specs/2026-07-16-s177-sondages-disponibilite-design.md`.
+
+- Sous-système autonome façon Doodle : `AvailabilityPoll` + `PollSlot` + `PollVote`
+  (migration `0009`), **finaliser un créneau crée directement un `Event`** avec les
+  votants « oui » ayant un compte pré-ajoutés comme participants (la boucle sondage→agenda,
+  le plus vs Doodle).
+- **Participation = lien public à jeton + membres** (décision produit validée) : un invité
+  vote sans compte (nom + `guest_key` renvoyé pour rééditer), un membre connecté est
+  attribué (`get_optional_user`). Réponses **3 états** `oui`/`si_besoin`/`non`. Un bulletin
+  **remplace** tous les votes de l'identité (un bulletin par personne).
+- Gestion réservée à l'organisateur (`require_owned_poll`) ; vote + vue publics par
+  `share_token` (jamais par `poll_id`). Temps réel : canal `poll:{id}:changes` + SSE public
+  `/sse/polls/{token}`. Front : page de vote autonome `page_sondage` + onglet « 📊 Sondages ».
+- Surface LLM manifest **v1.3.0** : `sondage_consulter`, `sondage_creer`, `sondage_finaliser`
+  (gaté). Suite agenda **261** (+18). RESTE : smoke Alembic 0009 Postgres + merge main.
+- Fast-follow : notifier les votants à la finalisation ; tri pondérant `si_besoin` ;
+  créneaux journée entière ; fermeture auto à `expires_at`.
 
 ## S178 — PWA + notifications push web + widgets + digest
 

@@ -160,6 +160,89 @@ class LoyaltyCardOut(BaseModel):
         from_attributes = True
 
 
+# ── S177 : sondages de disponibilité ──────────────────────────────────────────
+
+VOTE_VALEURS = ("oui", "si_besoin", "non")
+
+
+class PollSlotIn(BaseModel):
+    start_at: datetime
+    end_at: datetime
+
+
+class PollCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    calendar_id: Optional[str] = None
+    slots: list[PollSlotIn] = []
+    expire_heures: Optional[int] = None
+
+
+class PollUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+
+
+class PollSlotOut(BaseModel):
+    id: str
+    start_at: datetime
+    end_at: datetime
+    position: int
+
+    class Config:
+        from_attributes = True
+
+
+class VoteIn(BaseModel):
+    slot_id: str
+    value: str  # "oui" | "si_besoin" | "non"
+
+
+class BallotIn(BaseModel):
+    """Bulletin complet d'une personne (remplace ses votes précédents). `nom` requis pour
+    un invité anonyme ; ignoré si l'appelant est un membre connecté. `guest_key` permet à
+    un invité de rééditer son bulletin."""
+    nom: Optional[str] = None
+    guest_key: Optional[str] = None
+    votes: list[VoteIn] = []
+
+
+class VoterLineOut(BaseModel):
+    """Une ligne de la grille : un votant et ses réponses par créneau (slot_id → value)."""
+    voter_name: str
+    voter_id: Optional[str] = None
+    is_guest: bool
+    votes: dict[str, str]  # slot_id → "oui"|"si_besoin"|"non"
+
+
+class PollDetailOut(BaseModel):
+    id: str
+    title: str
+    description: Optional[str]
+    location: Optional[str]
+    status: str
+    created_by: str
+    share_token: Optional[str] = None  # exposé à l'organisateur seulement
+    final_slot_id: Optional[str] = None
+    final_event_id: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    slots: list[PollSlotOut] = []
+    voters: list[VoterLineOut] = []
+    tallies: dict[str, dict[str, int]] = {}  # slot_id → {"oui":n,"si_besoin":n,"non":n}
+
+
+class PollSummaryOut(BaseModel):
+    id: str
+    title: str
+    status: str
+    nb_slots: int
+    nb_voters: int
+    share_token: str
+    final_slot_id: Optional[str] = None
+
+
 # ── Labels (étiquettes nommées / catégories) ──────────────────────────────────
 
 class LabelCreate(BaseModel):

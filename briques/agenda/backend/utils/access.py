@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.orm import (
+    AvailabilityPoll,
     Calendar,
     CalendarMember,
     LoyaltyCard,
@@ -86,3 +87,15 @@ async def require_owned_card(db: AsyncSession, card_id: str, user_id: str) -> Lo
     if carte is None or carte.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carte introuvable")
     return carte
+
+
+# ── S177 : sondages de disponibilité ──────────────────────────────────────────
+
+async def require_owned_poll(db: AsyncSession, poll_id: str, user_id: str) -> AvailabilityPoll:
+    """Sondage s'il appartient à user_id (organisateur) ; 404 sinon (ne divulgue pas
+    l'existence). La gestion (résultats détaillés, finalisation) est réservée à
+    l'organisateur ; le vote passe par le share_token, pas par cette porte."""
+    poll = await db.get(AvailabilityPoll, poll_id)
+    if poll is None or poll.created_by != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sondage introuvable")
+    return poll

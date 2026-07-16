@@ -86,6 +86,27 @@ async def get_current_user_sse(
         x_api_key=x_api_key, x_compte_id=x_compte_id)
 
 
+async def get_optional_user(
+    token: str | None = Depends(oauth2_scheme),
+    x_user_id: str | None = Header(None),
+    x_api_key: str | None = Header(None),
+    x_compte_id: str | None = Header(None),
+) -> dict | None:
+    """Identité FACULTATIVE — pour les surfaces publiques (vote d'un sondage par lien) qui
+    veulent attribuer l'action à un membre connecté SANS imposer l'authentification à un
+    invité. Renvoie l'utilisateur si un dialecte valide est présent, sinon `None` (au lieu
+    de lever 401). Un `sub` « anonymous » (AUTH désactivé, sans X-User-Id) compte comme
+    non identifié → `None`."""
+    try:
+        user = await get_current_user(
+            token=token, x_user_id=x_user_id, x_api_key=x_api_key, x_compte_id=x_compte_id)
+    except HTTPException:
+        return None
+    if not user.get("sub") or user["sub"] == "anonymous":
+        return None
+    return user
+
+
 async def require_admin(token: str | None = Depends(oauth2_scheme)) -> dict:
     if not settings.AUTH_ENABLED:
         logger.warning("Admin endpoint accessed without auth (AUTH_ENABLED=false)")
