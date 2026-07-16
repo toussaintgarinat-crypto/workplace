@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
@@ -16,8 +15,15 @@ from models.orm import Event
 from models.schemas import EventOut, EventUpdate
 from services.horaires import vers_utc_naif
 from services.journal import consigner
-from services.occurrences import occurrence_en_dict, occurrences_calendrier
+from services.occurrences import (
+    creer_ou_maj_override,
+    exclure_occurrence,
+    occurrence_en_dict,
+    occurrence_valide,
+    occurrences_calendrier,
+)
 from services.pubsub import publish_change
+from services.recurrence import Occurrence
 from utils.access import require_calendar_access
 
 router = APIRouter(tags=["events"])
@@ -77,10 +83,24 @@ async def get_event(
     return evt
 
 
-@router.patch("/events/{event_id}", response_model=EventOut)
+def _occurrence_naive(occurrence: Optional[datetime]) -> Optional[datetime]:
+    """`occurrence` (query ?scope=this) IDENTIFIE une occurrence déjà stockée — ce
+    n'est pas une saisie humaine. Un client réel le renvoie AWARE (l'ISO Europe/Paris
+    exposé par `occurrence_en_dict`/`vers_paris`) : on le reconvertit alors en naïf UTC
+    via `vers_utc_naif`. Un naïf reçu tel quel (appel direct hors HTTP, ex. tests) est
+    déjà dans la convention de stockage et n'est PAS réinterprété comme heure murale
+    Paris — sinon un décalage DST (été/hiver) le ferait manquer sa propre occurrence."""
+    if occurrence is None:
+        return None
+    return vers_utc_naif(occurrence) if occurrence.tzinfo is not None else occurrence
+
+
+@router.patch("/events/{event_id}", response_model=None)
 async def update_event(
     event_id: str,
     body: EventUpdate,
+    scope: str = Query("all"),
+    occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -88,22 +108,40 @@ async def update_event(
     if not evt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
-    data = body.model_dump(exclude_none=True)
+    data = body.model_dump(exclude_unset=True)
     if data.get("label_id") == "":  # chaîne vide = « aucune étiquette » explicite
         data["label_id"] = None
+    if scope == "this" and evt.recurrence_rule:
+        # Portée « cette occurrence » : crée/maj un event-override, le maître (la
+        # série) reste intact. L'occurrence doit être produite par la règle.
+        occ = _occurrence_naive(occurrence)
+        if not occ or not occurrence_valide(evt, occ):
+            raise HTTPException(status_code=422, detail="occurrence invalide")
+        ov = await creer_ou_maj_override(db, evt, occ, data)
+        await consigner(db, evt.id, user["sub"], "event_updated",
+                        {"portee": "occurrence", "occurrence": occ.isoformat()})
+        await db.commit()
+        out = occurrence_en_dict(Occurrence(ov, ov.start_at, ov.end_at, occ, True))
+        await publish_change(evt.calendar_id, "event.updated", out)
+        return out
     for k, v in data.items():
         setattr(evt, k, v)
     await consigner(db, evt.id, user["sub"], "event_updated", {"champs": list(data.keys())})
     await db.commit()
     await db.refresh(evt)
     out = EventOut.model_validate(evt)
+    # Modèle pydantic (pas le dict) : préserve l'accès par attribut pour les appelants
+    # historiques (ex. tests appelant la route directement) ; sérialisable tel quel
+    # côté HTTP (jsonable_encoder gère les BaseModel même sans response_model).
     await publish_change(evt.calendar_id, "event.updated", out.model_dump(mode="json"))
-    return evt
+    return out
 
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
     event_id: str,
+    scope: str = Query("all"),
+    occurrence: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -112,6 +150,14 @@ async def delete_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     await require_calendar_access(db, evt.calendar_id, user["sub"], min_role="editor")
     cal_id = evt.calendar_id
+    if scope == "this" and evt.recurrence_rule:
+        # Portée « cette occurrence » : EXDATE sur le maître, la série survit.
+        occ = _occurrence_naive(occurrence)
+        if not occ or not occurrence_valide(evt, occ):
+            raise HTTPException(status_code=422, detail="occurrence invalide")
+        await exclure_occurrence(db, evt, occ)
+        await publish_change(cal_id, "event.updated", {"id": event_id})
+        return
     await db.delete(evt)
     await db.commit()
     await publish_change(cal_id, "event.deleted", {"id": event_id})

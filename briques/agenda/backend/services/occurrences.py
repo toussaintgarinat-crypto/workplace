@@ -71,3 +71,49 @@ def occurrence_en_dict(occ: Occurrence) -> dict:
     dico["occurrence_start"] = vers_paris(occ.occurrence_start).isoformat()
     dico["recurrent"] = occ.recurrent
     return dico
+
+
+# ── Écriture par portée (S175) : scope=this isole une occurrence sans toucher au
+# maître ; scope=all (comportement historique) agit sur la série entière. ──────────
+
+def occurrence_valide(maitre, occurrence: datetime) -> bool:
+    """Vrai si `occurrence` (naïf UTC) est une occurrence produite par la règle du
+    maître et pas déjà dans ses exdates."""
+    if not maitre.recurrence_rule:
+        return False
+    exd = {_naif(x) for x in (maitre.exdates or [])}
+    if occurrence in exd:
+        return False
+    petit = expanser(maitre, occurrence, occurrence, set(), {})
+    return any(o.occurrence_start == occurrence for o in petit)
+
+
+async def exclure_occurrence(db: AsyncSession, maitre: Event, occurrence: datetime) -> None:
+    """Ajoute `occurrence` aux exdates du maître (réassignation : SQLAlchemy ne traque
+    pas la mutation en place d'une colonne JSON)."""
+    maitre.exdates = list(maitre.exdates or []) + [occurrence.isoformat()]
+    await db.commit()
+
+
+async def creer_ou_maj_override(db: AsyncSession, maitre: Event, occurrence: datetime,
+                                champs: dict) -> Event:
+    """Crée (ou met à jour) l'event-override d'une occurrence. `champs` = colonnes ORM à
+    poser (title/start_at/end_at/...). Défaut : hérite des horaires de l'occurrence."""
+    ov = (await db.execute(
+        select(Event).where(and_(Event.recurrence_parent_id == maitre.id,
+                                 Event.recurrence_date == occurrence))
+    )).scalar_one_or_none()
+    duree = maitre.end_at - maitre.start_at
+    if ov is None:
+        ov = Event(calendar_id=maitre.calendar_id, created_by=maitre.created_by,
+                   title=maitre.title, description=maitre.description,
+                   location=maitre.location, color=maitre.color, label_id=maitre.label_id,
+                   all_day=maitre.all_day, rappels=list(maitre.rappels or []),
+                   start_at=occurrence, end_at=occurrence + duree,
+                   recurrence_parent_id=maitre.id, recurrence_date=occurrence)
+        db.add(ov)
+    for k, v in champs.items():
+        setattr(ov, k, v)
+    await db.commit()
+    await db.refresh(ov)
+    return ov
