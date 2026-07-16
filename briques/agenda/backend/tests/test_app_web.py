@@ -87,6 +87,18 @@ async def test_app_page_contient_le_badge_recurrence():
 
 
 @pytest.mark.asyncio
+async def test_app_page_contient_onglets_listes_et_cartes():
+    """S176 — onglets Listes (SSE + catalogue) et Cartes (code-barres embarqué)."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "Listes" in corps and "Cartes" in corps
+    assert "/sse/lists/" in corps          # temps réel branché
+    assert "dessinerCodeBarres" in corps   # générateur code-barres appelé
+    assert "/static/barcode.js" in corps   # script embarqué chargé
+    assert "/loyalty-cards" in corps
+
+
+@pytest.mark.asyncio
 async def test_app_page_le_script_est_du_js_syntaxiquement_valide():
     """Filet de sécurité : les tests ci-dessus ne vérifient que la présence de sous-chaînes,
     pas que le <script> inline soit du JS valide (cf. bug quelqu\\'un double-backslash S172

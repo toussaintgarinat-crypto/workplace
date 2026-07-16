@@ -36,6 +36,28 @@ _PAGE = r"""<!doctype html>
   .muted { color: #94a3b8; font-size: 13px; }
   .err { color: #f87171; }
   .barre { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .onglets { display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid #2d3148; }
+  .onglets button { background: transparent; border: 1px solid #334155; color: #e2e8f0; }
+  .onglets button.actif { background: #3b82f6; border-color: #3b82f6; }
+  /* Listes de courses (S176) */
+  .listes-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+  @media (max-width: 640px) { .listes-layout { grid-template-columns: 1fr; } }
+  .liste-item { display: flex; justify-content: space-between; width: 100%; margin-bottom: 6px; text-align: left; }
+  .liste-item .badge { background: #0f172a; border-radius: 10px; padding: 0 8px; font-size: 12px; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #263043; cursor: pointer; }
+  .item.coche { opacity: .5; text-decoration: line-through; }
+  .rayon-titre { margin: 14px 0 4px; font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+  .grille { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .cat { background: #141a26; border: 1px solid #2d3148; color: #e2e8f0; font-weight: 500; }
+  .cat:hover { background: #1e293b; }
+  /* Cartes de fidélité (S176) */
+  .cartes-grille { display: flex; flex-wrap: wrap; gap: 12px; }
+  .carte { width: 150px; height: 90px; border-radius: 12px; color: #fff; font-weight: 700;
+           display: flex; align-items: center; justify-content: center; text-align: center; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none;
+           align-items: center; justify-content: center; z-index: 50; }
+  .modal .contenu { background: #fff; color: #111; border-radius: 16px; padding: 24px; max-width: 92vw; text-align: center; }
+  .modal svg { width: 320px; max-width: 80vw; height: 120px; }
 </style>
 </head>
 <body>
@@ -43,7 +65,18 @@ _PAGE = r"""<!doctype html>
   <h1>📅 Agenda</h1>
   <div id="entete-droite"></div>
 </header>
+<nav id="onglets" class="onglets" hidden></nav>
 <main id="main"><div class="centre muted">Chargement…</div></main>
+<div id="carte-modal" class="modal">
+  <div class="contenu">
+    <h3 id="carte-enseigne" style="margin:0 0 12px"></h3>
+    <svg id="carte-barcode" viewBox="0 0 200 100" preserveAspectRatio="none"></svg>
+    <p id="carte-numero" style="font:600 18px monospace;letter-spacing:.1em"></p>
+    <p id="carte-fallback" class="muted" style="display:none">Code-barres non généré — saisir le numéro à la main.</p>
+    <button onclick="fermerCarte()">Fermer</button>
+  </div>
+</div>
+<script src="/static/barcode.js"></script>
 <script>
 const KC = %%KC%%;
 const REDIRECT = location.origin + location.pathname;
@@ -152,7 +185,22 @@ async function chargerApp() {
     '<button class="ghost" id="btn-logout">Se déconnecter</button>';
   document.getElementById("btn-logout").onclick = deconnecter;
   try { await api("/profiles/me", { method: "POST" }); } catch (e) { /* best-effort */ }
-  await chargerCalendriers();
+  const nav = document.getElementById("onglets");
+  nav.hidden = false;
+  nav.innerHTML =
+    '<button data-vue="agenda" onclick="montrerVue(\'agenda\')">📅 Agenda</button>' +
+    '<button data-vue="listes" onclick="montrerVue(\'listes\')">🛒 Listes</button>' +
+    '<button data-vue="cartes" onclick="montrerVue(\'cartes\')">💳 Cartes</button>';
+  montrerVue("agenda");
+}
+
+function montrerVue(nom) {
+  for (const b of document.querySelectorAll("#onglets button"))
+    b.classList.toggle("actif", b.dataset.vue === nom);
+  if (nom !== "listes" && SSE_LISTE) { SSE_LISTE.close(); SSE_LISTE = null; }
+  if (nom === "agenda") chargerCalendriers();
+  else if (nom === "listes") vueListes();
+  else if (nom === "cartes") vueCartes();
 }
 
 let CALENDARS = [];
@@ -536,6 +584,182 @@ async function creerInvitation() {
       `<input readonly style="width:100%" value="${esc(lien)}" onclick="this.select()">`;
   } catch (e) { alert("Échec : " + e.message); }
 }
+
+// ═══════════════ Listes de courses/tâches (S176) ═══════════════
+let SSE_LISTE = null, LISTE_ACTIVE = null, LISTES = [], CARTES = [];
+
+async function vueListes() {
+  document.getElementById("main").innerHTML =
+    '<div class="listes-layout">' +
+    '<div><div class="barre"><strong>Mes listes</strong>' +
+    '<button onclick="creerListe()">+ Nouvelle</button></div><div id="listes-col"></div></div>' +
+    '<div class="card"><div id="liste-detail"><p class="muted">Choisis une liste.</p></div></div>' +
+    '</div>';
+  await chargerListes();
+}
+
+async function chargerListes() {
+  try { LISTES = await api("/lists"); } catch (e) { return; }
+  const col = document.getElementById("listes-col");
+  if (!col) return;
+  col.innerHTML = LISTES.map((l, i) =>
+    `<button class="liste-item" onclick="ouvrirListe(${i})">` +
+    `<span>${esc(l.name)}</span><span class="badge">${l.nb_a_prendre}</span></button>`).join("")
+    || '<p class="muted">Aucune liste.</p>';
+}
+
+async function creerListe() {
+  const nom = prompt("Nom de la liste ?"); if (!nom) return;
+  const kind = confirm("Liste de courses ? (Annuler = liste de tâches)") ? "courses" : "taches";
+  try {
+    await api("/lists", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nom, kind }) });
+    await chargerListes();
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+async function ouvrirListe(i) {
+  const l = LISTES[i]; if (!l) return;
+  LISTE_ACTIVE = l;
+  const estCourses = l.kind === "courses";
+  document.getElementById("liste-detail").innerHTML =
+    `<div class="barre"><strong>${esc(l.name)}</strong></div>` +
+    '<div id="liste-items"></div>' +
+    '<div class="barre" style="margin-top:14px">' +
+    '<input id="item-libre" placeholder="Ajouter un article…" style="flex:1" ' +
+    'onkeydown="if(event.key===\'Enter\')ajouterLibre()">' +
+    '<button onclick="ajouterLibre()">Ajouter</button>' +
+    (estCourses ? '<button class="ghost" onclick="basculerCatalogue()">Catalogue</button>' : "") +
+    '</div><div id="catalogue" hidden></div>';
+  await rafraichirItems();
+  brancherSSE(l.id);
+}
+
+async function rafraichirItems() {
+  if (!LISTE_ACTIVE) return;
+  let items;
+  try { items = await api(`/lists/${LISTE_ACTIVE.id}/items`); } catch (e) { return; }
+  const cible = document.getElementById("liste-items");
+  if (!cible) return;
+  const actifs = items.filter((i) => !i.checked), pris = items.filter((i) => i.checked);
+  const parRayon = {};
+  actifs.forEach((i) => { (parRayon[i.rayon || "Autre"] ||= []).push(i); });
+  let html = "";
+  for (const rayon of Object.keys(parRayon))
+    html += `<div class="rayon-titre">${esc(rayon)}</div>` + parRayon[rayon].map(itemLigne).join("");
+  if (!actifs.length) html += '<p class="muted">Rien à prendre.</p>';
+  if (pris.length)
+    html += `<div class="rayon-titre">Déjà pris (${pris.length}) ` +
+      '<button class="ghost" style="padding:2px 8px" onclick="viderPris()">Vider</button></div>' +
+      pris.map(itemLigne).join("");
+  cible.innerHTML = html;
+}
+
+function itemLigne(i) {
+  const par = i.checked_by ? pastille((PROFILS[i.checked_by] || {}).avatar_color || "#64748b") : "";
+  return `<div class="item ${i.checked ? "coche" : ""}" onclick="basculerItem('${i.id}', ${i.checked ? "false" : "true"})">` +
+    `<span>${i.emoji || "•"}</span><span style="flex:1">${esc(i.name)}` +
+    `${i.note ? ` <em class="muted">${esc(i.note)}</em>` : ""}</span>${par}</div>`;
+}
+
+async function basculerItem(id, checked) {
+  try {
+    await api(`/lists/${LISTE_ACTIVE.id}/items/${id}`, { method: "PATCH",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checked }) });
+    await rafraichirItems();
+  } catch (e) { /* SSE rattrapera */ }
+}
+
+async function viderPris() {
+  try { await api(`/lists/${LISTE_ACTIVE.id}/items/clear-checked`, { method: "POST" }); }
+  catch (e) {}
+  await rafraichirItems();
+}
+
+async function basculerCatalogue() {
+  const el = document.getElementById("catalogue");
+  el.hidden = !el.hidden;
+  if (!el.hidden && !el.dataset.charge) { await chargerCatalogue(); el.dataset.charge = "1"; }
+}
+
+async function chargerCatalogue() {
+  let data;
+  try { data = await api(`/lists/${LISTE_ACTIVE.id}/catalog`); } catch (e) { return; }
+  document.getElementById("catalogue").innerHTML = data.rayons.map((g) =>
+    `<div class="rayon-titre">${esc(g.rayon)}</div><div class="grille">` +
+    g.items.map((ci) => `<button class="cat" onclick="ajouterCatalogue('${ci.id}')">` +
+      `${ci.emoji} ${esc(ci.name)}</button>`).join("") + "</div>").join("");
+}
+
+async function ajouterCatalogue(catId) {
+  try {
+    await api(`/lists/${LISTE_ACTIVE.id}/items`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ catalog_item_id: catId }) });
+    await rafraichirItems();
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+async function ajouterLibre() {
+  const inp = document.getElementById("item-libre");
+  const v = inp.value.trim(); if (!v) return;
+  inp.value = "";
+  try {
+    await api(`/lists/${LISTE_ACTIVE.id}/items`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: v }) });
+    document.getElementById("catalogue").dataset.charge = "";
+    await rafraichirItems();
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+function brancherSSE(id) {
+  if (SSE_LISTE) SSE_LISTE.close();
+  // EventSource ne pose pas d'en-tête → JWT en query (cf. get_current_user_sse).
+  SSE_LISTE = new EventSource(`/sse/lists/${id}?access_token=${encodeURIComponent(ACCESS_TOKEN)}`);
+  SSE_LISTE.onmessage = (e) => {
+    let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+    const pertinents = ["item.added", "item.checked", "item.unchecked", "item.updated", "item.deleted", "checked.cleared"];
+    if (pertinents.includes(msg.type)) rafraichirItems();
+  };
+}
+
+// ═══════════════ Cartes de fidélité (S176) ═══════════════
+async function vueCartes() {
+  document.getElementById("main").innerHTML =
+    '<div class="barre"><strong>Mes cartes de fidélité</strong>' +
+    '<button onclick="creerCarte()">+ Ajouter</button></div><div id="cartes-grille" class="cartes-grille"></div>';
+  await chargerCartes();
+}
+
+async function chargerCartes() {
+  try { CARTES = await api("/loyalty-cards"); } catch (e) { return; }
+  document.getElementById("cartes-grille").innerHTML = CARTES.map((c, i) =>
+    `<button class="carte" style="background:${esc(c.couleur)}" onclick="ouvrirCarte(${i})">` +
+    `${esc(c.enseigne)}</button>`).join("") || '<p class="muted">Aucune carte.</p>';
+}
+
+async function creerCarte() {
+  const enseigne = prompt("Enseigne ? (ex. Carrefour)"); if (!enseigne) return;
+  const numero = prompt("Numéro de carte / code-barres ?"); if (!numero) return;
+  const format = (prompt("Format : code128 ou ean13 ?", "code128") || "code128").trim();
+  try {
+    await api("/loyalty-cards", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enseigne, numero, format }) });
+    await chargerCartes();
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+function ouvrirCarte(i) {
+  const c = CARTES[i]; if (!c) return;
+  document.getElementById("carte-enseigne").textContent = c.enseigne;
+  document.getElementById("carte-numero").textContent = c.numero;
+  const svg = document.getElementById("carte-barcode");
+  const ok = window.dessinerCodeBarres(svg, c.numero, c.format);
+  document.getElementById("carte-fallback").style.display = ok ? "none" : "block";
+  if (!ok) svg.innerHTML = "";
+  document.getElementById("carte-modal").style.display = "flex";
+}
+
+function fermerCarte() { document.getElementById("carte-modal").style.display = "none"; }
 
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </script>
