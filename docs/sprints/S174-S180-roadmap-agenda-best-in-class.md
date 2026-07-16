@@ -61,11 +61,23 @@ S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cuttin
   `AuditLogs` de la brique Forge (`briques/forge/forge/core/app/models/generated.py:288`)
   — colonnes user_id/user_nom/action/entite/entite_id/details JSON/created_at.
 
-## S175 — Récurrence avancée
+## S175 — Récurrence avancée ✅ CODE-COMPLET (LIVE différé)
 
 - `Event.recurrence_rule` existe en base mais n'est expansé nulle part (vérifié :
   aucune référence RRULE dans `routers/events.py`). Implémenter l'expansion RRULE réelle
   + gestion des exceptions ("tous les lundis sauf le 25").
+- **Livré (2026-07-16)** : occurrences virtuelles au read-time (`services/recurrence.py`
+  pur + `services/occurrences.py`), migration 0007 (`exdates`, `recurrence_parent_id`,
+  `recurrence_date` + contrainte unique override), câblage des 3 chemins de lecture
+  (list_events, agrégation `/service` + correctif N+1 participants, proactif Cœur avec
+  clé de dédup par occurrence), API portée `?scope=all|this&occurrence=` sur `/events` et
+  `/service`, front (sélecteur récurrence + badge ↻ + dialogue de portée). Design
+  `docs/superpowers/specs/2026-07-16-s175-recurrence-rrule-design.md`, plan
+  `docs/superpowers/plans/2026-07-16-s175-recurrence-rrule.md`. Suites : agenda 189,
+  cœur 439.
+- **Fast-follow** : `scope=this_and_following` (scission de série) ; RRULE exotiques
+  (`BYSETPOS`, `BYMONTHDAY` multiples) ; smoke `alembic upgrade/downgrade` de 0007 sur
+  Postgres avant déploiement (les tests utilisent `create_all`, pas la migration).
 
 ## S176 — Liste de courses/tâches partagée (façon Bring!)
 
