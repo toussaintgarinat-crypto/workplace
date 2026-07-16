@@ -254,7 +254,7 @@ async function chargerVue() {
       `<div style="font-size:11px;color:${memeJour(d, today) ? "#5865F2" : "#94a3b8"}">${d.getDate()}</div>`;
     for (const e of jevts.slice(0, 3)) {
       const c = e.color || "#5865F2";
-      h += `<div data-evt="${e.id}" style="background:${c};color:#fff;font-size:11px;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.all_day ? "" : esc(fmtHeure(e.start_at))+" "}${e.recurrent ? "↻ " : ""}${esc(e.title)}</div>`;
+      h += `<div data-evt="${e.id}" data-occ="${esc(e.occurrence_start || "")}" style="background:${c};color:#fff;font-size:11px;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.all_day ? "" : esc(fmtHeure(e.start_at))+" "}${e.recurrent ? "↻ " : ""}${esc(e.title)}</div>`;
     }
     if (jevts.length > 3) h += `<div style="font-size:10px;color:#64748b">+${jevts.length-3}</div>`;
     h += "</div>";
@@ -263,17 +263,22 @@ async function chargerVue() {
   zone.innerHTML = h;
   document.getElementById("mois-prec").onclick = () => { calRef.setMonth(calRef.getMonth()-1); calRef = new Date(calRef); chargerVue(); };
   document.getElementById("mois-suiv").onclick = () => { calRef.setMonth(calRef.getMonth()+1); calRef = new Date(calRef); chargerVue(); };
-  document.getElementById("btn-nouveau").onclick = () => ouvrirModaleEvent(null, ymd(new Date()));
-  zone.querySelectorAll("[data-evt]").forEach((el) => el.addEventListener("click", (ev) => { ev.stopPropagation(); ouvrirModaleEvent(el.dataset.evt, null); }));
-  zone.querySelectorAll("[data-jour]").forEach((el) => el.addEventListener("click", () => ouvrirModaleEvent(null, el.dataset.jour)));
+  document.getElementById("btn-nouveau").onclick = () => ouvrirModaleEvent(null, null, ymd(new Date()));
+  // data-occ porte l'identité d'occurrence (occurrence_start) : sans elle, toutes les
+  // occurrences virtuelles d'une série partagent l'id du maître et on résoudrait toujours
+  // la première occurrence au lieu de celle cliquée.
+  zone.querySelectorAll("[data-evt]").forEach((el) => el.addEventListener("click", (ev) => { ev.stopPropagation(); ouvrirModaleEvent(el.dataset.evt, el.dataset.occ, null); }));
+  zone.querySelectorAll("[data-jour]").forEach((el) => el.addEventListener("click", () => ouvrirModaleEvent(null, null, el.dataset.jour)));
 }
 
 function fermerModaleEvent() {
   const m = document.getElementById("modale"); if (m) m.remove();
 }
 
-function ouvrirModaleEvent(id, dateYMD) {
-  const ev = id ? EVENTS_CACHE.find((e) => e.id === id) : null;
+function ouvrirModaleEvent(id, occ, dateYMD) {
+  // Match sur (id, occurrence_start) : les occurrences virtuelles d'une série récurrente
+  // partagent toutes le même id (celui du maître) — occ désambiguïse laquelle a été cliquée.
+  const ev = id ? EVENTS_CACHE.find((e) => e.id === id && (e.occurrence_start || "") === (occ || "")) : null;
   let dStart, dEnd;
   if (ev) { dStart = isoToLocal(ev.start_at); dEnd = isoToLocal(ev.end_at); }
   else { dStart = dateYMD + "T09:00"; dEnd = dateYMD + "T10:00"; }
@@ -317,8 +322,11 @@ function ouvrirModaleEvent(id, dateYMD) {
     chargerDetailsEvent(ev.id);
   }
   document.getElementById("btn-annuler").onclick = fermerModaleEvent;
-  document.getElementById("btn-enregistrer").onclick = () => enregistrerEvent(id);
-  if (ev) document.getElementById("btn-suppr").onclick = () => supprimerEvent(id);
+  // On repasse ev.occurrence_start (déjà résolu ci-dessus) plutôt que de laisser
+  // enregistrerEvent/supprimerEvent refaire un find() par id seul, qui retomberait
+  // sur le même bug (première occurrence trouvée au lieu de celle ouverte).
+  document.getElementById("btn-enregistrer").onclick = () => enregistrerEvent(id, ev ? ev.occurrence_start : null);
+  if (ev) document.getElementById("btn-suppr").onclick = () => supprimerEvent(id, ev.occurrence_start);
 }
 
 function moiSub() {
@@ -459,7 +467,7 @@ async function requeterPortee(ev) {
   return portee === "this" ? `?scope=this&occurrence=${encodeURIComponent(ev.occurrence_start)}` : "?scope=all";
 }
 
-async function enregistrerEvent(id) {
+async function enregistrerEvent(id, occ) {
   const corps = {
     title: document.getElementById("ev-titre").value.trim(),
     start_at: localToIso(document.getElementById("ev-debut").value),
@@ -471,7 +479,7 @@ async function enregistrerEvent(id) {
     recurrence_rule: document.getElementById("ev-recurrence").value || null,
   };
   if (!corps.title) { alert("Donne un titre."); return; }
-  const ev = id ? EVENTS_CACHE.find((e) => e.id === id) : null;
+  const ev = id ? EVENTS_CACHE.find((e) => e.id === id && (e.occurrence_start || "") === (occ || "")) : null;
   const qs = await requeterPortee(ev);
   if (qs === null) return;
   try {
@@ -485,8 +493,8 @@ async function enregistrerEvent(id) {
   } catch (e) { alert("Échec : " + e.message); }
 }
 
-async function supprimerEvent(id) {
-  const ev = EVENTS_CACHE.find((e) => e.id === id);
+async function supprimerEvent(id, occ) {
+  const ev = EVENTS_CACHE.find((e) => e.id === id && (e.occurrence_start || "") === (occ || ""));
   const qs = await requeterPortee(ev);
   if (qs === null) return;
   if (!qs && !confirm("Supprimer cet événement ?")) return;
