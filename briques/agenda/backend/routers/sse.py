@@ -11,7 +11,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import get_current_user
+from auth import get_current_user, get_current_user_sse
 from config import settings
 from db import get_db
 from utils.access import require_list_access
@@ -63,7 +63,7 @@ async def list_sse(
     list_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user_sse),
 ):
     """SSE stream — changements d'une liste (item.added/checked/…) en temps réel."""
     await require_list_access(db, list_id, user["sub"], min_role="viewer")

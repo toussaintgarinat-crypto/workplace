@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
@@ -69,6 +69,21 @@ async def get_current_user(
         return await verify_token(token, _KC)
     except JWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+
+
+async def get_current_user_sse(
+    access_token: str | None = Query(None),
+    token: str | None = Depends(oauth2_scheme),
+    x_user_id: str | None = Header(None),
+    x_api_key: str | None = Header(None),
+    x_compte_id: str | None = Header(None),
+) -> dict:
+    """Identité pour les flux SSE. `EventSource` ne peut PAS poser d'en-tête
+    `Authorization` → on accepte le JWT en query `?access_token=`, avec repli sur l'en-tête
+    Bearer (et sur les dialectes S2S). Délègue toute la logique à `get_current_user`."""
+    return await get_current_user(
+        token=access_token or token, x_user_id=x_user_id,
+        x_api_key=x_api_key, x_compte_id=x_compte_id)
 
 
 async def require_admin(token: str | None = Depends(oauth2_scheme)) -> dict:
