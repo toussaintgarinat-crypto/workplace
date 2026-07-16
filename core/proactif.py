@@ -182,6 +182,10 @@ async def _check_agenda(registre) -> int:
             titre_evt = e.get("title", "(sans titre)")
             heure = (e.get("start_at") or "")[11:16]
             lieu = f" — {e.get('location')}" if e.get("location") else ""
+            # Récurrence (S175) : chaque occurrence expansée partage l'id du maître mais
+            # porte son propre `occurrence_start` → l'inclure dans la clé, sinon deux
+            # occurrences de la même série se dédoublonnent entre elles (une seule notifie).
+            occ_start = e.get("occurrence_start") or e.get("start_at") or ""
             # Repli rétro-compat : event sans participants → propriétaire + event.rappels.
             participants = e.get("participants") or [
                 {"user_id": agenda.USER_ID, "rappels_effectifs": e.get("rappels") or []}
@@ -193,7 +197,7 @@ async def _check_agenda(registre) -> int:
                 for m, _debut in _rappels_dus(evt_perso, maintenant):
                     titre = f"Rappel : {titre_evt}"
                     corps = f"{_delai_lisible(m).capitalize()} (à {heure}){lieu}"
-                    cle = f"agenda:{e.get('id')}:{uid}:{m}"
+                    cle = f"agenda:{e.get('id')}:{occ_start}:{uid}:{m}"
                     if uid == agenda.USER_ID:
                         if _ajouter("agenda", titre, corps, cle):
                             n += 1
