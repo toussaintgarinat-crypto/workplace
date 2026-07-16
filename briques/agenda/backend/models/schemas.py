@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, field_serializer, field_validator
 
 from services.horaires import vers_paris, vers_utc_naif
+from services.recurrence import valider_rrule
 
 
 # ── Calendars ─────────────────────────────────────────────────────────────────
@@ -171,6 +172,11 @@ class EventCreate(BaseModel):
     def _rappels(cls, v):
         return normaliser_rappels(v)
 
+    @field_validator("recurrence_rule")
+    @classmethod
+    def _rrule(cls, v):
+        return valider_rrule(v) if v else v
+
     @field_validator("start_at", "end_at")
     @classmethod
     def _utc(cls, v):
@@ -196,6 +202,11 @@ class EventUpdate(BaseModel):
     def _rappels(cls, v):
         return normaliser_rappels(v)
 
+    @field_validator("recurrence_rule")
+    @classmethod
+    def _rrule(cls, v):
+        return valider_rrule(v) if v else v
+
     @field_validator("start_at", "end_at")
     @classmethod
     def _utc(cls, v):
@@ -215,16 +226,19 @@ class EventOut(BaseModel):
     label_id: Optional[str] = None
     all_day: bool
     recurrence_rule: Optional[str]
+    exdates: list[datetime] = []
+    occurrence_start: Optional[datetime] = None
+    recurrent: bool = False
     rappels: list[int] = []
     created_by: str
     created_at: datetime
     updated_at: datetime
 
-    @field_serializer("start_at", "end_at")
+    @field_serializer("start_at", "end_at", "occurrence_start")
     def _heure_locale(self, v: datetime):
         # Stocké en UTC naïf → exposé en Europe/Paris (avec offset), pour que le
         # navigateur ET les lecteurs par découpage de chaîne voient l'heure locale.
-        return vers_paris(v)
+        return vers_paris(v) if v is not None else v
 
     class Config:
         from_attributes = True
