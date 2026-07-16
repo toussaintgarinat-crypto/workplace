@@ -79,14 +79,25 @@ S180 (chiffrement au repos — durcissement sécurité, en dernier, cross-cuttin
   (`BYSETPOS`, `BYMONTHDAY` multiples) ; smoke `alembic upgrade/downgrade` de 0007 sur
   Postgres avant déploiement (les tests utilisent `create_all`, pas la migration).
 
-## S176 — Liste de courses/tâches partagée (façon Bring!)
+## S176 — Liste de courses/tâches partagée (façon Bring!) — ✅ CODE-COMPLET 2026-07-16 (LIVE différé)
 
-- Nouveau sous-système : `ShoppingList` + `ShoppingListItem`, cochage temps réel (SSE
-  déjà dispo dans la brique), catalogue d'items visuel (icônes, tap-to-add), templates
-  par rayon de magasin.
-- Notifications sur ajout/cochage réutilisent l'infra par-personne de S174.
-- Import de recettes en un clic = optionnel, à évaluer à l'ouverture du sprint (ROI vs
-  effort).
+- **Statut** : code-complet, suite agenda **242 passed** (+ 1 skip redis), migration `0008`.
+  Design `docs/superpowers/specs/2026-07-16-s176-liste-courses-partagee-design.md`, plan
+  `docs/superpowers/plans/2026-07-16-s176-liste-courses-cartes-fidelite.md`, ADR push
+  événementiel `docs/decisions/2026-07-16-listes-push-evenementiel.md`. Voir
+  `briques/agenda/backend/README.md#s176`.
+- **Livré** : sous-système **autonome** (6 tables) — `ShoppingList` (`kind`
+  courses|taches), `ShoppingListMember`, `ShoppingListInvitation` (partage par lien),
+  `ShoppingItem`, `CatalogItem` (catalogue FR emoji ~55 items semé au boot, idempotent),
+  `LoyaltyCard`. Cochage **temps réel** via canal SSE dédié `list:{id}:changes`
+  (`EventSource` authentifié par token en query — `get_current_user_sse`). Anti-doublon
+  façon Bring!. Push par personne **événementiel** best-effort vers `connexion /pousser`
+  (`CONNEXION_URL`/`CONNEXION_KEY`, repli honnête). Outils LLM `courses_*` (manifest
+  v1.2.0). Front : onglets « Listes » (catalogue tap-to-add par rayon + SSE) et « Cartes »
+  (code-barres **Code128/EAN-13** généré par `static/barcode.js` vanilla, sans CDN).
+- **Fast-follow** : génération **QR** des cartes (repli numéro en attendant) ; outils LLM
+  cartes ; import de recettes ; templates de listes ; quantités structurées ; smoke
+  `alembic upgrade/downgrade 0008` sur **Postgres** avant déploiement (tests = `create_all`).
 
 ## S177 — Sondages de disponibilité
 
