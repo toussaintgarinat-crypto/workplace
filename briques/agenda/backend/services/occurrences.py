@@ -11,13 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.orm import Event
 from models.schemas import EventOut
-from services.horaires import vers_paris, vers_utc_naif
+from services.horaires import PARIS, vers_paris, vers_utc_naif
 from services.recurrence import Occurrence, expanser
 
 
 def _naif(dt: datetime | str) -> datetime:
     """exdates/recurrence_date peuvent revenir en str (JSON) → datetime naïf UTC."""
     return datetime.fromisoformat(dt) if isinstance(dt, str) else dt
+
+
+# FIX I1 : champs qu'un event-override ne doit JAMAIS porter — le front envoie
+# systématiquement `recurrence_rule` dans le corps du PATCH (même sur scope=this), et
+# sans ce filtre l'override hériterait la règle du maître, violant l'invariant
+# « override.recurrence_rule IS NULL ». Les autres champs listés sont l'identité de
+# l'override elle-même (parent/date) et son rattachement (calendrier) : jamais
+# réassignables via un simple PATCH de champs.
+_CHAMPS_INTERDITS_OVERRIDE = {
+    "recurrence_rule", "recurrence_parent_id", "recurrence_date", "exdates", "calendar_id",
+}
 
 
 async def occurrences_calendrier(db: AsyncSession, cal_id: str,
@@ -57,7 +68,10 @@ async def occurrences_calendrier(db: AsyncSession, cal_id: str,
     result: list[Occurrence] = []
     for m in maitres:
         exd = {_naif(x) for x in (m.exdates or [])}
-        result.extend(expanser(m, d, f, exd, overrides_par_parent.get(m.id, {})))
+        # tz=PARIS (FIX I3) : déplie en heure murale Paris pour que « tous les lundis
+        # 10h » reste 10h été comme hiver — sinon l'UTC naïf figé dérive de ±1h au
+        # changement d'heure.
+        result.extend(expanser(m, d, f, exd, overrides_par_parent.get(m.id, {}), tz=PARIS))
     result.sort(key=lambda o: o.start)
     return result
 
@@ -84,7 +98,9 @@ def occurrence_valide(maitre, occurrence: datetime) -> bool:
     exd = {_naif(x) for x in (maitre.exdates or [])}
     if occurrence in exd:
         return False
-    petit = expanser(maitre, occurrence, occurrence, set(), {})
+    # tz=PARIS : DOIT matcher `occurrences_calendrier` — sinon une occurrence produite
+    # par l'expansion réelle (heure murale Paris) serait jugée invalide ici.
+    petit = expanser(maitre, occurrence, occurrence, set(), {}, tz=PARIS)
     return any(o.occurrence_start == occurrence for o in petit)
 
 
@@ -132,6 +148,7 @@ async def creer_ou_maj_override(db: AsyncSession, maitre: Event, occurrence: dat
                    start_at=occurrence, end_at=occurrence + duree,
                    recurrence_parent_id=maitre.id, recurrence_date=occurrence)
         db.add(ov)
+    champs = {k: v for k, v in champs.items() if k not in _CHAMPS_INTERDITS_OVERRIDE}
     for k, v in champs.items():
         setattr(ov, k, v)
     await db.commit()
