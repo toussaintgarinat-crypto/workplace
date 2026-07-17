@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
@@ -181,16 +181,22 @@ def sante():
     return checks
 
 
-@app.post("/resumer")
-def resumer(req: ResumerRequest, _cle: str = Depends(cle_api)):
-    """Résume une vidéo par URL (YouTube ou média direct)."""
+def _pipeline_resumer(job_id: str, url: str, langue: str, modele: str):
     try:
-        return _summarize(req.url, req.langue, req.modele)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        _jobs.maj_statut(job_id, "en_cours", progress_pct=10)
+        data = _summarize(url, langue, modele)
+        _jobs.maj_statut(job_id, "termine", progress_pct=100, resultat=data)
     except Exception as e:  # noqa: BLE001
-        logger.exception("Erreur /resumer")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("pipeline_resumer job=%s", job_id)
+        _jobs.maj_statut(job_id, "erreur", erreur=str(e))
+
+
+@app.post("/resumer", status_code=202)
+def resumer(req: ResumerRequest, background_tasks: BackgroundTasks,
+            _cle: str = Depends(cle_api)):
+    job_id = _jobs.creer_job("resumer", url=req.url, langue=req.langue)
+    background_tasks.add_task(_pipeline_resumer, job_id, req.url, req.langue, req.modele)
+    return {"job_id": job_id, "statut": "en_cours", "poll_url": f"/jobs/{job_id}"}
 
 
 @app.post("/resumer-fichier")
