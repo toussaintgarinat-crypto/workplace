@@ -1,6 +1,7 @@
 """S179 — générateur ICS pur (RFC 5545). Aucune I/O : on lui passe des dicts."""
 from __future__ import annotations
 
+import types
 from datetime import datetime
 
 from services.ics import event_en_vevent, generer_ics
@@ -51,3 +52,44 @@ def test_echappement_rfc5545():
     assert "SUMMARY:A\\; B\\, C\\\\D" in out
     assert "DESCRIPTION:ligne1\\nligne2" in out
     assert "LOCATION:12\\, rue X" in out
+
+
+def test_override_uid_est_celui_du_maitre():
+    """Une occurrence override (RECURRENCE-ID) doit partager l'UID du maître, sinon
+    les clients agenda créent un doublon au lieu de lier/remplacer l'occurrence."""
+    override = types.SimpleNamespace(
+        id="override-xyz", recurrence_parent_id="maitre-123",
+        recurrence_date=datetime(2026, 7, 27, 19, 0, 0),
+        title="Dîner", start_at=datetime(2026, 7, 27, 20, 0, 0),
+        end_at=datetime(2026, 7, 27, 22, 0, 0), all_day=False,
+        description=None, location=None, recurrence_rule=None, exdates=[],
+    )
+    result = event_en_vevent(override)
+    assert result["uid"] == "maitre-123"
+    assert result["recurrence_id"] == datetime(2026, 7, 27, 19, 0, 0)
+
+    maitre = types.SimpleNamespace(
+        id="maitre-123", recurrence_parent_id=None,
+        recurrence_date=None,
+        title="Dîner", start_at=datetime(2026, 7, 27, 20, 0, 0),
+        end_at=datetime(2026, 7, 27, 22, 0, 0), all_day=False,
+        description=None, location=None, recurrence_rule=None, exdates=[],
+    )
+    assert event_en_vevent(maitre)["uid"] == "maitre-123"
+
+
+def test_all_day_recurrence_exdate_value_date():
+    """Pour un event all_day, EXDATE et RECURRENCE-ID doivent être en VALUE=DATE
+    (comme DTSTART/DTEND), pas en date-heure UTC — sinon le type ne correspond pas
+    (RFC 5545) et certains clients agenda rejettent ou mal-interprètent la ligne."""
+    out = generer_ics([_evt(all_day=True, rrule="FREQ=YEARLY",
+                            exdates=[datetime(2027, 7, 20, 0, 0, 0)],
+                            recurrence_id=None)])
+    assert "EXDATE;VALUE=DATE:20270720" in out
+    for ligne in out.split("\r\n"):
+        if ligne.startswith("EXDATE"):
+            assert "Z" not in ligne
+
+    out2 = generer_ics([_evt(all_day=True,
+                             recurrence_id=datetime(2027, 7, 20, 0, 0, 0))])
+    assert "RECURRENCE-ID;VALUE=DATE:20270720" in out2

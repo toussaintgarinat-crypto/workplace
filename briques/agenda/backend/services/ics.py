@@ -41,9 +41,15 @@ def _vevent(e: dict) -> list[str]:
     if e.get("rrule"):
         lignes.append(f"RRULE:{e['rrule']}")
     if e.get("exdates"):
-        lignes.append("EXDATE:" + ",".join(_fmt_utc(d) for d in e["exdates"]))
+        if e["all_day"]:
+            lignes.append("EXDATE;VALUE=DATE:" + ",".join(_fmt_date(d) for d in e["exdates"]))
+        else:
+            lignes.append("EXDATE:" + ",".join(_fmt_utc(d) for d in e["exdates"]))
     if e.get("recurrence_id"):
-        lignes.append(f"RECURRENCE-ID:{_fmt_utc(e['recurrence_id'])}")
+        if e["all_day"]:
+            lignes.append(f"RECURRENCE-ID;VALUE=DATE:{_fmt_date(e['recurrence_id'])}")
+        else:
+            lignes.append(f"RECURRENCE-ID:{_fmt_utc(e['recurrence_id'])}")
     lignes.append("END:VEVENT")
     return lignes
 
@@ -66,7 +72,7 @@ def event_en_vevent(e) -> dict:
     """Mappe un ORM `Event` vers le dict attendu par `generer_ics`. Un event override
     (recurrence_parent_id non-NULL) porte un `recurrence_id` = sa `recurrence_date`."""
     return {
-        "uid": e.id,
+        "uid": e.recurrence_parent_id or e.id,
         "title": e.title or "",
         "start": e.start_at,
         "end": e.end_at,
