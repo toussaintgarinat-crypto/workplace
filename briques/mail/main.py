@@ -86,6 +86,14 @@ class BrouillonEntree(BaseModel):
     lang: str = "fr"
 
 
+class EnvoiDirectEntree(BaseModel):
+    a: str                 # destinataire
+    sujet: str
+    corps: str              # texte brut (repli honnête)
+    corps_html: str | None = None   # alternative HTML optionnelle (ex. digest S178)
+    compte: str = ""        # adresse d'envoi (optionnel : auto si une seule boîte réelle)
+
+
 class ComposerEntree(BaseModel):
     a: str                 # destinataire du mail neuf
     dictee: str            # ce que l'utilisateur a dicté (sera corrigé + mis en forme)
@@ -455,6 +463,28 @@ def envoyer_brouillon(brouillon_id: str, corps: EnvoiEntree = EnvoiEntree(),
     stockage.marquer_brouillon_envoye(tenant, brouillon_id)
     return {"ok": True, "envoye": True, "mode": res["mode"], "de": res["de"],
             "a": br["a"], "message": res["message"]}
+
+
+@app.post("/mail/envoyer", status_code=200)
+def envoyer_direct(corps: EnvoiDirectEntree, tenant: str = Depends(tenant_actuel)):
+    """Envoi DIRECT (pas un brouillon) — sert le digest S178, qui construit son propre HTML.
+    Auto-sélectionne l'UNIQUE boîte réelle connectée si `compte` n'est pas précisé ; aucune boîte
+    réelle ⇒ envoi SIMULÉ honnête (rien ne part). ACTION à effet de bord réel."""
+    if not corps.a.strip():
+        raise HTTPException(422, "Destinataire requis.")
+    comptes = stockage.lister_comptes(tenant)
+    addr = corps.compte.strip() or (comptes[0]["utilisateur"] if len(comptes) == 1 else "")
+    compte = next((c for c in comptes if c["utilisateur"] == addr), None) if addr else None
+    if addr and compte is None:
+        raise HTTPException(404, f"Boîte « {addr} » non connectée.")
+    # Boîte réelle : recharger avec le secret déchiffré, comme le fait _compte_du_brouillon.
+    reel = _compte_du_brouillon(tenant, {"compte": addr}) if addr else None
+    try:
+        res = envoi.envoyer(reel, a=corps.a.strip(), sujet=corps.sujet, corps=corps.corps,
+                            corps_html=corps.corps_html)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+    return {"ok": True, "envoye": res["envoye"], "mode": res["mode"]}
 
 
 # ── Démarchage : brouillons en lot, conformes, gardés (S170) ─────────────────
