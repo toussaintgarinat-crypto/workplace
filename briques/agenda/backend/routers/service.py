@@ -463,3 +463,25 @@ async def service_finaliser_sondage(poll_id: str, corps: ServiceSondageFinalize,
     return await _polls.finalize_poll(
         poll_id, _FinalizeIn(slot_id=corps.creneau_id, calendar_id=corps.calendrier_id),
         db=db, user=user)
+
+
+# ── S179 : présence + abonnement webcal ───────────────────────────────────────
+from services import abonnement as _abonnement  # noqa: E402
+from services import presence as _presence  # noqa: E402
+
+
+@router.get("/presence")
+async def service_presence_consulter(db: AsyncSession = Depends(get_db),
+                                     user: dict = Depends(get_current_user)):
+    """Qui a partagé sa position (visible par l'identité pinnée), non expirées. Lecture seule."""
+    return await _presence.positions_visibles(db, user["sub"])
+
+
+@router.get("/ics")
+async def service_ics_lien(request: Request, db: AsyncSession = Depends(get_db),
+                           user: dict = Depends(get_current_user)):
+    """URL d'abonnement webcal de l'agenda (à coller dans un client calendrier). Lecture seule."""
+    base = (settings.AGENDA_URL_PUBLIQUE or str(request.base_url)).rstrip("/")
+    token = await _abonnement.obtenir_ou_creer_token(db, user["sub"])
+    return {"token": token, "https": _abonnement.url_https(base, token),
+            "webcal": _abonnement.url_webcal(base, token)}
