@@ -169,19 +169,22 @@ Design détaillé : `docs/superpowers/specs/2026-07-16-s177-sondages-disponibili
   `AGENDA_ENCRYPTION_KEY` ou sous-clé HKDF dérivée de `VAULT_SECRET`, fail-closed) et ses
   `TypeDecorator` (`Chiffre`/`ChiffreFloat`/`ChiffreJSON`) appliqués en transparent aux
   champs humains sensibles : titres/descriptions/lieux d'événements, commentaires,
-  positions de présence (lat/lon), emails (profils + invitations), numéro/note de carte
-  de fidélité, sondages (titre/desc/lieu + voter_name), journal d'activité (user_nom +
-  details), items/noms de listes — dates, jetons, `external_id`, `Label.name`,
-  `LoyaltyCard.enseigne`, couleurs/emoji/enums restent en clair (interrogés/triés) ;
-  `vault.py` refactoré pour partager la primitive de chiffrement ; migration Alembic
-  `0012` (chiffre les colonnes existantes en place, guardée `dialect.name ==
-  "postgresql"`).
+  positions de présence (lat/lon) et leur libellé (`LivePosition.label`), emails
+  (profils + invitations), noms affichables (`UserProfile.display_name`), numéro/note
+  de carte de fidélité, sondages (titre/desc/lieu + voter_name), journal d'activité
+  (user_nom + details), items/noms de listes — dates, jetons, `external_id`,
+  `Label.name`, `LoyaltyCard.enseigne`, couleurs/emoji/enums restent en clair
+  (interrogés/triés) ; `vault.py` refactoré pour partager la primitive de chiffrement ;
+  migration Alembic `0012` (chiffre les colonnes existantes en place, guardée
+  `dialect.name == "postgresql"`). `display_name` et `label` ajoutés après la revue
+  finale de branche pour cohérence de périmètre avec les instantanés déjà chiffrés.
 - **RESTE (LIVE différé)** : poser `AGENDA_ENCRYPTION_KEY` en prod (ou `VAULT_SECRET`
   existant) ; smoke **obligatoire** `alembic upgrade 0012` / `downgrade 0011` sur une
   copie **Postgres** (tests = `create_all`, pas la migration) ; disque de la base chiffré
   en défense en profondeur (à ajouter au runbook `MIGRATION-HP.md`). Fast-follow :
-  rotation de clé réelle, chiffrement des pièces jointes (`EventAttachment`), géocodage
-  de `Event.location` avant chiffrement.
+  rotation de clé réelle, chiffrement des pièces jointes (`EventAttachment`), chiffrer
+  aussi `EventAttachment.filename` (métadonnée en clair, avec le contenu des pièces
+  jointes déjà différé), géocodage de `Event.location` avant chiffrement.
 
 ## Hors périmètre / à clarifier au lancement
 

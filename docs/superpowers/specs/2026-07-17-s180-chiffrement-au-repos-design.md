@@ -61,8 +61,8 @@ zéro casse fonctionnelle.
 | --- | --- |
 | `Event` | `title`, `description`, `location` |
 | `EventComment` | `content` |
-| `LivePosition` | `latitude`, `longitude` (géoloc) |
-| `UserProfile` | `email` |
+| `LivePosition` | `latitude`, `longitude` (géoloc), `label` |
+| `UserProfile` | `email`, `display_name` |
 | `CalendarInvitation` | `email` |
 | `ShoppingListInvitation` | `email` |
 | `LoyaltyCard` | `numero`, `note` |
@@ -71,6 +71,12 @@ zéro casse fonctionnelle.
 | `EventActivityLog` | `user_nom`, `details` (JSON) |
 | `ShoppingItem` | `name`, `note` |
 | `ShoppingList` | `name` |
+
+`UserProfile.display_name` et `LivePosition.label` ont été ajoutés après la revue
+finale de branche : ce sont les mêmes contenus humains que les instantanés déjà
+chiffrés (`EventActivityLog.user_nom`, `PollVote.voter_name` pour l'un ;
+`latitude`/`longitude` pour l'autre) — les laisser en clair aurait défait le
+chiffrement des instantanés dans un dump de base.
 
 ### Laissés en clair (justifié)
 

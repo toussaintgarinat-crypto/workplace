@@ -352,7 +352,8 @@ rappel temps réel du Cœur ; widgets/raccourcis au-delà des 3 shortcuts du man
 
 Le contenu humain sensible est chiffré au repos (AES-GCM) de façon transparente via
 les `TypeDecorator` de `crypto.py` : titres/descriptions/lieux d'événements, contenu
-des commentaires, positions de présence (lat/lon), emails (profils + invitations),
+des commentaires, positions de présence (lat/lon) et leurs libellés de position
+(`label`), emails (profils + invitations), noms affichables (`display_name`),
 numéro/note de carte de fidélité, sondages (titre/desc/lieu + voter_name), journal
 d'activité (user_nom + details), items et noms de listes.
 
@@ -374,5 +375,6 @@ d'activité (user_nom + details), items et noms de listes.
 
 **Fast-follow** : rotation de clé réelle (l'enveloppe versionnée v1 la prépare) ;
 chiffrer aussi les **pièces jointes** fichiers (`EventAttachment` dans `ATTACHMENTS_DIR`,
-non couvert par le chiffrement de colonnes) ; géocoder `Event.location` au write avant
-chiffrement.
+non couvert par le chiffrement de colonnes) ; chiffrer aussi `EventAttachment.filename`
+(métadonnée en clair, avec le contenu des pièces jointes déjà différé) ; géocoder
+`Event.location` au write avant chiffrement.
