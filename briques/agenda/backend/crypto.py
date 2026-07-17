@@ -17,6 +17,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from sqlalchemy.types import Text, TypeDecorator
+
 from config import settings
 
 VERSION = 1
@@ -62,3 +64,42 @@ def dechiffrer(token: str) -> str:
     blob = base64.b64decode(token)
     # blob[0] = version (0x01 aujourd'hui) ; réservé pour une rotation future.
     return decrypt_raw(field_key(), blob[1:]).decode()
+
+
+class Chiffre(TypeDecorator):
+    """Colonne texte chiffrée au repos (transparent en lecture/écriture)."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else chiffrer(value)
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else dechiffrer(value)
+
+
+class ChiffreFloat(TypeDecorator):
+    """Float chiffré : sérialisé en repr() puis chiffré ; rendu en float."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else chiffrer(repr(float(value)))
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else float(dechiffrer(value))
+
+
+class ChiffreJSON(TypeDecorator):
+    """Objet JSON chiffré : json.dumps() puis chiffré ; rendu désérialisé."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else chiffrer(json.dumps(value))
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else json.loads(dechiffrer(value))
