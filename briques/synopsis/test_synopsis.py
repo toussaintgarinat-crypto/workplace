@@ -298,6 +298,53 @@ def test_jobs_init_db_idempotent(monkeypatch, tmp_path):
     assert j.lire_job(jid) is not None
 
 
+# ── GET /jobs/{id} — polling async (S179) ────────────────────────────────────
+
+def test_jobs_endpoint_rend_un_job_en_cours(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    jid = _j.creer_job("resumer", url="https://youtube.com/watch?v=abc")
+    r = client.get(f"/jobs/{jid}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["statut"] == "en_cours"
+    assert data["progress_pct"] == 0
+    assert "resultat" in data and data["resultat"] is None
+
+
+def test_jobs_endpoint_rend_un_job_termine_avec_resultat(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    jid = _j.creer_job("resumer")
+    _j.maj_statut(jid, "termine", resultat={"titre": "T", "resume": "R"}, progress_pct=100)
+    r = client.get(f"/jobs/{jid}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["statut"] == "termine"
+    assert data["progress_pct"] == 100
+    assert data["resultat"]["titre"] == "T"
+
+
+def test_jobs_endpoint_rend_une_erreur_en_200_pas_500(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    jid = _j.creer_job("resumer")
+    _j.maj_statut(jid, "erreur", erreur="Vidéo inaccessible")
+    r = client.get(f"/jobs/{jid}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["statut"] == "erreur"
+    assert data["erreur"] == "Vidéo inaccessible"
+
+
+def test_jobs_endpoint_404_si_inexistant():
+    r = client.get("/jobs/nexiste-pas-uuid")
+    assert r.status_code == 404
+
+
 # ── Front servi ──────────────────────────────────────────────────────────────
 
 def test_front_servi():
