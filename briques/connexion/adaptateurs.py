@@ -34,6 +34,7 @@ except Exception:  # noqa: BLE001 — dépendance optionnelle, repli honnête
         pass
 
 import appareils
+import correspondance
 import stockage
 
 
@@ -332,6 +333,10 @@ class WebPush(Adaptateur):
             code = getattr(getattr(ex, "response", None), "status_code", None)
             if code in (404, 410):
                 appareils.retirer(id_externe)   # appareil mort → purge
+                try:
+                    correspondance.delier("webpush", id_externe)   # ne plus le lister comme cible
+                except Exception:  # noqa: BLE001 — best-effort, ne doit jamais faire remonter
+                    pass
             return False
         except Exception:  # noqa: BLE001 — best-effort
             return False

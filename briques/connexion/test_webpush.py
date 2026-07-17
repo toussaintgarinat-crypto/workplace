@@ -35,6 +35,9 @@ def test_envoyer_appelle_pywebpush(tmp_path):
 def test_envoyer_410_purge_appareil(tmp_path):
     ap, ad = _setup(tmp_path)
     ap.enregistrer("marina", {"endpoint": "https://push/GONE", "keys": {"p256dh": "p", "auth": "a"}})
+    import correspondance
+    importlib.reload(correspondance)
+    correspondance.lier("webpush", "https://push/GONE", "marina")
     from pywebpush import WebPushException
     resp = MagicMock(); resp.status_code = 410
     exc = WebPushException("gone"); exc.response = resp
@@ -44,3 +47,4 @@ def test_envoyer_410_purge_appareil(tmp_path):
             ad.obtenir("webpush").envoyer("https://push/GONE", "🔔 x\ny"))
     assert ok is False
     assert ap.par_endpoint("https://push/GONE") is None
+    assert ("webpush", "https://push/GONE") not in correspondance.cibles_pour("marina")
