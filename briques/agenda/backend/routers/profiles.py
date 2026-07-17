@@ -20,9 +20,10 @@ async def upsert_me(
     user: dict = Depends(get_current_user),
 ):
     """Enregistre/rafraîchit le profil de l'appelant depuis les claims de son token
-    (name > preferred_username > sub). Appelé par l'appli /app juste après le login."""
+    (name > preferred_username > sub, + email si présent). Appelé par l'appli /app
+    juste après le login."""
     nom = user.get("name") or user.get("preferred_username") or user["sub"]
-    return await profils.upsert(db, user["sub"], nom)
+    return await profils.upsert(db, user["sub"], nom, email=user.get("email"))
 
 
 @router.get("/profiles", response_model=list[ProfileOut])

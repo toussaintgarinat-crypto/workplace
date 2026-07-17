@@ -230,6 +230,16 @@ class UserProfile(Base):
     user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_color: Mapped[str] = mapped_column(String(20), nullable=False, default="#3B82F6")
+    # S178 : email semé depuis les claims Keycloak (destinataire des digests). Préférences
+    # push/digest — défauts qui préservent le comportement actuel (push actif, email inactif,
+    # cadence « off » = pas de digest tant que l'utilisateur ne l'active pas explicitement).
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    digest_cadence: Mapped[str] = mapped_column(String(10), nullable=False, default="off")
+    digest_push: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    digest_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    heures_calmes: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    dernier_digest_quotidien: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    dernier_digest_hebdo: Mapped[str | None] = mapped_column(String(10), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
