@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user
@@ -48,12 +48,14 @@ async def add_item(list_id: str, body: ShoppingItemCreate, db: AsyncSession = De
     nom = nom.strip()
 
     # Anti-doublon façon Bring! : un item actif de même nom → on ne duplique pas.
-    existant = (await db.execute(
+    # Comparaison en Python (pas en SQL) : `name` est chiffré au repos (S180), une
+    # égalité SQL sur la colonne ne peut plus matcher le texte en clair.
+    actifs = (await db.execute(
         select(ShoppingItem).where(
             ShoppingItem.list_id == list_id,
             ShoppingItem.checked.is_(False),
-            func.lower(ShoppingItem.name) == nom.lower(),
-        ))).scalars().first()
+        ))).scalars().all()
+    existant = next((i for i in actifs if i.name.lower() == nom.lower()), None)
     if existant is not None:
         item = existant
     else:

@@ -91,7 +91,7 @@ class CalendarInvitation(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     calendar_id: Mapped[str] = mapped_column(String(36), ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False)
     token: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=_uuid)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -235,7 +235,7 @@ class UserProfile(Base):
     # S178 : email semé depuis les claims Keycloak (destinataire des digests). Préférences
     # push/digest — défauts qui préservent le comportement actuel (push actif, email inactif,
     # cadence « off » = pas de digest tant que l'utilisateur ne l'active pas explicitement).
-    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    email: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     digest_cadence: Mapped[str] = mapped_column(String(10), nullable=False, default="off")
     digest_push: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     digest_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -258,9 +258,9 @@ class EventActivityLog(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    user_nom: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_nom: Mapped[str] = mapped_column(Chiffre, nullable=False)
     action: Mapped[str] = mapped_column(String(30), nullable=False)
-    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    details: Mapped[dict | None] = mapped_column(ChiffreJSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -272,7 +272,7 @@ class ShoppingList(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     kind: Mapped[str] = mapped_column(
         Enum("courses", "taches", name="list_kind"), nullable=False, default="courses")
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(Chiffre, nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -302,7 +302,7 @@ class ShoppingListInvitation(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     list_id: Mapped[str] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=False)
     token: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=_uuid)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -317,10 +317,10 @@ class ShoppingItem(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     list_id: Mapped[str] = mapped_column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(Chiffre, nullable=False)
     emoji: Mapped[str | None] = mapped_column(String(16), nullable=True)
     rayon: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     checked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     checked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -355,11 +355,11 @@ class LoyaltyCard(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     enseigne: Mapped[str] = mapped_column(String(255), nullable=False)
-    numero: Mapped[str] = mapped_column(String(255), nullable=False)
+    numero: Mapped[str] = mapped_column(Chiffre, nullable=False)
     format: Mapped[str] = mapped_column(
         Enum("code128", "ean13", "qr", name="barcode_format"), nullable=False, default="code128")
     couleur: Mapped[str] = mapped_column(String(20), nullable=False, default="#3B82F6")
-    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -375,9 +375,9 @@ class AvailabilityPoll(Base):
     __tablename__ = "availability_polls"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    title: Mapped[str] = mapped_column(Chiffre, nullable=False)
+    description: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
+    location: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     # Calendrier cible pour la finalisation. SET NULL : supprimer le calendrier ne
     # détruit pas le sondage — on retombe sur le calendrier par défaut à la finalisation.
@@ -424,7 +424,7 @@ class PollVote(Base):
     slot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("poll_slots.id", ondelete="CASCADE"), nullable=False, index=True)
     voter_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    voter_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    voter_name: Mapped[str] = mapped_column(Chiffre, nullable=False)
     guest_key: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     value: Mapped[str] = mapped_column(
         Enum("oui", "si_besoin", "non", name="poll_vote_value"), nullable=False)
