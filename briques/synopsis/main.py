@@ -199,22 +199,39 @@ def resumer(req: ResumerRequest, background_tasks: BackgroundTasks,
     return {"job_id": job_id, "statut": "en_cours", "poll_url": f"/jobs/{job_id}"}
 
 
-@app.post("/resumer-fichier")
+def _pipeline_fichier(job_id: str, fichier_path: str, nom: str, langue: str, modele: str):
+    try:
+        _jobs.maj_statut(job_id, "en_cours", progress_pct=10)
+        contenu = Path(fichier_path).read_bytes()
+        data = _summarize_fichier(contenu, nom, langue, modele)
+        _jobs.maj_statut(job_id, "termine", progress_pct=100, resultat=data)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("pipeline_fichier job=%s", job_id)
+        _jobs.maj_statut(job_id, "erreur", erreur=str(e))
+    finally:
+        try:
+            Path(fichier_path).unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@app.post("/resumer-fichier", status_code=202)
 async def resumer_fichier(fichier: UploadFile = File(...),
                           langue: str = Form("Français"),
                           modele: str = Form(""),
+                          background_tasks: BackgroundTasks = BackgroundTasks(),
                           _cle: str = Depends(cle_api)):
-    """Résume N'IMPORTE QUEL fichier vidéo/audio uploadé (ffmpeg → transcription → LLM)."""
     contenu = await fichier.read()
     if not contenu:
-        raise HTTPException(status_code=422, detail="Fichier vide.")
-    try:
-        return _summarize_fichier(contenu, fichier.filename or "media", langue, modele)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Erreur /resumer-fichier")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(422, "Fichier vide.")
+    job_id = _jobs.creer_job("resumer_fichier", langue=langue)
+    upload_dir = Path(os.getenv("UPLOAD_DIR", "/clips/uploads"))
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    fichier_path = str(upload_dir / job_id)
+    Path(fichier_path).write_bytes(contenu)
+    background_tasks.add_task(_pipeline_fichier, job_id, fichier_path,
+                              fichier.filename or "media", langue, modele)
+    return {"job_id": job_id, "statut": "en_cours", "poll_url": f"/jobs/{job_id}"}
 
 
 def _pipeline_reel(job_id: str, req: ReelRequest):
