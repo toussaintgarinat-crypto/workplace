@@ -90,6 +90,8 @@ def collecter_capacites(registre) -> list[dict]:
                 "niveau": _niveau(decl.get("niveau")),
                 # S134 — socle:true = toujours inclus dans le routage par embeddings
                 "socle": bool(decl.get("socle", False)),
+                "async": bool(decl.get("async", False)),
+                "poll_chemin": decl.get("poll_chemin"),
             })
     return capacites
 
