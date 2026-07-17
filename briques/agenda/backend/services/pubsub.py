@@ -52,3 +52,19 @@ async def publish_poll_change(poll_id: str, event_type: str, payload: dict) -> N
         await r.aclose()
     except Exception as exc:
         logger.warning("Redis publish (poll) failed: %s", exc)
+
+
+async def publish_presence_change(event_type: str, payload: dict) -> None:
+    """Broadcast d'un changement de présence (partage/arrêt) aux clients SSE. Canal unique
+    `presence:changes` (pas d'id — la carte recharge la liste visible). Best-effort."""
+    if not settings.REDIS_URL:
+        return
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        msg = json.dumps({"type": event_type, "data": payload})
+        await r.publish("presence:changes", msg)
+        await r.aclose()
+    except Exception as exc:
+        logger.warning("Redis publish (presence) failed: %s", exc)
