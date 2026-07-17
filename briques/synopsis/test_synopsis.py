@@ -142,7 +142,10 @@ def test_resumer_langue():
 
 # ── /reel ────────────────────────────────────────────────────────────────────
 
-def test_reel_structure():
+def test_reel_renvoie_202_avec_job_id(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     reel_result = {"reel_path": "/clips/test.mp4", "clip_count": 3, "vertical_path": None}
     with (
         patch("main.get_youtube_transcript", return_value=_TRANSCRIPT_FAKE),
@@ -151,17 +154,42 @@ def test_reel_structure():
         patch("main._highlight_reel", return_value=reel_result),
     ):
         r = client.post("/reel", json={"url": "https://youtube.com/watch?v=abc"})
-    assert r.status_code == 200
+    assert r.status_code == 202
     data = r.json()
-    assert data["reel_path"] == "/clips/test.mp4"
-    assert data["clip_count"] == 3
-    assert data["titre"] == "Introduction à Python"
+    assert "job_id" in data
+    assert data["statut"] == "en_cours"
 
 
-def test_reel_erreur_transcript_400():
+def test_reel_job_termine_contient_reel_path_titre(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    reel_result = {"reel_path": "/clips/test.mp4", "clip_count": 3, "vertical_path": None}
+    with (
+        patch("main.get_youtube_transcript", return_value=_TRANSCRIPT_FAKE),
+        patch("main.chunk_transcript", return_value=_CHUNKS_FAKE),
+        patch("main.llm_complete", return_value=_RESUME_FAKE),
+        patch("main._highlight_reel", return_value=reel_result),
+    ):
+        r = client.post("/reel", json={"url": "https://youtube.com/watch?v=abc"})
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "termine"
+    assert job["resultat"]["reel_path"] == "/clips/test.mp4"
+    assert job["resultat"]["titre"] == "Introduction à Python"
+
+
+def test_reel_job_erreur_sur_value_error(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     with patch("main.get_youtube_transcript", side_effect=ValueError("Privée")):
         r = client.post("/reel", json={"url": "https://youtube.com/watch?v=bad"})
-    assert r.status_code == 400
+    assert r.status_code == 202
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "erreur"
+    assert "Privée" in (job["erreur"] or "")
 
 
 # ── Routage YouTube vs média quelconque ──────────────────────────────────────

@@ -217,19 +217,27 @@ async def resumer_fichier(fichier: UploadFile = File(...),
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/reel")
-def reel(req: ReelRequest, _cle: str = Depends(cle_api)):
+def _pipeline_reel(job_id: str, req: ReelRequest):
     try:
+        _jobs.maj_statut(job_id, "en_cours", progress_pct=10)
         summary = _summarize(req.url, "Français")
-        result = _highlight_reel(req.url, summary["resume"], req.duree_clip, req.sous_titres,
-                                 req.narration, req.langue_narration, req.export_vertical)
+        _jobs.maj_statut(job_id, "en_cours", progress_pct=50)
+        result = _highlight_reel(req.url, summary["resume"], req.duree_clip,
+                                 req.sous_titres, req.narration, req.langue_narration,
+                                 req.export_vertical)
         result["titre"] = summary["titre"]
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        _jobs.maj_statut(job_id, "termine", progress_pct=100, resultat=result)
     except Exception as e:  # noqa: BLE001
-        logger.exception("Erreur /reel")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("pipeline_reel job=%s", job_id)
+        _jobs.maj_statut(job_id, "erreur", erreur=str(e))
+
+
+@app.post("/reel", status_code=202)
+def reel(req: ReelRequest, background_tasks: BackgroundTasks,
+         _cle: str = Depends(cle_api)):
+    job_id = _jobs.creer_job("reel", url=req.url)
+    background_tasks.add_task(_pipeline_reel, job_id, req)
+    return {"job_id": job_id, "statut": "en_cours", "poll_url": f"/jobs/{job_id}"}
 
 
 @app.get("/jobs/{job_id}")
