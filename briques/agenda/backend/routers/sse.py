@@ -143,3 +143,40 @@ async def list_sse(
             await r.aclose()
 
     return EventSourceResponse(_generator())
+
+
+@router.get("/sse/presence")
+async def presence_sse(
+    request: Request,
+    user: dict = Depends(get_current_user_sse),
+):
+    """SSE — changements de présence (partage/arrêt) en temps réel. Canal `presence:changes`."""
+
+    async def _generator():
+        if not settings.REDIS_URL:
+            yield {"data": json.dumps({"type": "connected"})}
+            while not await request.is_disconnected():
+                await asyncio.sleep(30)
+                yield {"data": json.dumps({"type": "ping"})}
+            return
+
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        pubsub = r.pubsub()
+        channel = "presence:changes"
+        await pubsub.subscribe(channel)
+        yield {"data": json.dumps({"type": "connected"})}
+        try:
+            async for message in pubsub.listen():
+                if await request.is_disconnected():
+                    break
+                if message["type"] == "message":
+                    yield {"data": message["data"]}
+        except Exception as exc:
+            logger.warning("SSE error for presence: %s", exc)
+        finally:
+            await pubsub.unsubscribe(channel)
+            await r.aclose()
+
+    return EventSourceResponse(_generator())
