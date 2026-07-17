@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # coffre chiffré, jamais en clair dans l'image.
     VAULT_SECRET: str = ""
 
+    # ── Chiffrement au repos des champs sensibles (S180) ───────────────────────
+    # Clé dédiée qui dérive l'AES-GCM des colonnes sensibles (events, positions,
+    # emails, etc.). Si vide, on dérive une sous-clé DISTINCTE de VAULT_SECRET via
+    # HKDF (séparation des usages, zéro friction). Si les deux sont vides, toute
+    # écriture chiffrée lève (fail-closed). En prod : au coffre, jamais dans l'image.
+    AGENDA_ENCRYPTION_KEY: str = ""
+
     # ── Pont Google Agenda (sync consentie, pull one-way) ──────────────────────
     # Identifiants OAuth2 d'un projet Google Cloud (scope calendar.readonly).
     # Vides ⇒ le pont est désactivé (les endpoints /google/* renvoient 503).
