@@ -279,3 +279,71 @@ retenir un créneau) dans `/app`.
 personne façon S174/S176) ; tri auto pondérant `si_besoin` ; créneaux journée entière ;
 fermeture auto à `expires_at` (aujourd'hui le lien expire pour voter, le sondage reste
 consultable).
+
+## S178 — PWA + push web + digest
+
+**PWA installable** : `/app` est servie comme une vraie app installable — Web App Manifest
+(`GET /app/manifest.webmanifest`), service worker (`GET /app/sw.js`, scope `/app`), icônes
+192/512/maskable générées (`GET /app/icone-{taille}.png`), raccourcis (« Nouvel événement »,
+« Listes », « Sondages »). Le SW ne fait que du **cache d'app-shell minimal** (`/app`) + de
+l'affichage de notification sur `push` (aucune requête réseau interceptée/rejouée) — pas de
+mise en cache des données métier.
+
+**Push web = 5ᵉ canal** (à côté de 🔔+Telegram+WhatsApp+Discord), câblé comme adaptateur
+`webpush` dans la brique `connexion` (voir `briques/connexion/README.md`). Côté agenda,
+`GET /push/cle_publique` sert la clé **publique** VAPID (pas de secret), et
+`POST`/`DELETE /push/appareils` (authentifiés Bearer, `Depends(get_current_user)`) relaient
+best-effort vers `connexion` en forçant `utilisateur` depuis le **`sub` du token**, jamais
+depuis le corps envoyé par le navigateur — un appareil ne peut pas s'enregistrer pour
+quelqu'un d'autre. Anti-intrusif : l'onglet **⚙️ Réglages → 🔔 Notifications** ne demande la
+permission navigateur **que sur clic** (« Activer les notifications sur cet appareil ») ;
+« Couper sur cet appareil » désabonne localement puis `DELETE /push/appareils`. Si un
+endpoint répond 404/410 à l'envoi (abonnement mort — désinstallation, expiration navigateur),
+`connexion` le **purge automatiquement** du magasin.
+
+**Digest quotidien/hebdo** (`POST /digests/executer`, gardé par `DIGEST_KEY`, appelé par
+l'horloge du Cœur — `core/proactif.py:_check_digest`, à chaque tick, idempotent) : composé
+localement (`services/digest.py`, gabarit **déterministe, sans LLM** — texte court pour le
+push, HTML pour l'email), envoyé en push (`connexion /pousser`) et/ou email
+(`mail 6030 /mail/envoyer`) selon les préférences du profil. **Off par défaut**
+(`digest_cadence="off"`) — l'utilisateur l'active explicitement via
+`PATCH /profiles/me/notifs` (cadence `quotidien`/`hebdo`, `digest_push`, `digest_email`,
+`heures_calmes`). Idempotence par (utilisateur, jour) via `dernier_digest_quotidien` /
+`dernier_digest_hebdo` sur `UserProfile` — un appel répété au même tick ne renvoie rien deux
+fois ; le digest hebdo ne part que le lundi.
+
+**Heures calmes** (`services/heures_calmes.py`, plage `HH:MM-HH:MM`, gère l'enjambement de
+minuit) : respectées à la fois par le digest et par les notifications par-personne des listes
+de S176 (`services/notifications.py`). **Pas encore branchées sur le rappel temps réel
+d'événement du Cœur** (`_check_agenda`) — fast-follow explicite, pas un oubli.
+
+**Env** (`config.py`) :
+- `VAPID_PUBLIC_KEY` — clé publique VAPID, **même valeur** que côté `connexion`. Vide ⇒
+  `/push/cle_publique` renvoie une clé vide, le front n'active pas le bouton.
+- `DIGEST_KEY` — clé interne gardant `POST /digests/executer`. Vide ⇒ 503 (digest désactivé).
+- `DIGEST_HEURE` (def. `7`) — heure locale avant laquelle l'endpoint ne fait rien (appelé à
+  chaque tick, se contente de sortir tôt).
+- `DIGEST_TZ` (def. `Europe/Paris`) — fuseau de référence pour l'heure d'envoi et le calcul
+  jour/semaine.
+- `MAIL_URL` / `MAIL_KEY` — base + `X-API-Key` de la brique mail 6030. Vide ⇒ email du
+  digest désactivé (repli honnête), le push reste possible indépendamment.
+
+**⚠️ Migration 0010** (`email`, `digest_cadence`, `digest_push`, `digest_email`,
+`heures_calmes`, `dernier_digest_quotidien`, `dernier_digest_hebdo` sur `user_profiles`) :
+tests = `create_all` ; smoke-tester `alembic upgrade 0010` / `downgrade` sur **Postgres**
+avant déploiement (comme 0007/0008/0009).
+
+**Limites honnêtes** :
+- **iOS** ne supporte le Web Push **qu'après "Ajouter à l'écran d'accueil"** (pas depuis
+  Safari onglet) — limitation de la plateforme, pas de la brique.
+- **Offline = lecture dégradée seulement** : le SW sert l'app-shell en cache, pas les
+  données ; sans réseau, `/app` s'ouvre mais les appels API échouent normalement (pas de
+  synchronisation différée / file d'attente offline dans ce sprint).
+- Heures calmes du **rappel temps réel** d'événement (`_check_agenda` côté Cœur) = **fast-
+  follow**, pas livré ici (seuls le digest et les notifs de listes S176 les respectent).
+
+**Hors périmètre (fast-follow)** : purge auto smoke-testée en conditions réelles (aujourd'hui
+prouvée par test unitaire uniquement) ; génération des clés VAPID (à faire une fois au
+déploiement, `web-push generate-vapid-keys` ou équivalent) ; `pywebpush` à ajouter à l'image
+Docker `connexion` (dépendance optionnelle, repli honnête si absente) ; heures calmes sur le
+rappel temps réel du Cœur ; widgets/raccourcis au-delà des 3 shortcuts du manifest.
