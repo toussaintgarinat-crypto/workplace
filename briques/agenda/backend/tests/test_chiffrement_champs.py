@@ -47,3 +47,24 @@ async def test_comment_content_chiffre(db):
         text("SELECT content FROM event_comments WHERE id='k1'"))).one()
     assert "gâteau" not in brut[0]
     assert crypto.dechiffrer(brut[0]) == "j'apporte le gâteau"
+
+
+@pytest.mark.asyncio
+async def test_live_position_latlon_chiffres(db):
+    from datetime import datetime, timedelta
+    from models.orm import LivePosition
+
+    db.add(LivePosition(user_id="perso", latitude=48.8566, longitude=2.3522,
+                        scope="famille",
+                        expires_at=datetime.utcnow() + timedelta(minutes=30)))
+    await db.commit()
+    db.expire_all()
+
+    pos = (await db.execute(
+        select(LivePosition).where(LivePosition.user_id == "perso"))).scalar_one()
+    assert pos.latitude == 48.8566 and pos.longitude == 2.3522   # transparent, float
+
+    brut = (await db.execute(
+        text("SELECT latitude FROM live_positions WHERE user_id='perso'"))).one()
+    assert "48.8566" not in str(brut[0])       # illisible en base
+    assert float(crypto.dechiffrer(brut[0])) == 48.8566

@@ -444,8 +444,8 @@ class LivePosition(Base):
     __tablename__ = "live_positions"
 
     user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    latitude: Mapped[float] = mapped_column(Float, nullable=False)
-    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    latitude: Mapped[float] = mapped_column(ChiffreFloat, nullable=False)
+    longitude: Mapped[float] = mapped_column(ChiffreFloat, nullable=False)
     accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # famille = visible de tous les membres ; event = visible des seuls participants de
