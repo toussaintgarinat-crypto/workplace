@@ -2,11 +2,17 @@
 import importlib
 from unittest.mock import patch, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 import main
 
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def _uploads_en_tmp(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
 
 _TRANSCRIPT_FAKE = {
     "transcript": "Bonjour tout le monde. Aujourd'hui on parle de Python.",
@@ -226,7 +232,10 @@ def test_resumer_url_media_delegue_transcription(monkeypatch, tmp_path):
 
 # ── /resumer-fichier (n'importe quelle vidéo uploadée) ───────────────────────
 
-def test_resumer_fichier_ok():
+def test_resumer_fichier_renvoie_202_avec_job_id(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     fake = {"transcript": [{"start": 0.0, "text": "Salut", "duration": 0.0}],
             "titre": "ma-video", "langue": "fr"}
     with (
@@ -238,10 +247,14 @@ def test_resumer_fichier_ok():
         r = client.post("/resumer-fichier",
                         files={"fichier": ("ma-video.mp4", b"\x00\x01videodata", "video/mp4")},
                         data={"langue": "Français"})
-    assert r.status_code == 200
+    assert r.status_code == 202
     data = r.json()
-    assert data["titre"] == "ma-video"
-    assert isinstance(data["chapitres"], list)
+    assert "job_id" in data
+    assert data["statut"] == "en_cours"
+    jid = data["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "termine"
+    assert job["resultat"]["titre"] == "ma-video"
     mock_audio.assert_called_once()
     mock_tr.assert_called_once()
 
@@ -252,15 +265,20 @@ def test_resumer_fichier_vide_422():
     assert r.status_code == 422
 
 
-def test_resumer_fichier_sans_moteur_400():
-    """Si la transcription n'a aucun moteur, on rend une erreur honnête (400)."""
+def test_resumer_fichier_job_erreur_sur_value_error(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     with patch("main.audio.extraire_audio", return_value=b"wav"), \
          patch("main.transcribe_client.transcrire_fichier",
                side_effect=ValueError("aucun moteur de transcription configuré")):
         r = client.post("/resumer-fichier",
                         files={"fichier": ("v.mp4", b"data", "video/mp4")})
-    assert r.status_code == 400
-    assert "moteur" in r.json()["detail"]
+    assert r.status_code == 202
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "erreur"
+    assert "moteur" in (job["erreur"] or "")
 
 
 # ── Normalisation des réponses de la brique transcription ────────────────────
