@@ -347,3 +347,32 @@ prouvée par test unitaire uniquement) ; génération des clés VAPID (à faire 
 déploiement, `web-push generate-vapid-keys` ou équivalent) ; `pywebpush` à ajouter à l'image
 Docker `connexion` (dépendance optionnelle, repli honnête si absente) ; heures calmes sur le
 rappel temps réel du Cœur ; widgets/raccourcis au-delà des 3 shortcuts du manifest.
+
+## S180 — Chiffrement au repos
+
+Le contenu humain sensible est chiffré au repos (AES-GCM) de façon transparente via
+les `TypeDecorator` de `crypto.py` : titres/descriptions/lieux d'événements, contenu
+des commentaires, positions de présence (lat/lon), emails (profils + invitations),
+numéro/note de carte de fidélité, sondages (titre/desc/lieu + voter_name), journal
+d'activité (user_nom + details), items et noms de listes.
+
+**Non chiffré** (interrogé/trié/capacité) : dates, clés de jointure, jetons
+(`ics_token`/`share_token`/tokens d'invitation), `external_id`, `Label.name`,
+`LoyaltyCard.enseigne`, couleurs/emoji/enums.
+
+**Clé** : `AGENDA_ENCRYPTION_KEY` (dédiée) ; à défaut, sous-clé HKDF dérivée de
+`VAULT_SECRET` (distincte de la clé du coffre OAuth). Sans aucune des deux, toute
+écriture chiffrée lève (fail-closed).
+
+**Déploiement (RESTE, LIVE différé)** :
+- Poser `AGENDA_ENCRYPTION_KEY` en prod (ou s'appuyer sur `VAULT_SECRET` déjà présent).
+- Smoke **obligatoire** avant bascule : `alembic upgrade 0012` puis `alembic downgrade 0011`
+  sur une copie **Postgres** des données (les tests utilisent `create_all`, pas la migration ;
+  la migration exige qu'une clé soit configurée au moment de l'`upgrade`).
+- Défense en profondeur (hors code) : volume de la base sur disque chiffré — à ajouter
+  au runbook `MIGRATION-HP.md`.
+
+**Fast-follow** : rotation de clé réelle (l'enveloppe versionnée v1 la prépare) ;
+chiffrer aussi les **pièces jointes** fichiers (`EventAttachment` dans `ATTACHMENTS_DIR`,
+non couvert par le chiffrement de colonnes) ; géocoder `Event.location` au write avant
+chiffrement.
