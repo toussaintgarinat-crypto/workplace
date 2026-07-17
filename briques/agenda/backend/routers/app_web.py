@@ -20,4 +20,5 @@ router = APIRouter(tags=["app"])
 @router.get("/app", response_class=HTMLResponse, include_in_schema=False)
 async def app_page():
     kc_url = settings.KEYCLOAK_PUBLIC_URL or settings.KEYCLOAK_URL
-    return HTMLResponse(page_app(kc_url, settings.KEYCLOAK_REALM, settings.KEYCLOAK_CLIENT_ID))
+    return HTMLResponse(page_app(kc_url, settings.KEYCLOAK_REALM,
+                                 settings.KEYCLOAK_CLIENT_ID, settings.AUTH_ENABLED))
