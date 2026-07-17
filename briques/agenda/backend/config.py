@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     CONNEXION_URL: str = ""
     CONNEXION_KEY: str = ""
 
+    # ── Push web + PWA (S178) ──────────────────────────────────────────────────
+    # Clé PUBLIQUE VAPID (même valeur que connexion) — servie au navigateur pour
+    # s'inscrire. La clé PRIVÉE ne vit QUE dans connexion. Vide ⇒ push désactivé.
+    VAPID_PUBLIC_KEY: str = ""
+    # Clé interne gardant POST /digests/executer (déclenché par l'horloge du Cœur).
+    DIGEST_KEY: str = ""
+    DIGEST_HEURE: int = 7          # heure locale d'envoi du digest
+    DIGEST_TZ: str = "Europe/Paris"
+
     class Config:
         env_file = ".env"
 
