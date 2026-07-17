@@ -15,6 +15,8 @@ _PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<meta name="theme-color" content="#1A1612">
 <title>Agenda</title>
 <style>
   :root { color-scheme: light dark; }
@@ -169,6 +171,7 @@ async function demarrer() {
     if (!tokens) { afficherLogin("Échec de la connexion. Réessayez."); return; }
     poserSession(tokens);
     await chargerApp();
+    await initPWA();
     return;
   }
 
@@ -178,6 +181,7 @@ async function demarrer() {
   if (!tokens) { afficherLogin("Session expirée. Reconnecte-toi."); return; }
   poserSession(tokens);
   await chargerApp();
+  await initPWA();
 }
 
 async function chargerApp() {
@@ -191,7 +195,8 @@ async function chargerApp() {
     '<button data-vue="agenda" onclick="montrerVue(\'agenda\')">📅 Agenda</button>' +
     '<button data-vue="listes" onclick="montrerVue(\'listes\')">🛒 Listes</button>' +
     '<button data-vue="sondages" onclick="montrerVue(\'sondages\')">📊 Sondages</button>' +
-    '<button data-vue="cartes" onclick="montrerVue(\'cartes\')">💳 Cartes</button>';
+    '<button data-vue="cartes" onclick="montrerVue(\'cartes\')">💳 Cartes</button>' +
+    '<button data-vue="reglages" onclick="montrerVue(\'reglages\')">⚙️ Réglages</button>';
   montrerVue("agenda");
 }
 
@@ -203,6 +208,7 @@ function montrerVue(nom) {
   else if (nom === "listes") vueListes();
   else if (nom === "sondages") vueSondages();
   else if (nom === "cartes") vueCartes();
+  else if (nom === "reglages") vueReglages();
 }
 
 let CALENDARS = [];
@@ -861,6 +867,65 @@ async function finaliserSondage(id, slotId) {
       body: JSON.stringify({ slot_id: slotId }) });
     ouvrirSondage(id);
   } catch (e) { alert("Échec : " + e.message); }
+}
+
+// ── Réglages : panneau notifications (S178) ─────────────────────────────────
+async function vueReglages() {
+  document.getElementById("main").innerHTML =
+    '<section id="panneau-notifs" style="margin-top:16px">' +
+    '<h3>🔔 Notifications</h3>' +
+    '<p id="etat-push">…</p>' +
+    '<button id="btn-activer-push" onclick="activerPush()">Activer les notifications sur cet appareil</button>' +
+    '<button id="btn-couper-push" onclick="couperPush()" style="display:none">Couper sur cet appareil</button>' +
+    '</section>';
+  majEtatPush();
+}
+
+// ── PWA + push web (S178) — anti-intrusif : rien au chargement, tout sur clic ──
+const b64ToUint8 = (s) => {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...b].map((c) => c.charCodeAt(0)));
+};
+let swReg = null;
+async function initPWA() {
+  if (!("serviceWorker" in navigator)) return;
+  try { swReg = await navigator.serviceWorker.register("/app/sw.js", { scope: "/app" }); }
+  catch (e) { console.warn("SW non enregistré", e); }
+  majEtatPush();
+}
+async function majEtatPush() {
+  const el = document.getElementById("etat-push");
+  if (!el) return;
+  if (!("Notification" in window) || !swReg) { el.textContent = "Non supporté sur ce navigateur."; return; }
+  const sub = await swReg.pushManager.getSubscription();
+  el.textContent = sub ? "🔔 Notifications activées sur cet appareil." : "🔕 Notifications coupées ici.";
+  document.getElementById("btn-activer-push").style.display = sub ? "none" : "";
+  document.getElementById("btn-couper-push").style.display = sub ? "" : "none";
+}
+async function activerPush() {
+  if (Notification.permission === "denied") { alert("Autorise les notifications dans les réglages du navigateur."); return; }
+  const perm = await Notification.requestPermission();      // ← demande UNIQUEMENT ici, sur clic
+  if (perm !== "granted") return;
+  const { cle } = await (await fetch("/push/cle_publique")).json();
+  if (!cle) { alert("Push non configuré côté serveur."); return; }
+  const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToUint8(cle) });
+  try {
+    await api("/push/appareils", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appareil: sub.toJSON() }) });
+  } catch (e) { alert("Échec : " + e.message); return; }
+  majEtatPush();
+}
+async function couperPush() {
+  const sub = await swReg.pushManager.getSubscription();
+  if (sub) {
+    try {
+      await api("/push/appareils", { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: sub.endpoint }) });
+    } catch (e) { /* best-effort */ }
+    await sub.unsubscribe();
+  }
+  majEtatPush();
 }
 
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
