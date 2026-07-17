@@ -22,6 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
+from crypto import Chiffre, ChiffreFloat, ChiffreJSON
 
 
 def _uuid() -> str:
@@ -109,11 +110,11 @@ class Event(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     calendar_id: Mapped[str] = mapped_column(String(36), ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(Chiffre, nullable=False)
+    description: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     start_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    location: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Étiquette nommée (catégorie) facultative. Si posée, la couleur d'affichage vient
     # du label ; sinon repli sur `color`. ondelete=SET NULL : supprimer un label ne
@@ -177,7 +178,7 @@ class EventComment(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     event_id: Mapped[str] = mapped_column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Chiffre, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
