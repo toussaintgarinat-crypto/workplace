@@ -28,7 +28,8 @@ def serveur_smtp(compte: dict) -> tuple[str, int]:
     return host, (port or 587)
 
 
-def _construire(de: str, a: str, sujet: str, corps: str, en_reponse_a_uid: str = "") -> EmailMessage:
+def _construire(de: str, a: str, sujet: str, corps: str, en_reponse_a_uid: str = "",
+                 corps_html: str | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = de
     msg["To"] = a
@@ -39,14 +40,20 @@ def _construire(de: str, a: str, sujet: str, corps: str, en_reponse_a_uid: str =
         msg["In-Reply-To"] = en_reponse_a_uid
         msg["References"] = en_reponse_a_uid
     msg.set_content(corps)
+    if corps_html:
+        # Alternative HTML (ex. digest S178) : le client mail choisit le meilleur rendu, le
+        # texte brut reste le repli honnête pour les clients qui n'affichent pas le HTML.
+        msg.add_alternative(corps_html, subtype="html")
     return msg
 
 
 def envoyer(compte: dict | None, *, a: str, sujet: str, corps: str,
-            en_reponse_a_uid: str = "") -> dict:
-    """Envoie la réponse. Renvoie {envoye, mode:"reel"|"simule", de, message}.
+            en_reponse_a_uid: str = "", corps_html: str | None = None) -> dict:
+    """Envoie la réponse (ou un email direct, ex. digest). Renvoie {envoye, mode:"reel"|"simule",
+    de, message}.
 
     `compte` (avec `mot_de_passe` déchiffré) → envoi réel ; None → envoi simulé honnête.
+    `corps_html` optionnel : ajoute une alternative HTML au message (texte brut conservé).
     Lève `RuntimeError` si l'envoi réel échoue (l'appelant transforme en erreur HTTP propre)."""
     if not a:
         raise RuntimeError("Pas de destinataire pour ce brouillon.")
@@ -56,7 +63,7 @@ def envoyer(compte: dict | None, *, a: str, sujet: str, corps: str,
 
     de = compte["utilisateur"]
     host, port = serveur_smtp(compte)
-    msg = _construire(de, a, sujet, corps, en_reponse_a_uid)
+    msg = _construire(de, a, sujet, corps, en_reponse_a_uid, corps_html)
     try:
         with smtplib.SMTP(host, port, timeout=30) as s:
             s.ehlo()
