@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 import adaptateurs
+import appareils
 import client_assistant
 import correspondance
 import miniapp
@@ -78,6 +79,21 @@ class InitData(BaseModel):
 class MiniChat(BaseModel):
     messages: list
     init_data: Optional[str] = None   # repli si l'en-tête n'est pas transmis
+
+
+class AppareilPush(BaseModel):
+    endpoint: str
+    keys: dict = {}
+    ua: Optional[str] = None
+
+
+class EnregistrerAppareil(BaseModel):
+    utilisateur: str
+    appareil: AppareilPush
+
+
+class RetirerAppareil(BaseModel):
+    endpoint: str
 
 
 @app.get("/sante", tags=["système"])
@@ -176,6 +192,29 @@ async def pousser(body: Pousser, _cle: str = Depends(cle_api)):
         except Exception as ex:  # noqa: BLE001 — un réseau KO ne bloque pas les autres
             detail.append({"reseau": reseau, "envoye": False, "raison": str(ex)})
     return {"ok": True, "envoyes": envoyes, "cibles": len(cibles), "detail": detail}
+
+
+@app.get("/push/cle_publique", tags=["push"])
+async def push_cle_publique():
+    """Clé publique VAPID (publique par nature) : le navigateur en a besoin pour s'inscrire."""
+    return {"cle": os.getenv("VAPID_PUBLIC_KEY", "")}
+
+
+@app.post("/push/appareils", tags=["push"])
+async def push_enregistrer(body: EnregistrerAppareil, _cle: str = Depends(cle_api)):
+    """Enregistre un appareil push web d'un utilisateur (device, PAS abonnement payant).
+    L'appareil devient une cible de correspondance → `/pousser` le fanout ensuite."""
+    app_enr = appareils.enregistrer(body.utilisateur, body.appareil.model_dump())
+    correspondance.lier("webpush", app_enr["endpoint"], body.utilisateur)
+    return {"ok": True}
+
+
+@app.delete("/push/appareils", tags=["push"])
+async def push_retirer(body: RetirerAppareil, _cle: str = Depends(cle_api)):
+    """Retire un appareil (coupure des notifs sur ce navigateur)."""
+    ok = appareils.retirer(body.endpoint)
+    correspondance.delier("webpush", body.endpoint)
+    return {"ok": ok}
 
 
 @app.get("/correspondances", tags=["admin"])
