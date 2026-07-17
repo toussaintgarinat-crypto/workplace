@@ -877,8 +877,33 @@ async function vueReglages() {
     '<p id="etat-push">…</p>' +
     '<button id="btn-activer-push" onclick="activerPush()">Activer les notifications sur cet appareil</button>' +
     '<button id="btn-couper-push" onclick="couperPush()" style="display:none">Couper sur cet appareil</button>' +
+    '<h4 style="margin-top:16px">Résumé (digest)</h4>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;max-width:320px">' +
+    '<label>Fréquence : ' +
+    '<select id="digest-cadence"><option value="off">Aucun</option>' +
+    '<option value="quotidien">Quotidien</option><option value="hebdo">Hebdo</option></select></label>' +
+    '<label><input type="checkbox" id="digest-push"> Par notification</label>' +
+    '<label><input type="checkbox" id="digest-email"> Par email</label>' +
+    '<label>Heures calmes : <input id="heures-calmes" placeholder="22:00-07:00"></label>' +
+    '<button onclick="enregistrerNotifs()">Enregistrer</button>' +
+    '</div>' +
     '</section>';
   majEtatPush();
+}
+
+async function enregistrerNotifs() {
+  const body = {
+    digest_cadence: document.getElementById("digest-cadence").value,
+    digest_push: document.getElementById("digest-push").checked,
+    digest_email: document.getElementById("digest-email").checked,
+    heures_calmes: document.getElementById("heures-calmes").value.trim(),
+  };
+  try {
+    await api("/profiles/me/notifs", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+    alert("Préférences enregistrées.");
+  } catch (e) { alert("Échec : " + e.message); }
 }
 
 // ── PWA + push web (S178) — anti-intrusif : rien au chargement, tout sur clic ──
