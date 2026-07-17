@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -241,6 +242,9 @@ class UserProfile(Base):
     dernier_digest_quotidien: Mapped[str | None] = mapped_column(String(10), nullable=True)
     dernier_digest_hebdo: Mapped[str | None] = mapped_column(String(10), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    # S179 : jeton du flux d'abonnement webcal (ICS). NULL tant que l'utilisateur n'a pas
+    # demandé son lien ; révocable (régénérer = nouveau jeton, l'ancien cesse de résoudre).
+    ics_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
 
 
 class EventActivityLog(Base):
@@ -427,3 +431,28 @@ class PollVote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     poll: Mapped["AvailabilityPoll"] = relationship(back_populates="votes")
+
+
+# ── S179 : présence (position éphémère partagée) ──────────────────────────────
+
+class LivePosition(Base):
+    """Position éphémère partagée par une personne. UNE ligne max par personne
+    (PK `user_id`) : repartager REMPLACE. `expires_at` borne la durée de vie ; au-delà,
+    filtrée à la lecture puis purgée. Aucun historique conservé (ligne unique)."""
+
+    __tablename__ = "live_positions"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # famille = visible de tous les membres ; event = visible des seuls participants de
+    # l'événement `event_id` (expiration = fin de l'event).
+    scope: Mapped[str] = mapped_column(
+        Enum("famille", "event", name="live_position_scope"), nullable=False, default="famille")
+    event_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now())
