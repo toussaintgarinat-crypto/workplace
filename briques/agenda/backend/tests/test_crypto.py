@@ -64,3 +64,62 @@ def test_dechiffrer_mauvaise_cle_leve():
             crypto.dechiffrer(token)
     finally:
         settings.AGENDA_ENCRYPTION_KEY = ""
+
+
+import pytest_asyncio
+from sqlalchemy import Column, Integer, String, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+import crypto as crypto_mod
+
+
+class _Base(DeclarativeBase):
+    pass
+
+
+class _Jetable(_Base):
+    __tablename__ = "jetable_crypto"
+    id = Column(Integer, primary_key=True)
+    secret = Column(crypto_mod.Chiffre, nullable=True)
+    lat = Column(crypto_mod.ChiffreFloat, nullable=True)
+    meta = Column(crypto_mod.ChiffreJSON, nullable=True)
+
+
+@pytest_asyncio.fixture
+async def db_jetable():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(_Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_decorateurs_transparents_et_chiffres(db_jetable):
+    db_jetable.add(_Jetable(id=1, secret="confidentiel", lat=48.8566,
+                            meta={"clé": "valeur"}))
+    await db_jetable.commit()
+    db_jetable.expire_all()
+
+    obj = (await db_jetable.execute(select(_Jetable).where(_Jetable.id == 1))).scalar_one()
+    assert obj.secret == "confidentiel"       # transparent en lecture
+    assert obj.lat == 48.8566
+    assert obj.meta == {"clé": "valeur"}
+
+    brut = (await db_jetable.execute(
+        text("SELECT secret, lat, meta FROM jetable_crypto WHERE id=1"))).one()
+    assert "confidentiel" not in (brut[0] or "")  # illisible en base
+    assert "48.8566" not in (brut[1] or "")
+    assert crypto_mod.dechiffrer(brut[0]) == "confidentiel"
+
+
+@pytest.mark.asyncio
+async def test_decorateurs_none_reste_none(db_jetable):
+    db_jetable.add(_Jetable(id=2, secret=None, lat=None, meta=None))
+    await db_jetable.commit()
+    db_jetable.expire_all()
+    obj = (await db_jetable.execute(select(_Jetable).where(_Jetable.id == 2))).scalar_one()
+    assert obj.secret is None and obj.lat is None and obj.meta is None
