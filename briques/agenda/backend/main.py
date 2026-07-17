@@ -28,6 +28,7 @@ from routers.loyalty import router as loyalty_router
 from routers.members import router as members_router
 from routers.participants import router as participants_router
 from routers.polls import router as polls_router
+from routers.presence import router as presence_router
 from routers.push import router as push_router
 from routers.profiles import router as profiles_router
 from routers.pwa import router as pwa_router
@@ -99,6 +100,7 @@ app.include_router(polls_router)
 app.include_router(push_router)
 app.include_router(pwa_router)
 app.include_router(ics_router)
+app.include_router(presence_router)
 
 # S176 : sert le générateur de code-barres embarqué (static/barcode.js), sans CDN.
 import os as _os
