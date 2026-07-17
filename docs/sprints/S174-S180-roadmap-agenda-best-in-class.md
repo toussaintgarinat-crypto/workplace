@@ -123,14 +123,31 @@ Design détaillé : `docs/superpowers/specs/2026-07-16-s177-sondages-disponibili
 - Fast-follow : notifier les votants à la finalisation ; tri pondérant `si_besoin` ;
   créneaux journée entière ; fermeture auto à `expires_at`.
 
-## S178 — PWA + notifications push web + widgets + digest
+## S178 — PWA + notifications push web + widgets + digest — ✅ CODE-COMPLET 2026-07-17 (LIVE différé)
 
-- Service worker + Web App Manifest → installable sans app native (contourne le
-  problème d'adoption mobile identifié).
-- Push web (canal supplémentaire à 🔔+Telegram existants) pour les notifs par-personne
-  de S174 et les listes de S176.
-- Widgets = raccourcis PWA, une fois le manifest en place.
-- Digest quotidien/hebdo (façon Cozi) par email (brique mail 6030) ou Telegram.
+- **Statut** : code-complet, suites vertes — agenda **294 passed** (+1 skip redis, migration
+  `0010`), `connexion` **84 passed**, `mail` **76 passed**, `make test-core` **441 passed**
+  (dont `_check_digest`). Voir `briques/agenda/backend/README.md#s178--pwa--push-web--digest`
+  et `briques/connexion/README.md` (section Web Push).
+- **Livré** : PWA installable sur `/app` (Web App Manifest + service worker + icônes
+  192/512/maskable + 3 raccourcis) ; **push web** comme **5ᵉ adaptateur** `webpush` de la
+  brique `connexion` (VAPID, appareils enregistrés via un relais agenda qui force
+  l'utilisateur depuis le `sub` Keycloak, auto-purge des cibles mortes sur 404/410) ; **digest
+  quotidien/hebdo** (off par défaut, opt-in explicite) composé sans LLM dans l'agenda et
+  envoyé en push court (`connexion /pousser`) + email HTML riche (`mail 6030
+  /mail/envoyer`), déclenché à chaque tick par l'horloge du Cœur
+  (`core/proactif.py:_check_digest`, idempotent par utilisateur+jour) ; **heures calmes**
+  (plage `HH:MM-HH:MM`) respectées par le digest et par les notifs de listes S176 ;
+  `UserProfile` étendu (migration `0010` : email, `digest_cadence`/`digest_push`/
+  `digest_email`, `heures_calmes`, `dernier_digest_quotidien`/`hebdo`) avec
+  `PATCH /profiles/me/notifs` et un panneau 🔔 dans un nouvel onglet **⚙️ Réglages**
+  (activer/couper le push par appareil, régler cadence/canaux/heures calmes du digest).
+- **RESTE** : smoke `alembic upgrade`/`downgrade` de la migration `0010` sur **Postgres**
+  (tests = `create_all`) ; générer les clés VAPID réelles au déploiement ; ajouter
+  `pywebpush` à l'image Docker `connexion` (dépendance optionnelle, repli honnête tant
+  qu'absente) ; heures calmes sur le rappel temps réel d'événement du Cœur (`_check_agenda`,
+  fast-follow explicite) ; offline reste lecture dégradée (pas de file d'attente) ; iOS
+  exige l'ajout à l'écran d'accueil pour recevoir le push (limitation plateforme).
 
 ## S179 — Géolocalisation légère + export ICS/webcal
 

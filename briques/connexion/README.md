@@ -55,6 +55,34 @@ HMAC `X-Hub-Signature-256`). Demande un compte Meta Business.
 ### Email / SMS — squelette honnête
 `EMAILSMS_FOURNISSEUR` (à brancher : SMTP entrant, Twilio…). Non configuré → ignoré.
 
+### Web Push (S178) — notifications navigateur/PWA
+Adaptateur `webpush` (`adaptateurs.py`) : `id_externe` = l'**endpoint** de l'abonnement
+`PushSubscription` du navigateur, résolu dans le magasin `appareils.py`
+(`appareils_webpush.json`, upsert par endpoint). Dépendance optionnelle `pywebpush` — si
+absente, `configure()` renvoie `False` et l'adaptateur est simplement ignoré (repli
+honnête, **pas** simulé).
+
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (ex. `mailto:admin@example.org`) —
+identité du serveur push. La clé **publique** est aussi posée côté agenda
+(`VAPID_PUBLIC_KEY`, même valeur) pour être servie au navigateur ; la clé **privée** ne vit
+que **côté `connexion`**.
+
+Endpoints :
+- `GET /push/cle_publique` — clé publique VAPID, sans auth (publique par nature). Le front
+  agenda (`/app`) l'appelle pour `pushManager.subscribe()`.
+- `POST /push/appareils` `{utilisateur, appareil}` (`X-API-Key`) — enregistre l'appareil
+  (upsert par endpoint) **et** le lie dans la table de correspondance
+  (`reseau="webpush", id_externe=endpoint`) : il devient une cible normale de `/pousser`.
+  Appelé par le relais `POST /push/appareils` de l'agenda, qui force `utilisateur` depuis
+  le `sub` du token Keycloak de l'appelant (jamais depuis le corps envoyé par le
+  navigateur).
+- `DELETE /push/appareils` `{endpoint}` (`X-API-Key`) — retire l'appareil + délie la
+  correspondance (coupure des notifs sur ce navigateur).
+
+**Auto-purge** : si `pywebpush` échoue avec un statut `404`/`410` (abonnement mort — app
+désinstallée, permission révoquée, expiration navigateur), l'adaptateur retire
+automatiquement l'appareil du magasin — pas d'accumulation de cibles mortes.
+
 ## Relier un interlocuteur (consentement)
 
 ```bash
@@ -76,5 +104,5 @@ curl localhost:5870/correspondances     # lister
 ## Tests
 
 ```bash
-pytest          # 44 tests offline, déterministes (conftest purge tous les tokens)
+pytest          # 84 tests offline, déterministes (conftest purge tous les tokens)
 ```
