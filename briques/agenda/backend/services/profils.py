@@ -31,17 +31,20 @@ def nom_affiche(user_id: str, profil: UserProfile | None) -> str:
 
 
 async def upsert(db: AsyncSession, user_id: str, display_name: str,
-                 avatar_color: str | None = None) -> UserProfile:
-    """Crée ou met à jour le profil d'un utilisateur (nom + couleur)."""
+                 avatar_color: str | None = None, email: str | None = None) -> UserProfile:
+    """Crée ou met à jour le profil d'un utilisateur (nom + couleur + email semé au login)."""
     prof = await db.get(UserProfile, user_id)
     couleur = avatar_color or couleur_pour(user_id)
     if prof is None:
-        prof = UserProfile(user_id=user_id, display_name=display_name, avatar_color=couleur)
+        prof = UserProfile(user_id=user_id, display_name=display_name,
+                           avatar_color=couleur, email=email)
         db.add(prof)
     else:
         prof.display_name = display_name
         if avatar_color:
             prof.avatar_color = avatar_color
+        if email:
+            prof.email = email
     await db.commit()
     await db.refresh(prof)
     return prof
