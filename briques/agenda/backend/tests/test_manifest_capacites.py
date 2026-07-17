@@ -58,6 +58,8 @@ def test_les_capacites_attendues():
         "courses_consulter", "courses_creer_liste", "courses_ajouter", "courses_cocher",
         # Sondages de disponibilité (S177)
         "sondage_consulter", "sondage_creer", "sondage_finaliser",
+        # Présence + abonnement webcal (S179)
+        "presence_consulter", "ics_lien",
     }
     assert {c["nom"] for c in _CAPS} == attendues
 

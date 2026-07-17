@@ -1,7 +1,7 @@
 {
   "nom": "agenda",
   "famille": "metier",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Agenda personnel auto-hébergé — calendriers, événements, invitations (repris de workspace/calendar)",
   "role": "agenda",
   "couche": "backend",
@@ -185,6 +185,22 @@
         "calendrier_id": {"type": "string", "description": "Calendrier cible (optionnel, sinon l'agenda par défaut)."}
       },
       "action": true
+    },
+    {
+      "nom": "presence_consulter",
+      "description": "Liste les personnes ayant partagé leur position (carte familiale + « en route » sur un événement), non expirées. Renvoie nom, couleur, latitude/longitude, ancienneté. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/service/presence",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "ics_lien",
+      "description": "Donne à l'utilisateur son URL d'abonnement webcal (à coller dans Apple Calendar / Google Agenda / Outlook pour voir l'agenda du Cœur, lecture seule). Crée le jeton au besoin.",
+      "methode": "GET",
+      "chemin": "/service/ics",
+      "params": {},
+      "action": false
     }
   ],
   "taches": [
