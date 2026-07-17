@@ -1,8 +1,8 @@
 {
   "nom": "synopsis",
   "famille": "media",
-  "version": "1.1.0",
-  "description": "Résumé de N'IMPORTE QUELLE vidéo par IA (YouTube, lien direct, ou fichier uploadé) — transcription, synthèse LLM, chapitrage automatique, points clés, highlight reels.",
+  "version": "1.2.0",
+  "description": "Résumé de N'IMPORTE QUELLE vidéo par IA (YouTube, lien direct, ou fichier uploadé) — transcription, synthèse LLM, chapitrage automatique, points clés, highlight reels. Capacités asynchrones (202 + polling /jobs/{id}).",
   "role": "video",
   "couche": "backend",
   "statut": "actif",
@@ -16,9 +16,11 @@
   "capacites": [
     {
       "nom": "video_resumer",
-      "description": "Résume une vidéo à partir d'une URL : YouTube (transcript natif) OU lien direct vers un média (délégué à la transcription Whisper). Produit un résumé structuré avec chapitres temporels et points clés.",
+      "description": "Résume une vidéo à partir d'une URL : YouTube (transcript natif) OU lien direct vers un média (délégué à la transcription Whisper). Produit un résumé structuré avec chapitres temporels et points clés. Asynchrone : POST renvoie 202 + job_id, poller GET /jobs/{id} jusqu'à statut=termine.",
       "methode": "POST",
       "chemin": "/resumer",
+      "async": true,
+      "poll_chemin": "/jobs/{id}",
       "params": {
         "url": {
           "type": "string",
@@ -42,9 +44,11 @@
     },
     {
       "nom": "youtube_reel",
-      "description": "Crée un highlight reel vidéo à partir des moments clés identifiés dans un résumé YouTube. Télécharge la vidéo, extrait les clips par chapitre, les assemble avec sous-titres et narration TTS optionnelle.",
+      "description": "Crée un highlight reel vidéo à partir des moments clés identifiés dans un résumé YouTube. Télécharge la vidéo, extrait les clips par chapitre, les assemble avec sous-titres et narration TTS optionnelle. Asynchrone (202 + poll).",
       "methode": "POST",
       "chemin": "/reel",
+      "async": true,
+      "poll_chemin": "/jobs/{id}",
       "params": {
         "url": {
           "type": "string",
