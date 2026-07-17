@@ -18,6 +18,7 @@ _PAGE = r"""<!doctype html>
 <link rel="manifest" href="/app/manifest.webmanifest">
 <meta name="theme-color" content="#1A1612">
 <title>Agenda</title>
+<link rel="stylesheet" href="/static/leaflet.css">
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -196,6 +197,7 @@ async function chargerApp() {
     '<button data-vue="listes" onclick="montrerVue(\'listes\')">🛒 Listes</button>' +
     '<button data-vue="sondages" onclick="montrerVue(\'sondages\')">📊 Sondages</button>' +
     '<button data-vue="cartes" onclick="montrerVue(\'cartes\')">💳 Cartes</button>' +
+    '<button data-vue="presence" onclick="montrerVue(\'presence\')">📍 Présence</button>' +
     '<button data-vue="reglages" onclick="montrerVue(\'reglages\')">⚙️ Réglages</button>';
   montrerVue("agenda");
 }
@@ -204,10 +206,12 @@ function montrerVue(nom) {
   for (const b of document.querySelectorAll("#onglets button"))
     b.classList.toggle("actif", b.dataset.vue === nom);
   if (nom !== "listes" && SSE_LISTE) { SSE_LISTE.close(); SSE_LISTE = null; }
+  if (nom !== "presence" && SSE_PRESENCE) { SSE_PRESENCE.close(); SSE_PRESENCE = null; }
   if (nom === "agenda") chargerCalendriers();
   else if (nom === "listes") vueListes();
   else if (nom === "sondages") vueSondages();
   else if (nom === "cartes") vueCartes();
+  else if (nom === "presence") vuePresence();
   else if (nom === "reglages") vueReglages();
 }
 
@@ -887,8 +891,37 @@ async function vueReglages() {
     '<label>Heures calmes : <input id="heures-calmes" placeholder="22:00-07:00"></label>' +
     '<button onclick="enregistrerNotifs()">Enregistrer</button>' +
     '</div>' +
-    '</section>';
+    '</section>' +
+    '<div class="card" style="margin-top:16px"><strong>📅 Abonnement calendrier</strong>' +
+    '<p class="muted">Colle ce lien dans Apple Calendar / Google Agenda / Outlook ' +
+    '(« S\'abonner à un calendrier ») pour voir cet agenda, en lecture seule.</p>' +
+    '<input id="ics-url" readonly style="width:100%" value="…">' +
+    '<div class="barre"><button onclick="copierICS()">Copier</button>' +
+    '<button class="ghost" onclick="regenererICS()">Régénérer</button></div></div>';
   majEtatPush();
+  chargerICS();
+}
+
+async function chargerICS() {
+  try {
+    const r = await api("/ics/cle");
+    const champ = document.getElementById("ics-url");
+    if (champ) champ.value = r.webcal;
+  } catch (e) {}
+}
+
+function copierICS() {
+  const champ = document.getElementById("ics-url");
+  if (champ) { champ.select(); navigator.clipboard && navigator.clipboard.writeText(champ.value); }
+}
+
+async function regenererICS() {
+  if (!confirm("Régénérer le lien invalidera l'abonnement actuel. Continuer ?")) return;
+  try {
+    const r = await api("/ics/regenerer", { method: "POST" });
+    const champ = document.getElementById("ics-url");
+    if (champ) champ.value = r.webcal;
+  } catch (e) {}
 }
 
 async function enregistrerNotifs() {
@@ -951,6 +984,94 @@ async function couperPush() {
     await sub.unsubscribe();
   }
   majEtatPush();
+}
+
+// ═══════════════ Présence éphémère (S179) ═══════════════
+let SSE_PRESENCE = null, CARTE_PRESENCE = null, COUCHE_PRESENCE = null;
+
+function chargerLeaflet() {
+  // Charge le JS Leaflet vendoré une seule fois (zéro CDN). Résout quand L est prêt.
+  return new Promise((resolve) => {
+    if (window.L) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "/static/leaflet.js";
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+}
+
+async function vuePresence() {
+  document.getElementById("main").innerHTML =
+    '<div class="barre"><strong>Présence</strong>' +
+    '<button onclick="partagerPosition(\'famille\')">📍 Partager ma position</button>' +
+    '<button class="ghost" onclick="arreterPosition()">Arrêter</button></div>' +
+    '<div id="carte-presence" style="height:60vh;border-radius:8px;overflow:hidden"></div>' +
+    '<div id="liste-presence" class="muted" style="margin-top:8px"></div>';
+  await chargerLeaflet();
+  // Fonds souverains : IGN Géoplateforme (sans clé) + OSM en repli (motif brique geo).
+  const ign = L.tileLayer(
+    "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+    "&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM" +
+    "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png",
+    { maxZoom: 19, attribution: "© IGN Géoplateforme" });
+  const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, attribution: "© OpenStreetMap" });
+  CARTE_PRESENCE = L.map("carte-presence", { layers: [ign] }).setView([46.6, 2.4], 6);
+  L.control.layers({ "Plan IGN": ign, "OpenStreetMap": osm }).addTo(CARTE_PRESENCE);
+  COUCHE_PRESENCE = L.layerGroup().addTo(CARTE_PRESENCE);
+  await chargerPresence();
+  ouvrirSSEPresence();
+}
+
+async function chargerPresence() {
+  let positions = [];
+  try { positions = await api("/presence"); } catch (e) { return; }
+  if (!COUCHE_PRESENCE) return;
+  COUCHE_PRESENCE.clearLayers();
+  const liste = document.getElementById("liste-presence");
+  if (!positions.length) { if (liste) liste.textContent = "Personne ne partage sa position."; return; }
+  const bornes = [];
+  for (const p of positions) {
+    const quand = new Date(p.updated_at).toLocaleTimeString("fr-FR",
+      { hour: "2-digit", minute: "2-digit" });
+    const osm = "https://www.openstreetmap.org/?mlat=" + p.latitude + "&mlon=" + p.longitude;
+    L.circleMarker([p.latitude, p.longitude],
+      { radius: 9, color: p.avatar_color, fillColor: p.avatar_color, fillOpacity: 0.8 })
+      .bindPopup("<strong>" + esc(p.display_name) + "</strong><br>vu à " + quand +
+        '<br><a href="' + osm + '" target="_blank" rel="noopener">Ouvrir dans Plans</a>')
+      .addTo(COUCHE_PRESENCE);
+    bornes.push([p.latitude, p.longitude]);
+  }
+  if (bornes.length) CARTE_PRESENCE.fitBounds(bornes, { maxZoom: 14, padding: [40, 40] });
+  if (liste) liste.textContent = positions.length + " personne(s) en partage.";
+}
+
+function partagerPosition(scope, eventId) {
+  if (!navigator.geolocation) { alert("Géolocalisation indisponible sur cet appareil."); return; }
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const corps = { lat: pos.coords.latitude, lon: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy, scope: scope || "famille" };
+    if (eventId) corps.event_id = eventId;
+    try {
+      await api("/presence", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corps) });
+    } catch (e) { alert("Partage impossible."); return; }
+    await chargerPresence();
+  }, () => alert("Position refusée."), { enableHighAccuracy: true, timeout: 10000 });
+}
+
+async function arreterPosition() {
+  try { await api("/presence", { method: "DELETE" }); } catch (e) {}
+  await chargerPresence();
+}
+
+function ouvrirSSEPresence() {
+  if (SSE_PRESENCE) return;
+  try {
+    // EventSource ne pose pas d'en-tête → JWT en query (cf. get_current_user_sse).
+    SSE_PRESENCE = new EventSource(`/sse/presence?access_token=${encodeURIComponent(ACCESS_TOKEN)}`);
+    SSE_PRESENCE.onmessage = () => chargerPresence();
+  } catch (e) { SSE_PRESENCE = null; }
 }
 
 demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
