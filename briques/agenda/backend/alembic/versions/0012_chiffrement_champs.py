@@ -29,16 +29,18 @@ _TEXTE = {
     "shopping_items": ("id", ["name", "note"]),
     "shopping_lists": ("id", ["name"]),
 }
-# Colonnes String(n) à élargir en Text (varchar→text, cast implicite Postgres)
+# Colonnes String(n) à élargir en Text (varchar→text, cast implicite Postgres).
+# Longueur = taille String(n) d'origine (migrations 0001/0006/0008/0010), pour
+# que downgrade() restaure exactement le schéma pré-0012 (pas un 500 uniforme).
 _A_ELARGIR = [
-    ("events", "title"), ("events", "location"),
-    ("user_profiles", "email"), ("calendar_invitations", "email"),
-    ("shopping_list_invitations", "email"),
-    ("loyalty_cards", "numero"), ("loyalty_cards", "note"),
-    ("availability_polls", "title"), ("availability_polls", "location"),
-    ("poll_votes", "voter_name"), ("event_activity_log", "user_nom"),
-    ("shopping_items", "name"), ("shopping_items", "note"),
-    ("shopping_lists", "name"),
+    ("events", "title", 500), ("events", "location", 500),
+    ("user_profiles", "email", 320), ("calendar_invitations", "email", 255),
+    ("shopping_list_invitations", "email", 255),
+    ("loyalty_cards", "numero", 255), ("loyalty_cards", "note", 255),
+    ("availability_polls", "title", 500), ("availability_polls", "location", 500),
+    ("poll_votes", "voter_name", 255), ("event_activity_log", "user_nom", 255),
+    ("shopping_items", "name", 255), ("shopping_items", "note", 255),
+    ("shopping_lists", "name", 255),
 ]
 
 
@@ -75,7 +77,7 @@ def upgrade() -> None:
     is_pg = conn.dialect.name == "postgresql"
 
     if is_pg:
-        for table, col in _A_ELARGIR:
+        for table, col, _ in _A_ELARGIR:
             op.alter_column(table, col, type_=sa.Text())
         op.alter_column("event_activity_log", "details", type_=sa.Text(),
                         postgresql_using="details::text")
@@ -98,8 +100,9 @@ def downgrade() -> None:
     if is_pg:
         op.alter_column("event_activity_log", "details", type_=sa.JSON(),
                         postgresql_using="details::json")
-        for table, col in _A_ELARGIR:
-            op.alter_column(table, col, type_=sa.String(length=500))
+        for table, col, length in _A_ELARGIR:
+            op.alter_column(table, col, type_=sa.String(length=length))
+        # live_positions éphémère : purge avant de re-typer lat/lon en Float (symétrique de upgrade)
         op.execute("DELETE FROM live_positions")
         op.alter_column("live_positions", "latitude", type_=sa.Float(),
                         postgresql_using="latitude::double precision")
