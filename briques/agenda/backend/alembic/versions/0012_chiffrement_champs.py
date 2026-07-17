@@ -19,7 +19,7 @@ depends_on = None
 _TEXTE = {
     "events": ("id", ["title", "description", "location"]),
     "event_comments": ("id", ["content"]),
-    "user_profiles": ("user_id", ["email"]),
+    "user_profiles": ("user_id", ["email", "display_name"]),
     "calendar_invitations": ("id", ["email"]),
     "shopping_list_invitations": ("id", ["email"]),
     "loyalty_cards": ("id", ["numero", "note"]),
@@ -34,13 +34,15 @@ _TEXTE = {
 # que downgrade() restaure exactement le schéma pré-0012 (pas un 500 uniforme).
 _A_ELARGIR = [
     ("events", "title", 500), ("events", "location", 500),
-    ("user_profiles", "email", 320), ("calendar_invitations", "email", 255),
+    ("user_profiles", "email", 320), ("user_profiles", "display_name", 255),
+    ("calendar_invitations", "email", 255),
     ("shopping_list_invitations", "email", 255),
     ("loyalty_cards", "numero", 255), ("loyalty_cards", "note", 255),
     ("availability_polls", "title", 500), ("availability_polls", "location", 500),
     ("poll_votes", "voter_name", 255), ("event_activity_log", "user_nom", 255),
     ("shopping_items", "name", 255), ("shopping_items", "note", 255),
     ("shopping_lists", "name", 255),
+    ("live_positions", "label", 255),
 ]
 
 

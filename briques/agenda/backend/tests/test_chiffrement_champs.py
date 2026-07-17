@@ -55,6 +55,7 @@ async def test_live_position_latlon_chiffres(db):
     from models.orm import LivePosition
 
     db.add(LivePosition(user_id="perso", latitude=48.8566, longitude=2.3522,
+                        label="chez mamie",
                         scope="famille",
                         expires_at=datetime.utcnow() + timedelta(minutes=30)))
     await db.commit()
@@ -63,11 +64,17 @@ async def test_live_position_latlon_chiffres(db):
     pos = (await db.execute(
         select(LivePosition).where(LivePosition.user_id == "perso"))).scalar_one()
     assert pos.latitude == 48.8566 and pos.longitude == 2.3522   # transparent, float
+    assert pos.label == "chez mamie"
 
     brut = (await db.execute(
         text("SELECT latitude FROM live_positions WHERE user_id='perso'"))).one()
     assert "48.8566" not in str(brut[0])       # illisible en base
     assert float(crypto.dechiffrer(brut[0])) == 48.8566
+
+    brut_label = (await db.execute(
+        text("SELECT label FROM live_positions WHERE user_id='perso'"))).one()[0]
+    assert "mamie" not in brut_label
+    assert crypto.dechiffrer(brut_label) == "chez mamie"
 
 
 @pytest.mark.asyncio
@@ -83,6 +90,12 @@ async def test_profil_email_chiffre(db):
     brut = (await db.execute(
         text("SELECT email FROM user_profiles WHERE user_id='perso'"))).one()
     assert "papa@example.com" not in brut[0]
+
+    assert prof.display_name == "Papa"
+    brut_row = (await db.execute(
+        text("SELECT display_name FROM user_profiles WHERE user_id='perso'"))).one()[0]
+    assert "Papa" not in brut_row
+    assert crypto.dechiffrer(brut_row) == "Papa"
 
 
 @pytest.mark.asyncio

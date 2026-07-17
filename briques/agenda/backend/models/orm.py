@@ -230,7 +230,7 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(Chiffre, nullable=False)
     avatar_color: Mapped[str] = mapped_column(String(20), nullable=False, default="#3B82F6")
     # S178 : email semé depuis les claims Keycloak (destinataire des digests). Préférences
     # push/digest — défauts qui préservent le comportement actuel (push actif, email inactif,
@@ -447,7 +447,7 @@ class LivePosition(Base):
     latitude: Mapped[float] = mapped_column(ChiffreFloat, nullable=False)
     longitude: Mapped[float] = mapped_column(ChiffreFloat, nullable=False)
     accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
-    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    label: Mapped[str | None] = mapped_column(Chiffre, nullable=True)
     # famille = visible de tous les membres ; event = visible des seuls participants de
     # l'événement `event_id` (expiration = fin de l'event).
     scope: Mapped[str] = mapped_column(
