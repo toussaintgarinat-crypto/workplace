@@ -72,14 +72,32 @@ def _url_dynamique(cap: dict, args: dict) -> str:
     return url
 
 
-async def _appel_dynamique(client, cap: dict, args: dict) -> str:
-    """Exécute une capacité découverte : gate de confirmation si action, puis appel HTTP.
+ASYNC_TIMEOUT = float(os.environ.get("OUTILS_ASYNC_TIMEOUT", "600"))
+ASYNC_POLL = float(os.environ.get("OUTILS_ASYNC_POLL", "5"))
 
-    GET → query params ; autres méthodes → corps JSON ET query params (certains endpoints
-    d'écriture, ex. DELETE, lisent un filtre en query — l'envoyer aux deux est sans risque :
-    un endpoint à modèle de corps ignore les query en trop, un endpoint à query ignore le
-    corps). Les params consommés par le chemin ne sont pas renvoyés en double. Verdict
-    honnête sur refus/injoignable."""
+
+async def _poll_async(poll_url: str, headers: dict | None, brique: str,
+                      job_id: str) -> str:
+    async with httpx.AsyncClient(timeout=None, headers=headers) as c:
+        while True:
+            r = await c.request("GET", poll_url, headers=headers)
+            try:
+                data = r.json()
+            except ValueError:
+                return json.dumps({"ok": False, "brique": brique,
+                                   "message": f"Poll {poll_url} a renvoyé un corps non JSON "
+                                              f"(HTTP {r.status_code})."}, ensure_ascii=False)
+            statut = data.get("statut")
+            if statut == "termine":
+                return json.dumps(data.get("resultat") or data, ensure_ascii=False)
+            if statut == "erreur":
+                return json.dumps({"ok": False, "brique": brique,
+                                   "message": data.get("erreur") or "job en erreur"},
+                                  ensure_ascii=False)
+            await asyncio.sleep(ASYNC_POLL)
+
+
+async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     args = dict(args or {})
     confirme = args.pop("confirme", None)
     if cap.get("action") and not confirme:
@@ -92,6 +110,34 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
         r = await client.request("GET", url, params=charge, headers=entetes)
     else:
         r = await client.request(cap["methode"], url, json=charge, params=charge, headers=entetes)
+    # ── Branche async (S179) : 202 sur cap async → on poll ──
+    if cap.get("async") and r.status_code == 202:
+        try:
+            body = r.json()
+        except ValueError:
+            return json.dumps({"ok": False, "brique": cap["brique"],
+                               "message": "202 sans corps JSON."}, ensure_ascii=False)
+        job_id = body.get("job_id") or body.get("id")
+        if not job_id:
+            return json.dumps({"ok": False, "brique": cap["brique"],
+                               "message": "202 reçu sans job_id — impossible de poller."},
+                              ensure_ascii=False)
+        poll_chemin = (cap.get("poll_chemin") or "/jobs/{id}").replace("{id}", str(job_id))
+        base = cap["url"].rsplit(cap["chemin"], 1)[0]
+        poll_url = base + poll_chemin
+        async_timeout = float(os.environ.get("OUTILS_ASYNC_TIMEOUT", str(ASYNC_TIMEOUT)))
+        try:
+            return await asyncio.wait_for(
+                _poll_async(poll_url, entetes, cap["brique"], job_id),
+                timeout=async_timeout,
+            )
+        except asyncio.TimeoutError:
+            return json.dumps({"ok": False, "brique": cap["brique"],
+                               "message": f"Délai dépassé ({async_timeout:.0f}s). Job "
+                                          f"toujours en cours — interroge GET {poll_url} "
+                                          "plus tard.",
+                               "job_id": job_id}, ensure_ascii=False)
+    # ── Branche sync (comportement S64 inchangé) ──
     if r.status_code >= 400:
         return json.dumps({"ok": False, "brique": cap["brique"],
                            "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
@@ -99,9 +145,6 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     try:
         return json.dumps(r.json(), ensure_ascii=False)
     except ValueError:
-        # Réponse 2xx sans corps JSON. Cas fréquent : 204 No Content (suppressions REST,
-        # ex. studio/personnages) → sans ça l'assistant recevrait une chaîne VIDE et ne
-        # saurait pas si l'action a réussi. On renvoie un succès honnête et explicite.
         texte = (r.text or "").strip()
         if not texte:
             return json.dumps({"ok": True, "brique": cap["brique"], "status": r.status_code},

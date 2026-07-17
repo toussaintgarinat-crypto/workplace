@@ -218,6 +218,103 @@ def test_executer_outil_inconnu_reste_inconnu():
     assert "inconnu" in out.lower()
 
 
+# ── Capacités async (S179) — 202 + polling ──────────────────────────────────
+
+class _ClientAsync:
+    """Client stub qui répond :
+       - sur POST /resumer -> 202 {job_id, statut:'en_cours'}
+       - sur GET /jobs/{id} -> enfile les réponses préchargées dans self.polls.
+    """
+    def __init__(self, post_resp, polls):
+        self.post_resp = post_resp
+        self.polls = list(polls)
+        self.poll_calls = 0
+        self.dernier = {}
+
+    async def request(self, methode, url, json=None, params=None, headers=None, timeout=None):
+        self.dernier = {"methode": methode, "url": url}
+        if methode == "POST":
+            return self.post_resp
+        # GET
+        self.poll_calls += 1
+        return self.polls[min(self.poll_calls - 1, len(self.polls) - 1)]
+
+
+def _cap_async():
+    return {
+        "nom": "video_resumer", "brique": "synopsis", "description": "resumer",
+        "methode": "POST", "chemin": "/resumer",
+        "url": "http://host.docker.internal:6090/resumer",
+        "params": {"url": {"type": "string", "requis": True}},
+        "action": False, "async": True, "poll_chemin": "/jobs/{id}",
+    }
+
+
+def _patch_client_async(monkeypatch, post_resp, polls):
+    """Force _appel_dynamique à utiliser un AsyncClient qui route vers _ClientAsync."""
+    import outils_communs
+    cli = _ClientAsync(post_resp, polls)
+
+    class _Fab:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        async def __aenter__(self):
+            return cli
+
+        async def __aexit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(outils_communs.httpx, "AsyncClient", lambda *a, **kw: _Fab(*a, **kw))
+    return cli
+
+
+def test_appel_dynamique_async_termine_rend_resultat(monkeypatch):
+    post = _Resp(202, {"job_id": "abc", "statut": "en_cours", "poll_url": "/jobs/abc"})
+    polls = [
+        _Resp(200, {"statut": "en_cours", "progress_pct": 50}),
+        _Resp(200, {"statut": "termine", "progress_pct": 100,
+                    "resultat": {"titre": "T", "resume": "R"}}),
+    ]
+    cli = _patch_client_async(monkeypatch, post, polls)
+    out = json.loads(asyncio.run(
+        outils._appel_dynamique(cli, _cap_async(), {"url": "https://youtube.com/watch?v=abc"})))
+    assert out["titre"] == "T"
+    assert out["resume"] == "R"
+
+
+def test_appel_dynamique_async_erreur_rend_ok_false_avec_message(monkeypatch):
+    post = _Resp(202, {"job_id": "x1", "statut": "en_cours"})
+    polls = [_Resp(200, {"statut": "erreur", "erreur": "Vidéo inaccessible"})]
+    cli = _patch_client_async(monkeypatch, post, polls)
+    out = json.loads(asyncio.run(
+        outils._appel_dynamique(cli, _cap_async(), {"url": "https://youtube.com/watch?v=bad"})))
+    assert out["ok"] is False
+    assert "Vidéo inaccessible" in out["message"]
+
+
+def test_appel_dynamique_async_timeout_rend_message_avec_job_id(monkeypatch):
+    import outils_communs
+    monkeypatch.setenv("OUTILS_ASYNC_TIMEOUT", "0.05")
+    post = _Resp(202, {"job_id": "abc", "statut": "en_cours"})
+    polls = [_Resp(200, {"statut": "en_cours"})]  # toujours en_cours
+    cli = _patch_client_async(monkeypatch, post, polls)
+    out = json.loads(asyncio.run(
+        outils._appel_dynamique(cli, _cap_async(), {"url": "https://youtube.com/watch?v=long"})))
+    assert out["ok"] is False
+    assert "délai" in out["message"].lower()
+    assert out["job_id"] == "abc"
+
+
+def test_appel_dynamique_async_sans_job_id_rend_honnete(monkeypatch):
+    post = _Resp(202, {"statut": "en_cours"})  # pas de job_id
+    cli = _patch_client_async(monkeypatch, post, [])
+    out = json.loads(asyncio.run(
+        outils._appel_dynamique(cli, _cap_async(), {"url": "https://youtube.com/watch?v=x"})))
+    assert out["ok"] is False
+    assert "job_id" in out["message"].lower() or "202" in out["message"]
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
