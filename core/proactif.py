@@ -276,7 +276,25 @@ async def _check_geo(registre) -> int:
     return 0
 
 
-CHECKS = [_check_agenda, _check_documents, _check_geo]
+async def _check_digest(registre) -> int:
+    """Déclenche le digest agenda (S178). L'agenda décide seul cadence/heure/idempotence :
+    on peut appeler à chaque tick sans risque. Best-effort, ne lève jamais."""
+    cle = os.getenv("DIGEST_KEY", "")
+    if not cle:
+        return 0
+    try:
+        base = orchestrateur._brique_base(registre, "agenda")
+    except Exception:  # noqa: BLE001
+        return 0
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(f"{base}/digests/executer", headers={"X-API-Key": cle})
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("Proactif digest : %s", ex)
+    return 0
+
+
+CHECKS = [_check_agenda, _check_documents, _check_geo, _check_digest]
 
 
 async def run_check(registre) -> int:
