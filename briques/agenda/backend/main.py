@@ -18,6 +18,7 @@ from routers.digests import router as digests_router
 from routers.events import router as events_router
 from routers.google_sync import router as google_router
 from routers.health import router as health_router
+from routers.ics import router as ics_router
 from routers.invitations import router as invitations_router
 from routers.labels import router as labels_router
 from routers.list_catalog import router as list_catalog_router
@@ -97,6 +98,7 @@ app.include_router(loyalty_router)
 app.include_router(polls_router)
 app.include_router(push_router)
 app.include_router(pwa_router)
+app.include_router(ics_router)
 
 # S176 : sert le générateur de code-barres embarqué (static/barcode.js), sans CDN.
 import os as _os
