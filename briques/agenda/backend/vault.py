@@ -12,13 +12,12 @@ stocke jamais un token en clair par accident.
 from __future__ import annotations
 
 import hashlib
-import os
 from datetime import datetime
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import crypto
 from config import settings
 from models.orm import UserToken
 
@@ -32,16 +31,11 @@ def _key() -> bytes:
 
 
 def encrypt(plaintext: str) -> bytes:
-    aesgcm = AESGCM(_key())
-    nonce = os.urandom(12)
-    ct = aesgcm.encrypt(nonce, plaintext.encode(), None)
-    return nonce + ct
+    return crypto.encrypt_raw(_key(), plaintext.encode())
 
 
 def decrypt(data: bytes) -> str:
-    aesgcm = AESGCM(_key())
-    blob = bytes(data)
-    return aesgcm.decrypt(blob[:12], blob[12:], None).decode()
+    return crypto.decrypt_raw(_key(), bytes(data)).decode()
 
 
 async def get_token_row(db: AsyncSession, user_id: str, provider: str = "google") -> UserToken | None:
