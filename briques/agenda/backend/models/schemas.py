@@ -535,6 +535,24 @@ class ProfileOut(BaseModel):
         from_attributes = True
 
 
+# ── Préférences de notification / digest (S178, C7) ───────────────────────────
+
+class NotifPrefsEntree(BaseModel):
+    """Corps du PATCH /profiles/me/notifs — tous les champs sont optionnels : seuls
+    les champs fournis sont modifiés sur le profil de l'appelant."""
+    digest_cadence: Optional[str] = None
+    digest_push: Optional[bool] = None
+    digest_email: Optional[bool] = None
+    heures_calmes: Optional[str] = None
+
+    @field_validator("digest_cadence")
+    @classmethod
+    def _cadence(cls, v):
+        if v is not None and v not in ("off", "quotidien", "hebdo"):
+            raise ValueError("cadence invalide")
+        return v
+
+
 # ── Journal d'activité (S174) ─────────────────────────────────────────────────
 
 class ActivityLogOut(BaseModel):
