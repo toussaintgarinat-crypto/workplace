@@ -23,6 +23,7 @@ from lib.chunker import chunk_transcript
 from lib.fusion import _extract_chapters, _extract_insights
 from lib.llm_client import llm_complete
 from lib import transcribe_client, audio
+from lib import jobs as _jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("synopsis")
@@ -31,6 +32,12 @@ app = FastAPI(title="Synopsis API", version="1.1.0",
               description="Résumé de n'importe quelle vidéo (YouTube, URL, fichier) — Gateway-ready.")
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
+
+try:
+    _jobs.init_db()
+    logger.info("Jobs DB prête (%s)", _jobs.JOBS_DB)
+except Exception as _e:
+    logger.warning("init_db jobs échoué : %s", _e)
 
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
 
@@ -217,6 +224,19 @@ def reel(req: ReelRequest, _cle: str = Depends(cle_api)):
     except Exception as e:  # noqa: BLE001
         logger.exception("Erreur /reel")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jobs/{job_id}")
+def job_etat(job_id: str):
+    job = _jobs.lire_job(job_id)
+    if not job:
+        raise HTTPException(404, f"Job {job_id} introuvable")
+    return {
+        "statut": job["statut"],
+        "progress_pct": job.get("progress_pct") or 0,
+        "resultat": job.get("resultat"),
+        "erreur": job.get("erreur"),
+    }
 
 
 if __name__ == "__main__":
