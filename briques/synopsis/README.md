@@ -29,8 +29,14 @@ python main.py
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/sante` | Health check (+ statut Gateway) |
-| `POST` | `/resumer` | `{"url": "...", "langue": "Français"}` → résumé structuré |
-| `POST` | `/reel` | `{"url": "...", "duree_clip": 45}` → highlight reel |
+| `POST` | `/resumer` | `{"url": "...", "langue": "Français"}` → `202 {job_id, statut:"en_cours", poll_url}` |
+| `POST` | `/reel` | `{"url": "...", "duree_clip": 45}` → `202 {job_id, poll_url}` (highlight reel) |
+| `POST` | `/resumer-fichier` | multipart `fichier=...` → `202 {job_id, poll_url}` |
+| `GET` | `/jobs/{id}` | `{statut, progress_pct, resultat?, erreur?}` — poll jusqu'à `statut:"termine"\|"erreur"` |
+
+Tous les POST sont **asynchrones** (S181) : la brique renvoie `202` immédiatement et
+exécute le pipeline en arrière-plan (BackgroundTasks). Poller `GET /jobs/{job_id}`
+jusqu'à `statut:"termine"` (résultat) ou `statut:"erreur"` (échec).
 
 ## Intégration Workplace
 
