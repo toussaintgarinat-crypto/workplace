@@ -150,7 +150,8 @@ function deconnecter() {
 }
 
 async function api(path, opts = {}) {
-  const headers = Object.assign({ Authorization: "Bearer " + ACCESS_TOKEN }, opts.headers || {});
+  const headers = Object.assign({}, opts.headers || {});
+  if (KC.authEnabled) headers.Authorization = "Bearer " + ACCESS_TOKEN;
   const r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) { deconnecter(); throw new Error("session expirée"); }
   if (!r.ok) throw new Error("erreur " + r.status);
@@ -159,6 +160,10 @@ async function api(path, opts = {}) {
 }
 
 async function demarrer() {
+  // Mode mono-utilisateur (AUTH_ENABLED=false) : aucun serveur d'identité, on charge
+  // directement l'agenda — le backend résout l'utilisateur par défaut sans token.
+  if (!KC.authEnabled) { await chargerApp(); await initPWA(); return; }
+
   const params = new URLSearchParams(location.search);
   const code = params.get("code"), state = params.get("state");
 
@@ -186,9 +191,9 @@ async function demarrer() {
 }
 
 async function chargerApp() {
-  document.getElementById("entete-droite").innerHTML =
-    '<button class="ghost" id="btn-logout">Se déconnecter</button>';
-  document.getElementById("btn-logout").onclick = deconnecter;
+  document.getElementById("entete-droite").innerHTML = KC.authEnabled
+    ? '<button class="ghost" id="btn-logout">Se déconnecter</button>' : '';
+  if (KC.authEnabled) document.getElementById("btn-logout").onclick = deconnecter;
   try { await api("/profiles/me", { method: "POST" }); } catch (e) { /* best-effort */ }
   const nav = document.getElementById("onglets");
   nav.hidden = false;
@@ -1080,8 +1085,9 @@ demarrer().catch(() => afficherLogin("Erreur réseau. Réessayez."));
 </html>"""
 
 
-def page_app(kc_url: str, kc_realm: str, kc_client_id: str) -> str:
+def page_app(kc_url: str, kc_realm: str, kc_client_id: str, auth_enabled: bool = True) -> str:
     return _PAGE.replace(
         "%%KC%%",
-        json.dumps({"url": kc_url, "realm": kc_realm, "clientId": kc_client_id}),
+        json.dumps({"url": kc_url, "realm": kc_realm, "clientId": kc_client_id,
+                    "authEnabled": bool(auth_enabled)}),
     )
