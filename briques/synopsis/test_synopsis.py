@@ -241,6 +241,63 @@ def test_extraire_audio_vide_leve():
         audio.extraire_audio(b"", "x.mp4")
 
 
+# ── lib/jobs — persistance async (S179) ──────────────────────────────────────
+
+import os as _os
+import tempfile as _tempfile
+
+def _avec_db_temp(monkeypatch, tmp_path):
+    """Redirige JOBS_DB vers un fichier temporaire isolé du test."""
+    db = tmp_path / "jobs.db"
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(db))
+    _j.init_db()
+    return _j
+
+
+def test_jobs_creer_puis_lire(monkeypatch, tmp_path):
+    j = _avec_db_temp(monkeypatch, tmp_path)
+    jid = j.creer_job("resumer", url="https://youtube.com/watch?v=abc", langue="Français")
+    job = j.lire_job(jid)
+    assert job["type"] == "resumer"
+    assert job["url"] == "https://youtube.com/watch?v=abc"
+    assert job["langue"] == "Français"
+    assert job["statut"] == "en_cours"
+    assert job["progress_pct"] == 0
+    assert job["resultat"] is None and job["erreur"] is None
+
+
+def test_jobs_maj_statut_termine_monkeypatch(monkeypatch, tmp_path):
+    j = _avec_db_temp(monkeypatch, tmp_path)
+    jid = j.creer_job("resumer")
+    j.maj_statut(jid, "termine", resultat={"titre": "T", "resume": "R"}, progress_pct=100)
+    job = j.lire_job(jid)
+    assert job["statut"] == "termine"
+    assert job["progress_pct"] == 100
+    assert job["resultat"] == {"titre": "T", "resume": "R"}
+
+
+def test_jobs_maj_statut_erreur(monkeypatch, tmp_path):
+    j = _avec_db_temp(monkeypatch, tmp_path)
+    jid = j.creer_job("reel")
+    j.maj_statut(jid, "erreur", erreur="Whisper down")
+    job = j.lire_job(jid)
+    assert job["statut"] == "erreur"
+    assert job["erreur"] == "Whisper down"
+
+
+def test_jobs_lire_job_inexistant_rend_none(monkeypatch, tmp_path):
+    j = _avec_db_temp(monkeypatch, tmp_path)
+    assert j.lire_job("nexiste-pas") is None
+
+
+def test_jobs_init_db_idempotent(monkeypatch, tmp_path):
+    j = _avec_db_temp(monkeypatch, tmp_path)
+    j.init_db()  # ne lève pas
+    jid = j.creer_job("resumer")
+    assert j.lire_job(jid) is not None
+
+
 # ── Front servi ──────────────────────────────────────────────────────────────
 
 def test_front_servi():
