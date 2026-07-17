@@ -68,3 +68,50 @@ async def test_live_position_latlon_chiffres(db):
         text("SELECT latitude FROM live_positions WHERE user_id='perso'"))).one()
     assert "48.8566" not in str(brut[0])       # illisible en base
     assert float(crypto.dechiffrer(brut[0])) == 48.8566
+
+
+@pytest.mark.asyncio
+async def test_profil_email_chiffre(db):
+    from models.orm import UserProfile
+    db.add(UserProfile(user_id="perso", display_name="Papa",
+                       email="papa@example.com"))
+    await db.commit()
+    db.expire_all()
+    prof = (await db.execute(
+        select(UserProfile).where(UserProfile.user_id == "perso"))).scalar_one()
+    assert prof.email == "papa@example.com"
+    brut = (await db.execute(
+        text("SELECT email FROM user_profiles WHERE user_id='perso'"))).one()
+    assert "papa@example.com" not in brut[0]
+
+
+@pytest.mark.asyncio
+async def test_loyalty_numero_chiffre(db):
+    from models.orm import LoyaltyCard
+    db.add(LoyaltyCard(id="l1", user_id="perso", enseigne="Carrefour",
+                       numero="9876543210123", note="carte de Marina"))
+    await db.commit()
+    db.expire_all()
+    brut = (await db.execute(
+        text("SELECT enseigne, numero FROM loyalty_cards WHERE id='l1'"))).one()
+    assert brut[0] == "Carrefour"              # enseigne EN CLAIR (triée)
+    assert "9876543210123" not in brut[1]      # numero chiffré
+    assert crypto.dechiffrer(brut[1]) == "9876543210123"
+
+
+@pytest.mark.asyncio
+async def test_activity_log_details_json_chiffre(db):
+    from models.orm import EventActivityLog
+    db.add(EventActivityLog(id="a1", event_id="zz", user_id="perso",
+                            user_nom="Papa", action="update",
+                            details={"champ": "titre", "avant": "A", "apres": "B"}))
+    await db.commit()
+    db.expire_all()
+    log = (await db.execute(
+        select(EventActivityLog).where(EventActivityLog.id == "a1"))).scalar_one()
+    assert log.details == {"champ": "titre", "avant": "A", "apres": "B"}
+    assert log.user_nom == "Papa"
+    brut = (await db.execute(
+        text("SELECT user_nom, details FROM event_activity_log WHERE id='a1'"))).one()
+    assert brut[0] != "Papa"
+    assert "titre" not in brut[1]
