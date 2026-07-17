@@ -54,3 +54,21 @@ async def test_icone_png():
     with pytest.raises(HTTPException) as exc_info:
         await icone("999")
     assert exc_info.value.status_code == 404
+
+
+# S178 B4 — /app référence le manifest, enregistre le SW, expose le panneau 🔔
+# (opt-in sur clic, anti-intrusif : la permission n'est demandée que dans activerPush()).
+# Comme cette brique n'a pas de fixture `client`, on appelle page_app() directement
+# et on inspecte le HTML/JS retourné (chaîne Python).
+
+
+def test_page_app_reference_pwa():
+    from templates_app import page_app
+
+    html = page_app("http://kc", "forge", "calendar-app")
+    assert 'rel="manifest"' in html and "/app/manifest.webmanifest" in html
+    assert "serviceWorker.register" in html
+    assert "Activer les notifications sur cet appareil" in html
+    # anti-intrusif : la permission n'est demandée que dans activerPush, pas au chargement
+    assert "requestPermission" in html
+    assert "initPWA(" in html
