@@ -28,6 +28,17 @@ PY
 # 4) manifest.json (décrit les capacités de l'agenda ; les tests de contrat le lisent).
 #    Le Dockerfile standalone le COPY vers /manifest.json (emplacement attendu par les
 #    tests une fois le layout aplati : backend/tests → /app/tests, parents[2] = /).
-cp "$SRC_ROOT/briques/agenda/manifest.json" "$DEST/manifest.json"
+#    On ASSAINIT les champs Workplace-locaux avant de le publier (chemin auteur,
+#    host.docker.internal, mention interne) — les capacités testées sont préservées.
+python3 - "$SRC_ROOT/briques/agenda/manifest.json" "$DEST/manifest.json" <<'PY'
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+d.pop("chemin_source", None)
+d["url_sante"] = "http://localhost:8400/health"
+if isinstance(d.get("description"), str):
+    d["description"] = d["description"].replace(" (repris de workspace/calendar)", "")
+json.dump(d, open(dst, "w"), ensure_ascii=False, indent=2)
+PY
 
-echo "Synchro OK -> $DEST (backend/ + vendor/ + manifest.json)"
+echo "Synchro OK -> $DEST (backend/ + vendor/ + manifest.json assaini)"
