@@ -25,4 +25,9 @@ cat > "$DEST/vendor/shared/__init__.py" <<'PY'
 """Sous-ensemble vendoré de la lib partagée Workplace (workplace_auth uniquement)."""
 PY
 
-echo "Synchro OK -> $DEST (backend/ + vendor/)"
+# 4) manifest.json (décrit les capacités de l'agenda ; les tests de contrat le lisent).
+#    Le Dockerfile standalone le COPY vers /manifest.json (emplacement attendu par les
+#    tests une fois le layout aplati : backend/tests → /app/tests, parents[2] = /).
+cp "$SRC_ROOT/briques/agenda/manifest.json" "$DEST/manifest.json"
+
+echo "Synchro OK -> $DEST (backend/ + vendor/ + manifest.json)"
