@@ -10,7 +10,7 @@ export OPENROUTER_API_KEY="sk-or-..."
 pip install -r requirements.txt
 python main.py
 
-# Test
+# Test — POST renvoie 202 + job_id, puis poll GET /jobs/{job_id} (voir Endpoints API)
 curl -X POST http://localhost:6090/resumer -H "Content-Type: application/json" -d '{"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "langue": "Français"}'
 ```
 
@@ -43,7 +43,7 @@ jusqu'à `statut:"termine"` (résultat) ou `statut:"erreur"` (échec).
 1. Copier ce dossier dans `~/Desktop/Workplace/briques/synopsis/`
 2. `cd ~/Desktop/Workplace/briques/synopsis && make up`
 3. `curl -X POST http://localhost:5000/briques/reload`
-4. L'assistant IA Workplace auto-découvre les capacités `youtube_resumer` et `youtube_reel`
+4. L'assistant IA Workplace auto-découvre les capacités `video_resumer` et `youtube_reel` (déclarées `async:true` : le Cœur sonde `GET /jobs/{id}` après le 202)
 
 ## Licence
 
