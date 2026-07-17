@@ -157,12 +157,31 @@ Design détaillé : `docs/superpowers/specs/2026-07-16-s177-sondages-disponibili
 - Flux ICS abonnable (`webcal://`) en lecture seule pour ouvrir l'agenda dans une app
   tierce sans compte ni API custom.
 
-## S180 — Chiffrement au repos (durcissement sécurité)
+## S180 — Chiffrement au repos (durcissement sécurité) — ✅ CODE-COMPLET 2026-07-17 (LIVE différé)
 
 - Traité à part et en dernier : cross-cutting (touche tous les modèles), moins urgent
   en auto-hébergé (le serveur est chez l'utilisateur, pas un tiers) contrairement à
   TimeTree/FamilyWall SaaS. À réévaluer si des tiers au-delà de Marina rejoignent
   l'agenda.
+- **Statut** : code-complet, suites vertes — agenda **341 passed** (+1 skip), `make
+  test-core` **441 passed**. Voir `briques/agenda/backend/README.md#s180--chiffrement-au-repos`.
+- **Livré** : `crypto.py` (primitive AES-GCM + enveloppe versionnée v1, clé dédiée
+  `AGENDA_ENCRYPTION_KEY` ou sous-clé HKDF dérivée de `VAULT_SECRET`, fail-closed) et ses
+  `TypeDecorator` (`Chiffre`/`ChiffreFloat`/`ChiffreJSON`) appliqués en transparent aux
+  champs humains sensibles : titres/descriptions/lieux d'événements, commentaires,
+  positions de présence (lat/lon), emails (profils + invitations), numéro/note de carte
+  de fidélité, sondages (titre/desc/lieu + voter_name), journal d'activité (user_nom +
+  details), items/noms de listes — dates, jetons, `external_id`, `Label.name`,
+  `LoyaltyCard.enseigne`, couleurs/emoji/enums restent en clair (interrogés/triés) ;
+  `vault.py` refactoré pour partager la primitive de chiffrement ; migration Alembic
+  `0012` (chiffre les colonnes existantes en place, guardée `dialect.name ==
+  "postgresql"`).
+- **RESTE (LIVE différé)** : poser `AGENDA_ENCRYPTION_KEY` en prod (ou `VAULT_SECRET`
+  existant) ; smoke **obligatoire** `alembic upgrade 0012` / `downgrade 0011` sur une
+  copie **Postgres** (tests = `create_all`, pas la migration) ; disque de la base chiffré
+  en défense en profondeur (à ajouter au runbook `MIGRATION-HP.md`). Fast-follow :
+  rotation de clé réelle, chiffrement des pièces jointes (`EventAttachment`), géocodage
+  de `Event.location` avant chiffrement.
 
 ## Hors périmètre / à clarifier au lancement
 
