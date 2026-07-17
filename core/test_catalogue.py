@@ -122,6 +122,22 @@ def test_niveau_defaut_zero_et_lecture():
     assert par_nom == {"x_a": 0, "x_b": 1, "x_c": 0, "x_d": 0}
 
 
+def test_capacite_async_propage_async_et_poll_chemin():
+    reg = _Registre({
+        "synopsis": {"nom": "synopsis", "port": 6090, "capacites": [
+            {"nom": "video_resumer", "methode": "POST", "chemin": "/resumer",
+             "description": "resumer", "params": {},
+             "async": True, "poll_chemin": "/jobs/{id}"},
+            {"nom": "video_sync", "methode": "GET", "chemin": "/sync", "params": {}},
+        ]},
+    })
+    cap = {c["nom"]: c for c in catalogue.collecter_capacites(reg)}
+    assert cap["video_resumer"]["async"] is True
+    assert cap["video_resumer"]["poll_chemin"] == "/jobs/{id}"
+    assert cap["video_sync"]["async"] is False
+    assert cap["video_sync"]["poll_chemin"] is None
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
