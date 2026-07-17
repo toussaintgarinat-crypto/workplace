@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from config import settings
-from models.orm import ShoppingList, ShoppingListMember
+from models.orm import ShoppingList, ShoppingListMember, UserProfile
 from services import notifications
 
 
@@ -64,3 +64,28 @@ async def test_ne_leve_jamais_si_connexion_injoignable(db, monkeypatch):
     liste = await _liste_avec_membres(db)
     # Ne doit pas lever malgré l'exception réseau.
     await notifications.notifier_membres(db, liste, acteur_id="perso", texte="🛒 test")
+
+
+@pytest.mark.asyncio
+async def test_heures_calmes_saute_le_push(db, monkeypatch):
+    monkeypatch.setattr(settings, "CONNEXION_URL", "http://connexion:5870", raising=False)
+    monkeypatch.setattr(settings, "CONNEXION_KEY", "", raising=False)
+    cibles = []
+
+    class FakeClient:
+        def __init__(self, *a, **k): ...
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, json=None, headers=None):
+            cibles.append(json["utilisateur"])
+            class R: ...
+            return R()
+
+    monkeypatch.setattr(notifications.httpx, "AsyncClient", FakeClient)
+    liste = await _liste_avec_membres(db)
+    # marina en heures calmes toute la journée → jamais poussée.
+    db.add(UserProfile(user_id="marina", display_name="Marina", heures_calmes="00:00-23:59"))
+    await db.commit()
+    n = await notifications.notifier_membres(db, liste, acteur_id="perso", texte="🛒 x")
+    assert cibles == []  # aucun push vers marina (perso est l'acteur, déjà exclu)
+    assert n == 0

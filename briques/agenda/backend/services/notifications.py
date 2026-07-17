@@ -4,6 +4,8 @@ n'est pas configuré. Réutilise le contrat de `_pousser_messagerie` du Cœur (S
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import select
@@ -11,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from models.orm import ShoppingList, ShoppingListMember, UserProfile
+from services.heures_calmes import dans_les_heures_calmes
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,10 @@ async def notifier_membres(
     base = settings.CONNEXION_URL.rstrip("/")
     n = 0
     for uid in cibles:
+        # S178 : on saute les membres actuellement dans leurs heures calmes.
+        prof = await db.get(UserProfile, uid)
+        if prof and dans_les_heures_calmes(prof.heures_calmes, datetime.now(ZoneInfo(settings.DIGEST_TZ))):
+            continue
         corps = {"utilisateur": uid, "texte": texte}
         try:
             async with httpx.AsyncClient(timeout=10) as client:
