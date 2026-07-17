@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     DIGEST_KEY: str = ""
     DIGEST_HEURE: int = 7          # heure locale d'envoi du digest
     DIGEST_TZ: str = "Europe/Paris"
+    # Base de la brique mail (6030) pour l'email du digest. Vide ⇒ email désactivé
+    # (repli honnête) — le push reste possible indépendamment. MAIL_KEY = X-API-Key
+    # de la brique mail, si définie.
+    MAIL_URL: str = ""
+    MAIL_KEY: str = ""
 
     class Config:
         env_file = ".env"

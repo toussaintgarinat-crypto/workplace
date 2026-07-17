@@ -14,6 +14,7 @@ from routers.app_web import router as app_web_router
 from routers.attachments import router as attachments_router
 from routers.calendars import router as calendars_router
 from routers.comments import router as comments_router
+from routers.digests import router as digests_router
 from routers.events import router as events_router
 from routers.google_sync import router as google_router
 from routers.health import router as health_router
@@ -84,6 +85,7 @@ app.include_router(participants_router)
 app.include_router(profiles_router)
 app.include_router(service_router)
 app.include_router(comments_router)
+app.include_router(digests_router)
 app.include_router(attachments_router)
 app.include_router(sse_router)
 app.include_router(google_router)
