@@ -97,11 +97,28 @@ async def test_enregistrer_force_le_sub_du_token(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_enregistrer_ignore_lutilisateur_du_corps():
-    """Le schéma d'entrée n'accepte même pas d'`utilisateur` dans le corps — un
-    éventuel champ additionnel serait de toute façon écrasé côté relais."""
-    body = AppareilEntree(appareil={"endpoint": "https://p/AAA", "keys": {}})
-    assert not hasattr(body, "utilisateur")
+async def test_enregistrer_ignore_lutilisateur_du_corps(monkeypatch):
+    """Preuve anti-usurpation de bout en bout : un `utilisateur` PIRATE injecté
+    dans le corps de la requête est (1) ignoré par le schéma d'entrée et (2) de
+    toute façon absent du payload relayé, qui ne porte que le `sub` du token
+    Keycloak. C'est la SEULE frontière de sécurité — le pont `connexion` fait
+    confiance à `body.utilisateur` sans contre-vérification côté agenda."""
+    monkeypatch.setattr(settings, "CONNEXION_URL", "http://connexion", raising=False)
+    monkeypatch.setattr(settings, "CONNEXION_KEY", "k", raising=False)
+    fake = FakeClient()
+    monkeypatch.setattr(push.httpx, "AsyncClient", lambda *a, **k: fake)
+
+    body = AppareilEntree.model_validate(
+        {"appareil": {"endpoint": "https://p/AAA", "keys": {}}, "utilisateur": "PIRATE"})
+    assert not hasattr(body, "utilisateur")  # extra='ignore' : le champ additionnel est écarté
+
+    out = await push.enregistrer(body, user={"sub": "vraie-personne"})
+
+    assert out == {"ok": True}
+    assert len(fake.appels) == 1
+    appel = fake.appels[0]
+    assert appel["json"]["utilisateur"] == "vraie-personne"   # jamais "PIRATE"
+    assert "PIRATE" not in str(appel["json"])                 # nulle part dans le payload relayé
 
 
 @pytest.mark.asyncio
