@@ -40,7 +40,7 @@ def test_auth_ouverte_sans_cles(monkeypatch):
         "titre": "T", "resume": "R", "chapitres": [], "insights": [], "langue_source": "fr"
     }):
         r = c.post("/resumer", json={"url": "https://youtube.com/watch?v=test"})
-    assert r.status_code == 200
+    assert r.status_code == 202
 
 
 def test_auth_401_sans_cle_si_configuree(monkeypatch):
@@ -73,27 +73,58 @@ def test_auth_ok_bonne_cle(monkeypatch):
     }):
         r = c.post("/resumer", json={"url": "https://youtube.com/watch?v=test"},
                    headers={"X-API-Key": "cle-test"})
-    assert r.status_code == 200
+    assert r.status_code == 202
     monkeypatch.setenv("API_KEYS", "")
     importlib.reload(main)
 
 
 # ── /resumer ─────────────────────────────────────────────────────────────────
 
-def test_resumer_structure():
+def test_resumer_renvoie_202_avec_job_id(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     with (
         patch("main.get_youtube_transcript", return_value=_TRANSCRIPT_FAKE),
         patch("main.chunk_transcript", return_value=_CHUNKS_FAKE),
         patch("main.llm_complete", return_value=_RESUME_FAKE),
     ):
         r = client.post("/resumer", json={"url": "https://youtube.com/watch?v=abc"})
-    assert r.status_code == 200
+    assert r.status_code == 202
     data = r.json()
-    assert data["titre"] == "Introduction à Python"
-    assert "resume" in data
-    assert isinstance(data["chapitres"], list)
-    assert isinstance(data["insights"], list)
-    assert data["langue_source"] == "fr"
+    assert "job_id" in data
+    assert data["statut"] == "en_cours"
+    assert data["poll_url"].startswith("/jobs/")
+
+
+def test_resumer_job_termine_apres_pipeline(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    with (
+        patch("main.get_youtube_transcript", return_value=_TRANSCRIPT_FAKE),
+        patch("main.chunk_transcript", return_value=_CHUNKS_FAKE),
+        patch("main.llm_complete", return_value=_RESUME_FAKE),
+    ):
+        r = client.post("/resumer", json={"url": "https://youtube.com/watch?v=abc"})
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "termine"
+    assert job["resultat"]["titre"] == "Introduction à Python"
+    assert "resume" in job["resultat"]
+
+
+def test_resumer_job_erreur_sur_value_error(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    with patch("main.get_youtube_transcript", side_effect=ValueError("Vidéo inaccessible")):
+        r = client.post("/resumer", json={"url": "https://youtube.com/watch?v=bad"})
+    assert r.status_code == 202
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "erreur"
+    assert "Vidéo inaccessible" in (job["erreur"] or "")
 
 
 def test_resumer_langue():
@@ -106,14 +137,7 @@ def test_resumer_langue():
             "url": "https://youtube.com/watch?v=abc",
             "langue": "English",
         })
-    assert r.status_code == 200
-
-
-def test_resumer_erreur_transcript_400():
-    with patch("main.get_youtube_transcript", side_effect=ValueError("Vidéo inaccessible")):
-        r = client.post("/resumer", json={"url": "https://youtube.com/watch?v=bad"})
-    assert r.status_code == 400
-    assert "Vidéo" in r.json()["detail"]
+    assert r.status_code == 202
 
 
 # ── /reel ────────────────────────────────────────────────────────────────────
@@ -149,8 +173,11 @@ def test_est_youtube():
     assert not main._est_youtube("https://vimeo.com/123")
 
 
-def test_resumer_url_media_delegue_transcription():
+def test_resumer_url_media_delegue_transcription(monkeypatch, tmp_path):
     """Une URL NON-YouTube passe par la brique transcription, pas par YouTube."""
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
     fake = {"transcript": [{"start": 0.0, "text": "Bonjour", "duration": 0.0}],
             "titre": "cours.mp4", "langue": "fr"}
     with (
@@ -160,8 +187,11 @@ def test_resumer_url_media_delegue_transcription():
         patch("main.llm_complete", return_value=_RESUME_FAKE),
     ):
         r = client.post("/resumer", json={"url": "https://example.com/cours.mp4"})
-    assert r.status_code == 200
-    assert r.json()["titre"] == "cours.mp4"
+    assert r.status_code == 202
+    jid = r.json()["job_id"]
+    job = _j.lire_job(jid)
+    assert job["statut"] == "termine"
+    assert job["resultat"]["titre"] == "cours.mp4"
     mock_tr.assert_called_once()
     mock_yt.assert_not_called()
 
