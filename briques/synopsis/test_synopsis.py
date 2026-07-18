@@ -428,3 +428,98 @@ def test_front_servi():
     assert r.status_code == 200
     assert "Synopsis" in r.text
     assert "text/html" in r.headers["content-type"]
+
+
+# ── Extraction du sommaire (chapitrage) — robustesse (S181) ───────────────────
+# Régression : le sommaire disparaissait dès que le LLM s'écartait un peu du
+# gabarit (HH:MM:SS des vidéos longues, emoji omis, titre traduit).
+
+from lib.fusion import _extract_chapters, _extract_insights, _ts_to_seconds
+
+_SYNOPSIS_BASE = (
+    "# 📺 ANALYSE VIDÉO : Test\n"
+    "## 🚀 Résumé Exécutif (TL;DR)\n> Bla bla.\n"
+    "## 📍 Chapitrage Temporel\n"
+    "| Time | Sujet | Description |\n"
+    "| :--- | :--- | :--- |\n"
+    "| [00:12] | *Intro* | Présentation |\n"
+    "| [03:45] | *Sujet* | Détail |\n"
+    "## 💡 Top 3 Moments Forts (Insights)\n"
+    "1. *Le pic* [01:10] : moment clé\n"
+    "2. *La chute* [02:30] : autre moment\n"
+)
+
+
+def test_chapitres_format_exact():
+    ch = _extract_chapters(_SYNOPSIS_BASE)
+    assert [c["subject"] for c in ch] == ["Intro", "Sujet"]
+    assert ch[0]["timestamp"] == "00:12" and ch[0]["ts_seconds"] == 12
+
+
+def test_chapitres_video_longue_hhmmss():
+    md = _SYNOPSIS_BASE.replace("[00:12]", "[1:05:12]").replace("[03:45]", "[1:22:40]")
+    ch = _extract_chapters(md)
+    assert len(ch) == 2
+    assert ch[0]["ts_seconds"] == 3912  # 1*3600 + 5*60 + 12
+
+
+def test_chapitres_sans_emoji_dans_le_titre():
+    md = _SYNOPSIS_BASE.replace("## 📍 Chapitrage Temporel", "## Chapitrage Temporel")
+    assert len(_extract_chapters(md)) == 2
+
+
+def test_chapitres_titre_de_section_traduit():
+    md = (_SYNOPSIS_BASE
+          .replace("## 📍 Chapitrage Temporel", "## 📍 Timeline Chapters")
+          .replace("## 💡 Top 3 Moments Forts (Insights)", "## 💡 Key Moments"))
+    assert len(_extract_chapters(md)) == 2
+    assert len(_extract_insights(md)) == 2
+
+
+def test_chapitres_plage_horaire_prend_le_debut():
+    md = _SYNOPSIS_BASE.replace("[00:12]", "[00:12 – 03:45]")
+    ch = _extract_chapters(md)
+    assert ch[0]["ts_seconds"] == 12
+
+
+def test_chapitres_ignore_ligne_separatrice():
+    # La ligne | :--- | :--- | :--- | ne doit jamais devenir un chapitre.
+    ch = _extract_chapters(_SYNOPSIS_BASE)
+    assert all(c["subject"] not in (":---", "---") for c in ch)
+
+
+def test_chapitres_vide_si_aucun_tableau():
+    assert _extract_chapters("# Titre\n> juste du texte, aucun sommaire") == []
+    assert _extract_chapters("") == []
+
+
+def test_insights_hhmmss():
+    md = _SYNOPSIS_BASE.replace("[01:10]", "[1:01:10]")
+    ins = _extract_insights(md)
+    assert ins[0]["timestamp"] == "1:01:10"
+
+
+def test_ts_to_seconds():
+    assert _ts_to_seconds("03:45") == 225
+    assert _ts_to_seconds("1:05:12") == 3912
+
+
+def test_extraction_multilingue_6_langues():
+    # Le LLM traduit souvent les titres de section dans la langue de sortie ;
+    # chapitres ET points clés doivent survivre pour les 6 langues de l'UI.
+    def mk(chap_h, ins_h):
+        return (f"# Titre\n## {chap_h}\n| T | S | D |\n| :--- | :--- | :--- |\n"
+                f"| [00:12] | Intro | d |\n| [03:45] | Sujet | d |\n"
+                f"## {ins_h}\n1. Le pic [01:10] : cle\n2. La chute [02:30] : autre\n")
+    cas = {
+        "FR": ("📍 Chapitrage Temporel", "💡 Moments Forts (Insights)"),
+        "EN": ("📍 Timeline Chapters", "💡 Key Moments"),
+        "ES": ("📍 Capítulos Temporales", "💡 Momentos Clave"),
+        "DE": ("📍 Zeitliche Kapitel", "💡 Höhepunkte"),
+        "PT": ("📍 Capítulos Temporais", "💡 Momentos-Chave"),
+        "IT": ("📍 Capitoli Temporali", "💡 Momenti Salienti"),
+    }
+    for lg, (ch, ins) in cas.items():
+        md = mk(ch, ins)
+        assert len(_extract_chapters(md)) == 2, f"chapitres KO pour {lg}"
+        assert len(_extract_insights(md)) == 2, f"insights KO pour {lg}"

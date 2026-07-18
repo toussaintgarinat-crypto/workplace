@@ -1,7 +1,7 @@
 {
   "nom": "synopsis",
   "famille": "media",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Résumé de N'IMPORTE QUELLE vidéo par IA (YouTube, lien direct, ou fichier uploadé) — transcription, synthèse LLM, chapitrage automatique, points clés, highlight reels. Capacités asynchrones (202 + polling /jobs/{id}).",
   "role": "video",
   "couche": "backend",
