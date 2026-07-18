@@ -18,3 +18,13 @@ import Caddyfile.briques
 https://workplaceagenda.duckdns.org {
 	reverse_proxy localhost:5100
 }
+
+# S181 — Keycloak joignable via le domaine pour le LOGIN DISTANT (mesh). Port décalé +10000
+# (8080 → 18080). Cert Let's Encrypt fourni par l'`acme_dns` global. Caddy pose X-Forwarded-*
+# → Keycloak (KC_PROXY=edge, KC_HOSTNAME_STRICT=false) dérive l'issuer du domaine tout seul :
+# pas de KC_HOSTNAME figé (le flux agenda en hostname dynamique reste intact), et le Cœur ne
+# valide pas `iss` (JWKS indépendant du hostname). Le navigateur atteint ainsi Keycloak de
+# partout ; le Cœur émet la redirection /auth sur ce domaine via KEYCLOAK_PUBLIC_URL.
+https://workplaceagenda.duckdns.org:18080 {
+	reverse_proxy localhost:8080
+}
