@@ -24,6 +24,13 @@ def test_dashboard_repond():
     assert "text/html" in r.headers["content-type"]
 
 
+def test_onglet_cercle_present():
+    """S181 — l'onglet Cercle (inviter un proche au mesh) existe dans le dashboard."""
+    html = client.get("/dashboard").text
+    assert 'data-vue="cercle"' in html
+    assert "/admin/inviter-proche" in html
+
+
 def test_hub_atelier_present():
     """Le Hub des créations a fusionné dans l'onglet « Atelier » (tuiles Usine/Forge/…)."""
     html = client.get("/dashboard").text
