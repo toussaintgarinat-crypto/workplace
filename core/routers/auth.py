@@ -34,7 +34,7 @@ async def auth_login(request: Request):
         "code_challenge_method": "S256",
     }
     url = (
-        f"{auth.KEYCLOAK_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/auth"
+        f"{auth.KEYCLOAK_PUBLIC_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/auth"
         f"?{urllib.parse.urlencode(params)}"
     )
     resp = RedirectResponse(url, status_code=307)

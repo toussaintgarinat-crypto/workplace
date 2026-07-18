@@ -36,6 +36,11 @@ from shared.workplace_auth import KeycloakSettings, verify_token
 # ── Configuration (motif `os.environ.get` au niveau module — core/ n'a pas de config.py,
 # contrairement à l'agenda ; cf. core/urls_ui.py pour le même motif). ──────────────────
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
+# S181 — URL Keycloak vue par le NAVIGATEUR (accès distant via le domaine mesh, Caddy).
+# Défaut = KEYCLOAK_URL → comportement inchangé si non défini (rollback = ne pas la définir).
+# L'échange de code S2S (_token_endpoint) et la validation JWKS (KC) restent sur KEYCLOAK_URL
+# interne : verify_token ne valide pas `iss`, les clés JWKS sont indépendantes du hostname.
+KEYCLOAK_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", KEYCLOAK_URL)
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "forge")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "assistant-app")
 KEYCLOAK_AUDIENCE = os.environ.get("KEYCLOAK_AUDIENCE", "assistant-app")
