@@ -807,6 +807,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div id="g-panel" class="tt-panel" style="display:none"></div>
       <div id="tt-panel" class="tt-panel" style="display:none"></div>
       <iframe id="agenda-iframe" title="Agenda"
+        allow="geolocation"
         style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"></iframe>
     </div>
   </div>

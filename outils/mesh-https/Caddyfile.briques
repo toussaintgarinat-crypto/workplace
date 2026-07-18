@@ -6,72 +6,75 @@
 # Caddy ne peut donc pas l'écouter (Address already in use). On expose donc chaque brique
 # en HTTPS sur `<port>+10000` (libres), et le Cœur émet ce port décalé dans l'URL d'iframe
 # quand la requête vient de l'hôte mesh (cf. core/urls_ui.url_brique + MESH_HOST/MESH_PORT_OFFSET).
-# LAN direct → http://192.168.1.89:<port> (brique, inchangé) ; mesh → https://100.x:<port+10000> (Caddy).
+# LAN direct → http://192.168.1.89:<port> (brique, inchangé) ; mesh → https://workplaceagenda.duckdns.org:<port+10000> (Caddy).
 #
-# `tls internal` : certifs émis par la CA interne de Caddy (déjà de confiance sur l'iPhone,
-# cf. décision NetBird) → pas de nouvel avertissement. Caddy fait l'upgrade WebSocket (voix).
+# Certificats : Let's Encrypt via DNS-01 (option globale `acme_dns` du Caddyfile principal) →
+# vrais certifs de confiance, aucun avertissement. Caddy fait l'upgrade WebSocket (voix).
 
 (brique_mesh) {
-	tls internal
 	reverse_proxy localhost:{args[0]}
 }
 
+# Agenda (calendrier / présence) — 8400 -> 18400
+https://workplaceagenda.duckdns.org:18400 {
+	import brique_mesh 8400
+}
 # Studio (audio-séries) — 6060 -> 16060
-https://100.124.248.226:16060 {
+https://workplaceagenda.duckdns.org:16060 {
 	import brique_mesh 6060
 }
 # Personnages (atelier holistique) — 5900 -> 15900
-https://100.124.248.226:15900 {
+https://workplaceagenda.duckdns.org:15900 {
 	import brique_mesh 5900
 }
 # Transcription (audio->texte) — 5980 -> 15980
-https://100.124.248.226:15980 {
+https://workplaceagenda.duckdns.org:15980 {
 	import brique_mesh 5980
 }
 # Restaurant (QR & paiement) — 6010 -> 16010
-https://100.124.248.226:16010 {
+https://workplaceagenda.duckdns.org:16010 {
 	import brique_mesh 6010
 }
 # Mail (boîte de réception) — 6030 -> 16030
-https://100.124.248.226:16030 {
+https://workplaceagenda.duckdns.org:16030 {
 	import brique_mesh 6030
 }
 # Synopsis (résumé vidéo) — 6090 -> 16090
-https://100.124.248.226:16090 {
+https://workplaceagenda.duckdns.org:16090 {
 	import brique_mesh 6090
 }
 # Voix (moteur TTS) — WebSocket — 5985 -> 15985
-https://100.124.248.226:15985 {
+https://workplaceagenda.duckdns.org:15985 {
 	import brique_mesh 5985
 }
 # Mémoire (graphe Memory) — 5600 -> 15600
-https://100.124.248.226:15600 {
+https://workplaceagenda.duckdns.org:15600 {
 	import brique_mesh 5600
 }
 # Générateur (composeur de bundles embarqué) — 5400 -> 15400
-https://100.124.248.226:15400 {
+https://workplaceagenda.duckdns.org:15400 {
 	import brique_mesh 5400
 }
 # Gateway (console LiteLLM) — peut refuser le framing (X-Frame-Options) — 4001 -> 14001
-https://100.124.248.226:14001 {
+https://workplaceagenda.duckdns.org:14001 {
 	import brique_mesh 4001
 }
 # PeerTube (vidéothèque souveraine) — 9000 -> 19000
-https://100.124.248.226:19000 {
+https://workplaceagenda.duckdns.org:19000 {
 	import brique_mesh 9000
 }
 # GeoHub (carte de veille) — 6110 -> 16110
-https://100.124.248.226:16110 {
+https://workplaceagenda.duckdns.org:16110 {
 	import brique_mesh 6110
 }
 
 # IDE dev (code-server) — WebSocket (terminal + éditeur) — 8744 -> 18744
-https://100.124.248.226:18744 {
+https://workplaceagenda.duckdns.org:18744 {
 	import brique_mesh 8744
 }
 
 # Forge (SPA + Keycloak same-origin) — 3000 → 13000 (S130)
 # nginx interne proxifie /realms/* et /resources/* vers Keycloak (:8081).
-https://100.124.248.226:13000 {
+https://workplaceagenda.duckdns.org:13000 {
 	import brique_mesh 3000
 }
