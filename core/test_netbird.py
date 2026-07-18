@@ -45,3 +45,12 @@ def test_creer_setup_key_erreur_api(monkeypatch):
     with pytest.raises(netbird.NetbirdError):
         asyncio.run(netbird.creer_setup_key("x", client=client))
     asyncio.run(client.aclose())
+
+
+def test_creer_setup_key_2xx_sans_key(monkeypatch):
+    """Un 200 dont le corps n'a pas de « key » reste dans le contrat NetbirdError (pas de KeyError)."""
+    monkeypatch.setattr(netbird, "NETBIRD_API_TOKEN", "nbp_test")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"oops": 1})))
+    with pytest.raises(netbird.NetbirdError):
+        asyncio.run(netbird.creer_setup_key("x", client=client))
+    asyncio.run(client.aclose())
