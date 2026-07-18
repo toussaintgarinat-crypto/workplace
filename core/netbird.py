@@ -10,7 +10,11 @@ import httpx
 NETBIRD_API_URL = os.environ.get("NETBIRD_API_URL", "https://api.netbird.io").rstrip("/")
 NETBIRD_API_TOKEN = os.environ.get("NETBIRD_API_TOKEN", "")
 NETBIRD_INVITE_GROUP_ID = os.environ.get("NETBIRD_INVITE_GROUP_ID", "")
-NETBIRD_SETUP_KEY_EXPIRES = int(os.environ.get("NETBIRD_SETUP_KEY_EXPIRES", "86400"))
+try:
+    NETBIRD_SETUP_KEY_EXPIRES = int(os.environ.get("NETBIRD_SETUP_KEY_EXPIRES", "86400"))
+except ValueError:
+    # Valeur d'env malformée : ne pas faire planter le démarrage du Cœur — repli sur 24 h.
+    NETBIRD_SETUP_KEY_EXPIRES = 86400
 
 
 class NetbirdError(RuntimeError):
@@ -43,9 +47,15 @@ async def creer_setup_key(nom: str, *, client: httpx.AsyncClient | None = None) 
             raise NetbirdError(f"API NetBird injoignable : {e}") from e
         if r.status_code >= 400:
             raise NetbirdError(f"NetBird {r.status_code} : {r.text[:200]}")
-        data = r.json()
+        try:
+            data = r.json()
+            key = data["key"]
+        except (ValueError, KeyError, TypeError) as e:
+            # 2xx mais corps non-JSON ou sans « key » : rester dans le contrat NetbirdError
+            # (→ 502 côté endpoint) plutôt que laisser fuiter JSONDecodeError/KeyError en 500.
+            raise NetbirdError(f"Réponse NetBird inattendue : {e}") from e
     finally:
         if own:
             await c.aclose()
 
-    return {"key": data["key"], "expires": data.get("expires"), "name": data.get("name", nom)}
+    return {"key": key, "expires": data.get("expires"), "name": data.get("name", nom)}
