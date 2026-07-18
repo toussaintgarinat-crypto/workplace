@@ -1,45 +1,93 @@
-"""Fusion — chapter/insight extraction from LLM markdown output."""
+"""Fusion — chapter/insight extraction from LLM markdown output.
+
+L'extraction est volontairement tolérante : le LLM ne respecte pas toujours
+le gabarit du prompt à la lettre (emoji omis, titre de section traduit quand
+la langue de sortie n'est pas le français, horodatage en HH:MM:SS pour les
+vidéos longues, crochets absents…). Le sommaire ne doit pas disparaître pour
+ces variations bénignes.
+"""
 
 import re
 
+# MM:SS, H:MM:SS ou HH:MM:SS (les vidéos > 1 h produisent la forme longue).
+_TS = r'\d{1,3}:\d{2}(?::\d{2})?'
+
+# Une ligne de tableau dont la 1re cellule commence par un horodatage.
+# La cellule peut contenir des crochets et/ou une plage (« 00:12 – 03:45 ») :
+# on ne capture que le 1er horodatage, le reste de la cellule est ignoré.
+_CHAPTER_ROW = re.compile(
+    rf'\|\s*\[?({_TS})\]?[^|]*\|\s*(.+?)\s*\|\s*(.+?)\s*\|')
+
+# Titre de section « chapitrage », insensible à l'emoji et à la langue.
+# Couvre FR/EN/ES/DE/PT/IT (cap[ií]tol → capítulo, capitulo, capitolo, capitoli).
+_CHAPTER_HEADING = re.compile(
+    r'^#{1,4}\s.*(chapitr|chapter|timeline|sommaire|chronolog|'
+    r'cap[ií]tol|kapitel|[ií]ndice|segment)',
+    re.IGNORECASE | re.MULTILINE)
+
+# Idem pour les « points clés » (moments forts / highlights / Höhepunkte…).
+_INSIGHT_HEADING = re.compile(
+    r'^#{1,4}\s.*(moments?\s*forts?|insight|highlight|key\s*moment|'
+    r'moment[oi]s?|momente|h[oö]hepunkt|destaque|saliente)',
+    re.IGNORECASE | re.MULTILINE)
+
+_INSIGHT_ITEM = re.compile(
+    rf'^\s*\d+[.)]\s*\*{{0,2}}(.+?)\*{{0,2}}\s*\[?({_TS})\]?\s*[:\-–]\s*(.+)',
+    re.MULTILINE)
+
+
+def _ts_to_seconds(ts: str) -> int:
+    parts = [int(p) for p in ts.split(':')]
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    return parts[0] * 60 + parts[1]
+
+
+def _clean(text: str) -> str:
+    return text.strip().strip('*').strip()
+
+
+def _section_after(heading: re.Pattern, analysis: str) -> str | None:
+    """Contenu de la section (jusqu'au prochain titre) ou None si absente."""
+    m = heading.search(analysis)
+    if not m:
+        return None
+    rest = analysis[m.end():]
+    nxt = re.search(r'^#{1,4}\s', rest, re.MULTILINE)
+    return rest[:nxt.start()] if nxt else rest
+
 
 def _extract_chapters(analysis: str) -> list[dict]:
-    chapters = []
+    chapters: list[dict] = []
     if not analysis:
         return chapters
-    pattern = r'##\s*📍\s*Chapitrage\s*Temporel\s*\n(.*?)(?=\n##\s|\Z)'
-    match = re.search(pattern, analysis, re.DOTALL | re.IGNORECASE)
-    if not match:
-        return chapters
-    section = match.group(1)
-    row_pattern = r'\|\s*\[?(\d{1,3}:\d{2})\]?\s*\|\s*\*?(.+?)\*?\s*\|\s*(.+?)\s*\|'
-    for m in re.finditer(row_pattern, section):
-        ts_raw = m.group(1)
-        subject = m.group(2).strip().rstrip('*').lstrip('*')
-        desc = m.group(3).strip()
-        if subject.startswith(':') and desc.startswith(':'):
+    # De préférence dans la section « chapitrage » ; sinon, tout le document
+    # (le seul tableau horodaté produit par le pipeline est le sommaire).
+    scope = _section_after(_CHAPTER_HEADING, analysis)
+    if scope is None:
+        scope = analysis
+    for m in _CHAPTER_ROW.finditer(scope):
+        subject = _clean(m.group(2))
+        desc = _clean(m.group(3))
+        # Ligne de séparation du tableau (| :--- | :--- | :--- |).
+        if set(subject) <= {':', '-', ' '} and set(desc) <= {':', '-', ' '}:
             continue
-        parts = ts_raw.split(':')
-        ts_seconds = int(parts[0]) * 60 + int(parts[1])
-        chapters.append({'timestamp': ts_raw, 'ts_seconds': ts_seconds, 'subject': subject, 'description': desc})
+        ts_raw = m.group(1)
+        chapters.append({'timestamp': ts_raw, 'ts_seconds': _ts_to_seconds(ts_raw),
+                         'subject': subject, 'description': desc})
     return chapters
 
 
 def _extract_insights(analysis: str) -> list[dict]:
-    insights = []
+    insights: list[dict] = []
     if not analysis:
         return insights
-    pattern = r'##\s*💡\s*Top\s*\d*\s*Moments\s*Forts.*?\n(.*?)(?=\n##\s|\Z)'
-    match = re.search(pattern, analysis, re.DOTALL | re.IGNORECASE)
-    if not match:
+    scope = _section_after(_INSIGHT_HEADING, analysis)
+    if scope is None:
         return insights
-    section = match.group(1)
-    item_pattern = r'\d+\.\s*\*?(.+?)\*?\s*\[?(\d{1,3}:\d{2})\]?\s*:\s*(.+)'
-    for m in re.finditer(item_pattern, section):
-        title = m.group(1).strip().rstrip('*').lstrip('*')
-        ts = m.group(2)
-        desc = m.group(3).strip()
-        insights.append({'title': title, 'timestamp': ts, 'description': desc})
+    for m in _INSIGHT_ITEM.finditer(scope):
+        insights.append({'title': _clean(m.group(1)), 'timestamp': m.group(2),
+                         'description': m.group(3).strip()})
     return insights
 
 
