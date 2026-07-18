@@ -21,7 +21,7 @@ import routage_outils
 from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
-from routers import agenda, assistant, dashboard, profil, systeme, usine
+from routers import agenda, assistant, dashboard, invite, profil, systeme, usine
 from routers import auth as routeur_auth
 
 
@@ -87,3 +87,5 @@ app.include_router(dashboard.router, dependencies=[Depends(exiger_session)])
 app.include_router(assistant.router, dependencies=_tenant)
 app.include_router(agenda.router, dependencies=_tenant)
 app.include_router(profil.router, dependencies=_tenant)
+# S181 — invitation d'un proche au mesh (setup key NetBird + QR) : gardé par session (cockpit).
+app.include_router(invite.router, dependencies=[Depends(exiger_session)])
