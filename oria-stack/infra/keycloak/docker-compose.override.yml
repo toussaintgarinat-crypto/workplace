@@ -1,7 +1,21 @@
-# Fix NetBird DNS : bypass DNS pour le hostname "postgres" (service DB Keycloak).
-# NetBird intercepte les DNS courts et les route vers netbird.cloud → NXDOMAIN.
-# extra_hosts injecte dans /etc/hosts → résolution sans DNS.
+# Fix NetBird DNS + REBOOT-PROOF : le hostname "postgres" (DB Keycloak) est épinglé sur une
+# IP STATIQUE de keycloak-db.
+#   - extra_hosts contourne l'interception des noms courts par NetBird (→ NXDOMAIN sinon) ;
+#   - l'IP FIXE survit aux reboots : sans elle, keycloak-db récupère une IP différente au
+#     redémarrage (ex. .3 → .2) et l'extra_hosts figé pointe dans le vide → keycloak boucle
+#     en "Connection to postgres:5432 refused". On fige donc keycloak-db sur 172.27.0.3 et on
+#     aligne l'extra_hosts dessus.
 services:
+  postgres:
+    networks:
+      default:
+        ipv4_address: 172.27.0.3
   keycloak:
     extra_hosts:
-      - "postgres:172.27.0.2"
+      - "postgres:172.27.0.3"
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.27.0.0/16
