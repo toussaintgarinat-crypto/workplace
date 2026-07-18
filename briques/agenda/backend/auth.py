@@ -53,7 +53,11 @@ async def get_current_user(
         return {"sub": settings.AGENDA_USER_ID, "service_call": True, "compte_id": x_compte_id}
 
     if not settings.AUTH_ENABLED:
-        return {"sub": x_user_id or "anonymous"}
+        # Mono-utilisateur : on résout sur l'utilisateur unique configuré
+        # (`AGENDA_USER_ID`, « perso » par défaut), le MÊME que le pin S2S ci-dessus.
+        # Sinon le front (qui n'envoie pas de X-User-Id) lirait « anonymous » et ne verrait
+        # aucune donnée, alors que tout (events, coffre OAuth/TimeTree) est keyé sur ce pin.
+        return {"sub": x_user_id or settings.AGENDA_USER_ID}
 
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")

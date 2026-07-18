@@ -7,10 +7,13 @@
 # Variante « zéro avertissement » (vrai cert DuckDNS) : cf. README.md.
 services:
   caddy:
-    image: caddy:2
+    build: .                      # Caddy + module caddy-dns/duckdns (cf. Dockerfile)
+    image: mesh-caddy-duckdns:latest
     container_name: mesh_caddy
     network_mode: host
     restart: unless-stopped
+    environment:
+      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN:?DUCKDNS_TOKEN requis (voir outils/mesh-https/.env)}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ || exit 1"]
       interval: 30s
