@@ -523,3 +523,24 @@ def test_extraction_multilingue_6_langues():
         md = mk(ch, ins)
         assert len(_extract_chapters(md)) == 2, f"chapitres KO pour {lg}"
         assert len(_extract_insights(md)) == 2, f"insights KO pour {lg}"
+
+
+def test_chapitres_titre_video_contient_mot_cle_section():
+    # Régression LIVE : un titre H1 contenant « chapter » (ou « chapitre »,
+    # « segment »…) ne doit pas être pris pour la section chapitrage et faire
+    # disparaître le vrai tableau. Cf. « Deep learning chapter 1 ».
+    md = (
+        "# 📺 ANALYSE VIDÉO : What is a neural network? | Deep learning chapter 1\n"
+        "*Langue Source :* Anglais\n\n"
+        "## 🚀 Résumé Exécutif (TL;DR)\n> Bla bla.\n\n"
+        "## 📍 Chapitrage Temporel\n\n"
+        "| Time | Sujet | Description |\n| :--- | :--- | :--- |\n"
+        "| [00:04] | *Intro* | Présentation |\n"
+        "| [01:40] | *Architecture* | Détail |\n\n"
+        "## 💡 Top 3 Moments Forts (Insights)\n"
+        "1. *Le pic* [15:39] : moment clé\n"
+    )
+    ch = _extract_chapters(md)
+    assert len(ch) == 2, f"le titre H1 a masqué le sommaire ({len(ch)} chapitres)"
+    assert ch[0]["subject"] == "Intro"
+    assert len(_extract_insights(md)) == 1

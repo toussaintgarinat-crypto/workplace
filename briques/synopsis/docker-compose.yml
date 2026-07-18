@@ -1,7 +1,7 @@
 services:
   synopsis:
     build: .
-    image: workplace/synopsis:1.2.1
+    image: workplace/synopsis:1.2.2
     container_name: workplace-synopsis
     ports:
       - "6090:6090"
