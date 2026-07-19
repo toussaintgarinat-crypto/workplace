@@ -427,12 +427,14 @@ def test_jobs_endpoint_401_sans_cle_si_configuree(monkeypatch, tmp_path):
     _j.init_db()
     jid = _j.creer_job("resumer")
     monkeypatch.setenv("API_KEYS", "cle-test")
-    m = importlib.reload(main)
-    c = TestClient(m.app)
-    r = c.get(f"/jobs/{jid}")
-    assert r.status_code == 401
-    monkeypatch.setenv("API_KEYS", "")
-    importlib.reload(main)
+    try:
+        m = importlib.reload(main)
+        c = TestClient(m.app)
+        r = c.get(f"/jobs/{jid}")
+        assert r.status_code == 401
+    finally:
+        monkeypatch.setenv("API_KEYS", "")
+        importlib.reload(main)
 
 
 def test_jobs_endpoint_200_avec_bonne_cle_si_configuree(monkeypatch, tmp_path):
@@ -441,12 +443,14 @@ def test_jobs_endpoint_200_avec_bonne_cle_si_configuree(monkeypatch, tmp_path):
     _j.init_db()
     jid = _j.creer_job("resumer")
     monkeypatch.setenv("API_KEYS", "cle-test")
-    m = importlib.reload(main)
-    c = TestClient(m.app)
-    r = c.get(f"/jobs/{jid}", headers={"X-API-Key": "cle-test"})
-    assert r.status_code == 200
-    monkeypatch.setenv("API_KEYS", "")
-    importlib.reload(main)
+    try:
+        m = importlib.reload(main)
+        c = TestClient(m.app)
+        r = c.get(f"/jobs/{jid}", headers={"X-API-Key": "cle-test"})
+        assert r.status_code == 200
+    finally:
+        monkeypatch.setenv("API_KEYS", "")
+        importlib.reload(main)
 
 
 # ── Front servi ──────────────────────────────────────────────────────────────
