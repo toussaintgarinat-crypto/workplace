@@ -64,6 +64,22 @@ def test_creer_evenement_dans_calendrier():
     assert r["id"] == "new"
 
 
+def test_creer_agenda_partage():
+    """S182b : proxy de création d'un calendrier partageable (POST /calendars)."""
+    _setup()
+    r = _run(agenda.creer_agenda(None, "Famille", "#22c55e"))
+    assert ("POST", "http://agenda/calendars", {"name": "Famille", "color": "#22c55e"}, False) in APPELS
+    assert r["id"] == "new"
+
+
+def test_creer_invitation_via_service():
+    """S182b : proxy d'invitation via la surface /service (qui renvoie le `lien`)."""
+    _setup()
+    _run(agenda.creer_invitation(None, "cal9", role="editor", expire_heures=48))
+    assert ("POST", "http://agenda/service/calendars/cal9/invitations",
+            {"role": "editor", "expire_heures": 48}, False) in APPELS
+
+
 def test_modifier_evenement():
     _setup()
     r = _run(agenda.modifier_evenement(None, "e1", {"color": "#fff"}))
