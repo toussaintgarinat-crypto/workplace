@@ -258,7 +258,7 @@ def reel(req: ReelRequest, background_tasks: BackgroundTasks,
 
 
 @app.get("/jobs/{job_id}")
-def job_etat(job_id: str):
+def job_etat(job_id: str, _cle: str = Depends(cle_api)):
     job = _jobs.lire_job(job_id)
     if not job:
         raise HTTPException(404, f"Job {job_id} introuvable")

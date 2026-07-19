@@ -421,6 +421,38 @@ def test_jobs_endpoint_404_si_inexistant():
     assert r.status_code == 404
 
 
+def test_jobs_endpoint_401_sans_cle_si_configuree(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    jid = _j.creer_job("resumer")
+    monkeypatch.setenv("API_KEYS", "cle-test")
+    try:
+        m = importlib.reload(main)
+        c = TestClient(m.app)
+        r = c.get(f"/jobs/{jid}")
+        assert r.status_code == 401
+    finally:
+        monkeypatch.setenv("API_KEYS", "")
+        importlib.reload(main)
+
+
+def test_jobs_endpoint_200_avec_bonne_cle_si_configuree(monkeypatch, tmp_path):
+    import lib.jobs as _j
+    monkeypatch.setattr(_j, "JOBS_DB", str(tmp_path / "jobs.db"))
+    _j.init_db()
+    jid = _j.creer_job("resumer")
+    monkeypatch.setenv("API_KEYS", "cle-test")
+    try:
+        m = importlib.reload(main)
+        c = TestClient(m.app)
+        r = c.get(f"/jobs/{jid}", headers={"X-API-Key": "cle-test"})
+        assert r.status_code == 200
+    finally:
+        monkeypatch.setenv("API_KEYS", "")
+        importlib.reload(main)
+
+
 # ── Front servi ──────────────────────────────────────────────────────────────
 
 def test_front_servi():
