@@ -118,6 +118,39 @@ async def agenda_calendriers():
         return {"calendriers": [], "detail": str(e)}
 
 
+@router.post("/agenda/calendriers", tags=["agenda"])
+async def agenda_creer_calendrier(request: Request):
+    """Crée un agenda partageable au nom de l'utilisateur de session (S182b) : il en est
+    owner et pourra y inviter des personnes. Corps : {nom, couleur?, description?}."""
+    corps = await request.json()
+    nom = (corps.get("nom") or corps.get("name") or "").strip()
+    if not nom:
+        return JSONResponse({"detail": "nom requis"}, status_code=400)
+    try:
+        return await agenda.creer_agenda(registre, nom, corps.get("couleur") or corps.get("color"),
+                                         corps.get("description"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/creer_calendrier : %s", e)
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@router.post("/agenda/calendriers/{calendar_id}/invitations", tags=["agenda"])
+async def agenda_inviter(calendar_id: str, request: Request):
+    """Génère un lien d'invitation à un agenda partagé (owner requis côté brique).
+    Corps : {role?: viewer|editor, expire_heures?, email?}. Renvoie l'invitation + le lien."""
+    corps = await request.json()
+    try:
+        inv = await agenda.creer_invitation(
+            registre, calendar_id,
+            role=corps.get("role") or "viewer",
+            expire_heures=corps.get("expire_heures", 72),
+            email=corps.get("email"))
+        return inv
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/inviter : %s", e)
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
 @router.post("/agenda/evenements", tags=["agenda"])
 async def agenda_creer(request: Request):
     """Crée un événement (champs bruts brique : title, start_at, end_at, location,
