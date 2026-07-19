@@ -135,14 +135,15 @@ def test_agenda_entetes_reflete_le_contexte():
 
 
 def test_entetes_brique_par_personne_forwarde_identite():
-    """S182 (agenda) + S184 (ecoute) : la surface /service (outils de l'assistant) doit
-    porter X-User-Id = utilisateur connecté pour les briques « cercle privé » ; les autres
-    briques ne le portent pas."""
+    """S182 (agenda) + S184 (ecoute) + S185 (mail) : la surface /service (outils de
+    l'assistant) doit porter X-User-Id = utilisateur connecté pour les briques « cercle
+    privé » ; les autres briques ne le portent pas."""
     _reset_complet()
     import outils_communs
     ct.definir_contexte(utilisateur="claire")
     assert outils_communs._entetes_brique("agenda")["X-User-Id"] == "claire"
     assert outils_communs._entetes_brique("ecoute")["X-User-Id"] == "claire"
+    assert outils_communs._entetes_brique("mail")["X-User-Id"] == "claire"
     # Une autre brique (ex. restaurant) ne reçoit PAS X-User-Id (elle l'ignorerait).
     assert "X-User-Id" not in outils_communs._entetes_brique("restaurant")
 

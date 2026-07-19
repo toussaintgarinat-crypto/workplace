@@ -21,7 +21,7 @@ import routage_outils
 from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
-from routers import agenda, assistant, dashboard, profil, systeme, usine
+from routers import agenda, assistant, dashboard, mail_proxy, profil, systeme, usine
 from routers import auth as routeur_auth
 
 
@@ -84,6 +84,10 @@ app.include_router(systeme.router)
 app.include_router(routeur_auth.router)
 app.include_router(usine.router, dependencies=_tenant)
 app.include_router(dashboard.router, dependencies=[Depends(exiger_session)])
+# Mail (S185) : session obligatoire (comme dashboard) + contexte de tenant (X-User-Id de
+# session → identité forwardée à la brique mail) pour que la vue native soit isolée par
+# personne, cf. core/routers/mail_proxy.py.
+app.include_router(mail_proxy.router, dependencies=[Depends(exiger_session)] + _tenant)
 app.include_router(assistant.router, dependencies=_tenant)
 app.include_router(agenda.router, dependencies=_tenant)
 app.include_router(profil.router, dependencies=_tenant)

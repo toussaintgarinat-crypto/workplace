@@ -1408,13 +1408,15 @@ function chargerForge() {
 }
 
 // ── Mail (client mail intégré, brique 6030) ────────────────────────────────────
-// Chargement paresseux de l'iframe au 1er affichage de l'onglet.
-const MAIL_UI_URL = '__MAIL_UI_URL__';
+// Chargement paresseux de l'iframe au 1er affichage de l'onglet. Vue native (S185) :
+// rendue via le proxy /mail-app/* du Cœur (même origine, session déjà posée), donc PAR
+// PERSONNE — PAS l'URL brute de la brique (qui retomberait sur le tenant « public » partagé
+// par tout le foyer). L'URL brute reste utilisée pour le lien « Ouvrir dans un onglet ».
 let mailCharge = false;
 function chargerMail() {
   if (mailCharge) return;
   const f = document.getElementById('mail-iframe');
-  if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
+  if (f) { f.src = '/mail-app/'; mailCharge = true; }
 }
 
 // ── Agenda ──────────────────────────────────────────────────────────────────

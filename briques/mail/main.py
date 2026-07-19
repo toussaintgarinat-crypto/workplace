@@ -42,15 +42,29 @@ API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()
 
 # ── Multi-tenant : la clé API identifie le PROPRIÉTAIRE (le tenant) ───────────
 def tenant_actuel(x_api_key: Optional[str] = Header(None),
-                  authorization: Optional[str] = Header(None)) -> str:
-    """Résout le tenant depuis la clé API (X-API-Key ou Bearer). La clé reste secrète : le tenant
-    est son **empreinte** (sha256 tronquée). Fail-closed si `API_KEYS` défini ; sinon (dev) « public »."""
+                  authorization: Optional[str] = Header(None),
+                  x_user_id: Optional[str] = Header(None)) -> str:
+    """Résout le tenant. Deux dialectes :
+
+    (a) **Cœur / cercle privé (S185, motif agenda S182 / ecoute S184)** : la clé présentée
+        == `MAIL_KEY` (SEUL le Cœur la détient) ⇒ le Cœur emprunte l'identité de la personne
+        connectée via `X-User-Id` (sinon repli `perso`) — chaque membre du foyer obtient SA
+        boîte, ses brouillons, ses filtres, isolés des autres, même s'ils partagent tous la
+        même `MAIL_KEY`.
+    (b) **Tenant externe (bundle-client)** : toute AUTRE clé (ou son absence, en dev) ⇒
+        motif historique, le tenant est l'**empreinte** (sha256 tronquée) de la clé —
+        un client externe n'a jamais de `X-User-Id` à faire valoir.
+
+    Fail-closed si `API_KEYS` défini (401 hors ces deux dialectes) ; sinon (dev) « public »."""
     presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
     if API_KEYS:
         if presentee not in API_KEYS:
             raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
     elif not presentee:
         return "public"
+    cle_coeur = os.environ.get("MAIL_KEY")
+    if cle_coeur and presentee == cle_coeur:
+        return f"perso:{x_user_id or 'perso'}"
     return hashlib.sha256((presentee or "public").encode()).hexdigest()[:16]
 
 
@@ -758,6 +772,9 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
 </div>
 
 <script>
+// Préfixe d'API (S185) : vide en usage autoporté (brique servie directement), posé par le
+// proxy /mail-app/* du Cœur quand la page est rendue en vue native isolée par personne.
+const API=(window.MAIL_API_BASE||'');
 const CATS=[['','Tout'],['__nl','Non lus'],['facture','💶 Factures'],['rendez_vous','📅 RDV'],
   ['personnel','👤 Perso'],['notification','🔔 Notifs'],['newsletter','📰 Newsletters'],['autre','✉️ Autres']];
 let FILTRES=[];
@@ -780,7 +797,7 @@ function dessinerFiltres(){
 function setFiltre(v){filtre=v;dessinerFiltres();recharger();}
 
 async function chargerConfig(){
-  const j=await fetch('/config',{headers:entetes()}).then(r=>r.json());
+  const j=await fetch(API+'/config',{headers:entetes()}).then(r=>r.json());
   const el=document.getElementById('mode');
   if(j.fournisseur==='imap'){el.className='badge reel';el.textContent=(j.comptes.length)+' boîte(s)';}
   else{el.className='badge mock';el.textContent='boîte simulée';}
@@ -797,7 +814,7 @@ async function recharger(){
   else if(filtre)p.set('categorie',filtre);
   const compte=document.getElementById('fCompte').value; if(compte)p.set('compte',compte);
   p.set('limite','200');
-  const j=await fetch('/mail?'+p,{headers:entetes()}).then(r=>r.json());
+  const j=await fetch(API+'/mail?'+p,{headers:entetes()}).then(r=>r.json());
   let msgs=j.messages||[]; const q=document.getElementById('q').value.trim().toLowerCase();
   if(q)msgs=msgs.filter(m=>((m.sujet||'')+' '+(m.de_nom||'')+' '+(m.de||'')+' '+(m.extrait||'')).toLowerCase().includes(q));
   MSGS=msgs;
@@ -858,7 +875,7 @@ function afficherMail(chargerImages){
 
 async function ouvrir(id){
   selId=id; recharger();
-  const m=await fetch('/mail/'+id,{headers:entetes()}).then(r=>r.json());
+  const m=await fetch(API+'/mail/'+id,{headers:entetes()}).then(r=>r.json());
   if(m.detail){document.getElementById('lec').innerHTML='<div class=vide>Message introuvable.</div>';return;}
   _htmlCourant=(m.corps_html && m.corps_html.trim())?m.corps_html:null;
   const zone=_htmlCourant
@@ -883,7 +900,7 @@ async function ouvrir(id){
 async function preparer(mid){
   const consigne=document.getElementById('consigne').value;
   document.getElementById('compose').innerHTML='<p class=muted>Rédaction…</p>';
-  const j=await fetch('/mail/brouillon',{method:'POST',headers:entetes(),
+  const j=await fetch(API+'/mail/brouillon',{method:'POST',headers:entetes(),
     body:JSON.stringify({message_id:mid,instruction:consigne})}).then(r=>r.json());
   if(!j.brouillon){document.getElementById('compose').innerHTML='<p class=muted>Échec.</p>';return;}
   const b=j.brouillon;
@@ -897,7 +914,7 @@ async function preparer(mid){
 async function envoyer(bid){
   if(!confirm('Envoyer cette réponse ?'))return;
   const corps=document.getElementById('corps').value;
-  const r=await fetch('/brouillons/'+bid+'/envoyer',{method:'POST',headers:entetes(),body:JSON.stringify({corps})});
+  const r=await fetch(API+'/brouillons/'+bid+'/envoyer',{method:'POST',headers:entetes(),body:JSON.stringify({corps})});
   const j=await r.json();
   document.getElementById('envres').innerHTML = r.ok
     ? (j.mode==='reel'?'✅ ':'🟡 ')+esc(j.message||'Envoyé.')
@@ -905,14 +922,14 @@ async function envoyer(bid){
 }
 
 async function synchroniser(){
-  const j=await fetch('/mail/sync',{method:'POST',headers:entetes()}).then(r=>r.json());
+  const j=await fetch(API+'/mail/sync',{method:'POST',headers:entetes()}).then(r=>r.json());
   recharger();
   if(j.echecs&&j.echecs.length)alert('Boîtes en échec : '+j.echecs.join(', '));
 }
 
 async function resumer(){
   document.getElementById('lec').innerHTML='<p class=muted style="padding:20px">Résumé en cours…</p>';
-  const j=await fetch('/mail/resumer',{method:'POST',headers:entetes(),body:JSON.stringify({lang:'fr'})}).then(r=>r.json());
+  const j=await fetch(API+'/mail/resumer',{method:'POST',headers:entetes(),body:JSON.stringify({lang:'fr'})}).then(r=>r.json());
   document.getElementById('lec').innerHTML=`<h2>✨ Le point sur ta boîte</h2>
     <div class=muted style="font-size:.78rem;margin-bottom:8px">${j.genere_par==='ia'?'Résumé par l’assistant':'Résumé local'}</div>
     <div class=corps style="border:0;padding:0">${esc(j.texte||'')}</div>`;
@@ -922,7 +939,7 @@ async function resumer(){
 function ouvrirComptes(){document.getElementById('mComptes').classList.add('on');chargerComptes();}
 function fermerComptes(){document.getElementById('mComptes').classList.remove('on');chargerConfig();recharger();}
 async function chargerComptes(){
-  const j=await fetch('/comptes',{headers:entetes()}).then(r=>r.json());
+  const j=await fetch(API+'/comptes',{headers:entetes()}).then(r=>r.json());
   const box=document.getElementById('accs');
   box.innerHTML=(j.comptes&&j.comptes.length)
     ? j.comptes.map(c=>`<div class=acc><span>📥 <b>${esc(c.adresse)}</b> <span class=muted>(${esc(c.hote)})</span></span>
@@ -932,7 +949,7 @@ async function chargerComptes(){
 async function connecter(){
   const g=id=>document.getElementById(id).value;
   document.getElementById('accres').textContent='Connexion…';
-  const r=await fetch('/comptes',{method:'POST',headers:entetes(),body:JSON.stringify({
+  const r=await fetch(API+'/comptes',{method:'POST',headers:entetes(),body:JSON.stringify({
     host:g('host').trim(),port:+g('port')||993,utilisateur:g('user').trim(),mot_de_passe:g('pass'),
     smtp_host:g('smtp').trim(),smtp_port:+g('smtpport')||0})});
   const j=await r.json();
@@ -941,7 +958,7 @@ async function connecter(){
 }
 async function deco(id){
   if(!confirm('Déconnecter cette boîte ?'))return;
-  await fetch('/comptes/'+id,{method:'DELETE',headers:entetes()});chargerComptes();
+  await fetch(API+'/comptes/'+id,{method:'DELETE',headers:entetes()});chargerComptes();
 }
 const PROVIDERS={
  gmail:{imap:'imap.gmail.com',smtp:'smtp.gmail.com',aide:`<b>Gmail</b> — active d'abord la <b>validation en 2 étapes</b>, puis génère un mot de passe d'application : <a href="https://myaccount.google.com/apppasswords" target=_blank rel=noopener>myaccount.google.com/apppasswords</a>. Colle ici le code de 16 lettres (sans les espaces).`},
@@ -962,7 +979,7 @@ function preremplir(){
 
 // ── Filtres personnalisés (ex. un par entreprise) ───────────────────────────
 async function chargerFiltres(){
-  const j=await fetch('/filtres',{headers:entetes()}).then(r=>r.json());
+  const j=await fetch(API+'/filtres',{headers:entetes()}).then(r=>r.json());
   FILTRES=j.filtres||[]; dessinerFiltres();
 }
 function ouvrirFiltre(){document.getElementById('mFiltre').classList.add('on');}
@@ -973,7 +990,7 @@ async function creerFiltre(){
   const mots=document.getElementById('fMots').value.split(',').map(s=>s.trim()).filter(Boolean);
   if(!nom){document.getElementById('fres').textContent='Donne un nom.';return;}
   if(!exp&&!mots.length){document.getElementById('fres').textContent='Mets un expéditeur ou un mot-clé.';return;}
-  const r=await fetch('/filtres',{method:'POST',headers:entetes(),
+  const r=await fetch(API+'/filtres',{method:'POST',headers:entetes(),
     body:JSON.stringify({nom,expediteur:exp,mots})});
   if(!r.ok){const j=await r.json();document.getElementById('fres').textContent='❌ '+(j.detail||'Échec.');return;}
   ['fNom','fExp','fMots'].forEach(i=>document.getElementById(i).value='');
@@ -983,7 +1000,7 @@ async function creerFiltre(){
 async function supprimerFiltre(id){
   if(!confirm('Supprimer ce filtre ?'))return;
   if(filtre==='f:'+id)filtre='';
-  await fetch('/filtres/'+id,{method:'DELETE',headers:entetes()});
+  await fetch(API+'/filtres/'+id,{method:'DELETE',headers:entetes()});
   await chargerFiltres(); recharger();
 }
 
