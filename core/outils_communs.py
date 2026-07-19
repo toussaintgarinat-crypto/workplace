@@ -44,6 +44,11 @@ def _espace_memoire(espace: str | None) -> str | None:
 # outil CÂBLÉ gagne toujours (zéro régression) ; liste blanche et kill-switch d'env
 # permettent de borner ce que le LLM voit (souveraineté du « plan de contrôle »).
 
+# Briques « cercle privé » (S182 agenda, S184 ecoute) : le Cœur forwarde l'identité de
+# l'utilisateur connecté en X-User-Id, gagée par {BRIQUE}_KEY (seul le Cœur la détient).
+# Les autres briques ignorent cet en-tête (motif tenant/bundle-client, cf. X-Compte-Id).
+BRIQUES_PAR_PERSONNE = {"agenda", "ecoute"}
+
 
 def _entetes_brique(brique: str) -> dict:
     """En-têtes de service pour piloter une brique au nom de l'appelant (S167).
@@ -60,13 +65,8 @@ def _entetes_brique(brique: str) -> dict:
     cle = os.environ.get(f"{brique.upper()}_KEY")
     if cle:
         entetes["X-API-Key"] = cle
-    # S182 « chacun son agenda » : les outils de l'assistant empruntent la surface
-    # /service ; on forwarde l'identité de l'utilisateur connecté (contexte de tenant) en
-    # X-User-Id pour que l'agenda serve SES données au lieu du pin « perso ». Ciblé sur
-    # l'agenda (seule brique qui honore X-User-Id derrière AGENDA_KEY) ; les autres
-    # briques ignorent cet en-tête.
-    if brique.lower() == "agenda":
-        entetes.update(contexte_tenant.entetes_agenda())
+    if brique.lower() in BRIQUES_PAR_PERSONNE:
+        entetes.update(contexte_tenant.entetes_par_personne())
     return entetes
 
 
