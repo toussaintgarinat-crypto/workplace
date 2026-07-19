@@ -4,14 +4,35 @@ Agenda : événements, TimeTree, Google, documents, commentaires, étiquettes.
 """
 import json
 import logging
+import urllib.parse
 from fastapi import APIRouter, File, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from etat import registre
 import agenda
+import auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/agenda/invitation/{token}", tags=["agenda"])
+async def agenda_accepter_invitation(token: str, request: Request):
+    """Accepte une invitation à un agenda partagé (S182b) — c'est le lien transmis à
+    l'invité, sous le modèle « login unique au Cœur » : pas de page/PKCE côté brique.
+
+    Non connecté ⇒ redirige vers le login du Cœur avec retour ici (`next`), puis l'invité
+    revient et l'acceptation se fait sous SON identité de session. Connecté ⇒ accepte via
+    le proxy (X-User-Id de session) et renvoie au dashboard, onglet Agenda."""
+    if not auth.sub_session_optionnel(request):
+        cible = "/agenda/invitation/" + urllib.parse.quote(token)
+        return RedirectResponse(f"/auth/login?next={urllib.parse.quote(cible)}", status_code=303)
+    try:
+        await agenda.accepter_invitation(registre, token)
+        return RedirectResponse("/dashboard#agenda", status_code=303)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/accepter_invitation : %s", e)
+        return RedirectResponse("/dashboard#agenda?invitation=echec", status_code=303)
 
 
 @router.get("/agenda/evenements", tags=["agenda"])

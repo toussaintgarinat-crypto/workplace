@@ -13,6 +13,14 @@ import auth
 router = APIRouter(tags=["auth"])
 
 
+def _next_sur(brut: str | None) -> str:
+    """Destination post-login SÛRE : chemin interne uniquement (commence par un seul `/`,
+    jamais `//` ni `/\\` — anti open-redirect). Sinon défaut `/dashboard` (S182b)."""
+    if brut and brut.startswith("/") and not brut.startswith("//") and not brut.startswith("/\\"):
+        return brut
+    return "/dashboard"
+
+
 @router.get("/auth/login")
 async def auth_login(request: Request):
     verifier, challenge = auth.generer_pkce()
@@ -22,6 +30,8 @@ async def auth_login(request: Request):
         "code_verifier": verifier,
         "state": state,
         "redirect_uri": redirect_uri,
+        # Destination après login (ex. accepter une invitation d'agenda) ; validée à l'aller.
+        "next": _next_sur(request.query_params.get("next")),
     })
 
     params = {
@@ -71,7 +81,7 @@ async def auth_callback(request: Request, code: str, state: str):
         "avatarEmoji": payload.get("avatarEmoji"),
         "refresh_token": refresh_token,
     }
-    resp = RedirectResponse("/dashboard", status_code=307)
+    resp = RedirectResponse(_next_sur(pending.get("next")), status_code=307)
     resp.set_cookie(
         auth.COOKIE_SESSION, auth.chiffrer_cookie(session),
         httponly=True, secure=auth.AUTH_COOKIE_SECURE, samesite="lax",
