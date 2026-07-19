@@ -88,3 +88,10 @@ STUDIO_KEY = os.environ.get("STUDIO_KEY", "")
 # Même motif pour GeoHub : le front carte lit `?api_key=` et la pose en X-API-Key sur
 # ses appels de données (nécessaire dès que API_KEYS est fail-closed au .env racine).
 GEO_KEY = os.environ.get("GEO_KEY", "")
+
+# Même motif pour l'atelier Personnages (5900) : ses deux fronts (distribution /
+# atelier holistique) lisent `?api_key=` et l'injectent en X-API-Key sur tous leurs
+# fetch. Sans cela, dès que PERSONNAGES_KEY est posée au .env racine (fail-closed),
+# tous les appels du front (lister/créer/éditer fiches, casting, distribution, geo…)
+# renvoient 401 → « mes personnages créés » vides et erreurs de clé partout.
+PERSONNAGES_KEY = os.environ.get("PERSONNAGES_KEY", "")
