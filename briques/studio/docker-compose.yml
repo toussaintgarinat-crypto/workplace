@@ -23,8 +23,9 @@ services:
       - VIDEO_URL=http://host.docker.internal:5970
       - VIDEO_PUBLIC_URL=http://localhost:5970
       # Personnages (5900) : distribution + casting vocal stable. Repli interne si absente.
+      # PERSONNAGES_KEY hérité du .env racine via env_file (ne PAS redéclarer ici : une
+      # valeur vide écraserait la clé et le Studio recevrait 401 en interrogeant /fiches).
       - PERSONNAGES_URL=http://host.docker.internal:5900
-      - PERSONNAGES_KEY=
       # Séries persistées en JSON dans un volume propre (plus de /app/uploads d'Oria).
       - STUDIO_DIR=/data/ateliers
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :
