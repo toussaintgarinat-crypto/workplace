@@ -28,7 +28,7 @@ def _entetes() -> dict:
     Identité S2S : `X-User-Id` = utilisateur du contexte de tenant (S121), défaut
     `perso` quand le Cœur tourne mono-user. Le service-token, lui, est fixe.
     """
-    e = contexte_tenant.entetes_agenda()  # {"X-User-Id": <utilisateur courant ou perso>}
+    e = contexte_tenant.entetes_par_personne()  # {"X-User-Id": <utilisateur courant ou perso>}
     if _SERVICE_TOKEN:
         e["Authorization"] = f"Bearer {_SERVICE_TOKEN}"
     return e

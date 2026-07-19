@@ -50,6 +50,7 @@
       "chemin": "/entrainement/traiter",
       "cadence_heures": 0.25,
       "idempotent": true,
+      "entete_token_env": "ECOUTE_KEY",
       "tolere_echec": true
     }
   ]

@@ -17,7 +17,8 @@ Contrat WebSocket `/ecoute` (inchangé S42, + paramètre `mot`) :
 """
 import os
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (Depends, FastAPI, HTTPException, Request, WebSocket,
+                     WebSocketDisconnect)
 from pydantic import BaseModel
 from starlette.websockets import WebSocketState
 
@@ -26,6 +27,7 @@ import commandes as cmd
 import entrainement
 import paiement
 from detecteur import Detecteur, MOT_DEFAUT, SEUIL_DEFAUT
+import auth
 
 app = FastAPI(
     title="Workplace — brique ecoute",
@@ -128,13 +130,18 @@ async def paiement_etat():
 
 
 @app.post("/commandes", tags=["commandes"])
-async def creer_commande(body: CommandeBody):
-    """Commande un nom de marque sur mesure : crée la commande (idempotente) et émet un
-    lien de paiement Stripe (réel ou mock honnête)."""
+async def creer_commande(body: CommandeBody, proprietaire: str = Depends(auth.identite)):
+    """Commande un nom de marque sur mesure au nom de `proprietaire` (S184 : isolation par
+    personne) : crée la commande (idempotente par personne) et émet un lien de paiement
+    Stripe (réel ou mock honnête). Si la marque est déjà livrée (catalogue partagé), aucune
+    nouvelle commande n'est créée."""
     try:
-        commande = MAGASIN.creer(body.nom_marque)
+        commande = MAGASIN.creer(body.nom_marque, proprietaire=proprietaire)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if commande.get("deja_disponible"):
+        return {"commande": None, "paiement": None, "deja_disponible": True,
+                "message": f"« {body.nom_marque} » est déjà disponible dans le catalogue."}
     # Émet/rafraîchit le lien de paiement tant que c'est en attente.
     checkout = None
     if commande["statut"] == "en_attente_paiement":
@@ -147,27 +154,28 @@ async def creer_commande(body: CommandeBody):
 
 
 @app.get("/commandes", tags=["commandes"])
-async def lister_commandes(statut: str | None = None):
+async def lister_commandes(statut: str | None = None,
+                           proprietaire: str = Depends(auth.identite)):
     MAGASIN.init_db()
-    return [cmd.vue(c) for c in MAGASIN.lister(statut)]
+    return [cmd.vue(c) for c in MAGASIN.lister(statut, proprietaire=proprietaire)]
 
 
 @app.get("/commandes/{cid}", tags=["commandes"])
-async def get_commande(cid: str):
-    c = MAGASIN.get(cid)
+async def get_commande(cid: str, proprietaire: str = Depends(auth.identite)):
+    c = MAGASIN.get(cid, proprietaire=proprietaire)
     if not c:
         raise HTTPException(status_code=404, detail="Commande inconnue.")
     return cmd.vue(c)
 
 
 @app.post("/commandes/{cid}/payer", tags=["commandes"])
-async def payer_mock(cid: str):
+async def payer_mock(cid: str, proprietaire: str = Depends(auth.identite)):
     """Confirmation **mock** (mode dev sans Stripe). En mode live, c'est le webhook signé
     qui confirme → ici on refuse (409) pour ne pas court-circuiter la signature (cf. S21)."""
     if paiement.resoudre_cle():
         raise HTTPException(status_code=409,
                             detail="Stripe configuré : le paiement se confirme par le webhook signé, pas ici.")
-    c = MAGASIN.get(cid)
+    c = MAGASIN.get(cid, proprietaire=proprietaire)
     if not c:
         raise HTTPException(status_code=404, detail="Commande inconnue.")
     return cmd.vue(MAGASIN.marquer_payee(cid))
@@ -197,9 +205,10 @@ async def webhook(request: Request):
 # ── File d'entraînement (tâche de l'horloge S29) ─────────────────────────────
 
 @app.post("/entrainement/traiter", tags=["entrainement"])
-async def traiter():
+async def traiter(_cle: None = Depends(auth.service_key)):
     """Tâche périodique appelée par l'**horloge S29** (déclarée au manifest) : avance la
-    file (payee→entraînement→livrée) et relance les impayées. Idempotente."""
+    file (payee→entraînement→livrée) et relance les impayées. Idempotente. Gardée par
+    ECOUTE_KEY (S184) : credential de service, pas une identité personne."""
     return entrainement.traiter_file(MAGASIN)
 
 
