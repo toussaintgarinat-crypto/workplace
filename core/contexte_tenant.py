@@ -125,12 +125,21 @@ async def lire_contexte_tenant(
     """Dépendance posée sur les routers déclenchant des appels S2S : lit l'identité de
     la requête entrante et la dépose dans le contexte du tour.
 
-    Sources de l'utilisateur, par priorité (S182) :
-    1. en-tête ``X-User-Id`` (S2S/Telegram — identité déjà résolue par l'appelant) ;
-    2. ``sub`` de la **session web** (cookie S171) — c'est le maillon qui manquait :
-       le dashboard s'authentifie par cookie et n'envoie PAS ``X-User-Id``, donc sans ce
-       repli tous les comptes retombaient sur ``perso`` et voyaient le MÊME agenda ;
-    3. défaut ``perso`` (mono-user historique) si ni en-tête ni session.
+    Sources de l'utilisateur, par priorité (S182, ordre inversé en S185) :
+    1. ``sub`` de la **session web** (cookie S171), si une session valide existe — c'est
+       le maillon qui manquait à l'origine (S182) : le dashboard s'authentifie par cookie
+       et n'envoie PAS ``X-User-Id``, donc sans ce repli tous les comptes retombaient sur
+       ``perso`` et voyaient le MÊME agenda ;
+    2. en-tête ``X-User-Id`` (S2S sans session — script/curl, appelant qui a déjà résolu
+       l'identité lui-même), UNIQUEMENT si aucune session valide n'est présente. **Ne
+       JAMAIS** laisser cet en-tête l'emporter sur une session : ces routers sont aussi
+       atteints directement par le NAVIGATEUR (vues natives agenda/mail S182b/S185) — une
+       priorité inverse permettrait à n'importe quel utilisateur connecté de lire les
+       données d'un autre en posant lui-même l'en-tête depuis les devtools. Aucun
+       appelant légitime du monorepo ne dépend de l'ancienne priorité : le seul canal S2S
+       réel (Telegram/Mini App) passe par le champ ``utilisateur`` du CORPS du chat
+       (S78, cf. plus bas), jamais par cet en-tête ;
+    3. défaut ``perso`` (mono-user historique) si ni session ni en-tête.
     ``X-Org-ID`` / ``X-User-Token`` : en-têtes uniquement, inchangés. Non bloquant : une
     session absente/corrompue retombe simplement au défaut.
     Le champ ``utilisateur`` du corps du chat (S78) reste géré par le routeur assistant
@@ -140,7 +149,7 @@ async def lire_contexte_tenant(
     # tout risque de cycle à l'import.
     import auth
 
-    utilisateur = x_user_id or auth.sub_session_optionnel(request)
+    utilisateur = auth.sub_session_optionnel(request) or x_user_id
     definir_contexte(
         utilisateur=utilisateur,
         org_id=x_org_id,
