@@ -1039,7 +1039,7 @@ async function inviterProche() {
       '<p><strong>Clé :</strong> <code>' + esc(d.key) + '</code></p>' +
       '<p>Management : <code>' + esc(d.management_url) + '</code>' +
       (d.expires ? ' — expire le ' + esc(d.expires) : '') + '</p>' +
-      '<ol><li>Installer l\'app <strong>NetBird</strong></li>' +
+      '<ol><li>Installer l\\'app <strong>NetBird</strong></li>' +
       '<li>Rejoindre avec la clé ci-dessus</li>' +
       '<li>Ouvrir le tableau de bord une fois connecté au mesh</li></ol>';
   } catch (e) {
