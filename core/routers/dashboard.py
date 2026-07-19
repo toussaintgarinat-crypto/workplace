@@ -5,7 +5,7 @@ Tableau de bord visuel du Cœur (HTML embarqué + injection des URLs d'iframes).
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from etat import registre
-from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, STUDIO_KEY, url_brique
+from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, PERSONNAGES_KEY, STUDIO_KEY, url_brique
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
@@ -2997,10 +2997,17 @@ async def dashboard(request: Request):
     if GEO_KEY:
         sep = "&" if "?" in geo_ui else "?"
         geo_ui = f"{geo_ui}{sep}api_key={GEO_KEY}"
+    # Même motif pour l'atelier Personnages (5900) : ses fronts lisent `?api_key=` et le
+    # posent en X-API-Key sur tous leurs fetch (lister/créer/éditer fiches, casting, geo…).
+    # Sans cela, dès que PERSONNAGES_KEY est posée, le front tire 401 partout (clé manquante).
+    personnages_ui = u("PERSONNAGES")
+    if PERSONNAGES_KEY:
+        sep = "&" if "?" in personnages_ui else "?"
+        personnages_ui = f"{personnages_ui}{sep}api_key={PERSONNAGES_KEY}"
     return HTMLResponse(content=DASHBOARD_HTML
         .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
-        .replace("__PERSONNAGES_UI_URL__", u("PERSONNAGES"))
+        .replace("__PERSONNAGES_UI_URL__", personnages_ui)
         .replace("__TRANSCRIPTION_UI_URL__", u("TRANSCRIPTION"))
         .replace("__RESTAURANT_UI_URL__", u("RESTAURANT"))
         .replace("__MAIL_UI_URL__", u("MAIL"))

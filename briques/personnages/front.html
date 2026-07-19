@@ -108,6 +108,16 @@ CAPITAINE KAELEN VOSS: Avance, Borg.</textarea>
 </div>
 
 <script>
+// Clé API facultative (vente brique seule). Vide = mode ouvert. Lue ?api_key= ou localStorage.
+// Transportée par le Dashboard Cœur dans l'iframe (?api_key=PERSONNAGES_KEY).
+const API_KEY = new URLSearchParams(location.search).get('api_key') || localStorage.getItem('personnages_api_key') || '';
+const HDR = {'Content-Type':'application/json', ...(API_KEY ? {'X-API-Key': API_KEY} : {})};
+async function api(path, opts={}){
+  const init = {method:opts.method||'GET',
+                headers:{...HDR, ...(opts.headers||{})},
+                body:opts.body!=null?opts.body:null};
+  return await fetch(path, init);
+}
 let DISTRIB = [];            // personnages proposés (avec voix figées)
 const voixPool = () => document.getElementById('voix').value.split(',').map(s=>s.trim()).filter(Boolean);
 const esc = s => (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -116,7 +126,7 @@ async function proposer(){
   const btn=document.getElementById('btn-prop'), err=document.getElementById('prop-err');
   err.textContent=''; btn.disabled=true; btn.textContent='✨ Le Directeur de Casting réfléchit…';
   try{
-    const r = await fetch('/distribution/proposer',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r = await api('/distribution/proposer',{method:'POST',
       body:JSON.stringify({premisse:document.getElementById('premisse').value,
         langue:document.getElementById('langue').value,
         combien:parseInt(document.getElementById('combien').value)||4,
@@ -147,7 +157,7 @@ async function caster(){
   const lignes = document.getElementById('script').value.split('\n').map(l=>l.trim()).filter(Boolean)
     .map(l=>{const i=l.indexOf(':'); return i<0?{perso:'NARRATEUR',texte:l}:{perso:l.slice(0,i).trim(),texte:l.slice(i+1).trim()};});
   try{
-    const r = await fetch('/casting',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r = await api('/casting',{method:'POST',
       body:JSON.stringify({personnages:DISTRIB, repliques:lignes, langue:lg, pool_voix:voixPool()})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     const d = await r.json();

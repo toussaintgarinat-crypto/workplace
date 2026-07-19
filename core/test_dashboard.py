@@ -125,6 +125,19 @@ def test_sans_cle_pas_dapi_key(monkeypatch):
     assert "api_key=" not in html
 
 
+def test_cle_personnages_injectee_dans_iframe(monkeypatch):
+    """Avec PERSONNAGES_KEY posée, l'iframe de l'atelier 5900 transporte la clé en ?api_key=.
+
+    Non-régression : sans cela, dès que PERSONNAGES_KEY est posée (fail-closed), les fronts
+    de la brique (distribution + atelier holistique) tirent 401 sur tous leurs fetch
+    (/fiches, /casting, /distribution/proposer, /geo…) → « mes personnages créés » vides.
+    """
+    monkeypatch.delenv("PERSONNAGES_UI_URL", raising=False)
+    monkeypatch.setattr(dashboard_router, "PERSONNAGES_KEY", "cle-personnages-123")
+    html = client.get("/dashboard", headers={"host": "localhost:5100"}).text
+    assert "http://localhost:5900/atelier?api_key=cle-personnages-123" in html
+
+
 # ── S102 — Manipulation directe : menu contextuel du dashboard ────────────────────
 def test_socle_manipulation_directe_servi():
     """Le Cœur sert le socle (S101/S102) en JavaScript, pour le menu contextuel + modale."""

@@ -125,6 +125,20 @@
      + cliquer-déposer, source unique partagée. Expose confirmer / demanderTexte /
      attacherMenu / sortable… sur window. -->
 <script src="/manipulation_directe.js"></script>
+<script>
+// Clé API facultative (vente brique seule). Vide = mode ouvert. Lue ?api_key= ou localStorage.
+// Transportée par le Dashboard Cœur dans l'iframe (?api_key=PERSONNAGES_KEY) — sinon lecture
+// directe (mode ouvert) ou localStorage pour usage standalone (vente autonome).
+const API_KEY = new URLSearchParams(location.search).get('api_key') || localStorage.getItem('personnages_api_key') || '';
+const HDR = {'Content-Type':'application/json', ...(API_KEY ? {'X-API-Key': API_KEY} : {})};
+// Wrapper fetch qui injecte X-API-Key sur TOUS les appels (avec fusion des headers caller).
+async function api(path, opts={}){
+  const init = {method:opts.method||'GET',
+                headers:{...HDR, ...(opts.headers||{})},
+                body:opts.body!=null?opts.body:null};
+  return await fetch(path, init);
+}
+</script>
 <div class="wrap">
   <header>
     <h1>Atelier holistique<span class="dot">.</span></h1>
@@ -302,7 +316,7 @@ async function geocoder(){
   if(!v){ info.textContent='Indique une ville.'; return; }
   btn.disabled=true; info.textContent='📍 Recherche…';
   try{
-    const r=await fetch('/geo?ville='+encodeURIComponent(v));
+    const r=await api('/geo?ville='+encodeURIComponent(v));
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     const d=await r.json();
     $('lat').value=d.latitude.toFixed(4); $('lon').value=d.longitude.toFixed(4);
@@ -329,7 +343,7 @@ async function portrait(){
     const body=corpsFiche();
     _dernierContexte={prenoms:body.prenoms, nom:body.nom, date:body.date_naissance,
       heure:body.heure_naissance, ville:$('ville').value, systeme:body.systeme_numerologie};
-    const r=await fetch('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await api('/holistique/portrait',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     renderPortrait(await r.json());
@@ -348,7 +362,7 @@ async function approfondir(){
   const btn=$('btn-approf'), err=$('approf-err'); err.textContent='';
   const ini=btn.textContent; btn.disabled=true; btn.textContent='✨ Lecture en cours… (IA)';
   try{
-    const r=await fetch('/holistique/lecture-approfondie',{method:'POST',
+    const r=await api('/holistique/lecture-approfondie',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({...corpsFiche(), langue:'français'})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
@@ -567,7 +581,7 @@ async function enregistrer(){
     const body={nom:nomPersonne(), categorie:($('categorie').value||'').trim(),
       contexte:_dernierContexte, traditions:d.traditions,
       portrait:d.portrait, empreinte:d.empreinte, lecture_approfondie:_lectureApprofondie||null};
-    const r=await fetch('/fiches',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await api('/fiches',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     btn.textContent='✅ Enregistré';
@@ -579,7 +593,7 @@ async function enregistrer(){
 async function chargerFiches(){
   const box=$('fiches-liste'); box.textContent='Chargement…';
   try{
-    const r=await fetch('/fiches'); if(!r.ok) throw new Error('HTTP '+r.status);
+    const r=await api('/fiches'); if(!r.ok) throw new Error('HTTP '+r.status);
     const arr=await r.json();
     if(!arr.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
     box.innerHTML='';
@@ -618,7 +632,7 @@ function brancherDndFiches(box){
 }
 async function rangerFicheDirect(id, cat){
   try{
-    const r=await fetch('/fiches/'+id+'/categorie',{method:'PATCH',
+    const r=await api('/fiches/'+id+'/categorie',{method:'PATCH',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({categorie:cat})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     chargerFiches();                            // rafraîchit + regroupe
@@ -683,7 +697,7 @@ async function rangerFiche(id, catActuelle){
 let _ficheOuverte=null;   // fiche enregistrée actuellement sélectionnée {id, nom}
 async function chargerFiche(id){
   try{
-    const r=await fetch('/fiches/'+id); if(!r.ok) throw new Error('HTTP '+r.status);
+    const r=await api('/fiches/'+id); if(!r.ok) throw new Error('HTTP '+r.status);
     const f=await r.json(), d=f.donnees||{};
     const c=d.contexte||{};
     $('prenoms').value=c.prenoms||''; $('nom').value=c.nom||'';
@@ -717,7 +731,7 @@ async function renommerFiche(id, nomActuel){
   if(nom===null) return;                      // annulé
   if(!nom){ toast('Le nom ne peut pas être vide.'); return; }
   try{
-    const r=await fetch('/fiches/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    const r=await api('/fiches/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({nom})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
     if(_ficheOuverte && _ficheOuverte.id===id) _ficheOuverte.nom=nom;
@@ -731,7 +745,7 @@ async function supprimerFiche(id, row, nom){
     action:'Supprimer définitivement'});
   if(!ok) return;
   try{
-    const r=await fetch('/fiches/'+id,{method:'DELETE'});
+    const r=await api('/fiches/'+id,{method:'DELETE'});
     if(r.status!==204) throw new Error('HTTP '+r.status);
     row.remove();
     if(_ficheOuverte && _ficheOuverte.id===id){ _ficheOuverte=null; $('btn-renommer').style.display='none'; }
@@ -777,7 +791,7 @@ async function inverse(){
   const btn=$('btn-mont'), err=$('mont-err'); err.textContent='';
   btn.disabled=true; btn.textContent='🔮 Recherche… (IA si besoin)';
   try{
-    const r=await fetch('/holistique/recherche-inverse',{method:'POST',
+    const r=await api('/holistique/recherche-inverse',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({description:$('descr').value, combien:3})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||('HTTP '+r.status));}
