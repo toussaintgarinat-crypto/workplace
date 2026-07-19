@@ -1,10 +1,13 @@
 """Dialecte S2S Workplace (S168) sur `get_current_user`.
 
 Le Cœur pilote l'agenda par le manifest : il envoie `X-API-Key == AGENDA_KEY` +
-`X-Compte-Id` (jamais de JWT). On vérifie que l'identité de calendrier est PINNÉE sur
-`AGENDA_USER_ID` (« perso ») — sinon l'agenda paraîtrait vide et TimeTree/Google
-déconnectés — et que la clé fait autorité (mauvaise clé → 401), sans casser les
-dialectes existants (JWT désactivé, service token historique).
+`X-Compte-Id` (jamais de JWT). On vérifie :
+- S182 : si le Cœur forwarde `X-User-Id`, l'identité de calendrier est CET utilisateur
+  (chacun son agenda) ; la clé fait le gage de confiance.
+- sans `X-User-Id`, repli sur le pin `AGENDA_USER_ID` (« perso ») — jobs de fond /
+  synchro OAuth sans session, sinon l'agenda paraîtrait vide et TimeTree/Google déconnectés.
+- la clé fait autorité (mauvaise clé → 401), sans casser les dialectes existants (JWT
+  désactivé, service token historique).
 """
 
 from __future__ import annotations
@@ -35,6 +38,26 @@ async def test_cle_valide_pinne_sur_perso(_cle_service):
     assert u["sub"] == "perso"
     assert u["service_call"] is True
     assert u["compte_id"] == "admin"           # tracé comme crochet multi-tenant
+
+
+@pytest.mark.asyncio
+async def test_identite_forwardee_honoree(_cle_service):
+    """S182 « chacun son agenda » : le Cœur (détenteur de la clé) forwarde le sub de
+    l'utilisateur connecté → l'agenda sert SES données, pas « perso »."""
+    u = await auth.get_current_user(token=None, x_user_id="kc-sub-marina",
+                                    x_api_key="clef-agenda-test", x_compte_id="admin")
+    assert u["sub"] == "kc-sub-marina"
+    assert u["service_call"] is True
+    assert u["compte_id"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_identite_forwardee_exige_la_cle(_cle_service):
+    """Frontière de sécurité : un X-User-Id SANS la bonne clé n'usurpe rien (401)."""
+    with pytest.raises(HTTPException) as exc:
+        await auth.get_current_user(token=None, x_user_id="kc-sub-marina",
+                                    x_api_key="mauvaise-clef", x_compte_id="admin")
+    assert exc.value.status_code == 401
 
 
 @pytest.mark.asyncio

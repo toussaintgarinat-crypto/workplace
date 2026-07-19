@@ -74,6 +74,51 @@ async def lister_agendas(registre) -> list[dict]:
         return r.json() if r.status_code < 400 else []
 
 
+async def creer_agenda(registre, nom: str, couleur: str | None = None,
+                       description: str | None = None) -> dict:
+    """Crée un calendrier partageable au nom de l'utilisateur de session (S182b) : le
+    créateur en est owner et peut ensuite y inviter des personnes. Proxy vers la brique
+    (`POST /calendars`), identité portée par `_entetes()` (X-User-Id de session)."""
+    corps: dict = {"name": nom}
+    if couleur:
+        corps["color"] = couleur
+    if description:
+        corps["description"] = description
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{_base(registre)}/calendars", headers=_entetes(), json=corps)
+        r.raise_for_status()
+        return r.json()
+
+
+async def creer_invitation(registre, calendar_id: str, role: str = "viewer",
+                           expire_heures: int | None = 72, email: str | None = None) -> dict:
+    """Génère un lien d'invitation à un calendrier (S182b). Proxy vers la surface
+    `/service` de la brique (owner requis) sous l'identité de session : cette surface
+    renvoie le `lien` d'acceptation prêt à transmettre (construit depuis
+    `AGENDA_URL_PUBLIQUE`), en plus du `token`."""
+    corps: dict = {"role": role}
+    if expire_heures is not None:
+        corps["expire_heures"] = expire_heures
+    if email:
+        corps["email"] = email
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{_base(registre)}/service/calendars/{calendar_id}/invitations",
+                              headers=_entetes(), json=corps)
+        r.raise_for_status()
+        return r.json()
+
+
+async def accepter_invitation(registre, token: str) -> dict:
+    """Accepte une invitation au nom de l'utilisateur de session (S182b) : il devient
+    membre du calendrier avec le rôle de l'invitation. Proxy vers `POST
+    /invitations/{token}/accept`, identité portée par `_entetes()` (X-User-Id de session).
+    Lève pour un token inconnu/expiré/déjà utilisé (4xx propagé par la brique)."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{_base(registre)}/invitations/{token}/accept", headers=_entetes())
+        r.raise_for_status()
+        return r.json()
+
+
 async def lister_evenements(registre, debut: str | None = None, fin: str | None = None) -> list[dict]:
     """Événements de TOUS les calendriers accessibles, filtrés sur [debut, fin] (ISO 8601).
 

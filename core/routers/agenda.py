@@ -4,14 +4,35 @@ Agenda : événements, TimeTree, Google, documents, commentaires, étiquettes.
 """
 import json
 import logging
+import urllib.parse
 from fastapi import APIRouter, File, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from etat import registre
 import agenda
+import auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/agenda/invitation/{token}", tags=["agenda"])
+async def agenda_accepter_invitation(token: str, request: Request):
+    """Accepte une invitation à un agenda partagé (S182b) — c'est le lien transmis à
+    l'invité, sous le modèle « login unique au Cœur » : pas de page/PKCE côté brique.
+
+    Non connecté ⇒ redirige vers le login du Cœur avec retour ici (`next`), puis l'invité
+    revient et l'acceptation se fait sous SON identité de session. Connecté ⇒ accepte via
+    le proxy (X-User-Id de session) et renvoie au dashboard, onglet Agenda."""
+    if not auth.sub_session_optionnel(request):
+        cible = "/agenda/invitation/" + urllib.parse.quote(token)
+        return RedirectResponse(f"/auth/login?next={urllib.parse.quote(cible)}", status_code=303)
+    try:
+        await agenda.accepter_invitation(registre, token)
+        return RedirectResponse("/dashboard#agenda", status_code=303)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/accepter_invitation : %s", e)
+        return RedirectResponse("/dashboard#agenda?invitation=echec", status_code=303)
 
 
 @router.get("/agenda/evenements", tags=["agenda"])
@@ -116,6 +137,39 @@ async def agenda_calendriers():
     except Exception as e:  # noqa: BLE001
         logger.warning("agenda/calendriers : %s", e)
         return {"calendriers": [], "detail": str(e)}
+
+
+@router.post("/agenda/calendriers", tags=["agenda"])
+async def agenda_creer_calendrier(request: Request):
+    """Crée un agenda partageable au nom de l'utilisateur de session (S182b) : il en est
+    owner et pourra y inviter des personnes. Corps : {nom, couleur?, description?}."""
+    corps = await request.json()
+    nom = (corps.get("nom") or corps.get("name") or "").strip()
+    if not nom:
+        return JSONResponse({"detail": "nom requis"}, status_code=400)
+    try:
+        return await agenda.creer_agenda(registre, nom, corps.get("couleur") or corps.get("color"),
+                                         corps.get("description"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/creer_calendrier : %s", e)
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
+@router.post("/agenda/calendriers/{calendar_id}/invitations", tags=["agenda"])
+async def agenda_inviter(calendar_id: str, request: Request):
+    """Génère un lien d'invitation à un agenda partagé (owner requis côté brique).
+    Corps : {role?: viewer|editor, expire_heures?, email?}. Renvoie l'invitation + le lien."""
+    corps = await request.json()
+    try:
+        inv = await agenda.creer_invitation(
+            registre, calendar_id,
+            role=corps.get("role") or "viewer",
+            expire_heures=corps.get("expire_heures", 72),
+            email=corps.get("email"))
+        return inv
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda/inviter : %s", e)
+        return JSONResponse({"detail": str(e)}, status_code=502)
 
 
 @router.post("/agenda/evenements", tags=["agenda"])

@@ -58,6 +58,17 @@ async def test_app_page_contient_le_bouton_inviter():
 
 
 @pytest.mark.asyncio
+async def test_app_page_contient_la_creation_dagenda_partage():
+    """S182 — partager un agenda depuis l'UI : bouton « Nouvel agenda » + modale de
+    création qui POST /calendars (le créateur en devient owner et peut ensuite Inviter)."""
+    resp = await app_page()
+    corps = resp.body.decode()
+    assert "ouvrirModaleCreerAgenda" in corps
+    assert "Nouvel agenda" in corps
+    assert "creerAgenda" in corps
+
+
+@pytest.mark.asyncio
 async def test_app_page_contient_editeur_recurrence():
     """S175 — la modale event propose un sélecteur de fréquence RRULE."""
     resp = await app_page()

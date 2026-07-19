@@ -53,8 +53,9 @@ def test_valeurs_vides_ignorees():
 
 
 class _FakeRequest:
-    def __init__(self, headers):
+    def __init__(self, headers, cookies=None):
         self.headers = headers
+        self.cookies = cookies or {}
 
 
 async def _capter(req, **kw):
@@ -93,6 +94,36 @@ def test_capture_sans_entete_garde_defauts():
     assert c.utilisateur == "perso"
 
 
+# ── S182 « chacun son agenda » : repli sur le sub de session ──────────────────────
+
+def test_repli_sub_session_quand_pas_de_x_user_id(monkeypatch):
+    """Le dashboard n'envoie pas X-User-Id (auth par cookie) → on doit résoudre depuis
+    la session web. C'est le maillon qui manquait (sinon tous les comptes → perso)."""
+    _reset_complet()
+    import auth
+    monkeypatch.setattr(auth, "sub_session_optionnel", lambda req: "kc-sub-de-marina")
+    c = asyncio.run(_capter(_FakeRequest({}), x_org_id=None, x_user_id=None))
+    assert c.utilisateur == "kc-sub-de-marina"
+
+
+def test_x_user_id_prioritaire_sur_session(monkeypatch):
+    """En-tête X-User-Id explicite (S2S/Telegram déjà résolu) l'emporte sur la session."""
+    _reset_complet()
+    import auth
+    monkeypatch.setattr(auth, "sub_session_optionnel", lambda req: "sub-session")
+    c = asyncio.run(_capter(_FakeRequest({}), x_org_id=None, x_user_id="sub-entete"))
+    assert c.utilisateur == "sub-entete"
+
+
+def test_sans_session_ni_entete_reste_perso(monkeypatch):
+    """Ni en-tête ni session valide → défaut perso (comportement mono-user inchangé)."""
+    _reset_complet()
+    import auth
+    monkeypatch.setattr(auth, "sub_session_optionnel", lambda req: None)
+    c = asyncio.run(_capter(_FakeRequest({}), x_org_id=None, x_user_id=None))
+    assert c.utilisateur == "perso"
+
+
 # ── Propagation effective vers les clients S2S ───────────────────────────────────
 
 def test_agenda_entetes_reflete_le_contexte():
@@ -101,6 +132,18 @@ def test_agenda_entetes_reflete_le_contexte():
     assert agenda._entetes()["X-User-Id"] == "perso"
     ct.definir_contexte(utilisateur="claire")
     assert agenda._entetes()["X-User-Id"] == "claire"
+
+
+def test_entetes_brique_agenda_forwarde_identite():
+    """S182 : la surface /service (outils de l'assistant) doit porter X-User-Id =
+    utilisateur connecté pour l'agenda ; les autres briques ne le portent pas."""
+    _reset_complet()
+    import outils_communs
+    ct.definir_contexte(utilisateur="claire")
+    ag = outils_communs._entetes_brique("agenda")
+    assert ag["X-User-Id"] == "claire"
+    # Une autre brique (ex. restaurant) ne reçoit PAS X-User-Id (elle l'ignorerait).
+    assert "X-User-Id" not in outils_communs._entetes_brique("restaurant")
 
 
 class _FakeResponse:
