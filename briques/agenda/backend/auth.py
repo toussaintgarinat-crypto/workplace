@@ -37,10 +37,13 @@ async def get_current_user(
     (a) **S2S Workplace (S168)** : `X-API-Key == AGENDA_KEY` (+ `X-Compte-Id`), injecté
         par le Cœur via `_entetes_brique`. Vérifié EN PREMIER, indépendamment
         d'`AUTH_ENABLED` : la clé prouve le droit d'emprunter la surface de service.
-        L'utilisateur de calendrier reste **pinné sur `AGENDA_USER_ID`** (« perso »
-        mono-user) — toutes les données ET le coffre OAuth/TimeTree sont keyés sur cet
-        id, donc pinner = ne rien perdre à la bascule. `X-Compte-Id` est tracé comme
-        crochet multi-tenant futur (cf. ADR agenda-surface-de-service).
+        Identité (S182 « chacun son agenda ») : si le Cœur forwarde un `X-User-Id`,
+        l'utilisateur de calendrier est **cet id** — la clé `AGENDA_KEY` est le gage de
+        confiance (seul le Cœur, qui la détient, peut emprunter une identité ; un client
+        externe sans clé n'atteint jamais cette branche). Sans `X-User-Id`, repli sur le
+        pin `AGENDA_USER_ID` (« perso ») : jobs de fond / briefing / proactif / synchro
+        OAuth/TimeTree tournent sans session et restent keyés `perso`. `X-Compte-Id` reste
+        tracé comme crochet multi-tenant (cf. ADR agenda-surface-de-service).
     (b) **JWT Keycloak** (frontend).
     (c) **service token historique** (`CALENDAR_SERVICE_TOKEN`) + `X-User-Id` (S2S d'origine).
     """
@@ -50,7 +53,10 @@ async def get_current_user(
         if x_api_key != settings.AGENDA_KEY:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                 detail="Invalid service key")
-        return {"sub": settings.AGENDA_USER_ID, "service_call": True, "compte_id": x_compte_id}
+        # S182 : le Cœur (détenteur de la clé) peut forwarder l'identité de l'utilisateur
+        # connecté ; sinon on retombe sur le pin mono-user « perso ».
+        return {"sub": x_user_id or settings.AGENDA_USER_ID,
+                "service_call": True, "compte_id": x_compte_id}
 
     if not settings.AUTH_ENABLED:
         # Mono-utilisateur : on résout sur l'utilisateur unique configuré

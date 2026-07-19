@@ -123,13 +123,24 @@ async def lire_contexte_tenant(
     """Dépendance posée sur les routers déclenchant des appels S2S : lit l'identité de
     la requête entrante et la dépose dans le contexte du tour.
 
-    Sources, par priorité : en-têtes ``X-User-Id`` / ``X-Org-ID`` / ``X-User-Token``.
-    Absentes ⇒ défauts (perso / defaut / pas de token) ⇒ comportement mono-user actuel.
+    Sources de l'utilisateur, par priorité (S182) :
+    1. en-tête ``X-User-Id`` (S2S/Telegram — identité déjà résolue par l'appelant) ;
+    2. ``sub`` de la **session web** (cookie S171) — c'est le maillon qui manquait :
+       le dashboard s'authentifie par cookie et n'envoie PAS ``X-User-Id``, donc sans ce
+       repli tous les comptes retombaient sur ``perso`` et voyaient le MÊME agenda ;
+    3. défaut ``perso`` (mono-user historique) si ni en-tête ni session.
+    ``X-Org-ID`` / ``X-User-Token`` : en-têtes uniquement, inchangés. Non bloquant : une
+    session absente/corrompue retombe simplement au défaut.
     Le champ ``utilisateur`` du corps du chat (S78) reste géré par le routeur assistant
     qui appelle :func:`definir_contexte` lui-même.
     """
+    # Import paresseux : `auth` n'est pas un dépendance de ce module bas-niveau, on évite
+    # tout risque de cycle à l'import.
+    import auth
+
+    utilisateur = x_user_id or auth.sub_session_optionnel(request)
     definir_contexte(
-        utilisateur=x_user_id,
+        utilisateur=utilisateur,
         org_id=x_org_id,
         user_token=_token_depuis_request(request),
     )
