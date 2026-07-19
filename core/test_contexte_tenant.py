@@ -106,11 +106,23 @@ def test_repli_sub_session_quand_pas_de_x_user_id(monkeypatch):
     assert c.utilisateur == "kc-sub-de-marina"
 
 
-def test_x_user_id_prioritaire_sur_session(monkeypatch):
-    """En-tête X-User-Id explicite (S2S/Telegram déjà résolu) l'emporte sur la session."""
+def test_session_prioritaire_sur_x_user_id(monkeypatch):
+    """S185 : une session valide l'emporte TOUJOURS sur l'en-tête — sinon un utilisateur
+    connecté pourrait usurper l'identité d'un autre en posant X-User-Id depuis son
+    navigateur (agenda.router / mail_proxy.router sont aussi atteints en direct)."""
     _reset_complet()
     import auth
     monkeypatch.setattr(auth, "sub_session_optionnel", lambda req: "sub-session")
+    c = asyncio.run(_capter(_FakeRequest({}), x_org_id=None, x_user_id="sub-usurpe"))
+    assert c.utilisateur == "sub-session"
+
+
+def test_x_user_id_repli_seulement_sans_session(monkeypatch):
+    """Sans session valide (S2S/script pur, pas de cookie) l'en-tête X-User-Id reste
+    honoré — c'est le seul cas où il sert encore de source d'identité."""
+    _reset_complet()
+    import auth
+    monkeypatch.setattr(auth, "sub_session_optionnel", lambda req: None)
     c = asyncio.run(_capter(_FakeRequest({}), x_org_id=None, x_user_id="sub-entete"))
     assert c.utilisateur == "sub-entete"
 
