@@ -47,6 +47,11 @@ def test_service_key_avec_cle_valide_ok(monkeypatch):
     auth.service_key(x_api_key="cle-coeur", authorization=None)  # ne lève pas
 
 
+def test_service_key_avec_cle_valide_via_bearer_ok(monkeypatch):
+    monkeypatch.setenv("ECOUTE_KEY", "cle-coeur")
+    auth.service_key(x_api_key=None, authorization="Bearer cle-coeur")  # ne lève pas
+
+
 def test_service_key_avec_mauvaise_cle_401(monkeypatch):
     monkeypatch.setenv("ECOUTE_KEY", "cle-coeur")
     with pytest.raises(HTTPException) as exc:
