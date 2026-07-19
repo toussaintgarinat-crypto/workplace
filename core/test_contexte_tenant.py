@@ -27,7 +27,7 @@ def test_defauts_mono_user():
     assert c.utilisateur == "perso"
     assert c.org_id is None
     assert c.user_token is None
-    assert ct.entetes_agenda() == {"X-User-Id": "perso"}
+    assert ct.entetes_par_personne() == {"X-User-Id": "perso"}
     assert ct.entetes_donnees() == {"X-Org-ID": "defaut"}
     assert ct.entetes_forge() == {}
 
@@ -37,7 +37,7 @@ def test_definir_et_reinitialiser():
     jetons = ct.definir_contexte(utilisateur="alice", org_id="acme", user_token="JWT-1")
     c = ct.contexte_actuel()
     assert (c.utilisateur, c.org_id, c.user_token) == ("alice", "acme", "JWT-1")
-    assert ct.entetes_agenda() == {"X-User-Id": "alice"}
+    assert ct.entetes_par_personne() == {"X-User-Id": "alice"}
     assert ct.entetes_donnees() == {"X-Org-ID": "acme"}
     assert ct.entetes_forge() == {"X-Forge-User-Token": "Bearer JWT-1"}
     ct.reinitialiser(jetons)
@@ -134,14 +134,15 @@ def test_agenda_entetes_reflete_le_contexte():
     assert agenda._entetes()["X-User-Id"] == "claire"
 
 
-def test_entetes_brique_agenda_forwarde_identite():
-    """S182 : la surface /service (outils de l'assistant) doit porter X-User-Id =
-    utilisateur connecté pour l'agenda ; les autres briques ne le portent pas."""
+def test_entetes_brique_par_personne_forwarde_identite():
+    """S182 (agenda) + S184 (ecoute) : la surface /service (outils de l'assistant) doit
+    porter X-User-Id = utilisateur connecté pour les briques « cercle privé » ; les autres
+    briques ne le portent pas."""
     _reset_complet()
     import outils_communs
     ct.definir_contexte(utilisateur="claire")
-    ag = outils_communs._entetes_brique("agenda")
-    assert ag["X-User-Id"] == "claire"
+    assert outils_communs._entetes_brique("agenda")["X-User-Id"] == "claire"
+    assert outils_communs._entetes_brique("ecoute")["X-User-Id"] == "claire"
     # Une autre brique (ex. restaurant) ne reçoit PAS X-User-Id (elle l'ignorerait).
     assert "X-User-Id" not in outils_communs._entetes_brique("restaurant")
 

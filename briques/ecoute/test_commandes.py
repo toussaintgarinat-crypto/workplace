@@ -37,6 +37,49 @@ def test_idempotent_pas_de_doublon(magasin):
     assert c1["id"] == c2["id"]  # on rend la commande en cours, pas un doublon (pas de double-débit)
 
 
+def test_creer_scope_par_proprietaire(magasin):
+    """Deux propriétaires peuvent chacun commander la même marque sans se voir."""
+    c_alice = magasin.creer("Acme Corp", proprietaire="alice")
+    c_bob = magasin.creer("Acme Corp", proprietaire="bob")
+    assert c_alice["id"] != c_bob["id"]
+    assert c_alice["proprietaire"] == "alice"
+    assert c_bob["proprietaire"] == "bob"
+
+
+def test_creer_deja_livree_court_circuite(magasin):
+    c = magasin.creer("Acme", proprietaire="alice")
+    magasin.marquer_payee(c["id"])
+    magasin.changer_etat(c["id"], "en_entrainement")
+    magasin.changer_etat(c["id"], "livree")
+    # Bob commande la même marque déjà livrée : pas de nouvelle commande, pas de paiement.
+    resultat = magasin.creer("Acme", proprietaire="bob")
+    assert resultat == {"deja_disponible": True, "modele": "acme"}
+
+
+def test_lister_filtre_par_proprietaire(magasin):
+    magasin.creer("Acme", proprietaire="alice")
+    magasin.creer("Ibiza", proprietaire="bob")
+    assert [c["nom_marque"] for c in magasin.lister(proprietaire="alice")] == ["Acme"]
+    assert [c["nom_marque"] for c in magasin.lister(proprietaire="bob")] == ["Ibiza"]
+    assert len(magasin.lister()) == 2  # sans filtre (usage interne) : tout le monde
+
+
+def test_get_filtre_par_proprietaire(magasin):
+    c = magasin.creer("Acme", proprietaire="alice")
+    assert magasin.get(c["id"], proprietaire="bob") is None
+    assert magasin.get(c["id"], proprietaire="alice")["id"] == c["id"]
+    assert magasin.get(c["id"]) is not None  # sans filtre : accès interne
+
+
+def test_livrees_reste_global_malgre_proprietaires_differents(magasin):
+    """Catalogue partagé : livrees() n'est jamais filtré par propriétaire."""
+    c = magasin.creer("Acme", proprietaire="alice")
+    magasin.marquer_payee(c["id"])
+    magasin.changer_etat(c["id"], "en_entrainement")
+    magasin.changer_etat(c["id"], "livree")
+    assert [x["id"] for x in magasin.livrees()] == [c["id"]]
+
+
 def test_transitions_gardees(magasin):
     c = magasin.creer("Acme")
     # saut interdit en_attente → en_entrainement

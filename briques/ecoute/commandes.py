@@ -111,16 +111,28 @@ class MagasinCommandes:
                     relances      INTEGER DEFAULT 0,
                     message       TEXT,
                     cree_le       TEXT NOT NULL,
-                    maj_le        TEXT NOT NULL
+                    maj_le        TEXT NOT NULL,
+                    proprietaire  TEXT NOT NULL DEFAULT 'perso'  -- S184 : isolation par personne
                 )
             """)
+            colonnes = {row["name"] for row in c.execute("PRAGMA table_info(commandes)")}
+            if "proprietaire" not in colonnes:
+                c.execute(
+                    "ALTER TABLE commandes ADD COLUMN proprietaire TEXT NOT NULL DEFAULT 'perso'"
+                )
 
     # ── Lecture ──────────────────────────────────────────────────────────────
 
-    def get(self, cid: str) -> dict | None:
+    def get(self, cid: str, proprietaire: str | None = None) -> dict | None:
+        """Sans `proprietaire` (None) : accès interne, pas de filtre. Avec : renvoie None
+        si la commande appartient à quelqu'un d'autre (S184 — la route appelante fait 404,
+        pas 403, motif mail/restaurant : ne pas révéler l'existence)."""
         with self._c() as c:
             row = c.execute("SELECT * FROM commandes WHERE id = ?", (cid,)).fetchone()
-        return dict(row) if row else None
+        c_dict = dict(row) if row else None
+        if c_dict and proprietaire is not None and c_dict["proprietaire"] != proprietaire:
+            return None
+        return c_dict
 
     def par_session(self, session_id: str) -> dict | None:
         with self._c() as c:
@@ -129,23 +141,30 @@ class MagasinCommandes:
             ).fetchone()
         return dict(row) if row else None
 
-    def lister(self, statut: str | None = None) -> list[dict]:
+    def lister(self, statut: str | None = None, proprietaire: str | None = None) -> list[dict]:
+        """Sans `proprietaire` (None) : aucun filtre — usage interne (file d'entraînement,
+        catalogue partagé `livrees()`). Avec `proprietaire` : isolation par personne (S184)."""
+        clauses: list[str] = []
+        params: list[str] = []
+        if statut:
+            clauses.append("statut = ?")
+            params.append(statut)
+        if proprietaire is not None:
+            clauses.append("proprietaire = ?")
+            params.append(proprietaire)
+        where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
         with self._c() as c:
-            if statut:
-                rows = c.execute(
-                    "SELECT * FROM commandes WHERE statut = ? ORDER BY cree_le", (statut,)
-                ).fetchall()
-            else:
-                rows = c.execute("SELECT * FROM commandes ORDER BY cree_le").fetchall()
+            rows = c.execute(f"SELECT * FROM commandes {where}ORDER BY cree_le", params).fetchall()
         return [dict(r) for r in rows]
 
-    def _en_cours_pour_marque(self, modele: str) -> dict | None:
-        """Une commande NON terminale pour ce slug (idempotence : pas de doublon)."""
+    def _en_cours_pour_marque(self, modele: str, proprietaire: str) -> dict | None:
+        """Une commande NON terminale pour ce slug ET ce propriétaire (idempotence par
+        personne, S184 : deux propriétaires peuvent chacun commander la même marque)."""
         with self._c() as c:
             row = c.execute(
-                "SELECT * FROM commandes WHERE modele = ? AND statut NOT IN ('livree','echec') "
-                "ORDER BY cree_le DESC LIMIT 1",
-                (modele,),
+                "SELECT * FROM commandes WHERE modele = ? AND proprietaire = ? "
+                "AND statut NOT IN ('livree','echec') ORDER BY cree_le DESC LIMIT 1",
+                (modele, proprietaire),
             ).fetchone()
         return dict(row) if row else None
 
@@ -155,14 +174,22 @@ class MagasinCommandes:
 
     # ── Écriture ─────────────────────────────────────────────────────────────
 
-    def creer(self, nom_marque: str) -> dict:
-        """Crée une commande `en_attente_paiement`. **Idempotent** : si une commande
-        non terminale existe déjà pour cette marque, on la rend (pas de double-débit)."""
+    def creer(self, nom_marque: str, proprietaire: str = "perso") -> dict:
+        """Crée une commande `en_attente_paiement` pour `proprietaire`. **Idempotent** par
+        (marque, propriétaire) : si CE propriétaire a déjà une commande non terminale pour
+        cette marque, on la rend (pas de double-débit) — un autre propriétaire peut commander
+        la même marque indépendamment (S184).
+
+        Si la marque est déjà **livrée** (catalogue partagé, peu importe qui l'a payée),
+        court-circuite : `{"deja_disponible": True, "modele": slug}`, aucune nouvelle
+        commande ni paiement (évite de refacturer un modèle déjà entraîné et public)."""
         self.init_db()
         slug = slugifier(nom_marque)
         if not slug:
             raise ValueError("Nom de marque vide ou non prononçable.")
-        existante = self._en_cours_pour_marque(slug)
+        if any(c["modele"] == slug for c in self.livrees()):
+            return {"deja_disponible": True, "modele": slug}
+        existante = self._en_cours_pour_marque(slug, proprietaire)
         if existante:
             return existante
         maintenant = datetime.utcnow().isoformat()
@@ -170,10 +197,10 @@ class MagasinCommandes:
         with self._c() as c:
             c.execute(
                 "INSERT INTO commandes (id, nom_marque, modele, statut, prix_cents, devise, "
-                "stripe_session_id, factice, relances, message, cree_le, maj_le) "
-                "VALUES (?,?,?,?,?,?,?,0,0,?,?,?)",
+                "stripe_session_id, factice, relances, message, cree_le, maj_le, proprietaire) "
+                "VALUES (?,?,?,?,?,?,?,0,0,?,?,?,?)",
                 (cid, nom_marque, slug, "en_attente_paiement", PRIX_CENTS, DEVISE,
-                 None, None, maintenant, maintenant),
+                 None, None, maintenant, maintenant, proprietaire),
             )
         return self.get(cid)
 
@@ -232,6 +259,7 @@ def vue(c: dict) -> dict:
         "statut": c["statut"],
         "prix_cents": c["prix_cents"],
         "devise": c["devise"],
+        "proprietaire": c.get("proprietaire", "perso"),
         "factice": bool(c.get("factice")),
         "relances": c.get("relances", 0),
         "message": c.get("message"),

@@ -18,6 +18,9 @@ services:
       - WAKEWORD_SEUIL=0.5
       - COMMANDES_DB=/data/ecoute.db
       - MODELES_DIR=/data/modeles
+      # ECOUTE_KEY (S184, pilotage /commandes par le Cœur en X-API-Key + X-User-Id) vient du
+      # .env racine via env_file — NE PAS la redéclarer en `ECOUTE_KEY=${ECOUTE_KEY:-}` (piège
+      # « env shadow » : chaîne VIDE qui écraserait la vraie valeur → brique vue mono-user).
       # ENTRAINEUR_CMD : vrai job GPU d'entraînement par nom (absent en dev → stand-in honnête).
     volumes:
       - ecoute_data:/data   # commandes (SQLite) + modèles sur mesure livrés

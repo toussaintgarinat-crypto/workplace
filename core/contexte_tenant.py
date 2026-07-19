@@ -14,8 +14,9 @@ Rétrocompatible par construction : sans en-tête, l'utilisateur retombe sur ``"
 (comportement actuel de ``core/agenda.py``) et l'organisation sur ``"defaut"`` côté
 ``donnees`` — l'instance de dev ouverte et les bundles existants ne changent pas.
 
-Granularité (décision S121) : ``donnees`` est scopé par **organisation**
-(``X-Org-ID`` / claim ``org_id``), ``agenda`` par **utilisateur** (``X-User-Id``).
+Granularité (décision S121, étendue S184) : ``donnees`` est scopé par **organisation**
+(``X-Org-ID`` / claim ``org_id``) ; les briques « cercle privé » (``agenda``, ``ecoute``) par
+**utilisateur** (``X-User-Id``).
 """
 from __future__ import annotations
 
@@ -85,8 +86,9 @@ def reinitialiser(jetons: _Jetons) -> None:
 
 # ── En-têtes sortants S2S ────────────────────────────────────────────────────────
 
-def entetes_agenda() -> dict:
-    """Identité pour la brique agenda : ``X-User-Id`` (scope par utilisateur)."""
+def entetes_par_personne() -> dict:
+    """Identité pour les briques « cercle privé » (agenda S182, ecoute S184) : ``X-User-Id``
+    (scope par utilisateur connecté, pas par organisation/tenant)."""
     return {"X-User-Id": _utilisateur.get() or UTILISATEUR_DEFAUT}
 
 
