@@ -64,6 +64,29 @@ def test_creer_evenement_dans_calendrier():
     assert r["id"] == "new"
 
 
+def test_creer_agenda_partage():
+    """S182b : proxy de création d'un calendrier partageable (POST /calendars)."""
+    _setup()
+    r = _run(agenda.creer_agenda(None, "Famille", "#22c55e"))
+    assert ("POST", "http://agenda/calendars", {"name": "Famille", "color": "#22c55e"}, False) in APPELS
+    assert r["id"] == "new"
+
+
+def test_creer_invitation_via_service():
+    """S182b : proxy d'invitation via la surface /service (qui renvoie le `lien`)."""
+    _setup()
+    _run(agenda.creer_invitation(None, "cal9", role="editor", expire_heures=48))
+    assert ("POST", "http://agenda/service/calendars/cal9/invitations",
+            {"role": "editor", "expire_heures": 48}, False) in APPELS
+
+
+def test_accepter_invitation():
+    """S182b : proxy d'acceptation (POST /invitations/{token}/accept) sous l'identité de session."""
+    _setup()
+    _run(agenda.accepter_invitation(None, "tok123"))
+    assert ("POST", "http://agenda/invitations/tok123/accept", None, False) in APPELS
+
+
 def test_modifier_evenement():
     _setup()
     r = _run(agenda.modifier_evenement(None, "e1", {"color": "#fff"}))
@@ -114,6 +137,31 @@ def test_erreur_agenda_loggee(monkeypatch, caplog):
     assert resp.status_code == 200
     assert resp.json()["evenements"] == []
     assert "brique down" in caplog.text
+
+
+def test_route_acceptation_sans_session_redirige_vers_login():
+    """S182b : le lien d'invitation, ouvert sans session, renvoie au login du Cœur avec
+    `next` = retour sur la route d'acceptation (login unique, pas de page côté brique)."""
+    import os
+    os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
+    os.environ.setdefault("GATEWAY_KEY", "test")
+    import main
+    from fastapi.testclient import TestClient
+    c = TestClient(main.app)
+    r = c.get("/agenda/invitation/tok999", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/auth/login?next=")
+    assert "agenda/invitation/tok999" in loc
+
+
+def test_next_login_anti_open_redirect():
+    """`next` post-login : chemins internes seulement (anti open-redirect)."""
+    from routers.auth import _next_sur
+    assert _next_sur("/agenda/invitation/x") == "/agenda/invitation/x"
+    assert _next_sur("//evil.com") == "/dashboard"          # protocol-relative rejeté
+    assert _next_sur("https://evil.com") == "/dashboard"    # absolu rejeté
+    assert _next_sur(None) == "/dashboard"                  # absent → défaut
 
 
 if __name__ == "__main__":

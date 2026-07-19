@@ -60,6 +60,13 @@ def _entetes_brique(brique: str) -> dict:
     cle = os.environ.get(f"{brique.upper()}_KEY")
     if cle:
         entetes["X-API-Key"] = cle
+    # S182 « chacun son agenda » : les outils de l'assistant empruntent la surface
+    # /service ; on forwarde l'identité de l'utilisateur connecté (contexte de tenant) en
+    # X-User-Id pour que l'agenda serve SES données au lieu du pin « perso ». Ciblé sur
+    # l'agenda (seule brique qui honore X-User-Id derrière AGENDA_KEY) ; les autres
+    # briques ignorent cet en-tête.
+    if brique.lower() == "agenda":
+        entetes.update(contexte_tenant.entetes_agenda())
     return entetes
 
 

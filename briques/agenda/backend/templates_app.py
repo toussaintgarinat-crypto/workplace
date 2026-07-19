@@ -249,7 +249,9 @@ async function chargerCalendriers() {
   }
   if (!CALENDARS.length) {
     document.getElementById("main").innerHTML =
-      '<div class="card"><p class="muted">Aucun agenda partagé avec toi pour l\'instant.</p></div>';
+      '<div class="card"><p class="muted">Aucun agenda partagé avec toi pour l\'instant.</p>' +
+      '<button id="btn-nouvel-agenda-vide" style="margin-top:10px">+ Créer un agenda</button></div>';
+    document.getElementById("btn-nouvel-agenda-vide").onclick = ouvrirModaleCreerAgenda;
     return;
   }
   if (!CAL_ACTIF || !CALENDARS.some((c) => c.id === CAL_ACTIF)) CAL_ACTIF = CALENDARS[0].id;
@@ -266,10 +268,12 @@ function rendreBarre() {
     '<div class="barre">' +
     `<select id="sel-cal">${options}</select>` +
     (role === "owner" ? '<button id="btn-inviter">Inviter</button>' : "") +
+    '<button class="ghost" id="btn-nouvel-agenda" style="margin-left:auto">+ Nouvel agenda</button>' +
     '</div><div id="zone-vue"></div>';
   document.getElementById("sel-cal").onchange = (e) => { CAL_ACTIF = e.target.value; rendreBarre(); chargerVue(); };
   const btnInviter = document.getElementById("btn-inviter");
   if (btnInviter) btnInviter.onclick = ouvrirModaleInviter;
+  document.getElementById("btn-nouvel-agenda").onclick = ouvrirModaleCreerAgenda;
 }
 
 const JOURS_COURT = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
@@ -599,6 +603,51 @@ async function creerInvitation() {
     document.getElementById("inv-resultat").innerHTML =
       '<p class="muted">Envoie ce lien à la personne invitée :</p>' +
       `<input readonly style="width:100%" value="${esc(lien)}" onclick="this.select()">`;
+  } catch (e) { alert("Échec : " + e.message); }
+}
+
+// Créer un nouvel agenda partageable (S182) : distinct de l'agenda perso, le créateur
+// en est owner et peut ensuite « Inviter » des personnes. Complète le pilotage par
+// l'assistant (agenda_creer_partage) d'un accès UI.
+function ouvrirModaleCreerAgenda() {
+  const puces = COULEURS.map((c, i) =>
+    `<button type="button" class="pastille-cal" data-couleur="${c}" ` +
+    `style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${i === 0 ? "#fff" : "transparent"};cursor:pointer"></button>`
+  ).join("");
+  const html =
+    '<div id="modale" style="position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:10">' +
+    '<div class="card" style="width:100%;max-width:420px">' +
+    '<h3 style="margin-top:0">Nouvel agenda partagé</h3>' +
+    '<div style="margin-bottom:10px"><input id="cal-nom" placeholder="Nom (ex. Famille, Chantier)" style="width:100%"></div>' +
+    `<div style="display:flex;gap:8px;margin-bottom:14px">${puces}</div>` +
+    '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+    '<button class="ghost" id="btn-annuler">Fermer</button>' +
+    '<button id="btn-creer-agenda">Créer</button>' +
+    "</div></div></div>";
+  document.body.insertAdjacentHTML("beforeend", html);
+  let couleurChoisie = COULEURS[0];
+  document.querySelectorAll(".pastille-cal").forEach((b) => {
+    b.onclick = () => {
+      couleurChoisie = b.dataset.couleur;
+      document.querySelectorAll(".pastille-cal").forEach((x) => (x.style.border = "2px solid transparent"));
+      b.style.border = "2px solid #fff";
+    };
+  });
+  document.getElementById("btn-annuler").onclick = fermerModaleEvent;
+  document.getElementById("btn-creer-agenda").onclick = () => creerAgenda(couleurChoisie);
+}
+
+async function creerAgenda(couleur) {
+  const nom = document.getElementById("cal-nom").value.trim();
+  if (!nom) { alert("Donne un nom à l'agenda."); return; }
+  try {
+    const cal = await api("/calendars", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nom, color: couleur }),
+    });
+    fermerModaleEvent();
+    CAL_ACTIF = cal.id;          // bascule sur le nouvel agenda
+    await chargerCalendriers();  // recharge la liste + la barre (bouton « Inviter » dispo)
   } catch (e) { alert("Échec : " + e.message); }
 }
 

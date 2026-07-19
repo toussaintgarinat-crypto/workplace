@@ -40,6 +40,19 @@ def test_atelier_dev_est_une_tuile_de_l_atelier():
     assert 'id="vue-dev"' in html                    # la vue IDE existe toujours
 
 
+def test_agenda_est_natif_pas_iframe():
+    """S182b : l'onglet Agenda est une VUE NATIVE (rendue via le proxy /agenda/* du Cœur,
+    donc par personne) et non plus l'iframe /app (qui, AUTH_ENABLED=false, montrait perso
+    à tout le monde). On vérifie la grille native + les fonctions de partage."""
+    html = client.get("/dashboard").text
+    assert 'id="agenda-iframe"' not in html            # plus d'iframe agenda
+    assert 'id="cal-conteneur"' in html                # grille native présente
+    assert "function rendreMois" in html               # rendu natif du mois
+    assert "ouvrirModaleNouvelAgenda" in html          # créer un agenda partagé
+    assert "ouvrirModaleInviterAgenda" in html         # inviter quelqu'un
+    assert "/agenda/calendriers" in html               # via le proxy du Cœur
+
+
 def test_bulles_d_aide_presentes():
     """Des bulles d'aide en clair (composant .aide) expliquent chaque section au
     visiteur non technique : au moins sur les onglets et les titres de vues."""

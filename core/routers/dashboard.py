@@ -800,17 +800,46 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <div class="view" id="vue-agenda">
     <div class="topbar">
-      <h2>Agenda<span class="aide" tabindex="0">i<span class="aide-txt">Ton calendrier : vois tes rendez-vous (mois ou semaine), ajoutes-en, mets des rappels. Tu peux aussi demander à l'assistant « ajoute un déjeuner mardi à 12h ».</span></span></h2>
-      <a class="btn ghost" href="__AGENDA_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+      <h2>Agenda<span class="aide" tabindex="0">i<span class="aide-txt">Ton calendrier : vois tes rendez-vous (mois ou semaine), ajoutes-en, mets des rappels. Partage un agenda avec quelqu'un via « + Nouvel agenda » puis « Inviter ». Tu peux aussi demander à l'assistant « ajoute un déjeuner mardi à 12h ».</span></span></h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="opacity:.85" onclick="ouvrirGestionEtiquettes()">🏷 Étiquettes</button>
+        <button class="btn" onclick="ouvrirModaleEvent(null, null)">+ Nouveau rendez-vous</button>
+        <a class="btn ghost" href="__AGENDA_UI_URL__" target="_blank" rel="noopener">Ouvrir dans un onglet ↗</a>
+      </div>
     </div>
-    <div class="panel" style="padding:0;overflow:hidden">
+    <!-- Vue native (S182b) : rendue via le proxy /agenda/* du Cœur, donc PAR PERSONNE
+         (identité de session), sans iframe /app ni second login. -->
+    <div class="panel">
       <div id="g-panel" class="tt-panel" style="display:none"></div>
       <div id="tt-panel" class="tt-panel" style="display:none"></div>
-      <iframe id="agenda-iframe" title="Agenda"
-        allow="geolocation"
-        style="width:100%;height:calc(100vh - 200px);min-height:520px;border:0;border-radius:12px"></iframe>
+      <!-- Barre de partage : mes agendas + créer un agenda partagé + inviter -->
+      <div class="cal-toolbar" style="margin-bottom:8px">
+        <div class="cal-nav" style="gap:8px">
+          <span class="cal-leg-titre">Mes agendas :</span>
+          <select id="cal-partage-sel" class="agenda-select" onchange="majBoutonsPartage()"></select>
+          <button class="btn" onclick="ouvrirModaleNouvelAgenda()">+ Nouvel agenda</button>
+          <button class="btn ghost" id="btn-partage-inviter" onclick="ouvrirModaleInviterAgenda()" disabled>Inviter</button>
+        </div>
+      </div>
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="cal-fleche" onclick="calNav(-1)" title="Précédent">‹</button>
+          <button class="btn" onclick="calAujourdhui()">Aujourd'hui</button>
+          <button class="cal-fleche" onclick="calNav(1)" title="Suivant">›</button>
+          <span id="cal-label" class="cal-label"></span>
+        </div>
+        <div class="cal-modes">
+          <button class="cal-mode active" id="cal-mode-mois" onclick="calMode('mois')">Mois</button>
+          <button class="cal-mode" id="cal-mode-semaine" onclick="calMode('semaine')">Semaine</button>
+        </div>
+      </div>
+      <div id="cal-legende" class="cal-legende" style="display:none"></div>
+      <div id="cal-conteneur" class="cal-conteneur"><span class="liv-sub">Chargement…</span></div>
     </div>
   </div>
+  <div id="event-modal"></div>
+  <div id="label-modal"></div>
+  <div id="partage-modal"></div>
 
   <!-- VUE MAIL -->
   <div class="view" id="vue-mail">
@@ -1388,14 +1417,388 @@ function chargerMail() {
   if (f) { f.src = MAIL_UI_URL; mailCharge = true; }
 }
 
-// ── Agenda (appli autonome, S172) : iframe chargée paresseusement au 1er affichage ──
-const AGENDA_UI_URL = '__AGENDA_UI_URL__';
-let agendaCharge = false;
-function chargerAgenda() {
-  if (agendaCharge) return;
-  const f = document.getElementById('agenda-iframe');
-  if (f) { f.src = AGENDA_UI_URL; agendaCharge = true; }
+// ── Agenda ──────────────────────────────────────────────────────────────────
+const JOURS_COURT = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const MOIS_COURT = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const COULEURS_PALETTE = ['#5865F2','#3B82F6','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#a855f7','#14b8a6','#64748b'];
+const RAPPEL_PRESETS = [[0,"à l'heure"],[10,"10 min"],[30,"30 min"],[60,"1 h"],[1440,"1 jour"],[10080,"1 sem"]];
+function libRappel(m){ if(m===0)return "à l'heure"; if(m<60)return m+" min"; if(m<1440)return (m/60)+" h"; if(m<10080)return (m/1440)+" j"; return (m/10080)+" sem"; }
+function fmtHeure(iso){ const d=new Date(iso); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function isoToLocal(iso){ if(!iso) return ''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
+function localToIso(v){ return v ? new Date(v).toISOString() : null; }
+function lundiDe(d){ const x=new Date(d); const j=(x.getDay()+6)%7; x.setDate(x.getDate()-j); x.setHours(0,0,0,0); return x; }
+function memeJour(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+function estImporte(ev){ return ev && (ev.calendrier==='TimeTree' || ev.calendrier==='Google'); }
+
+let calRef = new Date();
+let calModeActuel = 'mois';
+let CALENDARS = [];
+let EVENTS_CACHE = [];
+let modalCouleur = '#5865F2';
+let modalLabelId = '';        // étiquette nommée choisie dans la modale ('' = aucune)
+let newLabelCouleur = '#5865F2';  // couleur de l'étiquette en cours de création inline
+
+function calMode(m){ calModeActuel=m; const a=document.getElementById('cal-mode-mois'), b=document.getElementById('cal-mode-semaine'); if(a)a.classList.toggle('active',m==='mois'); if(b)b.classList.toggle('active',m==='semaine'); chargerAgenda(); }
+function calAujourdhui(){ calRef=new Date(); chargerAgenda(); }
+function calNav(dir){ if(calModeActuel==='mois'){ calRef.setMonth(calRef.getMonth()+dir); } else { calRef.setDate(calRef.getDate()+dir*7); } calRef=new Date(calRef); chargerAgenda(); }
+
+async function chargerAgenda(){
+  const cont=document.getElementById('cal-conteneur'); if(!cont) return;
+  if(!CALENDARS.length){ try{ CALENDARS=(await fetch('/agenda/calendriers').then(r=>r.json())).calendriers||[]; }catch(e){} }
+  try{ majListePartage(); }catch(e){}
+  let debut, fin, label;
+  if(calModeActuel==='mois'){
+    const first=new Date(calRef.getFullYear(),calRef.getMonth(),1);
+    debut=lundiDe(first); fin=new Date(debut); fin.setDate(fin.getDate()+42);
+    label=MOIS[calRef.getMonth()]+' '+calRef.getFullYear();
+  } else {
+    debut=lundiDe(calRef); fin=new Date(debut); fin.setDate(fin.getDate()+7);
+    const l=new Date(debut); l.setDate(l.getDate()+6);
+    label=debut.getDate()+' '+MOIS_COURT[debut.getMonth()]+' – '+l.getDate()+' '+MOIS_COURT[l.getMonth()]+' '+l.getFullYear();
+  }
+  const lab=document.getElementById('cal-label'); if(lab) lab.textContent=label;
+  cont.innerHTML='<span class="liv-sub">Chargement…</span>';
+  let evts=[];
+  try{ evts=(await fetch('/agenda/evenements?debut='+encodeURIComponent(debut.toISOString())+'&fin='+encodeURIComponent(fin.toISOString())).then(r=>r.json())).evenements||[]; }
+  catch(e){ cont.innerHTML='<span class="liv-sub">Agenda indisponible : '+e.message+'</span>'; return; }
+  EVENTS_CACHE=evts;
+  cont.innerHTML = calModeActuel==='mois' ? rendreMois(debut,evts) : rendreSemaine(debut,evts);
+  rendreLegende();
 }
+function rendreLegende(){
+  const box=document.getElementById('cal-legende'); if(!box) return;
+  const seen=new Map();
+  for(const e of EVENTS_CACHE){ if(e.etiquette && !seen.has(e.etiquette)) seen.set(e.etiquette, e.couleur||'#5865F2'); }
+  if(!seen.size){ box.innerHTML=''; box.style.display='none'; return; }
+  box.style.display='flex';
+  box.innerHTML = '<span class="cal-leg-titre">Étiquettes :</span>' + Array.from(seen.entries())
+    .map(([n,c])=>`<span class="cal-leg-chip"><span class="cal-leg-dot" style="background:${escAttr(c)}"></span>${escHtml(n)}</span>`).join('');
+}
+function eventsDuJour(evts,d){ return evts.filter(e=>memeJour(new Date(e.start_at),d)).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)); }
+function chipEvent(e){
+  const c=e.couleur||'#5865F2';
+  const heure=e.all_day?'':fmtHeure(e.start_at)+' ';
+  return `<div class="cal-chip" style="background:${escAttr(c)}" title="${escAttr((heure)+e.title)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)">${escHtml(heure)}${escHtml(e.title)}</div>`;
+}
+function rendreMois(debut,evts){
+  const today=new Date();
+  let h='<div class="cal-grid">';
+  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${j}</div>`;
+  for(let i=0;i<42;i++){
+    const d=new Date(debut); d.setDate(d.getDate()+i);
+    const autre=d.getMonth()!==calRef.getMonth();
+    const jevts=eventsDuJour(evts,d), max=3;
+    h+=`<div class="cal-cell${autre?' autre':''}${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<span class="cal-num">${d.getDate()}</span>`;
+    jevts.slice(0,max).forEach(e=>{ h+=chipEvent(e); });
+    if(jevts.length>max) h+=`<span class="cal-plus">+${jevts.length-max}</span>`;
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function rendreSemaine(debut,evts){
+  const today=new Date();
+  let h='<div class="cal-week">';
+  for(let i=0;i<7;i++){
+    const d=new Date(debut); d.setDate(d.getDate()+i);
+    h+=`<div class="cal-wcol${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<div class="cal-whead">${JOURS_COURT[i]} ${d.getDate()}</div>`;
+    eventsDuJour(evts,d).forEach(e=>{
+      const c=e.couleur||'#5865F2';
+      h+=`<div class="cal-wevt" style="border-left-color:${escAttr(c)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)"><span class="h">${e.all_day?'journée':fmtHeure(e.start_at)}</span>${escHtml(e.title)}</div>`;
+    });
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+
+// ── Modale événement (créer / éditer + documents + commentaires) ─────────────
+function fermerModale(){ const m=document.getElementById('event-modal'); if(m) m.innerHTML=''; }
+function choisirCouleur(c){ modalCouleur=c; document.querySelectorAll('#event-modal .ev-swatch').forEach(s=>s.classList.toggle('sel', s.dataset.c===c)); }
+function ouvrirModaleEvent(id, dateYMD){
+  const ev = id ? EVENTS_CACHE.find(e=>e.id===id) : null;
+  const ro = estImporte(ev);
+  // Dates par défaut (création) : 09:00–10:00 le jour cliqué, sinon prochaine heure pleine.
+  let dStart, dEnd;
+  if(ev){ dStart=isoToLocal(ev.start_at); dEnd=isoToLocal(ev.end_at); }
+  else if(dateYMD){ dStart=dateYMD+'T09:00'; dEnd=dateYMD+'T10:00'; }
+  else { const n=new Date(); n.setMinutes(0,0,0); n.setHours(n.getHours()+1); const e2=new Date(n); e2.setHours(e2.getHours()+1); dStart=isoToLocal(n.toISOString()); dEnd=isoToLocal(e2.toISOString()); }
+  modalCouleur = (ev && ev.color) || '#5865F2';
+  modalLabelId = (ev && ev.label_id) || '';
+  newLabelCouleur = '#5865F2';
+  const calOptions = CALENDARS.filter(c=>c.name!=='TimeTree'&&c.name!=='Google').map(c=>`<option value="${escAttr(c.id)}" ${ev&&ev.calendar_id===c.id?'selected':''}>${escHtml(c.name)}</option>`).join('');
+  const rappels = (ev&&ev.rappels)||[];
+  const checks = RAPPEL_PRESETS.map(([m,lib])=>`<label style="font-weight:400;display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:0.8rem"><input type="checkbox" class="ev-rap" value="${m}" ${rappels.includes(m)?'checked':''}> ${lib}</label>`).join('');
+  const swatches = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===modalCouleur?'sel':''}" data-c="${c}" style="background:${c}" onclick="choisirCouleur('${c}')"></span>`).join('');
+  const titre = ev ? (ro?'Événement (lecture seule)':'Modifier l\\'événement') : 'Nouveau rendez-vous';
+  const dis = ro ? 'disabled' : '';
+  let html = `<div class="modal-fond" onclick="if(event.target===this)fermerModale()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerModale()">✕</button>
+    <div class="modal-titre">${escHtml(titre)}</div>
+    ${ro?`<div class="ev-ro">⚠ Importé de ${escHtml(ev.calendrier)} — modifiable seulement dans ${escHtml(ev.calendrier)}. Ici tu peux ajouter rappels, documents et commentaires.</div>`:''}
+    <div class="ev-row"><label>Titre</label><input id="ev-titre" class="ev-in" ${dis} value="${ev?escAttr(ev.title):''}" placeholder="Titre du rendez-vous"></div>
+    <div class="ev-2col">
+      <div class="ev-row"><label>Début</label><input id="ev-debut" type="datetime-local" class="ev-in" ${dis} value="${dStart}"></div>
+      <div class="ev-row"><label>Fin</label><input id="ev-fin" type="datetime-local" class="ev-in" ${dis} value="${dEnd}"></div>
+    </div>
+    <div class="ev-row"><label><input type="checkbox" id="ev-allday" ${dis} ${ev&&ev.all_day?'checked':''}> Journée entière</label></div>`;
+  if(!ev || !ro){
+    const newPal = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===newLabelCouleur?'sel':''}" data-nc="${c}" style="background:${c}" onclick="choisirNewLabelCouleur('${c}')"></span>`).join('');
+    html += `<div class="ev-row"><label>Calendrier</label><select id="ev-cal" class="ev-in" ${dis} onchange="onCalChange()">${calOptions||'<option value="">Perso</option>'}</select></div>
+    <div class="ev-row"><label>🏷 Étiquette</label>
+      <select id="ev-label" class="ev-in" ${dis} onchange="onLabelChange()"><option value="">— chargement…</option></select>
+      <div id="ev-newlabel" style="display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <input id="ev-newlabel-nom" type="text" class="ev-in" style="max-width:200px" placeholder="Nom (ex. Famille)">
+        <div class="ev-palette">${newPal}</div>
+        <button class="btn" type="button" onclick="creerEtiquetteModale()">Créer</button>
+        <button class="btn" type="button" style="opacity:.6" onclick="annulerNewLabel()">Annuler</button>
+      </div>
+    </div>
+    <div class="ev-row" id="ev-couleur-row"><label>Couleur libre</label><div class="ev-palette">${swatches}</div></div>`;
+  }
+  html += `<div class="ev-row"><label>Lieu</label><input id="ev-lieu" class="ev-in" ${dis} value="${ev&&ev.location?escAttr(ev.location):''}" placeholder="Lieu (optionnel)"></div>
+    <div class="ev-row"><label>Notes</label><textarea id="ev-notes" class="ev-in" ${dis} rows="2" placeholder="Notes (optionnel)">${ev&&ev.description?escHtml(ev.description):''}</textarea></div>
+    <div class="ev-row"><label>🔔 Rappels</label><div>${checks}</div></div>
+    <div class="modal-actions">
+      ${ro?'':`<button class="btn" onclick="enregistrerEvent(${ev?`'${ev.id}'`:'null'})">${ev?'Enregistrer':'Créer'}</button>`}
+      ${ev?`<button class="btn" style="opacity:.7" onclick="majRappelsModale('${ev.id}')">Enregistrer les rappels</button>`:''}
+      ${ev&&!ro?`<button class="btn" style="background:#ef4444" onclick="supprimerEvent('${ev.id}')">Supprimer</button>`:''}
+    </div>`;
+  if(ev){
+    html += `<div class="ev-sec"><h4>📎 Documents</h4><div id="ev-docs"><span class="liv-sub">Chargement…</span></div>
+      <input type="file" id="ev-file" style="margin-top:8px;font-size:0.8rem">
+      <button class="btn" style="margin-left:8px" onclick="uploadDoc('${ev.id}')">Joindre</button></div>
+    <div class="ev-sec"><h4>💬 Commentaires</h4><div id="ev-comms"><span class="liv-sub">Chargement…</span></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="ev-comm-in" class="ev-in" placeholder="Ajouter un commentaire…"><button class="btn" onclick="ajouterComm('${ev.id}')">Envoyer</button></div></div>`;
+  }
+  html += `</div></div>`;
+  document.getElementById('event-modal').innerHTML = html;
+  if(document.getElementById('ev-label')) chargerEtiquettesModale();
+  if(ev){ chargerDocs(ev.id); chargerComm(ev.id); }
+}
+function currentCalId(){ const s=document.getElementById('ev-cal'); return s ? s.value : ''; }
+async function chargerEtiquettesModale(){
+  const cal=currentCalId(); const sel=document.getElementById('ev-label'); if(!sel) return;
+  let labels=[];
+  if(cal){ try{ labels=(await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes').then(r=>r.json())).etiquettes||[]; }catch(e){} }
+  if(modalLabelId && !labels.some(l=>l.id===modalLabelId)) modalLabelId='';  // étiquette d'un autre calendrier → on détache
+  sel.innerHTML = `<option value="">Aucune (couleur libre)</option>`
+    + labels.map(l=>`<option value="${escAttr(l.id)}" ${l.id===modalLabelId?'selected':''}>${escHtml(l.name)}</option>`).join('')
+    + `<option value="__new__">➕ Nouvelle étiquette…</option>`;
+  appliquerEtatLabel();
+}
+function onCalChange(){ modalLabelId=''; chargerEtiquettesModale(); }
+function onLabelChange(){
+  const sel=document.getElementById('ev-label'); const v=sel.value;
+  if(v==='__new__'){ const f=document.getElementById('ev-newlabel'); if(f) f.style.display='flex'; sel.value=modalLabelId||''; return; }
+  modalLabelId=v; appliquerEtatLabel();
+}
+function appliquerEtatLabel(){
+  // Quand une étiquette est choisie, sa couleur prime → on masque la palette libre.
+  const row=document.getElementById('ev-couleur-row'); if(row) row.style.display = modalLabelId ? 'none' : '';
+}
+function choisirNewLabelCouleur(c){ newLabelCouleur=c; document.querySelectorAll('#ev-newlabel .ev-swatch').forEach(s=>s.classList.toggle('sel', s.dataset.nc===c)); }
+function annulerNewLabel(){ const f=document.getElementById('ev-newlabel'); if(f) f.style.display='none'; }
+async function creerEtiquetteModale(){
+  const cal=currentCalId(); if(!cal){ alert("Choisis d'abord un calendrier."); return; }
+  const nom=(document.getElementById('ev-newlabel-nom').value||'').trim(); if(!nom){ alert('Donne un nom.'); return; }
+  try{
+    const l=await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:newLabelCouleur})}).then(r=>r.json());
+    if(l && l.id){ modalLabelId=l.id; annulerNewLabel(); document.getElementById('ev-newlabel-nom').value=''; await chargerEtiquettesModale(); }
+    else alert('Échec : '+((l&&l.detail)||'inconnu'));
+  }catch(e){ alert('Échec : '+e.message); }
+}
+
+// ── Mini-gestion des étiquettes (panneau depuis la toolbar) ──────────────────
+async function ouvrirGestionEtiquettes(){
+  if(!CALENDARS.length){ try{ CALENDARS=(await fetch('/agenda/calendriers').then(r=>r.json())).calendriers||[]; }catch(e){} }
+  try{ majListePartage(); }catch(e){}
+  const cals=CALENDARS.filter(c=>c.name!=='TimeTree'&&c.name!=='Google');
+  const opts=cals.map(c=>`<option value="${escAttr(c.id)}">${escHtml(c.name)}</option>`).join('')||'<option value="">Perso</option>';
+  const html=`<div class="modal-fond" onclick="if(event.target===this)fermerGestionEtq()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerGestionEtq()">✕</button>
+    <div class="modal-titre">🏷 Gérer les étiquettes</div>
+    <div class="ev-row"><label>Calendrier</label><select id="etq-cal" class="ev-in" onchange="chargerGestionEtq()">${opts}</select></div>
+    <div id="etq-liste"><span class="liv-sub">Chargement…</span></div>
+    <div class="ev-sec"><h4>Nouvelle étiquette</h4>
+      <div class="etq-row">
+        <input type="color" id="etq-new-col" value="#5865F2">
+        <input type="text" id="etq-new-nom" placeholder="Nom (ex. Famille)">
+        <button class="btn" onclick="ajouterGestionEtq()">Ajouter</button>
+      </div>
+    </div>
+  </div></div>`;
+  document.getElementById('label-modal').innerHTML=html;
+  chargerGestionEtq();
+}
+function fermerGestionEtq(){ const m=document.getElementById('label-modal'); if(m) m.innerHTML=''; }
+function gestionCalId(){ const s=document.getElementById('etq-cal'); return s?s.value:''; }
+async function chargerGestionEtq(){
+  const cal=gestionCalId(); const box=document.getElementById('etq-liste'); if(!box) return;
+  let labels=[];
+  if(cal){ try{ labels=(await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes').then(r=>r.json())).etiquettes||[]; }catch(e){} }
+  box.innerHTML = labels.length ? labels.map(l=>`<div class="etq-row">
+    <input type="color" value="${escAttr(l.color||'#5865F2')}" id="etq-col-${l.id}">
+    <input type="text" value="${escAttr(l.name)}" id="etq-nom-${l.id}">
+    <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="majGestionEtq('${l.id}')">💾</button>
+    <button class="sup" title="Supprimer" onclick="supprGestionEtq('${l.id}')">🗑</button>
+  </div>`).join('') : '<span class="liv-sub">Aucune étiquette pour ce calendrier.</span>';
+}
+async function majGestionEtq(id){
+  const nom=(document.getElementById('etq-nom-'+id).value||'').trim();
+  const col=document.getElementById('etq-col-'+id).value;
+  if(!nom){ alert('Le nom ne peut pas être vide.'); return; }
+  try{ await fetch('/agenda/etiquettes/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:col})}); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprGestionEtq(id){
+  if(!confirm("Supprimer cette étiquette ? Les événements concernés repasseront « sans étiquette ».")) return;
+  try{ await fetch('/agenda/etiquettes/'+encodeURIComponent(id),{method:'DELETE'}); chargerGestionEtq(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function ajouterGestionEtq(){
+  const cal=gestionCalId(); if(!cal){ alert('Choisis un calendrier.'); return; }
+  const nom=(document.getElementById('etq-new-nom').value||'').trim(); const col=document.getElementById('etq-new-col').value;
+  if(!nom){ alert('Donne un nom.'); return; }
+  try{ await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nom,color:col})}); document.getElementById('etq-new-nom').value=''; chargerGestionEtq(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+function rappelsCoches(){ return Array.from(document.querySelectorAll('#event-modal .ev-rap:checked')).map(c=>parseInt(c.value,10)); }
+function corpsEvent(){
+  const allday=document.getElementById('ev-allday').checked;
+  return {
+    title: document.getElementById('ev-titre').value.trim(),
+    start_at: localToIso(document.getElementById('ev-debut').value),
+    end_at: localToIso(document.getElementById('ev-fin').value),
+    location: document.getElementById('ev-lieu').value.trim() || null,
+    description: document.getElementById('ev-notes').value.trim() || null,
+    color: modalCouleur, label_id: modalLabelId || '', all_day: allday, rappels: rappelsCoches()
+  };
+}
+async function enregistrerEvent(id){
+  const corps=corpsEvent();
+  if(!corps.title){ alert('Donne un titre.'); return; }
+  if(!corps.start_at||!corps.end_at){ alert('Indique début et fin.'); return; }
+  try{
+    if(id){ await fetch('/agenda/evenements/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)}); }
+    else { const sel=document.getElementById('ev-cal'); corps.calendar_id=sel?sel.value:null; await fetch('/agenda/evenements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)}); }
+    fermerModale(); chargerAgenda();
+  }catch(e){ alert('Échec : '+e.message); }
+}
+async function majRappelsModale(id){
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/rappels',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({rappels:rappelsCoches()})}); fermerModale(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprimerEvent(id){
+  if(!confirm('Supprimer cet événement ?')) return;
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id),{method:'DELETE'}); fermerModale(); chargerAgenda(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function chargerDocs(id){
+  const box=document.getElementById('ev-docs'); if(!box) return;
+  try{
+    const docs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/documents').then(r=>r.json())).documents||[];
+    box.innerHTML = docs.length ? docs.map(d=>`<div class="ev-doc"><a href="/agenda/documents/${encodeURIComponent(d.id)}" target="_blank">${escHtml(d.filename)}</a><span class="liv-sub">${Math.round((d.size_bytes||0)/1024)} Ko</span><button class="sup" onclick="supprDoc('${d.id}','${id}')">✕</button></div>`).join('') : '<span class="liv-sub">Aucun document.</span>';
+  }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
+}
+async function uploadDoc(id){
+  const f=document.getElementById('ev-file'); if(!f||!f.files.length){ alert('Choisis un fichier.'); return; }
+  const fd=new FormData(); fd.append('file', f.files[0]);
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/documents',{method:'POST',body:fd}); f.value=''; chargerDocs(id); }
+  catch(e){ alert('Échec upload : '+e.message); }
+}
+async function supprDoc(attId,id){ if(!confirm('Supprimer ce document ?'))return; try{ await fetch('/agenda/documents/'+encodeURIComponent(attId),{method:'DELETE'}); chargerDocs(id); }catch(e){} }
+async function chargerComm(id){
+  const box=document.getElementById('ev-comms'); if(!box) return;
+  try{
+    const cs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/commentaires').then(r=>r.json())).commentaires||[];
+    box.innerHTML = cs.length ? cs.map(c=>`<div class="ev-comm">${escHtml(c.content)}<div class="meta">${new Date(c.created_at).toLocaleString('fr-FR')} <button class="sup" style="border:none;background:none;color:#ef4444;cursor:pointer" onclick="supprComm('${c.id}','${id}')">supprimer</button></div></div>`).join('') : '<span class="liv-sub">Aucun commentaire.</span>';
+  }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
+}
+async function ajouterComm(id){
+  const inp=document.getElementById('ev-comm-in'); const v=inp.value.trim(); if(!v) return;
+  try{ await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/commentaires',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contenu:v})}); inp.value=''; chargerComm(id); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+async function supprComm(cId,id){ try{ await fetch('/agenda/commentaires/'+encodeURIComponent(cId),{method:'DELETE'}); chargerComm(id); }catch(e){} }
+
+// ── Partage d'agenda (S182b) : créer un agenda partagé + inviter, via le proxy /agenda ──
+// Réutilise CALENDARS (chargé par chargerAgenda). Tout passe par la session du Cœur → per-user.
+function majListePartage(){
+  const sel=document.getElementById('cal-partage-sel'); if(!sel) return;
+  const av=sel.value;
+  sel.innerHTML=CALENDARS.map(c=>`<option value="${escAttr(c.id)}">${escHtml(c.name)}${c.role&&c.role!=='owner'?' ('+escHtml(c.role)+')':''}</option>`).join('')
+    || '<option value="">(aucun)</option>';
+  if(av && CALENDARS.some(c=>c.id===av)) sel.value=av;
+  majBoutonsPartage();
+}
+function majBoutonsPartage(){
+  const sel=document.getElementById('cal-partage-sel'); const btn=document.getElementById('btn-partage-inviter');
+  if(!sel||!btn) return;
+  const cal=CALENDARS.find(c=>c.id===sel.value);
+  const owner = cal && (cal.role==='owner' || cal.role===undefined);
+  btn.disabled=!owner;
+  btn.title = owner ? "Inviter quelqu'un sur cet agenda" : "Seul le propriétaire peut inviter";
+}
+function ouvrirModaleNouvelAgenda(){
+  const puces=COULEURS_PALETTE.map((c,i)=>`<span class="ev-swatch ${i===0?'sel':''}" data-pc="${c}" style="background:${c}" onclick="choisirPartageCouleur('${c}')"></span>`).join('');
+  document.getElementById('partage-modal').innerHTML=`<div class="modal-fond" onclick="if(event.target===this)fermerPartage()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerPartage()">✕</button>
+    <div class="modal-titre">Nouvel agenda partagé</div>
+    <div class="ev-row"><label>Nom</label><input id="pa-nom" class="ev-in" placeholder="Famille, Chantier…"></div>
+    <div class="ev-row"><label>Couleur</label><div class="ev-palette">${puces}</div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn ghost" onclick="fermerPartage()">Annuler</button>
+      <button class="btn" onclick="creerNouvelAgenda()">Créer</button>
+    </div></div></div>`;
+  window._paCouleur=COULEURS_PALETTE[0];
+}
+function choisirPartageCouleur(c){ window._paCouleur=c; document.querySelectorAll('#partage-modal .ev-swatch').forEach(s=>s.classList.toggle('sel', s.dataset.pc===c)); }
+function fermerPartage(){ const m=document.getElementById('partage-modal'); if(m) m.innerHTML=''; }
+async function creerNouvelAgenda(){
+  const nom=(document.getElementById('pa-nom').value||'').trim();
+  if(!nom){ alert("Donne un nom à l'agenda."); return; }
+  try{
+    const cal=await fetch('/agenda/calendriers',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nom, couleur:window._paCouleur})}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+    fermerPartage();
+    CALENDARS=[];                    // force le rechargement de la liste
+    await chargerAgenda();
+    const sel=document.getElementById('cal-partage-sel'); if(sel&&cal&&cal.id){ sel.value=cal.id; majBoutonsPartage(); }
+  }catch(e){ alert('Échec : '+e.message); }
+}
+function ouvrirModaleInviterAgenda(){
+  const sel=document.getElementById('cal-partage-sel'); const cal=CALENDARS.find(c=>c.id===(sel&&sel.value));
+  if(!cal){ alert("Choisis d'abord un agenda."); return; }
+  document.getElementById('partage-modal').innerHTML=`<div class="modal-fond" onclick="if(event.target===this)fermerPartage()"><div class="modal-boite">
+    <button class="modal-fermer" onclick="fermerPartage()">✕</button>
+    <div class="modal-titre">Inviter sur « ${escHtml(cal.name)} »</div>
+    <div class="ev-row"><label>Email (optionnel, pour info)</label><input id="pa-email" class="ev-in" placeholder="marina@exemple.fr"></div>
+    <div class="ev-row"><label>Droit</label><select id="pa-role" class="ev-in"><option value="viewer">Lecture seule</option><option value="editor">Lecture et écriture</option></select></div>
+    <div id="pa-resultat"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn ghost" onclick="fermerPartage()">Fermer</button>
+      <button class="btn" onclick="genererLienInvitation('${escAttr(cal.id)}')">Créer le lien</button>
+    </div></div></div>`;
+}
+async function genererLienInvitation(calId){
+  const email=(document.getElementById('pa-email').value||'').trim()||null;
+  const role=document.getElementById('pa-role').value;
+  try{
+    const inv=await fetch('/agenda/calendriers/'+encodeURIComponent(calId)+'/invitations',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role, email})})
+      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+    // Lien d'acceptation = route du Cœur (login unique) ; la brique n'est pas exposée à distance.
+    const lien = location.origin+'/agenda/invitation/'+inv.token;
+    document.getElementById('pa-resultat').innerHTML=
+      '<p class="cal-leg-titre" style="margin:8px 0 4px">Envoie ce lien à la personne :</p>'+
+      `<input class="ev-in" readonly value="${escAttr(lien)}" onclick="this.select()">`;
+  }catch(e){ alert('Échec : '+e.message); }
+}
+
 
 // ── GeoHub (carte de veille, brique 6110) ──────────────────────────────────────
 // Chargement paresseux de l'iframe au 1er affichage de l'onglet.
