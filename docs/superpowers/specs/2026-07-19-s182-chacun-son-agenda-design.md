@@ -81,10 +81,25 @@ SON propre Google le keyera sous SON `sub` (comportement multi-user correct). Se
 cosmétique : le panneau « connecté ? » du dashboard lu sous mon `sub` réel ne « voit » pas la
 connexion `perso` — **hors périmètre MVP**, noté pour S183 (aliasing coffre ou reconnexion 1-clic).
 
+## Partager un agenda depuis l'UI (complément S182)
+
+Le socle de partage existait déjà (S172) : `POST /calendars` (créateur = owner), modale
+« Inviter » (lien token), page d'acceptation Keycloak → `CalendarMember`. Manquait **un bouton
+UI pour CRÉER un agenda partagé** : on ne pouvait inviter que sur des calendriers déjà existants
+(création réservée à l'assistant `agenda_creer_partage`). Ajout dans le front `/app`
+(`briques/agenda/backend/templates_app.py`) :
+- bouton **« + Nouvel agenda »** dans la barre + dans l'état vide (plus de cul-de-sac) ;
+- modale nom + couleur → `POST /calendars` → bascule sur le nouvel agenda (bouton « Inviter »
+  alors disponible car on en est owner).
+Flux complet UI : créer « Famille » → Inviter → envoyer le lien → l'autre accepte (login KC) →
+il devient membre. Test : `test_app_page_contient_la_creation_dagenda_partage` + le filet
+`node --check` du JS inline.
+
 ## Flux « 2e personne » (aucun code neuf au-delà des 3 points)
 
 Inscription realm `forge` (ouverte) → login Cœur → contexte porte son `sub` → agenda vide (aucun
-`CalendarMember`) → je l'invite sur un calendrier partagé (flux S172 `agenda_inviter`).
+`CalendarMember`) → je l'invite sur un calendrier partagé (bouton « Nouvel agenda » puis
+« Inviter », ou assistant `agenda_inviter`).
 
 ## Vérification e2e (LIVE, groupée HP)
 
