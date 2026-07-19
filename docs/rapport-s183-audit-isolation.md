@@ -40,6 +40,7 @@ cercle privé — sauf l'agenda, seule brique ayant reçu le correctif S182.
 | forge | 5700 | X-Forge-User-Token (ContextVar) | Non (propagation identité) | N/A | Oui | infra-partagé | partagée-à-raison |
 | connexion | 5870 | X-API-Key, X-Telegram-Init-Data | Oui-partiel — mapping interlocuteur→utilisateur | Oui | Non | personne | isolée-personne (non testée) |
 | voix | 5985 | X-API-Key/Bearer | Non (bibliothèque de clones globale) | Non | Non | personne (biométrie vocale) | partagée-à-raison (voulu, sensible) |
+| ecoute | 5800 | Aucun | Non (commandes sans compte_id/tenant) | Non | Non | personne (commandes+paiement vocal) | **TROU** |
 | images | 5950 | X-API-Key/Bearer | Non (stateless) | N/A | Non | bundle-client | partagée-à-raison |
 | video | 5970 | X-API-Key/Bearer | Non (stateless) | N/A | Non | bundle-client | partagée-à-raison |
 | transcription | 5980 | X-API-Key/Bearer | Non (stateless) | N/A | Non | bundle-client | partagée-à-raison |
@@ -73,6 +74,12 @@ cercle privé — sauf l'agenda, seule brique ayant reçu le correctif S182.
 - **`donnees` (X-Org-ID jamais forwardé via `outils_communs`)** : REPORTÉ — nécessite de
   décider si les outils LLM doivent porter une organisation, hors périmètre "chacun son espace
   par personne".
+- **ecoute** : REPORTÉ — aucune auth du tout aujourd'hui (aucun `Depends`/`Header`/`X-API-Key`
+  sur aucune route, y compris le WebSocket `/ecoute`), et la table `commandes` n'a aucune colonne
+  tenant/compte_id. Corriger exige de concevoir un modèle de tenant complet (colonne, filtre sur
+  chaque route), pas un fix d'1-2 lignes — comme `memoire`. Brique à traiter avec une attention
+  particulière : elle gère aussi des paiements (`/commandes/{cid}/payer`,
+  `/paiement/webhook`), donc ce trou touche de l'argent réel, pas seulement de la donnée.
 
 ## Hors périmètre confirmé
 
