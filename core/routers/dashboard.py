@@ -1791,7 +1791,8 @@ async function genererLienInvitation(calId){
     const inv=await fetch('/agenda/calendriers/'+encodeURIComponent(calId)+'/invitations',
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role, email})})
       .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
-    const lien = inv.lien || (location.origin+'/agenda-invitation/'+inv.token);
+    // Lien d'acceptation = route du Cœur (login unique) ; la brique n'est pas exposée à distance.
+    const lien = location.origin+'/agenda/invitation/'+inv.token;
     document.getElementById('pa-resultat').innerHTML=
       '<p class="cal-leg-titre" style="margin:8px 0 4px">Envoie ce lien à la personne :</p>'+
       `<input class="ev-in" readonly value="${escAttr(lien)}" onclick="this.select()">`;

@@ -108,6 +108,17 @@ async def creer_invitation(registre, calendar_id: str, role: str = "viewer",
         return r.json()
 
 
+async def accepter_invitation(registre, token: str) -> dict:
+    """Accepte une invitation au nom de l'utilisateur de session (S182b) : il devient
+    membre du calendrier avec le rôle de l'invitation. Proxy vers `POST
+    /invitations/{token}/accept`, identité portée par `_entetes()` (X-User-Id de session).
+    Lève pour un token inconnu/expiré/déjà utilisé (4xx propagé par la brique)."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{_base(registre)}/invitations/{token}/accept", headers=_entetes())
+        r.raise_for_status()
+        return r.json()
+
+
 async def lister_evenements(registre, debut: str | None = None, fin: str | None = None) -> list[dict]:
     """Événements de TOUS les calendriers accessibles, filtrés sur [debut, fin] (ISO 8601).
 
