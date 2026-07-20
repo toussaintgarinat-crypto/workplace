@@ -428,6 +428,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="cercle" onclick="switchVue('cercle')" title="Inviter un proche au mesh privé">🔑 Cercle</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
+    <button class="btn ghost" onclick="deconnexion()" title="Se déconnecter">Déconnexion</button>
   </div>
 </header>
 <!-- S165 — jeton assistant ciblable : glisse-le sur un onglet (Agenda/Mail/Carte) ou une
@@ -1024,6 +1025,11 @@ const ROLES_LABELS = {
   agenda:'Agenda'
 };
 let VUE = 'briques';
+
+async function deconnexion() {
+  await fetch('/auth/logout', { method: 'POST' });
+  window.location.href = '/auth/login';
+}
 
 function switchVue(v) {
   VUE = v;

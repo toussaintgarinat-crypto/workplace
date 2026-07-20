@@ -837,7 +837,7 @@ let _htmlCourant=null;  // HTML brut du message ouvert (null si email texte seul
 function rendreMailHtml(html, chargerImages){
   const propre=DOMPurify.sanitize(html,{
     FORBID_TAGS:['script','form','iframe','object','embed','input','button','textarea','audio','video','meta','base'],
-    FORBID_ATTR:['srcdoc']});
+    FORBID_ATTR:['srcdoc'], KEEP_CONTENT:false});
   const doc=new DOMParser().parseFromString(propre,'text/html');
   let bloquees=0;
   const distant=u=>/^\s*(https?:)?\/\//i.test(u||'');
