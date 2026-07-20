@@ -36,10 +36,12 @@ from shared.workplace_auth import KeycloakSettings, verify_token
 # ── Configuration (motif `os.environ.get` au niveau module — core/ n'a pas de config.py,
 # contrairement à l'agenda ; cf. core/urls_ui.py pour le même motif). ──────────────────
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
-# URL Keycloak vue par le NAVIGATEUR (redirection /auth/login) — distincte de KEYCLOAK_URL
-# (appels serveur-à-serveur : échange de code, JWKS) quand Keycloak est joint autrement en
-# interne qu'en façade (ex. IP LAN interne vs domaine mesh HTTPS avec KC_HOSTNAME figé).
-# Vide/absente = repli sur KEYCLOAK_URL (comportement historique, mono-accès).
+# URL Keycloak vue par le NAVIGATEUR (redirection /auth/login, S181) — distincte de
+# KEYCLOAK_URL (appels serveur-à-serveur : échange de code, JWKS ; verify_token ne valide
+# pas `iss`, les clés JWKS sont indépendantes du hostname) quand Keycloak est joint
+# autrement en interne qu'en façade (ex. IP LAN interne vs domaine mesh HTTPS, Caddy,
+# KC_HOSTNAME figé). Vide OU absente = repli sur KEYCLOAK_URL (motif `KEY=` du reste du
+# monorepo — une variable présente mais vide dans le .env doit se comporter comme absente).
 KEYCLOAK_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "") or KEYCLOAK_URL
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "forge")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "assistant-app")

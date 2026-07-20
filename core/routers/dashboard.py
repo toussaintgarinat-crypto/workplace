@@ -425,6 +425,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab" data-vue="mail" data-cible-brique="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
       <button class="tab" data-vue="geo" data-cible-brique="geo" onclick="switchVue('geo')" title="La carte de veille : entreprises récentes et objets géolocalisés sur tes zones surveillées, avec pastilles de fraîcheur.">Carte</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
+      <button class="tab" data-vue="cercle" onclick="switchVue('cercle')" title="Inviter un proche au mesh privé">🔑 Cercle</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
   </div>
@@ -968,6 +969,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         placeholder="Chargement…"></textarea>
     </div>
   </div>
+
+  <!-- VUE CERCLE (S181) -->
+  <div class="view" id="vue-cercle">
+    <div class="panel">
+      <h2>🔑 Inviter un proche au cercle privé</h2>
+      <p style="font-size:0.85rem;color:#94a3b8;line-height:1.5">Génère un QR à usage unique pour rattacher l'appareil d'un proche au mesh privé.
+         Il installe l'app NetBird, scanne/saisit la clé, puis ouvre le tableau de bord.</p>
+      <label style="font-size:0.78rem;color:#94a3b8;display:block;max-width:320px">Nom de l'invité
+        <input id="cercle-nom" style="width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid #2d3148;background:#0f1117;color:#e2e8f0;font-size:13px" placeholder="Marina"></label>
+      <div style="margin-top:12px"><button class="btn" onclick="inviterProche()">Générer l'invitation</button></div>
+      <div id="cercle-resultat" style="margin-top:16px"></div>
+    </div>
+  </div>
 </main>
 
 <!-- Panneau de détail d'une brique -->
@@ -1033,6 +1047,35 @@ function switchVue(v) {
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
+}
+
+// ── Cercle privé (S181) : inviter un proche au mesh via NetBird ─────────────────────
+async function inviterProche() {
+  const nom = (document.getElementById('cercle-nom').value || 'proche').trim();
+  const cible = document.getElementById('cercle-resultat');
+  cible.textContent = 'Génération…';
+  try {
+    const r = await fetch('/admin/inviter-proche', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({nom})
+    });
+    const d = await r.json();
+    if (!r.ok) { cible.textContent = 'Erreur : ' + (d.erreur || r.status); return; }
+    // qr_svg est produit côté serveur (segno) → confiance ; on échappe en revanche la clé,
+    // l'URL et l'expiration (valeurs issues de l'API NetBird) avant injection innerHTML.
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    cible.innerHTML =
+      '<div style="max-width:240px">' + d.qr_svg + '</div>' +
+      '<p><strong>Clé :</strong> <code>' + esc(d.key) + '</code></p>' +
+      '<p>Management : <code>' + esc(d.management_url) + '</code>' +
+      (d.expires ? ' — expire le ' + esc(d.expires) : '') + '</p>' +
+      '<ol><li>Installer l\\'app <strong>NetBird</strong></li>' +
+      '<li>Rejoindre avec la clé ci-dessus</li>' +
+      '<li>Ouvrir le tableau de bord une fois connecté au mesh</li></ol>';
+  } catch (e) {
+    cible.textContent = 'Erreur réseau : ' + e;
+  }
 }
 
 // ── Conversations & projets dans l'Assistant (refonte façon Claude/Perplexity) ──────

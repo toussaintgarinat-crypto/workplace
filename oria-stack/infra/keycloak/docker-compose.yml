@@ -39,6 +39,13 @@ services:
       - KC_HOSTNAME_STRICT_HTTPS=false
       # Nécessaire pour que la console admin accepte les requêtes depuis Traefik
       - KC_PROXY=edge
+      # S181 — login DISTANT via le domaine mesh (Caddy termine le TLS). KC_PROXY=edge est
+      # déprécié en KC26 → xforwarded pour que Keycloak détecte HTTPS (sinon la page de login
+      # rend son form action en http → mixed-content). KC_HOSTNAME fige l'issuer sur le domaine :
+      # indispensable car le REFRESH token (émis via :18080/https) est rafraîchi par le Cœur
+      # contre l'endpoint interne — sans issuer stable, Keycloak rejette le refresh (boucle login).
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HOSTNAME=https://workplaceagenda.duckdns.org:18080
     volumes:
       - ./realms:/opt/keycloak/data/import
     depends_on:
