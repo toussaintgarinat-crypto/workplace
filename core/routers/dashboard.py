@@ -1026,13 +1026,12 @@ const ROLES_LABELS = {
 };
 let VUE = 'briques';
 
-async function deconnexion() {
-  // redirect:'manual' : /auth/logout redirige vers /auth/login qui, cookie supprimé,
-  // redirige à son tour vers Keycloak (autre origine) — fetch() suivrait ce 2e saut et
-  // se ferait bloquer par CORS (TypeError: Failed to fetch), avant d'atteindre la ligne
-  // suivante. On laisse la VRAIE navigation (pas fetch) gérer les redirections.
-  try { await fetch('/auth/logout', { method: 'POST', redirect: 'manual' }); } catch (e) {}
-  window.location.href = '/auth/login';
+function deconnexion() {
+  // Navigation, pas fetch() : /auth/logout doit traverser Keycloak (fin de session SSO,
+  // sinon la prochaine visite de /auth/login relogue silencieusement via le SSO encore
+  // actif, et le bouton semble ne rien faire) — une autre origine que le Cœur, que fetch()
+  // se ferait bloquer par CORS en suivant.
+  window.location.href = '/auth/logout';
 }
 
 function switchVue(v) {
