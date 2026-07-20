@@ -1027,7 +1027,11 @@ const ROLES_LABELS = {
 let VUE = 'briques';
 
 async function deconnexion() {
-  await fetch('/auth/logout', { method: 'POST' });
+  // redirect:'manual' : /auth/logout redirige vers /auth/login qui, cookie supprimé,
+  // redirige à son tour vers Keycloak (autre origine) — fetch() suivrait ce 2e saut et
+  // se ferait bloquer par CORS (TypeError: Failed to fetch), avant d'atteindre la ligne
+  // suivante. On laisse la VRAIE navigation (pas fetch) gérer les redirections.
+  try { await fetch('/auth/logout', { method: 'POST', redirect: 'manual' }); } catch (e) {}
   window.location.href = '/auth/login';
 }
 
