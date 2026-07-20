@@ -44,11 +44,11 @@ def _espace_memoire(espace: str | None) -> str | None:
 # outil CÂBLÉ gagne toujours (zéro régression) ; liste blanche et kill-switch d'env
 # permettent de borner ce que le LLM voit (souveraineté du « plan de contrôle »).
 
-# Briques « cercle privé » (S182 agenda, S184 ecoute, S185 mail, S186 memoire) : le Cœur
-# forwarde l'identité de l'utilisateur connecté en X-User-Id, gagée par {BRIQUE}_KEY (seul
-# le Cœur la détient). Les autres briques ignorent cet en-tête (motif tenant/bundle-client,
-# cf. X-Compte-Id).
-BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire"}
+# Briques « cercle privé » (S182 agenda, S184 ecoute, S185 mail, S186 memoire, S187 studio) :
+# le Cœur forwarde l'identité de l'utilisateur connecté en X-User-Id, gagée par {BRIQUE}_KEY
+# (seul le Cœur la détient). Les autres briques ignorent cet en-tête (motif tenant/bundle-
+# client, cf. X-Compte-Id).
+BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire", "studio"}
 
 
 def _entetes_brique(brique: str) -> dict:
