@@ -78,35 +78,34 @@ class _Client:
         return self.resp
 
 
-def test_studio_appel_envoie_la_cle():
-    os.environ["STUDIO_KEY"] = "secret-de-service"
-    try:
-        cli = _Client(_Resp(200, {"ok": True}))
-        out = asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
-        assert cli.dernier["headers"]["X-API-Key"] == "secret-de-service"
-        assert cli.dernier["url"] == "http://studio.test/series"
-        assert json.loads(out) == {"ok": True}
-    finally:
-        os.environ.pop("STUDIO_KEY", None)
+def test_studio_appel_envoie_la_cle(monkeypatch):
+    # monkeypatch.setenv (pas os.environ direct) : restaure la valeur PRÉCÉDENTE de
+    # STUDIO_KEY après le test, plutôt que de la détruire inconditionnellement — sinon ce
+    # test pollue l'ordre pour test_studio_proxy.py, qui pose STUDIO_KEY à l'import (S187).
+    monkeypatch.setenv("STUDIO_KEY", "secret-de-service")
+    cli = _Client(_Resp(200, {"ok": True}))
+    out = asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
+    assert cli.dernier["headers"]["X-API-Key"] == "secret-de-service"
+    assert cli.dernier["url"] == "http://studio.test/series"
+    assert json.loads(out) == {"ok": True}
 
 
-def test_studio_appel_sans_cle_pas_de_cle_api():
-    os.environ.pop("STUDIO_KEY", None)
+def test_studio_appel_sans_cle_pas_de_cle_api(monkeypatch):
+    monkeypatch.delenv("STUDIO_KEY", raising=False)
     cli = _Client(_Resp(200, {"ok": True}))
     asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
     assert "X-API-Key" not in (cli.dernier["headers"] or {})
 
 
-def test_studio_appel_forwarde_lidentite_par_personne():
+def test_studio_appel_forwarde_lidentite_par_personne(monkeypatch):
     import contexte_tenant as ct
-    os.environ["STUDIO_KEY"] = "secret-de-service"
+    monkeypatch.setenv("STUDIO_KEY", "secret-de-service")
     try:
         ct.definir_contexte(utilisateur="claire")
         cli = _Client(_Resp(200, {"ok": True}))
         asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
         assert cli.dernier["headers"]["X-User-Id"] == "claire"
     finally:
-        os.environ.pop("STUDIO_KEY", None)
         ct.definir_contexte(utilisateur=ct.UTILISATEUR_DEFAUT)
         ct._utilisateur.set(ct.UTILISATEUR_DEFAUT)
 
