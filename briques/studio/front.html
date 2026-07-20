@@ -155,9 +155,12 @@ const md = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,
 // Clé API facultative (vente brique seule). Vide = mode ouvert. Lue ?api_key= ou localStorage.
 const API_KEY = new URLSearchParams(location.search).get('api_key') || localStorage.getItem('studio_api_key') || '';
 const HDR = {'Content-Type':'application/json', ...(API_KEY ? {'X-API-Key': API_KEY} : {})};
+// Préfixe posé par le proxy Cœur /studio-app/* (S187) : vide en usage autoporté (démo/BYO),
+// donc ce changement est un NO-OP hors du proxy — mêmes chemins relatifs qu'avant.
+const API_BASE = window.STUDIO_API_BASE || '';
 
 async function api(path, method='GET', body=null){
-  const r = await fetch(path, {method, headers:HDR, body: body!=null?JSON.stringify(body):null});
+  const r = await fetch(API_BASE + path, {method, headers:HDR, body: body!=null?JSON.stringify(body):null});
   if(!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || ('HTTP '+r.status)); }
   return r.status===204 ? null : r.json();
 }
