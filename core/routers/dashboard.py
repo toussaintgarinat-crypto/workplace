@@ -4,6 +4,8 @@ Tableau de bord visuel du Cœur (HTML embarqué + injection des URLs d'iframes).
 """
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+import auth
+import memoire_jeton
 from etat import registre
 from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, PERSONNAGES_KEY, STUDIO_KEY, url_brique
 
@@ -3409,6 +3411,15 @@ async def dashboard(request: Request):
     if PERSONNAGES_KEY:
         sep = "&" if "?" in personnages_ui else "?"
         personnages_ui = f"{personnages_ui}{sep}api_key={PERSONNAGES_KEY}"
+    # Mémoire (S186) : jeton signé PAR PERSONNE (pas une clé statique partagée comme
+    # ci-dessus) — dit à la brique QUI ouvre l'onglet sans exposer MEMOIRE_KEY au navigateur.
+    # emettre() renvoie None si MEMOIRE_KEY n'est pas configurée : l'URL reste inchangée, la
+    # brique retombe sur le compte de service (comportement historique, mono-tenant).
+    memoire_ui = u("MEMOIRE")
+    jeton_memoire = memoire_jeton.emettre(auth.sub_session_optionnel(request) or "perso")
+    if jeton_memoire:
+        sep = "&" if "?" in memoire_ui else "?"
+        memoire_ui = f"{memoire_ui}{sep}m={jeton_memoire}"
     return HTMLResponse(content=DASHBOARD_HTML
         .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
@@ -3420,7 +3431,7 @@ async def dashboard(request: Request):
         .replace("__GEO_UI_URL__", geo_ui)
         .replace("__SYNOPSIS_UI_URL__", u("SYNOPSIS"))
         .replace("__VOIX_UI_URL__", u("VOIX"))
-        .replace("__MEMOIRE_UI_URL__", u("MEMOIRE"))
+        .replace("__MEMOIRE_UI_URL__", memoire_ui)
         .replace("__DEV_IDE_URL__", u("DEV_IDE"))
         .replace("__GENERATEUR_BUNDLES_URL__", u("GENERATEUR"))
         .replace("__GATEWAY_UI_URL__", u("GATEWAY")))
