@@ -68,12 +68,29 @@ def cle_api(x_api_key: Optional[str] = Header(None),
     raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
 
 
-def charger(serie_id: str) -> dict:
-    """Charge une série (404 si absente) — wrap honnête de la persistance fichier."""
+def _identite_effective(serie: dict) -> str:
+    """Normalise `cree_par` à la LECTURE (jamais réécrit dans le fichier, S187) : une valeur
+    legacy — mode ouvert historique (`"public"`) ou ancienne `STUDIO_KEY` brute d'avant ce
+    sprint — est traitée comme `"perso"`, le bucket mono-user par défaut du dialecte par
+    personne. N'affecte PAS le dialecte BYO : la clé d'un client reste sa propre identité."""
+    valeur = serie.get("cree_par")
+    studio_key = os.environ.get("STUDIO_KEY", "").strip()
+    if studio_key and (valeur in (None, "public") or valeur == studio_key):
+        return "perso"
+    return valeur if valeur is not None else "public"
+
+
+def charger(serie_id: str, identite: str) -> dict:
+    """Charge une série (404 si absente OU si elle n'appartient pas à `identite`) — wrap
+    honnête de la persistance fichier. 404 (pas 403, motif mail/ecoute) : ne révèle jamais
+    l'existence d'une série à quelqu'un d'autre."""
     try:
-        return S._load(serie_id)
+        serie = S._load(serie_id)
     except FileNotFoundError:
         raise HTTPException(404, "Série introuvable")
+    if _identite_effective(serie) != identite:
+        raise HTTPException(404, "Série introuvable")
+    return serie
 
 
 def _agent(mot: str):
@@ -298,7 +315,7 @@ def creer_serie(body: CreerSerie, cle: str = Depends(cle_api)):
 
 
 @app.get("/series", tags=["séries"])
-def lister_series(world_id: Optional[str] = None, _cle: str = Depends(cle_api)):
+def lister_series(world_id: Optional[str] = None, cle: str = Depends(cle_api)):
     """Liste toutes les séries (résumé), filtrables par monde (si fourni)."""
     out = []
     for fn in os.listdir(S.ATELIERS_DIR):
@@ -308,6 +325,8 @@ def lister_series(world_id: Optional[str] = None, _cle: str = Depends(cle_api)):
             with open(os.path.join(S.ATELIERS_DIR, fn), encoding="utf-8") as f:
                 s = json.load(f)
         except Exception:
+            continue
+        if _identite_effective(s) != cle:
             continue
         if world_id and s.get("world_id") != world_id:
             continue
@@ -331,26 +350,34 @@ def lister_series(world_id: Optional[str] = None, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/reordonner", tags=["séries"])
-def reordonner_series(body: ReordonnerSeries, _cle: str = Depends(cle_api)):
+def reordonner_series(body: ReordonnerSeries, cle: str = Depends(cle_api)):
     """Réordonne les séries par cliquer-déposer (S104). `ids` = la nouvelle suite ; chaque
-    série reçoit son rang comme `ordre` (persisté dans son fichier d'atelier)."""
-    for rang, sid in enumerate(body.ids):
+    série reçoit son rang comme `ordre` (persisté dans son fichier d'atelier). Un id qui
+    n'appartient pas à l'appelant est IGNORÉ silencieusement (S187) : c'est un
+    réordonnancement best-effort de SA propre liste, pas une opération qu'on veut faire
+    échouer en bloc pour un id étranger glissé dans la requête."""
+    rang = 0
+    for sid in body.ids:
         try:
             serie = S._load(sid)
         except FileNotFoundError:
             continue
+        if _identite_effective(serie) != cle:
+            continue
         serie["ordre"] = rang
         S._save(serie)
-    return {"ok": True, "ordonnees": len(body.ids)}
+        rang += 1
+    return {"ok": True, "ordonnees": rang}
 
 
 @app.get("/series/{serie_id}", tags=["séries"])
-def lire_serie(serie_id: str, _cle: str = Depends(cle_api)):
-    return charger(serie_id)
+def lire_serie(serie_id: str, cle: str = Depends(cle_api)):
+    return charger(serie_id, cle)
 
 
 @app.delete("/series/{serie_id}", status_code=204, tags=["séries"])
-def supprimer_serie(serie_id: str, _cle: str = Depends(cle_api)):
+def supprimer_serie(serie_id: str, cle: str = Depends(cle_api)):
+    charger(serie_id, cle)  # 404 si absente ou pas à `cle` (S187) — jamais de suppression à l'aveugle
     p = S._path(serie_id)
     if os.path.exists(p):
         os.remove(p)
@@ -359,13 +386,13 @@ def supprimer_serie(serie_id: str, _cle: str = Depends(cle_api)):
 
 # ── Épisodes d'écoute (~12 min) ──────────────────────────────────
 @app.get("/series/{serie_id}/episodes", tags=["épisodes"])
-def decoupage_episodes(serie_id: str, _cle: str = Depends(cle_api)):
-    return S._decoupage_episodes(charger(serie_id))
+def decoupage_episodes(serie_id: str, cle: str = Depends(cle_api)):
+    return S._decoupage_episodes(charger(serie_id, cle))
 
 
 @app.post("/series/{serie_id}/cible-episode", tags=["épisodes"])
-def definir_cible_episode(serie_id: str, body: CibleEpisode, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def definir_cible_episode(serie_id: str, body: CibleEpisode, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     serie["cible_episode_secondes"] = max(1, min(int(body.minutes), 60)) * 60
     S._save(serie)
     return S._decoupage_episodes(serie)
@@ -378,8 +405,8 @@ def lister_cibles(_cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/cible", tags=["réglages"])
-def definir_cible(serie_id: str, body: DefinirCible, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def definir_cible(serie_id: str, body: DefinirCible, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if body.cible is not None and body.cible not in S.CIBLES:
         raise HTTPException(400, f"Cible inconnue : {body.cible}")
     serie["cible"] = body.cible
@@ -394,8 +421,8 @@ def lister_langues(_cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/langue", tags=["réglages"])
-def definir_langue(serie_id: str, body: DefinirLangue, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def definir_langue(serie_id: str, body: DefinirLangue, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if body.langue not in S.LANGUES:
         raise HTTPException(400, f"Langue inconnue : {body.langue}")
     serie["langue"] = body.langue
@@ -411,13 +438,13 @@ async def voix_disponibles(langue: str = "fr", _cle: str = Depends(cle_api)):
 
 
 @app.get("/series/{serie_id}/personnages", tags=["distribution"])
-def lister_personnages(serie_id: str, _cle: str = Depends(cle_api)):
-    return charger(serie_id).get("personnages") or []
+def lister_personnages(serie_id: str, cle: str = Depends(cle_api)):
+    return charger(serie_id, cle).get("personnages") or []
 
 
 @app.post("/series/{serie_id}/personnages", tags=["distribution"])
-def creer_perso(serie_id: str, body: CreerPerso, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def creer_perso(serie_id: str, body: CreerPerso, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if not (body.nom or "").strip():
         raise HTTPException(400, "Le personnage doit avoir un nom.")
     serie.setdefault("personnages", [])
@@ -435,11 +462,11 @@ def creer_perso(serie_id: str, body: CreerPerso, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/personnages/importer", tags=["distribution"])
-def importer_perso(serie_id: str, body: ImporterPerso, _cle: str = Depends(cle_api)):
+def importer_perso(serie_id: str, body: ImporterPerso, cle: str = Depends(cle_api)):
     """Connexion Personnages→Studio (push iframe) : importe une fiche holistique comme rôle.
 
     Garde toujours les deux noms : `nom_naissance` (cosmique, figé) + `nom` (de scène)."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     if not (body.nom or "").strip():
         raise HTTPException(400, "Le personnage doit avoir un nom.")
     serie.setdefault("personnages", [])
@@ -472,12 +499,12 @@ async def personnages_holistiques(_cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/personnages/importer-fiche", tags=["distribution"])
-async def importer_fiche(serie_id: str, body: ImporterFiche, _cle: str = Depends(cle_api)):
+async def importer_fiche(serie_id: str, body: ImporterFiche, cle: str = Depends(cle_api)):
     """Ajoute à la série un personnage créé dans l'atelier holistique, avec un nom de scène.
 
     Le Studio va lire la fiche complète (5900) par son id ; on garde le nom cosmique
     d'origine (`nom_naissance`) et on dérive archétype/empreinte/description du portrait."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     fiche = await composition.lire_fiche_holistique(body.fiche_id)
     if not fiche:
         raise HTTPException(502, "Fiche introuvable ou atelier Personnages injoignable.")
@@ -502,9 +529,9 @@ async def importer_fiche(serie_id: str, body: ImporterFiche, _cle: str = Depends
 
 
 @app.post("/series/{serie_id}/personnages/{pid}/portrait", tags=["distribution"])
-async def portrait_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
+async def portrait_perso(serie_id: str, pid: str, cle: str = Depends(cle_api)):
     """Connexion Personnages→images : génère le PORTRAIT d'un personnage de la distribution."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     perso = next((p for p in serie.get("personnages", []) if p["id"] == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
@@ -523,12 +550,12 @@ async def portrait_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/personnages/{pid}/animer", tags=["distribution"])
-async def animer_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
+async def animer_perso(serie_id: str, pid: str, cle: str = Depends(cle_api)):
     """Connexion Personnages→video : ANIME le portrait d'un personnage (clip image→vidéo).
 
     On part du portrait déjà produit (s'il existe) comme image de départ ; sinon text→vidéo
     à partir de la fiche seule. Repli honnête si la brique video est injoignable/non branchée."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     perso = next((p for p in serie.get("personnages", []) if p["id"] == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
@@ -550,8 +577,8 @@ async def animer_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
 
 
 @app.patch("/series/{serie_id}/personnages/{pid}", tags=["distribution"])
-def maj_perso(serie_id: str, pid: str, body: MajPerso, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def maj_perso(serie_id: str, pid: str, body: MajPerso, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     perso = next((p for p in serie.get("personnages", []) if p["id"] == pid), None)
     if not perso:
         raise HTTPException(404, "Personnage introuvable")
@@ -572,8 +599,8 @@ def maj_perso(serie_id: str, pid: str, body: MajPerso, _cle: str = Depends(cle_a
 
 
 @app.delete("/series/{serie_id}/personnages/{pid}", status_code=204, tags=["distribution"])
-def supprimer_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def supprimer_perso(serie_id: str, pid: str, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     serie["personnages"] = [p for p in serie.get("personnages", []) if p["id"] != pid]
     S._save(serie)
     return None
@@ -581,13 +608,13 @@ def supprimer_perso(serie_id: str, pid: str, _cle: str = Depends(cle_api)):
 
 @app.post("/series/{serie_id}/personnages/proposer", tags=["distribution"])
 async def proposer_distribution(serie_id: str, body: ProposerDistribution,
-                                _cle: str = Depends(cle_api)):
+                                cle: str = Depends(cle_api)):
     """Distribution cohérente avec la bible (rien stocké).
 
     Composée : déléguée à la brique personnages (5900, le Directeur de Casting maison du
     produit) ; repli HONNÊTE sur le Directeur de Casting INTERNALISÉ si la brique est
     absente. `source` indique laquelle a répondu."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     combien = max(2, min(int(body.combien or 4), 8))
     deja = S._distribution_texte(serie) or "(distribution vide — c'est le tout début)\n\n"
     idee = f"\n\nPiste de l'utilisateur à intégrer : « {body.mon_idee} »." if body.mon_idee else ""
@@ -636,8 +663,8 @@ def _cycle(serie: dict, cycle_id: str) -> dict:
 
 
 @app.post("/series/{serie_id}/cycles", tags=["structure"])
-def creer_cycle(serie_id: str, body: CreerCycle, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def creer_cycle(serie_id: str, body: CreerCycle, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     cid = S._next_id("c", {c["id"] for c in serie["cycles"]})
     numero = len(serie["cycles"]) + 1
     cycle = {"id": cid, "numero": numero, "titre": body.titre or f"Cycle {numero}",
@@ -648,8 +675,8 @@ def creer_cycle(serie_id: str, body: CreerCycle, _cle: str = Depends(cle_api)):
 
 
 @app.patch("/series/{serie_id}/cycles/{cycle_id}", tags=["structure"])
-def renommer_cycle(serie_id: str, cycle_id: str, body: Renommer, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def renommer_cycle(serie_id: str, cycle_id: str, body: Renommer, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     cycle = _cycle(serie, cycle_id)
     if body.titre is not None:
         cycle["titre"] = body.titre
@@ -660,8 +687,8 @@ def renommer_cycle(serie_id: str, cycle_id: str, body: Renommer, _cle: str = Dep
 
 
 @app.delete("/series/{serie_id}/cycles/{cycle_id}", status_code=204, tags=["structure"])
-def supprimer_cycle(serie_id: str, cycle_id: str, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def supprimer_cycle(serie_id: str, cycle_id: str, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     cycle = _cycle(serie, cycle_id)
     if len(serie["cycles"]) == 1:
         raise HTTPException(409, "Impossible de supprimer le dernier cycle.")
@@ -675,8 +702,8 @@ def supprimer_cycle(serie_id: str, cycle_id: str, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/cycles/{cycle_id}/tomes", tags=["structure"])
-def creer_tome(serie_id: str, cycle_id: str, body: CreerTome, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def creer_tome(serie_id: str, cycle_id: str, body: CreerTome, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     cycle = _cycle(serie, cycle_id)
     tid = S._next_id("t", {t["id"] for t in S._tous_tomes(serie)})
     numero = len(cycle.setdefault("tomes", [])) + 1
@@ -689,8 +716,8 @@ def creer_tome(serie_id: str, cycle_id: str, body: CreerTome, _cle: str = Depend
 
 
 @app.patch("/series/{serie_id}/tomes/{tome_id}", tags=["structure"])
-def renommer_tome(serie_id: str, tome_id: str, body: Renommer, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def renommer_tome(serie_id: str, tome_id: str, body: Renommer, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     tome = next((t for t in S._tous_tomes(serie) if t["id"] == tome_id), None)
     if not tome:
         raise HTTPException(404, "Tome introuvable")
@@ -707,8 +734,8 @@ def renommer_tome(serie_id: str, tome_id: str, body: Renommer, _cle: str = Depen
 
 
 @app.delete("/series/{serie_id}/tomes/{tome_id}", status_code=204, tags=["structure"])
-def supprimer_tome(serie_id: str, tome_id: str, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def supprimer_tome(serie_id: str, tome_id: str, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if len(S._tous_tomes(serie)) == 1:
         raise HTTPException(409, "Impossible de supprimer le dernier tome.")
     if any(ep.get("tome_id") == tome_id for ep in serie.get("episodes", [])):
@@ -721,8 +748,8 @@ def supprimer_tome(serie_id: str, tome_id: str, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/tome-actif", tags=["structure"])
-def definir_tome_actif(serie_id: str, body: TomeActif, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def definir_tome_actif(serie_id: str, body: TomeActif, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if body.tome_id not in {t["id"] for t in S._tous_tomes(serie)}:
         raise HTTPException(404, "Tome introuvable")
     serie["tome_actif"] = body.tome_id
@@ -731,9 +758,9 @@ def definir_tome_actif(serie_id: str, body: TomeActif, _cle: str = Depends(cle_a
 
 
 @app.post("/series/{serie_id}/tomes/{tome_id}/bilan", tags=["structure"])
-async def bilan_tome(serie_id: str, tome_id: str, _cle: str = Depends(cle_api)):
+async def bilan_tome(serie_id: str, tome_id: str, cle: str = Depends(cle_api)):
     """« Le tome est-il fini normalement ? » — arc prévu vs chapitres écrits + canon."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     cycle, tome = S._tome_de(serie, tome_id)
     if not tome:
         raise HTTPException(404, "Tome introuvable")
@@ -783,9 +810,9 @@ async def bilan_tome(serie_id: str, tome_id: str, _cle: str = Depends(cle_api)):
 
 @app.get("/series/{serie_id}/livre", tags=["structure"])
 def livre(serie_id: str, tome_id: Optional[str] = None, cycle_id: Optional[str] = None,
-          _cle: str = Depends(cle_api)):
+          cle: str = Depends(cle_api)):
     """Compile la version « vrai livre » : texte narratif sans balises son (Markdown)."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     par_tome: dict = {}
     for ep in serie.get("episodes", []):
         par_tome.setdefault(ep.get("tome_id"), []).append(ep)
@@ -822,8 +849,8 @@ def livre(serie_id: str, tome_id: Optional[str] = None, cycle_id: Optional[str] 
 
 # ── Co-création de la bible ──────────────────────────────────────
 @app.post("/series/{serie_id}/proposer", tags=["bible"])
-async def proposer(serie_id: str, body: Proposer, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+async def proposer(serie_id: str, body: Proposer, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     role = S.DIMENSION_AGENT.get(body.dimension.lower(), "Showrunner")
     ag = _agent(role)
 
@@ -853,8 +880,8 @@ async def proposer(serie_id: str, body: Proposer, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/decider", tags=["bible"])
-def decider(serie_id: str, body: Decider, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+def decider(serie_id: str, body: Decider, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     serie["bible"][body.dimension.lower()] = body.choix
     S._save(serie)
     faits = set(serie["bible"].keys())
@@ -864,8 +891,8 @@ def decider(serie_id: str, body: Decider, _cle: str = Depends(cle_api)):
 
 # ── Production d'épisodes ────────────────────────────────────────
 @app.post("/series/{serie_id}/episode", tags=["production"])
-async def faire_episode(serie_id: str, body: FaireEpisode, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+async def faire_episode(serie_id: str, body: FaireEpisode, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     scenariste = _agent("Scénariste")
     doctor     = _agent("Script Doctor")
 
@@ -901,9 +928,9 @@ async def faire_episode(serie_id: str, body: FaireEpisode, _cle: str = Depends(c
 
 
 @app.post("/series/{serie_id}/episode/{n}/couverture", tags=["production"])
-async def couverture_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)):
+async def couverture_episode(serie_id: str, n: int, cle: str = Depends(cle_api)):
     """Connexion Studio→images : génère la COUVERTURE d'un épisode."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
     if not ep:
         raise HTTPException(404, f"Chapitre {n} introuvable.")
@@ -924,11 +951,11 @@ async def couverture_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)
 
 
 @app.post("/series/{serie_id}/episode/{n}/teaser", tags=["production"])
-async def teaser_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)):
+async def teaser_episode(serie_id: str, n: int, cle: str = Depends(cle_api)):
     """Connexion Studio→video : génère la BANDE-ANNONCE (clip teaser) d'un épisode.
 
     Repli honnête si la brique video est injoignable/non branchée (placeholder annoncé)."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
     if not ep:
         raise HTTPException(404, f"Chapitre {n} introuvable.")
@@ -949,8 +976,8 @@ async def teaser_episode(serie_id: str, n: int, _cle: str = Depends(cle_api)):
 
 
 @app.post("/series/{serie_id}/audio", tags=["production"])
-async def produire_audio(serie_id: str, body: FaireEpisode, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+async def produire_audio(serie_id: str, body: FaireEpisode, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     if not serie.get("episodes"):
         raise HTTPException(400, "Aucun épisode à sonoriser — génère d'abord un épisode.")
     ep = next((e for e in serie["episodes"] if e.get("n") == body.n), None) if body.n \
@@ -1031,9 +1058,9 @@ async def _casting_stable(serie: dict, langue: str, audibles: list, pool: list) 
 
 
 @app.post("/series/{serie_id}/express", tags=["production"])
-async def episode_express(serie_id: str, body: Express, _cle: str = Depends(cle_api)):
+async def episode_express(serie_id: str, body: Express, cle: str = Depends(cle_api)):
     """Le Showrunner décide lui-même les briques manquantes, puis on produit l'épisode."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     showrunner = _agent("Showrunner")
     for dim in S.ORDRE:
         if dim in serie["bible"]:
@@ -1073,8 +1100,8 @@ async def episode_express(serie_id: str, body: Express, _cle: str = Depends(cle_
 
 # ── Arbre des choix ──────────────────────────────────────────────
 @app.post("/series/{serie_id}/arbre", tags=["arbre"])
-async def cartographier(serie_id: str, body: Arbre, _cle: str = Depends(cle_api)):
-    serie = charger(serie_id)
+async def cartographier(serie_id: str, body: Arbre, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
     showrunner = _agent("Showrunner")
     prof_max = max(1, min(body.profondeur, 4))
     compteur = [0]
@@ -1100,9 +1127,9 @@ async def cartographier(serie_id: str, body: Arbre, _cle: str = Depends(cle_api)
 
 
 @app.post("/series/{serie_id}/arbre/{noeud_id}/jouer", tags=["arbre"])
-async def jouer_noeud(serie_id: str, noeud_id: str, _cle: str = Depends(cle_api)):
+async def jouer_noeud(serie_id: str, noeud_id: str, cle: str = Depends(cle_api)):
     """Écrit la scène jouable d'un nœud (= la branche choisie) ET la grave comme chapitre."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     arbre = serie.get("arbre")
     if not arbre:
         raise HTTPException(400, "Aucun arbre — cartographie d'abord.")
@@ -1133,9 +1160,9 @@ async def jouer_noeud(serie_id: str, noeud_id: str, _cle: str = Depends(cle_api)
 
 @app.post("/series/{serie_id}/arbre/{noeud_id}/etendre", tags=["arbre"])
 async def etendre_branche(serie_id: str, noeud_id: str, body: Etendre,
-                          _cle: str = Depends(cle_api)):
+                          cle: str = Depends(cle_api)):
     """Projette une branche : génère le nœud SUIVANT pour un choix donné."""
-    serie = charger(serie_id)
+    serie = charger(serie_id, cle)
     arbre = serie.get("arbre")
     if not arbre:
         raise HTTPException(400, "Aucun arbre — cartographie d'abord.")
