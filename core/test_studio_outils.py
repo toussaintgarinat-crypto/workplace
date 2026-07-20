@@ -83,18 +83,32 @@ def test_studio_appel_envoie_la_cle():
     try:
         cli = _Client(_Resp(200, {"ok": True}))
         out = asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
-        assert cli.dernier["headers"] == {"X-API-Key": "secret-de-service"}
+        assert cli.dernier["headers"]["X-API-Key"] == "secret-de-service"
         assert cli.dernier["url"] == "http://studio.test/series"
         assert json.loads(out) == {"ok": True}
     finally:
         os.environ.pop("STUDIO_KEY", None)
 
 
-def test_studio_appel_sans_cle_pas_dentete():
+def test_studio_appel_sans_cle_pas_de_cle_api():
     os.environ.pop("STUDIO_KEY", None)
     cli = _Client(_Resp(200, {"ok": True}))
     asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
-    assert cli.dernier["headers"] is None  # mode ouvert : aucun en-tête d'auth
+    assert "X-API-Key" not in (cli.dernier["headers"] or {})
+
+
+def test_studio_appel_forwarde_lidentite_par_personne():
+    import contexte_tenant as ct
+    os.environ["STUDIO_KEY"] = "secret-de-service"
+    try:
+        ct.definir_contexte(utilisateur="claire")
+        cli = _Client(_Resp(200, {"ok": True}))
+        asyncio.run(outils._studio_appel(cli, None, "GET", "/series"))
+        assert cli.dernier["headers"]["X-User-Id"] == "claire"
+    finally:
+        os.environ.pop("STUDIO_KEY", None)
+        ct.definir_contexte(utilisateur=ct.UTILISATEUR_DEFAUT)
+        ct._utilisateur.set(ct.UTILISATEUR_DEFAUT)
 
 
 def test_studio_appel_401_message_clair():

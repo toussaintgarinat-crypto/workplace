@@ -256,8 +256,7 @@ async def _studio_appel(client: httpx.AsyncClient, registre, methode: str, chemi
     La production d'épisode appelle des LLM : timeout généreux par défaut.
     """
     base = _base(registre, "studio")
-    cle = os.environ.get("STUDIO_KEY", "").strip()
-    entetes = {"X-API-Key": cle} if cle else None
+    entetes = _entetes_brique("studio")
     try:
         r = await client.request(methode, f"{base}{chemin}", json=charge, params=params,
                                   headers=entetes, timeout=timeout)
