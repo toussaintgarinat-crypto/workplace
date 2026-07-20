@@ -14,8 +14,12 @@ services:
       - PORT=5900
       # LLM par défaut : Gateway Workplace (cost-first). Le client peut aussi passer
       # sa propre clé par appel (champ `llm` : {base_url, cle, modele}).
+      # NB : `free/google/gemma-4-31b-it` est régulièrement rate-limité côté OpenRouter
+      # → le repli honnête s'active et le front affiche « IA indisponible ». On garde un
+      # modèle gratuit qui répond (#gemma-4-26b-a4b-it, même famille, plus léger). Ajuster
+      # si la disponibilité OpenRouter change (cf. probe via /v1/models + /chat/completions).
       - GATEWAY_URL=http://host.docker.internal:4001
-      - GATEWAY_MODEL=free/google/gemma-4-31b-it
+      - GATEWAY_MODEL=free/google/gemma-4-26b-a4b-it
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :
       # à renseigner pour vendre (auth + cloisonnement par tenant).
       - PERSONNAGES_DB=/data/personnages.db
