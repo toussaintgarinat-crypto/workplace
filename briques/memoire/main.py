@@ -22,11 +22,15 @@ pour porter les rangements de Forge (wings IPCRa) et d'Oria (wing_user / salles)
 """
 
 import asyncio
+import hashlib
+import hmac
 import os
+import time
 from pathlib import Path
+from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -35,6 +39,11 @@ MEMORY_API = os.environ.get("MEMORY_API", "http://memoire-backend:8000").rstrip(
 EMAIL = os.environ.get("MEMOIRE_EMAIL", "service@workplace.local")
 MOTDEPASSE = os.environ.get("MEMOIRE_PASSWORD", "workplace-memoire")
 ESPACE = os.environ.get("MEMOIRE_ESPACE", "Workplace")
+# Clé de service dédiée du Cœur (S186, motif agenda S182 / ecoute S184 / mail S185) : gage
+# la surface /service par personne (X-User-Id) ET signe le jeton d'URL/cookie de la tuile
+# dashboard (cf. _emettre_jeton/_verifier_jeton plus bas). Lue FRAÎCHE à chaque appel (pas
+# une constante au chargement) — monkeypatchable en test, comme ECOUTE_KEY/MAIL_KEY. Sans
+# clé configurée : mode ouvert (repli compte de service, comportement historique inchangé).
 
 # Front React buildé (memory/frontend → /app/ui par le Dockerfile multi-stage).
 # Absent en test/dev local : tout le service du front est alors gracieusement inerte.
@@ -49,6 +58,16 @@ app = FastAPI(title="Mémoire Workplace", version=VERSION)
 _session: dict = {"token": None}
 _espaces: dict[str, str] = {}   # nom d'espace → espace_id
 _verrou = asyncio.Lock()
+
+# Comptes PAR PERSONNE (S186) : un vrai compte Memory dédié par utilisateur du cercle privé
+# (au lieu du seul compte de service partagé ci-dessus), pour que « Perso » devienne un
+# espace RÉELLEMENT privé (le backend Memory isole par space ET par appartenance — voir
+# `_espace_id_personne`). Mémoïsés séparément du compte de service, verrou dédié.
+_sessions_personne: dict[str, str] = {}          # utilisateur → jwt
+_espaces_personne: dict[tuple[str, str], str] = {}  # (utilisateur, nom d'espace) → espace_id
+_verrou_personnes = asyncio.Lock()
+
+COOKIE_MEMOIRE = "memoire_utilisateur"
 
 
 async def _token(client: httpx.AsyncClient) -> str:
@@ -104,6 +123,165 @@ async def _espace_id(client: httpx.AsyncClient, nom: str | None = None) -> str:
         return _espaces[nom]
 
 
+async def _token_personne(client: httpx.AsyncClient, utilisateur: str) -> str:
+    """Garantit un compte Memory DÉDIÉ à `utilisateur` (créé si besoin, mot de passe dérivé
+    déterministe — pas de secret par personne à gérer) et renvoie son JWT (mémoïsé).
+
+    Motif `_token` (compte de service) répliqué par personne. La ressemblance est
+    volontaire : quand le backend Memory isole par space+appartenance, donner à chaque
+    personne SON compte est la façon la plus simple d'obtenir une isolation réelle, sans
+    réinventer un modèle de permissions."""
+    if utilisateur in _sessions_personne:
+        return _sessions_personne[utilisateur]
+    async with _verrou_personnes:
+        if utilisateur in _sessions_personne:
+            return _sessions_personne[utilisateur]
+        email = f"{utilisateur}@workplace.local"
+        motdepasse = hashlib.sha256(f"{MOTDEPASSE}:{utilisateur}".encode()).hexdigest()
+        try:
+            await client.post(
+                f"{MEMORY_API}/api/v1/auth/register",
+                json={"email": email, "password": motdepasse, "display_name": utilisateur},
+            )
+        except httpx.HTTPError:
+            pass
+        r = await client.post(
+            f"{MEMORY_API}/api/v1/auth/login",
+            json={"email": email, "password": motdepasse},
+        )
+        r.raise_for_status()
+        _sessions_personne[utilisateur] = r.json()["access_token"]
+    # Hors du verrou personne (comme _espace_id vs _token) : _assurer_membre_workplace
+    # prend son PROPRE verrou (_verrou, compte de service) — jamais les deux à la fois.
+    await _assurer_membre_workplace(client, email)
+    return _sessions_personne[utilisateur]
+
+
+async def _assurer_membre_workplace(client: httpx.AsyncClient, email_personne: str) -> None:
+    """Invite `email_personne` dans l'espace PARTAGÉ Workplace s'il n'y est pas déjà.
+
+    Idempotent : un 409 (déjà membre) ou toute erreur HTTP est tolérée sans bloquer — la
+    pire conséquence d'un échec transitoire est que la personne ne voit pas encore la
+    mémoire partagée, jamais un blocage de son espace privé."""
+    try:
+        token_service = await _token(client)
+        espace_id = await _espace_id(client, None)
+        await client.post(
+            f"{MEMORY_API}/api/v1/spaces/{espace_id}/invite",
+            headers={"Authorization": f"Bearer {token_service}"},
+            json={"email": email_personne, "role": "member"},
+        )
+    except httpx.HTTPError:
+        pass
+
+
+async def _espace_id_personne(client: httpx.AsyncClient, jeton_personne: str,
+                              utilisateur: str, nom: str) -> str:
+    """Comme `_espace_id`, mais résolu/créé sous le compte de LA PERSONNE — elle en devient
+    propriétaire, le compte de service n'y a PAS accès (isolation réelle, pas un simple
+    nommage). `GET /spaces` du backend Memory ne renvoie QUE les espaces dont l'appelant
+    est membre : on ne peut donc PAS réutiliser `_espace_id` (résolution côté service)."""
+    cle = (utilisateur, nom)
+    if cle in _espaces_personne:
+        return _espaces_personne[cle]
+    async with _verrou_personnes:
+        if cle in _espaces_personne:
+            return _espaces_personne[cle]
+        entetes = {"Authorization": f"Bearer {jeton_personne}"}
+        r = await client.get(f"{MEMORY_API}/api/v1/spaces", headers=entetes)
+        r.raise_for_status()
+        espace = next((e for e in r.json() if e.get("name") == nom), None)
+        if espace is None:
+            r = await client.post(
+                f"{MEMORY_API}/api/v1/spaces", headers=entetes,
+                json={"name": nom, "description": f"Espace privé de {utilisateur}"},
+            )
+            r.raise_for_status()
+            espace = r.json()
+        _espaces_personne[cle] = espace["id"]
+        return _espaces_personne[cle]
+
+
+async def _resoudre_espace(client: httpx.AsyncClient, espace_brut: str | None,
+                           utilisateur: str) -> tuple[str, str]:
+    """Résout `(espace_id, jwt à utiliser)` pour un appel de `utilisateur`.
+
+    Le mot-clé ``perso`` est le SEUL cas qui bascule sur un espace PAR PERSONNE — mono-user
+    historique (``utilisateur == "perso"``, pas de session/X-User-Id) reste sur le compte de
+    service et l'espace "Perso" tel qu'il existait avant S186 (zéro migration). Tout le
+    reste (``None``/"solution"/nom custom Forge-Oria) est INCHANGÉ : espace partagé, compte
+    de service — seule la mémoire PERSONNELLE (préférences/faits sur la personne) s'isole."""
+    if (espace_brut or "").strip().lower() == "perso":
+        if utilisateur == UTILISATEUR_DEFAUT:
+            return await _espace_id(client, "Perso"), await _token(client)
+        jeton_personne = await _token_personne(client, utilisateur)
+        nom = f"Perso-{utilisateur}"
+        return await _espace_id_personne(client, jeton_personne, utilisateur, nom), jeton_personne
+    nom = _normaliser_espace(espace_brut)
+    return await _espace_id(client, nom), await _token(client)
+
+
+# ── Identité de l'appelant (S186, motif ecoute S184 : X-User-Id gagé par MEMOIRE_KEY) ──
+
+UTILISATEUR_DEFAUT = "perso"
+
+
+def _presentee(x_api_key: Optional[str], authorization: Optional[str]) -> Optional[str]:
+    return x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
+
+
+def _identite_service(x_api_key: Optional[str] = Header(None),
+                      authorization: Optional[str] = Header(None),
+                      x_user_id: Optional[str] = Header(None)) -> str:
+    """Identité pour les routes du contrat (`/retenir`, `/rappeler`…) : `MEMOIRE_KEY`
+    configurée ⇒ seul le Cœur (qui la détient) peut emprunter `X-User-Id`. Sans clé
+    configurée (dev/mono-user) : mode ouvert, `X-User-Id` honoré tel quel s'il est fourni."""
+    cle = os.environ.get("MEMOIRE_KEY")
+    if cle and _presentee(x_api_key, authorization) != cle:
+        raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
+    return x_user_id or UTILISATEUR_DEFAUT
+
+
+# ── Jeton signé Cœur→mémoire (S186) : dit QUI ouvre l'onglet Mémoire du dashboard, sans
+# exposer MEMOIRE_KEY au navigateur. HMAC (pas de chiffrement : l'identité n'est pas
+# confidentielle, seule l'INTÉGRITÉ compte — empêche un utilisateur connecté de fabriquer
+# le jeton d'un autre). Même secret que la surface /service : double emploi assumé, motif
+# déjà utilisé pour AGENDA_KEY/MAIL_KEY comme gage de confiance du Cœur.
+
+def _secret_jeton() -> bytes:
+    return (os.environ.get("MEMOIRE_KEY") or "").encode()
+
+
+def _emettre_jeton(utilisateur: str, ttl: int = 120) -> str:
+    expire = int(time.time()) + ttl
+    message = f"{utilisateur}:{expire}"
+    signature = hmac.new(_secret_jeton(), message.encode(), hashlib.sha256).hexdigest()
+    return f"{message}:{signature}"
+
+
+def _verifier_jeton(jeton: Optional[str]) -> Optional[str]:
+    if not jeton or not _secret_jeton():
+        return None
+    try:
+        utilisateur, expire, signature = jeton.rsplit(":", 2)
+        expire_i = int(expire)
+    except ValueError:
+        return None
+    message = f"{utilisateur}:{expire}"
+    attendue = hmac.new(_secret_jeton(), message.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, attendue) or time.time() > expire_i:
+        return None
+    return utilisateur
+
+
+def _identite_navigateur(request: Request) -> Optional[str]:
+    """QUI ouvre l'onglet Mémoire : jeton d'URL (1re navigation, posé par le Cœur) en
+    priorité, sinon le cookie déjà posé par une navigation précédente. `None` si ni l'un ni
+    l'autre — repli sur le compte de service (comportement historique, mono-tenant)."""
+    return (_verifier_jeton(request.query_params.get("m"))
+            or _verifier_jeton(request.cookies.get(COOKIE_MEMOIRE)))
+
+
 async def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=20)
 
@@ -144,20 +322,19 @@ async def sante():
 
 
 def _normaliser_espace(espace: str | None) -> str | None:
-    """Normalise l'espace envoyé par le manifest : 'solution'→None (défaut), 'perso'→'Perso'."""
+    """Normalise l'espace envoyé par le manifest : 'solution'→None (défaut), reste (custom
+    Forge/Oria) passé tel quel. Le mot-clé 'perso' n'est PAS géré ici (S186) : il a besoin de
+    savoir QUI appelle pour construire un nom d'espace par personne — voir `_resoudre_espace`."""
     if not espace:
         return None
     low = espace.strip().lower()
     if low == "solution":
         return None
-    if low == "perso":
-        return "Perso"
-    return espace  # valeur brute pour les espaces custom
+    return espace  # valeur brute pour les espaces custom (et 'perso', intercepté en amont)
 
 
 @app.post("/retenir", summary="Mémoriser un souvenir")
-async def retenir(s: Souvenir):
-    s = s.model_copy(update={"espace": _normaliser_espace(s.espace)})
+async def retenir(s: Souvenir, utilisateur: str = Depends(_identite_service)):
     titre = (s.titre or s.contenu[:60] or "souvenir").strip()
     type_ = _type_valide(s.type)
     # Rangement : par défaut le wing reflète le type (vue Forge = wings IPCRa) ;
@@ -179,7 +356,7 @@ async def retenir(s: Souvenir):
         "frontmatter": frontmatter,
     }
     async with await _client() as client:
-        espace_id = await _espace_id(client, s.espace)
+        espace_id, _ = await _resoudre_espace(client, s.espace, utilisateur)
         r = await client.post(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
             json=corps,
@@ -194,13 +371,13 @@ async def retenir(s: Souvenir):
 
 @app.get("/rappeler", summary="Retrouver des souvenirs (recherche hybride)")
 async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
-                   espace: str | None = None):
-    espace = _normaliser_espace(espace)
+                   espace: str | None = None,
+                   utilisateur: str = Depends(_identite_service)):
     params: dict = {"q": q, "limit": limite}
     if type:
         params["type"] = type
     async with await _client() as client:
-        espace_id = await _espace_id(client, espace)
+        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
         r = await client.get(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/search",
             params=params,
@@ -224,8 +401,8 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
 @app.get("/souvenirs", summary="Lister les souvenirs récents")
 async def souvenirs(limite: int = 20, type: str | None = None,
                     wing: str | None = None, room: str | None = None,
-                    espace: str | None = None):
-    espace = _normaliser_espace(espace)
+                    espace: str | None = None,
+                    utilisateur: str = Depends(_identite_service)):
     params: dict = {"limit": limite}
     if type:
         params["type"] = type
@@ -234,7 +411,7 @@ async def souvenirs(limite: int = 20, type: str | None = None,
     if room:
         params["room"] = room
     async with await _client() as client:
-        espace_id = await _espace_id(client, espace)
+        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
         r = await client.get(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
             params=params,
@@ -260,11 +437,12 @@ async def souvenirs(limite: int = 20, type: str | None = None,
 
 
 @app.get("/taxonomy", summary="Comptes par type (pour les onglets/wings)")
-async def taxonomy(espace: str | None = None):
+async def taxonomy(espace: str | None = None,
+                   utilisateur: str = Depends(_identite_service)):
     async with await _client() as client:
-        espace_id = await _espace_id(client, espace)
-        # /stats est protégé (check_space_access) → joindre le JWT de service.
-        token = await _token(client)
+        # /stats est protégé (check_space_access) → le jwt renvoyé par _resoudre_espace
+        # (service pour un espace partagé, personne pour son "Perso") EST le bon acteur.
+        espace_id, token = await _resoudre_espace(client, espace, utilisateur)
         r = await client.get(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/stats",
             headers={"Authorization": f"Bearer {token}"},
@@ -280,9 +458,10 @@ async def taxonomy(espace: str | None = None):
 
 
 @app.delete("/souvenir/{souvenir_id}", summary="Supprimer un souvenir")
-async def supprimer(souvenir_id: str, espace: str | None = None):
+async def supprimer(souvenir_id: str, espace: str | None = None,
+                    utilisateur: str = Depends(_identite_service)):
     async with await _client() as client:
-        espace_id = await _espace_id(client, espace)
+        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
         r = await client.delete(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}"
         )
@@ -311,18 +490,23 @@ _HOP_BY_HOP = {
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def proxy_api(chemin: str, request: Request):
-    """Relaie /api/v1/* vers le backend Memory interne en forçant l'auth de service.
+    """Relaie /api/v1/* vers le backend Memory interne en forçant l'auth — celle de LA
+    PERSONNE qui a ouvert l'onglet (S186, cookie/jeton posé par `spa()`) si elle est
+    identifiée, sinon celle du compte de service (comportement historique, mono-tenant).
 
     On IGNORE l'Authorization éventuel du front (jeton injecté, peut-être périmé) et on
-    pose toujours un JWT de service frais : la brique est mono-locataire (compte unique).
+    pose toujours un JWT frais, RE-RÉSOLU À CHAQUE APPEL — pas de staleness possible, et
+    l'identité vient TOUJOURS du cookie signé du Cœur, jamais d'un en-tête du navigateur.
     """
+    utilisateur = _identite_navigateur(request)
     corps = await request.body()
     entetes = {
         k: v for k, v in request.headers.items()
         if k.lower() not in _HOP_BY_HOP and k.lower() != "authorization"
     }
     async with await _client() as client:
-        entetes["Authorization"] = f"Bearer {await _token(client)}"
+        jeton = await (_token_personne(client, utilisateur) if utilisateur else _token(client))
+        entetes["Authorization"] = f"Bearer {jeton}"
         amont = await client.request(
             request.method,
             f"{MEMORY_API}/api/v1/{chemin}",
@@ -347,15 +531,25 @@ def _type_mime(nom: str) -> str:
     return mimetypes.guess_type(nom)[0] or "application/octet-stream"
 
 
-async def _index_injecte() -> str:
-    """index.html du front avec un <script> qui pré-remplit localStorage (auth + espace)."""
+async def _index_injecte(utilisateur: Optional[str]) -> str:
+    """index.html du front avec un <script> qui pré-remplit localStorage (auth + espace).
+
+    `utilisateur` identifié (S186, cookie/jeton du Cœur) ⇒ SON compte + la mémoire partagée
+    Workplace en espace de départ (elle est déjà membre, cf. `_token_personne`). Sinon
+    (comportement historique) : compte de service, mono-tenant."""
     index = UI_DIR / "index.html"
     if not index.is_file():
         return ("<!doctype html><meta charset=utf-8><title>Mémoire</title>"
                 "<p>Front non buildé (image construite sans le stage Node ?).</p>")
     html = index.read_text(encoding="utf-8")
     async with await _client() as client:
-        token = await _token(client)
+        if utilisateur:
+            token = await _token_personne(client, utilisateur)
+        else:
+            token = await _token(client)
+        # L'id d'espace Workplace est une simple valeur (même UUID quel que soit qui la
+        # résout) : toujours via le compte de service, garanti membre/propriétaire, pour ne
+        # jamais risquer une création en double si l'invite d'une personne est très récente.
         espace_id = await _espace_id(client)
     boot = (
         "<script>try{"
@@ -372,14 +566,23 @@ async def racine():
 
 
 @app.get("/{chemin:path}", include_in_schema=False)
-async def spa(chemin: str):
+async def spa(chemin: str, request: Request):
     """Fallback SPA : toute route front (/memory, /memory/graph, …) rend l'index injecté.
 
     Déclaré en DERNIER : le contrat (/sante, /retenir…) et /api/v1 sont matchés avant.
     Un fichier statique racine présent (favicon.svg…) est servi tel quel.
-    """
+
+    Identité (S186) : jeton `?m=` (posé par le Cœur dans l'URL de la tuile, 1re navigation)
+    ou cookie déjà posé par une navigation précédente. Un jeton d'URL valide RAFRAÎCHIT le
+    cookie (la personne peut rouvrir l'onglet plus tard sans repasser par le dashboard)."""
     if chemin and UI_DIR.is_dir():
         cible = UI_DIR / chemin
         if cible.is_file() and cible.resolve().is_relative_to(UI_DIR.resolve()):
             return Response(content=cible.read_bytes(), media_type=_type_mime(cible.name))
-    return HTMLResponse(await _index_injecte())
+    jeton_url = request.query_params.get("m")
+    utilisateur = _verifier_jeton(jeton_url) or _verifier_jeton(request.cookies.get(COOKIE_MEMOIRE))
+    reponse = HTMLResponse(await _index_injecte(utilisateur))
+    if jeton_url and utilisateur:
+        reponse.set_cookie(COOKIE_MEMOIRE, _emettre_jeton(utilisateur, ttl=8 * 3600),
+                           max_age=8 * 3600, httponly=True, samesite="lax")
+    return reponse
