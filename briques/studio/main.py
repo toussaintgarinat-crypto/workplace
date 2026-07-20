@@ -37,21 +37,30 @@ _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
 # Clés API acceptées (séparées par virgule). Vide = mode OUVERT (dev) : tenant unique "public".
-# `API_KEYS` = vente standalone (BYO). `STUDIO_KEY` = clé d'intégration Workplace, injectée par
-# le `.env` racine (le noyau et son iframe s'authentifient avec) — variable DÉDIÉE pour ne pas
-# activer l'auth des autres briques qui liraient un `API_KEYS` partagé.
+# `API_KEYS` = vente standalone (BYO), chaque clé cliente = son propre tenant (motif historique).
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
-if os.getenv("STUDIO_KEY", "").strip():
-    API_KEYS.add(os.getenv("STUDIO_KEY").strip())
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),
-            authorization: Optional[str] = Header(None)) -> str:
+            authorization: Optional[str] = Header(None),
+            x_user_id: Optional[str] = Header(None)) -> str:
     """Valide la clé API (X-API-Key ou Authorization: Bearer) et sert d'identité créateur.
 
-    Mode ouvert si aucune clé configurée → identité « public ». La partition des séries
-    PAR tenant n'est pas encore faite (socle S51) : à brancher quand on vend la brique."""
+    Trois dialectes (S187) :
+    - clé == `STUDIO_KEY` (compte de service du Cœur, LUE FRAÎCHE à chaque appel via
+      `os.environ` — motif ECOUTE_KEY/MAIL_KEY, monkeypatchable en test) → identité =
+      `X-User-Id` transmis par le Cœur (repli `"perso"` si absent) : isolation PAR PERSONNE
+      dans le cercle privé.
+    - clé dans `API_KEYS` mais ≠ `STUDIO_KEY` (vente BYO standalone) → identité = la clé
+      elle-même (motif historique, inchangé — `X-User-Id` est ignoré, ce n'est pas le Cœur
+      qui appelle).
+    - Mode ouvert (aucune clé configurée du tout) → identité = la clé présentée ou `"public"`
+      (comportement actuel, inchangé).
+    """
     presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
+    studio_key = os.environ.get("STUDIO_KEY", "").strip()
+    if studio_key and presentee == studio_key:
+        return x_user_id or "perso"
     if not API_KEYS:
         return presentee or "public"
     if presentee in API_KEYS:
