@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 import auth
 import memoire_jeton
 from etat import registre
-from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, PERSONNAGES_KEY, STUDIO_KEY, url_brique
+from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, PERSONNAGES_KEY, url_brique
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="fr">
@@ -3392,13 +3392,10 @@ async def dashboard(request: Request):
     def u(nom):
         return url_brique(nom, scheme, host)
 
-    # Si un « compte Studio » (STUDIO_KEY) est configuré, on transporte la clé dans l'URL de
-    # l'iframe (?api_key=) pour que le front Studio s'authentifie. Cockpit mono-opérateur :
-    # la clé EST l'identité du propriétaire (même frontière de confiance que /dashboard).
-    studio_ui = u("STUDIO")
-    if STUDIO_KEY:
-        sep = "&" if "?" in studio_ui else "?"
-        studio_ui = f"{studio_ui}{sep}api_key={STUDIO_KEY}"
+    # Studio (S187) : vue native via le proxy /studio-app/* du Cœur (même origine, session
+    # déjà posée), PAR PERSONNE — PAS l'URL brute + STUDIO_KEY statique (qui retombait sur le
+    # même tenant partagé par tout le foyer, trou S183). Motif mail S185.
+    studio_ui = "/studio-app/"
     # Même motif pour GeoHub : le front carte lit `?api_key=` (X-API-Key sur ses fetch).
     geo_ui = u("GEO")
     if GEO_KEY:
