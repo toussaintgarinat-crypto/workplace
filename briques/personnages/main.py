@@ -247,8 +247,11 @@ async def holistique_lecture_approfondie(body: LectureApprofondie, _cle: str = D
         texte = await llm.approfondir_lecture(p, emp, body.langue, body.llm)
         if texte:
             return {"lecture": texte, "source": "llm"}
-    except Exception:  # noqa: BLE001 — repli honnête : on retombe sur le déterministe
-        pass
+    except Exception as e:  # noqa: BLE001 — repli honnête : on retombe sur le déterministe
+        import logging
+        logging.getLogger("personnages").warning(
+            "lecture-approfondie : repli déterministe activé — %s: %s",
+            type(e).__name__, str(e)[:200])
     return {"lecture": p["recit"], "source": "repli"}
 
 
