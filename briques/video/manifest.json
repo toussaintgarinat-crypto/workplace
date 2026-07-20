@@ -2,7 +2,7 @@
   "nom": "video",
   "famille": "media",
   "version": "0.1.0",
-  "description": "Moteur de génération vidéo en API, PROVIDER-AGNOSTIQUE (fal, Replicate, Luma, Runway, ou la Gateway Workplace), avec repli placeholder honnête (jamais de fausse vidéo). Primitif text→vidéo + deux synergies : bande-annonce d'épisode (texte/synopsis) et animation de portrait de personnage (image→vidéo). Produit autonome, miroir de la brique images. Composé par le Studio (S55) sans être absorbé.",
+  "description": "Moteur de génération vidéo en API, PROVIDER-AGNOSTIQUE (fal, Replicate, Luma, Runway, ou la Gateway Workplace), avec repli placeholder honnête (jamais de fausse vidéo). Primitif text→vidéo + deux synergies : bande-annonce d'épisode (texte/synopsis) et animation de portrait de personnage (image→vidéo). Complété par un habillage DÉTERMINISTE (ffmpeg local, sans IA/coût) : cartes de titre/chapitre et sous-titres incrustés (S188). Produit autonome, miroir de la brique images. Composé par le Studio (S55) sans être absorbé.",
   "role": "video",
   "couche": "backend",
   "statut": "a_tester",
@@ -15,7 +15,9 @@
     "teaser_episode",
     "animer_portrait",
     "multi_fournisseurs",
-    "repli_placeholder_honnete"
+    "repli_placeholder_honnete",
+    "carte_titre_chapitre",
+    "sous_titres_incrustes"
   ],
   "besoin": [],
   "capacites": [
@@ -123,6 +125,57 @@
       },
       "action": true,
       "niveau": 1
+    },
+    {
+      "nom": "video_carte_titre",
+      "description": "Génère une carte de titre/chapitre (fond uni + texte centré, quelques secondes) en MP4. DÉTERMINISTE (ffmpeg local) : pas de fournisseur, pas de coût, pas de confirme requis.",
+      "methode": "POST",
+      "chemin": "/habillage/carte-titre",
+      "params": {
+        "texte": {
+          "type": "string",
+          "description": "Titre affiché (obligatoire).",
+          "requis": true
+        },
+        "sous_titre": {
+          "type": "string",
+          "description": "Sous-titre optionnel affiché sous le titre."
+        },
+        "duree": {
+          "type": "number",
+          "description": "Durée en secondes (défaut 3)."
+        },
+        "largeur": {
+          "type": "integer",
+          "description": "Largeur en pixels (défaut 1920)."
+        },
+        "hauteur": {
+          "type": "integer",
+          "description": "Hauteur en pixels (défaut 1080)."
+        }
+      },
+      "action": true,
+      "niveau": 0
+    },
+    {
+      "nom": "video_sous_titrer",
+      "description": "Brûle des sous-titres minutés dans une vidéo déjà produite par cette brique (nom de fichier servi sous /fichiers). DÉTERMINISTE (ffmpeg local) : pas de fournisseur, pas de coût, pas de confirme requis.",
+      "methode": "POST",
+      "chemin": "/habillage/sous-titrer",
+      "params": {
+        "fichier": {
+          "type": "string",
+          "description": "Nom du fichier vidéo déjà stocké par cette brique (ex. le nom rendu par /generer ou /habillage/carte-titre).",
+          "requis": true
+        },
+        "segments": {
+          "type": "array",
+          "description": "Liste [{debut, fin, texte}] en secondes, un sous-titre par segment.",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 0
     }
   ],
   "taches": []
