@@ -90,12 +90,18 @@ def test_callback_echange_code_echoue_redirige_login_sans_500(monkeypatch):
     assert r2.headers["location"] == "/auth/login"
 
 
-def test_logout_supprime_le_cookie_de_session():
-    r = client.post("/auth/logout", follow_redirects=False)
+def test_logout_supprime_le_cookie_et_termine_la_session_sso():
+    r = client.get("/auth/logout", follow_redirects=False)
     assert r.status_code == 303
     # httpx TestClient expose la suppression via un cookie expiré (Max-Age=0) dans les headers.
     set_cookie = r.headers.get("set-cookie", "")
     assert auth.COOKIE_SESSION in set_cookie
+    # Doit traverser le end-session Keycloak (sinon la session SSO encore active relogue
+    # silencieusement à la prochaine visite de /auth/login — le bouton semblerait ne rien faire).
+    location = r.headers["location"]
+    assert location.startswith(f"{auth.KEYCLOAK_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/logout?")
+    assert f"client_id={auth.KEYCLOAK_CLIENT_ID}" in location
+    assert "post_logout_redirect_uri=" in location
 
 
 def test_dashboard_accessible_sans_session_quand_auth_desactivee():

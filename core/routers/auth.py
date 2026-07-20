@@ -91,8 +91,21 @@ async def auth_callback(request: Request, code: str, state: str):
     return resp
 
 
-@router.post("/auth/logout")
-async def auth_logout():
-    resp = RedirectResponse("/auth/login", status_code=303)
+@router.get("/auth/logout")
+async def auth_logout(request: Request):
+    """Détruit le cookie de session local ET la session SSO Keycloak (RP-Initiated Logout) —
+    sans ça, la prochaine visite de /auth/login relogue silencieusement via la session SSO
+    encore active côté Keycloak, donnant l'impression que le bouton « Déconnexion » ne fait
+    rien. GET (navigation, pas fetch) : la chaîne de redirections traverse Keycloak, une
+    autre origine que le Cœur — un fetch() la suivrait et se ferait bloquer par CORS."""
+    params = {
+        "client_id": auth.KEYCLOAK_CLIENT_ID,
+        "post_logout_redirect_uri": str(request.url_for("auth_login")),
+    }
+    url = (
+        f"{auth.KEYCLOAK_PUBLIC_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/logout"
+        f"?{urllib.parse.urlencode(params)}"
+    )
+    resp = RedirectResponse(url, status_code=303)
     resp.delete_cookie(auth.COOKIE_SESSION)
     return resp
