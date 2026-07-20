@@ -356,10 +356,11 @@ async def retenir(s: Souvenir, utilisateur: str = Depends(_identite_service)):
         "frontmatter": frontmatter,
     }
     async with await _client() as client:
-        espace_id, _ = await _resoudre_espace(client, s.espace, utilisateur)
+        espace_id, jeton = await _resoudre_espace(client, s.espace, utilisateur)
         r = await client.post(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
             json=corps,
+            headers={"Authorization": f"Bearer {jeton}"},
         )
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
@@ -377,10 +378,11 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
     if type:
         params["type"] = type
     async with await _client() as client:
-        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
+        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
         r = await client.get(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/search",
             params=params,
+            headers={"Authorization": f"Bearer {jeton}"},
         )
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
@@ -411,10 +413,11 @@ async def souvenirs(limite: int = 20, type: str | None = None,
     if room:
         params["room"] = room
     async with await _client() as client:
-        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
+        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
         r = await client.get(
             f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
             params=params,
+            headers={"Authorization": f"Bearer {jeton}"},
         )
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
@@ -461,9 +464,10 @@ async def taxonomy(espace: str | None = None,
 async def supprimer(souvenir_id: str, espace: str | None = None,
                     utilisateur: str = Depends(_identite_service)):
     async with await _client() as client:
-        espace_id, _ = await _resoudre_espace(client, espace, utilisateur)
+        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
         r = await client.delete(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}"
+            f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}",
+            headers={"Authorization": f"Bearer {jeton}"},
         )
         if r.status_code >= 400 and r.status_code != 404:
             raise HTTPException(502, f"Memory: {r.text}")
