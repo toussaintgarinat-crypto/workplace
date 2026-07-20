@@ -11,6 +11,7 @@ Runway / la Gateway par variables d'env ; sans fournisseur, on rend un placehold
 le DIT (jamais de fausse vidéo). Le Mac n'a pas de GPU → pas de moteur souverain local.
 """
 import os
+import uuid
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -19,6 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import fournisseurs
+import habillage
 import moteur
 import prompts
 
@@ -66,6 +68,19 @@ class Animer(BaseModel):
     style:       Optional[str] = None
     secondes:    int = 5
     fournisseur: Optional[str] = None
+
+
+class CarteTitre(BaseModel):
+    texte:      str
+    sous_titre: Optional[str] = ""
+    duree:      float = 3.0
+    largeur:    int = 1920
+    hauteur:    int = 1080
+
+
+class SousTitrer(BaseModel):
+    fichier:  str          # nom d'une vidéo déjà stockée par cette brique (servie sous /fichiers)
+    segments: list[dict]   # [{debut, fin, texte}] en secondes
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -120,6 +135,36 @@ async def animer(body: Animer, _cle: str = Depends(cle_api)):
     res = await moteur.generer(p["prompt"], body.image_url or "", body.secondes,
                                fournisseur=body.fournisseur)
     return {**res, "prompt_visuel": p["prompt"]}
+
+
+@app.post("/habillage/carte-titre", tags=["video", "habillage"])
+async def habillage_carte_titre(body: CarteTitre, _cle: str = Depends(cle_api)):
+    """Carte de titre/chapitre : fond uni + texte centré, DÉTERMINISTE (ffmpeg, sans IA/coût)."""
+    try:
+        data = habillage.carte_titre(body.texte, body.sous_titre or "", body.duree,
+                                     body.largeur, body.hauteur)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    nom = f"carte-{uuid.uuid4().hex[:12]}.mp4"
+    return {"url": moteur._enregistrer(nom, data), "backend": "ffmpeg", "place_holder": False}
+
+
+@app.post("/habillage/sous-titrer", tags=["video", "habillage"])
+async def habillage_sous_titrer(body: SousTitrer, _cle: str = Depends(cle_api)):
+    """Brûle des sous-titres minutés dans une vidéo déjà produite par cette brique."""
+    chemin = (moteur.VIDEOS_DIR / body.fichier).resolve()
+    if not str(chemin).startswith(str(moteur.VIDEOS_DIR.resolve())) or not chemin.is_file():
+        raise HTTPException(404, "Vidéo introuvable.")
+    try:
+        data = habillage.sous_titrer(chemin.read_bytes(), body.segments)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    nom = f"soustitre-{uuid.uuid4().hex[:12]}.mp4"
+    return {"url": moteur._enregistrer(nom, data), "backend": "ffmpeg", "place_holder": False}
 
 
 @app.get("/fichiers/{nom}", tags=["système"], include_in_schema=False)
