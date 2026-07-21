@@ -29,7 +29,9 @@ services:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
       - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-}
       # Gateway Workplace (zéro clé propre : réutilise la clé posée côté Gateway).
-      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      # GATEWAY_URL non listée ici : vient du .env racine via env_file. La redéclarer en
+      # `=${VAR:-défaut}` l'écraserait toujours par le défaut littéral (piège « env shadow »).
+      # Défaut http://host.docker.internal:4001 porté par le code (resume.py, fournisseurs.py).
       - GATEWAY_KEY=${GATEWAY_KEY:-}
       - TRANSCRIPTION_GATEWAY_MODEL=${TRANSCRIPTION_GATEWAY_MODEL:-}
       # Synthèse des notes par l'économe gratuit (≈0 $), via la Gateway, comme le briefing S30.

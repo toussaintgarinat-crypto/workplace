@@ -42,7 +42,9 @@ services:
       # 0 = désactivé (défaut, image légère). 1 = activé (rebuild requis avec PLAYWRIGHT=1).
       - RECHERCHE_PLAYWRIGHT=${RECHERCHE_PLAYWRIGHT:-0}
       # ── Synthèse LLM (/synthétiser → gateway Workplace) ────────────────────────
-      - GATEWAY_URL=${GATEWAY_URL:-http://gateway:4001}
+      # GATEWAY_URL non listée ici : vient du .env racine via env_file. La redéclarer en
+      # `=${VAR:-défaut}` l'écraserait toujours par le défaut littéral (piège « env shadow »).
+      # Défaut http://gateway:4001 porté par le code (synthese.py).
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
       - SYNTHESE_MODEL=${SYNTHESE_MODEL:-deepseek/deepseek-v4-flash}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).

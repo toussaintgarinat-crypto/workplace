@@ -28,7 +28,7 @@ from lib import jobs as _jobs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("synopsis")
 
-app = FastAPI(title="Synopsis API", version="1.2.2",
+app = FastAPI(title="Synopsis API", version="1.2.3",
               description="Résumé de n'importe quelle vidéo (YouTube, URL, fichier) — Gateway-ready.")
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -167,9 +167,9 @@ def design_system():
 
 @app.get("/sante")
 def sante():
-    checks = {"api": "ok", "version": "1.2.2"}
+    checks = {"api": "ok", "version": "1.2.3"}
     try:
-        gateway = os.getenv("GATEWAY_URL", "")
+        gateway = os.getenv("GATEWAY_URL", "http://host.docker.internal:4001")
         if gateway:
             import httpx
             r = httpx.get(f"{gateway}/health/liveliness", timeout=5)

@@ -1,7 +1,7 @@
 services:
   synopsis:
     build: .
-    image: workplace/synopsis:1.2.2
+    image: workplace/synopsis:1.2.3
     container_name: workplace-synopsis
     ports:
       - "6090:6090"
@@ -16,7 +16,10 @@ services:
       - PORT=6090
       - CLIP_OUTPUT_DIR=/clips
       - LLM_MODEL=${LLM_MODEL:-deepseek/deepseek-v4-flash}
-      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      # GATEWAY_URL non listée ici : vient du .env racine via env_file. La redéclarer en
+      # `=${VAR:-défaut}` l'écraserait toujours par le défaut littéral (piège « env shadow » —
+      # l'interpolation ne lit pas env_file). Défaut http://host.docker.internal:4001 porté par
+      # le code (main.py, lib/llm_client.py) si la variable est absente.
       # Brique transcription (Whisper) : voie d'entrée des vidéos NON-YouTube (URL/fichier).
       - TRANSCRIPTION_URL=${TRANSCRIPTION_URL:-http://host.docker.internal:5980}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}

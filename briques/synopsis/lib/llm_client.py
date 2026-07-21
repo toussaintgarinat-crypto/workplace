@@ -21,7 +21,7 @@ MAX_RETRIES = 2
 
 def llm_complete(prompt: str, model: str = "", system: str = "", temperature: float = 0.3) -> str:
     model = model or DEFAULT_MODEL
-    gateway_url = os.getenv("GATEWAY_URL", "").rstrip("/")
+    gateway_url = os.getenv("GATEWAY_URL", "http://host.docker.internal:4001").rstrip("/")
     gateway_key = os.getenv("GATEWAY_KEY", os.getenv("LITELLM_MASTER_KEY", ""))
 
     if gateway_url:
