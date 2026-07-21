@@ -10,8 +10,9 @@ FAMILLES: list[dict] = [
     {"slug": "generation",    "label": "Génération & Livraison",       "icone": "🏗️", "ordre": 3},
     {"slug": "collaboration", "label": "Collaboration & Communication", "icone": "💬", "ordre": 4},
     {"slug": "media",         "label": "Média & Contenu",              "icone": "🎬", "ordre": 5},
-    {"slug": "metier",        "label": "Applications Métier",          "icone": "🏢", "ordre": 6},
-    {"slug": "dev",           "label": "Persistance & Dev",            "icone": "🛠️", "ordre": 7},
+    {"slug": "veille",        "label": "Veille",                      "icone": "🔭", "ordre": 6},
+    {"slug": "metier",        "label": "Applications Métier",          "icone": "🏢", "ordre": 7},
+    {"slug": "dev",           "label": "Persistance & Dev",            "icone": "🛠️", "ordre": 8},
 ]
 
 # Index slug → métadonnées (accès O(1))
