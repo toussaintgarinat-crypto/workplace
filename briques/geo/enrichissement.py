@@ -29,6 +29,14 @@ DOMAINES_ANNUAIRES = {
     "google.com", "google.fr", "mappy.com", "petitfute.com",
     "autour-de-moi.com",   # agrégateur de fiches restos (repéré LIVE)
 }
+
+# Réseaux sociaux : PAS des annuaires (on ne les choisit jamais comme « site officiel »,
+# cf. DOMAINES_ANNUAIRES ci-dessus), mais un lien vers l'un d'eux TROUVÉ SUR le site
+# officiel est publié par l'entreprise elle-même — cohérent avec le principe RGPD-prudent
+# de ce module, contrairement aux avis tiers (hors périmètre, cf. design S193).
+DOMAINES_SOCIAUX = {"facebook.com", "instagram.com", "linkedin.com", "twitter.com",
+                    "x.com", "tiktok.com"}
+
 _MOTS_VIDES = {"sarl", "sas", "sasu", "eurl", "sci", "les", "des", "chez", "the", "et"}
 
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -111,6 +119,18 @@ def trouver_lien_contact(liens: list) -> str | None:
     return None
 
 
+def extraire_reseaux_sociaux(liens: list) -> list[str]:
+    """Liens vers des réseaux sociaux trouvés SUR le site officiel — dédupliqués, ordre
+    d'apparition. `liens` a le même format que celui déjà consommé par
+    `trouver_lien_contact` (dicts {"url", "texte"} ou chaînes brutes)."""
+    urls: list[str] = []
+    for lien in liens or []:
+        url = lien if isinstance(lien, str) else (lien.get("url") or "")
+        if url and _domaine(url) in DOMAINES_SOCIAUX and url not in urls:
+            urls.append(url)
+    return urls
+
+
 # ── I/O : via la brique recherche (souveraine) ───────────────────
 def _base_recherche() -> str:
     return os.getenv("RECHERCHE_URL", "http://host.docker.internal:6040").rstrip("/")
@@ -141,7 +161,7 @@ def enrichir(objet: dict) -> dict:
             return {"statut": "introuvable", "requete": requete,
                     "detail": "Aucun site officiel identifié (annuaires écartés)."}
         rapport = {"statut": "ok", "requete": requete, "site": site,
-                   "emails": [], "telephones": [], "source_url": site}
+                   "emails": [], "telephones": [], "reseaux_sociaux": [], "source_url": site}
         page = client.post(f"{_base_recherche()}/lire-page",
                            json={"url": site}, headers=_entetes())
         if page.status_code < 400:
@@ -149,6 +169,7 @@ def enrichir(objet: dict) -> dict:
             contacts = extraire_contacts(d.get("texte") or "")
             rapport["emails"] = contacts["emails"]
             rapport["telephones"] = contacts["telephones"]
+            rapport["reseaux_sociaux"] = extraire_reseaux_sociaux(d.get("liens") or [])
             if not rapport["emails"]:
                 lien = trouver_lien_contact(d.get("liens") or [])
                 if lien:

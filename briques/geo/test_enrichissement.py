@@ -75,6 +75,22 @@ def test_trouver_lien_contact_dicts_et_chaines():
     assert enrichissement.trouver_lien_contact([]) is None
 
 
+def test_extraire_reseaux_sociaux_filtre_et_deduplique():
+    liens = [
+        {"url": "https://www.facebook.com/x"}, {"url": "https://www.facebook.com/x"},
+        {"url": "https://linkedin.com/company/x"}, {"url": "https://autre-site.fr/"},
+        "https://x.com/handle",
+    ]
+    assert enrichissement.extraire_reseaux_sociaux(liens) == [
+        "https://www.facebook.com/x", "https://linkedin.com/company/x",
+        "https://x.com/handle"]
+
+
+def test_extraire_reseaux_sociaux_vide_sans_liens():
+    assert enrichissement.extraire_reseaux_sociaux([]) == []
+    assert enrichissement.extraire_reseaux_sociaux(None) == []
+
+
 # ── Faux client HTTP (brique recherche simulée, zéro réseau) ─────
 class _Rep:
     def __init__(self, status_code, corps):
@@ -149,6 +165,27 @@ def test_enrichir_email_sur_la_page_contact(monkeypatch):
     rapport = r.json()["rapport"]
     assert rapport["emails"] == ["fournil@boulangerie-test.fr"]
     assert rapport["source_url"] == "https://boulangerie-test.fr/contact"
+
+
+def test_enrichir_extrait_reseaux_sociaux_de_la_page_officielle(monkeypatch):
+    pages = {"https://boulangerie-test.fr/":
+             {"texte": "Bienvenue ! bonjour@boulangerie-test.fr",
+              "liens": [{"url": "https://www.facebook.com/boulangerietest", "texte": "FB"},
+                       {"url": "https://www.instagram.com/boulangerietest", "texte": "IG"},
+                       {"url": "https://boulangerie-test.fr/menu", "texte": "Menu"}]}}
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxHTTP(RESULTATS, pages))
+    r = client.post(f"/objets/{_objet()}/enrichir", headers=CLE)
+    meta = r.json()["objet"]["metadata"]
+    assert meta["reseaux_sociaux"] == ["https://www.facebook.com/boulangerietest",
+                                       "https://www.instagram.com/boulangerietest"]
+
+
+def test_enrichir_sans_reseaux_sociaux_absent_du_metadata(monkeypatch):
+    pages = {"https://boulangerie-test.fr/":
+             {"texte": "bonjour@boulangerie-test.fr", "liens": []}}
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxHTTP(RESULTATS, pages))
+    r = client.post(f"/objets/{_objet()}/enrichir", headers=CLE)
+    assert "reseaux_sociaux" not in r.json()["objet"]["metadata"]
 
 
 def test_enrichir_introuvable_honnete_et_journalise(monkeypatch):

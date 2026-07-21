@@ -178,6 +178,8 @@ def _enrichir_et_enregistrer(tenant: str, objet: dict) -> tuple[dict, dict]:
             meta["email"] = rapport["emails"][0]
         if rapport["telephones"]:
             meta["telephone"] = rapport["telephones"][0]
+        if rapport.get("reseaux_sociaux"):
+            meta["reseaux_sociaux"] = rapport["reseaux_sociaux"]
         meta["enrichi_le"] = datetime.now(timezone.utc).isoformat()
         meta["enrichi_source"] = rapport["source_url"]
         objet = stockage.maj_metadata(tenant, objet_id, meta) or objet
@@ -186,12 +188,16 @@ def _enrichir_et_enregistrer(tenant: str, objet: dict) -> tuple[dict, dict]:
 
 def _prospect_crm(objet: dict) -> dict:
     """Vue « prête pour le CRM » d'un objet enrichi : ce dont la Forge a besoin pour créer
-    un prospect (nom, coordonnées publiques trouvées, site, référence pour dé-doublonner)."""
+    un prospect (nom, coordonnées publiques trouvées, site, référence pour dé-doublonner),
+    plus l'enrichissement profond S193 (dirigeants, effectifs, réseaux sociaux) quand
+    disponible."""
     m = objet.get("metadata") or {}
     return {"objet_id": objet["id"], "nom": m.get("nom"), "entreprise": m.get("nom"),
             "email": m.get("email"), "telephone": m.get("telephone"),
             "site": m.get("site"), "naf": m.get("naf"), "commune": m.get("commune"),
-            "ref_externe": objet.get("ref_externe"), "source": objet.get("source")}
+            "ref_externe": objet.get("ref_externe"), "source": objet.get("source"),
+            "dirigeants": m.get("dirigeants"), "effectifs": m.get("effectifs"),
+            "reseaux_sociaux": m.get("reseaux_sociaux")}
 
 
 @app.post("/objets/{objet_id}/enrichir")
