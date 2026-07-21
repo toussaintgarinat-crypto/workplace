@@ -44,18 +44,20 @@ def _espace_memoire(espace: str | None) -> str | None:
 # outil CÂBLÉ gagne toujours (zéro régression) ; liste blanche et kill-switch d'env
 # permettent de borner ce que le LLM voit (souveraineté du « plan de contrôle »).
 
-# Briques « cercle privé » (S182 agenda, S184 ecoute, S185 mail, S186 memoire, S187 studio) :
-# le Cœur forwarde l'identité de l'utilisateur connecté en X-User-Id, gagée par {BRIQUE}_KEY
-# (seul le Cœur la détient). Les autres briques ignorent cet en-tête (motif tenant/bundle-
-# client, cf. X-Compte-Id).
-BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire", "studio"}
+# Briques « cercle privé » (S182 agenda, S184 ecoute, S185 mail, S186 memoire, S187 studio,
+# veille-info) : le Cœur forwarde l'identité de l'utilisateur connecté en X-User-Id, gagée
+# par {BRIQUE}_KEY (seul le Cœur la détient). Les autres briques ignorent cet en-tête
+# (motif tenant/bundle-client, cf. X-Compte-Id).
+BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire", "studio", "veille-info"}
 
 
 def _entetes_brique(brique: str) -> dict:
     """En-têtes de service pour piloter une brique au nom de l'appelant (S167).
 
     - ``{BRIQUE}_KEY`` → ``X-API-Key`` : prouve qu'on a le droit d'emprunter la surface
-      ``/service`` (motif muscle.py). Sans clé, la brique reste en mode ouvert.
+      ``/service`` (motif muscle.py). Sans clé, la brique reste en mode ouvert. Le nom de
+      brique est normalisé tiret→underscore pour former le nom de variable d'env (ex.
+      ``veille-info`` → ``VEILLE_INFO_KEY``, pas ``VEILLE-INFO_KEY``).
     - ``ADMIN_COMPTE_ID`` (défaut ``admin``) → ``X-Compte-Id`` : identité de l'appelant.
       La brique lit le ``role`` de ce compte EN BASE pour décider du périmètre (admin =
       accès total ; tenant = ses ressources). Mono-user aujourd'hui → toujours l'admin ;
@@ -63,7 +65,7 @@ def _entetes_brique(brique: str) -> dict:
       Cf. ADR docs/decisions/2026-07-13-surface-de-service-role-admin.md.
     """
     entetes: dict = {"X-Compte-Id": os.environ.get("ADMIN_COMPTE_ID", "admin")}
-    cle = os.environ.get(f"{brique.upper()}_KEY")
+    cle = os.environ.get(f"{brique.upper().replace('-', '_')}_KEY")
     if cle:
         entetes["X-API-Key"] = cle
     if brique.lower() in BRIQUES_PAR_PERSONNE:
