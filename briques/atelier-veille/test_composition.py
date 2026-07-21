@@ -9,10 +9,13 @@ import main as M
 client = TestClient(M.app)
 
 
-def _client_json(rep_json, status=200, boom=False):
+def _client_json(rep_json, status=200, boom=False, json_boom=False):
     class FauxRep:
         status_code = status
-        def json(self): return rep_json
+        def json(self):
+            if json_boom:
+                raise ValueError("réponse non-JSON (flux tronqué)")
+            return rep_json
 
     class FauxClient:
         def __init__(self, *a, **k): pass
@@ -88,3 +91,25 @@ def test_supprimer_source_introuvable_relaie_404(monkeypatch):
                         _client_json({"detail": "Source introuvable."}, status=404))
     r = client.delete("/veille/sources/999")
     assert r.status_code == 404
+
+
+def test_lister_sources_json_malforme_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json(None, json_boom=True))
+    r = client.get("/veille/sources")
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
+
+
+def test_creer_source_relaie_422_au_lieu_de_201(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json({"detail": "URL invalide"}, status=422))
+    r = client.post("/veille/sources", json={"nom": "Flux C", "url": "pas-une-url"})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "URL invalide"
+
+
+def test_lister_sources_relaie_500_au_lieu_de_200(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json({"detail": "erreur interne veille-info"}, status=500))
+    r = client.get("/veille/sources")
+    assert r.status_code == 500

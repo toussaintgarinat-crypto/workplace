@@ -14,6 +14,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Atelier Veille", version="0.1.0")
@@ -59,12 +60,16 @@ async def lister_sources(x_user_id: Optional[str] = Header(None),
     try:
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.get(f"{VEILLE_INFO_URL}/sources", headers=entetes)
+        corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
-    return r.json()
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
 
 
-@app.post("/veille/sources", tags=["veille"], status_code=201)
+@app.post("/veille/sources", tags=["veille"])
 async def creer_source(body: CreerSource, x_user_id: Optional[str] = Header(None),
                        x_api_key: Optional[str] = Header(None)):
     entetes = _entetes_aval(x_user_id, x_api_key)
@@ -72,9 +77,13 @@ async def creer_source(body: CreerSource, x_user_id: Optional[str] = Header(None
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.post(f"{VEILLE_INFO_URL}/sources", headers=entetes,
                              json=body.model_dump())
+        corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
-    return r.json()
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return JSONResponse(content=corps, status_code=r.status_code)
 
 
 @app.delete("/veille/sources/{source_id}", tags=["veille"])
@@ -84,8 +93,12 @@ async def supprimer_source(source_id: int, x_user_id: Optional[str] = Header(Non
     try:
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.delete(f"{VEILLE_INFO_URL}/sources/{source_id}", headers=entetes)
+        corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
     if r.status_code == 404:
         raise HTTPException(404, "Source introuvable.")
-    return r.json()
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
