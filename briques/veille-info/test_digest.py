@@ -133,6 +133,13 @@ def test_articles_non_digeres_recuperes_au_prochain_passage(monkeypatch):
     resultat = digest.executer_digest_quotidien(user_ids=["digest-henri"])
     assert resultat["digests_crees"] == 0
 
+    # Simule le passage au lendemain : l'article stocké hier ne doit PAS dépendre de
+    # created_at == aujourd'hui pour être repris (c'est exactement le bug corrigé —
+    # sans ce backdatage, ce test passerait aussi contre l'ancien code date-scopé).
+    with stockage._conn() as c:
+        c.execute("UPDATE articles SET created_at = '2020-01-01T00:00:00+00:00' "
+                 "WHERE user_id = 'digest-henri'")
+
     # Passage suivant : Gateway rétablie, mais AUCUN nouvel article RSS.
     monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [])
     monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé de rattrapage.")
