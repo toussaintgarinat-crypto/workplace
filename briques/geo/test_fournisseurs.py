@@ -156,3 +156,36 @@ def test_normaliser_type_association_et_coordonnees_protegees():
         {**PAYLOAD_SIRENE["matching_etablissements"][0],
          "latitude": "[NON-DIFFUSIBLE]", "longitude": "[NON-DIFFUSIBLE]"}]}
     assert domaine.normaliser_entreprise(protege) is None
+
+
+def test_normaliser_extrait_dirigeants_et_effectifs_si_presents():
+    payload = {**PAYLOAD_SIRENE,
+              "dirigeants": [
+                  {"nom": "BLACHERE", "prenoms": "BERNARD", "qualite": "Président de SAS",
+                   "type_dirigeant": "personne physique"},
+                  {"siren": "378159818", "denomination": "HOLDING BLACHERE",
+                   "qualite": "Président de SAS", "type_dirigeant": "personne morale"},
+              ],
+              "matching_etablissements": [
+                  {**PAYLOAD_SIRENE["matching_etablissements"][0],
+                   "tranche_effectif_salarie": "22"},
+              ]}
+    objet = domaine.normaliser_entreprise(payload)
+    assert objet["metadata"]["dirigeants"] == [
+        {"nom": "BLACHERE", "prenom": "BERNARD", "qualite": "Président de SAS"},
+        {"nom": "HOLDING BLACHERE", "prenom": "", "qualite": "Président de SAS"},
+    ]
+    assert objet["metadata"]["effectifs"] == "22"
+
+
+def test_normaliser_sans_dirigeants_ni_effectifs_absents_du_metadata():
+    objet = domaine.normaliser_entreprise(PAYLOAD_SIRENE)
+    assert "dirigeants" not in objet["metadata"]
+    assert "effectifs" not in objet["metadata"]
+
+
+def test_normaliser_dirigeants_tronque_a_cinq():
+    payload = {**PAYLOAD_SIRENE,
+              "dirigeants": [{"nom": f"Dirigeant {i}", "qualite": "Gérant"} for i in range(8)]}
+    objet = domaine.normaliser_entreprise(payload)
+    assert len(objet["metadata"]["dirigeants"]) == 5

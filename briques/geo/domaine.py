@@ -137,6 +137,14 @@ def bbox_union(boites: list[tuple[float, float, float, float]]) \
             max(b[2] for b in boites), max(b[3] for b in boites))
 
 
+def _dirigeant_dict(d: dict) -> dict:
+    """Un dirigeant Sirene, personne physique OU morale — normalisé au même schéma
+    ({nom, prenom, qualite}) pour que la vue prospect (geo/main.py::_prospect_crm) n'ait
+    jamais à distinguer les deux formes."""
+    return {"nom": d.get("nom") or d.get("denomination") or "",
+            "prenom": d.get("prenoms") or "", "qualite": d.get("qualite") or ""}
+
+
 def normaliser_entreprise(brute: dict, type_: str = "entreprise") -> dict | None:
     """Payload brut recherche-entreprises.api.gouv.fr → objet `geo_objects`, ou None si
     inexploitable. PIÈGE vérifié LIVE : l'API apparie les ÉTABLISSEMENTS proches
@@ -145,7 +153,12 @@ def normaliser_entreprise(brute: dict, type_: str = "entreprise") -> dict | None
     établissements FERMÉS (etat_administratif ≠ A) et les coordonnées protégées
     (« [NON-DIFFUSIBLE] », vu LIVE sur des associations). Coordonnées en CHAÎNES.
     L'identité d'upsert = SIRET de l'établissement (le SIREN en repli).
-    `type_` : « entreprise » ou « association » (même payload Sirene)."""
+    `type_` : « entreprise » ou « association » (même payload Sirene).
+
+    S193 : `dirigeants` (payload RACINE, personnes physiques ET morales, tronqué à 5) et
+    `effectifs` (tranche Sirene, champ de l'ÉTABLISSEMENT) sont extraits si présents —
+    zéro appel réseau supplémentaire (même payload déjà reçu). Absents du metadata si la
+    donnée source ne les fournit pas (payload figé de test, ou API sans ces champs)."""
     etab = (brute.get("matching_etablissements") or [{}])[0]
     if not etab:
         etab = brute.get("siege") or {}
@@ -159,6 +172,20 @@ def normaliser_entreprise(brute: dict, type_: str = "entreprise") -> dict | None
         return None
     nom = (etab.get("nom_commercial") or brute.get("nom_complet")
            or brute.get("nom_raison_sociale") or "")
+    metadata = {
+        "nom": nom,
+        "naf": etab.get("activite_principale") or brute.get("activite_principale") or "",
+        "adresse": etab.get("adresse") or "",
+        "commune": etab.get("libelle_commune") or "",
+        "siren": brute.get("siren") or "",
+    }
+    dirigeants = [_dirigeant_dict(d) for d in (brute.get("dirigeants") or [])[:5]
+                 if (d.get("nom") or d.get("denomination"))]
+    if dirigeants:
+        metadata["dirigeants"] = dirigeants
+    effectifs = etab.get("tranche_effectif_salarie")
+    if effectifs:
+        metadata["effectifs"] = effectifs
     return {
         "type": type_,
         "latitude": latitude,
@@ -166,11 +193,5 @@ def normaliser_entreprise(brute: dict, type_: str = "entreprise") -> dict | None
         "date_reference": etab.get("date_creation") or brute.get("date_creation"),
         "ref_externe": etab.get("siret") or brute.get("siren"),
         "source": "recherche-entreprises",
-        "metadata": {
-            "nom": nom,
-            "naf": etab.get("activite_principale") or brute.get("activite_principale") or "",
-            "adresse": etab.get("adresse") or "",
-            "commune": etab.get("libelle_commune") or "",
-            "siren": brute.get("siren") or "",
-        },
+        "metadata": metadata,
     }
