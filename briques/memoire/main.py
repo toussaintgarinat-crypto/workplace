@@ -206,11 +206,20 @@ async def _resoudre_espace(client: httpx.AsyncClient, espace_brut: str | None,
                            utilisateur: str) -> tuple[str, str]:
     """Résout `(espace_id, jwt à utiliser)` pour un appel de `utilisateur`.
 
-    Le mot-clé ``perso`` est le SEUL cas qui bascule sur un espace PAR PERSONNE — mono-user
-    historique (``utilisateur == "perso"``, pas de session/X-User-Id) reste sur le compte de
-    service et l'espace "Perso" tel qu'il existait avant S186 (zéro migration). Tout le
-    reste (``None``/"solution"/nom custom Forge-Oria) est INCHANGÉ : espace partagé, compte
-    de service — seule la mémoire PERSONNELLE (préférences/faits sur la personne) s'isole."""
+    Le mot-clé ``perso`` garde sa branche dédiée EXACTE (S186, inchangée) : nom d'espace
+    ``Perso-<utilisateur>``, casse figée.
+
+    Tout AUTRE nom custom (ni ``None``/``"solution"``, ni ``"perso"``) devient lui aussi
+    personnellement isolé (S193) dès qu'un ``utilisateur`` RÉEL est résolu (≠
+    ``UTILISATEUR_DEFAUT`` — c'est-à-dire qu'un vrai ``X-User-Id`` a été transmis) : espace
+    ``<nom>-<utilisateur>``, compte de LA personne. Généralisation du motif « perso », pour
+    que veille-prospection/veille-info isolent leur espace "veille" par personne sans
+    dupliquer la mécanique.
+
+    Sans ``utilisateur`` réel (mode service/mono-user, ex. Forge ``forge-org-*``,
+    ``transcription``) : comportement INCHANGÉ, espace partagé sous le compte de service —
+    aucun appelant actuel ne transmet ``X-User-Id`` pour un espace custom, donc ce
+    changement est rétrocompatible par construction (vérifié par test)."""
     if (espace_brut or "").strip().lower() == "perso":
         if utilisateur == UTILISATEUR_DEFAUT:
             return await _espace_id(client, "Perso"), await _token(client)
@@ -218,6 +227,11 @@ async def _resoudre_espace(client: httpx.AsyncClient, espace_brut: str | None,
         nom = f"Perso-{utilisateur}"
         return await _espace_id_personne(client, jeton_personne, utilisateur, nom), jeton_personne
     nom = _normaliser_espace(espace_brut)
+    if nom is not None and utilisateur != UTILISATEUR_DEFAUT:
+        jeton_personne = await _token_personne(client, utilisateur)
+        nom_personne = f"{nom}-{utilisateur}"
+        return (await _espace_id_personne(client, jeton_personne, utilisateur, nom_personne),
+                jeton_personne)
     return await _espace_id(client, nom), await _token(client)
 
 
