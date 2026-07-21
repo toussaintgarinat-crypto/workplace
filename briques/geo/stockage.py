@@ -302,6 +302,13 @@ def supprimer_zone(tenant: str, zone_id: str) -> bool:
         return cur.rowcount > 0
 
 
+def lire_zone(tenant: str, zone_id: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM geo_zones WHERE tenant = ? AND id = ?",
+                      (tenant, zone_id)).fetchone()
+    return _zone_dict(r) if r else None
+
+
 def maj_derniere_ingestion(zone_id: str) -> None:
     with _conn() as c:
         c.execute("UPDATE geo_zones SET derniere_ingestion = ? WHERE id = ?",
