@@ -73,3 +73,31 @@ def test_lister_et_lire_digest_isole_par_user_id():
     assert len(stockage.lister_digests("ivan")) == 1
     assert stockage.digest_get("ivan", d["id"])["texte_resume"] == "Résumé."
     assert stockage.digest_get("judy", d["id"]) is None
+
+
+def test_digest_sans_audio_a_des_champs_audio_none():
+    d = stockage.inserer_digest("iris", "Résumé.", 1)
+    assert stockage.digest_get("iris", d["id"])["audio_url"] is None
+    assert stockage.digest_get("iris", d["id"])["audio_duree"] is None
+    assert stockage.lister_digests("iris")[0]["audio_url"] is None
+
+
+def test_inserer_audio_digest_apparait_dans_lister_et_get():
+    d = stockage.inserer_digest("jules", "Résumé.", 1)
+    stockage.inserer_audio_digest(d["id"], "https://voix.example/episodes/x.mp3", 42.5)
+
+    lu = stockage.digest_get("jules", d["id"])
+    assert lu["audio_url"] == "https://voix.example/episodes/x.mp3"
+    assert lu["audio_duree"] == 42.5
+
+    liste = stockage.lister_digests("jules")
+    assert liste[0]["audio_url"] == "https://voix.example/episodes/x.mp3"
+
+
+def test_audio_digest_isole_par_digest_id():
+    d1 = stockage.inserer_digest("karim", "Résumé 1.", 1)
+    d2 = stockage.inserer_digest("karim", "Résumé 2.", 1, date="2020-01-01")
+    stockage.inserer_audio_digest(d1["id"], "https://voix.example/1.mp3", 10.0)
+
+    assert stockage.digest_get("karim", d1["id"])["audio_url"] == "https://voix.example/1.mp3"
+    assert stockage.digest_get("karim", d2["id"])["audio_url"] is None
