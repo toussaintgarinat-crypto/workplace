@@ -102,3 +102,38 @@ async def supprimer_source(source_id: int, x_user_id: Optional[str] = Header(Non
         detail = corps.get("detail") if isinstance(corps, dict) else None
         raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
     return corps
+
+
+@app.get("/veille/digests", tags=["veille"])
+async def lister_digests(x_user_id: Optional[str] = Header(None),
+                         x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{VEILLE_INFO_URL}/digests", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.post("/veille/digest/executer", tags=["veille"])
+async def executer_digest():
+    """Déclenche le digest quotidien pour TOUT le foyer (motif horloge, pas un compte
+    personnel) — gardé côté veille-info par un jeton de SERVICE, jamais l'identité du
+    navigateur."""
+    jeton = os.environ.get("VEILLE_INFO_KEY", "")
+    entetes = {"Authorization": f"Bearer {jeton}"}
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(f"{VEILLE_INFO_URL}/digest/executer", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
