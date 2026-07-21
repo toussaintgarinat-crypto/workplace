@@ -9,6 +9,8 @@ services:
         required: false
     ports:
       - "5970:5970"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       # Moteur vidéo PROVIDER-AGNOSTIQUE. Aucune clé embarquée : on branche par env.
       # Ordre de préférence (défaut : fal,replicate,luma,runway,gateway). VIDE = défaut.

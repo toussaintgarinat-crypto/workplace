@@ -20,6 +20,8 @@ services:
         required: false
     ports:
       - "8400:8400"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       # SQLite par défaut (DATABASE_URL vide), pas de Redis.
       - DATABASE_URL=

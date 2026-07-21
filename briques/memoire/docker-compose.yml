@@ -31,6 +31,8 @@ services:
       # Secrets partagés (JWT_SECRET, LLM_API_KEY) — source unique à la racine.
       - path: ../../.env
         required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       - DATABASE_URL=postgresql+asyncpg://memory:${MEMOIRE_DB_PASSWORD:-memory}@memoire-db:5432/memory
       # JWT_SECRET vient du .env racine (env_file ci-dessus).

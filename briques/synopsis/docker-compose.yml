@@ -5,6 +5,8 @@ services:
     container_name: workplace-synopsis
     ports:
       - "6090:6090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     volumes:
       - synopsis_clips:/clips
     env_file:

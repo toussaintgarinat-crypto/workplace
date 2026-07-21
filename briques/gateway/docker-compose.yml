@@ -23,6 +23,8 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "4001:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     env_file:
       # .env local (clé OpenRouter, gérée par l'app) PUIS .env racine (clé maîtresse
       # partagée). Le second l'emporte sur le premier en cas de doublon.

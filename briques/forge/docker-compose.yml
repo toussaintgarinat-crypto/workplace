@@ -54,6 +54,8 @@ services:
       dockerfile: briques/forge/forge/core/Dockerfile
     image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     command: ["python", "-m", "scripts.init_db"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       - DATABASE_URL=postgresql+asyncpg://forge:${FORGE_DB_PASSWORD:-forge_secret_change_this}@forge-db:5432/forge
     depends_on:
@@ -69,6 +71,8 @@ services:
     image: workplace-forge-core:${FORGE_CORE_VERSION:-0.1.0}
     ports:
       - "8600:8600"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     env_file:
       # Clé Gateway partagée (LLM_API_KEY) — source unique à la racine de Workplace.
       - path: ../../.env
@@ -151,6 +155,8 @@ services:
     build: .
     ports:
       - "5700:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     env_file:
       # Secret du client de service forge-service (FORGE_SERVICE_SECRET) — source
       # unique à la racine de Workplace, jamais en clair dans le compose.

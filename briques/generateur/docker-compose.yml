@@ -11,6 +11,8 @@ services:
         required: false
     ports:
       - "5400:5400"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     volumes:
       - generateur_data:/data
       - ../../apps_exportees:/export

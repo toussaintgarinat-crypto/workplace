@@ -11,6 +11,8 @@ services:
         required: false
     ports:
       - "5300:5300"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     volumes:
       - audit_data:/data
     environment:
