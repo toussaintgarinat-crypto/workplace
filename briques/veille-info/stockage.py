@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS digests (
     UNIQUE(user_id, date)
 );
 CREATE INDEX IF NOT EXISTS idx_digests_user ON digests(user_id);
+
+CREATE TABLE IF NOT EXISTS digest_audio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest_id INTEGER NOT NULL REFERENCES digests(id),
+    url TEXT NOT NULL,
+    duree REAL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_digest_audio_digest ON digest_audio(digest_id);
 """
 
 
@@ -142,8 +151,20 @@ def marquer_articles_digestes(article_ids: list[int]) -> None:
 
 # ── Digests ───────────────────────────────────────────────────
 def _digest_dict(r: sqlite3.Row) -> dict:
+    cols = r.keys()
     return {"id": r["id"], "date": r["date"], "texte_resume": r["texte_resume"],
-            "nb_articles": r["nb_articles"], "created_at": r["created_at"]}
+            "nb_articles": r["nb_articles"], "created_at": r["created_at"],
+            "audio_url": r["audio_url"] if "audio_url" in cols else None,
+            "audio_duree": r["audio_duree"] if "audio_duree" in cols else None}
+
+
+_DIGEST_AVEC_AUDIO = """
+    SELECT d.*, da.url AS audio_url, da.duree AS audio_duree
+    FROM digests d
+    LEFT JOIN digest_audio da ON da.id = (
+        SELECT id FROM digest_audio WHERE digest_id = d.id ORDER BY id DESC LIMIT 1
+    )
+"""
 
 
 def digest_existe(user_id: str, date: str | None = None) -> bool:
@@ -168,13 +189,24 @@ def inserer_digest(user_id: str, texte_resume: str, nb_articles: int,
 
 def lister_digests(user_id: str) -> list[dict]:
     with _conn() as c:
-        rows = c.execute("SELECT * FROM digests WHERE user_id = ? ORDER BY date DESC",
+        rows = c.execute(_DIGEST_AVEC_AUDIO + " WHERE d.user_id = ? ORDER BY d.date DESC",
                          (user_id,)).fetchall()
     return [_digest_dict(r) for r in rows]
 
 
 def digest_get(user_id: str, digest_id: int) -> dict | None:
     with _conn() as c:
-        row = c.execute("SELECT * FROM digests WHERE id = ? AND user_id = ?",
+        row = c.execute(_DIGEST_AVEC_AUDIO + " WHERE d.id = ? AND d.user_id = ?",
                         (digest_id, user_id)).fetchone()
     return _digest_dict(row) if row else None
+
+
+# ── Audio ─────────────────────────────────────────────────────
+def inserer_audio_digest(digest_id: int, url: str, duree: float | None) -> dict:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO digest_audio (digest_id, url, duree, created_at) VALUES (?,?,?,?)",
+            (digest_id, url, duree, _maintenant()))
+        row = c.execute("SELECT * FROM digest_audio WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return {"id": row["id"], "digest_id": row["digest_id"], "url": row["url"],
+            "duree": row["duree"], "created_at": row["created_at"]}
