@@ -37,14 +37,13 @@ def _generer_audio(digest_id: int, texte: str) -> None:
                              "segments": [{"voix": None, "texte": texte}]})
         r.raise_for_status()
         res = r.json()
+        if not res.get("url"):
+            logger.warning("Veille-info audio digest_id=%s : pas d'URL (place_holder=%s)",
+                           digest_id, res.get("place_holder"))
+            return
+        stockage.inserer_audio_digest(digest_id, res["url"], res.get("duree"))
     except Exception as e:  # noqa: BLE001 — audio best-effort, le digest texte reste utilisable
         logger.warning("Veille-info audio digest_id=%s : %s", digest_id, e)
-        return
-    if not res.get("url"):
-        logger.warning("Veille-info audio digest_id=%s : pas d'URL (place_holder=%s)",
-                       digest_id, res.get("place_holder"))
-        return
-    stockage.inserer_audio_digest(digest_id, res["url"], res.get("duree"))
 
 
 def _traiter_utilisateur(user_id: str) -> bool:
