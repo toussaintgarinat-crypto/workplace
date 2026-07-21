@@ -113,3 +113,43 @@ def test_lister_sources_relaie_500_au_lieu_de_200(monkeypatch):
                         _client_json({"detail": "erreur interne veille-info"}, status=500))
     r = client.get("/veille/sources")
     assert r.status_code == 500
+
+
+def test_lister_digests_proxifie_vers_veille_info(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json([{"id": 1, "date": "2026-07-21", "texte_resume": "…",
+                                       "nb_articles": 3, "audio_url": None, "audio_duree": None}]))
+    r = client.get("/veille/digests", headers={"X-User-Id": "claire"})
+    assert r.status_code == 200
+    assert r.json()[0]["nb_articles"] == 3
+
+
+def test_executer_digest_utilise_le_jeton_de_service_pas_lidentite_navigateur(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "jeton-horloge")
+    import importlib
+    importlib.reload(M)
+    Faux = _client_json({"utilisateurs_traites": 2, "digests_crees": 2})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = TestClient(M.app).post("/veille/digest/executer", headers={"X-User-Id": "claire"})
+    assert r.status_code == 200
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {"Authorization": "Bearer jeton-horloge"}
+
+
+def test_executer_digest_sans_cle_configuree_envoie_bearer_vide(monkeypatch):
+    monkeypatch.delenv("VEILLE_INFO_KEY", raising=False)
+    import importlib
+    importlib.reload(M)
+    Faux = _client_json({"utilisateurs_traites": 0, "digests_crees": 0})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = TestClient(M.app).post("/veille/digest/executer")
+    assert r.status_code == 200
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {"Authorization": "Bearer "}
+
+
+def test_executer_digest_refuse_relaie_lerreur(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json({"detail": "Jeton horloge invalide."}, status=401))
+    r = client.post("/veille/digest/executer")
+    assert r.status_code == 401
