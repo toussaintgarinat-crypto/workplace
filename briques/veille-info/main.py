@@ -29,19 +29,24 @@ API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()
 def tenant_actuel(x_api_key: Optional[str] = Header(None),
                   authorization: Optional[str] = Header(None),
                   x_user_id: Optional[str] = Header(None)) -> str:
-    """Résout la personne. Motif proche de briques/mail (S185) : la clé du Cœur
-    (VEILLE_INFO_KEY) fait EMPRUNTER l'identité X-User-Id (isolation par personne au sein du
-    foyer) ; toute autre clé retombe sur une empreinte (tenant externe). Fail-closed si
-    API_KEYS est défini. Sinon (dev, aucune clé exigée) : la personne est directement
-    X-User-Id si fourni, sinon « public » — contrairement à mail, qui ignore X-User-Id hors
-    clé Cœur ; ce choix évite d'exiger VEILLE_INFO_KEY rien que pour isoler par personne en
-    local/dev (aucun dialecte « tenant externe » n'est encore utile à cette brique)."""
+    """Résout le tenant. Deux dialectes :
+
+    (a) **Cœur / cercle privé (S185, motif agenda S182 / ecoute S184)** : la clé présentée
+        == `VEILLE_INFO_KEY` (SEUL le Cœur la détient) ⇒ le Cœur emprunte l'identité de la
+        personne connectée via `X-User-Id` (sinon repli `perso`) — chaque membre du foyer
+        obtient SES sources, ses digests, isolés des autres, même s'ils partagent tous la
+        même `VEILLE_INFO_KEY`.
+    (b) **Tenant externe (bundle-client)** : toute AUTRE clé (ou son absence, en dev) ⇒
+        motif historique, le tenant est l'**empreinte** (sha256 tronquée) de la clé —
+        un client externe n'a jamais de `X-User-Id` à faire valoir.
+
+    Fail-closed si `API_KEYS` défini (401 hors ces deux dialectes) ; sinon (dev) « public »."""
     presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
     if API_KEYS:
         if presentee not in API_KEYS:
             raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
     elif not presentee:
-        return x_user_id or "public"
+        return "public"
     cle_coeur = os.environ.get("VEILLE_INFO_KEY")
     if cle_coeur and presentee == cle_coeur:
         return f"perso:{x_user_id or 'perso'}"
