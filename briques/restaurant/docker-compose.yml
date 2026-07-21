@@ -34,7 +34,10 @@ services:
       # Synergie « Assistant carte » (import OCR) : URLs/modèle non secrets, absents du .env racine.
       - VISION_URL=${VISION_URL:-http://host.docker.internal:5960}
       - VISION_KEY=${VISION_KEY:-}
-      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      # GATEWAY_URL non listée ici : même piège « env shadow » que RESTAURANT_KEY/GATEWAY_KEY
+      # ci-dessus (l'interpolation ${VAR:-défaut} ne lit pas env_file, donc un GATEWAY_URL
+      # posé au .env racine serait ignoré). Vient du .env racine via env_file ; défaut
+      # http://host.docker.internal:4001 porté par le code (carte_ia.py, souvenir.py) si absente.
       - GATEWAY_MODEL=${GATEWAY_MODEL:-free/google/gemma-4-31b-it}
     volumes:
       - restaurant_data:/data   # comptes, restaurants, menus, commandes, paiements

@@ -21,7 +21,9 @@ services:
       - LUMAAI_API_KEY=${LUMAAI_API_KEY:-}
       - RUNWAY_API_KEY=${RUNWAY_API_KEY:-}
       # Gateway Workplace (zéro clé vidéo propre : réutilise la clé OpenRouter de la Gateway).
-      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:4001}
+      # GATEWAY_URL non listée ici : vient du .env racine via env_file. La redéclarer en
+      # `=${VAR:-défaut}` l'écraserait toujours par le défaut littéral (piège « env shadow »).
+      # Défaut http://host.docker.internal:4001 porté par le code (fournisseurs.py).
       - GATEWAY_KEY=${GATEWAY_KEY:-}
       # Modèles paramétrables (sinon défauts raisonnables, cf. fournisseurs.py).
       - FAL_VIDEO_MODEL=${FAL_VIDEO_MODEL:-}
