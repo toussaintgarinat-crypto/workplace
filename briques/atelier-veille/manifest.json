@@ -10,7 +10,6 @@
   "port": 6130,
   "url_sante": "http://host.docker.internal:6130/sante",
   "url_ui": "http://localhost:6130/atelier",
-  "vue_dashboard": "atelier-veille",
   "depends_on": [],
   "offre": ["front_atelier_veille"],
   "capacites": []
