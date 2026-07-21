@@ -18,53 +18,62 @@ import stockage
 client = TestClient(main.app)
 
 
+def _entetes(utilisateur):
+    return {"X-API-Key": "cle-coeur", "X-User-Id": utilisateur}
+
+
 def test_sante():
     r = client.get("/sante")
     assert r.status_code == 200
     assert r.json()["statut"] == "ok"
 
 
-def test_creer_lister_supprimer_source():
-    r = client.post("/sources", headers={"X-User-Id": "main-alice"},
+def test_creer_lister_supprimer_source(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-alice"),
                     json={"nom": "Flux A", "url": "https://a.example/rss"})
     assert r.status_code == 201
     source_id = r.json()["id"]
 
-    r = client.get("/sources", headers={"X-User-Id": "main-alice"})
+    r = client.get("/sources", headers=_entetes("main-alice"))
     assert len(r.json()) == 1
 
-    r = client.delete(f"/sources/{source_id}", headers={"X-User-Id": "main-alice"})
+    r = client.delete(f"/sources/{source_id}", headers=_entetes("main-alice"))
     assert r.status_code == 200
-    assert client.get("/sources", headers={"X-User-Id": "main-alice"}).json() == []
+    assert client.get("/sources", headers=_entetes("main-alice")).json() == []
 
 
-def test_sources_isolees_par_x_user_id():
-    client.post("/sources", headers={"X-User-Id": "main-bob"},
+def test_sources_isolees_par_x_user_id(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    client.post("/sources", headers=_entetes("main-bob"),
                json={"nom": "Flux de Bob", "url": "https://bob.example/rss"})
-    r = client.get("/sources", headers={"X-User-Id": "main-carol"})
+    r = client.get("/sources", headers=_entetes("main-carol"))
     assert all(s["nom"] != "Flux de Bob" for s in r.json())
 
 
-def test_supprimer_source_dune_autre_personne_echoue():
-    r = client.post("/sources", headers={"X-User-Id": "main-dave"},
+def test_supprimer_source_dune_autre_personne_echoue(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-dave"),
                     json={"nom": "Flux privé", "url": "https://dave.example/rss"})
     source_id = r.json()["id"]
-    r = client.delete(f"/sources/{source_id}", headers={"X-User-Id": "main-mallory"})
+    r = client.delete(f"/sources/{source_id}", headers=_entetes("main-mallory"))
     assert r.status_code == 404
 
 
-def test_lister_et_lire_digest():
-    stockage.inserer_digest("main-erin", "Résumé du jour.", 3)
-    r = client.get("/digests", headers={"X-User-Id": "main-erin"})
+def test_lister_et_lire_digest(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    stockage.inserer_digest("perso:main-erin", "Résumé du jour.", 3)
+    r = client.get("/digests", headers=_entetes("main-erin"))
     assert len(r.json()) == 1
     digest_id = r.json()[0]["id"]
-    r = client.get(f"/digests/{digest_id}", headers={"X-User-Id": "main-erin"})
+    r = client.get(f"/digests/{digest_id}", headers=_entetes("main-erin"))
     assert r.json()["texte_resume"] == "Résumé du jour."
 
 
-def test_lire_digest_dune_autre_personne_404():
-    d = stockage.inserer_digest("main-frank", "Privé.", 1)
-    r = client.get(f"/digests/{d['id']}", headers={"X-User-Id": "main-grace"})
+def test_lire_digest_dune_autre_personne_404(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    d = stockage.inserer_digest("perso:main-frank", "Privé.", 1)
+    r = client.get(f"/digests/{d['id']}", headers=_entetes("main-grace"))
     assert r.status_code == 404
 
 
