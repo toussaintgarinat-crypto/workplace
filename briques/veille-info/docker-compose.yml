@@ -8,6 +8,8 @@ services:
         required: false
     ports:
       - "6120:6120"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre Gateway/voix sous Linux (motif synopsis/studio)
     environment:
       - PORT=6120
       - VEILLE_INFO_DB=/data/veille_info.db
