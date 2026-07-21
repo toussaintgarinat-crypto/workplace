@@ -1,0 +1,30 @@
+services:
+  veille-info:
+    build: .
+    container_name: workplace_veille_info
+    image: workplace/veille-info:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6120:6120"
+    environment:
+      - PORT=6120
+      - VEILLE_INFO_DB=/data/veille_info.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # API_KEYS, VEILLE_INFO_KEY, GATEWAY_URL/KEY/MODEL : ABSENTS du `environment` exprès —
+      # viennent du .env racine via env_file (piège « env shadow » : ne PAS les redéclarer
+      # en `=${VAR:-}`, cf. fix-env-shadow-composes). Sans GATEWAY_URL : le résumé échoue
+      # proprement (pas de digest ce jour-là, retry au prochain passage horloge).
+    volumes:
+      - veille_info_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6120/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  veille_info_data:
