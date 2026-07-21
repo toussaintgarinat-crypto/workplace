@@ -75,17 +75,29 @@ def _traiter_utilisateur(user_id: str) -> bool:
         return False
 
     d = stockage.inserer_digest(user_id, resume, len(articles))
-    stockage.marquer_articles_digestes([a["id"] for a in articles])
-    _generer_audio(d["id"], resume)
+    try:
+        stockage.marquer_articles_digestes([a["id"] for a in articles])
+        _generer_audio(d["id"], resume)
+    except Exception as e:  # noqa: BLE001 — le digest (déjà créé ci-dessus) doit compter comme
+        # créé même si le marquage des articles ou l'audio échoue ensuite ; sans ce filet local,
+        # l'exception remonterait jusqu'à `_traiter_utilisateur_sans_planter`, qui compterait
+        # 0 digest alors qu'une ligne existe déjà en base — et comme `digest_existe(user_id)`
+        # est vrai dès le prochain passage, cette personne serait sautée pour toujours (le
+        # marquage et l'audio ne seraient plus jamais retentés). Rejouer marquer_articles_digestes
+        # plus tard est sans risque : l'UPDATE cible exactement ces ids déjà connus, pas «tout
+        # ce qui n'est pas marqué» — un no-op propre s'ils sont déjà marqués.
+        logger.warning("Veille-info marquage articles/audio (user=%s, digest_id=%s) : %s",
+                       user_id, d["id"], e)
     return True
 
 
 def _traiter_utilisateur_sans_planter(user_id: str) -> bool:
     """Enrobe `_traiter_utilisateur` : une panne inattendue (ex. un appel `stockage.*` qui
-    lève, en dehors des deux chemins déjà gardés dans `_traiter_utilisateur`) est journalisée
+    lève, en dehors des chemins déjà gardés dans `_traiter_utilisateur`) est journalisée
     et comptée comme « pas de digest pour cette personne », jamais propagée. Contrainte du
-    plan : « Aucun échec ne doit faire planter le pipeline » — plus large que les deux pannes
-    déjà gérées (fetch RSS, appel LLM)."""
+    plan : « Aucun échec ne doit faire planter le pipeline » — plus large que les pannes
+    déjà gérées localement (fetch RSS, appel LLM, marquage des articles + audio après
+    création du digest)."""
     try:
         return _traiter_utilisateur(user_id)
     except Exception as e:  # noqa: BLE001 — une personne en échec inattendu ne doit jamais arrêter le lot

@@ -246,3 +246,26 @@ def test_echec_stockage_audio_ne_bloque_pas_le_comptage_du_digest(monkeypatch):
     d = stockage.lister_digests("digest-laura")[0]
     assert d["texte_resume"] == "Résumé du jour."
     assert d["audio_url"] is None  # l'écriture audio a échoué, pas de ligne digest_audio
+
+
+def test_echec_marquage_articles_ne_bloque_pas_le_comptage_du_digest(monkeypatch):
+    """Le trou restant trouvé en revue finale : si stockage.marquer_articles_digestes lève
+    (ex. verrou SQLite transitoire), ça ne doit PAS faire remonter jusqu'au filet du lot —
+    le digest, déjà créé par stockage.inserer_digest juste avant, doit toujours compter
+    comme créé et rester en base."""
+    stockage.creer_source("digest-marie", "Flux", "https://marie.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://marie.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+
+    def _marquer_qui_casse(article_ids):
+        raise RuntimeError("DB verrouillée")
+    monkeypatch.setattr(digest.stockage, "marquer_articles_digestes", _marquer_qui_casse)
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-marie"])
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 1}
+    digests = stockage.lister_digests("digest-marie")
+    assert len(digests) == 1
+    assert digests[0]["texte_resume"] == "Résumé du jour."
