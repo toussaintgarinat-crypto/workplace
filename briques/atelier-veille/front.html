@@ -43,8 +43,29 @@
       style="width:100%;height:70vh;border:0;display:block"></iframe>
   </div>
 
-  <div id="vue-sources" class="vue panel"></div>
-  <div id="vue-digests" class="vue panel"></div>
+  <div id="vue-sources" class="vue panel">
+    <h3>Sources RSS suivies</h3>
+    <div id="liste-sources"></div>
+    <h3 style="margin-top:20px">Ajouter une source</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input id="nouvelle-source-nom" placeholder="Nom (ex. Le Monde Tech)" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+      <input id="nouvelle-source-url" placeholder="URL du flux RSS" style="flex:2;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+      <button onclick="ajouterSource()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#0b1622;font-weight:600;cursor:pointer">Ajouter</button>
+    </div>
+    <div id="erreur-sources" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+  </div>
+  <div id="vue-digests" class="vue panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <h3 style="margin:0">Digests quotidiens</h3>
+      <button id="btn-generer-digest" onclick="genererDigest()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">
+        Générer le digest maintenant (pour tout le foyer)
+      </button>
+    </div>
+    <p style="color:var(--mut);font-size:.82rem">Ce bouton déclenche le digest pour TOUT le
+      foyer d'un coup (comme l'horloge quotidienne), pas seulement pour toi.</p>
+    <div id="liste-digests"></div>
+    <div id="erreur-digests" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+  </div>
 </div>
 <script>
 function ouvrirOnglet(nom) {
@@ -52,7 +73,107 @@ function ouvrirOnglet(nom) {
     document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
     document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
   }
+  if (nom === 'sources') chargerSources();
+  if (nom === 'digests') chargerDigests();
 }
+
+async function chargerConfig() {
+  const r = await fetch('/config');
+  const cfg = await r.json();
+  document.getElementById('geo-iframe').src = cfg.geo_url;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function chargerSources() {
+  const cible = document.getElementById('liste-sources');
+  const erreur = document.getElementById('erreur-sources');
+  erreur.textContent = '';
+  try {
+    const r = await fetch('/veille/sources');
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const sources = await r.json();
+    cible.innerHTML = sources.length ? sources.map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div><b>${esc(s.nom)}</b><br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
+        <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
+      </div>`).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\\'instant.</p>';
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function ajouterSource() {
+  const nom = document.getElementById('nouvelle-source-nom').value.trim();
+  const url = document.getElementById('nouvelle-source-url').value.trim();
+  const erreur = document.getElementById('erreur-sources');
+  erreur.textContent = '';
+  if (!nom || !url) { erreur.textContent = 'Nom et URL requis.'; return; }
+  try {
+    const r = await fetch('/veille/sources', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({nom, url})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    document.getElementById('nouvelle-source-nom').value = '';
+    document.getElementById('nouvelle-source-url').value = '';
+    chargerSources();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function supprimerSource(id) {
+  const erreur = document.getElementById('erreur-sources');
+  erreur.textContent = '';
+  try {
+    const r = await fetch(`/veille/sources/${id}`, {method: 'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    chargerSources();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function chargerDigests() {
+  const cible = document.getElementById('liste-digests');
+  const erreur = document.getElementById('erreur-digests');
+  erreur.textContent = '';
+  try {
+    const r = await fetch('/veille/digests');
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const digests = await r.json();
+    cible.innerHTML = digests.length ? digests.map(d => `
+      <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+        <b>${esc(d.date)}</b> <span style="color:var(--mut);font-size:.8rem">(${d.nb_articles} article${d.nb_articles > 1 ? 's' : ''})</span>
+        <p style="margin:6px 0">${esc(d.texte_resume)}</p>
+        ${d.audio_url ? `<audio controls src="${esc(d.audio_url)}"></audio>` : '<span style="color:var(--mut);font-size:.8rem">Pas encore de version audio.</span>'}
+      </div>`).join('') : '<p style="color:var(--mut)">Aucun digest généré pour l\\'instant.</p>';
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function genererDigest() {
+  const bouton = document.getElementById('btn-generer-digest');
+  const erreur = document.getElementById('erreur-digests');
+  erreur.textContent = '';
+  bouton.disabled = true;
+  try {
+    const r = await fetch('/veille/digest/executer', {method: 'POST'});
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    await chargerDigests();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+chargerConfig();
+chargerSources();
 </script>
 </body>
 </html>

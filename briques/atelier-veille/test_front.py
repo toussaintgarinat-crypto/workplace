@@ -21,3 +21,28 @@ def test_workplace_css_servi():
     r = client.get("/workplace.css")
     assert r.status_code == 200
     assert "text/css" in r.headers["content-type"]
+
+
+def test_front_branche_la_carte_sur_config():
+    html = client.get("/").text
+    assert "fetch('/config'" in html or 'fetch("/config"' in html
+    assert "geo-iframe" in html
+
+
+def test_front_couvre_la_gestion_des_sources():
+    html = client.get("/").text
+    for marqueur in ("chargerSources", "ajouterSource", "supprimerSource",
+                     "/veille/sources"):
+        assert marqueur in html
+
+
+def test_front_couvre_les_digests_et_laudio():
+    html = client.get("/").text
+    for marqueur in ("chargerDigests", "genererDigest", "/veille/digests",
+                     "/veille/digest/executer", "<audio"):
+        assert marqueur in html
+
+
+def test_front_avertit_que_la_generation_est_pour_tout_le_foyer():
+    html = client.get("/").text
+    assert "foyer" in html.lower()
