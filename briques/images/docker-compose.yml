@@ -9,6 +9,8 @@ services:
         required: false
     ports:
       - "5950:5950"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       # Moteur d'images. On garde les DEUX options ouvertes : COMFY_URL accepte une LISTE
       # d'URLs ComfyUI séparées par virgule, essayées dans l'ORDRE (1re joignable gagne).

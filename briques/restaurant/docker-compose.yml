@@ -9,6 +9,8 @@ services:
         required: false
     ports:
       - "6010:6010"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       - PORT=6010
       - RESTAURANT_DB=/data/restaurant.db

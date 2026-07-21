@@ -9,6 +9,8 @@ services:
         required: false
     ports:
       - "5870:5870"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       # Où joindre l'assistant du Cœur (flux SSE). host.docker.internal = l'hôte depuis le conteneur.
       - NOYAU_ASSISTANT_URL=${NOYAU_ASSISTANT_URL:-http://host.docker.internal:5100}
