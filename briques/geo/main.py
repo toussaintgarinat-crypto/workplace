@@ -218,7 +218,8 @@ def enrichir_objet(objet_id: str, force: bool = False,
 
 
 class ProspecterLotEntree(BaseModel):
-    bbox: str                              # zone « lat_min,lon_min,lat_max,lon_max »
+    bbox: Optional[str] = None             # zone « lat_min,lon_min,lat_max,lon_max »…
+    zone_id: Optional[str] = None          # …OU une zone geo déjà créée (prioritaire)
     type: str = "entreprise"
     naf: Optional[str] = None              # préfixe d'activité pour cibler la prospection
     limite: int = 8                        # petit par défaut (enrichissement web = lent)
@@ -230,15 +231,27 @@ def enrichir_lot(corps: ProspecterLotEntree, tenant: str = Depends(tenant_actuel
     """Enrichit EN LOT (borné) les objets d'une zone — le socle de la PROSPECTION : pour
     chaque objet, trouve le site officiel + les coordonnées publiques (même moteur que
     l'unitaire, mêmes garde-fous : uniquement ce que l'entité affiche, chaque tentative
-    journalisée). Assouplissement ASSUMÉ du « une à la fois » pour du démarchage B2B, gardé
-    BORNÉ (plafond GEO_ENRICHIR_LOT_MAX). Synchrone et lent (lectures web réelles) → garde
-    les lots petits. Renvoie un décompte honnête + les prospects prêts pour le CRM."""
-    try:
-        boite = domaine.valider_bbox(corps.bbox)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    journalisée). Cible une zone géo déjà créée (`zone_id`, S193 — couvre aussi les zones
+    définies par communes, leur bbox étant toujours résolu à la création) OU une bbox brute.
+    Assouplissement ASSUMÉ du « une à la fois » pour du démarchage B2B, gardé BORNÉ (plafond
+    GEO_ENRICHIR_LOT_MAX). Synchrone et lent (lectures web réelles) → garde les lots petits.
+    Renvoie un décompte honnête + les prospects prêts pour le CRM."""
+    type_, naf = corps.type, corps.naf
+    if corps.zone_id:
+        zone = stockage.lire_zone(tenant, corps.zone_id)
+        if not zone:
+            raise HTTPException(404, "Zone introuvable.")   # cloisonnement : rien révélé
+        boite = (zone["lat_min"], zone["lon_min"], zone["lat_max"], zone["lon_max"])
+        type_, naf = zone["type"], zone["naf"]
+    elif corps.bbox:
+        try:
+            boite = domaine.valider_bbox(corps.bbox)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    else:
+        raise HTTPException(400, "Fournir soit « zone_id », soit « bbox ».")
     plafond = max(1, min(corps.limite, PLAFOND_ENRICHIR_LOT))
-    res = stockage.chercher_bbox(tenant, boite, type_=corps.type, naf=corps.naf, limite=plafond)
+    res = stockage.chercher_bbox(tenant, boite, type_=type_, naf=naf, limite=plafond)
     objets = res["objets"]
     compte = {"ok": 0, "deja_enrichi": 0, "introuvable": 0, "impossible": 0, "erreur": 0}
     prospects: list[dict] = []

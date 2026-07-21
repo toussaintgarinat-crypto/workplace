@@ -148,3 +148,36 @@ def test_prospecter_lot_cloisonne_par_tenant(monkeypatch):
     autre = client.post("/prospection/enrichir-lot", headers={"X-API-Key": "lot-voisin"},
                         json={"bbox": BBOX, "limite": 10}).json()
     assert autre["traites"] == 0 and autre["prospects"] == []
+
+
+def test_prospecter_lot_via_zone_id(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    cle = {"X-API-Key": "lot-zone"}
+    zone = client.post("/zones", headers=cle, json={"nom": "Castres", "bbox": BBOX}).json()
+    _objet(cle, "Prospect De La Zone")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"zone_id": zone["id"], "limite": 10})
+    assert r.status_code == 200
+    assert r.json()["traites"] == 1
+
+
+def test_prospecter_lot_zone_id_introuvable_404():
+    cle = {"X-API-Key": "lot-zone-404"}
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"zone_id": "zone-inexistante", "limite": 10})
+    assert r.status_code == 404
+
+
+def test_prospecter_lot_zone_id_cloisonne_par_tenant(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    zone = client.post("/zones", headers={"X-API-Key": "lot-zone-prop"},
+                       json={"nom": "Castres", "bbox": BBOX}).json()
+    r = client.post("/prospection/enrichir-lot", headers={"X-API-Key": "lot-zone-voisin"},
+                    json={"zone_id": zone["id"], "limite": 10})
+    assert r.status_code == 404   # zone d'un autre tenant : invisible, pas 403 (cloisonnement)
+
+
+def test_prospecter_lot_sans_bbox_ni_zone_id_400():
+    r = client.post("/prospection/enrichir-lot", headers={"X-API-Key": "lot-sans-cible"},
+                    json={"limite": 10})
+    assert r.status_code == 400
