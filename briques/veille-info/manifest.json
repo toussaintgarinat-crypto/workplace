@@ -1,0 +1,88 @@
+{
+  "nom": "veille-info",
+  "famille": "veille",
+  "version": "0.1.0",
+  "description": "Veille informationnelle : suit des sources RSS par personne, fetch quotidien automatique, résumé consolidé par IA (Gateway) des nouveaux articles. Isolé par personne (X-User-Id, motif mail S185). Pas de génération audio dans cette version (spec séparé prévu, appellera la brique voix).",
+  "role": "veille-info",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/veille-info",
+  "port": 6120,
+  "url_sante": "http://host.docker.internal:6120/sante",
+  "depends_on": [],
+  "offre": [
+    "sources_rss_par_personne",
+    "fetch_quotidien_automatique",
+    "resume_consolide_llm",
+    "isolation_par_personne"
+  ],
+  "taches": [
+    {
+      "nom": "digest-quotidien",
+      "description": "Fetch RSS + résumé consolidé du jour pour chaque personne ayant des sources actives.",
+      "methode": "POST",
+      "chemin": "/digest/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "entete_token_env": "VEILLE_INFO_KEY",
+      "tolere_echec": true
+    }
+  ],
+  "capacites": [
+    {
+      "nom": "veille_info_sources_lister",
+      "description": "Liste les sources RSS suivies par la personne connectée. Sert « quelles sont mes sources de veille », « qu'est-ce que je suis en train de suivre ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/sources",
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "veille_info_source_ajouter",
+      "description": "Ajoute une source RSS à suivre (nom + URL du flux). Sert « suis ce flux RSS », « ajoute cette source à ma veille ».",
+      "methode": "POST",
+      "chemin": "/sources",
+      "params": {
+        "nom": {"type": "string", "description": "Nom lisible de la source (ex. « Le Monde Tech »).", "requis": true},
+        "url": {"type": "string", "description": "URL du flux RSS.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "veille_info_source_supprimer",
+      "description": "Retire une source RSS de la veille (ne supprime pas les articles déjà collectés).",
+      "methode": "DELETE",
+      "chemin": "/sources/{source_id}",
+      "params": {
+        "source_id": {"type": "integer", "description": "Identifiant de la source à retirer.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "veille_info_digests_lister",
+      "description": "Liste les digests quotidiens déjà générés (date + nombre d'articles). Sert « qu'est-ce qu'il y a eu comme veille récemment ».",
+      "methode": "GET",
+      "chemin": "/digests",
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "veille_info_digest_lire",
+      "description": "Lit le texte complet d'un digest quotidien. Sert « lis-moi le résumé de la veille d'aujourd'hui/du [date] ».",
+      "methode": "GET",
+      "chemin": "/digests/{digest_id}",
+      "params": {
+        "digest_id": {"type": "integer", "description": "Identifiant du digest à lire.", "requis": true}
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    }
+  ]
+}
