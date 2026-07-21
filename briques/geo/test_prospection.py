@@ -181,3 +181,17 @@ def test_prospecter_lot_sans_bbox_ni_zone_id_400():
     r = client.post("/prospection/enrichir-lot", headers={"X-API-Key": "lot-sans-cible"},
                     json={"limite": 10})
     assert r.status_code == 400
+
+
+def test_prospect_crm_expose_dirigeants_et_effectifs(monkeypatch):
+    monkeypatch.setattr(enrichissement.httpx, "Client", _FauxRecherche())
+    cle = {"X-API-Key": "lot-profond"}
+    _objet(cle, "Societe Profonde", metadata={
+        "dirigeants": [{"nom": "Dupont", "prenom": "Alice", "qualite": "Gérante"}],
+        "effectifs": "10 à 19 salariés",
+    })
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "limite": 10}).json()
+    p = r["prospects"][0]
+    assert p["dirigeants"] == [{"nom": "Dupont", "prenom": "Alice", "qualite": "Gérante"}]
+    assert p["effectifs"] == "10 à 19 salariés"
