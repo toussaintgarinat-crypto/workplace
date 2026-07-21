@@ -9,12 +9,13 @@ dans le manifest) : cette brique est une SURFACE HUMAINE, pas un outil de l'assi
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Atelier Veille", version="0.1.0")
@@ -24,6 +25,23 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 
 GEO_PUBLIC_URL = os.getenv("GEO_PUBLIC_URL", "http://localhost:6110/")
 VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120")
+
+_FRONT = Path(__file__).parent / "front.html"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def racine():
+    return FileResponse(_FRONT, media_type="text/html")
+
+
+@app.get("/atelier", response_class=HTMLResponse, include_in_schema=False)
+def alias_atelier():
+    return FileResponse(_FRONT, media_type="text/html")
+
+
+@app.get("/workplace.css", include_in_schema=False)
+def css():
+    return FileResponse(Path(__file__).parent / "workplace.css", media_type="text/css")
 
 
 def _entetes_aval(x_user_id: Optional[str], x_api_key: Optional[str]) -> dict:

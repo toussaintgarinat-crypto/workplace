@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier Veille</title>
+<link rel="stylesheet" href="/workplace.css">
+<style>
+  :root{
+    --bg:var(--wp-bg); --panel:var(--wp-surface); --panel2:var(--wp-surface-2); --line:var(--wp-border);
+    --ink:var(--wp-text); --mut:var(--wp-muted); --accent:#4FA3D1; --ok:var(--wp-ok); --bad:var(--wp-err);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Segoe UI',-apple-system,system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 90px}
+  header h1{margin:0;font-size:1.5rem}
+  header h1 .dot{color:var(--accent)}
+  header p{color:var(--mut);margin:5px 0 0;font-size:.9rem}
+  nav.onglets{display:flex;gap:8px;margin:18px 0}
+  nav.onglets button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+    color:var(--mut);border-radius:20px;padding:7px 16px;font-size:.85rem}
+  nav.onglets button.actif{background:var(--accent);color:#0b1622;border-color:var(--accent);font-weight:600}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .vue{display:none}
+  .vue.actif{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot">🔭</span> Atelier Veille</h1>
+    <p>Carte des créations d'entreprises, sources RSS et digests quotidiens — en un seul endroit.</p>
+  </header>
+  <nav class="onglets">
+    <button id="btn-carte" class="actif" onclick="ouvrirOnglet('carte')">Carte</button>
+    <button id="btn-sources" onclick="ouvrirOnglet('sources')">Sources RSS</button>
+    <button id="btn-digests" onclick="ouvrirOnglet('digests')">Digests</button>
+  </nav>
+
+  <div id="vue-carte" class="vue actif panel" style="padding:0;overflow:hidden">
+    <iframe id="geo-iframe" title="Carte de veille"
+      style="width:100%;height:70vh;border:0;display:block"></iframe>
+  </div>
+
+  <div id="vue-sources" class="vue panel"></div>
+  <div id="vue-digests" class="vue panel"></div>
+</div>
+<script>
+function ouvrirOnglet(nom) {
+  for (const n of ['carte', 'sources', 'digests']) {
+    document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
+    document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
+  }
+}
+</script>
+</body>
+</html>
