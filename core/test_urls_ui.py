@@ -95,3 +95,10 @@ def test_mesh_host_pose_mais_requete_lan_reste_directe(monkeypatch):
     monkeypatch.setenv("MESH_HOST", "100.124.248.226")
     assert urls_ui.url_brique("STUDIO", "http", "192.168.1.89:5100") == \
         "http://192.168.1.89:6060/atelier"
+
+
+def test_atelier_veille_resoluble():
+    """S190 : atelier-veille doit être résolvable comme les autres briques embarquées
+    en iframe du dashboard."""
+    url = urls_ui.url_brique("ATELIER_VEILLE", "http", "localhost:5100")
+    assert url == "http://localhost:6130/atelier"
