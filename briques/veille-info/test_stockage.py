@@ -46,11 +46,20 @@ def test_inserer_article_dedup_par_url():
     assert doublon is False
 
 
-def test_articles_du_jour_isole_par_user_id():
+def test_articles_non_digestes_isole_par_user_id():
     s = stockage.creer_source("frank", "Flux", "https://example.com/frank-rss")
     stockage.inserer_article("frank", s["id"], "Titre", "https://frank.example/1", "")
-    assert len(stockage.articles_du_jour("frank")) == 1
-    assert stockage.articles_du_jour("grace") == []
+    assert len(stockage.articles_non_digestes("frank")) == 1
+    assert stockage.articles_non_digestes("grace") == []
+
+
+def test_marquer_articles_digestes_les_exclut_ensuite():
+    s = stockage.creer_source("henri", "Flux", "https://example.com/henri-rss")
+    stockage.inserer_article("henri", s["id"], "Titre", "https://henri.example/1", "")
+    articles = stockage.articles_non_digestes("henri")
+    assert len(articles) == 1
+    stockage.marquer_articles_digestes([a["id"] for a in articles])
+    assert stockage.articles_non_digestes("henri") == []
 
 
 def test_digest_idempotent_par_user_et_date():
