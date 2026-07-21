@@ -39,7 +39,8 @@
           "type": "string",
           "enum": [
             "solution",
-            "perso"
+            "perso",
+            "veille"
           ],
           "description": "Espace mémoire ciblé."
         }
@@ -64,7 +65,8 @@
           "type": "string",
           "enum": [
             "solution",
-            "perso"
+            "perso",
+            "veille"
           ],
           "description": "Espace mémoire ciblé."
         }
@@ -81,7 +83,8 @@
           "type": "string",
           "enum": [
             "solution",
-            "perso"
+            "perso",
+            "veille"
           ],
           "description": "Espace mémoire ciblé."
         }
@@ -112,7 +115,8 @@
           "type": "string",
           "enum": [
             "solution",
-            "perso"
+            "perso",
+            "veille"
           ],
           "description": "Espace mémoire ciblé."
         }
@@ -134,7 +138,8 @@
           "type": "string",
           "enum": [
             "solution",
-            "perso"
+            "perso",
+            "veille"
           ],
           "description": "Espace mémoire où se trouve le souvenir (défaut 'solution')."
         }
