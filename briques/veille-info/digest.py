@@ -5,12 +5,16 @@ indisponible) est journalisée et l'utilisateur suivant continue d'être traité
 from __future__ import annotations
 
 import logging
+import os
 
+import httpx
 import rss
 import stockage
 from lib.llm_client import llm_complete
 
 logger = logging.getLogger(__name__)
+
+VOIX_URL = os.getenv("VOIX_URL", "http://host.docker.internal:5985")
 
 _SYSTEM = ("Tu es un assistant de veille informationnelle. Résume en français, en quelques "
           "phrases synthétiques, les nouveaux articles listés ci-dessous. Regroupe par thème "
@@ -20,6 +24,27 @@ _SYSTEM = ("Tu es un assistant de veille informationnelle. Résume en français,
 def _construire_prompt(articles: list[dict]) -> str:
     lignes = [f"- {a['titre']} ({a['url']})" for a in articles]
     return "Nouveaux articles du jour :\n" + "\n".join(lignes)
+
+
+def _generer_audio(digest_id: int, texte: str) -> None:
+    """Génère l'audio du digest via la brique voix (motif briques/studio/main.py:1010-1028,
+    aucune clé — cohérent avec le reste du parc). Best-effort STRICT : un échec est
+    journalisé, jamais propagé — le digest texte (déjà créé par l'appelant) reste utilisable
+    sans audio. Pas de retry automatique dans cette version."""
+    try:
+        r = httpx.post(f"{VOIX_URL}/rendre", timeout=180,
+                       json={"episode_id": f"veille-info-{digest_id}",
+                             "segments": [{"voix": None, "texte": texte}]})
+        r.raise_for_status()
+        res = r.json()
+    except Exception as e:  # noqa: BLE001 — audio best-effort, le digest texte reste utilisable
+        logger.warning("Veille-info audio digest_id=%s : %s", digest_id, e)
+        return
+    if not res.get("url"):
+        logger.warning("Veille-info audio digest_id=%s : pas d'URL (place_holder=%s)",
+                       digest_id, res.get("place_holder"))
+        return
+    stockage.inserer_audio_digest(digest_id, res["url"], res.get("duree"))
 
 
 def _traiter_utilisateur(user_id: str) -> bool:
@@ -50,8 +75,9 @@ def _traiter_utilisateur(user_id: str) -> bool:
         logger.warning("Veille-info résumé LLM (user=%s) : %s", user_id, e)
         return False
 
-    stockage.inserer_digest(user_id, resume, len(articles))
+    d = stockage.inserer_digest(user_id, resume, len(articles))
     stockage.marquer_articles_digestes([a["id"] for a in articles])
+    _generer_audio(d["id"], resume)
     return True
 
 
