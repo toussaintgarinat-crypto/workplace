@@ -97,3 +97,21 @@ def test_echec_llm_ne_cree_pas_de_digest_partiel(monkeypatch):
     assert stockage.lister_digests("digest-erin") == []
     # Les articles ont quand même été stockés (dispo pour le prochain passage)
     assert len(stockage.articles_du_jour("digest-erin")) == 1
+
+
+def test_echec_inattendu_stockage_ne_bloque_pas_le_lot(monkeypatch):
+    """Une panne inattendue (ex. `stockage.lister_sources` qui lève, hors des deux chemins
+    déjà gardés dans `_traiter_utilisateur`) doit être rattrapée par
+    `_traiter_utilisateur_sans_planter` : comptée comme 0 digest pour cette personne, sans
+    jamais faire planter `executer_digest_quotidien` ni le lot."""
+    stockage.creer_source("digest-frank", "Flux", "https://frank.example/rss")
+
+    lister_sources_original = stockage.lister_sources
+    def _lister_sources_qui_casse(user_id, *args, **kwargs):
+        if user_id == "digest-frank":
+            raise RuntimeError("panne disque")
+        return lister_sources_original(user_id, *args, **kwargs)
+    monkeypatch.setattr(digest.stockage, "lister_sources", _lister_sources_qui_casse)
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-frank"])
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 0}

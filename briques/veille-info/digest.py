@@ -54,6 +54,19 @@ def _traiter_utilisateur(user_id: str) -> bool:
     return True
 
 
+def _traiter_utilisateur_sans_planter(user_id: str) -> bool:
+    """Enrobe `_traiter_utilisateur` : une panne inattendue (ex. un appel `stockage.*` qui
+    lève, en dehors des deux chemins déjà gardés dans `_traiter_utilisateur`) est journalisée
+    et comptée comme « pas de digest pour cette personne », jamais propagée. Contrainte du
+    plan : « Aucun échec ne doit faire planter le pipeline » — plus large que les deux pannes
+    déjà gérées (fetch RSS, appel LLM)."""
+    try:
+        return _traiter_utilisateur(user_id)
+    except Exception as e:  # noqa: BLE001 — une personne en échec inattendu ne doit jamais arrêter le lot
+        logger.warning("Veille-info échec inattendu (user=%s) : %s", user_id, e)
+        return False
+
+
 def executer_digest_quotidien(user_ids: list[str] | None = None) -> dict:
     """Point d'entrée appelé par l'horloge du Cœur (ou à la main). Traite TOUTES les
     personnes ayant au moins une source active, ou seulement `user_ids` si fourni.
@@ -62,5 +75,5 @@ def executer_digest_quotidien(user_ids: list[str] | None = None) -> dict:
     sources laissées par d'autres fichiers de test dans la même DB partagée) — la route HTTP
     de `main.py` ne le fournit JAMAIS, elle traite toujours tout le monde."""
     cibles = user_ids if user_ids is not None else stockage.lister_user_ids_actifs()
-    digests_crees = sum(1 for uid in cibles if _traiter_utilisateur(uid))
+    digests_crees = sum(1 for uid in cibles if _traiter_utilisateur_sans_planter(uid))
     return {"utilisateurs_traites": len(cibles), "digests_crees": digests_crees}
