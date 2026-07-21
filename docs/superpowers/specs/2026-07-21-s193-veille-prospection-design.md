@@ -41,8 +41,13 @@ Clarifications actées avec l'utilisateur :
   API — la notion de « nouveauté » vient uniquement de l'upsert par SIRET côté `geo`, pas d'une
   limite de la donnée source.
 - `briques/geo/main.py:220-263` (`POST /prospection/enrichir-lot`) : prend `{bbox, type?, naf?,
-  limite?, force?}` — **PAS de `zone_id`**, donc ne peut pas cibler une zone définie par
-  communes (`ZoneEntree.communes`, sans bbox). Plafond `GEO_ENRICHIR_LOT_MAX` (défaut 50).
+  limite?, force?}` — **PAS de `zone_id`**. Correction par rapport à une hypothèse initiale :
+  `stockage.creer_zone` (appelé par `POST /zones`) résout et persiste TOUJOURS un bbox, même
+  pour une zone définie par communes (`domaine.bbox_union` à la création, `main.py:292`) — donc
+  toute zone stockée a déjà son bbox, pas de gap à combler côté résolution communes→bbox.
+  Le seul manque réel : aucune fonction `stockage.lire_zone(tenant, zone_id)` (uniquement
+  `lister_zones`, toutes) ni paramètre `zone_id` sur `enrichir-lot` — à ajouter, triviaux.
+  Plafond `GEO_ENRICHIR_LOT_MAX` (défaut 50).
 - `briques/geo/domaine.py:140-176` (`normaliser_entreprise`) : construit `metadata` depuis le
   payload brut `recherche-entreprises.api.gouv.fr` mais n'extrait que `nom/naf/adresse/
   commune/siren` — le payload brut (`brute`, avant troncature) contient aussi `dirigeants`
@@ -110,12 +115,12 @@ briques veille, isolé par personne »).
 
 ### 2. Extensions `geo`
 
-- `ProspecterLotEntree` (ou nouvel endpoint `POST /prospection/enrichir-zone/{zone_id}`) :
-  accepte un `zone_id`, résout la zone stockée (bbox déjà présent OU dérivé des `communes` via
-  la même logique que l'ingestion horloge existante), puis réutilise
-  `stockage.chercher_bbox`/`chercher_communes` tel quel. Décision d'implémentation (bbox
-  dérivé vs. requête directe par communes) laissée au plan — le contrat externe est : « donne
-  un `zone_id`, reçois les mêmes prospects qu'avec un bbox ».
+- `stockage.lire_zone(tenant, zone_id) -> dict | None` (nouvelle fonction, un simple `SELECT *
+  FROM geo_zones WHERE tenant = ? AND id = ?`, motif exact `lire_objet`). `ProspecterLotEntree`
+  gagne un `zone_id` optionnel : si fourni (et `bbox` absent), la route résout la zone via
+  `lire_zone`, en tire `bbox`/`type`/`naf` (déjà tous stockés, y compris pour les zones définies
+  par communes — bbox toujours résolu à la création) et poursuit EXACTEMENT le code existant
+  de `enrichir_lot` sans autre changement. 404 si la zone n'existe pas pour ce tenant.
 - `domaine.normaliser_entreprise` : ajoute `metadata["dirigeants"]` (liste `{nom, prenom,
   qualite}`, tronquée à un nombre raisonnable, ex. 5) et `metadata["effectifs"]` (tranche
   brute Sirene, ex. `"10 à 19 salariés"`) depuis le payload déjà reçu — zéro appel réseau
@@ -141,8 +146,8 @@ Sur le modèle exact de `veille-info` (isolation, cadence horloge, tests, manife
 - `POST /campagnes/executer` (tâche horloge quotidienne, `tolere_echec: true`, `entete_token_
   env: VEILLE_PROSPECTION_KEY`, motif exact `digest-quotidien` de `veille-info`) : pour chaque
   personne ayant au moins une campagne active,
-  1. appelle `geo` (`/prospection/enrichir-zone/{zone_id}` ou équivalent, clé `GEO_KEY` si
-     définie, `X-User-Id` transmis) → liste de prospects enrichis ;
+  1. appelle `geo` (`POST /prospection/enrichir-lot {zone_id}`, clé `GEO_KEY` si définie,
+     `X-User-Id` transmis) → liste de prospects enrichis ;
   2. si non vide, appelle `forge` (`/crm/import-lot`, clé `FORGE_KEY` si définie, motif
      `_resoudre_pole_crm` existant, inchangé — pas de propagation d'identité personne, connu et
      documenté comme limite pré-existante S169/170) ;
