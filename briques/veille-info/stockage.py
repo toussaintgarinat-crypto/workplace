@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS articles (
     url TEXT NOT NULL,
     published_at TEXT,
     created_at TEXT NOT NULL,
+    digested INTEGER NOT NULL DEFAULT 0,
     UNIQUE(user_id, url)
 );
 CREATE INDEX IF NOT EXISTS idx_articles_user ON articles(user_id);
@@ -122,14 +123,21 @@ def inserer_article(user_id: str, source_id: int, titre: str, url: str,
     return cur.rowcount > 0
 
 
-def articles_du_jour(user_id: str, date: str | None = None) -> list[dict]:
-    date = date or _aujourdhui()
+def articles_non_digestes(user_id: str) -> list[dict]:
     with _conn() as c:
         rows = c.execute(
-            "SELECT * FROM articles WHERE user_id = ? AND created_at LIKE ? ORDER BY created_at ASC",
-            (user_id, f"{date}%")).fetchall()
+            "SELECT * FROM articles WHERE user_id = ? AND digested = 0 ORDER BY created_at ASC",
+            (user_id,)).fetchall()
     return [{"id": r["id"], "titre": r["titre"], "url": r["url"],
             "published_at": r["published_at"]} for r in rows]
+
+
+def marquer_articles_digestes(article_ids: list[int]) -> None:
+    if not article_ids:
+        return
+    placeholders = ",".join("?" * len(article_ids))
+    with _conn() as c:
+        c.execute(f"UPDATE articles SET digested = 1 WHERE id IN ({placeholders})", article_ids)
 
 
 # ── Digests ───────────────────────────────────────────────────

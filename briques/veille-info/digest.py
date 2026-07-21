@@ -40,7 +40,7 @@ def _traiter_utilisateur(user_id: str) -> bool:
             stockage.inserer_article(user_id, source["id"], item["titre"], item["url"],
                                      item["published_at"])
 
-    articles = stockage.articles_du_jour(user_id)
+    articles = stockage.articles_non_digestes(user_id)
     if not articles:
         return False
 
@@ -51,6 +51,7 @@ def _traiter_utilisateur(user_id: str) -> bool:
         return False
 
     stockage.inserer_digest(user_id, resume, len(articles))
+    stockage.marquer_articles_digestes([a["id"] for a in articles])
     return True
 
 

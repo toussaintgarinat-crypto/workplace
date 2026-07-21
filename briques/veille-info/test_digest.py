@@ -96,7 +96,7 @@ def test_echec_llm_ne_cree_pas_de_digest_partiel(monkeypatch):
     assert resultat["digests_crees"] == 0
     assert stockage.lister_digests("digest-erin") == []
     # Les articles ont quand même été stockés (dispo pour le prochain passage)
-    assert len(stockage.articles_du_jour("digest-erin")) == 1
+    assert len(stockage.articles_non_digestes("digest-erin")) == 1
 
 
 def test_echec_inattendu_stockage_ne_bloque_pas_le_lot(monkeypatch):
@@ -115,3 +115,29 @@ def test_echec_inattendu_stockage_ne_bloque_pas_le_lot(monkeypatch):
 
     resultat = digest.executer_digest_quotidien(user_ids=["digest-frank"])
     assert resultat == {"utilisateurs_traites": 1, "digests_crees": 0}
+
+
+def test_articles_non_digeres_recuperes_au_prochain_passage(monkeypatch):
+    """Le vrai scénario du bug corrigé : panne LLM un jour (article stocké, pas
+    résumé) puis, le lendemain, aucun nouvel article RSS — l'article laissé de côté
+    doit quand même être repris et digéré, pas perdu silencieusement."""
+    stockage.creer_source("digest-henri", "Flux", "https://henri.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article J1", "url": "https://henri.example/1", "published_at": ""},
+    ])
+
+    def _llm_echoue(prompt, system=""):
+        raise RuntimeError("Gateway indisponible")
+    monkeypatch.setattr(digest, "llm_complete", _llm_echoue)
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-henri"])
+    assert resultat["digests_crees"] == 0
+
+    # Passage suivant : Gateway rétablie, mais AUCUN nouvel article RSS.
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé de rattrapage.")
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-henri"])
+    assert resultat["digests_crees"] == 1
+    digests = stockage.lister_digests("digest-henri")
+    assert len(digests) == 1
+    assert digests[0]["nb_articles"] == 1
