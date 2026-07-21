@@ -148,3 +148,71 @@ def test_articles_non_digeres_recuperes_au_prochain_passage(monkeypatch):
     digests = stockage.lister_digests("digest-henri")
     assert len(digests) == 1
     assert digests[0]["nb_articles"] == 1
+
+
+def test_audio_genere_apres_un_digest_reussi(monkeypatch):
+    stockage.creer_source("digest-iris", "Flux", "https://iris.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://iris.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+
+    class _Rep:
+        status_code = 200
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"url": "https://voix.example/episodes/veille-info-1.mp3", "duree": 30.0}
+    monkeypatch.setattr(digest.httpx, "post", lambda *a, **k: _Rep())
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-iris"])
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 1}
+
+    d = stockage.lister_digests("digest-iris")[0]
+    assert d["audio_url"] == "https://voix.example/episodes/veille-info-1.mp3"
+    assert d["audio_duree"] == 30.0
+
+
+def test_audio_injoignable_ne_bloque_pas_le_digest(monkeypatch):
+    stockage.creer_source("digest-jules", "Flux", "https://jules.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://jules.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+
+    def _post_qui_casse(*a, **k):
+        raise ConnectionError("voix injoignable")
+    monkeypatch.setattr(digest.httpx, "post", _post_qui_casse)
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-jules"])
+    # Le digest texte compte comme créé même si l'audio a échoué.
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 1}
+
+    d = stockage.lister_digests("digest-jules")[0]
+    assert d["texte_resume"] == "Résumé du jour."
+    assert d["audio_url"] is None
+
+
+def test_audio_place_holder_sans_moteur_ne_bloque_pas_le_digest(monkeypatch):
+    """`voix` répond 200 mais sans URL (aucun moteur TTS configuré, place_holder honnête) —
+    même dégradation propre que l'injoignabilité."""
+    stockage.creer_source("digest-karim", "Flux", "https://karim.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://karim.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+
+    class _RepPlaceholder:
+        status_code = 200
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"place_holder": True, "note": "Aucun moteur de synthèse configuré"}
+    monkeypatch.setattr(digest.httpx, "post", lambda *a, **k: _RepPlaceholder())
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-karim"])
+    assert resultat["digests_crees"] == 1
+    assert stockage.lister_digests("digest-karim")[0]["audio_url"] is None
