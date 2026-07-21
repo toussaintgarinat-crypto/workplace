@@ -23,6 +23,7 @@ services:
       start_period: 10s
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.briques:/etc/caddy/Caddyfile.briques:ro   # S128 : sites HTTPS par brique
       - caddy_data:/data
       - caddy_config:/config
 volumes:
