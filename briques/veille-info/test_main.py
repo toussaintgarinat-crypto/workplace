@@ -93,3 +93,13 @@ def test_digest_executer_gate_si_cle_configuree(monkeypatch):
     assert r.status_code == 401
     r = client.post("/digest/executer", headers={"Authorization": "Bearer secret-horloge"})
     assert r.status_code == 200
+
+
+def test_digest_expose_audio_url_via_lapi(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    d = stockage.inserer_digest("perso:main-iris", "Résumé.", 1)
+    stockage.inserer_audio_digest(d["id"], "https://voix.example/episodes/y.mp3", 12.0)
+
+    r = client.get(f"/digests/{d['id']}", headers=_entetes("main-iris"))
+    assert r.json()["audio_url"] == "https://voix.example/episodes/y.mp3"
+    assert r.json()["audio_duree"] == 12.0
