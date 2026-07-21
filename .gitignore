@@ -43,3 +43,6 @@ apps_exportees/
 
 # Worktrees jetables de lauto-atelier dev (S86+) quand il tourne en conteneur (S92).
 .dev-ateliers/
+
+# Worktrees jetables (superpowers:using-git-worktrees).
+.worktrees/
