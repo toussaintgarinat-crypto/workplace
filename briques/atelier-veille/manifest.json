@@ -1,0 +1,17 @@
+{
+  "nom": "atelier-veille",
+  "famille": "veille",
+  "version": "0.1.0",
+  "description": "Atelier Veille : front unique de la famille veille — réunit la carte de geo (iframe) et les sources RSS/digests/audio de veille-info (proxy HTTP), sans dupliquer leur code. Aucune capacité LLM : surface humaine, pas un outil de l'assistant.",
+  "role": "atelier-veille",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/atelier-veille",
+  "port": 6130,
+  "url_sante": "http://host.docker.internal:6130/sante",
+  "url_ui": "http://localhost:6130/atelier",
+  "vue_dashboard": "atelier-veille",
+  "depends_on": [],
+  "offre": ["front_atelier_veille"],
+  "capacites": []
+}
