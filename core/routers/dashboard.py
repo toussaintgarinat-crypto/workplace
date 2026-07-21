@@ -777,6 +777,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Explore la mémoire de la solution : nœuds rangés par stage IPCRA, canvas graphe, recherche hybride.</span>
           <span class="creation-badge">Brique · port 5600</span>
         </button>
+        <button class="creation-tuile" onclick="ouvrirCreation('__ATELIER_VEILLE_UI_URL__', 'Veille — carte, RSS, digests')">
+          <span class="creation-emoji">🔭</span>
+          <span class="creation-titre">Veille</span>
+          <span class="creation-desc">Carte des créations d'entreprises, sources RSS suivies et digests quotidiens (texte + audio) — en un seul endroit.</span>
+          <span class="creation-badge">Brique · port 6130</span>
+        </button>
         <button class="creation-tuile creation-bientot" disabled>
           <span class="creation-emoji">🖼️</span>
           <span class="creation-titre">Images &amp; Vidéo</span>
@@ -3478,6 +3484,7 @@ async def dashboard(request: Request):
         .replace("__MAIL_UI_URL__", u("MAIL"))
         .replace("__AGENDA_UI_URL__", u("AGENDA"))
         .replace("__GEO_UI_URL__", geo_ui)
+        .replace("__ATELIER_VEILLE_UI_URL__", u("ATELIER_VEILLE"))
         .replace("__SYNOPSIS_UI_URL__", u("SYNOPSIS"))
         .replace("__VOIX_UI_URL__", u("VOIX"))
         .replace("__MEMOIRE_UI_URL__", memoire_ui)
