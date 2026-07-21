@@ -1,0 +1,27 @@
+services:
+  atelier-veille:
+    build: .
+    container_name: workplace_atelier_veille
+    image: workplace/atelier-veille:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6130:6130"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre geo/veille-info sous Linux
+    environment:
+      - PORT=6130
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - VEILLE_INFO_URL=http://host.docker.internal:6120
+      - GEO_PUBLIC_URL=${GEO_PUBLIC_URL:-http://localhost:6110/}
+      # VEILLE_INFO_KEY : ABSENTE du `environment` exprès — vient du .env racine via
+      # env_file (piège « env shadow » : ne PAS la redéclarer en `=${VAR:-}`, cf.
+      # fix-env-shadow-composes). VIDE aujourd'hui (mono-tenant, gate horloge no-op).
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6130/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
