@@ -160,6 +160,7 @@ def test_entetes_brique_par_personne_forwarde_identite():
     assert outils_communs._entetes_brique("memoire")["X-User-Id"] == "claire"
     assert outils_communs._entetes_brique("studio")["X-User-Id"] == "claire"
     assert outils_communs._entetes_brique("veille-info")["X-User-Id"] == "claire"
+    assert outils_communs._entetes_brique("veille-prospection")["X-User-Id"] == "claire"
     # Une autre brique (ex. restaurant) ne reçoit PAS X-User-Id (elle l'ignorerait).
     assert "X-User-Id" not in outils_communs._entetes_brique("restaurant")
 

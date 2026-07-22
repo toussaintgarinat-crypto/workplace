@@ -1,0 +1,31 @@
+services:
+  veille-prospection:
+    build: .
+    container_name: workplace_veille_prospection
+    image: workplace/veille-prospection:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6140:6140"
+    environment:
+      - PORT=6140
+      - VEILLE_PROSPECTION_DB=/data/veille_prospection.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # API_KEYS, VEILLE_PROSPECTION_KEY, GEO_KEY/FORGE_KEY/MEMOIRE_KEY : ABSENTS du
+      # `environment` exprès — viennent du .env racine via env_file (piège « env shadow » :
+      # ne PAS les redéclarer en `=${VAR:-}`, cf. fix-env-shadow-composes).
+    volumes:
+      - veille_prospection_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6140/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  veille_prospection_data:
