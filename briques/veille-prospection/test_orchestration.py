@@ -77,6 +77,33 @@ def test_campagne_avec_prospects_pousse_crm_et_memoire(monkeypatch):
     assert executions[0]["erreur"] is None
 
 
+def test_memoire_recoit_x_user_id_sans_prefixe_perso(monkeypatch):
+    """Le seam trouvé en revue finale : `campagne["user_id"]` est le tenant INTERNE tel que
+    produit par `tenant_actuel` (forme réelle `perso:claire`, jamais une simple chaîne comme
+    `orch-bob`), mais `memoire` isole par personne sur le X-User-Id BRUT (sans préfixe) que
+    lui envoie le Cœur. Sans le retrait du préfixe, le souvenir atterrit dans un espace
+    (`veille-perso:claire`) que le chemin de rappel du Cœur ne lit jamais (il envoie
+    `X-User-Id: claire`, cf. core/contexte_tenant.py)."""
+    c = stockage.creer_campagne("perso:claire", "zone-claire")
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/prospection/enrichir-lot"):
+            return _Rep(200, {"prospects": [{"nom": "P"}], "compte": {"deja_enrichi": 0}})
+        if url.endswith("/crm/import-lot"):
+            return _Rep(200, {"crees": 1})
+        if url.endswith("/retenir"):
+            captes["memoire_headers"] = headers
+            return _Rep(200, {"retenu": True})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    orchestration.executer_campagnes(user_ids=["perso:claire"])
+    assert captes["memoire_headers"]["X-User-Id"] == "claire"
+    # Le tenant interne complet ("perso:claire") reste, lui, utilisé tel quel côté stockage :
+    assert stockage.lister_campagnes("perso:claire")[0]["id"] == c["id"]
+
+
 def test_geo_injoignable_erreur_journalisee_pas_de_crash(monkeypatch):
     c = stockage.creer_campagne("orch-carol", "zone-panne")
 

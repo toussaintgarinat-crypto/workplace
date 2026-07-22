@@ -29,9 +29,17 @@ def _construire_prompt(articles: list[dict]) -> str:
 def _pousser_memoire(user_id: str, resume: str, date: str) -> None:
     """Best-effort strict (S193) : un échec ici ne doit JAMAIS faire perdre le digest texte
     déjà créé, ni empêcher le traitement des autres personnes — même filet que l'audio
-    (leçon S189 : tout ce qui suit un succès reste dans le même try/except)."""
+    (leçon S189 : tout ce qui suit un succès reste dans le même try/except).
+
+    `user_id` est le tenant interne (`f"perso:{x_user_id}"`, motif `tenant_actuel`), utilisé
+    tel quel dans NOTRE stockage. Mais `memoire` isole par personne via l'espace
+    `f"{espace}-{utilisateur}"` où `utilisateur` est le X-User-Id BRUT que lui envoie le
+    Cœur (sans préfixe, cf. `core/contexte_tenant.py::entetes_par_personne`) — on retire
+    donc le préfixe `perso:` avant de le transmettre à `memoire`, sinon le résumé atterrit
+    dans un espace (`veille-perso:xxx`) que le chemin de rappel du Cœur ne lit jamais."""
+    identite = user_id.removeprefix("perso:")
     base = os.getenv("MEMOIRE_URL", "http://host.docker.internal:5600").rstrip("/")
-    entetes = {"X-User-Id": user_id}
+    entetes = {"X-User-Id": identite}
     cle = os.getenv("MEMOIRE_KEY", "")
     if cle:
         entetes["X-API-Key"] = cle

@@ -82,8 +82,12 @@ def lister_campagnes(user_id: str, *, actives_seulement: bool = False) -> list[d
 
 
 def supprimer_campagne(user_id: str, campagne_id: int) -> bool:
+    """Désactive (soft-delete) une campagne : `actif = 0`, jamais un DELETE — la ligne reste
+    en base pour ne pas orpheliner son historique dans `executions` (pas de ON DELETE
+    CASCADE). `lister_campagnes(..., actives_seulement=True)` la masque, ce qui préserve le
+    comportement observable de l'API (une campagne « supprimée » disparaît de la liste)."""
     with _conn() as c:
-        cur = c.execute("DELETE FROM campagnes WHERE id = ? AND user_id = ?",
+        cur = c.execute("UPDATE campagnes SET actif = 0 WHERE id = ? AND user_id = ?",
                         (campagne_id, user_id))
     return cur.rowcount > 0
 

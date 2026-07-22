@@ -50,13 +50,21 @@ def _appeler_forge(prospects: list[dict]) -> dict:
 
 
 def _pousser_memoire(user_id: str, contenu: str) -> None:
-    """Best-effort strict : un échec ici ne remonte JAMAIS à l'appelant."""
+    """Best-effort strict : un échec ici ne remonte JAMAIS à l'appelant.
+
+    `user_id` est le tenant interne (`f"perso:{x_user_id}"`, motif `tenant_actuel`),
+    utilisé tel quel dans NOTRE stockage. Mais `memoire` isole par personne via l'espace
+    `f"{espace}-{utilisateur}"` où `utilisateur` est le X-User-Id BRUT que lui envoie le
+    Cœur (sans préfixe, cf. `core/contexte_tenant.py::entetes_par_personne`) — on retire
+    donc le préfixe `perso:` avant de le transmettre à `memoire`, sinon le souvenir atterrit
+    dans un espace (`veille-perso:xxx`) que le chemin de rappel du Cœur ne lit jamais."""
+    identite = user_id.removeprefix("perso:")
     base = _url("MEMOIRE_URL", "http://host.docker.internal:5600")
     try:
         r = httpx.post(f"{base}/retenir",
                        json={"contenu": contenu, "titre": "Prospection", "espace": "veille",
                              "wing": "veille-prospection"},
-                       headers=_entetes("MEMOIRE_KEY", user_id), timeout=30)
+                       headers=_entetes("MEMOIRE_KEY", identite), timeout=30)
         r.raise_for_status()
     except Exception as e:  # noqa: BLE001 — jamais bloquant
         logger.warning("Veille-prospection push mémoire (user=%s) : %s", user_id, e)

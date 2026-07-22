@@ -19,7 +19,19 @@ def test_supprimer_campagne_isole_par_user_id():
     c = stockage.creer_campagne("carol", "zone-a-supprimer")
     assert stockage.supprimer_campagne("mallory", c["id"]) is False
     assert stockage.supprimer_campagne("carol", c["id"]) is True
-    assert stockage.lister_campagnes("carol") == []
+    assert stockage.lister_campagnes("carol", actives_seulement=True) == []
+
+
+def test_supprimer_campagne_est_un_soft_delete():
+    """`supprimer_campagne` désactive (`actif = 0`) au lieu de DELETE — la ligne (et son
+    historique dans `executions`) survit, elle disparaît seulement de la liste par défaut
+    « actives seulement » côté route HTTP."""
+    c = stockage.creer_campagne("dave-soft", "zone-soft")
+    assert stockage.supprimer_campagne("dave-soft", c["id"]) is True
+    toutes = stockage.lister_campagnes("dave-soft")
+    assert len(toutes) == 1
+    assert toutes[0]["id"] == c["id"]
+    assert toutes[0]["actif"] is False
 
 
 def test_lister_user_ids_actifs_ignore_campagnes_inactives():
