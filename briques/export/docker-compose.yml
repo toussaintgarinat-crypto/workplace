@@ -1,0 +1,27 @@
+services:
+  export:
+    build: .
+    container_name: workplace_export
+    image: workplace/export:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (API_KEYS, CORS_ORIGINS). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6150:6150"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
+    environment:
+      - FICHIERS_DIR=/data/fichiers
+    volumes:
+      - export_data:/data/fichiers            # PDF/PPTX produits
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6150/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  export_data:

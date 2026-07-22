@@ -1,0 +1,17 @@
+{
+  "nom": "export",
+  "famille": "media",
+  "version": "0.1.0",
+  "description": "Rendu PDF et PPTX déterministe (WeasyPrint + python-pptx), sans IA ni coût : convertit du contenu structuré (Markdown thémé pour le PDF, diapositives pour le PPTX) en fichier téléchargeable. Service générique appelé par Studio (export livre), Forge (deck client) et les rapports internes — pas absorbé par un consommateur particulier (S194).",
+  "role": "export",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/export",
+  "port": 6150,
+  "url_sante": "http://host.docker.internal:6150/sante",
+  "depends_on": [],
+  "offre": ["rendu_pdf", "rendu_pptx", "themes_livre_rapport", "theme_pptx_sobre"],
+  "besoin": [],
+  "capacites": [],
+  "taches": []
+}
