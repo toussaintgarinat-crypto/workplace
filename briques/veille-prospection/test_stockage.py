@@ -40,6 +40,23 @@ def test_inserer_et_lister_executions():
     assert executions[0]["trouves"] == 3 and executions[0]["erreur"] is None
 
 
+def test_executions_isole_par_campagne_id():
+    c1 = stockage.creer_campagne("grace", "zone-grace-1")
+    c2 = stockage.creer_campagne("grace", "zone-grace-2")
+    stockage.inserer_execution(c1["id"], trouves=5, deja_connus=2, nouveaux_crm=3, erreur=None)
+    stockage.inserer_execution(c2["id"], trouves=7, deja_connus=1, nouveaux_crm=6, erreur=None)
+
+    executions_c1 = stockage.lister_executions(c1["id"])
+    assert len(executions_c1) == 1
+    assert executions_c1[0]["campagne_id"] == c1["id"]
+    assert executions_c1[0]["trouves"] == 5
+
+    executions_c2 = stockage.lister_executions(c2["id"])
+    assert len(executions_c2) == 1
+    assert executions_c2[0]["campagne_id"] == c2["id"]
+    assert executions_c2[0]["trouves"] == 7
+
+
 def test_maj_derniere_execution():
     c = stockage.creer_campagne("frank", "zone-frank")
     assert c["derniere_execution"] is None
