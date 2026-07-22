@@ -48,7 +48,8 @@ def _espace_memoire(espace: str | None) -> str | None:
 # veille-info) : le Cœur forwarde l'identité de l'utilisateur connecté en X-User-Id, gagée
 # par {BRIQUE}_KEY (seul le Cœur la détient). Les autres briques ignorent cet en-tête
 # (motif tenant/bundle-client, cf. X-Compte-Id).
-BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire", "studio", "veille-info"}
+BRIQUES_PAR_PERSONNE = {"agenda", "ecoute", "mail", "memoire", "studio", "veille-info",
+                        "veille-prospection"}
 
 
 def _entetes_brique(brique: str) -> dict:

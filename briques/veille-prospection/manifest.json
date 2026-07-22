@@ -1,0 +1,65 @@
+{
+  "nom": "veille-prospection",
+  "famille": "veille",
+  "version": "0.1.0",
+  "description": "Prospection géo-scrapée : campagnes automatisées qui référencent une zone geo existante, enrichissent (site, coordonnées, dirigeants, effectifs, réseaux sociaux) et poussent au CRM Forge, avec un résumé mémorisé par personne. Isolé par personne (X-User-Id, motif mail S185/veille-info).",
+  "role": "veille-prospection",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/veille-prospection",
+  "port": 6140,
+  "url_sante": "http://host.docker.internal:6140/sante",
+  "depends_on": [],
+  "offre": [
+    "campagnes_prospection_par_personne",
+    "orchestration_geo_forge_memoire",
+    "isolation_par_personne"
+  ],
+  "taches": [
+    {
+      "nom": "campagnes-quotidien",
+      "description": "Exécute toutes les campagnes actives : enrichissement geo, push CRM forge, résumé mémoire.",
+      "methode": "POST",
+      "chemin": "/campagnes/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "entete_token_env": "VEILLE_PROSPECTION_KEY",
+      "tolere_echec": true
+    }
+  ],
+  "capacites": [
+    {
+      "nom": "veille_prospection_campagnes_lister",
+      "description": "Liste les campagnes de prospection de la personne connectée (zone ciblée, dernière exécution). Sert « quelles zones je prospecte », « où en est ma veille de prospects ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/campagnes",
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "veille_prospection_campagne_creer",
+      "description": "Active une campagne de prospection automatisée sur une zone geo déjà créée (voir geo_zones_lister). Sert « prospecte cette zone tous les jours », « active la veille prospection sur [zone] ».",
+      "methode": "POST",
+      "chemin": "/campagnes",
+      "params": {
+        "zone_id": {"type": "string", "description": "Identifiant de la zone geo à prospecter (voir la liste des zones geo).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "veille_prospection_campagne_supprimer",
+      "description": "Désactive une campagne de prospection (arrête les exécutions futures, ne supprime pas les prospects déjà trouvés).",
+      "methode": "DELETE",
+      "chemin": "/campagnes/{campagne_id}",
+      "params": {
+        "campagne_id": {"type": "integer", "description": "Identifiant de la campagne à désactiver.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    }
+  ]
+}
