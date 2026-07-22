@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -23,8 +23,24 @@ app = FastAPI(title="Atelier Veille", version="0.1.0")
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
-GEO_PUBLIC_URL = os.getenv("GEO_PUBLIC_URL", "http://localhost:6110/")
+# GEO_PUBLIC_URL : surcharge EXPLICITE seulement (déploiement particulier / SSO). Laissée
+# vide par défaut : une valeur figée type "http://localhost:6110/" casse la carte dès que
+# l'atelier est ouvert depuis autre chose que la machine hôte (LAN, mesh, téléphone) — même
+# piège que S128 (cf. core/urls_ui.py). Par défaut on dérive donc l'URL de l'hôte de la
+# requête courante dans /config, exactement comme url_brique() côté Cœur.
+GEO_PUBLIC_URL = os.getenv("GEO_PUBLIC_URL", "").strip()
+GEO_PORT = int(os.getenv("GEO_PORT", "6110"))
 VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120")
+
+
+def _hote_sans_port(host: str) -> str:
+    """Renvoie l'hôte de l'en-tête `Host` sans le `:port` éventuel — même logique que
+    `core/urls_ui.py::_hote_sans_port` (S128), dupliquée ici car cette brique est un
+    service Docker autonome sans dépendance au code du Cœur."""
+    host = (host or "localhost").strip()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
 
 _FRONT = Path(__file__).parent / "front.html"
 
@@ -66,9 +82,16 @@ def sante():
 
 
 @app.get("/config", tags=["système"])
-def config():
-    """URL publique (navigateur) de la carte geo — injectée dans l'onglet Carte du front."""
-    return {"geo_url": GEO_PUBLIC_URL}
+def config(request: Request):
+    """URL publique (navigateur) de la carte geo — injectée dans l'onglet Carte du front.
+
+    Dérivée par défaut du scheme + hôte de LA REQUÊTE COURANTE (celle que le navigateur
+    vient d'utiliser pour joindre l'atelier), pour rester juste en LAN comme sur le mesh
+    sans repointer une IP figée. `GEO_PUBLIC_URL` reste une surcharge possible."""
+    if GEO_PUBLIC_URL:
+        return {"geo_url": GEO_PUBLIC_URL}
+    hote = _hote_sans_port(request.headers.get("host", "localhost"))
+    return {"geo_url": f"{request.url.scheme}://{hote}:{GEO_PORT}/"}
 
 
 @app.get("/veille/sources", tags=["veille"])
