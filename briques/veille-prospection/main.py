@@ -65,7 +65,7 @@ class CreerCampagne(BaseModel):
 
 @app.get("/campagnes", tags=["campagnes"])
 def lister_campagnes_route(tenant: str = Depends(tenant_actuel)):
-    return stockage.lister_campagnes(tenant)
+    return stockage.lister_campagnes(tenant, actives_seulement=True)
 
 
 @app.post("/campagnes", tags=["campagnes"], status_code=201)

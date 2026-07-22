@@ -299,6 +299,38 @@ def test_digest_pousse_un_resume_dans_memoire(monkeypatch):
     assert captes["headers"]["X-User-Id"] == "digest-frank"
 
 
+def test_digest_memoire_recoit_x_user_id_sans_prefixe_perso(monkeypatch):
+    """Le seam trouvé en revue finale : `user_id` est le tenant INTERNE tel que produit par
+    `tenant_actuel` (forme réelle `perso:claire`, jamais une simple chaîne comme
+    `digest-frank`), mais `memoire` isole par personne sur le X-User-Id BRUT (sans préfixe)
+    que lui envoie le Cœur. Sans le retrait du préfixe, le résumé atterrit dans un espace
+    (`veille-perso:claire`) que le chemin de rappel du Cœur ne lit jamais (il envoie
+    `X-User-Id: claire`, cf. core/contexte_tenant.py)."""
+    stockage.creer_source("perso:claire", "Flux C", "https://c-claire.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://c-claire.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        assert url.endswith("/retenir")
+        captes["headers"] = headers
+        class _Rep:
+            status_code = 200
+            def raise_for_status(self):
+                pass
+        return _Rep()
+
+    monkeypatch.setattr(digest.httpx, "post", _post)
+    resultat = digest.executer_digest_quotidien(user_ids=["perso:claire"])
+    assert resultat["digests_crees"] == 1
+    assert captes["headers"]["X-User-Id"] == "claire"
+    # Le tenant interne complet ("perso:claire") reste, lui, utilisé tel quel côté stockage :
+    assert len(stockage.lister_digests("perso:claire")) == 1
+
+
 def test_digest_memoire_injoignable_najamais_bloquant(monkeypatch):
     stockage.creer_source("digest-grace", "Flux G", "https://g.example/rss")
     monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
