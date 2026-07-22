@@ -51,8 +51,13 @@ class _FakeClient:
     async def get(self, url, headers=None):
         APPELS.append(("GET", url, headers))
         if url.endswith("/"):
+            # La vraie page mail construit un srcdoc d'iframe qui contient, en TEXTE JS,
+            # la chaîne littérale "</head>" (cf. briques/mail/main.py::rendreMailHtml) —
+            # un .replace("</head>", ...) sans limite la remplacerait AUSSI et casserait
+            # le <script> englobant (S185, régression réelle constatée en prod).
             return _Resp(texte='<html><head></head><body>'
                                 '<script src="/static/purify.min.js"></script>'
+                                "<script>const s=`</head><body>x</body>`;</script>"
                                 '</body></html>')
         return _Resp()
 
@@ -71,6 +76,10 @@ def test_racine_injecte_le_prefixe_et_reecrit_purify(monkeypatch):
     assert r.status_code == 200
     assert "window.MAIL_API_BASE='/mail-app';" in r.text
     assert 'src="/mail-app/static/purify.min.js"' in r.text
+    # Le "</head>" littéral planqué dans le <script> (texte JS) doit rester INTACT —
+    # sinon le <script> englobant se referme prématurément et son code source
+    # entier s'affiche en texte brut sur la page (régression réelle S185).
+    assert "const s=`</head><body>x</body>`;" in r.text
 
 
 def test_identite_de_session_forwardee_pas_celle_du_navigateur(monkeypatch):

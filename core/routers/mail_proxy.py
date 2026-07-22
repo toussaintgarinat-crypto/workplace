@@ -47,8 +47,8 @@ async def mail_app_racine(request: Request):
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.get(f"{_base()}/", headers=_entetes(request))
     page = (r.text
-            .replace('src="/static/purify.min.js"', f'src="{_PREFIXE}/static/purify.min.js"')
-            .replace("</head>", f"<script>window.MAIL_API_BASE='{_PREFIXE}';</script></head>"))
+            .replace('src="/static/purify.min.js"', f'src="{_PREFIXE}/static/purify.min.js"', 1)
+            .replace("</head>", f"<script>window.MAIL_API_BASE='{_PREFIXE}';</script></head>", 1))
     return HTMLResponse(page, status_code=r.status_code)
 
 
