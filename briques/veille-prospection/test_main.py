@@ -55,6 +55,20 @@ def test_supprimer_campagne_dune_autre_personne_echoue(monkeypatch):
     assert r.status_code == 404
 
 
+def test_x_user_id_sans_cle_est_ignore(monkeypatch):
+    """Régression : un X-User-Id SEUL (sans clé API) ne doit JAMAIS être honoré — sinon
+    n'importe quel appelant non authentifié pourrait usurper l'identité de n'importe
+    quel membre du foyer (bug déjà trouvé et corrigé une fois dans ce projet)."""
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    # POST avec SEUL X-User-Id (pas de clé) → doit atterrir dans "public", pas "perso:main-usurpateur"
+    r = client.post("/campagnes", headers={"X-User-Id": "main-usurpateur"},
+                   json={"zone_id": "zone-usurpee"})
+    assert r.status_code == 201
+    # GET authentifié AS main-usurpateur avec clé valide → ne voit PAS la campagne créée ci-dessus
+    r = client.get("/campagnes", headers=_entetes("main-usurpateur"))
+    assert all(c["zone_id"] != "zone-usurpee" for c in r.json())
+
+
 def test_campagnes_executer_ouvert_si_pas_de_cle_configuree(monkeypatch):
     monkeypatch.setattr(main.orchestration, "executer_campagnes",
                         lambda: {"campagnes_executees": 0})
