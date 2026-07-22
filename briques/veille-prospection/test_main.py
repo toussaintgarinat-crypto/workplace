@@ -13,38 +13,45 @@ import main
 client = TestClient(main.app)
 
 
+def _entetes(utilisateur):
+    return {"X-API-Key": "cle-coeur", "X-User-Id": utilisateur}
+
+
 def test_sante():
     r = client.get("/sante")
     assert r.status_code == 200
     assert r.json()["statut"] == "ok"
 
 
-def test_creer_lister_supprimer_campagne():
-    r = client.post("/campagnes", headers={"X-User-Id": "main-alice"},
+def test_creer_lister_supprimer_campagne(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    r = client.post("/campagnes", headers=_entetes("main-alice"),
                     json={"zone_id": "zone-a"})
     assert r.status_code == 201
     campagne_id = r.json()["id"]
 
-    r = client.get("/campagnes", headers={"X-User-Id": "main-alice"})
+    r = client.get("/campagnes", headers=_entetes("main-alice"))
     assert len(r.json()) == 1
 
-    r = client.delete(f"/campagnes/{campagne_id}", headers={"X-User-Id": "main-alice"})
+    r = client.delete(f"/campagnes/{campagne_id}", headers=_entetes("main-alice"))
     assert r.status_code == 200
-    assert client.get("/campagnes", headers={"X-User-Id": "main-alice"}).json() == []
+    assert client.get("/campagnes", headers=_entetes("main-alice")).json() == []
 
 
-def test_campagnes_isolees_par_x_user_id():
-    client.post("/campagnes", headers={"X-User-Id": "main-bob"},
+def test_campagnes_isolees_par_x_user_id(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    client.post("/campagnes", headers=_entetes("main-bob"),
                json={"zone_id": "zone-de-bob"})
-    r = client.get("/campagnes", headers={"X-User-Id": "main-carol"})
+    r = client.get("/campagnes", headers=_entetes("main-carol"))
     assert all(c["zone_id"] != "zone-de-bob" for c in r.json())
 
 
-def test_supprimer_campagne_dune_autre_personne_echoue():
-    r = client.post("/campagnes", headers={"X-User-Id": "main-dave"},
+def test_supprimer_campagne_dune_autre_personne_echoue(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    r = client.post("/campagnes", headers=_entetes("main-dave"),
                     json={"zone_id": "zone-privee"})
     campagne_id = r.json()["id"]
-    r = client.delete(f"/campagnes/{campagne_id}", headers={"X-User-Id": "main-mallory"})
+    r = client.delete(f"/campagnes/{campagne_id}", headers=_entetes("main-mallory"))
     assert r.status_code == 404
 
 
