@@ -12,6 +12,55 @@
   "depends_on": [],
   "offre": ["rendu_pdf", "rendu_pptx", "themes_livre_rapport", "theme_pptx_sobre"],
   "besoin": [],
-  "capacites": [],
+  "capacites": [
+    {
+      "nom": "export_pdf",
+      "description": "Rend un document PDF à partir d'un titre et d'un contenu Markdown, avec un thème de mise en page ('livre' : typographie roman, grandes marges ; 'rapport' : en-tête/pied de page, numérotation). DÉTERMINISTE (WeasyPrint local, aucune IA, aucun coût), mais ÉCRIT un fichier : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/pdf",
+      "params": {
+        "titre": {
+          "type": "string",
+          "description": "Titre du document (obligatoire).",
+          "requis": true
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Contenu au format Markdown (obligatoire).",
+          "requis": true
+        },
+        "theme": {
+          "type": "string",
+          "description": "Thème de mise en page : 'livre' ou 'rapport' (défaut 'livre')."
+        }
+      },
+      "action": true,
+      "niveau": 0
+    },
+    {
+      "nom": "export_pptx",
+      "description": "Rend une présentation PPTX à partir d'un titre et d'une liste de diapositives (titre + points à puces + notes optionnelles). DÉTERMINISTE (python-pptx local, aucune IA, aucun coût), mais ÉCRIT un fichier : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/pptx",
+      "params": {
+        "titre": {
+          "type": "string",
+          "description": "Titre de la présentation (obligatoire).",
+          "requis": true
+        },
+        "diapositives": {
+          "type": "array",
+          "description": "Liste [{titre, points: [str], notes?}], une entrée par diapositive (obligatoire).",
+          "requis": true
+        },
+        "theme": {
+          "type": "string",
+          "description": "Thème visuel (défaut et seul choix v1 : 'sobre')."
+        }
+      },
+      "action": true,
+      "niveau": 0
+    }
+  ],
   "taches": []
 }
