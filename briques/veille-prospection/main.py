@@ -36,8 +36,6 @@ def tenant_actuel(x_api_key: Optional[str] = Header(None),
         if presentee not in API_KEYS:
             raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
     elif not presentee:
-        if x_user_id:
-            return f"perso:{x_user_id}"
         return "public"
     cle_coeur = os.environ.get("VEILLE_PROSPECTION_KEY")
     if cle_coeur and presentee == cle_coeur:
