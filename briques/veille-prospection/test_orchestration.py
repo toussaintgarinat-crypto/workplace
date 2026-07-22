@@ -95,6 +95,7 @@ def test_geo_injoignable_erreur_journalisee_pas_de_crash(monkeypatch):
 
 def test_forge_injoignable_apres_geo_ok_prospects_pas_perdus(monkeypatch):
     c = stockage.creer_campagne("orch-dave", "zone-forge-panne")
+    captes = {}
 
     def _post(url, json=None, headers=None, timeout=None):
         if url.endswith("/prospection/enrichir-lot"):
@@ -102,6 +103,7 @@ def test_forge_injoignable_apres_geo_ok_prospects_pas_perdus(monkeypatch):
         if url.endswith("/crm/import-lot"):
             raise httpx.ConnectError("forge down")
         if url.endswith("/retenir"):
+            captes["memoire_called"] = True
             return _Rep(200, {"retenu": True})
         raise AssertionError(url)
 
@@ -111,6 +113,7 @@ def test_forge_injoignable_apres_geo_ok_prospects_pas_perdus(monkeypatch):
     assert executions[0]["trouves"] == 1     # le prospect n'est pas « perdu » au décompte
     assert executions[0]["nouveaux_crm"] == 0
     assert executions[0]["erreur"] is not None
+    assert captes.get("memoire_called") is True  # mémoire est poussée malgré l'échec forge
 
 
 def test_memoire_injoignable_najamais_bloquant(monkeypatch):
@@ -154,3 +157,44 @@ def test_executer_campagnes_user_ids_none_decouvre_via_stockage(monkeypatch):
     monkeypatch.setattr(stockage, "lister_user_ids_actifs", lambda: [])
     resultat = orchestration.executer_campagnes()
     assert resultat == {"campagnes_executees": 0}
+
+
+def test_panne_inattendue_campagne1_isolation_campagne2(monkeypatch):
+    """Vérifie qu'une panne inattendue (non HTTPError) dans une campagne n'empêche pas
+    les campagnes suivantes d'être traitées. Par ex., si stockage.inserer_execution
+    lève RuntimeError pour campagne1, campagne2 doit quand même être exécutée."""
+    c1 = stockage.creer_campagne("orch-greg", "zone-panne-stockage")
+    c2 = stockage.creer_campagne("orch-greg", "zone-ok")
+    appels_geo = set()
+
+    def _post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/prospection/enrichir-lot"):
+            zone = json.get("zone_id")
+            appels_geo.add(zone)
+            return _Rep(200, {"prospects": [{"nom": "P"}], "compte": {"deja_enrichi": 0}})
+        if url.endswith("/crm/import-lot"):
+            return _Rep(200, {"crees": 1})
+        if url.endswith("/retenir"):
+            return _Rep(200, {"retenu": True})
+        raise AssertionError(url)
+
+    # Monkeypatch stockage.inserer_execution : lève RuntimeError pour campagne1 seulement
+    original_inserer = stockage.inserer_execution
+    def inserer_avec_crash(campaign_id, **kwargs):
+        if campaign_id == c1["id"]:
+            raise RuntimeError("Crash stockage simulé")
+        return original_inserer(campaign_id, **kwargs)
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    monkeypatch.setattr(stockage, "inserer_execution", inserer_avec_crash)
+
+    resultat = orchestration.executer_campagnes(user_ids=["orch-greg"])
+    # Bien que campagne1 ait crashé en stockage, campagne2 a quand même été exécutée
+    # (geo appelée pour les 2 zones) et enregistrée avec succès
+    assert appels_geo == {"zone-panne-stockage", "zone-ok"}
+    # campagnes_executees compte seulement les SUCCÈS (sans crash inattendu)
+    assert resultat == {"campagnes_executees": 1}
+    # Vérifie que c2 a bien une exécution enregistrée (succès)
+    executions_c2 = stockage.lister_executions(c2["id"])
+    assert executions_c2[0]["trouves"] == 1
+    assert executions_c2[0]["erreur"] is None

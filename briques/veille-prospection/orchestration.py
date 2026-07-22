@@ -89,6 +89,23 @@ def _executer_campagne(campagne: dict) -> dict:
             "nouveaux_crm": nouveaux_crm, "erreur": erreur}
 
 
+def _executer_campagne_sans_planter(campagne: dict) -> bool:
+    """Enrobe `_executer_campagne` et les appels `stockage.*` qui suivent : une panne
+    inattendue (ex. corruption JSON de `geo`, ou une erreur SQLite imprévisible) est
+    journalisée et comptée comme « campagne traitée (sans succès) », jamais propagée.
+    Contrainte du plan : « Aucun échec ne doit faire planter le pipeline d'orchestration » —
+    plus large que les pannes HTTP déjà gérées dans `_executer_campagne`."""
+    try:
+        resultat = _executer_campagne(campagne)
+        stockage.inserer_execution(campagne["id"], **resultat)
+        stockage.maj_derniere_execution(campagne["id"])
+        return True
+    except Exception as e:  # noqa: BLE001 — une campagne en échec inattendu ne doit jamais arrêter le lot
+        logger.warning("Veille-prospection échec inattendu (campagne_id=%s, user_id=%s) : %s",
+                       campagne["id"], campagne.get("user_id"), e)
+        return False
+
+
 def executer_campagnes(user_ids: list[str] | None = None) -> dict:
     """Point d'entrée horloge : traite toutes les campagnes actives de toutes les
     personnes, ou seulement `user_ids` si fourni (motif `digest.py` de `veille-info` — la
@@ -97,8 +114,6 @@ def executer_campagnes(user_ids: list[str] | None = None) -> dict:
     campagnes_executees = 0
     for user_id in cibles:
         for campagne in stockage.lister_campagnes(user_id, actives_seulement=True):
-            resultat = _executer_campagne(campagne)
-            stockage.inserer_execution(campagne["id"], **resultat)
-            stockage.maj_derniere_execution(campagne["id"])
-            campagnes_executees += 1
+            if _executer_campagne_sans_planter(campagne):
+                campagnes_executees += 1
     return {"campagnes_executees": campagnes_executees}
