@@ -26,6 +26,25 @@ def _construire_prompt(articles: list[dict]) -> str:
     return "Nouveaux articles du jour :\n" + "\n".join(lignes)
 
 
+def _pousser_memoire(user_id: str, resume: str, date: str) -> None:
+    """Best-effort strict (S193) : un échec ici ne doit JAMAIS faire perdre le digest texte
+    déjà créé, ni empêcher le traitement des autres personnes — même filet que l'audio
+    (leçon S189 : tout ce qui suit un succès reste dans le même try/except)."""
+    base = os.getenv("MEMOIRE_URL", "http://host.docker.internal:5600").rstrip("/")
+    entetes = {"X-User-Id": user_id}
+    cle = os.getenv("MEMOIRE_KEY", "")
+    if cle:
+        entetes["X-API-Key"] = cle
+    try:
+        r = httpx.post(f"{base}/retenir",
+                       json={"contenu": resume, "titre": f"Veille du {date}",
+                             "espace": "veille", "wing": "veille-info"},
+                       headers=entetes, timeout=30)
+        r.raise_for_status()
+    except Exception as e:  # noqa: BLE001 — jamais bloquant
+        logger.warning("Veille-info push mémoire (user=%s) : %s", user_id, e)
+
+
 def _generer_audio(digest_id: int, texte: str) -> None:
     """Génère l'audio du digest via la brique voix (motif briques/studio/main.py:1010-1028,
     aucune clé — cohérent avec le reste du parc). Best-effort STRICT : un échec est
@@ -78,6 +97,7 @@ def _traiter_utilisateur(user_id: str) -> bool:
     try:
         stockage.marquer_articles_digestes([a["id"] for a in articles])
         _generer_audio(d["id"], resume)
+        _pousser_memoire(user_id, resume, d["date"])
     except Exception as e:  # noqa: BLE001 — le digest (déjà créé ci-dessus) doit compter comme
         # créé même si le marquage des articles ou l'audio échoue ensuite ; sans ce filet local,
         # l'exception remonterait jusqu'à `_traiter_utilisateur_sans_planter`, qui compterait

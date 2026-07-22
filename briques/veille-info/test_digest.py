@@ -269,3 +269,48 @@ def test_echec_marquage_articles_ne_bloque_pas_le_comptage_du_digest(monkeypatch
     digests = stockage.lister_digests("digest-marie")
     assert len(digests) == 1
     assert digests[0]["texte_resume"] == "Résumé du jour."
+
+
+def test_digest_pousse_un_resume_dans_memoire(monkeypatch):
+    stockage.creer_source("digest-frank", "Flux F", "https://f.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://f.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé du jour.")
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        assert url.endswith("/retenir")
+        captes["json"] = json
+        captes["headers"] = headers
+        class _Rep:
+            status_code = 200
+            def raise_for_status(self):
+                pass
+        return _Rep()
+
+    monkeypatch.setattr(digest.httpx, "post", _post)
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-frank"])
+    assert resultat["digests_crees"] == 1
+    assert captes["json"]["espace"] == "veille"
+    assert captes["json"]["wing"] == "veille-info"
+    assert captes["json"]["contenu"] == "Résumé du jour."
+    assert captes["headers"]["X-User-Id"] == "digest-frank"
+
+
+def test_digest_memoire_injoignable_najamais_bloquant(monkeypatch):
+    stockage.creer_source("digest-grace", "Flux G", "https://g.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://g.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé.")
+
+    def _post(url, json=None, headers=None, timeout=None):
+        raise ConnectionError("memoire down")
+
+    monkeypatch.setattr(digest.httpx, "post", _post)
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-grace"])
+    assert resultat["digests_crees"] == 1   # le digest texte n'est PAS affecté
+    assert len(stockage.lister_digests("digest-grace")) == 1
