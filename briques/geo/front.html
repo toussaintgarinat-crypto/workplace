@@ -325,7 +325,10 @@ async function chargerZones() {
       suppr.title = "Supprimer cette zone de veille";
       suppr.addEventListener("click", async () => {
         if (!confirm(`Supprimer la zone « ${z.nom} » ?`)) return;
-        await fetch("/zones/" + z.id, { method: "DELETE", headers: ENTETES });
+        try {
+          const r = await fetch("/zones/" + z.id, { method: "DELETE", headers: ENTETES });
+          if (!r.ok) { statut.textContent = "Suppression refusée : " + r.status; return; }
+        } catch { statut.textContent = "Brique injoignable"; return; }
         chargerZones();
       });
       div.append(voir, suppr);
