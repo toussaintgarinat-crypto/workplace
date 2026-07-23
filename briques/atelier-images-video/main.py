@@ -36,6 +36,32 @@ VIDEO_URL = os.getenv("VIDEO_URL", "http://host.docker.internal:5970")
 STUDIO_URL = os.getenv("STUDIO_URL", "http://host.docker.internal:6060")
 MEMOIRE_URL = os.getenv("MEMOIRE_URL", "http://host.docker.internal:5600")
 
+UTILISATEUR_DEFAUT = "perso"
+
+
+def _identite_service(x_api_key: Optional[str] = Header(None),
+                      authorization: Optional[str] = Header(None),
+                      x_user_id: Optional[str] = Header(None)) -> str:
+    """Identité de l'appelant pour les routes /studio/* et /galerie/* (motif
+    briques/memoire/main.py::_identite_service) : gagée par ATELIER_IMAGES_VIDEO_KEY si
+    configurée — SEUL core/routers/atelier_images_video_proxy.py la détient. Sans ce
+    garde-fou, un appel direct sur cette brique pourrait forger X-User-Id et emprunter
+    STUDIO_KEY/MEMOIRE_KEY (que CETTE brique détient) pour usurper une autre personne —
+    même trou que S183, un cran plus loin dans la chaîne de composition."""
+    cle = os.environ.get("ATELIER_IMAGES_VIDEO_KEY")
+    presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
+    if cle and presentee != cle:
+        raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
+    return x_user_id or UTILISATEUR_DEFAUT
+
+
+def _entetes_studio(identite: str) -> dict:
+    return {"X-API-Key": os.environ.get("STUDIO_KEY", ""), "X-User-Id": identite}
+
+
+def _entetes_memoire(identite: str) -> dict:
+    return {"X-API-Key": os.environ.get("MEMOIRE_KEY", ""), "X-User-Id": identite}
+
 _FRONT = Path(__file__).parent / "front.html"
 # no-cache (pas no-store) : le navigateur revalide sur l'ETag à chaque chargement au lieu
 # de garder une copie en cache heuristique — sans ça, un correctif poussé sur front.html
