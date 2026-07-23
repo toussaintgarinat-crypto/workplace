@@ -78,3 +78,40 @@ async def _relayer(methode: str, url: str, entetes: dict, marque: str,
         detail = corps.get("detail") if isinstance(corps, dict) else None
         raise HTTPException(r.status_code, detail or f"{marque} a refusé la requête ({r.status_code}).")
     return corps
+
+
+class GenererImage(BaseModel):
+    prompt: str
+    negatif: Optional[str] = None
+    largeur: int = 1024
+    hauteur: int = 1024
+    seed: Optional[int] = None
+    fournisseur: Optional[str] = None
+
+
+@app.post("/images/generer", tags=["images"])
+async def images_generer(body: GenererImage):
+    return await _relayer("POST", f"{IMAGES_URL}/generer", {}, "images", body.model_dump())
+
+
+@app.get("/images/fournisseurs", tags=["images"])
+async def images_fournisseurs():
+    return await _relayer("GET", f"{IMAGES_URL}/fournisseurs", {}, "images")
+
+
+class GenererVideo(BaseModel):
+    prompt: str
+    image_url: Optional[str] = None
+    secondes: int = 5
+    seed: Optional[int] = None
+    fournisseur: Optional[str] = None
+
+
+@app.post("/video/generer", tags=["video"])
+async def video_generer(body: GenererVideo):
+    return await _relayer("POST", f"{VIDEO_URL}/generer", {}, "video", body.model_dump())
+
+
+@app.get("/video/fournisseurs", tags=["video"])
+async def video_fournisseurs():
+    return await _relayer("GET", f"{VIDEO_URL}/fournisseurs", {}, "video")
