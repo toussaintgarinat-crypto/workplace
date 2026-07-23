@@ -32,6 +32,14 @@ GEO_PUBLIC_URL = os.getenv("GEO_PUBLIC_URL", "").strip()
 GEO_PORT = int(os.getenv("GEO_PORT", "6110"))
 VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120")
 
+# MESH_HOST / MESH_PORT_OFFSET : même convention que core/urls_ui.py::url_brique. Caddy
+# termine le TLS du mesh et reverse-proxy en HTTP vers ce conteneur, donc `request.url.scheme`
+# vaut toujours "http" ici — jamais fiable pour reconstruire l'URL vue par le NAVIGATEUR.
+# Sans ce garde-fou, la carte (servie en clair sur GEO_PORT) est bloquée en mixed content
+# dès que l'atelier est ouvert en HTTPS via le mesh.
+MESH_HOST = os.getenv("MESH_HOST", "").strip()
+MESH_PORT_OFFSET = int(os.getenv("MESH_PORT_OFFSET", "10000"))
+
 
 def _hote_sans_port(host: str) -> str:
     """Renvoie l'hôte de l'en-tête `Host` sans le `:port` éventuel — même logique que
@@ -91,6 +99,8 @@ def config(request: Request):
     if GEO_PUBLIC_URL:
         return {"geo_url": GEO_PUBLIC_URL}
     hote = _hote_sans_port(request.headers.get("host", "localhost"))
+    if MESH_HOST and hote == MESH_HOST:
+        return {"geo_url": f"https://{hote}:{GEO_PORT + MESH_PORT_OFFSET}/"}
     return {"geo_url": f"{request.url.scheme}://{hote}:{GEO_PORT}/"}
 
 
