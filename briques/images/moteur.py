@@ -74,10 +74,16 @@ async def fournisseur_actif() -> Optional[str]:
 
 
 async def generer(prompt: str, negatif: str = "", largeur: int = 1024, hauteur: int = 1024,
-                  seed=None, fournisseur: Optional[str] = None) -> dict:
-    """Rend {url, backend, place_holder}. `url` est servie par CETTE brique (/fichiers/…).
+                  seed=None, fournisseur: Optional[str] = None,
+                  modele: Optional[str] = None) -> dict:
+    """Rend {url, backend, place_holder, modele}. `url` est servie par CETTE brique
+    (/fichiers/…).
 
     `fournisseur` (optionnel) force un moteur précis ; sinon on suit l'ordre de préférence.
+    `modele` (optionnel) : override ponctuel, honoré SEULEMENT par le fournisseur `gateway`
+    (comparatif de modèles OpenRouter, cf. Atelier Images & Vidéo) — la réponse le restitue
+    tel quel dans ce cas, `None` sinon (on ne sait pas quel modèle un autre fournisseur a
+    lu depuis SA propre variable d'env sans le lui redemander explicitement).
     """
     largeur, hauteur = int(largeur or 1024), int(hauteur or 1024)
 
@@ -96,11 +102,13 @@ async def generer(prompt: str, negatif: str = "", largeur: int = 1024, hauteur: 
     erreurs = {}
     for nom in candidats:
         try:
-            data = await fournisseurs.REGISTRE[nom].generer(prompt, negatif, largeur, hauteur, seed)
+            data = await fournisseurs.REGISTRE[nom].generer(
+                prompt, negatif, largeur, hauteur, seed, modele)
             if data:
                 fichier = f"img-{uuid.uuid4().hex[:12]}.{_ext(data)}"
                 return {"url": _enregistrer(fichier, data), "prompt": prompt,
-                        "backend": nom, "place_holder": False}
+                        "backend": nom, "place_holder": False,
+                        "modele": modele if (nom == "gateway" and modele) else None}
             erreurs[nom] = "aucune image renvoyée"
         except Exception as e:  # noqa: BLE001
             erreurs[nom] = str(e)[:160]

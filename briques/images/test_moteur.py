@@ -90,3 +90,30 @@ def test_extension_selon_les_octets():
     assert moteur._ext(b"RIFF\x00\x00\x00\x00WEBP") == "webp"
     assert moteur._ext(b"GIF89a....") == "gif"
     assert moteur._ext(b"???") == "png"                  # défaut prudent
+
+
+def test_modele_restitue_quand_fournisseur_gateway(monkeypatch):
+    class OK:
+        def disponible(self):
+            return True
+        async def generer(self, *a):
+            return PNG
+    monkeypatch.setattr(fournisseurs, "REGISTRE", {"gateway": OK()})
+    res = asyncio.run(moteur.generer("x", fournisseur="gateway", modele="openai/gpt-5-image"))
+    assert res["modele"] == "openai/gpt-5-image"
+
+
+def test_modele_absent_hors_gateway(monkeypatch):
+    class OK:
+        def disponible(self):
+            return True
+        async def generer(self, *a):
+            return PNG
+    monkeypatch.setattr(fournisseurs, "REGISTRE", {"fal": OK()})
+    res = asyncio.run(moteur.generer("x", fournisseur="fal", modele="ignore-moi"))
+    assert res["modele"] is None
+
+
+def test_modele_absent_par_defaut():
+    res = asyncio.run(moteur.generer("x"))  # aucun fournisseur configuré → placeholder
+    assert "modele" not in res or res.get("modele") is None
