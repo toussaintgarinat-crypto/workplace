@@ -149,6 +149,14 @@ function jsonAttr(x) {
 // Préfixe posé par le proxy Cœur /atelier-images-video-app/* : vide en usage autoporté,
 // donc ce changement est un NO-OP hors du proxy — mêmes chemins relatifs qu'avant.
 const API_BASE = window.ATELIER_IV_API_BASE || '';
+// Les URLs de médias renvoyées par le backend (ex. `/fichiers/images/img-1.png`) sont
+// relatives à CETTE brique. Sous le proxy Cœur, la page est servie sous API_BASE
+// (`/atelier-images-video-app`) : sans ce préfixe, un chemin commençant par `/` retombe
+// à la racine du domaine (ex. workplaceagenda.duckdns.org/fichiers/...) au lieu de rester
+// sous le proxy → image cassée. Même piège que les appels API, cf. commentaire ci-dessus.
+function mediaUrl(url) {
+  return url && url.startsWith('/') ? API_BASE + url : url;
+}
 async function api(path, method = 'GET', body = null) {
   const r = await fetch(API_BASE + path, {
     method, headers: body ? {'Content-Type': 'application/json'} : {},
@@ -200,7 +208,7 @@ chargerFournisseurs('video');
 function afficherResultatMedia(cible, medium, data, titre, prompt) {
   const url = data.url;
   const avert = data.place_holder ? '<div class="avert">⚠️ Placeholder — aucun fournisseur réel n\'a produit ce média.</div>' : '';
-  const media = medium === 'image' ? `<img src="${esc(url)}" alt="résultat">` : `<video controls src="${esc(url)}"></video>`;
+  const media = medium === 'image' ? `<img src="${esc(mediaUrl(url))}" alt="résultat">` : `<video controls src="${esc(mediaUrl(url))}"></video>`;
   cible.innerHTML = `<div class="resultat">${media}${avert}
     <button class="discret" style="margin-top:8px" onclick='ajouterGalerie(${jsonAttr(medium)}, ${jsonAttr(titre)}, ${jsonAttr(prompt)}, ${jsonAttr(url)}, ${jsonAttr(data.backend || null)}, ${!!data.place_holder})'>➕ Ajouter à la galerie</button>
   </div>`;
@@ -333,8 +341,8 @@ async function chargerGalerie(medium) {
     cible.innerHTML = (data.souvenirs || []).map(s => {
       const meta = s.metadata || {};
       const media = meta.url ? (s.room === 'video'
-        ? `<video controls src="${esc(meta.url)}"></video>`
-        : `<img src="${esc(meta.url)}" alt="${esc(s.titre)}">`) : '';
+        ? `<video controls src="${esc(mediaUrl(meta.url))}"></video>`
+        : `<img src="${esc(mediaUrl(meta.url))}" alt="${esc(s.titre)}">`) : '';
       return `<div class="carte">
         <h4>${esc(s.titre)}</h4>
         ${media}
