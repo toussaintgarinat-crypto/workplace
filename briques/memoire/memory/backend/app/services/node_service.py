@@ -47,6 +47,14 @@ class NodeService:
             query = query.where(Node.ipcra_stage == IpCraStage(stage))
         if tier:
             query = query.where(Node.storage_tier == StorageTier(tier))
+        # wing/room ne sont pas des colonnes : create_node() les persiste uniquement dans
+        # frontmatter (cf. plus bas). Sans ce filtre JSONB, un appelant qui demande
+        # `wing=atelier-images-video` recevait TOUS les nœuds de l'espace, toutes briques
+        # confondues (bug constaté : galerie images/vidéo mélangée avec veille/dev).
+        if wing:
+            query = query.where(Node.frontmatter["wing"].astext == wing)
+        if room:
+            query = query.where(Node.frontmatter["room"].astext == room)
         query = query.order_by(Node.updated_at.desc()).limit(limit).offset(offset)
         result = await self.db.execute(query)
         return list(result.scalars().all())

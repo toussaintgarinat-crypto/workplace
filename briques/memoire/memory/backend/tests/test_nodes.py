@@ -77,6 +77,34 @@ class TestNodes:
         for node in response.json():
             assert node["type"] == "input"
 
+    async def test_list_nodes_filter_wing(self, client, auth_headers, test_space):
+        """wing/room ne sont pas des colonnes : ils vivent dans frontmatter (posé par
+        l'appelant, ex. briques/memoire/main.py). Sans filtre JSONB sur list_nodes(), un
+        appelant qui demande `wing=atelier-images-video` recevait TOUS les nœuds de
+        l'espace — bug constaté : galerie images/vidéo affichant des souvenirs d'autres
+        briques (veille, dev)."""
+        space_id = test_space["id"]
+        await client.post(
+            f"/api/v1/spaces/{space_id}/nodes",
+            json={"type": "ressource", "title": "Image atelier",
+                  "frontmatter": {"wing": "atelier-images-video", "room": "image"}},
+            headers=auth_headers,
+        )
+        await client.post(
+            f"/api/v1/spaces/{space_id}/nodes",
+            json={"type": "ressource", "title": "Note veille",
+                  "frontmatter": {"wing": "veille", "room": "info"}},
+            headers=auth_headers,
+        )
+        response = await client.get(
+            f"/api/v1/spaces/{space_id}/nodes?wing=atelier-images-video",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        titres = [n["title"] for n in response.json()]
+        assert "Image atelier" in titres
+        assert "Note veille" not in titres
+
     async def test_get_node(self, client, auth_headers, test_node, test_space):
         response = await client.get(
             f"/api/v1/spaces/{test_space['id']}/nodes/{test_node['id']}",
