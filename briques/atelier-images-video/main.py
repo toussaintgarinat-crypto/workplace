@@ -23,7 +23,7 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 app = FastAPI(title="Atelier Images & Vidéo", version="0.1.0")
@@ -108,6 +108,36 @@ async def _relayer(methode: str, url: str, entetes: dict, marque: str,
     return corps
 
 
+def _url_locale(url: str, prefixe: str) -> str:
+    """Réécrit le chemin renvoyé par images/video (ex. `/fichiers/img-1.png`, résoluble
+    SEULEMENT depuis LEUR origine à eux — IMAGES_URL/VIDEO_URL, souvent
+    host.docker.internal, injoignable depuis le navigateur) vers un chemin RELATIF de
+    CETTE brique (`/fichiers/images/…` ou `/fichiers/video/…`), servi par
+    `fichier_image`/`fichier_video` ci-dessous. Un chemin relatif se résout correctement
+    quelle que soit la façon dont le navigateur a atteint l'atelier (direct :6160, proxy
+    Cœur /atelier-images-video-app/*, LAN, mesh) — jamais une URL figée type localhost
+    (piège S128 déjà rencontré ailleurs, cf. core/urls_ui.py)."""
+    if not url:
+        return ""
+    nom = url.rsplit("/", 1)[-1]
+    return f"{prefixe}/{nom}"
+
+
+async def _proxifier_fichier(base_url: str, nom: str, marque: str) -> Response:
+    """Rapatrie un fichier produit par images/video et le sert depuis CETTE brique —
+    sans ce relais, l'URL renvoyée par /generer (chemin relatif à IMAGES_URL/VIDEO_URL,
+    souvent host.docker.internal) n'est jamais résoluble par le navigateur, qui affiche
+    une image « cassée »."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.request("GET", f"{base_url}/fichiers/{nom}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"{marque} injoignable ({base_url}) : {str(e)[:150]}")
+    if r.status_code != 200:
+        raise HTTPException(404, "Fichier introuvable.")
+    return Response(content=r.content, media_type=r.headers.get("content-type", "application/octet-stream"))
+
+
 class GenererImage(BaseModel):
     prompt: str
     negatif: Optional[str] = None
@@ -119,12 +149,19 @@ class GenererImage(BaseModel):
 
 @app.post("/images/generer", tags=["images"])
 async def images_generer(body: GenererImage):
-    return await _relayer("POST", f"{IMAGES_URL}/generer", {}, "images", body.model_dump())
+    corps = await _relayer("POST", f"{IMAGES_URL}/generer", {}, "images", body.model_dump())
+    corps["url"] = _url_locale(corps.get("url", ""), "/fichiers/images")
+    return corps
 
 
 @app.get("/images/fournisseurs", tags=["images"])
 async def images_fournisseurs():
     return await _relayer("GET", f"{IMAGES_URL}/fournisseurs", {}, "images")
+
+
+@app.get("/fichiers/images/{nom}", tags=["images"], include_in_schema=False)
+async def fichier_image(nom: str):
+    return await _proxifier_fichier(IMAGES_URL, nom, "images")
 
 
 class GenererVideo(BaseModel):
@@ -137,12 +174,19 @@ class GenererVideo(BaseModel):
 
 @app.post("/video/generer", tags=["video"])
 async def video_generer(body: GenererVideo):
-    return await _relayer("POST", f"{VIDEO_URL}/generer", {}, "video", body.model_dump())
+    corps = await _relayer("POST", f"{VIDEO_URL}/generer", {}, "video", body.model_dump())
+    corps["url"] = _url_locale(corps.get("url", ""), "/fichiers/video")
+    return corps
 
 
 @app.get("/video/fournisseurs", tags=["video"])
 async def video_fournisseurs():
     return await _relayer("GET", f"{VIDEO_URL}/fournisseurs", {}, "video")
+
+
+@app.get("/fichiers/video/{nom}", tags=["video"], include_in_schema=False)
+async def fichier_video(nom: str):
+    return await _proxifier_fichier(VIDEO_URL, nom, "video")
 
 
 @app.get("/studio/series", tags=["synergie"])
