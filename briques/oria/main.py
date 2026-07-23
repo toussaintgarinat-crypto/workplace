@@ -62,10 +62,24 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {_get_token()}"}
 
 
+def _invalider_token() -> None:
+    """Force un renouvellement au prochain appel : le jeton mémoïsé peut avoir été
+    révoqué côté Keycloak avant sa péremption annoncée (secret changé, client
+    désactivé) — `_get_token()` ne vérifie que l'horloge, jamais l'acceptation réelle par
+    Oria (même trou que celui corrigé dans briques/memoire, constaté 2026-07-23)."""
+    _token_cache["access_token"] = ""
+    _token_cache["expires_at"] = 0.0
+
+
 def _oria(method: str, path: str, **kwargs) -> Any:
-    """Appel HTTP vers l'API Oria avec token auto-renouvelé."""
+    """Appel HTTP vers l'API Oria avec token auto-renouvelé ; réessaie UNE fois avec un
+    jeton frais si Oria répond 401 (jeton mémoïsé révoqué avant sa péremption annoncée,
+    même filet que briques/memoire/briques/forge)."""
     url = f"{ORIA_API}/v1/api{path}"
     r = httpx.request(method, url, headers=_headers(), timeout=15, **kwargs)
+    if r.status_code == 401:
+        _invalider_token()
+        r = httpx.request(method, url, headers=_headers(), timeout=15, **kwargs)
     if r.status_code >= 400:
         raise HTTPException(r.status_code, f"Oria: {r.text[:300]}")
     return r.json()
