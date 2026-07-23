@@ -9,7 +9,7 @@
   "chemin_source": "~/Desktop/Workplace/briques/atelier-images-video",
   "port": 6160,
   "url_sante": "http://host.docker.internal:6160/sante",
-  "url_ui": "http://localhost:6160/atelier",
+  "url_ui": "/atelier-images-video-app/atelier",
   "depends_on": ["images", "video", "studio", "memoire"],
   "offre": ["front_atelier_images_video"],
   "capacites": []

@@ -783,11 +783,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="creation-desc">Carte des créations d'entreprises, sources RSS suivies et digests quotidiens (texte + audio) — en un seul endroit.</span>
           <span class="creation-badge">Brique · port 6130</span>
         </button>
-        <button class="creation-tuile creation-bientot" disabled>
+        <button class="creation-tuile" onclick="ouvrirCreation('__ATELIER_IMAGES_VIDEO_UI_URL__', 'Atelier Images &amp; Vidéo')">
           <span class="creation-emoji">🖼️</span>
           <span class="creation-titre">Images &amp; Vidéo</span>
-          <span class="creation-desc">Génération d'images et de vidéo — brique à venir.</span>
-          <span class="creation-badge creation-badge-bientot">Bientôt</span>
+          <span class="creation-desc">Génération libre d'images et de vidéo, synergies avec le Studio (portraits, couvertures, teasers) et galerie des créations sauvegardées.</span>
+          <span class="creation-badge">Brique · port 6160</span>
         </button>
       </div>
     </div>
@@ -3459,6 +3459,11 @@ async def dashboard(request: Request):
     # déjà posée), PAR PERSONNE — PAS l'URL brute + STUDIO_KEY statique (qui retombait sur le
     # même tenant partagé par tout le foyer, trou S183). Motif mail S185.
     studio_ui = "/studio-app/"
+    # Atelier Images & Vidéo : même motif que Studio (proxy Cœur, session, isolation par
+    # personne) — PAS l'URL brute :6160 (qui contournerait l'injection X-User-Id de session
+    # et exposerait un accès mono-tenant non isolé, même trou que S183 un cran plus loin,
+    # cf. core/routers/atelier_images_video_proxy.py).
+    atelier_images_video_ui = "/atelier-images-video-app/atelier"
     # Même motif pour GeoHub : le front carte lit `?api_key=` (X-API-Key sur ses fetch).
     geo_ui = u("GEO")
     if GEO_KEY:
@@ -3483,6 +3488,7 @@ async def dashboard(request: Request):
     return HTMLResponse(content=DASHBOARD_HTML
         .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
+        .replace("__ATELIER_IMAGES_VIDEO_UI_URL__", atelier_images_video_ui)
         .replace("__PERSONNAGES_UI_URL__", personnages_ui)
         .replace("__TRANSCRIPTION_UI_URL__", u("TRANSCRIPTION"))
         .replace("__RESTAURANT_UI_URL__", u("RESTAURANT"))
