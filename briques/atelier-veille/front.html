@@ -33,12 +33,12 @@
     <p>Carte des créations d'entreprises, sources RSS et digests quotidiens — en un seul endroit.</p>
   </header>
   <nav class="onglets">
-    <button id="btn-carte" class="actif" onclick="ouvrirOnglet('carte')">Carte</button>
+    <button id="btn-digests" class="actif" onclick="ouvrirOnglet('digests')">Digests</button>
     <button id="btn-sources" onclick="ouvrirOnglet('sources')">Sources RSS</button>
-    <button id="btn-digests" onclick="ouvrirOnglet('digests')">Digests</button>
+    <button id="btn-carte" onclick="ouvrirOnglet('carte')">Carte</button>
   </nav>
 
-  <div id="vue-carte" class="vue actif panel" style="padding:0;overflow:hidden">
+  <div id="vue-carte" class="vue panel" style="padding:0;overflow:hidden">
     <iframe id="geo-iframe" title="Carte de veille"
       style="width:100%;height:70vh;border:0;display:block"></iframe>
     <div id="erreur-carte" style="color:var(--bad);margin:8px;font-size:.85rem"></div>
@@ -55,7 +55,7 @@
     </div>
     <div id="erreur-sources" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
   </div>
-  <div id="vue-digests" class="vue panel">
+  <div id="vue-digests" class="vue actif panel">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <h3 style="margin:0">Digests quotidiens</h3>
       <button id="btn-generer-digest" onclick="genererDigest()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">
@@ -107,7 +107,7 @@ async function chargerSources() {
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
         <div><b>${esc(s.nom)}</b><br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
         <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
-      </div>`).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\\'instant.</p>';
+      </div>`).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\'instant.</p>';
   } catch (e) {
     erreur.textContent = String(e.message || e);
   }
@@ -158,7 +158,7 @@ async function chargerDigests() {
         <b>${esc(d.date)}</b> <span style="color:var(--mut);font-size:.8rem">(${d.nb_articles} article${d.nb_articles > 1 ? 's' : ''})</span>
         <p style="margin:6px 0">${esc(d.texte_resume)}</p>
         ${d.audio_url ? `<audio controls src="${esc(d.audio_url)}"></audio>` : '<span style="color:var(--mut);font-size:.8rem">Pas encore de version audio.</span>'}
-      </div>`).join('') : '<p style="color:var(--mut)">Aucun digest généré pour l\\'instant.</p>';
+      </div>`).join('') : '<p style="color:var(--mut)">Aucun digest généré pour l\'instant.</p>';
   } catch (e) {
     erreur.textContent = String(e.message || e);
   }
@@ -181,7 +181,7 @@ async function genererDigest() {
 }
 
 chargerConfig();
-chargerSources();
+chargerDigests();
 </script>
 </body>
 </html>
