@@ -305,9 +305,6 @@ services:
       dockerfile: forge/frontend/Dockerfile
     ports:
       - "${FORGE_FRONTEND_PORT:-3000}:80"
-    extra_hosts:
-      # Permet à `host.docker.internal` (nginx.conf, proxy Keycloak) de viser l'hôte sous Linux.
-      - "host.docker.internal:host-gateway"
     depends_on:
       # Front-door nginx → core (backend forge unique).
       core:
