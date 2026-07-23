@@ -176,3 +176,40 @@ async def studio_couverture(serie_id: str, n: int, identite: str = Depends(_iden
 async def studio_teaser(serie_id: str, n: int, identite: str = Depends(_identite_service)):
     url = f"{STUDIO_URL}/series/{serie_id}/episode/{n}/teaser"
     return await _relayer("POST", url, _entetes_studio(identite), "studio")
+
+
+class AjouterGalerie(BaseModel):
+    titre: str
+    prompt: str
+    medium: str                       # "image" | "video"
+    url: str
+    fournisseur: Optional[str] = None
+    place_holder: bool = False
+
+
+@app.post("/galerie", tags=["galerie"])
+async def galerie_ajouter(body: AjouterGalerie, identite: str = Depends(_identite_service)):
+    corps = {
+        "type": "ressource", "titre": body.titre, "contenu": body.prompt,
+        "wing": "atelier-images-video", "room": body.medium,
+        "metadata": {"url": body.url, "fournisseur": body.fournisseur,
+                    "place_holder": body.place_holder},
+    }
+    return await _relayer("POST", f"{MEMOIRE_URL}/retenir", _entetes_memoire(identite),
+                          "mémoire", corps)
+
+
+@app.get("/galerie", tags=["galerie"])
+async def galerie_lister(medium: Optional[str] = None,
+                         identite: str = Depends(_identite_service)):
+    params = {"wing": "atelier-images-video"}
+    if medium:
+        params["room"] = medium
+    return await _relayer("GET", f"{MEMOIRE_URL}/souvenirs", _entetes_memoire(identite),
+                          "mémoire", params=params)
+
+
+@app.delete("/galerie/{souvenir_id}", tags=["galerie"])
+async def galerie_supprimer(souvenir_id: str, identite: str = Depends(_identite_service)):
+    url = f"{MEMOIRE_URL}/souvenir/{souvenir_id}"
+    return await _relayer("DELETE", url, _entetes_memoire(identite), "mémoire")
