@@ -1,1 +1,54 @@
-/* Remplacé à la Task 7 par la copie du socle partagé via outils/sync_socle.sh. */
+/* ════════════════════════════════════════════════════════════════════════
+ * Design system Workplace — « squelette partagé, accent par brique » (S123)
+ * ────────────────────────────────────────────────────────────────────────
+ * SOURCE UNIQUE des tokens visuels du monorepo. Copié tel quel dans le Cœur
+ * et chaque brique qui sert un front (Docker COPY .) via outils/sync_socle.sh.
+ * ⚠️ Ne PAS éditer les copies dans core/ ni briques/* : éditer CE fichier
+ * puis relancer la synchro.
+ *
+ * Modèle : le SQUELETTE neutre (fonds ardoise, bordures, texte, rayons,
+ * espacement, typo) est UNIFORME pour toute l'app ; l'ACCENT reste propre à
+ * chaque brique (synopsis ambre, voix or, studio or chaud, perso violet…).
+ * Une brique adopte le système en :
+ *   1. <link rel="stylesheet" href="/workplace.css"> dans son <head> ;
+ *   2. son :root local alias ses variables sur var(--wp-*), en ne redéfinissant
+ *      que son accent. Le corps du front reste inchangé.
+ *
+ * Palette canonique = celle du dashboard du Cœur (ardoise/indigo).
+ * ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* — Fonds & neutres (squelette partagé, ardoise) — */
+  --wp-bg:        #0f1117;   /* fond de page */
+  --wp-surface:   #1e2535;   /* panneau / carte */
+  --wp-surface-2: #2d3148;   /* panneau surélevé / champ */
+  --wp-border:    #3d4468;   /* bordures, séparateurs */
+
+  /* — Texte — */
+  --wp-text:      #e2e8f0;   /* texte principal */
+  --wp-muted:     #94a3b8;   /* texte secondaire */
+  --wp-faint:     #64748b;   /* texte tertiaire / désactivé */
+
+  /* — Accent (défaut du Cœur ; CHAQUE brique peut le redéfinir) — */
+  --wp-accent:    #7c83ff;
+  --wp-accent-2:  #5865f2;
+
+  /* — États — */
+  --wp-ok:        #5fd0a0;
+  --wp-warn:      #f59e0b;
+  --wp-err:       #ef4444;
+
+  /* — Squelette : rayons, espacement, ombres — */
+  --wp-radius:    12px;
+  --wp-radius-sm: 8px;
+  --wp-gap:       12px;
+  --wp-shadow:    0 8px 28px rgba(0, 0, 0, .38);
+
+  /* — Typographie — */
+  --wp-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  --wp-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* NOTE — ce fichier ne contient QUE des tokens (custom properties). Aucune
+ * règle de mise en page : tant qu'un front ne référence pas un var(--wp-*),
+ * le charger n'altère RIEN. Chaque front garde son propre corps CSS. */
