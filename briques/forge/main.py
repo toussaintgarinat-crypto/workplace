@@ -160,6 +160,14 @@ class _ServiceAuth:
             self._exp_monotonic = time.monotonic() + float(d.get("expires_in", 300))
             return self._token
 
+    def invalider(self) -> None:
+        """Force un renouvellement au prochain appel : le jeton mémoïsé peut avoir été
+        révoqué côté Keycloak avant sa péremption annoncée (secret changé, client
+        désactivé) — `token()` ne vérifie que l'horloge, jamais l'acceptation réelle par
+        le core (même trou que celui corrigé dans briques/memoire, constaté 2026-07-23)."""
+        self._token = None
+        self._exp_monotonic = 0.0
+
 
 _auth = _ServiceAuth()
 
@@ -180,6 +188,7 @@ async def _appel_protege(
     - core injoignable → 503.
     """
     jeton_utilisateur = _JETON_UTILISATEUR.get()
+    entetes_supp = kw.pop("headers", {})
     if jeton_utilisateur:
         token = jeton_utilisateur
     else:
@@ -189,11 +198,28 @@ async def _appel_protege(
             token = await _auth.token(client)
         except httpx.HTTPError as e:
             raise HTTPException(502, f"Jeton de service Keycloak indisponible : {e}")
-    headers = {**kw.pop("headers", {}), "Authorization": f"Bearer {token}"}
+    headers = {**entetes_supp, "Authorization": f"Bearer {token}"}
     try:
-        return await client.request(methode, f"{FORGE_CORE_URL}{chemin}", headers=headers, **kw)
+        r = await client.request(methode, f"{FORGE_CORE_URL}{chemin}", headers=headers, **kw)
     except httpx.HTTPError as e:
         raise HTTPException(503, f"Core Forge injoignable : {e}")
+    # Filet de retry (même motif que briques/memoire, bug constaté 2026-07-23) : un 401
+    # sur le jeton de SERVICE mémoïsé peut signifier qu'il a été révoqué avant sa
+    # péremption annoncée — on invalide le cache et on réessaie UNE fois avec un jeton
+    # frais. Un 401 sur un jeton UTILISATEUR n'est PAS retenté : Forge n'a aucun moyen
+    # d'obtenir un meilleur jeton utilisateur, seul l'appelant original peut en fournir un.
+    if r.status_code == 401 and not jeton_utilisateur:
+        _auth.invalider()
+        try:
+            token = await _auth.token(client)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"Jeton de service Keycloak indisponible : {e}")
+        headers = {**entetes_supp, "Authorization": f"Bearer {token}"}
+        try:
+            r = await client.request(methode, f"{FORGE_CORE_URL}{chemin}", headers=headers, **kw)
+        except httpx.HTTPError as e:
+            raise HTTPException(503, f"Core Forge injoignable : {e}")
+    return r
 
 
 # ── Contrat ────────────────────────────────────────────────────────────────────
