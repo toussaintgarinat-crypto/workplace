@@ -2,9 +2,346 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atelier Images & Vidéo</title>
+<link rel="stylesheet" href="/workplace.css">
+<style>
+  :root{
+    --bg:var(--wp-bg); --panel:var(--wp-surface); --panel2:var(--wp-surface-2); --line:var(--wp-border);
+    --ink:var(--wp-text); --mut:var(--wp-muted); --accent:#c77dff; --ok:var(--wp-ok);
+    --warn:var(--wp-warn); --bad:var(--wp-err);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Segoe UI',-apple-system,system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 90px}
+  header h1{margin:0;font-size:1.5rem}
+  header h1 .dot{color:var(--accent)}
+  header p{color:var(--mut);margin:5px 0 0;font-size:.9rem}
+  nav.onglets{display:flex;gap:8px;margin:18px 0;flex-wrap:wrap}
+  nav.onglets button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+    color:var(--mut);border-radius:20px;padding:7px 16px;font-size:.85rem}
+  nav.onglets button.actif{background:var(--accent);color:#1a0b26;border-color:var(--accent);font-weight:600}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .vue{display:none}
+  .vue.actif{display:block}
+  label{display:block;font-size:.8rem;color:var(--mut);margin:10px 0 4px}
+  input,textarea,select{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);font-family:inherit}
+  textarea{min-height:70px;resize:vertical}
+  .ligne{display:flex;gap:10px;flex-wrap:wrap}
+  .ligne>div{flex:1;min-width:140px}
+  button.action{margin-top:14px;padding:9px 18px;border-radius:8px;border:1px solid var(--accent);
+    background:var(--accent);color:#1a0b26;font-weight:600;cursor:pointer}
+  button.discret{padding:6px 12px;border-radius:8px;border:1px solid var(--line);
+    background:transparent;color:var(--mut);cursor:pointer;font-size:.8rem}
+  .resultat{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+  .resultat img,.resultat video{max-width:100%;border-radius:8px;display:block}
+  .avert{color:var(--warn);font-size:.8rem;margin-top:6px}
+  .erreur{color:var(--bad);font-size:.85rem;margin-top:8px}
+  .carte{border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px}
+  .carte h4{margin:0 0 6px}
+  .carte .meta{color:var(--mut);font-size:.8rem;margin-bottom:8px}
+  .grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:14px}
+</style>
 </head>
 <body>
-<p>Atelier Images & Vidéo — en construction (Task 7 complète le vrai front).</p>
+<div class="wrap">
+  <header>
+    <h1><span class="dot">🎨</span> Atelier Images & Vidéo</h1>
+    <p>Génération libre, synergies avec le Studio (portraits, couvertures, teasers) et galerie des créations.</p>
+  </header>
+  <nav class="onglets">
+    <button id="btn-image" class="actif" onclick="ouvrirOnglet('image')">Image libre</button>
+    <button id="btn-video" onclick="ouvrirOnglet('video')">Vidéo libre</button>
+    <button id="btn-synergies" onclick="ouvrirOnglet('synergies')">Synergies</button>
+    <button id="btn-galerie" onclick="ouvrirOnglet('galerie')">Galerie</button>
+  </nav>
+
+  <div id="vue-image" class="vue actif panel">
+    <div class="ligne">
+      <div style="flex:2">
+        <label>Prompt</label>
+        <textarea id="image-prompt" placeholder="Un chat qui dort au soleil, style aquarelle…"></textarea>
+      </div>
+      <div>
+        <label>Mes prompts favoris</label>
+        <select id="image-presets" onchange="chargerPreset('image')"><option value="">—</option></select>
+        <button class="discret" style="margin-top:6px" onclick="sauverPreset('image')">💾 Sauver ce prompt</button>
+      </div>
+    </div>
+    <label>Négatif (optionnel)</label>
+    <input id="image-negatif" placeholder="flou, déformé…">
+    <div class="ligne">
+      <div><label>Largeur</label><input id="image-largeur" type="number" value="1024"></div>
+      <div><label>Hauteur</label><input id="image-hauteur" type="number" value="1024"></div>
+      <div><label>Fournisseur</label><select id="image-fournisseur"><option value="">auto (ordre par défaut)</option></select></div>
+    </div>
+    <button class="action" onclick="genererImage()">Générer l'image</button>
+    <div id="image-erreur" class="erreur"></div>
+    <div id="image-resultat"></div>
+  </div>
+
+  <div id="vue-video" class="vue panel">
+    <div class="ligne">
+      <div style="flex:2">
+        <label>Prompt</label>
+        <textarea id="video-prompt" placeholder="Un chat qui court dans un jardin…"></textarea>
+      </div>
+      <div>
+        <label>Mes prompts favoris</label>
+        <select id="video-presets" onchange="chargerPreset('video')"><option value="">—</option></select>
+        <button class="discret" style="margin-top:6px" onclick="sauverPreset('video')">💾 Sauver ce prompt</button>
+      </div>
+    </div>
+    <label>Image de départ (URL, optionnel — image→vidéo)</label>
+    <input id="video-image-url" placeholder="/fichiers/img-1.png">
+    <div class="ligne">
+      <div><label>Durée (secondes)</label><input id="video-secondes" type="number" value="5"></div>
+      <div><label>Fournisseur</label><select id="video-fournisseur"><option value="">auto (ordre par défaut)</option></select></div>
+    </div>
+    <button class="action" onclick="genererVideo()">Générer la vidéo</button>
+    <div id="video-erreur" class="erreur"></div>
+    <div id="video-resultat"></div>
+  </div>
+
+  <div id="vue-synergies" class="vue panel">
+    <label>Série</label>
+    <select id="synergie-serie" onchange="changerSerie()"><option value="">Choisis une série…</option></select>
+    <div id="synergie-erreur" class="erreur"></div>
+    <div id="synergie-personnages"></div>
+    <div id="synergie-episodes"></div>
+  </div>
+
+  <div id="vue-galerie" class="vue panel">
+    <div class="ligne">
+      <button class="discret" onclick="chargerGalerie('')">Tout</button>
+      <button class="discret" onclick="chargerGalerie('image')">Images</button>
+      <button class="discret" onclick="chargerGalerie('video')">Vidéos</button>
+    </div>
+    <div id="galerie-erreur" class="erreur"></div>
+    <div id="galerie-grille" class="grille"></div>
+  </div>
+</div>
+<script>
+function ouvrirOnglet(nom) {
+  for (const n of ['image', 'video', 'synergies', 'galerie']) {
+    document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
+    document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
+  }
+  if (nom === 'synergies') chargerSeries();
+  if (nom === 'galerie') chargerGalerie('');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Préfixe posé par le proxy Cœur /atelier-images-video-app/* : vide en usage autoporté,
+// donc ce changement est un NO-OP hors du proxy — mêmes chemins relatifs qu'avant.
+const API_BASE = window.ATELIER_IV_API_BASE || '';
+async function api(path, method = 'GET', body = null) {
+  const r = await fetch(API_BASE + path, {
+    method, headers: body ? {'Content-Type': 'application/json'} : {},
+    body: body != null ? JSON.stringify(body) : null,
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || ('HTTP ' + r.status)); }
+  return r.status === 204 ? null : r.json();
+}
+
+// ── Presets (localStorage, aucun backend) ─────────────────────────────────
+function clePreset(type) { return 'atelier_iv_presets_' + type; }
+function listerPresets(type) { return JSON.parse(localStorage.getItem(clePreset(type)) || '[]'); }
+function rafraichirPresets(type) {
+  const select = document.getElementById(type + '-presets');
+  const presets = listerPresets(type);
+  select.innerHTML = '<option value="">—</option>' +
+    presets.map((p, i) => `<option value="${i}">${esc(p.nom)}</option>`).join('');
+}
+function sauverPreset(type) {
+  const nom = prompt('Nom de ce prompt favori ?');
+  if (!nom) return;
+  const valeur = document.getElementById(type + '-prompt').value.trim();
+  if (!valeur) return;
+  const presets = listerPresets(type);
+  presets.push({nom, prompt: valeur});
+  localStorage.setItem(clePreset(type), JSON.stringify(presets));
+  rafraichirPresets(type);
+}
+function chargerPreset(type) {
+  const i = document.getElementById(type + '-presets').value;
+  if (i === '') return;
+  document.getElementById(type + '-prompt').value = listerPresets(type)[i].prompt;
+}
+rafraichirPresets('image');
+rafraichirPresets('video');
+
+// ── Génération libre ───────────────────────────────────────────────────────
+async function chargerFournisseurs(type) {
+  const select = document.getElementById(type + '-fournisseur');
+  try {
+    const data = await api('/' + type + '/fournisseurs');
+    select.innerHTML = '<option value="">auto (ordre par défaut)</option>' +
+      data.fournisseurs.map(f => `<option value="${esc(f.nom)}">${esc(f.nom)}${f.configure ? '' : ' (non configuré)'}</option>`).join('');
+  } catch (e) { /* select reste sur le seul choix "auto" */ }
+}
+chargerFournisseurs('images');
+chargerFournisseurs('video');
+
+function afficherResultatMedia(cible, medium, data, titre, prompt) {
+  const url = data.url;
+  const avert = data.place_holder ? '<div class="avert">⚠️ Placeholder — aucun fournisseur réel n\'a produit ce média.</div>' : '';
+  const media = medium === 'image' ? `<img src="${esc(url)}" alt="résultat">` : `<video controls src="${esc(url)}"></video>`;
+  cible.innerHTML = `<div class="resultat">${media}${avert}
+    <button class="discret" style="margin-top:8px" onclick='ajouterGalerie(${JSON.stringify(medium)}, ${JSON.stringify(titre)}, ${JSON.stringify(prompt)}, ${JSON.stringify(url)}, ${JSON.stringify(data.backend || null)}, ${!!data.place_holder})'>➕ Ajouter à la galerie</button>
+  </div>`;
+}
+
+async function genererImage() {
+  const prompt = document.getElementById('image-prompt').value.trim();
+  const erreur = document.getElementById('image-erreur');
+  const cible = document.getElementById('image-resultat');
+  erreur.textContent = ''; cible.innerHTML = '';
+  if (!prompt) { erreur.textContent = 'Le prompt est vide.'; return; }
+  try {
+    const data = await api('/images/generer', 'POST', {
+      prompt,
+      negatif: document.getElementById('image-negatif').value.trim() || null,
+      largeur: parseInt(document.getElementById('image-largeur').value, 10) || 1024,
+      hauteur: parseInt(document.getElementById('image-hauteur').value, 10) || 1024,
+      fournisseur: document.getElementById('image-fournisseur').value || null,
+    });
+    afficherResultatMedia(cible, 'image', data, prompt.slice(0, 60), prompt);
+  } catch (e) { erreur.textContent = String(e.message || e); }
+}
+
+async function genererVideo() {
+  const prompt = document.getElementById('video-prompt').value.trim();
+  const erreur = document.getElementById('video-erreur');
+  const cible = document.getElementById('video-resultat');
+  erreur.textContent = ''; cible.innerHTML = '';
+  if (!prompt) { erreur.textContent = 'Le prompt est vide.'; return; }
+  try {
+    const data = await api('/video/generer', 'POST', {
+      prompt,
+      image_url: document.getElementById('video-image-url').value.trim() || null,
+      secondes: parseInt(document.getElementById('video-secondes').value, 10) || 5,
+      fournisseur: document.getElementById('video-fournisseur').value || null,
+    });
+    afficherResultatMedia(cible, 'video', data, prompt.slice(0, 60), prompt);
+  } catch (e) { erreur.textContent = String(e.message || e); }
+}
+
+// ── Synergies Studio ───────────────────────────────────────────────────────
+async function chargerSeries() {
+  const select = document.getElementById('synergie-serie');
+  const erreur = document.getElementById('synergie-erreur');
+  erreur.textContent = '';
+  try {
+    const series = await api('/studio/series');
+    select.innerHTML = '<option value="">Choisis une série…</option>' +
+      series.map(s => `<option value="${esc(s.id)}">${esc(s.titre)}</option>`).join('');
+  } catch (e) { erreur.textContent = String(e.message || e); }
+}
+
+async function changerSerie() {
+  const id = document.getElementById('synergie-serie').value;
+  const zonePersos = document.getElementById('synergie-personnages');
+  const zoneEpisodes = document.getElementById('synergie-episodes');
+  const erreur = document.getElementById('synergie-erreur');
+  erreur.textContent = ''; zonePersos.innerHTML = ''; zoneEpisodes.innerHTML = '';
+  if (!id) return;
+  try {
+    const serie = await api('/studio/series/' + id);
+    zonePersos.innerHTML = '<h3>Personnages</h3>' + (serie.personnages || []).map(p => `
+      <div class="carte" id="perso-${esc(p.id)}">
+        <h4>${esc(p.nom)}</h4>
+        <div class="meta">${esc(p.role || '')}</div>
+        <button class="discret" onclick="genererPortrait('${esc(id)}','${esc(p.id)}')">🖼️ Portrait</button>
+        <button class="discret" onclick="genererAnimation('${esc(id)}','${esc(p.id)}')">🎬 Animer</button>
+        <div id="perso-resultat-${esc(p.id)}"></div>
+      </div>`).join('') || '<p style="color:var(--mut)">Aucun personnage dans cette série.</p>';
+    zoneEpisodes.innerHTML = '<h3>Chapitres</h3>' + (serie.episodes || []).map(e => `
+      <div class="carte" id="episode-${e.n}">
+        <h4>Chapitre ${e.n}</h4>
+        <div class="meta">${esc((e.consigne || '').slice(0, 100))}</div>
+        <button class="discret" onclick="genererCouverture('${esc(id)}',${e.n})">🖼️ Couverture</button>
+        <button class="discret" onclick="genererTeaser('${esc(id)}',${e.n})">🎬 Teaser</button>
+        <div id="episode-resultat-${e.n}"></div>
+      </div>`).join('') || '<p style="color:var(--mut)">Aucun chapitre dans cette série.</p>';
+  } catch (e) { erreur.textContent = String(e.message || e); }
+}
+
+async function genererPortrait(serieId, pid) {
+  const cible = document.getElementById('perso-resultat-' + pid);
+  try {
+    const data = await api(`/studio/series/${serieId}/personnages/${pid}/portrait`, 'POST');
+    afficherResultatMedia(cible, 'image', {url: data.portrait_url, place_holder: data.place_holder},
+      'Portrait ' + (data.perso ? data.perso.nom : ''), data.prompt_visuel || '');
+  } catch (e) { cible.innerHTML = `<div class="erreur">${esc(e.message || e)}</div>`; }
+}
+
+async function genererAnimation(serieId, pid) {
+  const cible = document.getElementById('perso-resultat-' + pid);
+  try {
+    const data = await api(`/studio/series/${serieId}/personnages/${pid}/animer`, 'POST');
+    afficherResultatMedia(cible, 'video', {url: data.clip_url, place_holder: data.place_holder},
+      'Animation ' + (data.perso ? data.perso.nom : ''), data.prompt_visuel || '');
+  } catch (e) { cible.innerHTML = `<div class="erreur">${esc(e.message || e)}</div>`; }
+}
+
+async function genererCouverture(serieId, n) {
+  const cible = document.getElementById('episode-resultat-' + n);
+  try {
+    const data = await api(`/studio/series/${serieId}/episode/${n}/couverture`, 'POST');
+    afficherResultatMedia(cible, 'image', {url: data.cover_url, place_holder: data.place_holder},
+      'Couverture chapitre ' + n, data.prompt_visuel || '');
+  } catch (e) { cible.innerHTML = `<div class="erreur">${esc(e.message || e)}</div>`; }
+}
+
+async function genererTeaser(serieId, n) {
+  const cible = document.getElementById('episode-resultat-' + n);
+  try {
+    const data = await api(`/studio/series/${serieId}/episode/${n}/teaser`, 'POST');
+    afficherResultatMedia(cible, 'video', {url: data.teaser_url, place_holder: data.place_holder},
+      'Teaser chapitre ' + n, data.prompt_visuel || '');
+  } catch (e) { cible.innerHTML = `<div class="erreur">${esc(e.message || e)}</div>`; }
+}
+
+// ── Galerie ─────────────────────────────────────────────────────────────
+async function ajouterGalerie(medium, titre, prompt, url, fournisseur, place_holder) {
+  try {
+    await api('/galerie', 'POST', {titre, prompt, medium, url, fournisseur, place_holder});
+  } catch (e) { alert('Ajout à la galerie impossible : ' + (e.message || e)); }
+}
+
+async function chargerGalerie(medium) {
+  const cible = document.getElementById('galerie-grille');
+  const erreur = document.getElementById('galerie-erreur');
+  erreur.textContent = ''; cible.innerHTML = '';
+  try {
+    const data = await api('/galerie' + (medium ? '?medium=' + medium : ''));
+    cible.innerHTML = (data.souvenirs || []).map(s => {
+      const meta = s.metadata || {};
+      const media = meta.url ? (s.room === 'video'
+        ? `<video controls src="${esc(meta.url)}"></video>`
+        : `<img src="${esc(meta.url)}" alt="${esc(s.titre)}">`) : '';
+      return `<div class="carte">
+        <h4>${esc(s.titre)}</h4>
+        ${media}
+        <div class="meta">${esc(meta.fournisseur || '')}</div>
+        <button class="discret" onclick="supprimerGalerie('${esc(s.id)}')">🗑️ Supprimer</button>
+      </div>`;
+    }).join('') || '<p style="color:var(--mut)">Aucune création sauvegardée pour l\'instant.</p>';
+  } catch (e) { erreur.textContent = String(e.message || e); }
+}
+
+async function supprimerGalerie(id) {
+  try {
+    await api('/galerie/' + id, 'DELETE');
+    chargerGalerie('');
+  } catch (e) { alert('Suppression impossible : ' + (e.message || e)); }
+}
+</script>
 </body>
 </html>
