@@ -137,3 +137,17 @@ def test_front_echappe_les_autres_onclicks_synergies_contre_injection_html():
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
     assert "esc(" not in ligne
+
+
+def test_front_couvre_le_comparatif_de_modeles():
+    html = client.get("/").text
+    for marqueur in ("chargerModelesComparatif", "lancerComparatif", "/images/modeles",
+                     "id=\"comparatif-modeles\"", "id=\"comparatif-grille\"",
+                     "fournisseur: 'gateway'"):
+        assert marqueur in html, f"marqueur absent : {marqueur}"
+
+
+def test_front_comparatif_recharge_les_modeles_a_louverture_de_longlet():
+    html = client.get("/").text
+    assert "chargerModelesComparatif()" in html
+    assert "'comparatif'" in html  # présent dans la liste des onglets de ouvrirOnglet()

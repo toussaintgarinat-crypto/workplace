@@ -56,6 +56,7 @@
     <button id="btn-video" onclick="ouvrirOnglet('video')">Vidéo libre</button>
     <button id="btn-synergies" onclick="ouvrirOnglet('synergies')">Synergies</button>
     <button id="btn-galerie" onclick="ouvrirOnglet('galerie')">Galerie</button>
+    <button id="btn-comparatif" onclick="ouvrirOnglet('comparatif')">Comparatif</button>
   </nav>
 
   <div id="vue-image" class="vue actif panel">
@@ -122,15 +123,26 @@
     <div id="galerie-erreur" class="erreur"></div>
     <div id="galerie-grille" class="grille"></div>
   </div>
+
+  <div id="vue-comparatif" class="vue panel">
+    <label>Prompt</label>
+    <textarea id="comparatif-prompt" placeholder="Un phare battu par la tempête, style aquarelle…"></textarea>
+    <label>Modèles à comparer (via la Gateway)</label>
+    <div id="comparatif-modeles">Chargement…</div>
+    <button class="action" onclick="lancerComparatif()">Comparer</button>
+    <div id="comparatif-erreur" class="erreur"></div>
+    <div id="comparatif-grille" class="grille"></div>
+  </div>
 </div>
 <script>
 function ouvrirOnglet(nom) {
-  for (const n of ['image', 'video', 'synergies', 'galerie']) {
+  for (const n of ['image', 'video', 'synergies', 'galerie', 'comparatif']) {
     document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
     document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
   }
   if (nom === 'synergies') chargerSeries();
   if (nom === 'galerie') chargerGalerie('');
+  if (nom === 'comparatif') chargerModelesComparatif();
 }
 
 function esc(s) {
@@ -358,6 +370,50 @@ async function supprimerGalerie(id) {
     await api('/galerie/' + id, 'DELETE');
     chargerGalerie('');
   } catch (e) { alert('Suppression impossible : ' + (e.message || e)); }
+}
+
+// ── Comparatif de modèles (via la Gateway/OpenRouter) ──────────────────────
+async function chargerModelesComparatif() {
+  const zone = document.getElementById('comparatif-modeles');
+  const erreur = document.getElementById('comparatif-erreur');
+  erreur.textContent = ''; zone.innerHTML = 'Chargement…';
+  try {
+    const data = await api('/images/modeles');
+    zone.innerHTML = (data.modeles || []).map(m => `
+      <label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:4px 0">
+        <input type="checkbox" value="${esc(m.id)}" class="comparatif-case">
+        ${esc(m.id)}${m.prix_image != null ? ` <span style="color:var(--mut)">(${esc(String(m.prix_image))} $/token image)</span>` : ''}
+      </label>`).join('') || '<p style="color:var(--mut)">Aucun modèle disponible.</p>';
+  } catch (e) {
+    zone.innerHTML = '';
+    erreur.innerHTML = esc(e.message || e) +
+      ' <button class="discret" onclick="chargerModelesComparatif()">Réessayer</button>';
+  }
+}
+
+async function lancerComparatif() {
+  const prompt = document.getElementById('comparatif-prompt').value.trim();
+  const erreur = document.getElementById('comparatif-erreur');
+  const grille = document.getElementById('comparatif-grille');
+  erreur.textContent = ''; grille.innerHTML = '';
+  if (!prompt) { erreur.textContent = 'Le prompt est vide.'; return; }
+  const modeles = [...document.querySelectorAll('.comparatif-case:checked')].map(c => c.value);
+  if (!modeles.length) { erreur.textContent = 'Coche au moins un modèle.'; return; }
+  grille.innerHTML = modeles.map((m, i) => `<div class="carte" id="comparatif-resultat-${i}">
+    <h4>${esc(m)}</h4><p style="color:var(--mut)">Génération…</p></div>`).join('');
+  await Promise.allSettled(modeles.map(async (modele, i) => {
+    const carte = document.getElementById('comparatif-resultat-' + i);
+    try {
+      const data = await api('/images/generer', 'POST', {prompt, fournisseur: 'gateway', modele});
+      const avert = data.place_holder
+        ? '<div class="avert">⚠️ Placeholder — aucun fournisseur réel n\'a produit ce média.</div>' : '';
+      carte.innerHTML = `<h4>${esc(modele)}</h4>
+        <img src="${esc(mediaUrl(data.url))}" alt="${esc(modele)}">${avert}
+        <button class="discret" style="margin-top:8px" onclick='ajouterGalerie("image", ${jsonAttr(prompt.slice(0, 60) + " (" + modele + ")")}, ${jsonAttr(prompt)}, ${jsonAttr(data.url)}, ${jsonAttr(modele)}, ${!!data.place_holder})'>➕ Ajouter à la galerie</button>`;
+    } catch (e) {
+      carte.innerHTML = `<h4>${esc(modele)}</h4><div class="erreur">${esc(e.message || e)}</div>`;
+    }
+  }));
 }
 </script>
 </body>
