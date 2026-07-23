@@ -28,6 +28,46 @@ async def test_lister_videos(client):
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_lister_videos_reessaie_une_fois_si_jeton_expire(client):
+    """Même filet que briques/memoire/forge/oria (bug constaté 2026-07-23) : un 401 sur
+    le jeton mémoïsé déclenche une invalidation + un seul réessai avec un jeton frais."""
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
+    respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
+        200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
+    ))
+    route = respx.get(f"{PEERTUBE_URL}/api/v1/videos").mock(side_effect=[
+        httpx.Response(401, json={"error": "invalid_token"}),
+        httpx.Response(200, json={"total": 1, "data": [{"uuid": "abc-123"}]}),
+    ])
+    videos = await client.lister_videos()
+    assert len(videos) == 1
+    assert videos[0]["uuid"] == "abc-123"
+    assert route.call_count == 2
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_lister_videos_abandonne_si_le_jeton_frais_echoue_aussi(client):
+    """Un seul essai de plus (pas de boucle infinie) : si le second essai échoue aussi,
+    l'erreur remonte normalement."""
+    respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
+        200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
+    ))
+    respx.post(f"{PEERTUBE_URL}/api/v1/users/token").mock(return_value=httpx.Response(
+        200, json={"access_token": "tok123", "token_type": "Bearer", "expires_in": 86400}
+    ))
+    route = respx.get(f"{PEERTUBE_URL}/api/v1/videos").mock(
+        return_value=httpx.Response(401, json={"error": "invalid_token"})
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.lister_videos()
+    assert route.call_count == 2
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_info_video(client):
     respx.get(f"{PEERTUBE_URL}/api/v1/oauth-clients/local").mock(return_value=httpx.Response(
         200, json={"client_id": "client-id-xxx", "client_secret": "client-secret-xxx"}
