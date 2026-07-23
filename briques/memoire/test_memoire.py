@@ -89,6 +89,57 @@ async def test_retenir_mappe_location_et_frontmatter():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_retenir_reessaie_une_fois_si_jeton_expire():
+    """Si Memory répond 401 sur le jeton mémoïsé (expiré côté Memory — `_token` ne le
+    détecte jamais lui-même, il renvoie juste la valeur en cache), on invalide le cache
+    et on réessaie UNE fois avec un jeton frais avant d'abandonner. Sans ce filet, un
+    401 casse SILENCIEUSEMENT tout appelant jusqu'à un redémarrage manuel du conteneur —
+    bug constaté en prod le 2026-07-23 (jeton de service resté ~30h en cache)."""
+    _mock_auth_et_espace(respx.mock)
+    route = respx.post(f"{API}/api/v1/spaces/{ESPACE_ID}/nodes").mock(
+        side_effect=[
+            httpx.Response(401, json={"detail": "Invalid token"}),
+            httpx.Response(201, json={"id": "node-1", "title": "Note", "type": "input"}),
+        ]
+    )
+    r = await _appel("POST", "/retenir", json={"contenu": "test", "titre": "Note"})
+    assert r.status_code == 200
+    assert r.json()["id"] == "node-1"
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retenir_abandonne_si_le_jeton_frais_echoue_aussi():
+    """Un seul essai de plus (pas de boucle infinie) : si le second essai échoue aussi,
+    on relaie l'erreur normalement (502)."""
+    _mock_auth_et_espace(respx.mock)
+    route = respx.post(f"{API}/api/v1/spaces/{ESPACE_ID}/nodes").mock(
+        return_value=httpx.Response(401, json={"detail": "Invalid token"})
+    )
+    r = await _appel("POST", "/retenir", json={"contenu": "test", "titre": "Note"})
+    assert r.status_code == 502
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_taxonomy_reessaie_une_fois_si_jeton_expire():
+    """Même filet que /retenir, sur une route GET (chemin _appel différent : /stats)."""
+    _mock_auth_et_espace(respx.mock)
+    respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/stats").mock(
+        side_effect=[
+            httpx.Response(401, json={"detail": "Invalid token"}),
+            httpx.Response(200, json={"total_nodes": 3, "by_type": {}, "by_stage": {}}),
+        ]
+    )
+    r = await _appel("GET", "/taxonomy")
+    assert r.status_code == 200
+    assert r.json()["total"] == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_retenir_wing_defaut_reflete_le_type():
     _mock_auth_et_espace(respx.mock)
     route = respx.post(f"{API}/api/v1/spaces/{ESPACE_ID}/nodes").mock(

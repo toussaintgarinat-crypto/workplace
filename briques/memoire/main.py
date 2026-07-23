@@ -235,6 +235,34 @@ async def _resoudre_espace(client: httpx.AsyncClient, espace_brut: str | None,
     return await _espace_id(client, nom), await _token(client)
 
 
+def _invalider_jetons(utilisateur: str) -> None:
+    """Force une ré-authentification au prochain appel : vide le jeton mis en cache,
+    service ET personne (sans savoir lequel des deux a expiré — revalider les deux est
+    idempotent et sans coût notable). Sans ce filet, un jeton mémoïsé qui expire côté
+    Memory casse SILENCIEUSEMENT tout appelant de cette brique jusqu'à un redémarrage
+    manuel du conteneur — bug constaté en prod le 2026-07-23 (jeton de service resté
+    ~30h en cache, jamais revalidé ni rafraîchi par `_token`/`_token_personne`, qui ne
+    font que renvoyer la valeur mémoïsée sans vérifier qu'elle est toujours acceptée par
+    Memory)."""
+    _session["token"] = None
+    _sessions_personne.pop(utilisateur, None)
+
+
+async def _appel_avec_retry(client: httpx.AsyncClient, utilisateur: str,
+                            espace_brut: str | None, faire_appel):
+    """Résout `(espace_id, jeton)` pour `utilisateur`/`espace_brut`, puis exécute
+    `faire_appel(espace_id, jeton) -> httpx.Response`. Si Memory répond 401 (jeton
+    mémoïsé expiré), invalide le cache et réessaie UNE fois avec un jeton frais avant
+    d'abandonner — voir `_invalider_jetons`."""
+    espace_id, jeton = await _resoudre_espace(client, espace_brut, utilisateur)
+    r = await faire_appel(espace_id, jeton)
+    if r.status_code == 401:
+        _invalider_jetons(utilisateur)
+        espace_id, jeton = await _resoudre_espace(client, espace_brut, utilisateur)
+        r = await faire_appel(espace_id, jeton)
+    return espace_id, r
+
+
 # ── Identité de l'appelant (S186, motif ecoute S184 : X-User-Id gagé par MEMOIRE_KEY) ──
 
 UTILISATEUR_DEFAUT = "perso"
@@ -370,12 +398,13 @@ async def retenir(s: Souvenir, utilisateur: str = Depends(_identite_service)):
         "frontmatter": frontmatter,
     }
     async with await _client() as client:
-        espace_id, jeton = await _resoudre_espace(client, s.espace, utilisateur)
-        r = await client.post(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
-            json=corps,
-            headers={"Authorization": f"Bearer {jeton}"},
-        )
+        async def _appel(espace_id: str, jeton: str):
+            return await client.post(
+                f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
+                json=corps,
+                headers={"Authorization": f"Bearer {jeton}"},
+            )
+        _, r = await _appel_avec_retry(client, utilisateur, s.espace, _appel)
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
         n = r.json()
@@ -392,12 +421,13 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
     if type:
         params["type"] = type
     async with await _client() as client:
-        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
-        r = await client.get(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/search",
-            params=params,
-            headers={"Authorization": f"Bearer {jeton}"},
-        )
+        async def _appel(espace_id: str, jeton: str):
+            return await client.get(
+                f"{MEMORY_API}/api/v1/spaces/{espace_id}/search",
+                params=params,
+                headers={"Authorization": f"Bearer {jeton}"},
+            )
+        _, r = await _appel_avec_retry(client, utilisateur, espace, _appel)
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
         resultats = r.json()
@@ -427,12 +457,13 @@ async def souvenirs(limite: int = 20, type: str | None = None,
     if room:
         params["room"] = room
     async with await _client() as client:
-        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
-        r = await client.get(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
-            params=params,
-            headers={"Authorization": f"Bearer {jeton}"},
-        )
+        async def _appel(espace_id: str, jeton: str):
+            return await client.get(
+                f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes",
+                params=params,
+                headers={"Authorization": f"Bearer {jeton}"},
+            )
+        _, r = await _appel_avec_retry(client, utilisateur, espace, _appel)
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
         noeuds = r.json()
@@ -459,11 +490,12 @@ async def taxonomy(espace: str | None = None,
     async with await _client() as client:
         # /stats est protégé (check_space_access) → le jwt renvoyé par _resoudre_espace
         # (service pour un espace partagé, personne pour son "Perso") EST le bon acteur.
-        espace_id, token = await _resoudre_espace(client, espace, utilisateur)
-        r = await client.get(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/stats",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        async def _appel(espace_id: str, jeton: str):
+            return await client.get(
+                f"{MEMORY_API}/api/v1/spaces/{espace_id}/stats",
+                headers={"Authorization": f"Bearer {jeton}"},
+            )
+        _, r = await _appel_avec_retry(client, utilisateur, espace, _appel)
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
         stats = r.json()
@@ -478,11 +510,12 @@ async def taxonomy(espace: str | None = None,
 async def supprimer(souvenir_id: str, espace: str | None = None,
                     utilisateur: str = Depends(_identite_service)):
     async with await _client() as client:
-        espace_id, jeton = await _resoudre_espace(client, espace, utilisateur)
-        r = await client.delete(
-            f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}",
-            headers={"Authorization": f"Bearer {jeton}"},
-        )
+        async def _appel(espace_id: str, jeton: str):
+            return await client.delete(
+                f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}",
+                headers={"Authorization": f"Bearer {jeton}"},
+            )
+        _, r = await _appel_avec_retry(client, utilisateur, espace, _appel)
         if r.status_code >= 400 and r.status_code != 404:
             raise HTTPException(502, f"Memory: {r.text}")
     return {"supprime": True, "id": souvenir_id}
