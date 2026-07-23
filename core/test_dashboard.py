@@ -86,6 +86,18 @@ def test_urls_briques_injectees():
     html = client.get("/dashboard").text
     assert "__STUDIO_UI_URL__" not in html
     assert "__PERSONNAGES_UI_URL__" not in html
+    assert "__ATELIER_IMAGES_VIDEO_UI_URL__" not in html
+
+
+def test_tuile_atelier_images_video_active():
+    """La tuile « Images & Vidéo » du hub Atelier n'est plus le placeholder désactivé
+    « Bientôt » — elle pointe vers le proxy /atelier-images-video-app/atelier du Cœur
+    (même motif que Studio, S187 : session same-origin, PAS l'URL brute :6160 qui
+    contournerait l'injection X-User-Id de session)."""
+    html = client.get("/dashboard").text
+    assert "creation-tuile creation-bientot" not in html  # plus de tuile désactivée
+    assert "/atelier-images-video-app/atelier" in html
+    assert "http://localhost:6160" not in html
 
 
 # ── S128 — URLs d'iframe relatives à l'hôte de la requête (LAN + mesh) ─────────────
