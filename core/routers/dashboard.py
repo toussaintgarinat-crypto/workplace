@@ -1442,7 +1442,12 @@ async function supprimerProjetParId(pid) {
 // ne pas réveiller les briques tant que l'utilisateur n'ouvre pas un outil.
 function ouvrirCreation(url, titre) {
   const f = document.getElementById('creation-iframe');
-  if (f) f.src = url;
+  // Cache-bust systématique : sans ça, un correctif poussé sur une brique embarquée
+  // (ex. atelier-veille) reste invisible tant que le navigateur n'a pas jugé bon de
+  // revalider sa copie en cache — même après un Maj+Cmd+R du Dashboard, puisque l'iframe
+  // n'est (re)chargée qu'APRÈS ce rechargement, au clic sur la tuile. Un paramètre
+  // toujours différent force une requête réseau neuve à chaque ouverture.
+  if (f) f.src = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
   document.getElementById('creation-cadre-titre').textContent = titre;
   document.getElementById('creation-open-tab').href = url;
   document.getElementById('creations-grille').style.display = 'none';
