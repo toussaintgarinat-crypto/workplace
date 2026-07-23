@@ -145,6 +145,7 @@ class GenererImage(BaseModel):
     hauteur: int = 1024
     seed: Optional[int] = None
     fournisseur: Optional[str] = None
+    modele: Optional[str] = None
 
 
 @app.post("/images/generer", tags=["images"])
@@ -157,6 +158,11 @@ async def images_generer(body: GenererImage):
 @app.get("/images/fournisseurs", tags=["images"])
 async def images_fournisseurs():
     return await _relayer("GET", f"{IMAGES_URL}/fournisseurs", {}, "images")
+
+
+@app.get("/images/modeles", tags=["images"])
+async def images_modeles():
+    return await _relayer("GET", f"{IMAGES_URL}/modeles", {}, "images")
 
 
 @app.get("/fichiers/images/{nom}", tags=["images"], include_in_schema=False)

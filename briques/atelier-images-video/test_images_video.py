@@ -174,3 +174,22 @@ def test_relayer_guard_204_no_content(monkeypatch):
     r = client.delete("/galerie/souvenir-123")
     assert r.status_code == 200  # La relayer renvoie {} pour 204 (traité comme succès)
     assert r.json() == {}
+
+
+def test_images_generer_transmet_le_modele(monkeypatch):
+    Faux = _client_json({"url": "/fichiers/img-1.png", "backend": "gateway",
+                         "place_holder": False, "modele": "openai/gpt-5-image"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/images/generer", json={"prompt": "un chat", "fournisseur": "gateway",
+                                         "modele": "openai/gpt-5-image"})
+    _, _, _, corps, _ = Faux.dernier_appel
+    assert corps["modele"] == "openai/gpt-5-image"
+
+
+def test_images_modeles_relaie_le_catalogue(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json({"modeles": [{"id": "google/gemini-2.5-flash-image",
+                                                    "prix_image": "0.0000003"}]}))
+    r = client.get("/images/modeles")
+    assert r.status_code == 200
+    assert r.json()["modeles"][0]["id"] == "google/gemini-2.5-flash-image"
