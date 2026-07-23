@@ -50,6 +50,7 @@ class Generer(BaseModel):
     hauteur:     int = 1024
     seed:        Optional[int] = None
     fournisseur: Optional[str] = None   # force un moteur (sinon : ordre de préférence)
+    modele:      Optional[str] = None   # override ponctuel, honoré par le fournisseur gateway
 
 
 class Portrait(BaseModel):
@@ -98,12 +99,25 @@ async def liste_fournisseurs():
             "ordre": fournisseurs.ordre()}
 
 
+@app.get("/modeles", tags=["système"])
+async def liste_modeles():
+    """Modèles d'image disponibles via la Gateway (OpenRouter), pour le comparatif de
+    l'Atelier Images & Vidéo. Liste TOUJOURS interrogée en direct (avec cache côté
+    fournisseurs.py) : jamais de catalogue figé en dur qui pourrait devenir obsolète."""
+    try:
+        modeles = await fournisseurs.modeles_image_openrouter()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"OpenRouter injoignable : {str(e)[:160]}")
+    return {"modeles": modeles}
+
+
 @app.post("/generer", tags=["images"])
 async def generer(body: Generer, _cle: str = Depends(cle_api)):
     if not (body.prompt or "").strip():
         raise HTTPException(422, "Le prompt est vide.")
     return await moteur.generer(body.prompt, body.negatif or "", body.largeur,
-                                body.hauteur, body.seed, fournisseur=body.fournisseur)
+                                body.hauteur, body.seed, fournisseur=body.fournisseur,
+                                modele=body.modele)
 
 
 @app.post("/portrait", tags=["images", "synergie"])

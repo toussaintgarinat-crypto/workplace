@@ -1,6 +1,7 @@
 """Tests — API de la brique images (placeholder honnête, endpoints de synergie)."""
 from fastapi.testclient import TestClient
 
+import fournisseurs
 import main
 
 c = TestClient(main.app)
@@ -70,3 +71,40 @@ def test_fichier_inconnu_404():
 def test_fichier_anti_traversee():
     # pas d'évasion hors du dossier d'images
     assert c.get("/fichiers/..%2f..%2fetc%2fpasswd").status_code == 404
+
+
+def test_generer_transmet_le_modele(monkeypatch):
+    captes = {}
+
+    async def _faux_generer(prompt, negatif, largeur, hauteur, seed=None,
+                            fournisseur=None, modele=None):
+        captes["modele"] = modele
+        return {"url": "/fichiers/x.png", "prompt": prompt, "backend": "gateway",
+                "place_holder": False, "modele": modele}
+
+    monkeypatch.setattr(main.moteur, "generer", _faux_generer)
+    r = c.post("/generer", json={"prompt": "un chat", "fournisseur": "gateway",
+                                 "modele": "openai/gpt-5-image"})
+    assert r.status_code == 200
+    assert captes["modele"] == "openai/gpt-5-image"
+    assert r.json()["modele"] == "openai/gpt-5-image"
+
+
+def test_modeles_liste_le_catalogue_openrouter(monkeypatch):
+    async def _faux_modeles():
+        return [{"id": "google/gemini-2.5-flash-image", "prix_image": "0.0000003"}]
+
+    monkeypatch.setattr(fournisseurs, "modeles_image_openrouter", _faux_modeles)
+    r = c.get("/modeles")
+    assert r.status_code == 200
+    assert r.json()["modeles"] == [
+        {"id": "google/gemini-2.5-flash-image", "prix_image": "0.0000003"}]
+
+
+def test_modeles_openrouter_injoignable_renvoie_502(monkeypatch):
+    async def _boom():
+        raise RuntimeError("timeout OpenRouter")
+
+    monkeypatch.setattr(fournisseurs, "modeles_image_openrouter", _boom)
+    r = c.get("/modeles")
+    assert r.status_code == 502
