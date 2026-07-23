@@ -198,6 +198,8 @@ function popupDe(o) {
 }
 
 async function charger() {
+  const b = carte.getBounds();
+  if (b.getSouth() === b.getNorth() || b.getWest() === b.getEast()) return; // conteneur pas encore dimensionné (ex. onglet caché)
   try {
     const r = await fetch("/objets?" + filtres(), { headers: ENTETES });
     if (!r.ok) { statut.textContent = "Erreur " + r.status; return; }
