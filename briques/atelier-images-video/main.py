@@ -97,6 +97,8 @@ async def _relayer(methode: str, url: str, entetes: dict, marque: str,
     try:
         async with httpx.AsyncClient(timeout=60) as c:
             r = await c.request(methode, url, headers=entetes, json=json_body, params=params)
+        if r.status_code == 204:
+            return {}
         corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"{marque} injoignable ({url}) : {str(e)[:150]}")

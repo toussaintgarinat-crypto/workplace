@@ -266,16 +266,16 @@ async function changerSerie() {
       <div class="carte" id="perso-${esc(p.id)}">
         <h4>${esc(p.nom)}</h4>
         <div class="meta">${esc(p.role || '')}</div>
-        <button class="discret" onclick="genererPortrait('${esc(id)}','${esc(p.id)}')">🖼️ Portrait</button>
-        <button class="discret" onclick="genererAnimation('${esc(id)}','${esc(p.id)}')">🎬 Animer</button>
+        <button class="discret" onclick="genererPortrait(${jsonAttr(id)},${jsonAttr(p.id)})">🖼️ Portrait</button>
+        <button class="discret" onclick="genererAnimation(${jsonAttr(id)},${jsonAttr(p.id)})">🎬 Animer</button>
         <div id="perso-resultat-${esc(p.id)}"></div>
       </div>`).join('') || '<p style="color:var(--mut)">Aucun personnage dans cette série.</p>';
     zoneEpisodes.innerHTML = '<h3>Chapitres</h3>' + (serie.episodes || []).map(e => `
       <div class="carte" id="episode-${e.n}">
         <h4>Chapitre ${e.n}</h4>
         <div class="meta">${esc((e.consigne || '').slice(0, 100))}</div>
-        <button class="discret" onclick="genererCouverture('${esc(id)}',${e.n})">🖼️ Couverture</button>
-        <button class="discret" onclick="genererTeaser('${esc(id)}',${e.n})">🎬 Teaser</button>
+        <button class="discret" onclick="genererCouverture(${jsonAttr(id)},${e.n})">🖼️ Couverture</button>
+        <button class="discret" onclick="genererTeaser(${jsonAttr(id)},${e.n})">🎬 Teaser</button>
         <div id="episode-resultat-${e.n}"></div>
       </div>`).join('') || '<p style="color:var(--mut)">Aucun chapitre dans cette série.</p>';
   } catch (e) { erreur.textContent = String(e.message || e); }
@@ -339,7 +339,7 @@ async function chargerGalerie(medium) {
         <h4>${esc(s.titre)}</h4>
         ${media}
         <div class="meta">${esc(meta.fournisseur || '')}</div>
-        <button class="discret" onclick="supprimerGalerie('${esc(s.id)}')">🗑️ Supprimer</button>
+        <button class="discret" onclick="supprimerGalerie(${jsonAttr(s.id)})">🗑️ Supprimer</button>
       </div>`;
     }).join('') || '<p style="color:var(--mut)">Aucune création sauvegardée pour l\'instant.</p>';
   } catch (e) { erreur.textContent = String(e.message || e); }
