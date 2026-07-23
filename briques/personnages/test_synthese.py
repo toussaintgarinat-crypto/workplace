@@ -69,6 +69,30 @@ def test_scorpion_est_discret():
     assert stats["Discrétion"] >= 70
 
 
+# ── i18n anglais (S194) ────────────────────────────────────────────
+def test_portrait_langue_fr_defaut_inchange():
+    """Garde-fou de non-régression : `langue` omise ou "fr" = sortie identique."""
+    trad = T.calculer({"date_naissance": "1990-09-05", "prenoms": "Aria", "nom": "Solis"})
+    assert S.portrait(trad, nom="Aria") == S.portrait(trad, nom="Aria", langue="fr")
+
+
+def test_portrait_langue_en_meme_forme_valeurs_traduites():
+    trad = T.calculer({"date_naissance": "1987-03-21", "heure_naissance": "08:15",
+                       "prenoms": "Camille", "nom": "Bernard",
+                       "latitude": 43.6, "longitude": 1.44, "utc_offset": 1})
+    p = S.portrait(trad, nom="Camille Bernard", langue="en")
+    assert set(p["stats"]) == set(S.STATS_LABEL_EN.values())
+    assert p["archetype"] in S._ARCHETYPES_EN.values()
+    assert len(p["forces"]) == 3
+    assert p["faiblesse"] in S.STATS_LABEL_EN.values()
+    assert p["pierre_equilibrage"]["compense"] == p["faiblesse"]
+    assert "entertainment" in p["recit"].lower()
+    for entete in ("**The Core.**", "**The Common Thread.**", "**The Shadow & the Remedy.**"):
+        assert entete in p["recit"], entete
+    # aucune fuite de français dans le récit anglais
+    assert "divertissement" not in p["recit"].lower()
+
+
 # ── Mode montant : description → pistes ───────────────────────────
 def test_cibler_stats_reconnait_les_mots():
     cible = S.cibler_stats("un guerrier colérique mais profondément spirituel")

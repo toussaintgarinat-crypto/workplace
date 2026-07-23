@@ -151,6 +151,42 @@ _EQUILIBRAGE = {
     "Énergie": ("Œil-de-tigre", "vitalité et dynamisme"),
 }
 
+# ══════════════════════════════════════════════════════════════════
+# i18n anglais — traduction d'AFFICHAGE uniquement (S194). Le calcul
+# (stats_depuis_traditions, _archetype, tables _TAGS_*) reste en français
+# en interne (clés canoniques) ; ces tables ne servent qu'à produire la
+# sortie de `portrait()`/`_recit()` en anglais quand `langue="en"`.
+# ══════════════════════════════════════════════════════════════════
+STATS_LABEL_EN = {
+    "Charisme": "Charisma", "Combativité": "Drive", "Sagesse": "Wisdom",
+    "Créativité": "Creativity", "Discrétion": "Discretion", "Stabilité": "Stability",
+    "Émotivité": "Emotionality", "Énergie": "Energy",
+}
+
+_ARCHETYPES_EN = {
+    "Le Stratège Solitaire": "The Solitary Strategist",
+    "Le Meneur Charismatique": "The Charismatic Leader",
+    "Le Sage Contemplatif": "The Contemplative Sage",
+    "L'Artiste Visionnaire": "The Visionary Artist",
+    "Le Gardien Loyal": "The Loyal Guardian",
+    "L'Aventurier Indomptable": "The Untamed Adventurer",
+    "Le Diplomate Sensible": "The Sensitive Diplomat",
+    "Le Bâtisseur Méthodique": "The Methodical Builder",
+    "L'Âme Empathique": "The Empathic Soul",
+    "L'Électron Libre": "The Free Spirit",
+}
+
+_EQUILIBRAGE_EN = {
+    "Charisme": ("Citrine", "radiance and self-confidence"),
+    "Combativité": ("Carnelian", "courage and drive to act"),
+    "Sagesse": ("Amethyst", "mental clarity and intuition"),
+    "Créativité": ("Apatite", "inspiration and freedom of expression"),
+    "Discrétion": ("Onyx", "grounding and self-mastery"),
+    "Stabilité": ("Hematite", "rootedness and constancy"),
+    "Émotivité": ("Rose Quartz", "openness of heart and gentleness"),
+    "Énergie": ("Tiger's Eye", "vitality and dynamism"),
+}
+
 # Champs lexicaux du mode montant : pour chaque stat, une FAMILLE de radicaux courts
 # (normalisés, sans accent). Les radicaux sont des PRÉFIXES → ils captent les variantes
 # (manipul → manipuler/manipulateur/manipulation). Traits « sombres » inclus. Un mot
@@ -269,9 +305,11 @@ def _archetype(stats: dict) -> str:
     return max(_ARCHETYPES, key=lambda a: sum(stats.get(s, 0) for s in a[1]))[0]
 
 
-def portrait(trad: dict, nom: str = "") -> dict:
+def portrait(trad: dict, nom: str = "", langue: str = "fr") -> dict:
     """Fiche de personnage complète à partir des traditions calculées.
 
+    `langue="fr"` (défaut) : sortie STRICTEMENT identique à avant l'i18n (S194), zéro
+    régression. `langue="en"` : même forme (mêmes clés JSON), valeurs traduites.
     Retourne {stats, archetype, forces, faiblesse, pierre_equilibrage, recit}."""
     stats = stats_depuis_traditions(trad)
     classe = sorted(STATS, key=lambda s: stats[s], reverse=True)
@@ -279,6 +317,19 @@ def portrait(trad: dict, nom: str = "") -> dict:
     faiblesse = classe[-1]
     pierre_nom, pierre_vertu = _EQUILIBRAGE[faiblesse]
     arch = _archetype(stats)
+    recit = _recit(arch, stats, forces, faiblesse, pierre_nom, pierre_vertu, trad, nom, langue)
+
+    if (langue or "fr").lower().startswith("en"):
+        return {
+            "stats": {STATS_LABEL_EN[s]: v for s, v in stats.items()},
+            "archetype": _ARCHETYPES_EN.get(arch, arch),
+            "forces": [STATS_LABEL_EN[f] for f in forces],
+            "faiblesse": STATS_LABEL_EN[faiblesse],
+            "pierre_equilibrage": {"pierre": _EQUILIBRAGE_EN[faiblesse][0],
+                                   "vertu": _EQUILIBRAGE_EN[faiblesse][1],
+                                   "compense": STATS_LABEL_EN[faiblesse]},
+            "recit": recit,
+        }
     return {
         "stats": stats,
         "archetype": arch,
@@ -286,7 +337,7 @@ def portrait(trad: dict, nom: str = "") -> dict:
         "faiblesse": faiblesse,
         "pierre_equilibrage": {"pierre": pierre_nom, "vertu": pierre_vertu,
                                "compense": faiblesse},
-        "recit": _recit(arch, stats, forces, faiblesse, pierre_nom, pierre_vertu, trad, nom),
+        "recit": recit,
     }
 
 
@@ -302,6 +353,12 @@ _ELEMENT_TON = {
     "Terre": "un tempérament concret, patient, attaché au réel",
     "Air": "un esprit mobile, sociable, porté par les idées",
     "Eau": "une nature sensible, intuitive, à fleur d'émotion",
+}
+_ELEMENT_TON_EN = {
+    "Feu": "a fiery energy, driven toward action and momentum",
+    "Terre": "a grounded temperament, patient, attached to the concrete",
+    "Air": "a nimble mind, sociable, carried by ideas",
+    "Eau": "a sensitive nature, intuitive, close to its emotions",
 }
 
 
@@ -356,11 +413,21 @@ def _fil_rouge(empreinte: list) -> str | None:
     return "Plusieurs traditions convergent vers le même motif : " + " ; ".join(motifs) + "."
 
 
-def _recit(arch, stats, forces, faiblesse, pierre, vertu, trad, nom) -> str:
+def _recit(arch, stats, forces, faiblesse, pierre, vertu, trad, nom, langue: str = "fr") -> str:
+    """Dispatch FR/EN (S194). `langue="fr"` (défaut) : comportement identique à avant
+    l'i18n. `langue="en"` : gabarit anglais dédié (`_recit_en`), pas une traduction à la
+    volée d'un texte français — les deux gabarits restent lisibles indépendamment."""
+    en = (langue or "fr").lower().startswith("en")
+    emp = SIG.expliquer(trad, "en" if en else "fr")
+    if en:
+        return _recit_en(arch, stats, forces, faiblesse, trad, nom, emp)
+    return _recit_fr(arch, stats, forces, faiblesse, pierre, vertu, trad, nom, emp)
+
+
+def _recit_fr(arch, stats, forces, faiblesse, pierre, vertu, trad, nom, emp) -> str:
     """Lecture symbolique en sections, qui TISSE les sens calculés (significations) et
     dégage un fil rouge, au lieu d'énumérer les sources. Reste du divertissement."""
     sujet = nom.strip() if (nom and nom.strip()) else "Ce personnage"
-    emp = SIG.expliquer(trad)
     par_cle = {e["cle"]: e for e in emp}
     sections = []
 
@@ -422,6 +489,72 @@ def _recit(arch, stats, forces, faiblesse, pierre, vertu, trad, nom) -> str:
         sections.append("**Le chemin des nombres.** " + phrase[:1].upper() + phrase[1:] + ".")
 
     sections.append("_Lecture symbolique — divertissement, pas un fait._")
+    return "\n\n".join(sections)
+
+
+def _recit_en(arch, stats, forces, faiblesse, trad, nom, emp) -> str:
+    """Gabarit anglais du récit — même structure que `_recit_fr`, phrases dédiées (pas
+    une traduction mécanique) ; s'appuie sur l'empreinte déjà traduite (`cle` en anglais)."""
+    sujet = nom.strip() if (nom and nom.strip()) else "This character"
+    par_cle = {e["cle"]: e for e in emp}
+    sections = []
+
+    arch_en = _ARCHETYPES_EN.get(arch, arch)
+    el = _element_dominant(trad)
+    noyau = f"**The Core.** {sujet} is **{arch_en}**"
+    noyau += f", carried by {_ELEMENT_TON_EN[el]}." if el else "."
+    sol = par_cle.get("Sun")
+    if sol and sol.get("sens"):
+        noyau += f" Their Sun in {sol['valeur']} sets the tone: {sol['sens']}."
+    lun = par_cle.get("Moon")
+    if lun and lun.get("sens"):
+        noyau += f" Within, a Moon in {lun['valeur']} — {lun['sens']}."
+    asc = par_cle.get("Ascendant")
+    if asc and asc.get("sens"):
+        noyau += f" Outwardly, a {asc['valeur']} ascendant: {asc['sens']}."
+    forces_txt = ", ".join(f"{STATS_LABEL_EN[f]} ({stats[f]})" for f in forces)
+    noyau += f" Dominant strengths: {forces_txt}."
+    sections.append(noyau)
+
+    fr = _fil_rouge(emp)
+    if fr:
+        sections.append("**The Common Thread.** " + fr)
+    else:
+        sections.append(f"**The Common Thread.** One trait clearly stands out: "
+                        f"{STATS_LABEL_EN[forces[0]]} ({stats[forces[0]]}), coloring the "
+                        f"rest of the temperament.")
+
+    voix = []
+    for cle, intro in (("Chinese Astrology", "on the Chinese side"), ("Egyptian", "in Egypt"),
+                       ("Celtic", "on the Celtic side"), ("Native American Totem", "as a totem"),
+                       ("Maya (Tzolkin)", "in the Tzolkin"), ("Nakshatra", "on the Vedic side")):
+        e = par_cle.get(cle)
+        if e and e.get("sens"):
+            voix.append(f"{intro}, {e['valeur']} ({e['sens']})")
+        if len(voix) >= 3:
+            break
+    if voix:
+        phrase = " ; ".join(voix)
+        sections.append("**Other Voices.** " + phrase[:1].upper() + phrase[1:] + ".")
+
+    pierre_en, vertu_en = _EQUILIBRAGE_EN[faiblesse]
+    sections.append(
+        f"**The Shadow & the Remedy.** The point to work on is {STATS_LABEL_EN[faiblesse]} "
+        f"({stats[faiblesse]}), where energy runs low. Compensatory gemmology suggests "
+        f"**{pierre_en}** ({vertu_en}) to reopen that door.")
+
+    nums = []
+    cdv = par_cle.get("Life Path")
+    if cdv and cdv.get("sens"):
+        nums.append(f"a life path of {cdv['valeur']} — {cdv['sens']}")
+    expr = par_cle.get("Expression (Name)")
+    if expr and expr.get("sens"):
+        nums.append(f"a name expression of {expr['valeur']} — {expr['sens']}")
+    if nums:
+        phrase = " ; ".join(nums)
+        sections.append("**The Path of Numbers.** " + phrase[:1].upper() + phrase[1:] + ".")
+
+    sections.append("_Symbolic reading — entertainment, not fact._")
     return "\n\n".join(sections)
 
 
