@@ -21,7 +21,8 @@ import routage_outils
 from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
-from routers import agenda, assistant, dashboard, invite, mail_proxy, profil, studio_proxy, systeme, usine
+from routers import (agenda, assistant, atelier_images_video_proxy, dashboard, invite,
+                     mail_proxy, profil, studio_proxy, systeme, usine)
 from routers import auth as routeur_auth
 
 
@@ -91,6 +92,11 @@ app.include_router(mail_proxy.router, dependencies=[Depends(exiger_session)] + _
 # Studio (S187) : même motif que mail — session obligatoire + contexte de tenant, pour que
 # la tuile Créations soit isolée par personne, cf. core/routers/studio_proxy.py.
 app.include_router(studio_proxy.router, dependencies=[Depends(exiger_session)] + _tenant)
+# Atelier Images & Vidéo : même motif que Studio — session obligatoire + contexte de
+# tenant, pour que les synergies (portrait/couverture/teaser/animer) et la galerie soient
+# isolées par personne, cf. core/routers/atelier_images_video_proxy.py.
+app.include_router(atelier_images_video_proxy.router,
+                   dependencies=[Depends(exiger_session)] + _tenant)
 app.include_router(assistant.router, dependencies=_tenant)
 app.include_router(agenda.router, dependencies=_tenant)
 app.include_router(profil.router, dependencies=_tenant)
