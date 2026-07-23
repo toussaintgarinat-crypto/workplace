@@ -137,6 +137,15 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// HTML-attribute-escape une valeur déjà passée par JSON.stringify : celui-ci échappe la
+// syntaxe string JS (backslashes, guillemets doubles) mais PAS les apostrophes — or ces
+// valeurs sont injectées dans un attribut onclick='...' délimité par apostrophes. Sans ce
+// second passage, une apostrophe dans un titre/prompt (ex. « L'Estafette ») fermerait
+// l'attribut HTML prématurément (injection d'attribut HTML).
+function jsonAttr(x) {
+  return JSON.stringify(x).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // Préfixe posé par le proxy Cœur /atelier-images-video-app/* : vide en usage autoporté,
 // donc ce changement est un NO-OP hors du proxy — mêmes chemins relatifs qu'avant.
 const API_BASE = window.ATELIER_IV_API_BASE || '';
@@ -193,7 +202,7 @@ function afficherResultatMedia(cible, medium, data, titre, prompt) {
   const avert = data.place_holder ? '<div class="avert">⚠️ Placeholder — aucun fournisseur réel n\'a produit ce média.</div>' : '';
   const media = medium === 'image' ? `<img src="${esc(url)}" alt="résultat">` : `<video controls src="${esc(url)}"></video>`;
   cible.innerHTML = `<div class="resultat">${media}${avert}
-    <button class="discret" style="margin-top:8px" onclick='ajouterGalerie(${JSON.stringify(medium)}, ${JSON.stringify(titre)}, ${JSON.stringify(prompt)}, ${JSON.stringify(url)}, ${JSON.stringify(data.backend || null)}, ${!!data.place_holder})'>➕ Ajouter à la galerie</button>
+    <button class="discret" style="margin-top:8px" onclick='ajouterGalerie(${jsonAttr(medium)}, ${jsonAttr(titre)}, ${jsonAttr(prompt)}, ${jsonAttr(url)}, ${jsonAttr(data.backend || null)}, ${!!data.place_holder})'>➕ Ajouter à la galerie</button>
   </div>`;
 }
 
