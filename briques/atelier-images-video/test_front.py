@@ -58,6 +58,24 @@ def test_front_couvre_les_presets_localstorage():
         assert marqueur in html
 
 
+def test_front_prefixe_les_urls_de_media_avec_api_base():
+    """`/fichiers/images/...` est relatif à CETTE brique. Sous le proxy Cœur (page servie
+    sous API_BASE), un chemin absolu utilisé tel quel comme src retombe à la racine du
+    domaine au lieu de rester sous le proxy → image cassée (motif déjà rencontré pour les
+    appels API, cf. api()). afficherResultatMedia() et le rendu de la galerie doivent tous
+    deux passer l'URL du média par mediaUrl() avant de l'injecter en src."""
+    html = client.get("/").text
+    assert "function mediaUrl(" in html
+
+    m = re.search(r"const media = medium === 'image' \? `<img[^`]*`[^;]*;", html)
+    assert m, "construction de <img>/<video> dans afficherResultatMedia() introuvable"
+    assert "mediaUrl(url)" in m.group(0)
+
+    m = re.search(r"const media = meta\.url \? \(s\.room === 'video'.*?\) : '';", html, re.DOTALL)
+    assert m, "construction de <img>/<video> dans chargerGalerie() introuvable"
+    assert "mediaUrl(meta.url)" in m.group(0)
+
+
 def test_front_echappe_l_onclick_ajoutergalerie_contre_injection_html():
     """JSON.stringify() n'échappe pas les apostrophes : injecté brut dans un attribut
     onclick='...' délimité par apostrophes, un titre/prompt contenant une apostrophe
