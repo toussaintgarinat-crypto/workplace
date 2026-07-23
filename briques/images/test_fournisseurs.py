@@ -7,6 +7,8 @@ la sélection (ordre/disponibilité). Les appels live se prouvent ailleurs (clé
 import asyncio
 import base64
 
+import pytest
+
 import fournisseurs as F
 
 
@@ -164,3 +166,102 @@ def test_gateway_sans_override_retombe_sur_lenv(monkeypatch):
     monkeypatch.setenv("IMAGE_GATEWAY_MODEL", "google/gemini-2.5-flash-image")
     _, _, body = F.Gateway()._requete("x", "", 1024, 1024, None)
     assert body["model"] == "google/gemini-2.5-flash-image"
+
+
+# ── Liste dynamique des modèles image OpenRouter (comparatif) ──────────────
+def _client_openrouter(payload):
+    class _Reponse:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return payload
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def get(self, url):
+            _Client.appels += 1
+            return _Reponse()
+    _Client.appels = 0
+    return _Client
+
+
+def test_modeles_image_filtre_output_modalities_et_exclut_auto(monkeypatch):
+    F._cache = {"ts": 0.0, "modeles": []}
+    payload = {"data": [
+        {"id": "google/gemini-2.5-flash-image",
+         "architecture": {"output_modalities": ["image"]}, "pricing": {"image": "0.0000003"}},
+        {"id": "openrouter/auto",
+         "architecture": {"output_modalities": ["image"]}, "pricing": {}},
+        {"id": "google/gemini-3-pro-image",
+         "architecture": {"output_modalities": ["image"]}, "pricing": {"image": "0.000002"}},
+        {"id": "text-only/model",
+         "architecture": {"output_modalities": ["text"]}, "pricing": {}},
+    ]}
+    monkeypatch.setattr(F.httpx, "AsyncClient", _client_openrouter(payload))
+    modeles = asyncio.run(F.modeles_image_openrouter())
+    assert [m["id"] for m in modeles] == [
+        "google/gemini-2.5-flash-image", "google/gemini-3-pro-image"]
+    assert modeles[0]["prix_image"] == "0.0000003"
+
+
+def test_modeles_image_cache_evite_le_second_appel_http(monkeypatch):
+    F._cache = {"ts": 0.0, "modeles": []}
+    payload = {"data": [{"id": "a/b", "architecture": {"output_modalities": ["image"]},
+                         "pricing": {}}]}
+    Client = _client_openrouter(payload)
+    monkeypatch.setattr(F.httpx, "AsyncClient", Client)
+    asyncio.run(F.modeles_image_openrouter())
+    asyncio.run(F.modeles_image_openrouter())
+    assert Client.appels == 1
+
+
+def test_modeles_image_cache_perime_relance_un_appel(monkeypatch):
+    F._cache = {"ts": 0.0, "modeles": [{"id": "vieux/modele", "prix_image": None}]}
+    payload = {"data": [{"id": "nouveau/modele",
+                         "architecture": {"output_modalities": ["image"]}, "pricing": {}}]}
+    Client = _client_openrouter(payload)
+    monkeypatch.setattr(F.httpx, "AsyncClient", Client)
+    modeles = asyncio.run(F.modeles_image_openrouter())
+    assert Client.appels == 1
+    assert [m["id"] for m in modeles] == ["nouveau/modele"]
+
+
+def test_modeles_image_sert_le_cache_perime_si_openrouter_tombe(monkeypatch):
+    F._cache = {"ts": 0.0, "modeles": [{"id": "cache/modele", "prix_image": None}]}
+
+    class _Boom:
+        def __init__(self, *a, **k):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def get(self, url):
+            raise RuntimeError("timeout")
+
+    monkeypatch.setattr(F.httpx, "AsyncClient", _Boom)
+    modeles = asyncio.run(F.modeles_image_openrouter())
+    assert modeles == [{"id": "cache/modele", "prix_image": None}]
+
+
+def test_modeles_image_leve_si_cache_vide_et_openrouter_tombe(monkeypatch):
+    F._cache = {"ts": 0.0, "modeles": []}
+
+    class _Boom:
+        def __init__(self, *a, **k):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def get(self, url):
+            raise RuntimeError("timeout")
+
+    monkeypatch.setattr(F.httpx, "AsyncClient", _Boom)
+    with pytest.raises(RuntimeError):
+        asyncio.run(F.modeles_image_openrouter())

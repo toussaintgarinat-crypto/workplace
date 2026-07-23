@@ -28,6 +28,7 @@ moteur ouvert sans figer un choix.
 import asyncio
 import base64
 import os
+import time
 from typing import Optional
 
 import httpx
@@ -344,3 +345,41 @@ def ordre() -> list:
 def disponibles() -> list:
     """Fournisseurs configurés (clé/URL présente), dans l'ordre de préférence."""
     return [n for n in ordre() if REGISTRE[n].disponible()]
+
+
+# ── Modèles image OpenRouter (comparatif, Atelier Images & Vidéo) ──────────
+# Endpoint PUBLIC (pas de clé requise pour lister). Cache mémoire 1h : évite de re-frapper
+# OpenRouter à chaque ouverture de l'onglet Comparatif. Jamais de liste inventée : si
+# l'appel échoue et qu'un cache existe encore (même périmé), on le sert plutôt que de
+# casser l'UI ; si le cache est vide, l'erreur est propagée telle quelle.
+_CACHE_TTL_S = 3600
+_cache: dict = {"ts": 0.0, "modeles": []}
+
+
+async def modeles_image_openrouter() -> list:
+    """Modèles OpenRouter capables de générer une image (architecture.output_modalities
+    contient "image"), routeurs auto (openrouter/auto*) exclus — ils choisissent eux-mêmes
+    le modèle sous le capot, ce qui fausserait un comparatif."""
+    maintenant = time.time()
+    if _cache["modeles"] and maintenant - _cache["ts"] < _CACHE_TTL_S:
+        return _cache["modeles"]
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get("https://openrouter.ai/api/v1/models")
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        if _cache["modeles"]:
+            return _cache["modeles"]
+        raise
+    modeles = sorted(
+        (
+            {"id": m["id"], "prix_image": (m.get("pricing") or {}).get("image")}
+            for m in data.get("data", [])
+            if "image" in ((m.get("architecture") or {}).get("output_modalities") or [])
+            and not m["id"].startswith("openrouter/auto")
+        ),
+        key=lambda m: m["id"],
+    )
+    _cache["modeles"], _cache["ts"] = modeles, maintenant
+    return modeles
