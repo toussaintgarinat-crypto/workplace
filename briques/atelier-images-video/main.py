@@ -141,3 +141,38 @@ async def video_generer(body: GenererVideo):
 @app.get("/video/fournisseurs", tags=["video"])
 async def video_fournisseurs():
     return await _relayer("GET", f"{VIDEO_URL}/fournisseurs", {}, "video")
+
+
+@app.get("/studio/series", tags=["synergie"])
+async def studio_series(identite: str = Depends(_identite_service)):
+    return await _relayer("GET", f"{STUDIO_URL}/series", _entetes_studio(identite), "studio")
+
+
+@app.get("/studio/series/{serie_id}", tags=["synergie"])
+async def studio_serie(serie_id: str, identite: str = Depends(_identite_service)):
+    return await _relayer("GET", f"{STUDIO_URL}/series/{serie_id}",
+                          _entetes_studio(identite), "studio")
+
+
+@app.post("/studio/series/{serie_id}/personnages/{pid}/portrait", tags=["synergie"])
+async def studio_portrait(serie_id: str, pid: str, identite: str = Depends(_identite_service)):
+    url = f"{STUDIO_URL}/series/{serie_id}/personnages/{pid}/portrait"
+    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+
+
+@app.post("/studio/series/{serie_id}/personnages/{pid}/animer", tags=["synergie"])
+async def studio_animer(serie_id: str, pid: str, identite: str = Depends(_identite_service)):
+    url = f"{STUDIO_URL}/series/{serie_id}/personnages/{pid}/animer"
+    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+
+
+@app.post("/studio/series/{serie_id}/episode/{n}/couverture", tags=["synergie"])
+async def studio_couverture(serie_id: str, n: int, identite: str = Depends(_identite_service)):
+    url = f"{STUDIO_URL}/series/{serie_id}/episode/{n}/couverture"
+    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+
+
+@app.post("/studio/series/{serie_id}/episode/{n}/teaser", tags=["synergie"])
+async def studio_teaser(serie_id: str, n: int, identite: str = Depends(_identite_service)):
+    url = f"{STUDIO_URL}/series/{serie_id}/episode/{n}/teaser"
+    return await _relayer("POST", url, _entetes_studio(identite), "studio")
