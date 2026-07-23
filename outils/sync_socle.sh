@@ -18,7 +18,7 @@ CSS="shared/static/workplace.css"
 # Consommateurs du socle JS (dashboards riches : menu contextuel + drag).
 SOCLE_BRIQUES=(studio personnages restaurant)
 # Consommateurs du design system CSS (briques servant un front.html autoporté).
-CSS_BRIQUES=(synopsis voix personnages studio transcription atelier-veille)
+CSS_BRIQUES=(synopsis voix personnages studio transcription atelier-veille atelier-images-video)
 
 n=0
 for b in "${SOCLE_BRIQUES[@]}"; do
