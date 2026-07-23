@@ -106,6 +106,9 @@ class FicheHolistique(BaseModel):
     longitude:      Optional[float] = None  # EST-positive
     utc_offset:     Optional[float] = None  # décalage local→UTC à la naissance
     systeme_numerologie: str = "classique"  # "classique" (A=1…Z=26) ou "pythagoricien"
+    langue_sortie:  str = "fr"              # "fr" ou "en" (S194) : langue du portrait/empreinte
+                                             # DÉTERMINISTES. Sans rapport avec `LectureApprofondie.
+                                             # langue` (texte libre passé au LLM, ex. "français").
 
 
 class RechercheInverse(BaseModel):
@@ -227,9 +230,9 @@ def holistique_portrait(body: FicheHolistique, _cle: str = Depends(cle_api)):
     trad = traditions.calculer(body.model_dump())
     if not trad.get("signe_solaire"):    # les stats dérivent de la date → elle est requise ici
         raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
-    p = synthese.portrait(trad, nom=body.prenoms or body.nom)
+    p = synthese.portrait(trad, nom=body.prenoms or body.nom, langue=body.langue_sortie)
     return {"traditions": trad, "portrait": p,
-            "empreinte": significations.expliquer(trad)}
+            "empreinte": significations.expliquer(trad, body.langue_sortie)}
 
 
 @app.post("/holistique/lecture-approfondie", tags=["holistique"])
@@ -241,8 +244,8 @@ async def holistique_lecture_approfondie(body: LectureApprofondie, _cle: str = D
     trad = traditions.calculer(fiche)
     if not trad.get("signe_solaire"):
         raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
-    p = synthese.portrait(trad, nom=body.prenoms or body.nom)
-    emp = significations.expliquer(trad)
+    p = synthese.portrait(trad, nom=body.prenoms or body.nom, langue=body.langue_sortie)
+    emp = significations.expliquer(trad, body.langue_sortie)
     try:
         texte = await llm.approfondir_lecture(p, emp, body.langue, body.llm)
         if texte:

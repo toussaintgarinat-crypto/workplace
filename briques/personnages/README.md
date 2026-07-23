@@ -74,6 +74,12 @@ trait porté par plusieurs cultures ressort comme majeur.
   "heure_naissance":"14:30","latitude":43.6,"longitude":1.44,"utc_offset":2.0 }
 ```
 
+**Langue (S194)** : `langue_sortie` (`"fr"` par défaut ou `"en"`) sur `FicheHolistique` —
+choisit la langue du portrait/empreinte **déterministes** (stats, archétype, pierre
+d'équilibrage, récit, `significations.expliquer`). Même forme JSON dans les deux langues,
+juste des valeurs traduites. Sans rapport avec `langue` de `LectureApprofondie` (texte
+libre passé au LLM pour la réécriture littéraire, ex. `"français"`/`"english"`).
+
 `POST /holistique/portrait` — **mode descendant** : fiche → tags → **stats**
 (Charisme/Combativité/Sagesse/Créativité/Discrétion/Stabilité/Émotivité/Énergie) →
 **archétype** + forces / faiblesse + **pierre d'équilibrage** (choisie selon la faiblesse) + récit.
