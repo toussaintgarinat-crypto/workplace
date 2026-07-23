@@ -80,20 +80,34 @@ def test_front_echappe_l_onclick_ajoutergalerie_contre_injection_html():
     """JSON.stringify() n'échappe pas les apostrophes : injecté brut dans un attribut
     onclick='...' délimité par apostrophes, un titre/prompt contenant une apostrophe
     (ex. « L'Estafette ») romprait l'attribut HTML (injection d'attribut). Le helper
-    jsonAttr() doit être utilisé à la place pour les 5 arguments stringifiés de
-    ajouterGalerie(), à l'intérieur de afficherResultatMedia()."""
+    jsonAttr() doit être utilisé à la place pour les arguments stringifiés de
+    ajouterGalerie(), aux DEUX sites d'appel : afficherResultatMedia() (5 arguments
+    stringifiés) et lancerComparatif() (4 arguments stringifiés — le medium y est un
+    littéral "image" codé en dur, pas stringifié). re.findall (pas re.search) est utilisé
+    exprès pour ne rater aucun des deux sites : un futur site d'appel ajouté sans jsonAttr()
+    doit aussi être détecté."""
     html = client.get("/").text
     assert "function jsonAttr(" in html
 
     # Non-greedy jusqu'à la première séquence ")'>" : l'attribut contient des parenthèses
     # imbriquées (jsonAttr(medium), jsonAttr(titre)...) qui ne sont jamais suivies de "'>"
     # avant la fin réelle de l'attribut onclick.
-    m = re.search(r"onclick='ajouterGalerie\(.*?\)'>", html)
-    assert m, "attribut onclick='ajouterGalerie(...)' introuvable dans le front"
-    ligne_onclick = m.group(0)
+    occurrences = re.findall(r"onclick='ajouterGalerie\(.*?\)'>", html)
+    assert len(occurrences) >= 2, (
+        "moins de 2 sites d'appel onclick='ajouterGalerie(...)' trouvés — "
+        "afficherResultatMedia() et lancerComparatif() doivent tous deux en avoir un"
+    )
 
-    assert "JSON.stringify" not in ligne_onclick
-    assert ligne_onclick.count("jsonAttr(") == 5
+    for ligne_onclick in occurrences:
+        assert "JSON.stringify" not in ligne_onclick
+
+    # Site 1 : afficherResultatMedia() — 5 arguments stringifiés (medium, titre, prompt,
+    # url, backend).
+    assert occurrences[0].count("jsonAttr(") == 5
+
+    # Site 2 : lancerComparatif() — 4 arguments stringifiés (titre composé, prompt, url,
+    # modele) ; le medium ("image") est un littéral codé en dur, pas stringifié.
+    assert occurrences[1].count("jsonAttr(") == 4
 
 
 def test_front_echappe_les_autres_onclicks_synergies_contre_injection_html():
