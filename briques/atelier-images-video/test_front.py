@@ -76,3 +76,46 @@ def test_front_echappe_l_onclick_ajoutergalerie_contre_injection_html():
 
     assert "JSON.stringify" not in ligne_onclick
     assert ligne_onclick.count("jsonAttr(") == 5
+
+
+def test_front_echappe_les_autres_onclicks_synergies_contre_injection_html():
+    """Les onclick handlers de synergies (genererPortrait, genererAnimation,
+    genererCouverture, genererTeaser, supprimerGalerie) doivent aussi utiliser
+    jsonAttr() pour les arguments stringifiés (id, p.id, s.id) qui pourraient
+    contenir des apostrophes si jamais on en acceptait en input."""
+    html = client.get("/").text
+
+    # genererPortrait : deux arguments string (id, p.id)
+    m = re.search(r'onclick="genererPortrait\([^"]*\)"', html, re.DOTALL)
+    assert m, "onclick='genererPortrait(...)' introuvable"
+    ligne = m.group(0)
+    assert "jsonAttr(" in ligne
+    assert "esc(" not in ligne
+
+    # genererAnimation : deux arguments string (id, p.id)
+    m = re.search(r'onclick="genererAnimation\([^"]*\)"', html, re.DOTALL)
+    assert m, "onclick='genererAnimation(...)' introuvable"
+    ligne = m.group(0)
+    assert "jsonAttr(" in ligne
+    assert "esc(" not in ligne
+
+    # genererCouverture : un argument string (id), un entier (e.n)
+    m = re.search(r'onclick="genererCouverture\([^"]*\)"', html, re.DOTALL)
+    assert m, "onclick='genererCouverture(...)' introuvable"
+    ligne = m.group(0)
+    assert "jsonAttr(" in ligne
+    assert "esc(" not in ligne
+
+    # genererTeaser : un argument string (id), un entier (e.n)
+    m = re.search(r'onclick="genererTeaser\([^"]*\)"', html, re.DOTALL)
+    assert m, "onclick='genererTeaser(...)' introuvable"
+    ligne = m.group(0)
+    assert "jsonAttr(" in ligne
+    assert "esc(" not in ligne
+
+    # supprimerGalerie : un argument string (s.id)
+    m = re.search(r'onclick="supprimerGalerie\([^"]*\)"', html, re.DOTALL)
+    assert m, "onclick='supprimerGalerie(...)' introuvable"
+    ligne = m.group(0)
+    assert "jsonAttr(" in ligne
+    assert "esc(" not in ligne

@@ -79,3 +79,14 @@ def test_video_fournisseurs_relaie_le_catalogue(monkeypatch):
     r = client.get("/video/fournisseurs")
     assert r.status_code == 200
     assert r.json()["fournisseurs"][0]["nom"] == "luma"
+
+
+def test_relayer_guard_204_no_content(monkeypatch):
+    """_relayer() doit retourner {} sans appeler r.json() si status==204, plutôt que
+    de laisser r.json() lever une exception sur un corps vide."""
+    Faux = _client_json({}, status=204)  # corps ignoré pour 204
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    # galerie_supprimer appelle _relayer avec DELETE, qui doit gérer le 204 proprement
+    r = client.delete("/galerie/souvenir-123")
+    assert r.status_code == 200  # La relayer renvoie {} pour 204 (traité comme succès)
+    assert r.json() == {}
