@@ -67,6 +67,10 @@ https://workplaceagenda.duckdns.org:19000 {
 https://workplaceagenda.duckdns.org:16110 {
 	import brique_mesh 6110
 }
+# Atelier Veille (front unique famille veille — carte, RSS, digests) — 6130 -> 16130
+https://workplaceagenda.duckdns.org:16130 {
+	import brique_mesh 6130
+}
 
 # IDE dev (code-server) — WebSocket (terminal + éditeur) — 8744 -> 18744
 https://workplaceagenda.duckdns.org:18744 {
