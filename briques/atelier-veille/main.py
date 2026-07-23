@@ -51,16 +51,20 @@ def _hote_sans_port(host: str) -> str:
     return host.rsplit(":", 1)[0] if ":" in host else host
 
 _FRONT = Path(__file__).parent / "front.html"
+# no-cache (pas no-store) : le navigateur revalide sur l'ETag à chaque chargement au lieu
+# de garder une copie en cache heuristique — sans ça, un correctif poussé sur front.html
+# reste invisible tant que l'utilisateur ne force pas un rechargement complet.
+_ENTETES_FRONT = {"Cache-Control": "no-cache"}
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def racine():
-    return FileResponse(_FRONT, media_type="text/html")
+    return FileResponse(_FRONT, media_type="text/html", headers=_ENTETES_FRONT)
 
 
 @app.get("/atelier", response_class=HTMLResponse, include_in_schema=False)
 def alias_atelier():
-    return FileResponse(_FRONT, media_type="text/html")
+    return FileResponse(_FRONT, media_type="text/html", headers=_ENTETES_FRONT)
 
 
 @app.get("/workplace.css", include_in_schema=False)
