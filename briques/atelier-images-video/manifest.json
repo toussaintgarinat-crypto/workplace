@@ -1,0 +1,16 @@
+{
+  "nom": "atelier-images-video",
+  "famille": "media",
+  "version": "0.1.0",
+  "description": "Atelier Images & Vidéo : front unique qui réunit génération libre (images/video) et synergies Studio (portrait, couverture, teaser, animer) + galerie de créations sauvegardées (brique mémoire), sans dupliquer leur code. Aucune capacité LLM : surface humaine, pas un outil de l'assistant.",
+  "role": "atelier-images-video",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/atelier-images-video",
+  "port": 6160,
+  "url_sante": "http://host.docker.internal:6160/sante",
+  "url_ui": "http://localhost:6160/atelier",
+  "depends_on": ["images", "video", "studio", "memoire"],
+  "offre": ["front_atelier_images_video"],
+  "capacites": []
+}

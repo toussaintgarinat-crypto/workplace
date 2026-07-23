@@ -1,0 +1,29 @@
+services:
+  atelier-images-video:
+    build: .
+    container_name: workplace_atelier_images_video
+    image: workplace/atelier-images-video:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6160:6160"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre images/video/studio/memoire sous Linux
+    environment:
+      - PORT=6160
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - IMAGES_URL=http://host.docker.internal:5950
+      - VIDEO_URL=http://host.docker.internal:5970
+      - STUDIO_URL=http://host.docker.internal:6060
+      - MEMOIRE_URL=http://host.docker.internal:5600
+      # STUDIO_KEY / MEMOIRE_KEY / ATELIER_IMAGES_VIDEO_KEY : ABSENTS du `environment`
+      # exprès (piège « env shadow » : ne PAS les redéclarer en `=${VAR:-}`, cf. mémoire
+      # fix-env-shadow-composes) — viennent du .env racine via env_file.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6160/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
