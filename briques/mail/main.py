@@ -775,6 +775,23 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
 // Préfixe d'API (S185) : vide en usage autoporté (brique servie directement), posé par le
 // proxy /mail-app/* du Cœur quand la page est rendue en vue native isolée par personne.
 const API=(window.MAIL_API_BASE||'');
+// Session expirée (proxy /mail-app/* du Cœur) : le Cœur répond 303→/auth/login, qui
+// redirige lui-même vers Keycloak sur un AUTRE domaine — un fetch() qui suit une
+// redirection cross-origin sans CORS échoue silencieusement (TypeError), et sans ce
+// filet tous les appels de cette page (ouvrir un mail, recharger la liste…) restent
+// des rejets de promesse non gérés : rien ne s'affiche, aucune erreur visible. On
+// rattrape ce cas précis et on force une VRAIE navigation (non soumise à CORS), qui
+// suit normalement la chaîne jusqu'à l'écran de reconnexion Keycloak.
+(function(){
+  const brut=window.fetch.bind(window);
+  window.fetch=async function(...a){
+    try{
+      const r=await brut(...a);
+      if(r.redirected && /\/auth\/login/.test(r.url)){location.reload();return new Promise(()=>{});}
+      return r;
+    }catch(e){location.reload();return new Promise(()=>{});}
+  };
+})();
 const CATS=[['','Tout'],['__nl','Non lus'],['facture','💶 Factures'],['rendez_vous','📅 RDV'],
   ['personnel','👤 Perso'],['notification','🔔 Notifs'],['newsletter','📰 Newsletters'],['autre','✉️ Autres']];
 let FILTRES=[];
