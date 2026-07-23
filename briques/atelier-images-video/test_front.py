@@ -1,5 +1,7 @@
 """Tests — front de l'atelier-images-video servi PAR la brique (motif atelier-veille/
 test_front.py)."""
+import re
+
 from fastapi.testclient import TestClient
 
 import main
@@ -54,3 +56,23 @@ def test_front_couvre_les_presets_localstorage():
     html = client.get("/").text
     for marqueur in ("sauverPreset", "chargerPreset", "localStorage", "atelier_iv_presets_"):
         assert marqueur in html
+
+
+def test_front_echappe_l_onclick_ajoutergalerie_contre_injection_html():
+    """JSON.stringify() n'échappe pas les apostrophes : injecté brut dans un attribut
+    onclick='...' délimité par apostrophes, un titre/prompt contenant une apostrophe
+    (ex. « L'Estafette ») romprait l'attribut HTML (injection d'attribut). Le helper
+    jsonAttr() doit être utilisé à la place pour les 5 arguments stringifiés de
+    ajouterGalerie(), à l'intérieur de afficherResultatMedia()."""
+    html = client.get("/").text
+    assert "function jsonAttr(" in html
+
+    # Non-greedy jusqu'à la première séquence ")'>" : l'attribut contient des parenthèses
+    # imbriquées (jsonAttr(medium), jsonAttr(titre)...) qui ne sont jamais suivies de "'>"
+    # avant la fin réelle de l'attribut onclick.
+    m = re.search(r"onclick='ajouterGalerie\(.*?\)'>", html)
+    assert m, "attribut onclick='ajouterGalerie(...)' introuvable dans le front"
+    ligne_onclick = m.group(0)
+
+    assert "JSON.stringify" not in ligne_onclick
+    assert ligne_onclick.count("jsonAttr(") == 5
