@@ -207,6 +207,8 @@ services:
     image: workplace-forge-frontend:${FORGE_FRONTEND_VERSION:-0.1.0}
     ports:
       - "${FORGE_FRONTEND_PORT:-3000}:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre keycloak (nginx.conf, proxy /realms) sous Linux
     depends_on:
       forge:
         condition: service_healthy
