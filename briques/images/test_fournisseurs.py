@@ -150,3 +150,17 @@ def test_disponibles_suit_la_cle(monkeypatch):
 def test_comfy_urls_liste(monkeypatch):
     monkeypatch.setenv("COMFY_URL", "http://a:8188/ , http://b:8188")
     assert F.ComfyUI().urls() == ["http://a:8188", "http://b:8188"]
+
+
+def test_gateway_modele_override_par_requete_prioritaire_sur_lenv(monkeypatch):
+    monkeypatch.setenv("GATEWAY_KEY", "k")
+    monkeypatch.setenv("IMAGE_GATEWAY_MODEL", "google/gemini-2.5-flash-image")
+    _, _, body = F.Gateway()._requete("x", "", 1024, 1024, None, "openai/gpt-5-image")
+    assert body["model"] == "openai/gpt-5-image"
+
+
+def test_gateway_sans_override_retombe_sur_lenv(monkeypatch):
+    monkeypatch.setenv("GATEWAY_KEY", "k")
+    monkeypatch.setenv("IMAGE_GATEWAY_MODEL", "google/gemini-2.5-flash-image")
+    _, _, body = F.Gateway()._requete("x", "", 1024, 1024, None)
+    assert body["model"] == "google/gemini-2.5-flash-image"

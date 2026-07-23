@@ -115,12 +115,17 @@ class _HTTP:
     def disponible(self) -> bool:
         raise NotImplementedError
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
-        """→ (url, headers, json_body). À spécialiser par fournisseur."""
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
+        """→ (url, headers, json_body). À spécialiser par fournisseur.
+
+        `modele` (optionnel) : override ponctuel, prioritaire sur la variable d'env du
+        fournisseur — SEULE la classe Gateway l'utilise réellement (comparatif de
+        modèles OpenRouter) ; les autres l'acceptent pour une signature uniforme mais
+        l'ignorent (YAGNI : ils ne sont pas configurés en prod)."""
         raise NotImplementedError
 
-    async def generer(self, prompt, negatif, largeur, hauteur, seed) -> Optional[bytes]:
-        url, headers, body = self._requete(prompt, negatif, largeur, hauteur, seed)
+    async def generer(self, prompt, negatif, largeur, hauteur, seed, modele=None) -> Optional[bytes]:
+        url, headers, body = self._requete(prompt, negatif, largeur, hauteur, seed, modele)
         async with httpx.AsyncClient(timeout=self.timeout) as c:
             r = await c.post(url, headers=headers, json=body)
             r.raise_for_status()
@@ -131,7 +136,9 @@ class Gateway(_HTTP):
     """Passe par la GATEWAY Workplace (LiteLLM → OpenRouter) — déjà utilisée par l'assistant
     pour le texte. AUCUNE clé d'image à configurer : on réutilise la clé OpenRouter déjà
     posée dans l'env de la Gateway. On demande l'image via /chat/completions (modalité image)
-    avec un modèle d'image OpenRouter — Nano Banana par défaut, paramétrable.
+    avec un modèle d'image OpenRouter — Nano Banana par défaut, paramétrable par env OU par
+    requête (le `modele` explicite gagne toujours sur `IMAGE_GATEWAY_MODEL`, cf. comparatif
+    de modèles dans l'Atelier Images & Vidéo).
 
     Réponse OpenRouter : l'image arrive dans choices[].message.images[].image_url.url
     (data URI base64), gérée par `_cherche_image`."""
@@ -144,8 +151,8 @@ class Gateway(_HTTP):
         # la clé OpenRouter vit côté Gateway ; ici il suffit de savoir joindre la Gateway.
         return bool(os.getenv("GATEWAY_KEY"))
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
-        modele = os.getenv("IMAGE_GATEWAY_MODEL", "google/gemini-2.5-flash-image")
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
+        modele = modele or os.getenv("IMAGE_GATEWAY_MODEL", "google/gemini-2.5-flash-image")
         texte = prompt if not negatif else f"{prompt}\n\nÀ éviter : {negatif}"
         body = {"model": modele, "modalities": ["image", "text"],
                 "messages": [{"role": "user", "content": texte}]}
@@ -163,7 +170,7 @@ class NanoBanana(_HTTP):
     def disponible(self):
         return bool(self._cle())
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
         modele = os.getenv("NANOBANANA_MODEL", "gemini-2.5-flash-image")
         texte = prompt if not negatif else f"{prompt}\n\nÀ éviter : {negatif}"
         url = ("https://generativelanguage.googleapis.com/v1beta/models/"
@@ -178,7 +185,7 @@ class Fal(_HTTP):
     def disponible(self):
         return bool(os.getenv("FAL_KEY"))
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
         modele = os.getenv("FAL_MODEL", "fal-ai/flux/schnell")
         body = {"prompt": prompt, "num_images": 1,
                 "image_size": {"width": int(largeur), "height": int(hauteur)}}
@@ -198,7 +205,7 @@ class Replicate(_HTTP):
     def disponible(self):
         return bool(os.getenv("REPLICATE_API_TOKEN"))
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
         modele = os.getenv("REPLICATE_MODEL", "black-forest-labs/flux-schnell")
         inp = {"prompt": prompt, "width": int(largeur), "height": int(hauteur)}
         if seed is not None:
@@ -216,7 +223,7 @@ class OpenAI(_HTTP):
     def disponible(self):
         return bool(os.getenv("OPENAI_API_KEY"))
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
         modele = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
         body = {"model": modele, "prompt": prompt, "n": 1,
                 "size": _taille_openai(largeur, hauteur)}
@@ -232,7 +239,7 @@ class Pruna(_HTTP):
     def disponible(self):
         return bool(os.getenv("PRUNA_API_KEY"))
 
-    def _requete(self, prompt, negatif, largeur, hauteur, seed):
+    def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
         url = os.getenv("PRUNA_API_URL", "https://api.pruna.ai/v1/inference")
         body = {"model": os.getenv("PRUNA_MODEL", "p-image"), "prompt": prompt,
                 "width": int(largeur), "height": int(hauteur)}
@@ -294,7 +301,7 @@ class ComfyUI:
                     return url
         return None
 
-    async def generer(self, prompt, negatif, largeur, hauteur, seed) -> Optional[bytes]:
+    async def generer(self, prompt, negatif, largeur, hauteur, seed, modele=None) -> Optional[bytes]:
         cible = await self.premier_joignable()
         if not cible:
             raise RuntimeError("Aucun ComfyUI joignable")
