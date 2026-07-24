@@ -78,6 +78,14 @@ class Adaptateur:
         """Envoie une réponse VOCALE (octets audio). Par défaut : non supporté."""
         raise NotImplementedError
 
+    async def envoyer_photo(self, id_externe: str, image: bytes, nom: str = "image.png") -> bool:
+        """Envoie une IMAGE en pièce jointe. Par défaut : non supporté."""
+        raise NotImplementedError
+
+    async def envoyer_document(self, id_externe: str, contenu: bytes, nom: str = "fichier") -> bool:
+        """Envoie un FICHIER (PDF, HTML, PPTX…) en pièce jointe. Par défaut : non supporté."""
+        raise NotImplementedError
+
 
 def _entete(headers: dict, nom: str) -> Optional[str]:
     """Lit un en-tête sans se soucier de la casse."""
@@ -176,6 +184,23 @@ class Telegram(Adaptateur):
         async with httpx.AsyncClient(timeout=60) as c:
             r = await c.post(self._api(methode), data={"chat_id": id_externe},
                              files={champ: (nom, audio, "application/octet-stream")})
+            r.raise_for_status()
+        return True
+
+    async def envoyer_photo(self, id_externe: str, image: bytes, nom: str = "image.png") -> bool:
+        """`sendPhoto` : upload multipart direct des octets, aucune URL publique requise
+        (même patron que `envoyer_audio`)."""
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(self._api("sendPhoto"), data={"chat_id": id_externe},
+                             files={"photo": (nom, image, "application/octet-stream")})
+            r.raise_for_status()
+        return True
+
+    async def envoyer_document(self, id_externe: str, contenu: bytes, nom: str = "fichier") -> bool:
+        """`sendDocument` : pièce jointe générique (PDF, HTML, PPTX…), upload multipart."""
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(self._api("sendDocument"), data={"chat_id": id_externe},
+                             files={"document": (nom, contenu, "application/octet-stream")})
             r.raise_for_status()
         return True
 

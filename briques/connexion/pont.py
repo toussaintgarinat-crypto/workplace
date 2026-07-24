@@ -12,11 +12,15 @@ réponse) ; réseau injoignable à l'envoi → on journalise sans rien perdre en
 """
 import os
 
+import httpx
+
 import adaptateurs
 import client_assistant
 import conversations
 import correspondance
 import voix
+
+_EXT_IMAGE = ("png", "jpg", "jpeg", "webp", "gif")
 
 _REPLI = ("Désolé, je n'arrive pas à joindre l'assistant pour l'instant. "
           "Réessaie dans un petit moment.")
@@ -72,6 +76,33 @@ async def _vocaliser(ad, id_externe: str, texte: str, envoyer: bool) -> bool:
         return False
 
 
+async def _envoyer_medias(ad, id_externe: str, medias: list) -> int:
+    """Télécharge chaque média produit par un outil (image/vidéo/export, cf. `url_interne`
+    dans client_assistant._extraire_media) et le relaie en pièce jointe sur le réseau
+    d'origine — `sendPhoto` pour une image, `sendDocument` sinon (PDF/PPTX/HTML…). Repli
+    HONNÊTE : un média KO (réseau, adaptateur sans pièce jointe) n'interrompt jamais les
+    autres ni le texte déjà envoyé."""
+    envoyes = 0
+    async with httpx.AsyncClient(timeout=60) as c:
+        for m in medias:
+            url = m.get("url")
+            if not url:
+                continue
+            try:
+                r = await c.get(url)
+                r.raise_for_status()
+                nom = url.rsplit("/", 1)[-1]
+                ext = nom.rsplit(".", 1)[-1].lower() if "." in nom else ""
+                if ext in _EXT_IMAGE:
+                    ok = await ad.envoyer_photo(id_externe, r.content, nom)
+                else:
+                    ok = await ad.envoyer_document(id_externe, r.content, nom)
+                envoyes += 1 if ok else 0
+            except (httpx.HTTPError, NotImplementedError):
+                continue
+    return envoyes
+
+
 async def _transcrire_vocal(reseau: str, ad, entrant, envoyer: bool) -> dict:
     """Télécharge le vocal et le transcrit (Whisper local). Repli HONNÊTE si le moteur est
     KO ou ne rend qu'un place_holder : on prévient l'interlocuteur, on ne relaie rien de faux."""
@@ -121,10 +152,12 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
 
     verbeux = str(os.getenv("CONNEXION_VERBEUX", "0")).strip() in ("1", "true", "oui")
     repli = False
+    medias: list = []
     try:
         reponse = await client_assistant.converser(
             messages, verbeux=verbeux, surface=reseau,
-            interlocuteur=entrant.id_externe, utilisateur=corr.get("utilisateur"))
+            interlocuteur=entrant.id_externe, utilisateur=corr.get("utilisateur"),
+            medias=medias)
         if not reponse:
             reponse, repli = _REPLI, True
     except Exception:  # noqa: BLE001 — assistant KO → repli honnête, pas de fausse réponse
@@ -140,6 +173,17 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
         except Exception:  # noqa: BLE001
             envoye = False
 
+    # Pièces jointes (S196) : images/PDF/HTML produits par un outil pendant ce tour, relayées
+    # EN PLUS du texte (jamais à sa place — le texte reste le repli honnête si l'envoi du
+    # média échoue). Pas de gate : ce ne sont jamais des ACTIONS, juste la restitution du
+    # résultat d'un outil déjà exécuté et confirmé plus haut dans la boucle de l'assistant.
+    medias_envoyes = 0
+    if envoyer and ad.configure() and medias and not repli:
+        try:
+            medias_envoyes = await _envoyer_medias(ad, entrant.id_externe, medias)
+        except Exception:  # noqa: BLE001 — un média KO ne doit jamais faire échouer le tour
+            medias_envoyes = 0
+
     # Réponse vocale : speech-to-speech (message entrant était audio) OU demande explicite
     # dans un texte ("fais-moi un vocal", "lis-moi ça"…). Le texte est toujours envoyé en
     # premier : il sert de transcription lisible et de repli si la brique voix est KO.
@@ -148,7 +192,8 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
         vocalise = await _vocaliser(ad, entrant.id_externe, reponse, envoyer)
 
     return {"ok": True, "reponse": reponse, "utilisateur": corr.get("utilisateur"),
-            "repli": repli, "envoye": envoye, "transcrit": transcrit, "vocalise": vocalise}
+            "repli": repli, "envoye": envoye, "transcrit": transcrit, "vocalise": vocalise,
+            "medias_envoyes": medias_envoyes}
 
 
 async def sonder(reseau: str) -> dict:

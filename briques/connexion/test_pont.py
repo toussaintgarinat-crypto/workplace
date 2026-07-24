@@ -1,6 +1,8 @@
 """Tests du pont : autorisation, relais à l'assistant (mocké), persistance, repli honnête."""
 import asyncio
 
+import httpx
+
 import adaptateurs as A
 import conversations as C
 import correspondance as K
@@ -20,6 +22,8 @@ class FauxAdaptateur(A.Adaptateur):
         self.envoyes = []
         self.telecharges = []
         self.audios = []
+        self.photos = []
+        self.documents = []
 
     def configure(self) -> bool:
         return True
@@ -34,6 +38,14 @@ class FauxAdaptateur(A.Adaptateur):
 
     async def envoyer_audio(self, id_externe: str, audio: bytes, format: str = "ogg") -> bool:
         self.audios.append((id_externe, audio, format))
+        return True
+
+    async def envoyer_photo(self, id_externe: str, image: bytes, nom: str = "image.png") -> bool:
+        self.photos.append((id_externe, image, nom))
+        return True
+
+    async def envoyer_document(self, id_externe: str, contenu: bytes, nom: str = "fichier") -> bool:
+        self.documents.append((id_externe, contenu, nom))
         return True
 
 
@@ -225,6 +237,126 @@ def test_vocal_repli_honnete_si_tts_indisponible(monkeypatch):
     r = _run(pont.traiter("faux", e))
     assert r["ok"] is True and r["vocalise"] is False
     assert faux.envoyes == [("v5", "Voilà.")] and faux.audios == []
+
+
+# ── Pièces jointes (S196) : images/PDF/HTML produits par un outil, relayées en plus du texte
+
+class _RespMedia:
+    def __init__(self, content=b"OCTETS", status=200):
+        self.content = content
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPError("brique média injoignable")
+
+
+def _fake_httpx_medias(monkeypatch, reponses: dict | None = None):
+    """Remplace `pont.httpx` par un faux client GET (pas de vrai réseau). `reponses` associe
+    une URL exacte à une `_RespMedia` (sinon 200/OCTETS par défaut)."""
+    reponses = reponses or {}
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            return reponses.get(url, _RespMedia())
+
+    monkeypatch.setattr(pont, "httpx", type("_H", (), {
+        "AsyncClient": _FakeClient, "HTTPError": httpx.HTTPError}))
+
+
+def test_envoyer_medias_image_va_en_sendphoto(monkeypatch):
+    _fake_httpx_medias(monkeypatch)
+    faux = FauxAdaptateur()
+    n = _run(pont._envoyer_medias(faux, "x1", [
+        {"url": "http://images-interne/fichiers/img-abc.png", "nom": "image_generer"}]))
+    assert n == 1
+    assert faux.photos == [("x1", b"OCTETS", "img-abc.png")]
+    assert faux.documents == []
+
+
+def test_envoyer_medias_document_va_en_senddocument(monkeypatch):
+    _fake_httpx_medias(monkeypatch)
+    faux = FauxAdaptateur()
+    n = _run(pont._envoyer_medias(faux, "x1", [
+        {"url": "http://export-interne/fichiers/rapport.pdf", "nom": "export_pdf"}]))
+    assert n == 1
+    assert faux.documents == [("x1", b"OCTETS", "rapport.pdf")]
+    assert faux.photos == []
+
+
+def test_envoyer_medias_echec_reseau_ignore_sans_lever(monkeypatch):
+    """Un média KO (brique injoignable) n'interrompt pas les autres — repli honnête."""
+    _fake_httpx_medias(monkeypatch, reponses={
+        "http://images-interne/fichiers/boum.png": _RespMedia(status=500)})
+    faux = FauxAdaptateur()
+    n = _run(pont._envoyer_medias(faux, "x1", [
+        {"url": "http://images-interne/fichiers/boum.png", "nom": "image_generer"},
+        {"url": "http://images-interne/fichiers/ok.png", "nom": "image_generer"},
+    ]))
+    assert n == 1
+    assert faux.photos == [("x1", b"OCTETS", "ok.png")]
+
+
+def test_envoyer_medias_adaptateur_sans_piece_jointe_ignore(monkeypatch):
+    """Un adaptateur qui ne sait pas envoyer de pièce jointe (NotImplementedError, cf. classe
+    de base Adaptateur) ne fait jamais échouer le tour — repli honnête."""
+    _fake_httpx_medias(monkeypatch)
+
+    class _AdaptateurSansPieceJointe(A.Adaptateur):
+        nom = "sans-pj"
+
+    n = _run(pont._envoyer_medias(_AdaptateurSansPieceJointe(), "x1", [
+        {"url": "http://images-interne/fichiers/img.png", "nom": "image_generer"}]))
+    assert n == 0
+
+
+def test_traiter_relaie_le_media_produit_par_un_outil(monkeypatch):
+    """Bout-en-bout : l'assistant produit une image pendant le tour (medias= peuplé par
+    client_assistant.converser) → le pont l'envoie APRÈS le texte, sans jamais le remplacer."""
+    faux = FauxAdaptateur()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    _fake_httpx_medias(monkeypatch)
+
+    async def fausse_converser(messages, medias=None, **_):
+        if medias is not None:
+            medias.append({"url": "http://images-interne/fichiers/img-abc.png",
+                           "nom": "image_generer"})
+        return "Voici ton image."
+
+    monkeypatch.setattr(client_assistant, "converser", fausse_converser)
+    K.lier("faux", "m1", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "m1", "fais-moi une image de chat", "Garina")))
+    assert r["ok"] is True and r["medias_envoyes"] == 1
+    assert faux.envoyes == [("m1", "Voici ton image.")]          # le texte part toujours
+    assert faux.photos == [("m1", b"OCTETS", "img-abc.png")]      # + la pièce jointe
+
+
+def test_traiter_repli_honnete_pas_de_media_envoye(monkeypatch):
+    """Assistant KO (repli honnête) : même si un média avait été partiellement collecté avant
+    la levée, on n'envoie JAMAIS de pièce jointe sur un tour en repli."""
+    faux = FauxAdaptateur()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    _fake_httpx_medias(monkeypatch)
+
+    async def fausse_converser(messages, medias=None, **_):
+        if medias is not None:
+            medias.append({"url": "http://images-interne/fichiers/img.png", "nom": "x"})
+        raise RuntimeError("assistant KO")
+
+    monkeypatch.setattr(client_assistant, "converser", fausse_converser)
+    K.lier("faux", "m2", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "m2", "salut", "Garina")))
+    assert r["ok"] is True and r["repli"] is True and r["medias_envoyes"] == 0
+    assert faux.photos == [] and faux.documents == []
 
 
 def test_sonder_reseau_non_configure():

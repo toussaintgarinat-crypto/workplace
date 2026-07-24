@@ -5,6 +5,12 @@ L'assistant répond en `text/event-stream` : des lignes `data: {json}` typées
 Ici on RELAIE vers une messagerie : on n'a besoin que du texte. On accumule donc les
 fragments `texte_delta`/`texte`, on condense les appels d'outils en une ligne (mode verbeux),
 et on s'arrête sur `fin`. Une `erreur` lève — le pont retombera sur un repli honnête.
+
+Pièces jointes (S196) : un `resultat_outil` d'une brique media (images/video/export) porte
+`url_interne` — cf. `core/outils_communs.py::_reecrire_url_media`. Si l'appelant passe
+`medias=[]`, on y ajoute chaque média rencontré ; le pont (`pont.py`) les télécharge et les
+relaie en pièce jointe (`envoyer_photo`/`envoyer_document`). Sans `medias`, comportement
+inchangé (rétrocompatible).
 """
 import json
 import os
@@ -34,7 +40,18 @@ def lire_sse(texte: str) -> list:
     return evts
 
 
-def accumuler(evenements: list, *, verbeux: bool = False) -> str:
+def _extraire_media(evt: dict, medias: list) -> None:
+    """Un `resultat_outil` d'une brique media porte `url_interne` (S196) : on le collecte
+    tel quel, le pont décidera comment le relayer (extension → sendPhoto/sendDocument)."""
+    try:
+        data = json.loads(evt.get("resultat") or "{}")
+    except json.JSONDecodeError:
+        return
+    if isinstance(data, dict) and isinstance(data.get("url_interne"), str):
+        medias.append({"url": data["url_interne"], "nom": evt.get("nom")})
+
+
+def accumuler(evenements: list, *, verbeux: bool = False, medias: list | None = None) -> str:
     """Reconstruit le texte de réponse à partir des événements (gère deltas + outils)."""
     morceaux = []
     for evt in evenements:
@@ -43,6 +60,8 @@ def accumuler(evenements: list, *, verbeux: bool = False) -> str:
             morceaux.append(evt.get("contenu", ""))
         elif t == "outil" and verbeux:
             morceaux.append(f"\n🔧 {evt.get('nom', 'outil')}…\n")
+        elif t == "resultat_outil" and medias is not None:
+            _extraire_media(evt, medias)
         elif t == "erreur":
             raise RuntimeError(evt.get("contenu", "erreur de l'assistant"))
     return "".join(morceaux).strip()
@@ -50,7 +69,7 @@ def accumuler(evenements: list, *, verbeux: bool = False) -> str:
 
 async def converser(messages: list, *, verbeux: bool = False, timeout: float = 120.0,
                     surface: str | None = None, interlocuteur: str | None = None,
-                    utilisateur: str | None = None) -> str:
+                    utilisateur: str | None = None, medias: list | None = None) -> str:
     """Envoie l'historique à l'assistant et renvoie sa réponse texte (flux SSE consommé).
 
     `surface`/`interlocuteur`/`utilisateur` alimentent la TRACE unifiée du Cœur (S78) : la
@@ -82,6 +101,8 @@ async def converser(messages: list, *, verbeux: bool = False, timeout: float = 1
                     morceaux.append(evt.get("contenu", ""))
                 elif t == "outil" and verbeux:
                     morceaux.append(f"\n🔧 {evt.get('nom', 'outil')}…\n")
+                elif t == "resultat_outil" and medias is not None:
+                    _extraire_media(evt, medias)
                 elif t == "erreur":
                     raise RuntimeError(evt.get("contenu", "erreur de l'assistant"))
                 elif t == "fin":

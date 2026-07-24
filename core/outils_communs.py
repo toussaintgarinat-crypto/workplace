@@ -113,14 +113,20 @@ async def _poll_async(poll_url: str, headers: dict | None, brique: str,
 _BRIQUES_MEDIA = {"images", "video", "export"}
 
 
-def _reecrire_url_media(brique: str, data):
+def _reecrire_url_media(brique: str, base: str, data):
     """Réécrit `url: /fichiers/xxx` en `/brique-fichiers/{brique}/xxx` — sinon cette URL,
     propre au port interne Docker de la brique, n'est jamais résolvable par le navigateur
-    qui affiche le résultat de l'outil (S196)."""
+    qui affiche le résultat de l'outil (S196). Ajoute aussi `url_interne` (URL absolue mais
+    interne au réseau Docker, ex. `http://host.docker.internal:5950/fichiers/xxx`) : un
+    appelant serveur-à-serveur comme le pont Telegram (`briques/connexion`) n'a pas de
+    session navigateur pour passer par `/brique-fichiers/…` et récupère les octets
+    directement depuis la brique d'origine."""
     if brique in _BRIQUES_MEDIA and isinstance(data, dict):
         url = data.get("url")
         if isinstance(url, str) and url.startswith("/fichiers/"):
-            data = {**data, "url": f"/brique-fichiers/{brique}{url}"}
+            nom = url[len("/fichiers/"):]
+            data = {**data, "url": f"/brique-fichiers/{brique}/{nom}",
+                    "url_interne": f"{base}{url}"}
     return data
 
 
@@ -170,7 +176,8 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
                            "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
                           ensure_ascii=False)
     try:
-        return json.dumps(_reecrire_url_media(cap["brique"], r.json()), ensure_ascii=False)
+        base = cap["url"].rsplit(cap["chemin"], 1)[0]
+        return json.dumps(_reecrire_url_media(cap["brique"], base, r.json()), ensure_ascii=False)
     except ValueError:
         texte = (r.text or "").strip()
         if not texte:
