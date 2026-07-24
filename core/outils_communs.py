@@ -108,6 +108,22 @@ async def _poll_async(poll_url: str, headers: dict | None, brique: str,
             await asyncio.sleep(ASYNC_POLL)
 
 
+# Briques qui rapatrient leur production et la servent depuis `/fichiers/{nom}` (URL
+# relative à leur propre port interne) : images, video, export. Cf. media_proxy.py.
+_BRIQUES_MEDIA = {"images", "video", "export"}
+
+
+def _reecrire_url_media(brique: str, data):
+    """Réécrit `url: /fichiers/xxx` en `/brique-fichiers/{brique}/xxx` — sinon cette URL,
+    propre au port interne Docker de la brique, n'est jamais résolvable par le navigateur
+    qui affiche le résultat de l'outil (S196)."""
+    if brique in _BRIQUES_MEDIA and isinstance(data, dict):
+        url = data.get("url")
+        if isinstance(url, str) and url.startswith("/fichiers/"):
+            data = {**data, "url": f"/brique-fichiers/{brique}{url}"}
+    return data
+
+
 async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     args = dict(args or {})
     confirme = args.pop("confirme", None)
@@ -154,7 +170,7 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
                            "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
                           ensure_ascii=False)
     try:
-        return json.dumps(r.json(), ensure_ascii=False)
+        return json.dumps(_reecrire_url_media(cap["brique"], r.json()), ensure_ascii=False)
     except ValueError:
         texte = (r.text or "").strip()
         if not texte:
