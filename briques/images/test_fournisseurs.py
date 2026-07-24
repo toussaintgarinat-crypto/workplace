@@ -120,8 +120,35 @@ def test_taille_openai_mappe_les_formats():
 def test_requete_pruna(monkeypatch):
     monkeypatch.setenv("PRUNA_API_KEY", "pk")
     url, headers, body = F.Pruna()._requete("fleur", "laid", 1024, 1024, 3)
-    assert headers["Authorization"] == "Bearer pk"
-    assert body["negative_prompt"] == "laid" and body["seed"] == 3
+    assert url == "https://api.pruna.ai/v1/predictions"
+    assert headers["apikey"] == "pk"                    # PAS Authorization: Bearer
+    assert headers["Model"] == "p-image"
+    assert headers["Try-Sync"] == "true"                # sinon réponse = job à poller, pas d'image
+    assert body["input"]["prompt"] == "fleur"
+    assert body["input"]["aspect_ratio"] == "custom"
+    assert body["input"]["width"] == 1024 and body["input"]["height"] == 1024
+    assert body["input"]["seed"] == 3
+
+
+def test_requete_pruna_arrondit_les_dimensions_au_multiple_de_16(monkeypatch):
+    """Pruna exige une dimension multiple de 16 entre 256 et 1440 (aspect_ratio=custom)."""
+    monkeypatch.setenv("PRUNA_API_KEY", "pk")
+    _, _, body = F.Pruna()._requete("fleur", "", 1500, 100, None)
+    assert body["input"]["width"] == 1440             # borné puis arrondi (1500 > 1440)
+    assert body["input"]["height"] == 256              # borné puis arrondi (100 < 256)
+
+
+def test_requete_pruna_modele_personnalise(monkeypatch):
+    monkeypatch.setenv("PRUNA_API_KEY", "pk")
+    monkeypatch.setenv("PRUNA_MODEL", "p-image-edit")
+    _, headers, _ = F.Pruna()._requete("fleur", "", 1024, 1024, None)
+    assert headers["Model"] == "p-image-edit"
+
+
+def test_cherche_image_reconnait_la_reponse_sync_pruna():
+    trouve = F._cherche_image({"status": "succeeded",
+                               "generation_url": "https://api.pruna.ai/v1/predictions/delivery/x.jpg"})
+    assert trouve == ("url", "https://api.pruna.ai/v1/predictions/delivery/x.jpg")
 
 
 # ── disponibilité & ordre ────────────────────────────────────────

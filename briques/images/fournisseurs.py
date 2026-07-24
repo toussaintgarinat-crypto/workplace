@@ -52,6 +52,7 @@ def _cherche_image(obj):
       • openai    → {"data": [{"b64_json": …}]}  (ou {"url": …})
       • gemini    → {"candidates": [{"content": {"parts": [{"inlineData": {"data": …}}]}}]}
       • openrouter (chat) → {"choices": [{"message": {"images": [{"image_url": {"url": "data:…"}}]}}]}
+      • pruna (Try-Sync)  → {"status": "succeeded", "generation_url": …}
     On descend récursivement les conteneurs usuels ; le premier visuel trouvé gagne."""
     if obj is None:
         return None
@@ -71,7 +72,7 @@ def _cherche_image(obj):
                 v = v.get("data")
             if isinstance(v, str) and v:
                 return ("b64", v)
-        for cle in ("url", "image_url", "image"):
+        for cle in ("url", "image_url", "image", "generation_url"):
             v = obj.get(cle)
             if isinstance(v, dict):           # openrouter chat : {"image_url": {"url": …}}
                 v = v.get("url")
@@ -232,23 +233,39 @@ class OpenAI(_HTTP):
                 {"Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"}, body)
 
 
+def _dim_pruna(v) -> int:
+    """Pruna exige une dimension MULTIPLE DE 16 entre 256 et 1440 (aspect_ratio="custom") —
+    sans ça l'API renvoie une erreur de validation plutôt qu'une image. On arrondit au
+    multiple de 16 inférieur après avoir borné, pour rester tolérant aux tailles passées
+    par l'appelant (image_generer accepte n'importe quel largeur/hauteur)."""
+    v = max(256, min(1440, int(v)))
+    return v - (v % 16)
+
+
 class Pruna(_HTTP):
-    """Pruna AI « P-Image » (sub-seconde). Endpoint/modèle paramétrables (API récente) :
-    le code reste tolérant — la réponse peut être une URL ou un b64, `_cherche_image` gère."""
+    """Pruna AI « P-Image » (sub-seconde) — cf. docs.pruna.ai/en/stable/docs_pruna_endpoints/
+    performance_models/p-image.html. Particularités par rapport aux autres fournisseurs HTTP :
+      • auth par header `apikey` (pas `Authorization: Bearer`) ;
+      • le modèle est un HEADER (`Model`), pas un champ du corps ;
+      • le corps est imbriqué sous `input` ;
+      • par défaut l'API est ASYNCHRONE (renvoie un job à poller) — `Try-Sync: true` force
+        une réponse directe sous 60s (`{"status": "succeeded", "generation_url": …}`),
+        seul mode compatible avec ce moteur qui ne poll pas."""
     nom = "pruna"
 
     def disponible(self):
         return bool(os.getenv("PRUNA_API_KEY"))
 
     def _requete(self, prompt, negatif, largeur, hauteur, seed, modele=None):
-        url = os.getenv("PRUNA_API_URL", "https://api.pruna.ai/v1/inference")
-        body = {"model": os.getenv("PRUNA_MODEL", "p-image"), "prompt": prompt,
-                "width": int(largeur), "height": int(hauteur)}
-        if negatif:
-            body["negative_prompt"] = negatif
+        url = os.getenv("PRUNA_API_URL", "https://api.pruna.ai/v1/predictions")
+        entree = {"prompt": prompt, "aspect_ratio": "custom",
+                  "width": _dim_pruna(largeur), "height": _dim_pruna(hauteur)}
         if seed is not None:
-            body["seed"] = int(seed)
-        return url, {"Authorization": f"Bearer {os.getenv('PRUNA_API_KEY')}"}, body
+            entree["seed"] = int(seed)
+        headers = {"apikey": os.getenv("PRUNA_API_KEY", ""),
+                   "Model": os.getenv("PRUNA_MODEL", "p-image"),
+                   "Try-Sync": "true"}
+        return url, headers, {"input": entree}
 
 
 def _taille_openai(largeur, hauteur) -> str:
