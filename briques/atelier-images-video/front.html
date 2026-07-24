@@ -77,7 +77,9 @@
       <div><label>Largeur</label><input id="image-largeur" type="number" value="1024"></div>
       <div><label>Hauteur</label><input id="image-hauteur" type="number" value="1024"></div>
       <div><label>Fournisseur</label><select id="image-fournisseur"><option value="">auto (ordre par défaut)</option></select></div>
+      <div><label>Modèle (Gateway)</label><select id="image-modele" onchange="majNoteModele()"><option value="">auto (laisse le fournisseur choisir)</option></select></div>
     </div>
+    <p id="image-modele-note" style="display:none;color:var(--mut);font-size:.85em">ℹ️ Un modèle choisi force le fournisseur sur <strong>gateway</strong> (seul à l'honorer).</p>
     <button class="action" onclick="genererImage()">Générer l'image</button>
     <div id="image-erreur" class="erreur"></div>
     <div id="image-resultat"></div>
@@ -211,16 +213,45 @@ rafraichirPresets('image');
 rafraichirPresets('video');
 
 // ── Génération libre ───────────────────────────────────────────────────────
-async function chargerFournisseurs(type) {
-  const select = document.getElementById(type + '-fournisseur');
+// `prefixeId` nomme l'élément DOM (singulier : image-fournisseur, video-fournisseur) ;
+// la route API, elle, est PLURIELLE pour images (/images/fournisseurs) mais singulière
+// pour video (/video/fournisseurs) — d'où le mappage explicite plutôt qu'un prefixeId
+// réutilisé tel quel des deux côtés (bug vécu : chargerFournisseurs('images') cherchait
+// l'id 'images-fournisseur', qui n'existe pas → select resté silencieusement sur "auto").
+async function chargerFournisseurs(prefixeId) {
+  const select = document.getElementById(prefixeId + '-fournisseur');
+  const segmentApi = prefixeId === 'image' ? 'images' : prefixeId;
   try {
-    const data = await api('/' + type + '/fournisseurs');
+    const data = await api('/' + segmentApi + '/fournisseurs');
     select.innerHTML = '<option value="">auto (ordre par défaut)</option>' +
       data.fournisseurs.map(f => `<option value="${esc(f.nom)}">${esc(f.nom)}${f.configure ? '' : ' (non configuré)'}</option>`).join('');
   } catch (e) { /* select reste sur le seul choix "auto" */ }
 }
-chargerFournisseurs('images');
+chargerFournisseurs('image');
 chargerFournisseurs('video');
+chargerModelesImage();
+
+// Modèle précis (Gateway) directement depuis l'onglet Image libre — mêmes modèles que
+// l'onglet Comparatif (/images/modeles), mais un seul choisi au lieu d'un lot coché.
+async function chargerModelesImage() {
+  const select = document.getElementById('image-modele');
+  try {
+    const data = await api('/images/modeles');
+    select.innerHTML = '<option value="">auto (laisse le fournisseur choisir)</option>' +
+      (data.modeles || []).map(m => `<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
+  } catch (e) { /* select reste sur le seul choix "auto" */ }
+}
+
+// Un modèle précis n'est honoré QUE par le fournisseur gateway (cf. images/moteur.py) :
+// le choisir verrouille donc le sélecteur Fournisseur dessus, pour ne pas laisser croire
+// qu'un autre fournisseur pourrait l'utiliser.
+function majNoteModele() {
+  const modele = document.getElementById('image-modele').value;
+  const fournisseur = document.getElementById('image-fournisseur');
+  document.getElementById('image-modele-note').style.display = modele ? 'block' : 'none';
+  fournisseur.disabled = !!modele;
+  if (modele) fournisseur.value = 'gateway';
+}
 
 function afficherResultatMedia(cible, medium, data, titre, prompt) {
   const url = data.url;
@@ -237,13 +268,19 @@ async function genererImage() {
   const cible = document.getElementById('image-resultat');
   erreur.textContent = ''; cible.innerHTML = '';
   if (!prompt) { erreur.textContent = 'Le prompt est vide.'; return; }
+  // Un modèle précis n'est honoré QUE par gateway (cf. images/moteur.py) : le choisir
+  // force donc ce fournisseur, quoi que porte le sélecteur Fournisseur (verrouillé par
+  // majNoteModele() dès qu'un modèle est choisi, mais on le refixe ici par sécurité).
+  const modele = document.getElementById('image-modele').value || null;
+  const fournisseur = modele ? 'gateway' : (document.getElementById('image-fournisseur').value || null);
   try {
     const data = await api('/images/generer', 'POST', {
       prompt,
       negatif: document.getElementById('image-negatif').value.trim() || null,
       largeur: parseInt(document.getElementById('image-largeur').value, 10) || 1024,
       hauteur: parseInt(document.getElementById('image-hauteur').value, 10) || 1024,
-      fournisseur: document.getElementById('image-fournisseur').value || null,
+      fournisseur,
+      modele,
     });
     afficherResultatMedia(cible, 'image', data, prompt.slice(0, 60), prompt);
   } catch (e) { erreur.textContent = String(e.message || e); }

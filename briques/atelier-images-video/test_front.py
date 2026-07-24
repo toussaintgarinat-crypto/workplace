@@ -39,6 +39,29 @@ def test_front_couvre_la_generation_libre():
         assert marqueur in html
 
 
+def test_front_image_libre_permet_de_choisir_un_modele():
+    """Sélecteur de modèle (Gateway) directement dans l'onglet Image libre — mêmes modèles
+    que l'onglet Comparatif (/images/modeles), mais un seul choisi plutôt qu'un lot coché."""
+    html = client.get("/").text
+    assert 'id="image-modele"' in html
+    assert "chargerModelesImage" in html
+    assert "/images/modeles" in html
+    # Un modèle n'est honoré QUE par gateway (cf. images/moteur.py) : le choisir doit
+    # verrouiller le fournisseur dessus, sans quoi le modèle serait silencieusement ignoré.
+    assert "majNoteModele" in html
+    assert "fournisseur.value = 'gateway'" in html
+
+
+def test_front_genererimage_envoie_le_modele_et_force_gateway():
+    html = client.get("/").text
+    m = re.search(r"async function genererImage\(\) \{.*?\n\}", html, re.DOTALL)
+    assert m, "genererImage() introuvable"
+    corps = m.group(0)
+    assert "image-modele" in corps
+    assert "modele ? 'gateway'" in corps
+    assert "modele," in corps          # transmis dans le corps POST /images/generer
+
+
 def test_front_couvre_les_synergies_studio():
     html = client.get("/").text
     for marqueur in ("chargerSeries", "genererPortrait", "genererAnimation",
