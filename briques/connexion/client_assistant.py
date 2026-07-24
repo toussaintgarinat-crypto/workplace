@@ -108,3 +108,22 @@ async def converser(messages: list, *, verbeux: bool = False, timeout: float = 1
                 elif t == "fin":
                     break
     return "".join(morceaux).strip()
+
+
+def url_historique_utilisateur() -> str:
+    base = os.getenv("NOYAU_ASSISTANT_URL", "http://host.docker.internal:5100").rstrip("/")
+    return f"{base}/assistant/historique_utilisateur"
+
+
+async def historique_utilisateur(utilisateur: str, limite: int = 40,
+                                  timeout: float = 10.0) -> list:
+    """Historique CROSS-SURFACE d'un compte, tenu par le journal unifié du Cœur (web +
+    Telegram + tout autre canal). Lève en cas d'échec réseau — l'appelant (`pont.py`) gère
+    le repli honnête sur son fil local à CE seul canal."""
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(url_historique_utilisateur(), params={"utilisateur": utilisateur,
+                                                                "limite": limite})
+        r.raise_for_status()
+        data = r.json()
+    msgs = data.get("messages")
+    return msgs if isinstance(msgs, list) else []

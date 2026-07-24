@@ -359,6 +359,65 @@ def test_traiter_repli_honnete_pas_de_media_envoye(monkeypatch):
     assert faux.photos == [] and faux.documents == []
 
 
+# ── Historique cross-surface (web ⇄ Telegram ⇄ tout autre canal) ────────────
+
+def test_historique_croise_defaut_off_utilise_le_fil_local(monkeypatch):
+    """Sans `CONNEXION_HISTORIQUE_CROISE`, comportement inchangé : fil local seulement,
+    aucun appel à `client_assistant.historique_utilisateur`."""
+    appels = {"n": 0}
+
+    async def jamais_appele(utilisateur, **_):
+        appels["n"] += 1
+        return ["ne devrait jamais être vu"]
+
+    monkeypatch.setattr(client_assistant, "historique_utilisateur", jamais_appele)
+    faux = _brancher(monkeypatch, reponse="ok")
+    K.lier("faux", "h1", "u@wp")
+    C.ajouter("faux", "h1", "user", "vieux message local")
+    _run(pont.traiter("faux", A.Entrant("faux", "h1", "coucou", "Garina")))
+    assert appels["n"] == 0
+
+
+def test_historique_croise_actif_fusionne_les_surfaces(monkeypatch):
+    """Flag activé + compte connu → l'historique vient du journal unifié du Cœur (web +
+    Telegram), pas du seul fil local du canal courant."""
+    monkeypatch.setenv("CONNEXION_HISTORIQUE_CROISE", "1")
+    captures = {}
+
+    async def capter(messages, **_):
+        captures["messages"] = messages
+        return "ok"
+
+    async def fausse_historique(utilisateur, **_):
+        assert utilisateur == "u@wp"
+        return [{"role": "user", "content": "dit sur le web"},
+                {"role": "assistant", "content": "répondu sur le web"}]
+
+    monkeypatch.setitem(A.REGISTRE, "faux", FauxAdaptateur())
+    monkeypatch.setattr(client_assistant, "converser", capter)
+    monkeypatch.setattr(client_assistant, "historique_utilisateur", fausse_historique)
+    K.lier("faux", "h2", "u@wp")
+    _run(pont.traiter("faux", A.Entrant("faux", "h2", "et maintenant sur telegram", "Garina")))
+    contenus = [m["content"] for m in captures["messages"]]
+    assert "dit sur le web" in contenus
+    assert "et maintenant sur telegram" in contenus
+
+
+def test_historique_croise_repli_honnete_si_coeur_ko(monkeypatch):
+    """Cœur injoignable pour l'historique croisé → repli sur le fil local, jamais une panne."""
+    monkeypatch.setenv("CONNEXION_HISTORIQUE_CROISE", "1")
+
+    async def historique_ko(utilisateur, **_):
+        raise RuntimeError("Cœur injoignable")
+
+    monkeypatch.setattr(client_assistant, "historique_utilisateur", historique_ko)
+    faux = _brancher(monkeypatch, reponse="ok quand même")
+    K.lier("faux", "h3", "u@wp")
+    C.ajouter("faux", "h3", "user", "ancien message local")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "h3", "toujours là ?", "Garina")))
+    assert r["ok"] is True and r["repli"] is False
+
+
 def test_sonder_reseau_non_configure():
     # email_sms n'est pas configuré → sondage honnête à vide, sans réseau.
     r = _run(pont.sonder("email_sms"))
