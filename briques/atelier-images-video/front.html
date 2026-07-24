@@ -150,10 +150,15 @@ function esc(s) {
 }
 
 // HTML-attribute-escape une valeur déjà passée par JSON.stringify : celui-ci échappe la
-// syntaxe string JS (backslashes, guillemets doubles) mais PAS les apostrophes — or ces
-// valeurs sont injectées dans un attribut onclick='...' délimité par apostrophes. Sans ce
+// syntaxe string JS (backslashes, guillemets doubles internes) mais PAS les apostrophes —
+// or ces valeurs sont injectées dans un attribut onclick='...' délimité par apostrophes. Sans ce
 // second passage, une apostrophe dans un titre/prompt (ex. « L'Estafette ») fermerait
 // l'attribut HTML prématurément (injection d'attribut HTML).
+// ⚠️ jsonAttr() laisse en revanche les guillemets doubles ENGLOBANTS de JSON.stringify
+// tels quels (littéraux) : à n'utiliser QUE dans un onclick='...' (apostrophes). Utilisé
+// dans un onclick="..." (guillemets doubles), ces guillemets englobants ferment
+// l'attribut en plein milieu de l'appel → bouton silencieusement cassé (bug vécu ici :
+// Portrait/Animer/Couverture/Teaser/Supprimer galerie).
 function jsonAttr(x) {
   return JSON.stringify(x).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -286,16 +291,16 @@ async function changerSerie() {
       <div class="carte" id="perso-${esc(p.id)}">
         <h4>${esc(p.nom)}</h4>
         <div class="meta">${esc(p.role || '')}</div>
-        <button class="discret" onclick="genererPortrait(${jsonAttr(id)},${jsonAttr(p.id)})">🖼️ Portrait</button>
-        <button class="discret" onclick="genererAnimation(${jsonAttr(id)},${jsonAttr(p.id)})">🎬 Animer</button>
+        <button class="discret" onclick='genererPortrait(${jsonAttr(id)},${jsonAttr(p.id)})'>🖼️ Portrait</button>
+        <button class="discret" onclick='genererAnimation(${jsonAttr(id)},${jsonAttr(p.id)})'>🎬 Animer</button>
         <div id="perso-resultat-${esc(p.id)}"></div>
       </div>`).join('') || '<p style="color:var(--mut)">Aucun personnage dans cette série.</p>';
     zoneEpisodes.innerHTML = '<h3>Chapitres</h3>' + (serie.episodes || []).map(e => `
       <div class="carte" id="episode-${e.n}">
         <h4>Chapitre ${e.n}</h4>
         <div class="meta">${esc((e.consigne || '').slice(0, 100))}</div>
-        <button class="discret" onclick="genererCouverture(${jsonAttr(id)},${e.n})">🖼️ Couverture</button>
-        <button class="discret" onclick="genererTeaser(${jsonAttr(id)},${e.n})">🎬 Teaser</button>
+        <button class="discret" onclick='genererCouverture(${jsonAttr(id)},${e.n})'>🖼️ Couverture</button>
+        <button class="discret" onclick='genererTeaser(${jsonAttr(id)},${e.n})'>🎬 Teaser</button>
         <div id="episode-resultat-${e.n}"></div>
       </div>`).join('') || '<p style="color:var(--mut)">Aucun chapitre dans cette série.</p>';
   } catch (e) { erreur.textContent = String(e.message || e); }
@@ -359,7 +364,7 @@ async function chargerGalerie(medium) {
         <h4>${esc(s.titre)}</h4>
         ${media}
         <div class="meta">${esc(meta.fournisseur || '')}</div>
-        <button class="discret" onclick="supprimerGalerie(${jsonAttr(s.id)})">🗑️ Supprimer</button>
+        <button class="discret" onclick='supprimerGalerie(${jsonAttr(s.id)})'>🗑️ Supprimer</button>
       </div>`;
     }).join('') || '<p style="color:var(--mut)">Aucune création sauvegardée pour l\'instant.</p>';
   } catch (e) { erreur.textContent = String(e.message || e); }

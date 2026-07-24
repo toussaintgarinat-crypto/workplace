@@ -110,43 +110,58 @@ def test_front_echappe_l_onclick_ajoutergalerie_contre_injection_html():
     assert occurrences[1].count("jsonAttr(") == 4
 
 
+def test_jsonattr_jamais_dans_un_onclick_a_guillemets_doubles():
+    """Régression : jsonAttr() laisse les guillemets doubles englobants de JSON.stringify
+    tels quels — dans un onclick="..." (guillemets doubles), ils referment l'attribut en
+    plein milieu de l'appel et cassent silencieusement le bouton (bug vécu sur Portrait/
+    Animer/Couverture/Teaser/Supprimer galerie, tous rebasculés en onclick='...')."""
+    html = client.get("/").text
+    for m in re.finditer(r'onclick="[^"]*"', html, re.DOTALL):
+        assert "jsonAttr(" not in m.group(0), f"jsonAttr() dans un onclick=\"...\" : {m.group(0)}"
+
+
 def test_front_echappe_les_autres_onclicks_synergies_contre_injection_html():
     """Les onclick handlers de synergies (genererPortrait, genererAnimation,
     genererCouverture, genererTeaser, supprimerGalerie) doivent aussi utiliser
     jsonAttr() pour les arguments stringifiés (id, p.id, s.id) qui pourraient
-    contenir des apostrophes si jamais on en acceptait en input."""
+    contenir des apostrophes si jamais on en acceptait en input.
+
+    Délimiteur ATTENDU : apostrophes (onclick='...'), PAS guillemets doubles — jsonAttr()
+    laisse les guillemets doubles englobants de JSON.stringify tels quels (littéraux), qui
+    romprait un onclick="..." en plein milieu de l'appel (bug vécu : les 5 boutons ne
+    déclenchaient plus rien, cf. commentaire de jsonAttr())."""
     html = client.get("/").text
 
     # genererPortrait : deux arguments string (id, p.id)
-    m = re.search(r'onclick="genererPortrait\([^"]*\)"', html, re.DOTALL)
+    m = re.search(r"onclick='genererPortrait\([^']*\)'", html, re.DOTALL)
     assert m, "onclick='genererPortrait(...)' introuvable"
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
     assert "esc(" not in ligne
 
     # genererAnimation : deux arguments string (id, p.id)
-    m = re.search(r'onclick="genererAnimation\([^"]*\)"', html, re.DOTALL)
+    m = re.search(r"onclick='genererAnimation\([^']*\)'", html, re.DOTALL)
     assert m, "onclick='genererAnimation(...)' introuvable"
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
     assert "esc(" not in ligne
 
     # genererCouverture : un argument string (id), un entier (e.n)
-    m = re.search(r'onclick="genererCouverture\([^"]*\)"', html, re.DOTALL)
+    m = re.search(r"onclick='genererCouverture\([^']*\)'", html, re.DOTALL)
     assert m, "onclick='genererCouverture(...)' introuvable"
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
     assert "esc(" not in ligne
 
     # genererTeaser : un argument string (id), un entier (e.n)
-    m = re.search(r'onclick="genererTeaser\([^"]*\)"', html, re.DOTALL)
+    m = re.search(r"onclick='genererTeaser\([^']*\)'", html, re.DOTALL)
     assert m, "onclick='genererTeaser(...)' introuvable"
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
     assert "esc(" not in ligne
 
     # supprimerGalerie : un argument string (s.id)
-    m = re.search(r'onclick="supprimerGalerie\([^"]*\)"', html, re.DOTALL)
+    m = re.search(r"onclick='supprimerGalerie\([^']*\)'", html, re.DOTALL)
     assert m, "onclick='supprimerGalerie(...)' introuvable"
     ligne = m.group(0)
     assert "jsonAttr(" in ligne
