@@ -50,6 +50,32 @@ def test_fils_multi_surfaces():
     assert par["telegram:4242"]["dernier"] == "réponse telegram"
 
 
+def test_messages_utilisateur_fusionne_toutes_les_surfaces():
+    """Cross-surface (pont) : un compte relié sur web ET Telegram retrouve les DEUX fils,
+    triés chronologiquement — indépendamment du fil d'origine."""
+    _reset()
+    jc.enregistrer("web", "dashboard", "user", "depuis le web", utilisateur="perso")
+    jc.enregistrer("telegram", "4242", "user", "depuis telegram", utilisateur="perso")
+    jc.enregistrer("telegram", "4242", "assistant", "réponse telegram", utilisateur="perso")
+    msgs = jc.messages_utilisateur("perso")
+    assert [m["content"] for m in msgs] == ["depuis le web", "depuis telegram", "réponse telegram"]
+
+
+def test_messages_utilisateur_ignore_les_autres_comptes():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "à moi", utilisateur="perso")
+    jc.enregistrer("telegram", "9", "user", "à un autre", utilisateur="autre")
+    msgs = jc.messages_utilisateur("perso")
+    assert [m["content"] for m in msgs] == ["à moi"]
+
+
+def test_messages_utilisateur_vide_sans_compte():
+    _reset()
+    jc.enregistrer("web", "c1", "user", "anonyme")
+    assert jc.messages_utilisateur("") == []
+    assert jc.messages_utilisateur(None) == []
+
+
 def test_fil_separe_par_interlocuteur():
     _reset()
     jc.enregistrer("telegram", "111", "user", "A")

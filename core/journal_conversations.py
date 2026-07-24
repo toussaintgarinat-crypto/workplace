@@ -178,6 +178,20 @@ def messages(fil_: str, limite: int = 100) -> list[dict]:
     return lignes[-max(1, limite):]
 
 
+def messages_utilisateur(utilisateur: str, limite: int = 100) -> list[dict]:
+    """Les derniers messages d'un COMPTE, tous fils/surfaces confondus (ordre chronologique).
+
+    Contrairement à `messages()` (un seul fil), fusionne web + Telegram + tout autre canal
+    relié au même compte — sert à donner à un nouveau canal la mémoire de ce qui a été dit
+    ailleurs par ce même compte (cf. `briques/connexion/pont.py`). `utilisateur` vide → liste
+    vide (rien à fusionner, repli honnête côté appelant)."""
+    if not utilisateur:
+        return []
+    lignes = [l for l in _lignes() if l.get("utilisateur") == utilisateur]
+    lignes.sort(key=lambda l: l.get("ts") or 0)
+    return lignes[-max(1, limite):]
+
+
 def fils(limite: int = 50, projet_id: str | None = None) -> list[dict]:
     """Liste des conversations (plus récente d'abord) avec aperçu, titre et projet.
 

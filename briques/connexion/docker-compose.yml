@@ -23,6 +23,10 @@ services:
       # Sécurité : un inconnu ne traverse PAS tant qu'il n'est pas relié (mets 1 pour ouvrir en dev).
       - CONNEXION_OUVERT=${CONNEXION_OUVERT:-0}
       - CONNEXION_HISTORIQUE_MAX=${CONNEXION_HISTORIQUE_MAX:-40}
+      # Historique CROSS-SURFACE (web ⇄ Telegram ⇄ tout autre canal) : le pont interroge
+      # `/assistant/historique_utilisateur` du Cœur pour un compte relié, au lieu du seul
+      # fil local de ce canal. Repli honnête automatique si le Cœur est injoignable.
+      - CONNEXION_HISTORIQUE_CROISE=${CONNEXION_HISTORIQUE_CROISE:-1}
       - CONNEXION_DIR=/data/connexion
       # ⚠ Tokens des réseaux (TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WHATSAPP_*,
       # DISCORD_*), identifiant par défaut, liste CONNEXION_RESEAUX et clés API_KEYS :

@@ -2,7 +2,9 @@
 
 Pour chaque message reçu d'un réseau :
   1. on vérifie le CONSENTEMENT (correspondance) — un inconnu reçoit un accueil, pas l'assistant ;
-  2. on charge l'historique de l'interlocuteur (conversations) ;
+  2. on charge l'historique de l'interlocuteur — CROSS-SURFACE (web + tout autre canal du
+     même compte) si activé (`CONNEXION_HISTORIQUE_CROISE`), sinon le seul fil local
+     (conversations) ;
   3. on construit les messages (système « qui parle » + historique + nouveau message) ;
   4. on interroge l'assistant du Cœur (client_assistant, flux SSE) ;
   5. on persiste le tour et on renvoie la réponse sur le réseau d'origine.
@@ -45,6 +47,30 @@ def _construire(reseau: str, entrant, corr: dict, historique: list) -> list:
                 + " Réponds en texte clair, concis, adapté à la messagerie.")
     return [{"role": "system", "content": contexte}, *historique,
             {"role": "user", "content": entrant.texte}]
+
+
+def _historique_croise_actif() -> bool:
+    """Historique cross-surface activé ? (env `CONNEXION_HISTORIQUE_CROISE`, défaut off —
+    à activer explicitement une fois le Cœur à jour avec `/assistant/historique_utilisateur`)."""
+    return str(os.getenv("CONNEXION_HISTORIQUE_CROISE", "0")).strip().lower() in (
+        "1", "true", "oui", "on")
+
+
+async def _historique_pour(reseau: str, id_externe: str, utilisateur: str | None) -> list:
+    """L'historique envoyé à l'assistant pour construire le tour : CROSS-SURFACE (web +
+    Telegram + tout autre canal relié au même compte) si le compte est connu et la fusion
+    activée, sinon repli sur le fil local à CE seul canal.
+
+    Repli HONNÊTE : Cœur injoignable/en erreur → on ne bloque jamais le tour, on retombe
+    simplement sur le fil local (moins riche mais jamais une panne)."""
+    if utilisateur and _historique_croise_actif():
+        try:
+            fusionne = await client_assistant.historique_utilisateur(utilisateur)
+            if fusionne:
+                return fusionne
+        except Exception:  # noqa: BLE001 — Cœur injoignable → repli local honnête
+            pass
+    return conversations.charger(reseau, id_externe)
 
 
 def _tts_actif() -> bool:
@@ -147,7 +173,7 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
             return cr
         transcrit = entrant.texte = cr["texte"]
 
-    historique = conversations.charger(reseau, entrant.id_externe)
+    historique = await _historique_pour(reseau, entrant.id_externe, corr.get("utilisateur"))
     messages = _construire(reseau, entrant, corr, historique)
 
     verbeux = str(os.getenv("CONNEXION_VERBEUX", "0")).strip() in ("1", "true", "oui")

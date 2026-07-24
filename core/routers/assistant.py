@@ -194,6 +194,16 @@ async def assistant_conversations(fil: str | None = None, limite: int = 100,
     return {"fils": journal_conversations.fils(limite, projet_id=projet)}
 
 
+@router.get("/assistant/historique_utilisateur", tags=["assistant"])
+async def assistant_historique_utilisateur(utilisateur: str, limite: int = 40):
+    """Historique CROSS-SURFACE d'un compte : fusionne tous ses fils (web, Telegram, tout
+    autre canal) du journal unifié (S78), triés chronologiquement. Sert `briques/connexion`
+    (le pont) à construire le contexte envoyé au LLM avec la mémoire des autres surfaces,
+    plutôt que le seul fil local du canal en cours."""
+    lignes = journal_conversations.messages_utilisateur(utilisateur, limite)
+    return {"messages": [{"role": l.get("role"), "content": l.get("content")} for l in lignes]}
+
+
 @router.post("/assistant/conversations/reordonner", tags=["assistant"])
 async def assistant_conversations_reordonner(corps: dict):
     """Réordonne les conversations par cliquer-déposer (S104). `fils` = la nouvelle suite ;
