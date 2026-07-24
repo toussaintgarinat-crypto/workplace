@@ -15,7 +15,8 @@
     "portrait_personnage",
     "couverture_serie",
     "multi_fournisseurs",
-    "repli_placeholder_honnete"
+    "repli_placeholder_honnete",
+    "historique_images"
   ],
   "besoin": [],
   "capacites": [
@@ -131,6 +132,24 @@
       },
       "action": true,
       "niveau": 1
+    },
+    {
+      "nom": "image_historique",
+      "description": "Retrouve une image DÉJÀ générée par cette brique (par toi ou un humain) — à utiliser AVANT de dire que tu ne peux pas retrouver une image, ou de la régénérer inutilement. Filtre optionnel par mot-clé sur le prompt d'origine (`q`). Renvoie les plus récentes (la meilleure correspondance en tête). Lecture seule, jamais de placeholder.",
+      "methode": "GET",
+      "chemin": "/historique",
+      "params": {
+        "q": {
+          "type": "string",
+          "description": "Mot-clé pour filtrer par prompt d'origine (optionnel — sans filtre, les plus récentes)."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum de résultats (défaut 5)."
+        }
+      },
+      "action": false,
+      "niveau": 0
     }
   ],
   "taches": []

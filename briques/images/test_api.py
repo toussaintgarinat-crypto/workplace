@@ -2,9 +2,14 @@
 from fastapi.testclient import TestClient
 
 import fournisseurs
+import historique
 import main
 
 c = TestClient(main.app)
+
+
+def _reset_historique():
+    historique._chemin().unlink(missing_ok=True)
 
 
 def test_sante_annonce_le_backend():
@@ -108,3 +113,65 @@ def test_modeles_openrouter_injoignable_renvoie_502(monkeypatch):
     monkeypatch.setattr(fournisseurs, "modeles_image_openrouter", _boom)
     r = c.get("/modeles")
     assert r.status_code == 502
+
+
+# ── Historique (retrouver une image déjà générée) ──────────────────────────
+
+def _faux_reel(url="/fichiers/x.png", backend="fal"):
+    async def _generer(prompt, negatif, largeur, hauteur, seed=None, fournisseur=None, modele=None):
+        return {"url": url, "prompt": prompt, "backend": backend, "place_holder": False}
+    return _generer
+
+
+def test_generer_reel_consigne_dans_l_historique(monkeypatch):
+    _reset_historique()
+    monkeypatch.setattr(main.moteur, "generer", _faux_reel())
+    c.post("/generer", json={"prompt": "un chat qui dort au soleil"})
+    r = c.get("/historique")
+    assert r.json()["total"] == 1
+    assert r.json()["images"][0]["prompt"] == "un chat qui dort au soleil"
+
+
+def test_generer_placeholder_ne_consigne_rien(monkeypatch):
+    _reset_historique()
+    # Sans fournisseur configuré (mode test), /generer rend un placeholder.
+    c.post("/generer", json={"prompt": "une forêt de cristal"})
+    assert c.get("/historique").json()["total"] == 0
+
+
+def test_portrait_et_couverture_reels_consignent_le_prompt_visuel(monkeypatch):
+    _reset_historique()
+    monkeypatch.setattr(main.moteur, "generer", _faux_reel())
+    c.post("/portrait", json={"fiche": {"nom": "Elara", "role": "héroïne"}})
+    c.post("/couverture", json={"titre": "La Cité de Verre"})
+    prompts_ = {i["type"]: i["prompt"] for i in c.get("/historique", params={"limite": 10}).json()["images"]}
+    assert "Elara" in prompts_["portrait"]
+    assert "Cité de Verre" in prompts_["couverture"]
+
+
+def test_historique_filtre_par_mot_cle(monkeypatch):
+    _reset_historique()
+    monkeypatch.setattr(main.moteur, "generer", _faux_reel())
+    c.post("/generer", json={"prompt": "un chat qui dort"})
+    c.post("/generer", json={"prompt": "une forêt de cristal"})
+    r = c.get("/historique", params={"q": "chat"})
+    assert r.json()["total"] == 1
+    assert "chat" in r.json()["images"][0]["prompt"]
+
+
+def test_historique_expose_la_meilleure_correspondance_a_la_racine(monkeypatch):
+    """`url`/`prompt`/`backend` dupliqués à la racine → réutilise TEL QUEL l'affichage
+    média déjà câblé (S196 : réécriture d'URL, relais Telegram) sans code supplémentaire."""
+    _reset_historique()
+    monkeypatch.setattr(main.moteur, "generer", _faux_reel(url="/fichiers/chat.png"))
+    c.post("/generer", json={"prompt": "un chat"})
+    r = c.get("/historique").json()
+    assert r["url"] == "/fichiers/chat.png"
+    assert r["prompt"] == "un chat"
+    assert r["backend"] == "fal"
+
+
+def test_historique_vide_sans_url_a_la_racine():
+    _reset_historique()
+    r = c.get("/historique").json()
+    assert r == {"images": [], "total": 0}

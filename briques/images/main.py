@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import fournisseurs
+import historique
 import moteur
 import prompts
 
@@ -111,13 +112,21 @@ async def liste_modeles():
     return {"modeles": modeles}
 
 
+def _consigner_si_reelle(type_: str, prompt: str, res: dict) -> None:
+    if not res.get("place_holder"):
+        historique.consigner(type_=type_, prompt=prompt, url=res.get("url"),
+                             backend=res.get("backend"))
+
+
 @app.post("/generer", tags=["images"])
 async def generer(body: Generer, _cle: str = Depends(cle_api)):
     if not (body.prompt or "").strip():
         raise HTTPException(422, "Le prompt est vide.")
-    return await moteur.generer(body.prompt, body.negatif or "", body.largeur,
-                                body.hauteur, body.seed, fournisseur=body.fournisseur,
-                                modele=body.modele)
+    res = await moteur.generer(body.prompt, body.negatif or "", body.largeur,
+                               body.hauteur, body.seed, fournisseur=body.fournisseur,
+                               modele=body.modele)
+    _consigner_si_reelle("generer", body.prompt, res)
+    return res
 
 
 @app.post("/portrait", tags=["images", "synergie"])
@@ -126,6 +135,7 @@ async def portrait(body: Portrait, _cle: str = Depends(cle_api)):
     p = prompts.prompt_portrait(body.fiche, style=body.style or "")
     res = await moteur.generer(p["prompt"], p["negatif"], body.largeur, body.hauteur,
                                fournisseur=body.fournisseur)
+    _consigner_si_reelle("portrait", p["prompt"], res)
     return {**res, "prompt_visuel": p["prompt"]}
 
 
@@ -136,7 +146,28 @@ async def couverture(body: Couverture, _cle: str = Depends(cle_api)):
                                   style=body.style or "", personnages=body.personnages)
     res = await moteur.generer(p["prompt"], p["negatif"], body.largeur, body.hauteur,
                                fournisseur=body.fournisseur)
+    _consigner_si_reelle("couverture", p["prompt"], res)
     return {**res, "prompt_visuel": p["prompt"]}
+
+
+@app.get("/historique", tags=["images"])
+async def historique_lister(q: Optional[str] = None, limite: int = 5,
+                            _cle: str = Depends(cle_api)):
+    """Images RÉELLEMENT produites récemment par CETTE brique (jamais de placeholder).
+
+    Sert à ce que l'assistant puisse RETROUVER et renvoyer une image déjà générée plutôt
+    que de devoir la régénérer ou dire qu'il ne peut pas. `q` filtre par sous-chaîne sur le
+    prompt d'origine (optionnel). La meilleure correspondance (la plus récente) est aussi
+    dupliquée au niveau racine (`url`/`prompt`/`backend`) pour réutiliser TEL QUEL
+    l'affichage média déjà câblé côté Cœur/dashboard/pont Telegram (S196) — sans rien
+    ajouter côté appelant."""
+    trouvees = historique.chercher(q, limite)
+    corps: dict = {"images": trouvees, "total": len(trouvees)}
+    if trouvees:
+        premiere = trouvees[0]
+        corps.update(url=premiere["url"], prompt=premiere.get("prompt"),
+                     backend=premiere.get("backend"))
+    return corps
 
 
 @app.get("/fichiers/{nom}", tags=["système"], include_in_schema=False)
