@@ -102,6 +102,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .bulle { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 0.88rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
   .msg.assistant .bulle { background: #232838; color: #e2e8f0; border: 1px solid #2d3148; border-bottom-left-radius: 3px; }
   .msg.user .bulle { background: #7c83ff; color: #fff; border-bottom-right-radius: 3px; }
+  .bulle-image { padding: 6px; }
+  .bulle-image img { display: block; max-width: 320px; max-height: 320px; border-radius: 8px; }
   .outil { align-self: flex-start; font-size: 0.74rem; color: #94a3b8; background: #161922; border: 1px solid #2d3148; border-radius: 8px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; }
   .outil .pic { width: 7px; height: 7px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 6px #22d3ee88; }
   .outil.action .pic { background: #fb923c; box-shadow: 0 0 6px #fb923c88; }
@@ -2650,6 +2652,18 @@ function ajouterBulle(role, texte) {
   fil.appendChild(d); chatEcho();
   return d.querySelector('.bulle');
 }
+// Image produite par un outil (image_generer, portrait, couverture…) : le résultat
+// renvoie `url` réécrite en `/brique-fichiers/...` par le Cœur (cf. outils_communs.py
+// _reecrire_url_media) — sans ça l'URL pointerait sur le port interne de la brique.
+function ajouterImage(url, alt) {
+  const fil = document.getElementById('chat-fil');
+  const d = document.createElement('div');
+  d.className = 'msg assistant';
+  d.innerHTML = '<div class="bulle bulle-image"><a target="_blank" rel="noopener"><img loading="lazy"></a></div>';
+  d.querySelector('a').href = url;
+  const img = d.querySelector('img'); img.src = url; img.alt = alt || 'Image générée';
+  fil.appendChild(d); chatEcho();
+}
 function ajouterOutil(nom, action, confirmation) {
   const fil = document.getElementById('chat-fil');
   const d = document.createElement('div');
@@ -2883,7 +2897,16 @@ async function envoyerMessage(e, visionImage = null) {
         if (!m) continue;
         const evt = JSON.parse(m[1]);
         if (evt.type === 'outil') { ajouterOutil(evt.nom, evt.action, false); traceOutil(evt); }
-        else if (evt.type === 'resultat_outil') { if (evt.confirmation) ajouterOutil(evt.nom, true, true); traceResultat(evt); }
+        else if (evt.type === 'resultat_outil') {
+          if (evt.confirmation) ajouterOutil(evt.nom, true, true);
+          traceResultat(evt);
+          try {
+            const d = JSON.parse(evt.resultat);
+            if (d && typeof d.url === 'string' && /\\.(png|jpe?g|webp|gif|svg)(\\?|$)/i.test(d.url)) {
+              ajouterImage(d.url, d.prompt || '');
+            }
+          } catch (_) {}
+        }
         else if (evt.type === 'actions') { ajouterActions(evt.actions); }
         else if (evt.type === 'texte_delta' && evt.contenu) {   // S60 : tokens au fil de l'eau
           if (!bulleAssist) { tip.remove(); bulleAssist = ajouterBulle('assistant', ''); }
