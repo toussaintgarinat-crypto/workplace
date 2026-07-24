@@ -18,6 +18,7 @@
     "historique_persistant",
     "transcription_vocale",
     "reponse_vocale",
+    "pieces_jointes",
     "repli_honnete"
   ],
   "besoin": [

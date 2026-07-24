@@ -174,6 +174,23 @@ def test_refus_brique_message_honnete():
     assert out["ok"] is False and "refusé" in out["message"].lower()
 
 
+def test_url_media_reecrite_pour_le_navigateur_et_le_pont_reseau():
+    """images/video/export rapatrient leur production sous `/fichiers/{nom}`, relatif à leur
+    PROPRE port interne. Le Cœur doit réécrire `url` en un chemin résolvable par le
+    navigateur (`/brique-fichiers/…`) ET fournir `url_interne` (URL absolue mais interne au
+    réseau Docker) pour un appelant serveur-à-serveur sans session (le pont Telegram, S196)."""
+    reg = _Registre({"images": {"nom": "images", "port": 5950, "capacites": [
+        {"nom": "image_generer", "description": "texte→image", "methode": "POST",
+         "chemin": "/generer", "params": {"prompt": {"type": "string"}}, "action": True},
+    ]}})
+    cli = _Client(_Resp(200, {"url": "/fichiers/img-abc.png", "backend": "gateway"}))
+    cap = outils._capacites_dynamiques(reg)["image_generer"]
+    out = json.loads(asyncio.run(
+        outils._appel_dynamique(cli, cap, {"prompt": "un chat", "confirme": True})))
+    assert out["url"] == "/brique-fichiers/images/img-abc.png"
+    assert out["url_interne"] == "http://host.docker.internal:5950/fichiers/img-abc.png"
+
+
 def test_succes_204_sans_corps_renvoie_ok_explicite():
     """Une réponse 2xx sans corps JSON (204 No Content des suppressions REST) ne doit PAS
     renvoyer une chaîne vide à l'assistant, mais un succès honnête et lisible (S167 T5)."""
