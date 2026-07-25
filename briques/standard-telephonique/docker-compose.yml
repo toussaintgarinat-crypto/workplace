@@ -1,0 +1,56 @@
+services:
+  standard-telephonique-api:
+    build: .
+    container_name: workplace_standard_telephonique_api
+    image: workplace/standard-telephonique:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6190:6190"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - MESSAGES_DB=/data/messages.db
+      - MESSAGES_DIR=/data/audio
+    volumes:
+      - standard_telephonique_data:/data
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "6190"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6190/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  standard-telephonique-agent:
+    build: .
+    container_name: workplace_standard_telephonique_agent
+    image: workplace/standard-telephonique:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - MESSAGES_DB=/data/messages.db
+      - MESSAGES_DIR=/data/audio
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${STANDARD_TEL_LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${STANDARD_TEL_LIVEKIT_API_SECRET}
+    volumes:
+      - standard_telephonique_data:/data
+    command: ["python", "agent.py", "start"]
+    networks:
+      - default
+      - roomkit_net
+    restart: unless-stopped
+
+networks:
+  roomkit_net:
+    external: true
+    name: roomkit-visio_default
+
+volumes:
+  standard_telephonique_data:
