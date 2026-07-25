@@ -28,6 +28,29 @@ def test_creer_transfert_sans_cle_api_ouvert_en_dev():
     assert "jeton_upload" in r.json()
 
 
+def test_creer_transfert_cle_api_invalide_refuse(monkeypatch):
+    """cle_api doit refuser (401) si API_KEYS est non vide et la clé fournie est
+    absente ou fausse. API_KEYS est un set construit au moment de l'import de
+    main.py (os.getenv figé) : on ne peut pas le changer via une variable
+    d'environnement après coup, il faut patcher directement main.API_KEYS."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    r_sans_cle = c.post("/transferts", json={"expiration_heures": 1})
+    assert r_sans_cle.status_code == 401
+    r_mauvaise_cle = c.post("/transferts", json={"expiration_heures": 1},
+                             headers={"X-API-Key": "mauvaise-cle"})
+    assert r_mauvaise_cle.status_code == 401
+
+
+def test_creer_transfert_cle_api_valide_autorise(monkeypatch):
+    """Avec la bonne clé API, la création doit réussir malgré API_KEYS non vide
+    (preuve que le test précédent ne renvoie pas 401 « en dur »)."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    r = c.post("/transferts", json={"expiration_heures": 1},
+               headers={"X-API-Key": "une-cle-valide"})
+    assert r.status_code == 200
+    assert "jeton_upload" in r.json()
+
+
 def test_parcours_complet_upload_finalisation_telechargement():
     creation = c.post("/transferts", json={"expiration_heures": 1}).json()
     tid, jeton_upload = creation["id"], creation["jeton_upload"]
@@ -88,7 +111,64 @@ def test_revoquer_transfert_inconnu_404():
     assert c.post("/transferts/nimporte-quoi/revoquer").status_code == 404
 
 
+def test_lister_cle_api_invalide_refuse(monkeypatch):
+    """lister (GET /transferts) doit refuser (401) sans clé API valide quand
+    API_KEYS est non vide."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    assert c.get("/transferts").status_code == 401
+    assert c.get("/transferts", headers={"X-API-Key": "mauvaise-cle"}).status_code == 401
+
+
+def test_lister_cle_api_valide_autorise(monkeypatch):
+    """Avec la bonne clé API, lister doit répondre 200."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    assert c.get("/transferts", headers={"X-API-Key": "une-cle-valide"}).status_code == 200
+
+
+def test_revoquer_cle_api_invalide_refuse(monkeypatch):
+    """revoquer_route doit refuser (401) sans clé API valide quand API_KEYS est
+    non vide (même sur un identifiant de transfert inexistant : l'auth est
+    vérifiée avant la logique métier)."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    r = c.post("/transferts/nimporte-quoi/revoquer")
+    assert r.status_code == 401
+    r2 = c.post("/transferts/nimporte-quoi/revoquer", headers={"X-API-Key": "mauvaise-cle"})
+    assert r2.status_code == 401
+
+
+def test_revoquer_cle_api_valide_autorise(monkeypatch):
+    """Avec la bonne clé API, révoquer un transfert existant (créé avec la même
+    clé, donc même propriétaire) doit réussir (200)."""
+    monkeypatch.setattr(main, "API_KEYS", {"une-cle-valide"})
+    entetes = {"X-API-Key": "une-cle-valide"}
+    creation = c.post("/transferts", json={"expiration_heures": 1}, headers=entetes).json()
+    r = c.post(f"/transferts/{creation['id']}/revoquer", headers=entetes)
+    assert r.status_code == 200
+    assert r.json()["revoque"] is True
+
+
 def test_purge_executer_sans_cle_horloge_ouvert_en_dev():
     r = c.post("/purge/executer")
+    assert r.status_code == 200
+    assert "purges" in r.json()
+
+
+def test_purge_executer_mauvais_jeton_refuse(monkeypatch):
+    """verifier_cle_horloge doit refuser (401) si TRANSFERTS_KEY est défini et le
+    jeton Bearer fourni est absent ou ne correspond pas. Contrairement à
+    API_KEYS, TRANSFERTS_KEY est relu en direct via os.environ.get(...) dans le
+    corps de la fonction : monkeypatch.setenv suffit, pas besoin de setattr."""
+    monkeypatch.setenv("TRANSFERTS_KEY", "un-jeton-horloge")
+    r_sans_jeton = c.post("/purge/executer")
+    assert r_sans_jeton.status_code == 401
+    r_mauvais_jeton = c.post("/purge/executer", headers={"Authorization": "Bearer faux-jeton"})
+    assert r_mauvais_jeton.status_code == 401
+
+
+def test_purge_executer_bon_jeton_autorise(monkeypatch):
+    """Avec le bon jeton Bearer, /purge/executer doit répondre 200 malgré
+    TRANSFERTS_KEY non vide."""
+    monkeypatch.setenv("TRANSFERTS_KEY", "un-jeton-horloge")
+    r = c.post("/purge/executer", headers={"Authorization": "Bearer un-jeton-horloge"})
     assert r.status_code == 200
     assert "purges" in r.json()
