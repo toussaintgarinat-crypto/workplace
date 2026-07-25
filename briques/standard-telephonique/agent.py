@@ -80,14 +80,14 @@ async def _enregistrer_message(track: rtc.Track, digit_queue: "asyncio.Queue[str
                 return
 
     tache_arret = asyncio.create_task(_attendre_diese())
+    tache_sleep = asyncio.create_task(asyncio.sleep(duree_max_s))
     try:
-        await asyncio.wait(
-            [tache_arret, asyncio.create_task(asyncio.sleep(duree_max_s))],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        await asyncio.wait([tache_arret, tache_sleep], return_when=asyncio.FIRST_COMPLETED)
     finally:
         tache_collecte.cancel()
         tache_arret.cancel()
+        tache_sleep.cancel()
+        await asyncio.gather(tache_collecte, tache_arret, tache_sleep, return_exceptions=True)
         await stream.aclose()
 
     duree_s = time.monotonic() - debut
