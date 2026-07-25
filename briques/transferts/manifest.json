@@ -24,7 +24,7 @@
     },
     {
       "nom": "transferts_revoquer",
-      "description": "Révoque immédiatement un transfert avant son expiration naturelle : supprime le fichier chiffré du disque et invalide le lien de partage. Irréversible : confirme=true requis.",
+      "description": "Révoque immédiatement un transfert avant son expiration naturelle : supprime le fichier chiffré du disque et invalide le lien de partage. Irréversible (confirmation demandée par le Cœur avant exécution).",
       "methode": "POST",
       "chemin": "/transferts/{tid}/revoquer",
       "params": {

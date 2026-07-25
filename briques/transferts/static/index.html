@@ -17,6 +17,18 @@
 <script type="module">
 import * as Chiffrement from "/static/chiffrement.js";
 
+// Clé API optionnelle (?api_key=…) : posée en X-API-Key sur les appels de gestion
+// (POST /transferts). Les appels d'upload (fichiers/parties/finaliser) sont gérés
+// par le jeton d'upload par transfert, pas par cette clé.
+const CLE_API = new URLSearchParams(location.search).get("api_key") || "";
+const ENTETES = CLE_API ? { "X-API-Key": CLE_API } : {};
+const ENTETES_JSON = { ...ENTETES, "Content-Type": "application/json" };
+
+async function verifie(r) {
+  if (!r.ok) throw new Error(await r.text() || `Erreur HTTP ${r.status}`);
+  return r.json();
+}
+
 const boutonEnvoyer = document.getElementById("envoyer");
 const champFichier = document.getElementById("fichier");
 const champExpiration = document.getElementById("expiration");
@@ -27,25 +39,25 @@ async function envoyer() {
   const fichier = champFichier.files[0];
   if (!fichier) { resultat.textContent = "Choisis un fichier d'abord."; return; }
 
-  const config = await (await fetch("/configuration")).json();
+  const config = await verifie(await fetch("/configuration"));
   const taillePartie = config.taille_partie_octets;
 
   const { cleCrypto, fragment } = await Chiffrement.genererCle();
 
-  const creation = await (await fetch("/transferts", {
-    method: "POST", headers: { "Content-Type": "application/json" },
+  const creation = await verifie(await fetch("/transferts", {
+    method: "POST", headers: ENTETES_JSON,
     body: JSON.stringify({ expiration_heures: Number(champExpiration.value) }),
-  })).json();
+  }));
   const { id: transfertId, jeton_upload: jetonUpload } = creation;
 
-  const declaration = await (await fetch(`/transferts/${transfertId}/fichiers`, {
+  const declaration = await verifie(await fetch(`/transferts/${transfertId}/fichiers`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Upload-Token": jetonUpload },
     body: JSON.stringify({
       nom: fichier.name, type_mime: fichier.type || "application/octet-stream",
       taille_clair: fichier.size, taille_partie: taillePartie,
     }),
-  })).json();
+  }));
   const fichierId = declaration.id;
   const nbParties = declaration.nb_parties;
 
@@ -56,15 +68,15 @@ async function envoyer() {
     const morceauClair = new Uint8Array(await fichier.slice(debut, fin).arrayBuffer());
     const aad = Chiffrement.aadPourPartie(fichierId, numero, nbParties);
     const morceauChiffre = await Chiffrement.chiffrerPartie(cleCrypto, morceauClair, aad);
-    await fetch(`/transferts/${transfertId}/fichiers/${fichierId}/parties/${numero}`, {
+    await verifie(await fetch(`/transferts/${transfertId}/fichiers/${fichierId}/parties/${numero}`, {
       method: "PUT", headers: { "X-Upload-Token": jetonUpload }, body: morceauChiffre,
-    });
+    }));
     barre.value = Math.round(((numero + 1) / nbParties) * 100);
   }
 
-  const fin = await (await fetch(`/transferts/${transfertId}/finaliser`, {
+  const fin = await verifie(await fetch(`/transferts/${transfertId}/finaliser`, {
     method: "POST", headers: { "X-Upload-Token": jetonUpload },
-  })).json();
+  }));
 
   const lien = `${location.origin}/t/${fin.jeton_public}#${fragment}`;
   resultat.innerHTML = `Lien (valable ${champExpiration.value} h) : <a href="${lien}">${lien}</a>`;
