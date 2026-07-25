@@ -1,0 +1,17 @@
+{
+  "nom": "transferts",
+  "famille": "media",
+  "version": "0.1.0",
+  "description": "Transfert de gros fichiers (jusqu'à ~20 Gio) via un lien à expiration, chiffré bout-en-bout dans le navigateur (AES-256-GCM/WebCrypto) : la clé ne transite jamais par le serveur (fragment d'URL), le Service Worker du destinataire déchiffre en streaming direct vers le téléchargement. Vendoring léger du design crypto de suitenumerique/transfers (S196), pas de fork Django.",
+  "role": "transferts",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/transferts",
+  "port": 6180,
+  "url_sante": "http://host.docker.internal:6180/sante",
+  "depends_on": [],
+  "offre": ["transfert_fichier_e2e", "lien_expirant", "purge_automatique"],
+  "besoin": [],
+  "capacites": [],
+  "taches": []
+}
