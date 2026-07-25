@@ -27,7 +27,7 @@ _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
-MAX_OCTETS = int(os.getenv("AUDIT_FICHIERS_MAX_OCTETS", str(100 * 1024 * 1024)))
+MAX_OCTETS = int(os.getenv("AUDIT_FICHIERS_MAX_OCTETS", str(2 * 1024 * 1024 * 1024)))
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),
