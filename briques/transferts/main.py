@@ -113,6 +113,14 @@ def service_worker():
                         headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/t/{jeton_public}", response_class=HTMLResponse, include_in_schema=False)
+def page_telechargement(jeton_public: str):
+    # La validité du jeton n'est PAS vérifiée ici : cette route sert toujours la
+    # même page statique, c'est le JS qui interroge /t/{jeton}/meta ensuite et
+    # affiche l'erreur (expiré/introuvable) côté client.
+    return FileResponse(STATIC_DIR / "telecharger.html")
+
+
 @app.post("/transferts", tags=["gestion"])
 def creer_transfert(body: NouveauTransfert, proprietaire: str = Depends(cle_api)):
     heures = min(body.expiration_heures, EXPIRATION_MAX_HEURES)

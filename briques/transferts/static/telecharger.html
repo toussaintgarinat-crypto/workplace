@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Transferts — télécharger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>📦 Fichier(s) reçu(s)</h1>
+<p id="etat">Préparation du déchiffrement…</p>
+<ul id="liste"></ul>
+
+<script type="module">
+import * as Chiffrement from "/static/chiffrement.js";
+
+const etat = document.getElementById("etat");
+const liste = document.getElementById("liste");
+
+async function main() {
+  const jeton = location.pathname.split("/").filter(Boolean)[1]; // /t/<jeton>
+  const fragment = location.hash.slice(1);
+  if (!fragment) { etat.textContent = "Clé de déchiffrement absente du lien (fragment #manquant)."; return; }
+  const cleCrypto = await Chiffrement.importerCle(fragment);
+
+  const meta = await fetch(`/t/${jeton}/meta`);
+  if (!meta.ok) { etat.textContent = meta.status === 410 ? "Ce lien a expiré." : "Lien introuvable."; return; }
+  const donnees = await meta.json();
+
+  if (!("serviceWorker" in navigator)) {
+    etat.textContent = "Ton navigateur ne supporte pas les Service Workers (requis pour le déchiffrement en flux).";
+    return;
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  await navigator.serviceWorker.ready;
+
+  const cleOctets = Chiffrement.decoderBase64Url(fragment);
+  await new Promise((resolve, reject) => {
+    const cible = navigator.serviceWorker.controller || reg.active;
+    const ecouteur = (event) => {
+      if (event.data?.jeton !== jeton) return;
+      navigator.serviceWorker.removeEventListener("message", ecouteur);
+      event.data.type === "enregistrer-cle-ok" ? resolve() : reject(new Error(event.data.message));
+    };
+    navigator.serviceWorker.addEventListener("message", ecouteur);
+    cible.postMessage({
+      type: "enregistrer-cle", jeton, cleOctets,
+      fichiers: donnees.fichiers.map((f) => ({
+        id: f.id, taillePartie: f.taille_partie, tailleClair: f.taille_clair,
+        nom: f.nom, typeMime: f.type_mime,
+      })),
+    });
+  });
+
+  // Retire la clé de la barre d'adresse une fois chargée en mémoire du SW.
+  history.replaceState(null, "", location.pathname);
+
+  etat.textContent = "Prêt à télécharger :";
+  for (const f of donnees.fichiers) {
+    const lien = document.createElement("a");
+    lien.href = `/_dl/${jeton}/${f.id}/${encodeURIComponent(f.nom)}`;
+    lien.textContent = `${f.nom} (${f.taille_clair} octets)`;
+    lien.download = f.nom;
+    const item = document.createElement("li");
+    item.appendChild(lien);
+    liste.appendChild(item);
+  }
+}
+
+main().catch((e) => { etat.textContent = `Erreur : ${e.message}`; });
+</script>
+</body>
+</html>
