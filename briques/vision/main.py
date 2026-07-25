@@ -35,6 +35,35 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
 MAX_OCTETS = int(os.getenv("VISION_MAX_OCTETS", str(25 * 1024 * 1024)))   # 25 Mo par défaut
 
+AUDIT_FICHIERS_URL = os.getenv("AUDIT_FICHIERS_URL", "http://host.docker.internal:6170")
+AUDIT_FICHIERS_KEY = os.getenv("AUDIT_FICHIERS_KEY", "")
+
+
+async def _verifier_antivirus(data: bytes, nom_fichier: str) -> None:
+    """Refuse la requête (400) si le fichier est détecté malveillant, ou (503) si
+    l'antivirus est injoignable — FAIL-CLOSED : jamais accepté sans scan complet (cf.
+    plan S195 Risque R6). No-op SEULEMENT si AUDIT_FICHIERS_URL est explicitement
+    vide (tests offline, cf. conftest.py) — en usage réel, une panne réseau ferme
+    l'accès plutôt que de l'ouvrir silencieusement."""
+    if not AUDIT_FICHIERS_URL:
+        return
+    entetes = {"X-API-Key": AUDIT_FICHIERS_KEY} if AUDIT_FICHIERS_KEY else {}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(f"{AUDIT_FICHIERS_URL}/scanner", headers=entetes,
+                                  files={"fichier": (nom_fichier or "fichier", data)})
+    except Exception as e:  # noqa: BLE001 — antivirus injoignable = refus par précaution
+        raise HTTPException(503, f"Antivirus injoignable, fichier refusé par "
+                                 f"précaution : {str(e)[:150]}") from e
+    if r.status_code != 200:
+        detail = r.json().get("detail", "Scan antivirus refusé.") if r.headers.get(
+            "content-type", "").startswith("application/json") else "Scan antivirus refusé."
+        raise HTTPException(r.status_code, detail)
+    verdict = r.json()
+    if not verdict.get("propre", False):
+        raise HTTPException(400, f"Fichier refusé : détecté malveillant "
+                                 f"({verdict.get('raison') or 'signature inconnue'}).")
+
 
 def cle_api(x_api_key: Optional[str] = Header(None),
             authorization: Optional[str] = Header(None)) -> str:
@@ -109,6 +138,7 @@ async def extraire(fichier: UploadFile = File(...), fournisseur: Optional[str] =
         raise HTTPException(422, "Le fichier est vide.")
     if len(data) > MAX_OCTETS:
         raise HTTPException(413, f"Fichier trop volumineux (> {MAX_OCTETS} octets).")
+    await _verifier_antivirus(data, fichier.filename or "")
     mime = _mime_devine(fichier.filename or "", fichier.content_type or "")
     return await moteur.extraire(data, fichier.filename or "", mime, fournisseur=fournisseur)
 
