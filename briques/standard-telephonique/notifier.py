@@ -27,5 +27,5 @@ async def notifier(texte: str) -> None:
         async with _client() as client:
             await client.post("/pousser", json={"utilisateur": utilisateur, "texte": texte},
                               headers=entetes)
-    except httpx.HTTPError as ex:
+    except Exception as ex:  # noqa: BLE001
         logger.warning("Notification standard-telephonique : %s", ex)
