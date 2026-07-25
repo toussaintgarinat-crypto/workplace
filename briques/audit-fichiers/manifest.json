@@ -12,6 +12,16 @@
   "depends_on": [],
   "offre": ["scan_malware_clamav"],
   "besoin": [],
-  "capacites": [],
+  "capacites": [
+    {
+      "nom": "audit_fichiers_etat",
+      "description": "Vérifie si le moteur antivirus (ClamAV) est joignable et opérationnel. À appeler quand l'utilisateur demande si l'antivirus / le scan de fichiers fonctionne. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/sante",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    }
+  ],
   "taches": []
 }
