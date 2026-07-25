@@ -172,3 +172,21 @@ def test_purge_executer_bon_jeton_autorise(monkeypatch):
     r = c.post("/purge/executer", headers={"Authorization": "Bearer un-jeton-horloge"})
     assert r.status_code == 200
     assert "purges" in r.json()
+
+
+def test_page_upload_servie():
+    r = c.get("/")
+    assert r.status_code == 200 and "chiffré" in r.text.lower()
+
+
+def test_page_telechargement_servie_pour_nimporte_quel_jeton():
+    # La page se charge toujours (c'est le JS ensuite qui valide le jeton côté /meta) —
+    # une route HTML statique ne doit pas dépendre de la validité du jeton en amont.
+    r = c.get("/t/nimporte-quoi")
+    assert r.status_code == 200 and "déchiffrement" in r.text.lower()
+
+
+def test_sw_js_servi_avec_cache_control_no_cache():
+    r = c.get("/sw.js")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-cache"

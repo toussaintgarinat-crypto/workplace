@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Transferts — envoyer un fichier</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>📦 Envoyer un fichier (chiffré bout-en-bout)</h1>
+<p>Le fichier est chiffré dans <strong>ce navigateur</strong> avant l'envoi : le serveur ne voit jamais le contenu en clair.</p>
+<input type="file" id="fichier">
+<label>Expire dans (heures) : <input type="number" id="expiration" value="72" min="1" max="168"></label>
+<button id="envoyer">Envoyer</button>
+<progress id="progression" value="0" max="100" style="display:none"></progress>
+<p id="resultat"></p>
+
+<script type="module">
+import * as Chiffrement from "/static/chiffrement.js";
+
+const boutonEnvoyer = document.getElementById("envoyer");
+const champFichier = document.getElementById("fichier");
+const champExpiration = document.getElementById("expiration");
+const barre = document.getElementById("progression");
+const resultat = document.getElementById("resultat");
+
+boutonEnvoyer.addEventListener("click", async () => {
+  const fichier = champFichier.files[0];
+  if (!fichier) { resultat.textContent = "Choisis un fichier d'abord."; return; }
+
+  const config = await (await fetch("/configuration")).json();
+  const taillePartie = config.taille_partie_octets;
+
+  const { cleCrypto, fragment } = await Chiffrement.genererCle();
+
+  const creation = await (await fetch("/transferts", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expiration_heures: Number(champExpiration.value) }),
+  })).json();
+  const { id: transfertId, jeton_upload: jetonUpload } = creation;
+
+  const declaration = await (await fetch(`/transferts/${transfertId}/fichiers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Upload-Token": jetonUpload },
+    body: JSON.stringify({
+      nom: fichier.name, type_mime: fichier.type || "application/octet-stream",
+      taille_clair: fichier.size, taille_partie: taillePartie,
+    }),
+  })).json();
+  const fichierId = declaration.id;
+  const nbParties = declaration.nb_parties;
+
+  barre.style.display = "block";
+  for (let numero = 0; numero < nbParties; numero++) {
+    const debut = numero * taillePartie;
+    const fin = Math.min(debut + taillePartie, fichier.size);
+    const morceauClair = new Uint8Array(await fichier.slice(debut, fin).arrayBuffer());
+    const aad = Chiffrement.aadPourPartie(fichierId, numero, nbParties);
+    const morceauChiffre = await Chiffrement.chiffrerPartie(cleCrypto, morceauClair, aad);
+    await fetch(`/transferts/${transfertId}/fichiers/${fichierId}/parties/${numero}`, {
+      method: "PUT", headers: { "X-Upload-Token": jetonUpload }, body: morceauChiffre,
+    });
+    barre.value = Math.round(((numero + 1) / nbParties) * 100);
+  }
+
+  const fin = await (await fetch(`/transferts/${transfertId}/finaliser`, {
+    method: "POST", headers: { "X-Upload-Token": jetonUpload },
+  })).json();
+
+  const lien = `${location.origin}/t/${fin.jeton_public}#${fragment}`;
+  resultat.innerHTML = `Lien (valable ${champExpiration.value} h) : <a href="${lien}">${lien}</a>`;
+});
+</script>
+</body>
+</html>
