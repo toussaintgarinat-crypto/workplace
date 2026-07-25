@@ -31,9 +31,11 @@ services:
       - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
     environment:
       - CLAMAV_HOSTS=audit-fichiers-clamav:3310
-      # Plafond de taille scannée — repris du défaut amont MAX_UPLOAD_SIZE (100 Mio, déjà
-      # un choix réfléchi côté file-scanner). Voir Risque R2 du plan.
-      - AUDIT_FICHIERS_MAX_OCTETS=${AUDIT_FICHIERS_MAX_OCTETS:-104857600}
+      # Plafond de taille scannée — porté à 2 Gio (revue finale S195) : le défaut amont
+      # MAX_UPLOAD_SIZE (100 Mio, pensé pour des documents/images côté file-scanner)
+      # faisait régresser silencieusement l'upload vidéo peertube, brique appelante de
+      # ce scanner. Voir Risque R2 du plan.
+      - AUDIT_FICHIERS_MAX_OCTETS=${AUDIT_FICHIERS_MAX_OCTETS:-2147483648}
     depends_on:
       audit-fichiers-clamav:
         condition: service_healthy

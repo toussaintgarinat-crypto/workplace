@@ -62,6 +62,9 @@ BRIQUES=(
   "transcription|$RACINE/briques/transcription|http://localhost:5980/sante"
   "voix|$RACINE/briques/voix|http://localhost:5985/sante"
   "images|$RACINE/briques/images|http://localhost:5950/sante"
+  # audit-fichiers AVANT vision/peertube : ces briques appelantes scannent les fichiers
+  # reçus via ce service (S195) — il doit déjà être up quand elles démarrent.
+  "audit-fichiers|$RACINE/briques/audit-fichiers|http://localhost:6170/sante"
   "vision|$RACINE/briques/vision|http://localhost:5960/sante"
   "video|$RACINE/briques/video|http://localhost:5970/sante"
   "personnages|$RACINE/briques/personnages|http://localhost:5900/sante"
@@ -76,7 +79,6 @@ BRIQUES=(
   "geo|$RACINE/briques/geo|http://localhost:6110/sante"
   "atelier-veille|$RACINE/briques/atelier-veille|http://localhost:6130/sante"
   "export|$RACINE/briques/export|http://localhost:6150/sante"
-  "audit-fichiers|$RACINE/briques/audit-fichiers|http://localhost:6170/sante"
   # Atelier dev : code/améliore les briques depuis l'assistant. Avant le Cœur
   # pour qu'il la découvre via son manifest au démarrage.
   "dev|$RACINE/briques/dev|http://localhost:5955/sante"
