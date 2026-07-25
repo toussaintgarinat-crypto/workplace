@@ -10,6 +10,8 @@ from typing import Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+import messages_store
+
 app = FastAPI(title="Standard téléphonique — IVR + répondeur", version="0.1.0")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -31,3 +33,10 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 @app.get("/sante", tags=["système"])
 def sante():
     return {"ok": True, "brique": "standard-telephonique"}
+
+
+@app.get("/messages", tags=["messages"])
+def messages(limite: int = 20, _cle: str = Depends(cle_api)):
+    """Liste les messages vocaux reçus (les plus récents d'abord). Lecture seule."""
+    db_path = os.getenv("MESSAGES_DB", "/data/messages.db")
+    return {"messages": messages_store.lister(db_path, limite=limite)}
