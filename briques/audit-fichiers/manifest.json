@@ -1,0 +1,17 @@
+{
+  "nom": "audit-fichiers",
+  "famille": "securite",
+  "version": "0.1.0",
+  "description": "Scan antivirus (ClamAV, protocole clamd) d'un fichier AVANT qu'une autre brique ne l'accepte — malware par signatures connues. Service générique appelé en serveur-à-serveur (vision /extraire, peertube /videos/upload...). Adapté (MIT) de suitenumerique/file-scanner (ANCT/DINUM), simplifié pour un contexte mono-tenant/famille : pas de JWT Ed25519 multi-émetteur (auth API_KEYS standard Workplace), pas de file d'attente dramatiq/Redis (scan synchrone uniquement) — S195.",
+  "role": "audit-fichiers",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/audit-fichiers",
+  "port": 6170,
+  "url_sante": "http://host.docker.internal:6170/sante",
+  "depends_on": [],
+  "offre": ["scan_malware_clamav"],
+  "besoin": [],
+  "capacites": [],
+  "taches": []
+}

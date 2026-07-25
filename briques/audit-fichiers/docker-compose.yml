@@ -1,0 +1,49 @@
+services:
+  # Moteur ClamAV — sidecar officiel, même image que l'amont suitenumerique/file-scanner.
+  # RISQUE R3/R4 du plan (docs/superpowers/plans/2026-07-25-s195-...) : 1ère synchro
+  # freshclam ~200-400 Mo (start_period généreux) ; image amd64 uniquement (émulation
+  # QEMU nécessaire sur Mac Apple Silicon, cf. R4).
+  audit-fichiers-clamav:
+    image: clamav/clamav:1.4
+    container_name: workplace_audit_fichiers_clamav
+    platform: linux/amd64
+    volumes:
+      - audit_fichiers_clamav_data:/var/lib/clamav   # base de signatures persistée
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+    restart: unless-stopped
+
+  audit-fichiers:
+    build: .
+    container_name: workplace_audit_fichiers
+    image: workplace/audit-fichiers:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # Réglages partagés à la racine (API_KEYS, CORS_ORIGINS, AUDIT_FICHIERS_KEY). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6170:6170"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
+    environment:
+      - CLAMAV_HOSTS=audit-fichiers-clamav:3310
+      # Plafond de taille scannée — repris du défaut amont MAX_UPLOAD_SIZE (100 Mio, déjà
+      # un choix réfléchi côté file-scanner). Voir Risque R2 du plan.
+      - AUDIT_FICHIERS_MAX_OCTETS=${AUDIT_FICHIERS_MAX_OCTETS:-104857600}
+    depends_on:
+      audit-fichiers-clamav:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6170/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  audit_fichiers_clamav_data:
