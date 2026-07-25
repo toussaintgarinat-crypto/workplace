@@ -12,7 +12,14 @@ Prérequis : `sip-stack/roomkit-visio/` déjà démarré (fournit le réseau Doc
 `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` (mêmes valeurs que
 `sip-stack/roomkit-visio/.env`).
 
+**Piège Compose** : `environment: - LIVEKIT_API_KEY=${STANDARD_TEL_LIVEKIT_API_KEY}`
+n'est interpolé par Compose qu'à partir du `.env` de **son propre** répertoire de
+projet — `env_file: ../../.env` ne suffit pas (ça injecte seulement dans le
+conteneur, pas dans l'interpolation `${...}` du YAML lui-même). Avant de démarrer,
+créer un lien vers le `.env` racine (jamais commité, comme `.env` lui-même) :
+
 ```bash
+ln -sf ../../.env briques/standard-telephonique/.env
 docker compose up -d --build
 ```
 
