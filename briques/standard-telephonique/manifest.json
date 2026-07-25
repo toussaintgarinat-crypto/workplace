@@ -1,0 +1,36 @@
+{
+  "nom": "standard-telephonique",
+  "famille": "collaboration",
+  "version": "0.1.0",
+  "description": "Standard vocal téléphonique : un agent (livekit-agents) décroche les appels SIP entrants (pont sip-stack/roomkit-visio, S197), joue un menu à 7 options, et — le temps que chaque usage réel soit construit — enregistre un message vocal, le transcrit (briques/transcription) et notifie Telegram (briques/connexion). Fondation commune réutilisable par les usages futurs (rendez-vous, écoute réunion, support produit, journal vocal, rappel prospect, assistant collaborateurs, standard familial).",
+  "role": "telephonie",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/standard-telephonique",
+  "port": 6190,
+  "url_sante": "http://host.docker.internal:6190/sante",
+  "depends_on": [],
+  "offre": [
+    "repondeur_menu_vocal",
+    "transcription_auto",
+    "notification_telegram"
+  ],
+  "besoin": [],
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "standard_telephonique_messages_lister",
+      "description": "Liste les messages vocaux reçus au standard téléphonique (répondeur) : option du menu choisie, horodatage, durée, texte transcrit si disponible, lien vers l'audio. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/messages",
+      "params": {
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum de messages à renvoyer (défaut 20, les plus récents d'abord)."
+        }
+      },
+      "action": false,
+      "niveau": 1
+    }
+  ]
+}
