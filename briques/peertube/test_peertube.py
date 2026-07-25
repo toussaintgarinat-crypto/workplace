@@ -183,6 +183,37 @@ def test_upload_video():
         assert resp.json()["uuid"] == "new-u"
 
 
+def test_upload_video_refuse_un_fichier_malveillant():
+    from main import app
+    import main as m
+    with patch("main._peertube") as mock_pt, \
+         patch.object(m, "AUDIT_FICHIERS_URL", "http://audit-test:6170"), \
+         respx.mock:
+        respx.post("http://audit-test:6170/scanner").mock(
+            return_value=httpx.Response(200, json={"ok": True, "propre": False,
+                                                    "raison": "Eicar-Test-Signature",
+                                                    "scanner": "clamav"}))
+        client = TestClient(app)
+        resp = client.post("/videos/upload", data={"nom": "Vidéo", "description": ""},
+                           files={"fichier": ("v.mp4", io.BytesIO(b"faux virus"), "video/mp4")})
+        assert resp.status_code == 400
+        mock_pt.uploader_video.assert_not_called()
+
+
+def test_upload_video_refuse_par_precaution_si_antivirus_injoignable():
+    from main import app
+    import main as m
+    with patch("main._peertube") as mock_pt, \
+         patch.object(m, "AUDIT_FICHIERS_URL", "http://audit-test:6170"), \
+         respx.mock:
+        respx.post("http://audit-test:6170/scanner").mock(side_effect=httpx.ConnectError("refus"))
+        client = TestClient(app)
+        resp = client.post("/videos/upload", data={"nom": "Vidéo", "description": ""},
+                           files={"fichier": ("v.mp4", io.BytesIO(b"contenu"), "video/mp4")})
+        assert resp.status_code == 503
+        mock_pt.uploader_video.assert_not_called()
+
+
 def test_creer_live_api():
     from main import app
     with patch("main._peertube") as mock_pt:
