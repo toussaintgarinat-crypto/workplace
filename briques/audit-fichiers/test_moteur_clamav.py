@@ -5,6 +5,7 @@ MIT) est mocké ici au niveau du client — comme rendu_pdf.py mocke WeasyPrint 
 S194) : ces tests tournent OFFLINE, sans démon ClamAV réel."""
 import io
 
+import clamd
 import pytest
 
 import moteur_clamav as M
@@ -36,6 +37,11 @@ class _FauxClientInjoignable:
         raise ConnectionRefusedError("connexion refusée")
 
 
+class _FauxClientBufferTropGros:
+    def instream(self, fileobj):
+        raise clamd.BufferTooLongError("fichier trop volumineux pour le scan")
+
+
 def test_scanner_fichier_propre(monkeypatch):
     monkeypatch.setattr(M, "_client", lambda: _FauxClientPropre())
     verdict = M.scanner(io.BytesIO(b"contenu inoffensif"))
@@ -59,6 +65,14 @@ def test_scanner_erreur_clamd_leve_indisponible(monkeypatch):
 
 def test_scanner_connexion_refusee_leve_indisponible(monkeypatch):
     monkeypatch.setattr(M, "_client", lambda: _FauxClientInjoignable())
+    with pytest.raises(M.MoteurIndisponible):
+        M.scanner(io.BytesIO(b"x"))
+
+
+def test_scanner_buffer_trop_gros_leve_indisponible(monkeypatch):
+    # BufferTooLongError (sous-classe de ResponseError) = fichier NON scanné en entier
+    # -> jamais "propre" (fail-closed, R6)
+    monkeypatch.setattr(M, "_client", lambda: _FauxClientBufferTropGros())
     with pytest.raises(M.MoteurIndisponible):
         M.scanner(io.BytesIO(b"x"))
 

@@ -51,8 +51,8 @@ def scanner(fileobj) -> Verdict:
     (fail-closed, cf. plan S195 Risque R6)."""
     try:
         resultat = _client().instream(fileobj)
-    except (clamd.ConnectionError, ConnectionRefusedError, OSError) as exc:
-        raise MoteurIndisponible(f"ClamAV injoignable : {exc}") from exc
+    except (clamd.ConnectionError, clamd.ResponseError, ConnectionRefusedError, OSError) as exc:
+        raise MoteurIndisponible(f"ClamAV injoignable ou scan incomplet : {exc}") from exc
     statut, raison = resultat["stream"]
     if statut == "OK":
         return Verdict(propre=True)
