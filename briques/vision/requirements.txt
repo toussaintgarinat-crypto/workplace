@@ -10,3 +10,7 @@ python-multipart==0.0.20
 #   markitdown[all]==0.1.1        # documents nés numériques → Markdown (PDF/Office/HTML)
 #   pytesseract==0.3.13           # OCR d'images (nécessite le binaire `tesseract` — cf. Dockerfile)
 #   Pillow==11.1.0                # lecture d'images pour Tesseract
+
+# Tests (mock HTTP pour le scan antivirus S195, cf. briques/peertube/requirements.txt)
+pytest==8.3.3
+respx==0.21.1

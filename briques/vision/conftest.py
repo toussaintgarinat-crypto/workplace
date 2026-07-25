@@ -11,6 +11,7 @@ import os
 
 os.environ["API_KEYS"] = ""               # mode ouvert
 os.environ["VISION_LOCAL"] = "0"          # neutralise markitdown/tesseract en test
+os.environ["AUDIT_FICHIERS_URL"] = ""     # no-op en test : pas de dépendance réseau (S195)
 
 for _v in ("MISTRAL_API_KEY", "GOOGLE_VISION_API_KEY", "GOOGLE_API_KEY", "VISION_PROVIDERS"):
     os.environ.pop(_v, None)

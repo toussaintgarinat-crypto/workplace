@@ -1,6 +1,8 @@
 """Tests — API de la brique vision (repli honnête, upload, surface JSON /lire)."""
 import base64
 
+import httpx
+import respx
 from fastapi.testclient import TestClient
 
 import main
@@ -72,3 +74,33 @@ def test_mime_devine_depuis_extension():
     assert main._mime_devine("photo.JPG") == "image/jpeg"
     assert main._mime_devine("inconnu.zzz") == "application/octet-stream"
     assert main._mime_devine("x", "image/webp") == "image/webp"   # MIME fourni prime
+
+
+@respx.mock
+def test_extraire_refuse_un_fichier_detecte_malveillant(monkeypatch):
+    monkeypatch.setattr(main, "AUDIT_FICHIERS_URL", "http://audit-test:6170")
+    respx.post("http://audit-test:6170/scanner").mock(
+        return_value=httpx.Response(200, json={"ok": True, "propre": False,
+                                                "raison": "Eicar-Test-Signature",
+                                                "scanner": "clamav"}))
+    r = c.post("/extraire", files={"fichier": ("virus.pdf", b"faux virus", "application/pdf")})
+    assert r.status_code == 400
+    assert "Eicar-Test-Signature" in r.json()["detail"]
+
+
+@respx.mock
+def test_extraire_refuse_par_precaution_si_antivirus_injoignable(monkeypatch):
+    monkeypatch.setattr(main, "AUDIT_FICHIERS_URL", "http://audit-test:6170")
+    respx.post("http://audit-test:6170/scanner").mock(side_effect=httpx.ConnectError("refus"))
+    r = c.post("/extraire", files={"fichier": ("doc.pdf", b"contenu", "application/pdf")})
+    assert r.status_code == 503
+
+
+@respx.mock
+def test_extraire_accepte_un_fichier_propre(monkeypatch):
+    monkeypatch.setattr(main, "AUDIT_FICHIERS_URL", "http://audit-test:6170")
+    respx.post("http://audit-test:6170/scanner").mock(
+        return_value=httpx.Response(200, json={"ok": True, "propre": True,
+                                                "raison": None, "scanner": "clamav"}))
+    r = c.post("/extraire", files={"fichier": ("scan.png", b"\x89PNG\r\n", "image/png")})
+    assert r.status_code == 200   # repli honnête habituel (aucun moteur OCR en test)
