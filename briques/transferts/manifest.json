@@ -12,6 +12,42 @@
   "depends_on": [],
   "offre": ["transfert_fichier_e2e", "lien_expirant", "purge_automatique"],
   "besoin": [],
-  "capacites": [],
-  "taches": []
+  "capacites": [
+    {
+      "nom": "transferts_lister",
+      "description": "Liste les transferts de fichiers actifs (nom pas exposé — seuls id, statut, date de création, échéance d'expiration et nombre de téléchargements, l'assistant ne voit JAMAIS le contenu ni la clé de déchiffrement). Utile pour répondre à « ai-je encore un lien de transfert actif ? » ou « quand expire mon transfert ? ».",
+      "methode": "GET",
+      "chemin": "/transferts",
+      "params": {},
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "transferts_revoquer",
+      "description": "Révoque immédiatement un transfert avant son expiration naturelle : supprime le fichier chiffré du disque et invalide le lien de partage. Irréversible : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/transferts/{tid}/revoquer",
+      "params": {
+        "tid": {
+          "type": "string",
+          "description": "Identifiant du transfert à révoquer (obtenu via transferts_lister).",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 0
+    }
+  ],
+  "taches": [
+    {
+      "nom": "purge-transferts-expires",
+      "description": "Supprime les fichiers chiffrés et les métadonnées des transferts expirés ou révoqués — purge le disque toutes les heures.",
+      "methode": "POST",
+      "chemin": "/purge/executer",
+      "cadence_heures": 1,
+      "idempotent": true,
+      "entete_token_env": "TRANSFERTS_KEY",
+      "tolere_echec": false
+    }
+  ]
 }
