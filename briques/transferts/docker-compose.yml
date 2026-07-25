@@ -1,0 +1,31 @@
+services:
+  transferts:
+    build: .
+    container_name: workplace_transferts
+    image: workplace/transferts:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6180:6180"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TRANSFERTS_DIR=/data/fichiers
+      - TRANSFERTS_DB=/data/transferts.db
+      - TAILLE_PARTIE_OCTETS=16777216
+      - TAILLE_MAX_OCTETS=21474836480
+      - EXPIRATION_MAX_HEURES=168
+      - EXPIRATION_DEFAUT_HEURES=72
+    volumes:
+      - transferts_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6180/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  transferts_data:
