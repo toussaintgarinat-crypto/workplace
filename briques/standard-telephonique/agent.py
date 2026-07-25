@@ -82,7 +82,8 @@ async def _enregistrer_message(track: rtc.Track, digit_queue: "asyncio.Queue[str
     tache_arret = asyncio.create_task(_attendre_diese())
     tache_sleep = asyncio.create_task(asyncio.sleep(duree_max_s))
     try:
-        await asyncio.wait([tache_arret, tache_sleep], return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait([tache_collecte, tache_arret, tache_sleep],
+                           return_when=asyncio.FIRST_COMPLETED)
     finally:
         tache_collecte.cancel()
         tache_arret.cancel()
