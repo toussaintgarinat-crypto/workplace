@@ -23,7 +23,7 @@ const champExpiration = document.getElementById("expiration");
 const barre = document.getElementById("progression");
 const resultat = document.getElementById("resultat");
 
-boutonEnvoyer.addEventListener("click", async () => {
+async function envoyer() {
   const fichier = champFichier.files[0];
   if (!fichier) { resultat.textContent = "Choisis un fichier d'abord."; return; }
 
@@ -68,6 +68,10 @@ boutonEnvoyer.addEventListener("click", async () => {
 
   const lien = `${location.origin}/t/${fin.jeton_public}#${fragment}`;
   resultat.innerHTML = `Lien (valable ${champExpiration.value} h) : <a href="${lien}">${lien}</a>`;
+}
+
+boutonEnvoyer.addEventListener("click", () => {
+  envoyer().catch((e) => { resultat.textContent = `Erreur : ${e.message}`; });
 });
 </script>
 </body>
