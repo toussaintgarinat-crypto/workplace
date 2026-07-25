@@ -59,6 +59,7 @@ async def _attendre_choix(queue: "asyncio.Queue[str]", timeout_s: float) -> str 
 
 
 async def _enregistrer_message(track: rtc.Track, digit_queue: "asyncio.Queue[str]",
+                               deconnexion_event: asyncio.Event,
                                duree_max_s: float) -> tuple[bytes, int, int, float]:
     """Enregistre l'audio entrant jusqu'à `#`, raccroché, ou `duree_max_s` écoulées.
     Retourne (wav_bytes, sample_rate, num_channels, duree_s)."""
@@ -81,14 +82,17 @@ async def _enregistrer_message(track: rtc.Track, digit_queue: "asyncio.Queue[str
 
     tache_arret = asyncio.create_task(_attendre_diese())
     tache_sleep = asyncio.create_task(asyncio.sleep(duree_max_s))
+    tache_deconnexion = asyncio.create_task(deconnexion_event.wait())
     try:
-        await asyncio.wait([tache_collecte, tache_arret, tache_sleep],
+        await asyncio.wait([tache_collecte, tache_arret, tache_sleep, tache_deconnexion],
                            return_when=asyncio.FIRST_COMPLETED)
     finally:
         tache_collecte.cancel()
         tache_arret.cancel()
         tache_sleep.cancel()
-        await asyncio.gather(tache_collecte, tache_arret, tache_sleep, return_exceptions=True)
+        tache_deconnexion.cancel()
+        await asyncio.gather(tache_collecte, tache_arret, tache_sleep, tache_deconnexion,
+                             return_exceptions=True)
         await stream.aclose()
 
     duree_s = time.monotonic() - debut
@@ -115,6 +119,13 @@ async def _gerer_appel(ctx: JobContext) -> None:
             track_appelant = track
             track_pret.set()
 
+    deconnexion_event = asyncio.Event()
+
+    @room.on("participant_disconnected")
+    def _on_participant_disconnected(p: rtc.RemoteParticipant) -> None:
+        if p.identity == participant.identity:
+            deconnexion_event.set()
+
     participant = await ctx.wait_for_participant(kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP)
     logger.info("Participant SIP connecté : %s", participant.identity)
 
@@ -132,7 +143,7 @@ async def _gerer_appel(ctx: JobContext) -> None:
     # Toutes les options tombent aujourd'hui sur le répondeur générique.
     await _jouer_texte(room, menu.TEXTE_BIP_INTRODUCTION)
     wav, sample_rate, num_channels, duree_s = await _enregistrer_message(
-        track_appelant, digit_queue, menu.DUREE_MAX_ENREGISTREMENT_S
+        track_appelant, digit_queue, deconnexion_event, menu.DUREE_MAX_ENREGISTREMENT_S
     )
 
     if duree_s < 0.5:
