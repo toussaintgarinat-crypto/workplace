@@ -87,3 +87,59 @@ def test_isolation_un_tenant_ne_supprime_pas_chez_un_autre():
     assert client.delete(f"/mail/{mid}", headers=b).status_code == 404
     # Alice le voit toujours (Bob n'a rien pu faire).
     assert client.get(f"/mail/{mid}", headers=a).status_code == 200
+
+
+def test_supprimer_lot_plusieurs_messages():
+    h = _h("t-lot-ok")
+    msgs = client.get("/mail", headers=h).json()["messages"]
+    ids = [msgs[0]["id"], msgs[1]["id"]]
+    avant = client.get("/mail", headers=h).json()["total"]
+
+    r = client.post("/mail/supprimer-lot", json={"message_ids": ids}, headers=h)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["supprimes"] == 2
+    assert all(res["ok"] for res in j["resultats"])
+    assert {res["message_id"] for res in j["resultats"]} == set(ids)
+
+    apres = client.get("/mail", headers=h).json()
+    assert apres["total"] == avant - 2
+    assert all(m["id"] not in ids for m in apres["messages"])
+
+
+def test_supprimer_lot_echec_partiel_id_inexistant():
+    h = _h("t-lot-partiel")
+    mid_valide = _premier_id(h)
+
+    r = client.post("/mail/supprimer-lot",
+                    json={"message_ids": [mid_valide, "id-inexistant"]}, headers=h)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["supprimes"] == 1
+    par_id = {res["message_id"]: res for res in j["resultats"]}
+    assert par_id[mid_valide]["ok"] is True
+    assert par_id["id-inexistant"]["ok"] is False
+    assert par_id["id-inexistant"]["erreur"]
+
+    assert client.get(f"/mail/{mid_valide}", headers=h).status_code == 404
+
+
+def test_supprimer_lot_isolation_entre_tenants():
+    a, b = _h("cle-alice-lot"), _h("cle-bob-lot")
+    mid_alice = client.get("/mail", headers=a).json()["messages"][0]["id"]
+
+    r = client.post("/mail/supprimer-lot", json={"message_ids": [mid_alice]}, headers=b)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["supprimes"] == 0
+    assert j["resultats"][0]["ok"] is False
+
+    # Alice voit toujours son message : Bob n'a rien pu supprimer.
+    assert client.get(f"/mail/{mid_alice}", headers=a).status_code == 200
+
+
+def test_supprimer_lot_liste_vide():
+    h = _h("t-lot-vide")
+    r = client.post("/mail/supprimer-lot", json={"message_ids": []}, headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"resultats": [], "supprimes": 0}
