@@ -124,6 +124,10 @@ class DeplacerEntree(BaseModel):
     dossier: str       # dossier de destination (ex. « Archive »)
 
 
+class SupprimerLotEntree(BaseModel):
+    message_ids: list[str]
+
+
 # ── Synchronisation (cache ← fournisseur, boîte unifiée) ─────────────────────
 def _sync_compte(tenant: str, compte: dict, connus: set[str]) -> int:
     """Synchronise UNE boîte IMAP : récupère, tague (compte_id + adresse), enrichit, remplace sa
@@ -365,6 +369,30 @@ def supprimer(message_id: str, tenant: str = Depends(tenant_actuel)):
     stockage.supprimer_message(tenant, message_id)
     return {"ok": True, "supprime": True, "mode": "reel" if compte else "simule",
             "message": "Message mis à la corbeille." if compte else "Message retiré (boîte simulée)."}
+
+
+@app.post("/mail/supprimer-lot")
+def supprimer_lot(corps: SupprimerLotEntree, tenant: str = Depends(tenant_actuel)):
+    """Supprime PLUSIEURS messages en une fois (action groupée de l'UI — pas de bouton de
+    suppression individuelle, décision produit S199). Réutilise la même logique que
+    `supprimer` message par message ; un échec sur l'un n'empêche jamais les autres, chaque
+    message a son propre résultat (jamais de mensonge global « tout est passé »)."""
+    _assurer_cache(tenant)
+    resultats = []
+    for mid in corps.message_ids:
+        msg = stockage.lire_message(tenant, mid)
+        if not msg:
+            resultats.append({"message_id": mid, "ok": False, "erreur": "Message introuvable."})
+            continue
+        compte = _compte_reel_du_message(tenant, msg)
+        try:
+            _agir_serveur(compte, lambda f: f.supprimer(msg["uid"], msg.get("dossier", "INBOX")))
+        except HTTPException as e:
+            resultats.append({"message_id": mid, "ok": False, "erreur": str(e.detail)})
+            continue
+        stockage.supprimer_message(tenant, mid)
+        resultats.append({"message_id": mid, "ok": True, "erreur": None})
+    return {"resultats": resultats, "supprimes": sum(1 for r in resultats if r["ok"])}
 
 
 @app.post("/mail/trier")
