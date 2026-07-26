@@ -196,6 +196,14 @@ async function api(path, opts={}){
     <details id="mes-fiches" style="margin-top:12px" ontoggle="if(this.open) chargerFiches()">
       <summary style="cursor:pointer;font-size:.8rem;color:var(--accent)">💾 Mes personnages enregistrés</summary>
       <p class="hint" style="margin:6px 0 0">Touchez pour ouvrir · <b>clic droit</b> / <b>appui long</b> pour le menu (renommer, ranger, supprimer).</p>
+      <div class="row" style="margin-top:8px;gap:8px;align-items:center">
+        <input id="fiches-recherche" type="text" placeholder="Rechercher un nom…"
+          oninput="dessinerFichesGroupees()" style="flex:1">
+        <button type="button" class="ghost" style="width:auto;margin:0;padding:6px 10px;font-size:.78rem"
+          onclick="deplierTout(true)">Tout déplier</button>
+        <button type="button" class="ghost" style="width:auto;margin:0;padding:6px 10px;font-size:.78rem"
+          onclick="deplierTout(false)">Tout replier</button>
+      </div>
       <div id="fiches-liste" class="hint" style="margin-top:8px">…</div>
     </details>
     <div id="desc-err" class="err"></div>
@@ -590,35 +598,67 @@ async function enregistrer(){
   }catch(e){ $('desc-err').textContent='⚠ '+e.message; btn.textContent=ini; btn.disabled=false; }
 }
 
+let _fichesCache=[];
+let _categoriesOuvertes=new Set();   // vide par défaut = tout replié
+
 async function chargerFiches(){
   const box=$('fiches-liste'); box.textContent='Chargement…';
   try{
     const r=await api('/fiches'); if(!r.ok) throw new Error('HTTP '+r.status);
-    const arr=await r.json();
-    if(!arr.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
-    box.innerHTML='';
-    // Regroupe par catégorie libre pour éviter un gros scroll quand il y en a beaucoup.
-    // Les catégories sont triées (alpha), « Non rangés » en dernier.
-    const groupes={};
-    arr.forEach(f=>{ const c=(f.categorie||'').trim(); (groupes[c]=groupes[c]||[]).push(f); });
-    majDatalistCategories(arr);
-    const nommees=Object.keys(groupes).filter(c=>c).sort((a,b)=>a.localeCompare(b,'fr'));
-    const ordre=nommees.concat(groupes[''] ? [''] : []);
-    ordre.forEach(cat=>{
-      // S104 : chaque section de catégorie est une ZONE de dépôt (data-cat). Glisser une
-      // fiche dedans la range dans cette catégorie. La fiche elle-même porte data-id.
-      const zone=document.createElement('div');
-      zone.className='cat-zone'; zone.dataset.cat=cat;          // '' = « Non rangés »
-      const titre=document.createElement('div');
-      titre.style.cssText='margin:12px 0 4px;font-size:.78rem;font-weight:600;'+
-        'color:var(--accent);text-transform:uppercase;letter-spacing:.04em';
-      titre.textContent=(cat||'Non rangés')+'  ('+groupes[cat].length+')';
-      zone.append(titre);
-      groupes[cat].forEach(f=>zone.append(ligneFiche(f)));
-      box.append(zone);
-    });
-    brancherDndFiches(box);
+    _fichesCache=await r.json();
+    if(!_fichesCache.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
+    majDatalistCategories(_fichesCache);
+    dessinerFichesGroupees();
   }catch(e){ box.textContent='⚠ '+e.message; }
+}
+
+function deplierTout(ouvrir){
+  if(ouvrir){
+    const groupes={}; _fichesCache.forEach(f=>{ const c=(f.categorie||'').trim(); groupes[c]=true; });
+    _categoriesOuvertes=new Set(Object.keys(groupes));
+  } else {
+    _categoriesOuvertes=new Set();
+  }
+  dessinerFichesGroupees();
+}
+
+function dessinerFichesGroupees(){
+  const box=$('fiches-liste');
+  if(!_fichesCache.length){ box.textContent="Aucun personnage enregistré pour l'instant."; return; }
+  const q=($('fiches-recherche')?.value||'').trim().toLowerCase();
+  const arr=q ? _fichesCache.filter(f=>
+    (f.nom||'').toLowerCase().includes(q) || (f.nom_naissance||'').toLowerCase().includes(q)
+  ) : _fichesCache;
+  box.innerHTML='';
+  if(!arr.length){ box.innerHTML='<p class="hint">Aucun résultat pour cette recherche.</p>'; return; }
+  // Regroupe par catégorie libre pour éviter un gros scroll quand il y en a beaucoup.
+  // Les catégories sont triées (alpha), « Non rangés » en dernier.
+  const groupes={};
+  arr.forEach(f=>{ const c=(f.categorie||'').trim(); (groupes[c]=groupes[c]||[]).push(f); });
+  const nommees=Object.keys(groupes).filter(c=>c).sort((a,b)=>a.localeCompare(b,'fr'));
+  const ordre=nommees.concat(groupes[''] ? [''] : []);
+  ordre.forEach(cat=>{
+    // S104 : chaque section de catégorie est une ZONE de dépôt (data-cat), TOUJOURS présente
+    // dans le DOM (repliée = lignes cachées, pas la zone) pour rester une cible de dépôt valide.
+    const ouverte=q ? true : _categoriesOuvertes.has(cat);
+    const zone=document.createElement('div');
+    zone.className='cat-zone'; zone.dataset.cat=cat;
+    const titre=document.createElement('div');
+    titre.style.cssText='margin:12px 0 4px;font-size:.78rem;font-weight:600;cursor:pointer;'+
+      'color:var(--accent);text-transform:uppercase;letter-spacing:.04em';
+    titre.textContent=(ouverte?'▾ ':'▸ ')+(cat||'Non rangés')+'  ('+groupes[cat].length+')';
+    titre.onclick=()=>{
+      if(_categoriesOuvertes.has(cat)) _categoriesOuvertes.delete(cat); else _categoriesOuvertes.add(cat);
+      dessinerFichesGroupees();
+    };
+    zone.append(titre);
+    const rows=document.createElement('div');
+    rows.style.display=ouverte?'':'none';
+    groupes[cat].forEach(f=>rows.append(ligneFiche(f)));
+    zone.append(rows);
+    box.append(zone);
+  });
+  brancherDndFiches(box);
 }
 
 // S104 — cliquer-déposer : glisser une fiche sur une autre catégorie la range. Pointer
