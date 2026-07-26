@@ -66,11 +66,17 @@ de transcrire/notifier à ce moment, le job se faisait couper (`parent process s
 avant d'avoir sauvegardé quoi que ce soit, message perdu. Fix : le message (audio+durée)
 est maintenant sauvegardé en base **immédiatement** après l'enregistrement, avant la
 transcription/notification (best-effort, mises à jour après coup si elles aboutissent) —
-voir `messages_store.mettre_a_jour_texte`. Vérifié par appel réel : le message survit
-maintenant même quand la room se ferme avant la fin de la transcription (`texte` reste
-`null` dans ce cas, mais le message existe). La transcription/notification elles-mêmes
-n'ont pas encore été observées aboutir dans la fenêtre de ~20s — reste à vérifier avec un
-appel où le répondeur reçoit moins de ~29s de message, ou à raccourcir le chemin critique.
+voir `messages_store.mettre_a_jour_texte`.
+
+Pipeline complet vérifié par appel réel bout-en-bout (softphone CLI `baresip` envoyant un
+vrai extrait de parole française de synthèse, pas juste un ton) : décroché → menu joué →
+délai DTMF → répondeur enregistré (18.9s) → transcription Whisper correcte → **texte mis à
+jour en base** → **notification Telegram envoyée** (`POST /pousser` → `200 OK` côté
+`briques/connexion` sur la VM 103, log confirmé). Les deux premiers essais de test
+(audio de synthèse = simple tonalité 440Hz, sans parole) avaient `texte: null` en base —
+ce n'est pas un bug de timing, Whisper renvoie honnêtement un placeholder vide quand il n'y
+a rien à transcrire (`transcription_client.py`, repli honnête) ; la transcription elle-même
+ne prend que ~2s, largement dans la fenêtre de 20s.
 
 Pour tester avec un softphone (ex. Linphone), s'enregistrer sur `192.168.1.188:5060`
 (remplace l'ancienne IP `192.168.1.89` utilisée avant cette migration).
