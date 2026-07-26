@@ -1,0 +1,153 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Active Dialogs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "kamailio_dlg_stats_active_ongoing", "legendFormat": "Ongoing" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Shared Memory Used",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "kamailio_core_shmmem_used / (kamailio_core_shmmem_used + kamailio_core_shmmem_free)", "legendFormat": "SHM Usage" }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 0.9 }] } } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "SHM Used / Free",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "kamailio_core_shmmem_used", "legendFormat": "Used" },
+        { "expr": "kamailio_core_shmmem_free", "legendFormat": "Free" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "kamailio_core_uptime_uptime_total", "legendFormat": "Uptime" }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "SL Reply Codes (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (code) (rate(kamailio_sl_stats_codes_total[5m])) * 60", "legendFormat": "SL {{code}}" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "TM Reply Codes (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "sum by (code) (rate(kamailio_tm_stats_codes_total[5m])) * 60", "legendFormat": "TM {{code}}" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Active Dialogs Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "kamailio_dlg_stats_active_ongoing", "legendFormat": "Ongoing" },
+        { "expr": "kamailio_dlg_stats_active_connecting", "legendFormat": "Connecting" },
+        { "expr": "kamailio_dlg_stats_active_answering", "legendFormat": "Answering" },
+        { "expr": "kamailio_dlg_stats_active_starting", "legendFormat": "Starting" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "TM Transactions",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "kamailio_tm_stats_current", "legendFormat": "Current" },
+        { "expr": "kamailio_tm_stats_waiting", "legendFormat": "Waiting" },
+        { "expr": "rate(kamailio_tm_stats_total_total[5m]) * 60", "legendFormat": "Total/min" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "TCP Connections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "kamailio_core_tcp_info_opened_connections", "legendFormat": "Opened" },
+        { "expr": "kamailio_core_tcp_info_opened_tls_connections", "legendFormat": "TLS" },
+        { "expr": "kamailio_core_tcp_info_write_queued_bytes", "legendFormat": "Write Queue (bytes)" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Shared Memory Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "kamailio_core_shmmem_used", "legendFormat": "Used" },
+        { "expr": "kamailio_core_shmmem_free", "legendFormat": "Free" },
+        { "expr": "kamailio_core_shmmem_real_used", "legendFormat": "Real Used" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Kamailio Logs",
+      "type": "logs",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 28 },
+      "targets": [{ "expr": "{container=~\".*kamailio-1.*\"} |~ \"$log_search\"", "refId": "A" }],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+    },
+    {
+      "title": "Kamailio-Cisco Logs",
+      "type": "logs",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 42 },
+      "targets": [{ "expr": "{container=~\".*kamailio-cisco.*\"} |~ \"$log_search\"", "refId": "A" }],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": { "text": "Prometheus", "value": "Prometheus" } },
+      { "name": "DS_LOKI", "type": "datasource", "query": "loki", "current": { "text": "Loki", "value": "Loki" } },
+      { "name": "log_search", "type": "textbox", "label": "Log Search", "current": { "text": "", "value": "" }, "options": [{ "text": "", "value": "", "selected": true }] }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Kamailio",
+  "uid": "kamailio"
+}

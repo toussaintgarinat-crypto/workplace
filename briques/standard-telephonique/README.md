@@ -58,11 +58,12 @@ HP : changer le type de CPU de la VM Proxmox (passthrough `host` ou modèle expo
 ou héberger ce worker sur une machine dédiée à part.
 
 **`sip-stack/roomkit-visio/`** (Kamailio + rtpengine + livekit-sip + LiveKit dont dépend cette
-brique) **vit uniquement sur le checkout git du HP** (`~/workplace/sip-stack/`), pas dans ce
-dépôt versionné — un clone frais de ce repo ne peut pas reproduire le système qui tourne.
-Les deux fichiers `.env` (`sip-stack/roomkit-visio/.env` et le `.env` racine de ce monorepo)
-doivent porter la même valeur de clé/secret LiveKit (`LIVEKIT_API_KEY`/`_SECRET` côté
-sip-stack, `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` côté racine) — rien ne garantit
+brique) est désormais versionné dans ce dépôt (`sip-stack/roomkit-visio/`, secrets exclus)
+— voir [`sip-stack/README.md`](../../sip-stack/README.md) pour la procédure complète de
+reconstruction sur une VM neuve (clone épinglé de `livekit-sip`, bootstrap, `.env`). Les
+deux fichiers `.env` (`sip-stack/roomkit-visio/.env` et le `.env` racine de ce monorepo)
+doivent toujours porter la même valeur de clé/secret LiveKit (`LIVEKIT_API_KEY`/`_SECRET`
+côté sip-stack, `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` côté racine) — rien ne garantit
 aujourd'hui qu'ils restent synchronisés au-delà de la vigilance manuelle.
 
 ## Hors périmètre (voir docs/superpowers/specs/2026-07-25-standard-vocal-ivr-repondeur-design.md)

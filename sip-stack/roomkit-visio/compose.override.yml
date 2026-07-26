@@ -1,0 +1,50 @@
+# Surcouche Workplace (S197) — NE PAS fusionner dans compose.yml amont (facilite la
+# resynchronisation avec suitenumerique/roomkit-visio plus tard).
+#
+# DÉVIATION vs plan initial (2026-07-25) : brancher livekit-sip sur le LiveKit *live* d'Oria
+# échoue ("sip not connected (redis required)") car oria-stack/oria/livekit/livekit.yaml n'a
+# aucune config redis — et la fonctionnalité SIP de LiveKit (trunk + dispatch rule) exige que le
+# serveur LiveKit lui-même soit connecté à redis pour orchestrer via psrpc avec le service SIP.
+# Ajouter redis à la config d'Oria toucherait un service déjà live — hors périmètre décidé par
+# l'utilisateur pour ce sprint. Solution retenue : un couple redis+LiveKit **jetable, dédié à ce
+# test**, entièrement dans ce compose, sans aucune dépendance sur oria-stack/. Ne prouve que le
+# mécanisme technique SIP↔LiveKit (pas son intégration dans l'UI Oria réelle — décision Phase 2).
+#
+# Sort livekit-sip de network_mode: host pour qu'il rejoigne le réseau par défaut de ce compose
+# (résout `redis` et `livekit` par nom de service) — Kamailio/rtpengine restent en
+# network_mode: host (annoncent la vraie IP LAN, requis pour le NAT traversal RTP avec un
+# softphone réel sur le LAN).
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:v1.12.0
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./docker/livekit-standalone/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7890:7880/tcp"
+      - "7891:7881/tcp"
+      - "7892:7882/udp"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  livekit-sip:
+    network_mode: !reset null
+    depends_on:
+      - redis
+      - livekit
+    ports:
+      - "5080:5080/tcp"
+      - "5080:5080/udp"
+      - "9101:9101/tcp"
+      - "30001-30100:30001-30100/udp"
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_WS_URL: ws://livekit:7880

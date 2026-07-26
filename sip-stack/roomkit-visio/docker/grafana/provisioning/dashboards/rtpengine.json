@@ -1,0 +1,139 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Active Sessions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "rtpengine_sessions{type=\"own\"}", "legendFormat": "Sessions" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Total Offers / Answers",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "rtpengine_offer_total", "legendFormat": "Offers" },
+        { "expr": "rtpengine_answer_total", "legendFormat": "Answers" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Closed Sessions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum(rtpengine_closed_sessions_total)", "legendFormat": "Closed" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "rtpengine_uptime_seconds", "legendFormat": "Uptime" }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Sessions Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "rtpengine_sessions{type=\"own\"}", "legendFormat": "Current Sessions (own)" },
+        { "expr": "rtpengine_sessions{type=\"foreign\"}", "legendFormat": "Current Sessions (foreign)" },
+        { "expr": "rtpengine_sessions_total", "legendFormat": "Total (cumulative)" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Offers / Answers / Deletes (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "rate(rtpengine_offer_total[5m]) * 60", "legendFormat": "Offers" },
+        { "expr": "rate(rtpengine_answer_total[5m]) * 60", "legendFormat": "Answers" },
+        { "expr": "rate(rtpengine_delete_total[5m]) * 60", "legendFormat": "Deletes" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Packets Relayed (rate/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "rate(rtpengine_packets_total[5m])", "legendFormat": "Relayed" },
+        { "expr": "rate(rtpengine_packet_errors_total[5m])", "legendFormat": "Errors" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Bytes Relayed (rate/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "rate(rtpengine_bytes_total[5m])", "legendFormat": "Relayed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Current Rates",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "rtpengine_packetrate", "legendFormat": "Packets/sec" },
+        { "expr": "rtpengine_errorrate", "legendFormat": "Errors/sec" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "Closed Sessions by Reason (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "rate(rtpengine_closed_sessions_total{reason=\"rejected\"}[5m]) * 60", "legendFormat": "Rejected" },
+        { "expr": "rate(rtpengine_closed_sessions_total{reason=\"timeout\"}[5m]) * 60", "legendFormat": "Timeout" },
+        { "expr": "rate(rtpengine_closed_sessions_total{reason=\"silent_timeout\"}[5m]) * 60", "legendFormat": "Silent Timeout" },
+        { "expr": "rate(rtpengine_closed_sessions_total{reason=\"terminated\"}[5m]) * 60", "legendFormat": "Terminated" }
+      ],
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+    },
+    {
+      "title": "RTPEngine Logs",
+      "type": "logs",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 28 },
+      "targets": [{ "expr": "{container=~\".*rtpengine.*\"} |~ \"$log_search\"", "refId": "A" }],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": { "text": "Prometheus", "value": "Prometheus" } },
+      { "name": "DS_LOKI", "type": "datasource", "query": "loki", "current": { "text": "Loki", "value": "Loki" } },
+      { "name": "log_search", "type": "textbox", "label": "Log Search", "current": { "text": "", "value": "" }, "options": [{ "text": "", "value": "", "selected": true }] }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "RTPEngine",
+  "uid": "rtpengine"
+}

@@ -1,0 +1,7 @@
+.env
+certs/*.crt
+certs/*.key
+certs/*.pem
+gst-dots/*
+!gst-dots/.gitkeep
+*.dot
