@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-personnel-shared"
+version = "0.4.0"
+description = "Utilitaires partagés (Redis, Keycloak, FastAPI, S2S HTTP, Jobs Streams) — Agent Personnel de Création"
+requires-python = ">=3.10"
+# Volontairement minimal : les services hôtes déclarent déjà fastapi / httpx / python-jose / redis
+# dans leur requirements.txt. Garder ce paquet léger évite les conflits de versions.
+# `tenacity` et `circuitbreaker` sont requis par `http_client.py` (S99).
+dependencies = [
+    "tenacity>=8.2",
+    "circuitbreaker>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_personnel_shared*"]

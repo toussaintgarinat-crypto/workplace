@@ -51,3 +51,12 @@ apps_exportees/
 # suitenumerique/livekit-sip@sip-video ; code non modifié par Workplace, jamais commité
 # (même motif que node_modules) — voir sip-stack/README.md pour la commande de clonage.
 sip-stack/livekit-sip/
+
+# Overrides Docker propres à un hôte (extra_hosts, secrets d'environnement locaux :
+# jetons NetBird, clés de session…) — jamais commités. Les overrides génériques déjà
+# versionnés (ex. oria-stack/*/docker-compose.override.yml) restent trackés : cette
+# règle n'empêche que l'ajout de NOUVEAUX fichiers du même nom.
+core/docker-compose.override.yml
+core/docker-compose.override.yml.bak*
+briques/*/docker-compose.override.yml
+*.tmp
