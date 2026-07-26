@@ -87,6 +87,10 @@ def _migrer_thematiques(c: sqlite3.Connection) -> None:
 
     cols_digests = {r[1] for r in c.execute("PRAGMA table_info(digests)").fetchall()}
     if "thematique" not in cols_digests:
+        # legacy_alter_table=ON le temps du RENAME : sinon SQLite réécrit silencieusement les
+        # clauses REFERENCES des AUTRES tables (ex. digest_audio) vers "digests_old", table
+        # droppée deux lignes plus bas — laissant digest_audio pointer dans le vide.
+        c.execute("PRAGMA legacy_alter_table = ON")
         c.executescript("""
             ALTER TABLE digests RENAME TO digests_old;
             CREATE TABLE digests (
@@ -104,6 +108,7 @@ def _migrer_thematiques(c: sqlite3.Connection) -> None:
             DROP TABLE digests_old;
             CREATE INDEX IF NOT EXISTS idx_digests_user ON digests(user_id);
         """)
+        c.execute("PRAGMA legacy_alter_table = OFF")
 
 
 def init() -> None:

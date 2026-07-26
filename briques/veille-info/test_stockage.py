@@ -159,7 +159,11 @@ def test_articles_non_digestes_filtre_par_thematique():
 
 def test_migration_ajoute_thematique_sur_digests_existant(tmp_path, monkeypatch):
     """Simule une base ANCIENNE (avant thematique, contrainte UNIQUE(user_id, date)) — la
-    forme réelle de la prod S193 — et vérifie que `init()` la met à niveau sans perte."""
+    forme réelle de la prod S193 — et vérifie que `init()` la met à niveau sans perte. Inclut
+    aussi une `digest_audio` pré-existante référençant le digest : le RENAME TO digests_old
+    (legacy_alter_table par défaut) réécrit silencieusement sa clause REFERENCES vers
+    `digests_old`, table ensuite droppée par la migration — d'où le double contrôle ci-dessous
+    (jointure applicative ET `PRAGMA foreign_key_check`)."""
     import sqlite3
     db_path = str(tmp_path / "ancienne.db")
     conn = sqlite3.connect(db_path)
@@ -167,8 +171,14 @@ def test_migration_ajoute_thematique_sur_digests_existant(tmp_path, monkeypatch)
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, date TEXT NOT NULL,
         texte_resume TEXT NOT NULL, nb_articles INTEGER NOT NULL, created_at TEXT NOT NULL,
         UNIQUE(user_id, date))""")
+    conn.execute("""CREATE TABLE digest_audio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        digest_id INTEGER NOT NULL REFERENCES digests(id),
+        url TEXT NOT NULL, duree REAL, created_at TEXT NOT NULL)""")
     conn.execute("INSERT INTO digests (user_id, date, texte_resume, nb_articles, created_at) "
                  "VALUES ('migr-user', '2026-07-20', 'Ancien résumé', 3, '2026-07-20T00:00:00')")
+    conn.execute("INSERT INTO digest_audio (digest_id, url, duree, created_at) "
+                 "VALUES (1, 'https://example.com/audio.mp3', 42.0, '2026-07-20T00:00:00')")
     conn.commit()
     conn.close()
 
@@ -179,3 +189,11 @@ def test_migration_ajoute_thematique_sur_digests_existant(tmp_path, monkeypatch)
     assert len(digests) == 1
     assert digests[0]["thematique"] == ""
     assert digests[0]["texte_resume"] == "Ancien résumé"
+    assert digests[0]["audio_url"] == "https://example.com/audio.mp3"
+
+    verif = sqlite3.connect(db_path)
+    violations = verif.execute("PRAGMA foreign_key_check").fetchall()
+    verif.close()
+    assert violations == [], (
+        "digest_audio doit référencer la table `digests` vivante, pas une `digests_old` "
+        f"droppée pendant la migration : {violations}")
