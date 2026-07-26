@@ -9,13 +9,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import audio_global
 import digest
+import envoi_mail
 import stockage
 
 app = FastAPI(title="Veille-info — RSS multi-sources → résumé quotidien", version="0.1.0")
@@ -118,6 +122,84 @@ def lire_digest_route(digest_id: int, tenant: str = Depends(tenant_actuel)):
     if d is None:
         raise HTTPException(404, "Digest introuvable.")
     return d
+
+
+class GenererAudioGlobal(BaseModel):
+    ordre_thematiques: list[int] = Field(min_length=1)
+
+
+class EnvoyerAudioGlobal(BaseModel):
+    destinataires: list[str] = Field(min_length=1)
+    sujet: str | None = None
+    message: str | None = None
+
+
+class GenererEtEnvoyerAudioGlobal(BaseModel):
+    ordre_thematiques: list[int] = Field(min_length=1)
+    destinataires: list[str] = Field(min_length=1)
+    sujet: str | None = None
+    message: str | None = None
+
+
+@app.post("/audio-global/generer", tags=["audio-global"])
+def generer_audio_global_route(body: GenererAudioGlobal, tenant: str = Depends(tenant_actuel)):
+    try:
+        return audio_global.generer(tenant, body.ordre_thematiques)
+    except audio_global.AudioGlobalError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/audio-global", tags=["audio-global"])
+def lister_audio_global_route(tenant: str = Depends(tenant_actuel)):
+    return stockage.lister_audio_global(tenant)
+
+
+@app.get("/audio-global/{jeton}.mp3", tags=["audio-global"], include_in_schema=False)
+def telecharger_audio_global_route(jeton: str):
+    a = stockage.audio_global_par_jeton(jeton)
+    if a is None:
+        raise HTTPException(404, "Audio introuvable.")
+    if datetime.fromisoformat(a["expire_le"]) <= datetime.now(timezone.utc):
+        raise HTTPException(404, "Ce lien a expiré.")
+    return FileResponse(a["fichier_path"], media_type="audio/mpeg")
+
+
+def _envoyer_audio_global(tenant: str, audio_id: int, destinataires: list[str],
+                          sujet: str | None, message: str | None, base_url: str) -> dict:
+    a = stockage.audio_global_get(tenant, audio_id)
+    if a is None:
+        raise HTTPException(404, "Audio introuvable.")
+    base = os.getenv("VEILLE_INFO_PUBLIC_URL", "").rstrip("/") or base_url.rstrip("/")
+    lien = f"{base}/audio-global/{a['jeton']}.mp3"
+    resultats = []
+    for dest in destinataires:
+        try:
+            envoi_mail.envoyer(tenant, dest, lien, sujet, message)
+            stockage.inserer_envoi_audio_global(audio_id, dest, "envoye", None)
+            resultats.append({"destinataire": dest, "ok": True})
+        except envoi_mail.EnvoiAudioGlobalError as e:  # noqa: BLE001 — un échec par destinataire
+            stockage.inserer_envoi_audio_global(audio_id, dest, "echec", str(e))
+            resultats.append({"destinataire": dest, "ok": False, "erreur": str(e)})
+    return {"resultats": resultats}
+
+
+@app.post("/audio-global/{audio_id}/envoyer", tags=["audio-global"])
+def envoyer_audio_global_route(audio_id: int, body: EnvoyerAudioGlobal, request: Request,
+                               tenant: str = Depends(tenant_actuel)):
+    return _envoyer_audio_global(tenant, audio_id, body.destinataires, body.sujet,
+                                 body.message, str(request.base_url))
+
+
+@app.post("/audio-global/generer-et-envoyer", tags=["audio-global"])
+def generer_et_envoyer_audio_global_route(body: GenererEtEnvoyerAudioGlobal, request: Request,
+                                          tenant: str = Depends(tenant_actuel)):
+    try:
+        audio = audio_global.generer(tenant, body.ordre_thematiques)
+    except audio_global.AudioGlobalError as e:
+        raise HTTPException(422, str(e))
+    envoi = _envoyer_audio_global(tenant, audio["id"], body.destinataires, body.sujet,
+                                  body.message, str(request.base_url))
+    return {**audio, "envoi": envoi}
 
 
 @app.post("/digest/executer", tags=["digest"])

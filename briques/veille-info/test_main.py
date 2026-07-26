@@ -135,3 +135,77 @@ def test_retagger_source_dune_autre_personne_echoue(monkeypatch):
     r = client.patch(f"/sources/{source_id}/thematique", headers=_entetes("main-retag-b"),
                      json={"thematique": "Piraté"})
     assert r.status_code == 404
+
+
+def test_generer_audio_global_digest_sans_audio_422(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    d = stockage.inserer_digest("perso:main-audioglobal-1", "Résumé.", 1, thematique="Tech")
+    r = client.post("/audio-global/generer", headers=_entetes("main-audioglobal-1"),
+                    json={"ordre_thematiques": [d["id"]]})
+    assert r.status_code == 422
+
+
+def test_generer_audio_global_appelle_le_module(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    appele = {}
+    def _faux_generer(user_id, ordre):
+        appele["user_id"] = user_id
+        appele["ordre"] = ordre
+        return {"id": 1, "user_id": user_id, "jeton": "jeton-test", "ordre_thematiques": ordre,
+                "fichier_path": "/data/audio-global/jeton-test.mp3", "duree_secondes": 12.0,
+                "expire_le": "2099-01-01T00:00:00+00:00", "cree_le": "2026-07-26T00:00:00"}
+    monkeypatch.setattr(main.audio_global, "generer", _faux_generer)
+
+    r = client.post("/audio-global/generer", headers=_entetes("main-audioglobal-2"),
+                    json={"ordre_thematiques": [1, 2]})
+    assert r.status_code == 200
+    assert r.json()["jeton"] == "jeton-test"
+    assert appele["user_id"] == "perso:main-audioglobal-2"
+    assert appele["ordre"] == [1, 2]
+
+
+def test_telecharger_audio_global_expire_404(monkeypatch, tmp_path):
+    fichier = tmp_path / "expire.mp3"
+    fichier.write_bytes(b"faux-mp3")
+    stockage.inserer_audio_global("perso:main-audioglobal-3", "jeton-expire", [1],
+                                  str(fichier), 5.0, "2020-01-01T00:00:00+00:00")
+    r = client.get("/audio-global/jeton-expire.mp3")
+    assert r.status_code == 404
+
+
+def test_telecharger_audio_global_valide_sert_le_fichier(tmp_path):
+    fichier = tmp_path / "valide.mp3"
+    fichier.write_bytes(b"faux-contenu-mp3")
+    stockage.inserer_audio_global("perso:main-audioglobal-4", "jeton-valide", [1],
+                                  str(fichier), 5.0, "2099-01-01T00:00:00+00:00")
+    r = client.get("/audio-global/jeton-valide.mp3")
+    assert r.status_code == 200
+    assert r.content == b"faux-contenu-mp3"
+
+
+def test_envoyer_audio_global_journalise_resultat_par_destinataire(monkeypatch, tmp_path):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    fichier = tmp_path / "envoi.mp3"
+    fichier.write_bytes(b"x")
+    a = stockage.inserer_audio_global("perso:main-audioglobal-5", "jeton-envoi", [1],
+                                      str(fichier), 5.0, "2099-01-01T00:00:00+00:00")
+
+    def _faux_envoyer(user_id, dest, lien, sujet, message):
+        if dest == "echoue@example.com":
+            raise main.envoi_mail.EnvoiAudioGlobalError("boom")
+    monkeypatch.setattr(main.envoi_mail, "envoyer", _faux_envoyer)
+
+    r = client.post(f"/audio-global/{a['id']}/envoyer", headers=_entetes("main-audioglobal-5"),
+                    json={"destinataires": ["ok@example.com", "echoue@example.com"]})
+    assert r.status_code == 200
+    j = r.json()
+    par_dest = {x["destinataire"]: x["ok"] for x in j["resultats"]}
+    assert par_dest["ok@example.com"] is True
+    assert par_dest["echoue@example.com"] is False
+
+
+def test_envoyer_audio_global_introuvable_404(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/audio-global/999999/envoyer", headers=_entetes("main-audioglobal-6"),
+                    json={"destinataires": ["x@example.com"]})
+    assert r.status_code == 404
