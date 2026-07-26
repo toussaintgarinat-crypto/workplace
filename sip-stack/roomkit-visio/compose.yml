@@ -1,0 +1,147 @@
+# roomkit-visio: SIP infrastructure for the meet platform.
+#
+# kamailio / rtpengine / livekit-sip / monitoring run with network_mode: host.
+# Postgres runs on the default bridge and publishes 5432 → host 25432.
+# livekit-sip reaches meet's livekit and redis at localhost:7880 and localhost:16379.
+
+volumes:
+  postgres-kamailio-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+
+services:
+  postgres-kamailio:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: kamailio
+      POSTGRES_USER: dinum
+      POSTGRES_PASSWORD: pass
+      MY_IP_ADDR: ${MY_IP_ADDR:-192.168.0.10}
+    ports:
+      - "25432:5432"
+    volumes:
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - postgres-kamailio-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dinum -d kamailio"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  rtpengine:
+    image: audiocodes/rtpengine:13.5.1.3-2
+    entrypoint: rtpengine
+    command: >
+      --config-file=/etc/rtpengine/rtpengine.conf
+      --interface=${MY_IP_ADDR:-192.168.0.10}
+      --foreground --log-stderr
+    volumes:
+      - ./docker/rtpengine/rtpengine.conf:/etc/rtpengine/rtpengine.conf:ro
+    network_mode: host
+    restart: unless-stopped
+
+  livekit-sip:
+    # Built locally from $LIVEKIT_SIP_SRC via `make sip-build`.
+    image: livekit-sip:local
+    environment:
+      SIP_LISTEN: "udp:0.0.0.0:5080,tcp:0.0.0.0:5080"
+      SIP_EXTERNAL_ADDR: ${MY_IP_ADDR:-192.168.0.10}
+    volumes:
+      - ./docker/livekit-sip/config/livekit-sip.yaml:/sip/config.yaml
+      - ./gst-dots:/tmp/gst-dots
+    network_mode: host
+
+  kamailio:
+    image: ghcr.io/kamailio/kamailio:6.0.3-focal
+    environment:
+      MY_IP_ADDR: ${MY_IP_ADDR:-192.168.0.10}
+      SIP_REALM: ${MY_IP_ADDR:-192.168.0.10}
+      SIP_ADVERTISE_IP: ${MY_IP_ADDR:-192.168.0.10}
+      KAMAILIO_DB_URL: postgres://dinum:pass@localhost:25432/kamailio
+      ENABLE_IP_WHITELIST: "true"
+      CTL_BINRPC: "2049"
+    volumes:
+      - ./docker/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg
+      - ./certs/tls.crt:/etc/kamailio/certs/tls.crt:ro
+      - ./certs/tls.key:/etc/kamailio/certs/tls.key:ro
+    network_mode: host
+    depends_on:
+      postgres-kamailio:
+        condition: service_healthy
+      rtpengine:
+        condition: service_started
+      livekit-sip:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- monitoring stack (compose --profile monitoring) ---
+
+  prometheus:
+    image: prom/prometheus:latest
+    command: --config.file=/etc/prometheus/prometheus.yml --web.listen-address=:9190
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    network_mode: host
+    profiles: [monitoring]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    network_mode: host
+    profiles: [monitoring]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    network_mode: host
+    profiles: [monitoring]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_HTTP_PORT: 3001
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    network_mode: host
+    depends_on: [prometheus, loki]
+    profiles: [monitoring]
+    restart: unless-stopped
+
+  rtpengine-exporter:
+    image: python:3.12-slim
+    command: python /app/rtpengine_exporter.py
+    environment:
+      RTPENGINE_HOST: ${MY_IP_ADDR:-192.168.0.10}
+      RTPENGINE_PORT: "22222"
+      EXPORTER_PORT: "9102"
+    volumes:
+      - ./docker/rtpengine/rtpengine_exporter.py:/app/rtpengine_exporter.py:ro
+    network_mode: host
+    depends_on: [rtpengine]
+    profiles: [monitoring]
+    restart: unless-stopped
+
+  kamailio-exporter:
+    image: florentchauveau/kamailio_exporter:latest
+    command: --kamailio.scrape-uri=tcp://${MY_IP_ADDR:-192.168.0.10}:2049 --web.listen-address=:9103 --kamailio.methods=tm.stats,sl.stats,core.shmmem,core.uptime,core.tcp_info,dlg.stats_active
+    network_mode: host
+    depends_on: [kamailio]
+    profiles: [monitoring]
+    restart: unless-stopped

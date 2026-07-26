@@ -1,0 +1,59 @@
+port: 5080
+log_level: debug
+
+redis:
+  address: redis:6379
+
+# NOTE (S197) : api_key/api_secret/ws_url sont volontairement ABSENTS ici (contrairement à
+# l'exemple amont qui les codait en dur "devkey"/"secret"/"ws://localhost:7880"). Vérifié dans
+# pkg/config/config.go (NewConfig, lignes ~114-124) : ce sont des champs top-level du struct
+# Config (pas nichés sous une clé "livekit:" — celle de l'exemple amont est une clé fantôme,
+# ignorée par yaml.Unmarshal, et "insecure" n'existe pas du tout dans le struct). Le code
+# initialise ces 3 champs depuis les variables d'env LIVEKIT_API_KEY/LIVEKIT_API_SECRET/
+# LIVEKIT_WS_URL AVANT de charger ce YAML, qui écraserait toute valeur ici présente — donc pour
+# les faire venir de l'environnement (et ne jamais committer la vraie clé Oria dans ce fichier
+# versionné), il ne faut PAS les définir ici. Ces 3 env vars sont posées sur le service
+# livekit-sip dans compose.override.yml, lues depuis .env (non commité).
+
+sip_port: 5080
+# advertised_ip is set from the SIP_EXTERNAL_ADDR env var in compose.yml.
+rtp_port: 30001-30100
+pin_required: false
+
+pprof_port: 6060
+prometheus_port: 9101
+health_port: 8081
+use_external_ip: false
+
+logging:
+  level: info
+
+# --- video / audio media ---
+
+# Default audio language for transcription / detection hints.
+audio_language: "fr"
+
+# Outbound video composition sent back to the SIP endpoint.
+# Uncomment to override resolution or enable NVIDIA hardware encode.
+# video:
+#   width: 1920
+#   height: 1080
+#   nvidia: false
+
+# GStreamer pipeline debugging.
+# dump_dot writes .dot pipeline graphs into dump_dir inside the container.
+# Mount ./gst-dots:/tmp/gst-dots in compose.yml to retrieve them on the host.
+gst:
+  dump_dot: false
+  dump_dir: "/tmp/gst-dots"
+  debug: "*:3,sipbin:4,videodecoder:1,audioresample:1"
+
+# Codec selection for tracks livekit-sip publishes into the LiveKit room.
+# publish_codecs:
+#   camera: "video/VP9"
+#   microphone: "audio/opus"
+#   screenshare: "video/VP9"
+#   screenshareaudio: "audio/opus"
+
+# Cap on the number of remote participants whose video is composited back to the SIP endpoint.
+# max_active_participants: 6

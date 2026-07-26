@@ -1,0 +1,12 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+redis:
+  address: redis:6379
+# keys: fournies via la variable d'env LIVEKIT_KEYS (compose.override.yml),
+# pas ici, pour ne pas commiter le secret LiveKit dans ce fichier versionné.
+logging:
+  json: false
+  level: info
