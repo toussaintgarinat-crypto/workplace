@@ -71,3 +71,17 @@ def test_envoyer_echec_reseau_leve_erreur_explicite(monkeypatch):
 
     with pytest.raises(envoi_mail.EnvoiAudioGlobalError):
         envoi_mail.envoyer("perso:carol", "x@example.com", "https://x.example/a.mp3", None, None)
+
+
+def test_envoyer_reponse_malformee_leve_erreur_explicite(monkeypatch):
+    """Réponse 200 mais corps sans la clé brouillon/id attendue : ne doit PAS laisser
+    fuiter un KeyError brut, doit être convertie en EnvoiAudioGlobalError (S199 finding)."""
+    def _faux_post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/mail/composer"):
+            return _FausseReponse({"ok": True})
+        raise AssertionError(f"URL inattendue : {url}")
+
+    monkeypatch.setattr(envoi_mail.httpx, "post", _faux_post)
+
+    with pytest.raises(envoi_mail.EnvoiAudioGlobalError):
+        envoi_mail.envoyer("perso:dave", "x@example.com", "https://x.example/a.mp3", None, None)

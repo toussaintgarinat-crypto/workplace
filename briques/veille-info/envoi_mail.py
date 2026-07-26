@@ -33,5 +33,5 @@ def envoyer(user_id: str, destinataire: str, lien: str, sujet: str | None,
         r2 = httpx.post(f"{MAIL_URL}/brouillons/{brouillon_id}/envoyer",
                         headers=entetes, timeout=30)
         r2.raise_for_status()
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, KeyError, ValueError) as e:
         raise EnvoiAudioGlobalError(f"Envoi mail impossible ({destinataire}) : {e}") from e
