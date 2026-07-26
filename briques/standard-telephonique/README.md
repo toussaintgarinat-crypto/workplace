@@ -27,44 +27,39 @@ Deux services : `standard-telephonique-api` (port 6190, capacité assistant
 `standard_telephonique_messages_lister`) et `standard-telephonique-agent` (worker
 `livekit-agents`, rejoint automatiquement chaque appel — aucun port exposé).
 
-## Limite connue (bloquant sur le HP actuellement)
+## Déploiement (VM dédiée, résolu 2026-07-26)
 
-Le worker `standard-telephonique-agent` **plante en boucle sur le HP** (SIGILL). Le CPU
-virtuel de la VM Proxmox (QEMU, sans AVX2) est incompatible avec `livekit-local-inference`,
-une dépendance native de `livekit-agents` (détection de fin de tour de parole) — l'agent
-n'utilise pourtant que du DTMF brut + `rtc.AudioStream`, pas de détection de tour de parole,
-donc cette dépendance native n'est même pas utile ici. `docker compose up -d --build` sur le
-HP démarre le conteneur, qui crash-loop ensuite silencieusement (`restart: unless-stopped`,
-aucun healthcheck sur ce service — rien ne signale le problème dans `docker compose ps`).
+Le worker `standard-telephonique-agent` **plantait en boucle** (SIGILL) quand `sip-stack/`
+tournait sur la VM Proxmox `103` (192.168.1.89, celle qui héberge le reste du stack
+Workplace) : son CPU virtuel générique (`x86-64-v2-AES`) est incompatible avec
+`livekit-local-inference`, une dépendance native de `livekit-agents`. Root cause confirmée
+via `lscpu` : `x86-64-v2` ne garantit pas AVX2 même quand le CPU physique l'a (i7-8700, qui
+l'a bien).
 
-**Contournement utilisé pour prouver le code (3 vrais appels SIP via Linphone, bout en
-bout : menu → délai → répondeur → raccroché → transcription → notification Telegram)** :
-exécuter `agent.py` directement (hors Docker) sur une machine avec AVX2 (ex. un Mac de dev),
-en pointant les variables d'environnement vers l'IP LAN réelle du HP plutôt que les noms de
-service Docker internes :
-```bash
-LIVEKIT_URL=ws://<IP_LAN_HP>:7890 \
-LIVEKIT_API_KEY=<meme valeur que sip-stack/roomkit-visio/.env> \
-LIVEKIT_API_SECRET=<idem> \
-VOIX_URL=http://<IP_LAN_HP>:5985 \
-TRANSCRIPTION_URL=http://<IP_LAN_HP>:5980 \
-CONNEXION_URL=http://<IP_LAN_HP>:5870 \
-MESSAGES_DB=/chemin/local/messages.db \
-MESSAGES_DIR=/chemin/local/audio \
-python agent.py start
-```
-Solution temporaire, pas une correction définitive. Pistes pour un vrai déploiement sur le
-HP : changer le type de CPU de la VM Proxmox (passthrough `host` ou modèle exposant AVX2),
-ou héberger ce worker sur une machine dédiée à part.
+**Solution retenue** : `sip-stack/` (Kamailio + rtpengine + livekit-sip + LiveKit) et cette
+brique tournent maintenant sur une **VM Proxmox dédiée** (`sip-stack-vm`, VMID 104,
+`192.168.1.188`, clonée d'un template Debian 13, `cpu: host` — expose AVX2 du CPU physique
+au guest, vérifié via `lscpu | grep avx2`), séparée de la VM 103 pour aussi isoler ce
+service exposé au réseau (SIP = cible classique de brute-force/toll fraud) du reste du
+stack. Réseau LAN/mesh uniquement, pas d'exposition WAN (le vrai trunk OVH reste hors
+périmètre, voir plus bas). `standard-telephonique-api` (port 6190, capacité assistant)
+reste sur la VM 103 — elle ne touche pas au SIP, pas de raison de la déplacer.
 
-**`sip-stack/roomkit-visio/`** (Kamailio + rtpengine + livekit-sip + LiveKit dont dépend cette
-brique) est désormais versionné dans ce dépôt (`sip-stack/roomkit-visio/`, secrets exclus)
-— voir [`sip-stack/README.md`](../../sip-stack/README.md) pour la procédure complète de
-reconstruction sur une VM neuve (clone épinglé de `livekit-sip`, bootstrap, `.env`). Les
-deux fichiers `.env` (`sip-stack/roomkit-visio/.env` et le `.env` racine de ce monorepo)
-doivent toujours porter la même valeur de clé/secret LiveKit (`LIVEKIT_API_KEY`/`_SECRET`
-côté sip-stack, `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` côté racine) — rien ne garantit
-aujourd'hui qu'ils restent synchronisés au-delà de la vigilance manuelle.
+Procédure de reconstruction complète : [`sip-stack/README.md`](../../sip-stack/README.md).
+Les deux fichiers `.env` (`sip-stack/roomkit-visio/.env` sur la VM 104 et le `.env` racine
+de ce monorepo, sur les DEUX VMs) doivent porter la même valeur de clé/secret LiveKit
+(`LIVEKIT_API_KEY`/`_SECRET` côté sip-stack, `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` côté
+racine) — rien ne garantit aujourd'hui qu'ils restent synchronisés au-delà de la vigilance
+manuelle. Sur la VM 104, le `.env` racine doit aussi pointer `VOIX_URL`/`TRANSCRIPTION_URL`/
+`CONNEXION_URL` vers `http://192.168.1.89:<port>` (ces services restent sur la VM 103, le
+défaut `host.docker.internal` ne suffit plus une fois les deux VMs séparées).
+
+Pour tester avec un softphone (ex. Linphone), s'enregistrer sur `192.168.1.188:5060`
+(remplace l'ancienne IP `192.168.1.89` utilisée avant cette migration).
+
+Ancien contournement (agent exécuté hors Docker sur un Mac de dev, utilisé le temps de
+prouver le code) **retiré** — plus nécessaire, l'agent tourne en conteneur normal sur la
+VM 104 (`RestartCount: 0`, `registered worker` dans les logs, pas de crash-loop).
 
 ## Hors périmètre (voir docs/superpowers/specs/2026-07-25-standard-vocal-ivr-repondeur-design.md)
 

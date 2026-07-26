@@ -1,5 +1,9 @@
 # sip-stack — infra SIP de la brique standard-telephonique
 
+**État actuel (2026-07-26)** : déployé sur la VM Proxmox dédiée `sip-stack-vm`
+(VMID 104, `192.168.1.188`, `cpu: host`) — pas sur la VM 103. Détails :
+[`briques/standard-telephonique/README.md`](../briques/standard-telephonique/README.md#déploiement-vm-dédiée-résolu-2026-07-26).
+
 Ce dossier verse dans le monorepo ce qu'il faut pour **reconstruire** la pile SIP
 (Kamailio + rtpengine + livekit-sip + LiveKit standalone) sur une VM neuve. Ce n'est
 pas du code applicatif Workplace : c'est de l'infra tierce (projet
