@@ -83,6 +83,48 @@
       "action": false,
       "niveau": 0,
       "socle": false
+    },
+    {
+      "nom": "veille_audio_global_generer",
+      "description": "Génère un audio unique concaténant plusieurs digests DÉJÀ audio-générés, dans un ordre choisi, avec un interlude parlé annonçant chaque thématique (« Voici les nouvelles pour la veille tech »). Chaque digest doit déjà avoir son audio (vérifier via veille_info_digests_lister). Sert « fais-moi un audio récapitulatif de mes veilles tech et cosmétique ».",
+      "methode": "POST",
+      "chemin": "/audio-global/generer",
+      "params": {
+        "ordre_thematiques": {"type": "array", "description": "Liste ordonnée des identifiants de digest (champ id de veille_info_digests_lister) à concaténer, dans l'ordre d'écoute souhaité.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "veille_audio_global_envoyer",
+      "description": "Envoie par email un audio global déjà généré (via veille_audio_global_generer), sous forme d'un lien d'écoute valable 7 jours. Sert « envoie cet audio à mon équipe ».",
+      "methode": "POST",
+      "chemin": "/audio-global/{audio_id}/envoyer",
+      "params": {
+        "audio_id": {"type": "integer", "description": "Identifiant de l'audio global (renvoyé par veille_audio_global_generer).", "requis": true},
+        "destinataires": {"type": "array", "description": "Liste d'adresses email destinataires.", "requis": true},
+        "sujet": {"type": "string", "description": "Objet de l'email (optionnel, défaut « Veille audio »)."},
+        "message": {"type": "string", "description": "Message d'accompagnement (optionnel)."}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "veille_audio_global_generer_et_envoyer",
+      "description": "Enchaîne génération ET envoi d'un audio global en un seul appel : génère l'audio à partir des digests choisis, puis l'envoie par email. Sert « génère l'audio de ma veille et envoie-le à mon équipe ».",
+      "methode": "POST",
+      "chemin": "/audio-global/generer-et-envoyer",
+      "params": {
+        "ordre_thematiques": {"type": "array", "description": "Liste ordonnée des identifiants de digest à concaténer.", "requis": true},
+        "destinataires": {"type": "array", "description": "Liste d'adresses email destinataires.", "requis": true},
+        "sujet": {"type": "string", "description": "Objet de l'email (optionnel)."},
+        "message": {"type": "string", "description": "Message d'accompagnement (optionnel)."}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
     }
   ]
 }
