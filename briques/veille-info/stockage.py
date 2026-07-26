@@ -1,9 +1,9 @@
 """Persistance de la brique veille-info (SQLite). Cloisonné par `user_id` : une personne ne
 voit jamais les sources, articles ni digests d'une autre — même motif que `briques/mail`.
 
-Trois tables : `sources` (flux RSS suivis), `articles` (dédup par `(user_id, url)`) et
-`digests` (un résumé consolidé par jour et par personne — `UNIQUE(user_id, date)` porte
-l'idempotence de la tâche horloge, cf. `digest.py`)."""
+Trois tables : `sources` (flux RSS suivis, taguées par `thematique`), `articles` (dédup par
+`(user_id, url)`) et `digests` (un résumé par jour, par personne et par thématique —
+`UNIQUE(user_id, thematique, date)` porte l'idempotence de la tâche horloge, cf. `digest.py`)."""
 from __future__ import annotations
 
 import os
@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sources (
     user_id TEXT NOT NULL,
     nom TEXT NOT NULL,
     url TEXT NOT NULL,
+    thematique TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
@@ -55,11 +56,12 @@ CREATE INDEX IF NOT EXISTS idx_articles_user ON articles(user_id);
 CREATE TABLE IF NOT EXISTS digests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
+    thematique TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL,
     texte_resume TEXT NOT NULL,
     nb_articles INTEGER NOT NULL,
     created_at TEXT NOT NULL,
-    UNIQUE(user_id, date)
+    UNIQUE(user_id, thematique, date)
 );
 CREATE INDEX IF NOT EXISTS idx_digests_user ON digests(user_id);
 
@@ -74,10 +76,41 @@ CREATE INDEX IF NOT EXISTS idx_digest_audio_digest ON digest_audio(digest_id);
 """
 
 
+def _migrer_thematiques(c: sqlite3.Connection) -> None:
+    """Met à niveau une base créée AVANT l'ajout de `thematique` (S199). `sources` : simple
+    ALTER TABLE ADD COLUMN. `digests` : nécessite de recréer la table, SQLite ne permet pas
+    de modifier une contrainte UNIQUE existante via ALTER TABLE. No-op sur une base déjà à
+    jour (CREATE TABLE IF NOT EXISTS de `_SCHEMA` l'a créée directement dans sa forme finale)."""
+    cols_sources = {r[1] for r in c.execute("PRAGMA table_info(sources)").fetchall()}
+    if "thematique" not in cols_sources:
+        c.execute("ALTER TABLE sources ADD COLUMN thematique TEXT NOT NULL DEFAULT ''")
+
+    cols_digests = {r[1] for r in c.execute("PRAGMA table_info(digests)").fetchall()}
+    if "thematique" not in cols_digests:
+        c.executescript("""
+            ALTER TABLE digests RENAME TO digests_old;
+            CREATE TABLE digests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                thematique TEXT NOT NULL DEFAULT '',
+                date TEXT NOT NULL,
+                texte_resume TEXT NOT NULL,
+                nb_articles INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, thematique, date)
+            );
+            INSERT INTO digests (id, user_id, thematique, date, texte_resume, nb_articles, created_at)
+                SELECT id, user_id, '', date, texte_resume, nb_articles, created_at FROM digests_old;
+            DROP TABLE digests_old;
+            CREATE INDEX IF NOT EXISTS idx_digests_user ON digests(user_id);
+        """)
+
+
 def init() -> None:
     os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
     with _conn() as c:
         c.executescript(_SCHEMA)
+        _migrer_thematiques(c)
 
 
 init()  # schéma prêt dès l'import (robuste même sous TestClient)
@@ -85,15 +118,16 @@ init()  # schéma prêt dès l'import (robuste même sous TestClient)
 
 # ── Sources ───────────────────────────────────────────────────
 def _source_dict(r: sqlite3.Row) -> dict:
-    return {"id": r["id"], "nom": r["nom"], "url": r["url"], "enabled": bool(r["enabled"]),
-            "created_at": r["created_at"]}
+    return {"id": r["id"], "nom": r["nom"], "url": r["url"], "thematique": r["thematique"],
+            "enabled": bool(r["enabled"]), "created_at": r["created_at"]}
 
 
-def creer_source(user_id: str, nom: str, url: str) -> dict:
+def creer_source(user_id: str, nom: str, url: str, thematique: str = "") -> dict:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO sources (user_id, nom, url, enabled, created_at) VALUES (?,?,?,1,?)",
-            (user_id, nom, url, _maintenant()))
+            "INSERT INTO sources (user_id, nom, url, thematique, enabled, created_at) "
+            "VALUES (?,?,?,?,1,?)",
+            (user_id, nom, url, thematique, _maintenant()))
         row = c.execute("SELECT * FROM sources WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _source_dict(row)
 
@@ -120,6 +154,21 @@ def lister_user_ids_actifs() -> list[str]:
     return [r["user_id"] for r in rows]
 
 
+def thematiques_actives(user_id: str) -> list[str]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT DISTINCT thematique FROM sources WHERE user_id = ? AND enabled = 1",
+            (user_id,)).fetchall()
+    return [r["thematique"] for r in rows]
+
+
+def retagger_source(user_id: str, source_id: int, thematique: str) -> bool:
+    with _conn() as c:
+        cur = c.execute("UPDATE sources SET thematique = ? WHERE id = ? AND user_id = ?",
+                        (thematique, source_id, user_id))
+    return cur.rowcount > 0
+
+
 # ── Articles ──────────────────────────────────────────────────
 def inserer_article(user_id: str, source_id: int, titre: str, url: str,
                     published_at: str) -> bool:
@@ -132,11 +181,23 @@ def inserer_article(user_id: str, source_id: int, titre: str, url: str,
     return cur.rowcount > 0
 
 
-def articles_non_digestes(user_id: str) -> list[dict]:
-    with _conn() as c:
-        rows = c.execute(
-            "SELECT * FROM articles WHERE user_id = ? AND digested = 0 ORDER BY created_at ASC",
-            (user_id,)).fetchall()
+def articles_non_digestes(user_id: str, thematique: str | None = None) -> list[dict]:
+    """`thematique=None` (défaut) : tous les articles non digérés, toutes thématiques
+    confondues (comportement historique). Une valeur précise (y compris `""`) filtre sur
+    cette thématique via jointure `sources` — c'est ce qu'utilise digest.py, qui traite
+    thématique par thématique."""
+    if thematique is None:
+        with _conn() as c:
+            rows = c.execute(
+                "SELECT * FROM articles WHERE user_id = ? AND digested = 0 ORDER BY created_at ASC",
+                (user_id,)).fetchall()
+    else:
+        with _conn() as c:
+            rows = c.execute(
+                "SELECT a.* FROM articles a JOIN sources s ON s.id = a.source_id "
+                "WHERE a.user_id = ? AND a.digested = 0 AND s.thematique = ? "
+                "ORDER BY a.created_at ASC",
+                (user_id, thematique)).fetchall()
     return [{"id": r["id"], "titre": r["titre"], "url": r["url"],
             "published_at": r["published_at"]} for r in rows]
 
@@ -152,8 +213,9 @@ def marquer_articles_digestes(article_ids: list[int]) -> None:
 # ── Digests ───────────────────────────────────────────────────
 def _digest_dict(r: sqlite3.Row) -> dict:
     cols = r.keys()
-    return {"id": r["id"], "date": r["date"], "texte_resume": r["texte_resume"],
-            "nb_articles": r["nb_articles"], "created_at": r["created_at"],
+    return {"id": r["id"], "date": r["date"], "thematique": r["thematique"] if "thematique" in cols else "",
+            "texte_resume": r["texte_resume"], "nb_articles": r["nb_articles"],
+            "created_at": r["created_at"],
             "audio_url": r["audio_url"] if "audio_url" in cols else None,
             "audio_duree": r["audio_duree"] if "audio_duree" in cols else None}
 
@@ -167,22 +229,23 @@ _DIGEST_AVEC_AUDIO = """
 """
 
 
-def digest_existe(user_id: str, date: str | None = None) -> bool:
+def digest_existe(user_id: str, date: str | None = None, thematique: str = "") -> bool:
     date = date or _aujourdhui()
     with _conn() as c:
-        row = c.execute("SELECT 1 FROM digests WHERE user_id = ? AND date = ?",
-                        (user_id, date)).fetchone()
+        row = c.execute(
+            "SELECT 1 FROM digests WHERE user_id = ? AND date = ? AND thematique = ?",
+            (user_id, date, thematique)).fetchone()
     return row is not None
 
 
 def inserer_digest(user_id: str, texte_resume: str, nb_articles: int,
-                   date: str | None = None) -> dict:
+                   date: str | None = None, thematique: str = "") -> dict:
     date = date or _aujourdhui()
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO digests (user_id, date, texte_resume, nb_articles, created_at) "
-            "VALUES (?,?,?,?,?)",
-            (user_id, date, texte_resume, nb_articles, _maintenant()))
+            "INSERT INTO digests (user_id, thematique, date, texte_resume, nb_articles, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (user_id, thematique, date, texte_resume, nb_articles, _maintenant()))
         row = c.execute("SELECT * FROM digests WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _digest_dict(row)
 
