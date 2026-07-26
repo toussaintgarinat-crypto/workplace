@@ -101,3 +101,81 @@ def test_audio_digest_isole_par_digest_id():
 
     assert stockage.digest_get("karim", d1["id"])["audio_url"] == "https://voix.example/1.mp3"
     assert stockage.digest_get("karim", d2["id"])["audio_url"] is None
+
+
+def test_creer_source_avec_thematique():
+    s = stockage.creer_source("thematique-alice", "Flux Tech", "https://t.example/rss",
+                              thematique="Tech")
+    assert s["thematique"] == "Tech"
+
+
+def test_creer_source_sans_thematique_defaut_vide():
+    s = stockage.creer_source("thematique-bob", "Flux", "https://b.example/rss")
+    assert s["thematique"] == ""
+
+
+def test_thematiques_actives_distinctes_et_ignore_desactivees():
+    stockage.creer_source("thematique-carol", "Flux Tech", "https://tc.example/rss", thematique="Tech")
+    stockage.creer_source("thematique-carol", "Flux Tech 2", "https://tc2.example/rss", thematique="Tech")
+    off = stockage.creer_source("thematique-carol", "Flux Cosmétique",
+                                "https://cc.example/rss", thematique="Cosmétique")
+    with stockage._conn() as c:
+        c.execute("UPDATE sources SET enabled = 0 WHERE id = ?", (off["id"],))
+    assert stockage.thematiques_actives("thematique-carol") == ["Tech"]
+
+
+def test_digest_existe_isole_par_thematique():
+    assert stockage.digest_existe("thematique-dave", thematique="Tech") is False
+    stockage.inserer_digest("thematique-dave", "Résumé tech.", 1, thematique="Tech")
+    assert stockage.digest_existe("thematique-dave", thematique="Tech") is True
+    assert stockage.digest_existe("thematique-dave", thematique="Cosmétique") is False
+
+
+def test_deux_thematiques_meme_jour_meme_user():
+    d1 = stockage.inserer_digest("thematique-erin", "Résumé tech.", 1, thematique="Tech")
+    d2 = stockage.inserer_digest("thematique-erin", "Résumé cosmétique.", 1, thematique="Cosmétique")
+    assert d1["id"] != d2["id"]
+    digests = stockage.lister_digests("thematique-erin")
+    assert len(digests) == 2
+    assert {d["thematique"] for d in digests} == {"Tech", "Cosmétique"}
+
+
+def test_articles_non_digestes_filtre_par_thematique():
+    s_tech = stockage.creer_source("thematique-frank", "Flux Tech", "https://ft.example/rss",
+                                   thematique="Tech")
+    s_cosmo = stockage.creer_source("thematique-frank", "Flux Cosmétique",
+                                    "https://fc.example/rss", thematique="Cosmétique")
+    stockage.inserer_article("thematique-frank", s_tech["id"], "Article Tech",
+                             "https://ft.example/1", "")
+    stockage.inserer_article("thematique-frank", s_cosmo["id"], "Article Cosmétique",
+                             "https://fc.example/1", "")
+
+    tech = stockage.articles_non_digestes("thematique-frank", thematique="Tech")
+    assert len(tech) == 1 and tech[0]["titre"] == "Article Tech"
+
+    toutes = stockage.articles_non_digestes("thematique-frank")
+    assert len(toutes) == 2  # thematique=None (défaut) : comportement historique inchangé
+
+
+def test_migration_ajoute_thematique_sur_digests_existant(tmp_path, monkeypatch):
+    """Simule une base ANCIENNE (avant thematique, contrainte UNIQUE(user_id, date)) — la
+    forme réelle de la prod S193 — et vérifie que `init()` la met à niveau sans perte."""
+    import sqlite3
+    db_path = str(tmp_path / "ancienne.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute("""CREATE TABLE digests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, date TEXT NOT NULL,
+        texte_resume TEXT NOT NULL, nb_articles INTEGER NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(user_id, date))""")
+    conn.execute("INSERT INTO digests (user_id, date, texte_resume, nb_articles, created_at) "
+                 "VALUES ('migr-user', '2026-07-20', 'Ancien résumé', 3, '2026-07-20T00:00:00')")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(stockage, "_DB", db_path)
+    stockage.init()
+
+    digests = stockage.lister_digests("migr-user")
+    assert len(digests) == 1
+    assert digests[0]["thematique"] == ""
+    assert digests[0]["texte_resume"] == "Ancien résumé"
