@@ -6,6 +6,7 @@ Trois tables : `sources` (flux RSS suivis, taguées par `thematique`), `articles
 `UNIQUE(user_id, thematique, date)` porte l'idempotence de la tâche horloge, cf. `digest.py`)."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -73,6 +74,29 @@ CREATE TABLE IF NOT EXISTS digest_audio (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_digest_audio_digest ON digest_audio(digest_id);
+
+CREATE TABLE IF NOT EXISTS veille_audio_global (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    jeton TEXT NOT NULL UNIQUE,
+    ordre_thematiques TEXT NOT NULL,
+    fichier_path TEXT NOT NULL,
+    duree_secondes REAL,
+    expire_le TEXT NOT NULL,
+    cree_le TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audio_global_user ON veille_audio_global(user_id);
+CREATE INDEX IF NOT EXISTS idx_audio_global_jeton ON veille_audio_global(jeton);
+
+CREATE TABLE IF NOT EXISTS veille_audio_global_envois (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audio_global_id INTEGER NOT NULL REFERENCES veille_audio_global(id),
+    destinataire TEXT NOT NULL,
+    statut TEXT NOT NULL,
+    detail TEXT,
+    envoye_le TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_envois_audio_global ON veille_audio_global_envois(audio_global_id);
 """
 
 
@@ -278,3 +302,64 @@ def inserer_audio_digest(digest_id: int, url: str, duree: float | None) -> dict:
         row = c.execute("SELECT * FROM digest_audio WHERE id = ?", (cur.lastrowid,)).fetchone()
     return {"id": row["id"], "digest_id": row["digest_id"], "url": row["url"],
             "duree": row["duree"], "created_at": row["created_at"]}
+
+
+# ── Audio global (S199) ──────────────────────────────────────────
+def _audio_global_dict(r: sqlite3.Row) -> dict:
+    return {"id": r["id"], "user_id": r["user_id"], "jeton": r["jeton"],
+            "ordre_thematiques": json.loads(r["ordre_thematiques"]),
+            "fichier_path": r["fichier_path"], "duree_secondes": r["duree_secondes"],
+            "expire_le": r["expire_le"], "cree_le": r["cree_le"]}
+
+
+def inserer_audio_global(user_id: str, jeton: str, ordre_digest_ids: list[int],
+                         fichier_path: str, duree: float | None, expire_le: str) -> dict:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO veille_audio_global (user_id, jeton, ordre_thematiques, fichier_path, "
+            "duree_secondes, expire_le, cree_le) VALUES (?,?,?,?,?,?,?)",
+            (user_id, jeton, json.dumps(ordre_digest_ids), fichier_path, duree, expire_le,
+             _maintenant()))
+        row = c.execute("SELECT * FROM veille_audio_global WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return _audio_global_dict(row)
+
+
+def audio_global_par_jeton(jeton: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM veille_audio_global WHERE jeton = ?", (jeton,)).fetchone()
+    return _audio_global_dict(row) if row else None
+
+
+def audio_global_get(user_id: str, audio_id: int) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM veille_audio_global WHERE id = ? AND user_id = ?",
+                        (audio_id, user_id)).fetchone()
+    return _audio_global_dict(row) if row else None
+
+
+def lister_audio_global(user_id: str) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM veille_audio_global WHERE user_id = ? ORDER BY cree_le DESC",
+            (user_id,)).fetchall()
+    return [_audio_global_dict(r) for r in rows]
+
+
+def inserer_envoi_audio_global(audio_global_id: int, destinataire: str, statut: str,
+                               detail: str | None) -> dict:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO veille_audio_global_envois (audio_global_id, destinataire, statut, "
+            "detail, envoye_le) VALUES (?,?,?,?,?)",
+            (audio_global_id, destinataire, statut, detail, _maintenant()))
+        row = c.execute("SELECT * FROM veille_audio_global_envois WHERE id = ?",
+                        (cur.lastrowid,)).fetchone()
+    return dict(row)
+
+
+def lister_envois_audio_global(audio_global_id: int) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM veille_audio_global_envois WHERE audio_global_id = ? "
+            "ORDER BY envoye_le DESC", (audio_global_id,)).fetchall()
+    return [dict(r) for r in rows]

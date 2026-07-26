@@ -53,6 +53,48 @@ def test_articles_non_digestes_isole_par_user_id():
     assert stockage.articles_non_digestes("grace") == []
 
 
+def test_inserer_et_lire_audio_global_par_jeton():
+    a = stockage.inserer_audio_global("audioglobal-alice", "jeton-abc", [1, 2],
+                                      "/data/audio-global/jeton-abc.mp3", 42.0,
+                                      "2026-08-02T00:00:00+00:00")
+    assert a["ordre_thematiques"] == [1, 2]
+    lu = stockage.audio_global_par_jeton("jeton-abc")
+    assert lu["id"] == a["id"]
+    assert lu["fichier_path"] == "/data/audio-global/jeton-abc.mp3"
+    assert stockage.audio_global_par_jeton("jeton-inexistant") is None
+
+
+def test_audio_global_get_isole_par_user_id():
+    a = stockage.inserer_audio_global("audioglobal-bob", "jeton-bob", [1],
+                                      "/data/audio-global/jeton-bob.mp3", 10.0,
+                                      "2026-08-02T00:00:00+00:00")
+    assert stockage.audio_global_get("audioglobal-bob", a["id"]) is not None
+    assert stockage.audio_global_get("audioglobal-mallory", a["id"]) is None
+
+
+def test_lister_audio_global_ordre_recent_dabord():
+    stockage.inserer_audio_global("audioglobal-carol", "jeton-c1", [1],
+                                  "/data/audio-global/c1.mp3", 5.0, "2026-08-02T00:00:00+00:00")
+    stockage.inserer_audio_global("audioglobal-carol", "jeton-c2", [2],
+                                  "/data/audio-global/c2.mp3", 5.0, "2026-08-02T00:00:00+00:00")
+    liste = stockage.lister_audio_global("audioglobal-carol")
+    assert len(liste) == 2
+    assert liste[0]["jeton"] == "jeton-c2"  # le plus récent en premier
+
+
+def test_envois_audio_global_lies_au_bon_audio():
+    a = stockage.inserer_audio_global("audioglobal-dave", "jeton-dave", [1],
+                                      "/data/audio-global/dave.mp3", 5.0, "2026-08-02T00:00:00+00:00")
+    stockage.inserer_envoi_audio_global(a["id"], "equipe@example.com", "envoye", None)
+    stockage.inserer_envoi_audio_global(a["id"], "invalide@@", "echec", "adresse invalide")
+
+    envois = stockage.lister_envois_audio_global(a["id"])
+    assert len(envois) == 2
+    par_dest = {e["destinataire"]: e["statut"] for e in envois}
+    assert par_dest["equipe@example.com"] == "envoye"
+    assert par_dest["invalide@@"] == "echec"
+
+
 def test_marquer_articles_digestes_les_exclut_ensuite():
     s = stockage.creer_source("henri", "Flux", "https://example.com/henri-rss")
     stockage.inserer_article("henri", s["id"], "Titre", "https://henri.example/1", "")
