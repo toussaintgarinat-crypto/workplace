@@ -726,6 +726,9 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
  .acc{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:6px 0}
  label{display:block;font-size:.82rem;font-weight:600;margin:8px 0 3px} .fld{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px}
  .muted{color:var(--mut)}
+ .listewrap{display:flex;flex-direction:column;min-width:0}
+ .actbar{display:none;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--bd)}
+ .actbar.on{display:flex}
 </style></head><body>
 <div class=top>
   <h1>📬 Mail <span id=mode class="badge mock">…</span></h1>
@@ -738,7 +741,17 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
 </div>
 <div class=filtres id=filtres></div>
 <div class=body>
-  <div class=liste id=liste></div>
+  <div class=listewrap>
+    <div class=actbar id=actbar>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem">
+        <input type=checkbox id=selAll onchange="toggleSelAll(this.checked)">Tout sélectionner
+      </label>
+      <span id=selCount class=muted style="font-size:.82rem"></span>
+      <button class=btn style="color:#dc2626;margin-left:auto" onclick=supprimerSelection()>
+        🗑️ Supprimer la sélection</button>
+    </div>
+    <div class=liste id=liste></div>
+  </div>
   <div class=lec id=lec><div class=vide>Sélectionne un message pour le lire.</div></div>
 </div>
 
@@ -752,8 +765,10 @@ _PAGE = r"""<!doctype html><html lang=fr><head><meta charset=utf-8>
       s'affiche selon le fournisseur) — c'est un code DÉDIÉ à cette appli, différent de ton mot de
       passe habituel.<br>
       <b>3.</b> Saisis ton adresse + ce mot de passe d'application, puis « Connecter ».<br>
-      <span class=muted>Lecture seule : rien n'est jamais supprimé ni déplacé. Le mot de passe est
-      chiffré au repos, jamais affiché. Tu peux connecter plusieurs adresses.</span></p>
+      <span class=muted>Le mot de passe est chiffré au repos, jamais affiché. Tu peux
+      connecter plusieurs adresses. La suppression (sélection multiple dans la liste) met
+      le message à la corbeille du serveur si une corbeille est détectable, sinon
+      l'efface définitivement.</span></p>
     <div id=accs></div>
     <h3 style="font-size:.95rem;margin-top:16px">Ajouter une boîte</h3>
     <label>Fournisseur</label>
@@ -852,6 +867,7 @@ async function chargerConfig(){
   sel.value=cur;
 }
 
+let SEL=new Set();
 async function recharger(){
   const p=new URLSearchParams();
   if(filtre==='__nl')p.set('non_lus','true');
@@ -863,9 +879,11 @@ async function recharger(){
   let msgs=j.messages||[]; const q=document.getElementById('q').value.trim().toLowerCase();
   if(q)msgs=msgs.filter(m=>((m.sujet||'')+' '+(m.de_nom||'')+' '+(m.de||'')+' '+(m.extrait||'')).toLowerCase().includes(q));
   MSGS=msgs;
+  SEL=new Set([...SEL].filter(id=>msgs.some(m=>m.id===id)));  // purge la sélection des mails disparus
   const L=document.getElementById('liste');
-  if(!msgs.length){L.innerHTML='<div class=vide style="padding:30px;color:#94a3b8">Aucun message.</div>';return;}
+  if(!msgs.length){L.innerHTML='<div class=vide style="padding:30px;color:#94a3b8">Aucun message.</div>';majBarreSelection();return;}
   L.innerHTML=msgs.map(m=>`<div class="it ${m.lu?'':'nl'} ${m.id===selId?'sel':''}" onclick="ouvrir('${m.id}')">
+    <input type=checkbox onclick="event.stopPropagation()" onchange="toggleSel('${m.id}', this.checked)" ${SEL.has(m.id)?'checked':''}>
     <span class=dot></span><div class=mid>
       <div class=de><span class=de>${esc(m.de_nom||m.de)}</span><span class=muted style="font-size:.72rem">${dateCourte(m.date)}</span></div>
       <div class=suj>${esc(m.sujet||'(sans sujet)')}</div>
@@ -874,6 +892,36 @@ async function recharger(){
         ${m.score>=70?'<span class=pri-h>● prioritaire</span>':''}
         ${m.compte?('<span class=muted>'+esc(m.compte)+'</span>'):''}</div>
     </div></div>`).join('');
+  majBarreSelection();
+}
+
+function toggleSel(id, checked){
+  if(checked)SEL.add(id); else SEL.delete(id);
+  majBarreSelection();
+}
+function toggleSelAll(checked){
+  SEL = checked ? new Set(MSGS.map(m=>m.id)) : new Set();
+  document.querySelectorAll('#liste input[type=checkbox]').forEach(cb=>cb.checked=checked);
+  majBarreSelection();
+}
+function majBarreSelection(){
+  const bar=document.getElementById('actbar');
+  document.getElementById('selCount').textContent = SEL.size ? (SEL.size+' sélectionné(s)') : '';
+  bar.classList.toggle('on', SEL.size>0);
+  const all=document.getElementById('selAll');
+  all.checked = MSGS.length>0 && SEL.size===MSGS.length;
+}
+async function supprimerSelection(){
+  if(!SEL.size)return;
+  const n=SEL.size;
+  if(!confirm(`Supprimer définitivement ${n} mail(s) ? Sur une vraie boîte, un message peut être effacé pour de bon si aucune corbeille n'est détectable côté serveur — cette action ne peut pas être annulée depuis cette interface.`))return;
+  const r=await fetch(API+'/mail/supprimer-lot',{method:'POST',headers:entetes(),
+    body:JSON.stringify({message_ids:[...SEL]})});
+  const j=await r.json();
+  const echecs=(j.resultats||[]).filter(x=>!x.ok);
+  SEL=new Set();
+  await recharger();
+  if(echecs.length)alert(`${j.supprimes||0} supprimé(s), ${echecs.length} échec(s) :\n`+echecs.map(e=>e.erreur).join('\n'));
 }
 
 let _htmlCourant=null;  // HTML brut du message ouvert (null si email texte seul)
