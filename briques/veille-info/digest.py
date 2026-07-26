@@ -73,11 +73,13 @@ def _generer_audio(digest_id: int, texte: str) -> None:
         logger.warning("Veille-info audio digest_id=%s : %s", digest_id, e)
 
 
-def _traiter_utilisateur(user_id: str) -> bool:
-    """Traite un utilisateur : fetch ses sources actives, résume s'il y a du nouveau.
-    Renvoie True si un digest a été créé."""
-    if stockage.digest_existe(user_id):
-        return False
+def _traiter_utilisateur(user_id: str) -> int:
+    """Traite un utilisateur : fetch ses sources actives, résume PAR THÉMATIQUE s'il y a du
+    nouveau (S199 — une thématique = un groupe de sources partageant `sources.thematique`,
+    "" = thématique par défaut). Renvoie le nombre de digests créés (0, 1, ou plusieurs)."""
+    thematiques = stockage.thematiques_actives(user_id)
+    if thematiques and all(stockage.digest_existe(user_id, thematique=t) for t in thematiques):
+        return 0  # tout est déjà fait aujourd'hui : pas la peine de fetcher (motif historique)
 
     for source in stockage.lister_sources(user_id, actives_seulement=True):
         try:
@@ -91,46 +93,46 @@ def _traiter_utilisateur(user_id: str) -> bool:
             stockage.inserer_article(user_id, source["id"], item["titre"], item["url"],
                                      item["published_at"])
 
-    articles = stockage.articles_non_digestes(user_id)
-    if not articles:
-        return False
+    digests_crees = 0
+    for thematique in thematiques:
+        if stockage.digest_existe(user_id, thematique=thematique):
+            continue
 
-    try:
-        resume = llm_complete(_construire_prompt(articles), system=_SYSTEM)
-    except Exception as e:  # noqa: BLE001 — Gateway indisponible : pas de digest partiel
-        logger.warning("Veille-info résumé LLM (user=%s) : %s", user_id, e)
-        return False
+        articles = stockage.articles_non_digestes(user_id, thematique)
+        if not articles:
+            continue
 
-    d = stockage.inserer_digest(user_id, resume, len(articles))
-    try:
-        stockage.marquer_articles_digestes([a["id"] for a in articles])
-        _generer_audio(d["id"], resume)
-        _pousser_memoire(user_id, resume, d["date"])
-    except Exception as e:  # noqa: BLE001 — le digest (déjà créé ci-dessus) doit compter comme
-        # créé même si le marquage des articles ou l'audio échoue ensuite ; sans ce filet local,
-        # l'exception remonterait jusqu'à `_traiter_utilisateur_sans_planter`, qui compterait
-        # 0 digest alors qu'une ligne existe déjà en base — et comme `digest_existe(user_id)`
-        # est vrai dès le prochain passage, cette personne serait sautée pour toujours (le
-        # marquage et l'audio ne seraient plus jamais retentés). Rejouer marquer_articles_digestes
-        # plus tard est sans risque : l'UPDATE cible exactement ces ids déjà connus, pas «tout
-        # ce qui n'est pas marqué» — un no-op propre s'ils sont déjà marqués.
-        logger.warning("Veille-info marquage articles/audio (user=%s, digest_id=%s) : %s",
-                       user_id, d["id"], e)
-    return True
+        try:
+            resume = llm_complete(_construire_prompt(articles), system=_SYSTEM)
+        except Exception as e:  # noqa: BLE001 — Gateway indisponible : pas de digest partiel
+            logger.warning("Veille-info résumé LLM (user=%s, thematique=%r) : %s",
+                           user_id, thematique, e)
+            continue
+
+        d = stockage.inserer_digest(user_id, resume, len(articles), thematique=thematique)
+        try:
+            stockage.marquer_articles_digestes([a["id"] for a in articles])
+            _generer_audio(d["id"], resume)
+            _pousser_memoire(user_id, resume, d["date"])
+        except Exception as e:  # noqa: BLE001 — le digest (déjà créé ci-dessus) doit compter
+            # comme créé même si le marquage des articles ou l'audio échoue ensuite (même
+            # filet que l'ancienne version mono-digest, cf. commentaire d'origine préservé
+            # dans l'historique git).
+            logger.warning("Veille-info marquage articles/audio (user=%s, digest_id=%s) : %s",
+                           user_id, d["id"], e)
+        digests_crees += 1
+    return digests_crees
 
 
-def _traiter_utilisateur_sans_planter(user_id: str) -> bool:
+def _traiter_utilisateur_sans_planter(user_id: str) -> int:
     """Enrobe `_traiter_utilisateur` : une panne inattendue (ex. un appel `stockage.*` qui
     lève, en dehors des chemins déjà gardés dans `_traiter_utilisateur`) est journalisée
-    et comptée comme « pas de digest pour cette personne », jamais propagée. Contrainte du
-    plan : « Aucun échec ne doit faire planter le pipeline » — plus large que les pannes
-    déjà gérées localement (fetch RSS, appel LLM, marquage des articles + audio après
-    création du digest)."""
+    et compte 0 digest créé pour cette personne, jamais propagée."""
     try:
         return _traiter_utilisateur(user_id)
     except Exception as e:  # noqa: BLE001 — une personne en échec inattendu ne doit jamais arrêter le lot
         logger.warning("Veille-info échec inattendu (user=%s) : %s", user_id, e)
-        return False
+        return 0
 
 
 def executer_digest_quotidien(user_ids: list[str] | None = None) -> dict:
@@ -141,5 +143,5 @@ def executer_digest_quotidien(user_ids: list[str] | None = None) -> dict:
     sources laissées par d'autres fichiers de test dans la même DB partagée) — la route HTTP
     de `main.py` ne le fournit JAMAIS, elle traite toujours tout le monde."""
     cibles = user_ids if user_ids is not None else stockage.lister_user_ids_actifs()
-    digests_crees = sum(1 for uid in cibles if _traiter_utilisateur_sans_planter(uid))
+    digests_crees = sum(_traiter_utilisateur_sans_planter(uid) for uid in cibles)
     return {"utilisateurs_traites": len(cibles), "digests_crees": digests_crees}

@@ -346,3 +346,60 @@ def test_digest_memoire_injoignable_najamais_bloquant(monkeypatch):
     resultat = digest.executer_digest_quotidien(user_ids=["digest-grace"])
     assert resultat["digests_crees"] == 1   # le digest texte n'est PAS affecté
     assert len(stockage.lister_digests("digest-grace")) == 1
+
+
+def test_digest_separe_par_thematique(monkeypatch):
+    stockage.creer_source("digest-multi", "Flux Tech", "https://tech-multi.example/rss",
+                          thematique="Tech")
+    stockage.creer_source("digest-multi", "Flux Cosmétique", "https://cosmo-multi.example/rss",
+                          thematique="Cosmétique")
+
+    # L'URL fetchée sert d'identifiant : chaque source produit un article à SA propre URL
+    # (évite une collision UNIQUE(user_id, url) entre les deux sources du test).
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: url)
+    monkeypatch.setattr(digest.rss, "parser_items",
+                        lambda texte: [{"titre": "Article", "url": texte + "/1", "published_at": ""}])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé.")
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-multi"])
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 2}
+
+    digests = stockage.lister_digests("digest-multi")
+    assert {d["thematique"] for d in digests} == {"Tech", "Cosmétique"}
+
+
+def test_digest_idempotent_par_thematique_independamment(monkeypatch):
+    stockage.creer_source("digest-idem", "Flux Tech", "https://tech-idem.example/rss",
+                          thematique="Tech")
+    stockage.creer_source("digest-idem", "Flux Cosmétique", "https://cosmo-idem.example/rss",
+                          thematique="Cosmétique")
+    stockage.inserer_digest("digest-idem", "Déjà fait pour Tech.", 1, thematique="Tech")
+
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: url)
+    monkeypatch.setattr(digest.rss, "parser_items",
+                        lambda texte: [{"titre": "Article", "url": texte + "/1", "published_at": ""}])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé Cosmétique.")
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-idem"])
+    assert resultat["digests_crees"] == 1  # seulement Cosmétique, Tech déjà fait aujourd'hui
+
+    par_thematique = {d["thematique"]: d["texte_resume"] for d in stockage.lister_digests("digest-idem")}
+    assert par_thematique["Tech"] == "Déjà fait pour Tech."
+    assert par_thematique["Cosmétique"] == "Résumé Cosmétique."
+
+
+def test_digest_aucun_fetch_si_toutes_thematiques_deja_faites(monkeypatch):
+    """Restaure l'optimisation historique : si TOUT est déjà digéré aujourd'hui, on ne
+    refait aucun appel RSS (évite de marteler les flux à chaque exécution de l'horloge)."""
+    stockage.creer_source("digest-complet", "Flux", "https://complet.example/rss", thematique="Tech")
+    stockage.inserer_digest("digest-complet", "Déjà fait.", 1, thematique="Tech")
+
+    appele = {"fetch": False}
+    def _fetcher(url):
+        appele["fetch"] = True
+        return url
+    monkeypatch.setattr(digest.rss, "fetcher", _fetcher)
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-complet"])
+    assert resultat["digests_crees"] == 0
+    assert appele["fetch"] is False
