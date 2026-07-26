@@ -26,8 +26,6 @@ DB = os.getenv("TRANSFERTS_DB", "/data/transferts.db")
 DIR = Path(os.getenv("TRANSFERTS_DIR", "/data/fichiers"))
 TAILLE_MAX_OCTETS = int(os.getenv("TAILLE_MAX_OCTETS", str(20 * 1024 ** 3)))
 
-_SURCOUT_PAR_PARTIE = 28  # IV(12) + tag GCM(16) — même constante que encryption.ts
-
 
 def _conn() -> sqlite3.Connection:
     Path(DB).parent.mkdir(parents=True, exist_ok=True)
