@@ -103,3 +103,35 @@ def test_digest_expose_audio_url_via_lapi(monkeypatch):
     r = client.get(f"/digests/{d['id']}", headers=_entetes("main-iris"))
     assert r.json()["audio_url"] == "https://voix.example/episodes/y.mp3"
     assert r.json()["audio_duree"] == 12.0
+
+
+def test_creer_source_avec_thematique(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-thematique"),
+                    json={"nom": "Flux Tech", "url": "https://mt.example/rss", "thematique": "Tech"})
+    assert r.status_code == 201
+    assert r.json()["thematique"] == "Tech"
+
+
+def test_retagger_source(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-retag"),
+                    json={"nom": "Flux", "url": "https://mr.example/rss"})
+    source_id = r.json()["id"]
+
+    r = client.patch(f"/sources/{source_id}/thematique", headers=_entetes("main-retag"),
+                     json={"thematique": "Cosmétique"})
+    assert r.status_code == 200
+
+    r = client.get("/sources", headers=_entetes("main-retag"))
+    assert r.json()[0]["thematique"] == "Cosmétique"
+
+
+def test_retagger_source_dune_autre_personne_echoue(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-retag-a"),
+                    json={"nom": "Flux privé", "url": "https://mra.example/rss"})
+    source_id = r.json()["id"]
+    r = client.patch(f"/sources/{source_id}/thematique", headers=_entetes("main-retag-b"),
+                     json={"thematique": "Piraté"})
+    assert r.status_code == 404

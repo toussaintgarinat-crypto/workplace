@@ -73,6 +73,7 @@ def sante():
 class CreerSource(BaseModel):
     nom: str = Field(min_length=1)
     url: str = Field(min_length=1)
+    thematique: str = ""
 
 
 @app.get("/sources", tags=["sources"])
@@ -82,12 +83,25 @@ def lister_sources_route(tenant: str = Depends(tenant_actuel)):
 
 @app.post("/sources", tags=["sources"], status_code=201)
 def creer_source_route(body: CreerSource, tenant: str = Depends(tenant_actuel)):
-    return stockage.creer_source(tenant, body.nom, body.url)
+    return stockage.creer_source(tenant, body.nom, body.url, body.thematique)
 
 
 @app.delete("/sources/{source_id}", tags=["sources"])
 def supprimer_source_route(source_id: int, tenant: str = Depends(tenant_actuel)):
     ok = stockage.supprimer_source(tenant, source_id)
+    if not ok:
+        raise HTTPException(404, "Source introuvable.")
+    return {"ok": True}
+
+
+class RetaggerSource(BaseModel):
+    thematique: str = ""
+
+
+@app.patch("/sources/{source_id}/thematique", tags=["sources"])
+def retagger_source_route(source_id: int, body: RetaggerSource,
+                          tenant: str = Depends(tenant_actuel)):
+    ok = stockage.retagger_source(tenant, source_id, body.thematique)
     if not ok:
         raise HTTPException(404, "Source introuvable.")
     return {"ok": True}
