@@ -8,7 +8,7 @@
   "statut": "a_tester",
   "chemin_source": "~/Desktop/Workplace/briques/standard-telephonique",
   "port": 6190,
-  "url_sante": "http://host.docker.internal:6190/sante",
+  "url_sante": "http://192.168.1.188:6190/sante",
   "depends_on": [],
   "offre": [
     "repondeur_menu_vocal",

@@ -34,6 +34,18 @@ def enregistrer(db_path: str, *, option: str | None, audio_path: str, duree_s: f
         conn.close()
 
 
+def mettre_a_jour_texte(db_path: str, message_id: int, texte: str) -> None:
+    """Complète la transcription d'un message déjà enregistré (repli honnête : le
+    message existe dès la fin de l'enregistrement, la transcription peut arriver
+    après coup sans risquer de perdre le message si le worker est coupé entre-temps)."""
+    conn = _connexion(db_path)
+    try:
+        conn.execute("UPDATE messages SET texte = ? WHERE id = ?", (texte, message_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def lister(db_path: str, limite: int = 20) -> list[dict]:
     """Liste les messages, les plus récents d'abord. Liste vide si la DB n'existe pas
     encore (repli honnête — pas une erreur, juste « aucun message pour l'instant »)."""

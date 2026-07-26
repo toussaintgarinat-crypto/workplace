@@ -155,11 +155,19 @@ async def _gerer_appel(ctx: JobContext) -> None:
     audio_path = messages_dir / f"{uuid.uuid4()}.wav"
     audio_path.write_bytes(wav)
 
-    texte = await transcription_client.transcrire(wav)
-
+    # Sauvegarde immédiate (texte=None) AVANT la transcription/notification : la room
+    # LiveKit peut être fermée par le serveur quelques secondes après le raccroché de
+    # l'appelant (départ du participant SIP), ce qui coupe ce worker en plein vol. Le
+    # message ne doit pas dépendre d'étapes lentes (HTTP transcription/notification)
+    # pour exister — repli honnête, un message sans transcription vaut mieux qu'un
+    # message perdu.
     db_path = os.getenv("MESSAGES_DB", "/data/messages.db")
-    messages_store.enregistrer(db_path, option=choix, audio_path=str(audio_path),
-                               duree_s=duree_s, texte=texte)
+    message_id = messages_store.enregistrer(db_path, option=choix, audio_path=str(audio_path),
+                                            duree_s=duree_s, texte=None)
+
+    texte = await transcription_client.transcrire(wav)
+    if texte:
+        messages_store.mettre_a_jour_texte(db_path, message_id, texte)
 
     resume = texte if texte else "(transcription indisponible)"
     option_txt = choix if choix else "aucune (délai dépassé)"
