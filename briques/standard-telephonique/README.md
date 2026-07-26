@@ -43,7 +43,13 @@ au guest, vérifié via `lscpu | grep avx2`), séparée de la VM 103 pour aussi 
 service exposé au réseau (SIP = cible classique de brute-force/toll fraud) du reste du
 stack. Réseau LAN/mesh uniquement, pas d'exposition WAN (le vrai trunk OVH reste hors
 périmètre, voir plus bas). `standard-telephonique-api` (port 6190, capacité assistant)
-reste sur la VM 103 — elle ne touche pas au SIP, pas de raison de la déplacer.
+tourne **aussi** sur la VM 104, avec l'agent — les deux services partagent le volume
+Docker `standard_telephonique_data` (SQLite + fichiers audio), donc les séparer entre
+deux VMs les aurait rendus aveugles l'un à l'autre (erreur commise puis corrigée le
+2026-07-26 : l'API a d'abord tourné seule sur la VM 103 avec sa propre base vide, pendant
+que l'agent écrivait dans son propre volume sur la VM 104 — aucun message n'était
+visible). `manifest.json.url_sante` pointe donc vers `http://192.168.1.188:6190/sante`
+(plus `host.docker.internal`, qui supposait la co-location avec le Cœur sur la VM 103).
 
 Procédure de reconstruction complète : [`sip-stack/README.md`](../../sip-stack/README.md).
 Les deux fichiers `.env` (`sip-stack/roomkit-visio/.env` sur la VM 104 et le `.env` racine
@@ -51,8 +57,20 @@ de ce monorepo, sur les DEUX VMs) doivent porter la même valeur de clé/secret 
 (`LIVEKIT_API_KEY`/`_SECRET` côté sip-stack, `STANDARD_TEL_LIVEKIT_API_KEY`/`_SECRET` côté
 racine) — rien ne garantit aujourd'hui qu'ils restent synchronisés au-delà de la vigilance
 manuelle. Sur la VM 104, le `.env` racine doit aussi pointer `VOIX_URL`/`TRANSCRIPTION_URL`/
-`CONNEXION_URL` vers `http://192.168.1.89:<port>` (ces services restent sur la VM 103, le
-défaut `host.docker.internal` ne suffit plus une fois les deux VMs séparées).
+`CONNEXION_URL` vers `http://192.168.1.89:<port>` (ces services-là, eux, restent sur la
+VM 103 ; seuls api+agent de cette brique ont besoin d'être colocalisés).
+
+**Bug découvert et corrigé en testant (2026-07-26)** : après un raccroché, LiveKit ferme
+la room (départ du participant SIP) environ 20s après — si l'agent était encore en train
+de transcrire/notifier à ce moment, le job se faisait couper (`parent process shutdown`)
+avant d'avoir sauvegardé quoi que ce soit, message perdu. Fix : le message (audio+durée)
+est maintenant sauvegardé en base **immédiatement** après l'enregistrement, avant la
+transcription/notification (best-effort, mises à jour après coup si elles aboutissent) —
+voir `messages_store.mettre_a_jour_texte`. Vérifié par appel réel : le message survit
+maintenant même quand la room se ferme avant la fin de la transcription (`texte` reste
+`null` dans ce cas, mais le message existe). La transcription/notification elles-mêmes
+n'ont pas encore été observées aboutir dans la fenêtre de ~20s — reste à vérifier avec un
+appel où le répondeur reçoit moins de ~29s de message, ou à raccourcir le chemin critique.
 
 Pour tester avec un softphone (ex. Linphone), s'enregistrer sur `192.168.1.188:5060`
 (remplace l'ancienne IP `192.168.1.89` utilisée avant cette migration).

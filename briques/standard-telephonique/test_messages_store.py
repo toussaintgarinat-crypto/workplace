@@ -40,3 +40,15 @@ def test_lister_db_absente_renvoie_liste_vide():
     with tempfile.TemporaryDirectory() as tmp:
         db_path = str(Path(tmp) / "inexistant.db")
         assert messages_store.lister(db_path) == []
+
+
+def test_mettre_a_jour_texte():
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = str(Path(tmp) / "messages.db")
+        message_id = messages_store.enregistrer(db_path, option="2", audio_path="/data/audio/c.wav",
+                                                 duree_s=8.0, texte=None)
+
+        messages_store.mettre_a_jour_texte(db_path, message_id, "transcription arrivee apres coup")
+
+        messages = messages_store.lister(db_path)
+        assert messages[0]["texte"] == "transcription arrivee apres coup"
