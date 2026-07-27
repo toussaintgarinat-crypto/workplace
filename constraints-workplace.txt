@@ -28,6 +28,10 @@ httpx==0.28.1
 python-multipart==0.0.20
 pydantic==2.9.2
 uvicorn==0.34.0
+# starlette : sa version est DICTÉE par fastapi (0.115.6 exige >=0.40,<0.42). Trois briques
+# l'épinglaient à 0.38.6 et devenaient de ce fait non installables — ajouté aux contraintes
+# pour que l'audit le voie au lieu de le découvrir au moment d'un test.
+starlette==0.41.3
 
 # Auth & crypto — figées tôt car les libs shared d'auth (S120) en dépendront.
 python-jose==3.3.0
