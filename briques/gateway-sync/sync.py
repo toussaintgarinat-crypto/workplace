@@ -135,10 +135,15 @@ def synchroniser() -> dict:
             except Exception as e:  # noqa: BLE001
                 erreurs.append(f"retrait {nom} : {str(e)[:120]}")
 
+    # « inchangés » = ceux qui étaient DÉJÀ là et qu'on a laissés tels quels. Se calcule sur
+    # `a_ajouter` (l'écart constaté) et non sur `ajoutes` (l'écart appliqué) : sinon un ajout
+    # en échec se comptait comme un modèle en place, et le rapport annonçait « 12 inchangés »
+    # alors que les 12 ajouts venaient d'échouer — exactement ce qu'on veut voir.
+    inchanges = len(voulus) - len(a_ajouter)
     if erreurs:
         logger.warning("gateway-sync : %d erreur(s) — %s", len(erreurs), "; ".join(erreurs))
     logger.info("gateway-sync : %d ajouté(s), %d retiré(s), %d inchangé(s)",
-                len(ajoutes), len(retires), len(voulus) - len(ajoutes))
+                len(ajoutes), len(retires), inchanges)
 
     return {"statut": "ok", "ajoutes": ajoutes, "retires": retires,
-            "inchanges": len(voulus) - len(ajoutes), "erreurs": erreurs}
+            "inchanges": inchanges, "erreurs": erreurs}
