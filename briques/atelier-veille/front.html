@@ -168,12 +168,36 @@ async function chargerSources() {
           </button>
         </div>
         ${groupes[t].map(s => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
-            <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
-            <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);${s.enabled ? '' : 'opacity:.55'}">
+            <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}${s.enabled ? '' : ' <span style="color:var(--mut);font-size:.75rem">· éteinte</span>'}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
+            <div style="display:flex;gap:6px">
+              <button onclick="basculerSourceActive(${s.id}, ${!s.enabled})"
+                style="border:1px solid var(--line);background:transparent;color:${s.enabled ? 'var(--mut)' : 'var(--ok)'};border-radius:8px;padding:5px 10px;cursor:pointer">
+                ${s.enabled ? 'Éteindre' : 'Rallumer'}
+              </button>
+              <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
+            </div>
           </div>`).join('')}
       </div>`;
     }).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\'instant.</p>';
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function basculerSourceActive(sourceId, active) {
+  // Éteindre UNE source, sans mettre en pause toute sa thématique — et pouvoir la
+  // rallumer. Note : « Reprendre » sur la thématique rallume tout le groupe, y compris
+  // ce qui a été éteint ici.
+  const erreur = document.getElementById('erreur-sources');
+  erreur.textContent = '';
+  try {
+    const r = await fetch(`${API_BASE}/veille/sources/${sourceId}/actif`, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active}),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    await chargerSources();
   } catch (e) {
     erreur.textContent = String(e.message || e);
   }

@@ -111,6 +111,21 @@ def retagger_source_route(source_id: int, body: RetaggerSource,
     return {"ok": True}
 
 
+class BasculerSourceActive(BaseModel):
+    active: bool
+
+
+@app.patch("/sources/{source_id}/actif", tags=["sources"])
+def basculer_source_active_route(source_id: int, body: BasculerSourceActive,
+                                 tenant: str = Depends(tenant_actuel)):
+    """Allume/éteint UNE source (S203) — permet d'écarter un flux mort sans mettre en pause
+    toute sa thématique, et surtout de le rallumer ensuite."""
+    ok = stockage.basculer_source_active(tenant, source_id, body.active)
+    if not ok:
+        raise HTTPException(404, "Source introuvable.")
+    return {"ok": True, "active": body.active}
+
+
 @app.get("/thematiques", tags=["sources"])
 def lister_thematiques_route(tenant: str = Depends(tenant_actuel)):
     return stockage.lister_thematiques(tenant)

@@ -164,6 +164,50 @@ def test_retagger_source_dune_autre_personne_echoue(monkeypatch):
     assert r.status_code == 404
 
 
+def test_basculer_source_active_eteint_et_rallume(monkeypatch):
+    """S203 — préalable à toute extinction automatique : une source doit pouvoir être
+    éteinte SEULE, et surtout rallumée. Avant, `enabled` ne se pilotait qu'au niveau d'une
+    thématique entière."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-actif"),
+                    json={"nom": "Flux mort", "url": "https://mort.example/rss"})
+    source_id = r.json()["id"]
+    assert r.json()["enabled"] is True
+
+    r = client.patch(f"/sources/{source_id}/actif", headers=_entetes("main-actif"),
+                     json={"active": False})
+    assert r.status_code == 200
+    assert client.get("/sources", headers=_entetes("main-actif")).json()[0]["enabled"] is False
+
+    r = client.patch(f"/sources/{source_id}/actif", headers=_entetes("main-actif"),
+                     json={"active": True})
+    assert r.status_code == 200
+    assert client.get("/sources", headers=_entetes("main-actif")).json()[0]["enabled"] is True
+
+
+def test_basculer_source_active_dune_autre_personne_echoue(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-actif-a"),
+                    json={"nom": "Flux privé", "url": "https://maa.example/rss"})
+    source_id = r.json()["id"]
+    r = client.patch(f"/sources/{source_id}/actif", headers=_entetes("main-actif-b"),
+                     json={"active": False})
+    assert r.status_code == 404
+
+
+def test_source_eteinte_nest_plus_fetchee(monkeypatch):
+    """L'extinction doit avoir un effet RÉEL sur le pipeline, pas seulement dans l'affichage."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-actif-fetch"),
+                    json={"nom": "Flux", "url": "https://mfetch.example/rss"})
+    source_id = r.json()["id"]
+    assert stockage.lister_sources("perso:main-actif-fetch", actives_seulement=True)
+
+    client.patch(f"/sources/{source_id}/actif", headers=_entetes("main-actif-fetch"),
+                 json={"active": False})
+    assert stockage.lister_sources("perso:main-actif-fetch", actives_seulement=True) == []
+
+
 def test_generer_audio_global_digest_sans_audio_422(monkeypatch):
     monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
     d = stockage.inserer_digest("perso:main-audioglobal-1", "Résumé.", 1, thematique="Tech")
