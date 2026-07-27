@@ -338,7 +338,9 @@ async def executer_digest(body: ExecuterDigest | None = None):
     jeton = os.environ.get("VEILLE_INFO_KEY", "")
     entetes = {"Authorization": f"Bearer {jeton}"}
     try:
-        async with httpx.AsyncClient(timeout=60) as c:
+        # 300 s (et non 60) : la synthèse LLM du digest sur toutes les sources d'une thématique
+        # dépasse couramment la minute. Même palier que /veille/audio-global/generer.
+        async with httpx.AsyncClient(timeout=300) as c:
             r = await c.post(f"{VEILLE_INFO_URL}/digest/executer", headers=entetes,
                              json=body.model_dump() if body else None)
         corps = r.json()
