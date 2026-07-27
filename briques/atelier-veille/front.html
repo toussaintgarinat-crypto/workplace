@@ -86,6 +86,8 @@
   </div>
 </div>
 <script>
+const API_BASE = window.ATELIER_VEILLE_API_BASE || '';
+
 function ouvrirOnglet(nom) {
   for (const n of ['carte', 'sources', 'digests', 'audioglobal']) {
     document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
@@ -100,7 +102,7 @@ async function chargerConfig() {
   const erreur = document.getElementById('erreur-carte');
   erreur.textContent = '';
   try {
-    const r = await fetch('/config');
+    const r = await fetch(`${API_BASE}/config`);
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const cfg = await r.json();
     document.getElementById('geo-iframe').src = cfg.geo_url;
@@ -118,7 +120,7 @@ async function chargerSources() {
   const erreur = document.getElementById('erreur-sources');
   erreur.textContent = '';
   try {
-    const r = await fetch('/veille/sources');
+    const r = await fetch(`${API_BASE}/veille/sources`);
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const sources = await r.json();
     cible.innerHTML = sources.length ? sources.map(s => `
@@ -139,7 +141,7 @@ async function ajouterSource() {
   erreur.textContent = '';
   if (!nom || !url) { erreur.textContent = 'Nom et URL requis.'; return; }
   try {
-    const r = await fetch('/veille/sources', {
+    const r = await fetch(`${API_BASE}/veille/sources`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({nom, url, thematique})
     });
@@ -157,7 +159,7 @@ async function supprimerSource(id) {
   const erreur = document.getElementById('erreur-sources');
   erreur.textContent = '';
   try {
-    const r = await fetch(`/veille/sources/${id}`, {method: 'DELETE'});
+    const r = await fetch(`${API_BASE}/veille/sources/${id}`, {method: 'DELETE'});
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     chargerSources();
   } catch (e) {
@@ -170,7 +172,7 @@ async function chargerDigests() {
   const erreur = document.getElementById('erreur-digests');
   erreur.textContent = '';
   try {
-    const r = await fetch('/veille/digests');
+    const r = await fetch(`${API_BASE}/veille/digests`);
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const digests = await r.json();
     if (!digests.length) { cible.innerHTML = '<p style="color:var(--mut)">Aucun digest généré pour l\'instant.</p>'; return; }
@@ -195,7 +197,7 @@ async function genererDigest() {
   erreur.textContent = '';
   bouton.disabled = true;
   try {
-    const r = await fetch('/veille/digest/executer', {method: 'POST'});
+    const r = await fetch(`${API_BASE}/veille/digest/executer`, {method: 'POST'});
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     await chargerDigests();
   } catch (e) {
@@ -211,7 +213,7 @@ let ORDRE_CHOISI = [];
 async function chargerChoixDigests() {
   const box = document.getElementById('choix-digests');
   try {
-    const r = await fetch('/veille/digests');
+    const r = await fetch(`${API_BASE}/veille/digests`);
     const digests = await r.json();
     DIGESTS_DISPONIBLES = digests.filter(d => d.audio_url);
     if (!DIGESTS_DISPONIBLES.length) {
@@ -240,14 +242,14 @@ async function genererAudioGlobal() {
   if (!ORDRE_CHOISI.length) { erreur.textContent = 'Choisis au moins un digest.'; return; }
   bouton.disabled = true;
   try {
-    const r = await fetch('/veille/audio-global/generer', {
+    const r = await fetch(`${API_BASE}/veille/audio-global/generer`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ordre_thematiques: ORDRE_CHOISI})
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const audio = await r.json();
     document.getElementById('lecteur-audioglobal').innerHTML = `
-      <audio controls src="/veille/audio-global/${audio.jeton}.mp3" style="width:100%"></audio>
+      <audio controls src="${API_BASE}/veille/audio-global/${audio.jeton}.mp3" style="width:100%"></audio>
       <div class="row" style="margin-top:8px;gap:8px">
         <input id="destinataires-audioglobal" placeholder="Destinataires (séparés par des virgules)" style="flex:2;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
         <input id="sujet-audioglobal" placeholder="Sujet (optionnel)" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
@@ -270,7 +272,7 @@ async function envoyerAudioGlobal(audioId) {
   if (!dest.length) { resultat.textContent = 'Indique au moins un destinataire.'; return; }
   resultat.textContent = 'Envoi…';
   try {
-    const r = await fetch(`/veille/audio-global/${audioId}/envoyer`, {
+    const r = await fetch(`${API_BASE}/veille/audio-global/${audioId}/envoyer`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({destinataires: dest, sujet: sujet || undefined})
     });
@@ -289,12 +291,12 @@ async function envoyerAudioGlobal(audioId) {
 async function chargerHistoriqueAudioGlobal() {
   const box = document.getElementById('historique-audioglobal');
   try {
-    const r = await fetch('/veille/audio-global');
+    const r = await fetch(`${API_BASE}/veille/audio-global`);
     const liste = await r.json();
     box.innerHTML = liste.length ? liste.map(a => `
       <div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:.85rem">
         <b>${esc(a.cree_le.slice(0, 10))}</b> — ${a.ordre_thematiques.length} digest(s)
-        <audio controls src="/veille/audio-global/${a.jeton}.mp3" style="display:block;margin-top:4px;width:100%"></audio>
+        <audio controls src="${API_BASE}/veille/audio-global/${a.jeton}.mp3" style="display:block;margin-top:4px;width:100%"></audio>
       </div>`).join('') : '<p style="color:var(--mut)">Aucun audio global généré pour l\'instant.</p>';
   } catch (e) {
     box.innerHTML = '<p style="color:var(--bad)">' + esc(e.message || e) + '</p>';
