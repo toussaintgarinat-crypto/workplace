@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS sources (
     url TEXT NOT NULL,
     thematique TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    echecs_consecutifs INTEGER NOT NULL DEFAULT 0,
+    dernier_echec TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sources_user ON sources(user_id);
 
@@ -135,11 +137,22 @@ def _migrer_thematiques(c: sqlite3.Connection) -> None:
         c.execute("PRAGMA legacy_alter_table = OFF")
 
 
+def _migrer_echecs(c: sqlite3.Connection) -> None:
+    """Met à niveau une base créée AVANT le suivi des sources en panne. No-op sur une base
+    déjà à jour (`_SCHEMA` crée les colonnes directement)."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(sources)").fetchall()}
+    if "echecs_consecutifs" not in cols:
+        c.execute("ALTER TABLE sources ADD COLUMN echecs_consecutifs INTEGER NOT NULL DEFAULT 0")
+    if "dernier_echec" not in cols:
+        c.execute("ALTER TABLE sources ADD COLUMN dernier_echec TEXT")
+
+
 def init() -> None:
     os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
     with _conn() as c:
         c.executescript(_SCHEMA)
         _migrer_thematiques(c)
+        _migrer_echecs(c)
 
 
 init()  # schéma prêt dès l'import (robuste même sous TestClient)
@@ -148,7 +161,8 @@ init()  # schéma prêt dès l'import (robuste même sous TestClient)
 # ── Sources ───────────────────────────────────────────────────
 def _source_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nom": r["nom"], "url": r["url"], "thematique": r["thematique"],
-            "enabled": bool(r["enabled"]), "created_at": r["created_at"]}
+            "enabled": bool(r["enabled"]), "created_at": r["created_at"],
+            "echecs_consecutifs": r["echecs_consecutifs"], "dernier_echec": r["dernier_echec"]}
 
 
 def creer_source(user_id: str, nom: str, url: str, thematique: str = "") -> dict:
@@ -175,6 +189,30 @@ def supprimer_source(user_id: str, source_id: int) -> bool:
     with _conn() as c:
         cur = c.execute("DELETE FROM sources WHERE id = ? AND user_id = ?", (source_id, user_id))
     return cur.rowcount > 0
+
+
+def enregistrer_echec_source(source_id: int, message: str) -> int:
+    """Incrémente le compteur d'échecs CONSÉCUTIFS de la source et renvoie sa nouvelle valeur.
+
+    Sert à rendre visibles les flux morts : un feed qui répond 404 depuis des semaines était
+    jusqu'ici retenté à chaque digest, ne remontait jamais rien, et n'existait que sous forme
+    d'un `logger.warning` que personne ne lit. On ne désactive PAS la source pour autant :
+    `enabled` est piloté par la pause/reprise d'une THÉMATIQUE ENTIÈRE
+    (`basculer_pause_thematique`), qui écraserait la décision — et aucune route ne permet de
+    réactiver une source seule. C'est donc à l'humain de trancher, depuis l'atelier."""
+    with _conn() as c:
+        c.execute("UPDATE sources SET echecs_consecutifs = echecs_consecutifs + 1, "
+                  "dernier_echec = ? WHERE id = ?", (message[:300], source_id))
+        row = c.execute("SELECT echecs_consecutifs FROM sources WHERE id = ?",
+                        (source_id,)).fetchone()
+    return row["echecs_consecutifs"] if row else 0
+
+
+def reinitialiser_echecs_source(source_id: int) -> None:
+    """Un fetch réussi efface l'ardoise : le compteur mesure les échecs CONSÉCUTIFS."""
+    with _conn() as c:
+        c.execute("UPDATE sources SET echecs_consecutifs = 0, dernier_echec = NULL "
+                  "WHERE id = ? AND echecs_consecutifs > 0", (source_id,))
 
 
 def lister_user_ids_actifs() -> list[str]:

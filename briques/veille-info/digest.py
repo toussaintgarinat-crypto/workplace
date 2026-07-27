@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 VOIX_URL = os.getenv("VOIX_URL", "http://host.docker.internal:5985")
 
+# Nombre de fetchs consécutifs en échec au-delà duquel une source est considérée MORTE
+# (flux supprimé, domaine expiré, feed passé en 405). Le digest tournant une fois par jour,
+# 5 ≈ cinq jours : assez pour ne pas s'alarmer d'une coupure réseau passagère.
+_SEUIL_SOURCE_EN_PANNE = int(os.getenv("VEILLE_SEUIL_SOURCE_EN_PANNE", "5"))
+
 _SYSTEM = ("Tu es un assistant de veille informationnelle. Résume en français, en quelques "
           "phrases synthétiques, les nouveaux articles listés ci-dessous. Regroupe par thème "
           "si pertinent, cite les points notables, reste factuel et concis.")
@@ -97,9 +102,19 @@ def _traiter_utilisateur(user_id: str, thematique_forcee: str | None = None) -> 
             texte = rss.fetcher(source["url"])
             items = rss.parser_items(texte)
         except Exception as e:  # noqa: BLE001 — une source en échec ne bloque pas les autres
-            logger.warning("Veille-info fetch source %r (user=%s) : %s",
-                          source["nom"], user_id, e)
+            echecs = stockage.enregistrer_echec_source(source["id"], str(e))
+            # Au-delà du seuil, le flux est mort (404/405 depuis des semaines) : on garde la
+            # trace en base — l'atelier l'affiche — mais on cesse de crier à chaque digest,
+            # sinon un feed disparu noie les vrais incidents dans les logs.
+            if echecs == _SEUIL_SOURCE_EN_PANNE:
+                logger.error("Veille-info source %r (user=%s) en panne depuis %d fetchs "
+                             "consécutifs — à corriger ou supprimer dans l'atelier : %s",
+                             source["nom"], user_id, echecs, e)
+            elif echecs < _SEUIL_SOURCE_EN_PANNE:
+                logger.warning("Veille-info fetch source %r (user=%s) : %s",
+                               source["nom"], user_id, e)
             continue
+        stockage.reinitialiser_echecs_source(source["id"])
         for item in items:
             stockage.inserer_article(user_id, source["id"], item["titre"], item["url"],
                                      item["published_at"])

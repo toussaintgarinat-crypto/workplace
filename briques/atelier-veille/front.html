@@ -122,6 +122,21 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Une source qui échoue en boucle (flux supprimé, domaine expiré, feed passé en 405) ne
+// remonte plus rien et n'existait jusqu'ici que sous forme d'une ligne de log. Le badge la
+// rend visible ICI, seul endroit d'où on peut la corriger ou la retirer. Seuil d'alerte
+// aligné sur digest.py::_SEUIL_SOURCE_EN_PANNE.
+const SEUIL_SOURCE_EN_PANNE = 5;
+
+function badgeEchecs(s) {
+  const n = s.echecs_consecutifs || 0;
+  if (!n) return '';
+  const mort = n >= SEUIL_SOURCE_EN_PANNE;
+  const couleur = mort ? 'var(--bad)' : 'var(--mut)';
+  const libelle = mort ? `en panne (${n} échecs)` : `${n} échec${n > 1 ? 's' : ''}`;
+  return ` <span title="${esc(s.dernier_echec || '')}" style="color:${couleur};font-size:.75rem;border:1px solid ${couleur};border-radius:6px;padding:1px 6px;margin-left:6px">${libelle}</span>`;
+}
+
 async function chargerSources() {
   const cible = document.getElementById('liste-sources');
   const erreur = document.getElementById('erreur-sources');
@@ -154,7 +169,7 @@ async function chargerSources() {
         </div>
         ${groupes[t].map(s => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
-            <div><b>${esc(s.nom)}</b><br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
+            <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
             <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
           </div>`).join('')}
       </div>`;
