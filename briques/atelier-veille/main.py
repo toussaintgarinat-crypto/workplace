@@ -109,18 +109,28 @@ def sante():
 
 
 @app.get("/config", tags=["système"])
-def config(request: Request):
+def config(request: Request, x_forwarded_host: Optional[str] = Header(None),
+          x_forwarded_proto: Optional[str] = Header(None)):
     """URL publique (navigateur) de la carte geo — injectée dans l'onglet Carte du front.
 
     Dérivée par défaut du scheme + hôte de LA REQUÊTE COURANTE (celle que le navigateur
     vient d'utiliser pour joindre l'atelier), pour rester juste en LAN comme sur le mesh
-    sans repointer une IP figée. `GEO_PUBLIC_URL` reste une surcharge possible."""
+    sans repointer une IP figée. `GEO_PUBLIC_URL` reste une surcharge possible.
+
+    Derrière le proxy du Cœur (`core/routers/atelier_veille_proxy.py`), la requête HTTP
+    reçue ICI vient du Cœur lui-même (httpx serveur→serveur) : son en-tête `Host` vaut
+    l'hôte INTERNE du conteneur atelier-veille, jamais celui vu par le navigateur. Le
+    proxy forwarde donc `X-Forwarded-Host`/`X-Forwarded-Proto` (motif déjà utilisé par
+    `core/routers/dashboard.py::u()` pour la même raison) — on les préfère s'ils sont
+    présents, sinon on retombe sur `Host` brut (accès direct, LAN, inchangé)."""
     if GEO_PUBLIC_URL:
         return {"geo_url": GEO_PUBLIC_URL}
-    hote = _hote_sans_port(request.headers.get("host", "localhost"))
+    hote_brut = x_forwarded_host or request.headers.get("host", "localhost")
+    scheme = x_forwarded_proto or request.url.scheme
+    hote = _hote_sans_port(hote_brut)
     if MESH_HOST and hote == MESH_HOST:
         return {"geo_url": f"https://{hote}:{GEO_PORT + MESH_PORT_OFFSET}/"}
-    return {"geo_url": f"{request.url.scheme}://{hote}:{GEO_PORT}/"}
+    return {"geo_url": f"{scheme}://{hote}:{GEO_PORT}/"}
 
 
 @app.get("/veille/sources", tags=["veille"])

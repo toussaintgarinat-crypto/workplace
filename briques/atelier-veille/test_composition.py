@@ -324,3 +324,27 @@ def test_fichier_audio_global_injoignable_renvoie_502(monkeypatch):
     r = client.get("/veille/audio-global/jeton-abc.mp3")
     assert r.status_code == 502
     assert "veille-info" in r.json()["detail"]
+
+
+# --- config (GET /config) — S200 : proxy du Cœur change l'en-tête Host vu ici ---
+
+def test_config_prefere_x_forwarded_host():
+    """Derrière le proxy du Cœur, request.headers['host'] vaut l'hôte du conteneur
+    atelier-veille lui-même (celui que httpx a appelé) — pas l'hôte vu par le navigateur.
+    X-Forwarded-Host/X-Forwarded-Proto (posés par le proxy, motif dashboard.py) doivent
+    primer pour que l'URL de la carte reste juste."""
+    r = client.get("/config", headers={
+        "Host": "atelier-veille:6130",
+        "X-Forwarded-Host": "workplaceagenda.duckdns.org",
+        "X-Forwarded-Proto": "https",
+    })
+    assert r.status_code == 200
+    assert r.json()["geo_url"].startswith("https://workplaceagenda.duckdns.org:")
+
+
+def test_config_repli_sur_host_sans_forwarded():
+    """Accès direct (LAN, sans passer par le Cœur) : comportement historique inchangé,
+    aucun en-tête X-Forwarded-* — on dérive toujours de Host."""
+    r = client.get("/config", headers={"Host": "192.168.1.89:6130"})
+    assert r.status_code == 200
+    assert "192.168.1.89" in r.json()["geo_url"]
