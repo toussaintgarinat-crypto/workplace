@@ -7,7 +7,13 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
+@router.get("/sante")
 async def health():
+    """Santé de la brique, servie sur DEUX chemins (S207).
+
+    `/sante` est la convention du parc ; `/health` est conservé car le healthcheck Docker et
+    le manifest pointent dessus — retirer l'ancien chemin casserait le conteneur.
+    """
     db_ok = False
     try:
         async with AsyncSessionLocal() as session:

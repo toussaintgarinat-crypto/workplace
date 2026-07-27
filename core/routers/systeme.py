@@ -21,7 +21,15 @@ router = APIRouter()
 
 
 @router.get("/health", tags=["système"])
+@router.get("/sante", tags=["système"])
 def health():
+    """Santé du Cœur, servie sur DEUX chemins (S207).
+
+    `/sante` est la convention du parc — 35 briques sur 38 la suivent — mais le Cœur ne
+    répondait qu'à `/health`, si bien qu'une sonde écrite de bonne foi tombait à côté et le
+    croyait muet. L'ancien chemin est conservé, jamais retiré : les healthchecks Docker et
+    `oria-stack` pointent dessus, une bascule sèche casserait les conteneurs.
+    """
     return {"statut": "ok", "version": "0.2.0", "briques_chargees": len(registre.briques)}
 
 

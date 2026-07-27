@@ -81,9 +81,12 @@ for nom in "${briques[@]}"; do
         apt-get update -qq >/dev/null 2>&1 || exit 3
         apt-get install -y -qq --no-install-recommends \$APT_PAQUETS >/dev/null 2>&1 || exit 3
       fi
-      pip install --quiet --disable-pip-version-check $SOCLE 2>&1 | grep -iE '^ERROR' && exit 3
-      [ -f requirements.txt ] && { pip install --quiet --disable-pip-version-check -r requirements.txt 2>&1 | grep -iE '^ERROR' && exit 3; }
-      [ -f requirements-dev.txt ] && { pip install --quiet --disable-pip-version-check -r requirements-dev.txt 2>&1 | grep -iE '^ERROR' && exit 3; }
+      # Code de retour de pip, et non un grep sur « ^ERROR » : pip préfixe ainsi de simples
+      # AVERTISSEMENTS de résolution, ce qui classait en ENV des briques parfaitement
+      # installées (vision, audit-fichiers).
+      pip install --quiet --disable-pip-version-check $SOCLE >/dev/null 2>&1 || exit 3
+      [ -f requirements.txt ] && { pip install --quiet --disable-pip-version-check -r requirements.txt >/dev/null 2>&1 || exit 3; }
+      [ -f requirements-dev.txt ] && { pip install --quiet --disable-pip-version-check -r requirements-dev.txt >/dev/null 2>&1 || exit 3; }
       # Le code de sortie doit être celui de PYTEST, pas celui du \`tail\` qui le suit :
       # sans cette précaution le rapport annonçait « au vert » des briques dont la collecte
       # échouait — soit très exactement le défaut que ce filet est censé supprimer.
