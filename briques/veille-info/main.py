@@ -117,13 +117,14 @@ def lister_thematiques_route(tenant: str = Depends(tenant_actuel)):
 
 
 class BasculerPauseThematique(BaseModel):
+    thematique: str
     en_pause: bool
 
 
-@app.patch("/thematiques/{thematique}/pause", tags=["sources"])
-def basculer_pause_thematique_route(thematique: str, body: BasculerPauseThematique,
+@app.patch("/thematiques/pause", tags=["sources"])
+def basculer_pause_thematique_route(body: BasculerPauseThematique,
                                     tenant: str = Depends(tenant_actuel)):
-    n = stockage.basculer_pause_thematique(tenant, thematique, body.en_pause)
+    n = stockage.basculer_pause_thematique(tenant, body.thematique, body.en_pause)
     if n == 0:
         raise HTTPException(404, "Thématique introuvable.")
     return {"ok": True, "nb_sources": n}

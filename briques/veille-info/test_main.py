@@ -225,7 +225,7 @@ def test_patch_pause_thematique(monkeypatch):
     monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
     client.post("/sources", headers=_entetes("main-pause-bob"),
                json={"nom": "Flux B", "url": "https://b4.example/rss", "thematique": "Tech"})
-    r = client.patch("/thematiques/Tech/pause", json={"en_pause": True},
+    r = client.patch("/thematiques/pause", json={"thematique": "Tech", "en_pause": True},
                      headers=_entetes("main-pause-bob"))
     assert r.status_code == 200
     assert r.json() == {"ok": True, "nb_sources": 1}
@@ -236,6 +236,25 @@ def test_patch_pause_thematique(monkeypatch):
 
 def test_patch_pause_thematique_inexistante_404(monkeypatch):
     monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
-    r = client.patch("/thematiques/Inexistante/pause", json={"en_pause": True},
+    r = client.patch("/thematiques/pause", json={"thematique": "Inexistante", "en_pause": True},
                      headers=_entetes("main-pause-carla"))
     assert r.status_code == 404
+
+
+def test_patch_pause_thematique_par_defaut_vide(monkeypatch):
+    """Régression : la thématique par défaut (chaîne vide) doit pouvoir être mise en pause.
+
+    Avant le fix, la route était /thematiques/{thematique}/pause : Starlette exige au
+    moins 1 caractère dans {thematique}, donc /thematiques//pause (thematique='')
+    faisait 404 et le bouton pause de la thématique "Général" était mort.
+    """
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    client.post("/sources", headers=_entetes("main-pause-defaut"),
+               json={"nom": "Flux sans thématique", "url": "https://sansthematique.example/rss"})
+    r = client.patch("/thematiques/pause", json={"thematique": "", "en_pause": True},
+                     headers=_entetes("main-pause-defaut"))
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "nb_sources": 1}
+
+    corps = client.get("/thematiques", headers=_entetes("main-pause-defaut")).json()
+    assert next(t for t in corps if t["thematique"] == "")["en_pause"] is True

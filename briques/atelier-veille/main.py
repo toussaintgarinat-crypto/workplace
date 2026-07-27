@@ -219,6 +219,7 @@ async def retagger_source(source_id: int, body: RetaggerSource,
 
 
 class BasculerPauseThematique(BaseModel):
+    thematique: str
     en_pause: bool
 
 
@@ -238,14 +239,14 @@ async def lister_thematiques(x_user_id: Optional[str] = Header(None),
     return corps
 
 
-@app.patch("/veille/thematiques/{thematique}/pause", tags=["veille"])
-async def basculer_pause_thematique(thematique: str, body: BasculerPauseThematique,
+@app.patch("/veille/thematiques/pause", tags=["veille"])
+async def basculer_pause_thematique(body: BasculerPauseThematique,
                                     x_user_id: Optional[str] = Header(None),
                                     x_api_key: Optional[str] = Header(None)):
     entetes = _entetes_aval(x_user_id, x_api_key)
     try:
         async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.patch(f"{VEILLE_INFO_URL}/thematiques/{thematique}/pause",
+            r = await c.patch(f"{VEILLE_INFO_URL}/thematiques/pause",
                               headers=entetes, json=body.model_dump())
         corps = r.json()
     except Exception as e:  # noqa: BLE001

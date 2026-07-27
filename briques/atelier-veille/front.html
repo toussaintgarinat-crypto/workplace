@@ -161,9 +161,9 @@ async function basculerPauseThematique(thematique, enPause) {
   const erreur = document.getElementById('erreur-sources');
   erreur.textContent = '';
   try {
-    const r = await fetch(`${API_BASE}/veille/thematiques/${encodeURIComponent(thematique)}/pause`, {
+    const r = await fetch(`${API_BASE}/veille/thematiques/pause`, {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({en_pause: enPause}),
+      body: JSON.stringify({thematique, en_pause: enPause}),
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     await chargerSources();
