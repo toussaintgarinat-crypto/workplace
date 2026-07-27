@@ -1,4 +1,8 @@
 -r requirements.txt
+# S206 : les tests de `memory/backend/tests/` importent le backend (sqlalchemy, asyncpg…),
+# dont les dépendances vivent dans un requirements séparé. Sans cette ligne, leur conftest
+# échouait à l'import et toute la suite de la brique était perdue.
+-r memory/backend/requirements.txt
 pytest==8.3.3
 pytest-asyncio==0.24.0
-respx==0.21.1
+respx==0.22.0  # 0.21 ne supporte pas httpx 0.28 (aligné S205) — même version que forge
