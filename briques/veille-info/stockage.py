@@ -198,6 +198,29 @@ def retagger_source(user_id: str, source_id: int, thematique: str) -> bool:
     return cur.rowcount > 0
 
 
+def lister_thematiques(user_id: str) -> list[dict]:
+    """Regroupe les sources de `user_id` par thématique. `en_pause` vaut True quand AUCUNE
+    source du groupe n'est active — cohérent avec `thematiques_actives()` (S199), qui
+    inclut une thématique dès qu'UNE seule de ses sources est active."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT thematique, COUNT(*) AS nb_sources, SUM(enabled) AS nb_actives "
+            "FROM sources WHERE user_id = ? GROUP BY thematique", (user_id,)).fetchall()
+    return [{"thematique": r["thematique"], "nb_sources": r["nb_sources"],
+            "en_pause": (r["nb_actives"] or 0) == 0} for r in rows]
+
+
+def basculer_pause_thematique(user_id: str, thematique: str, en_pause: bool) -> int:
+    """Met en pause (enabled=0) ou reprend (enabled=1) TOUTES les sources de cette
+    thématique pour cet utilisateur. Renvoie le nombre de sources affectées (0 = thématique
+    inconnue pour cet utilisateur)."""
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE sources SET enabled = ? WHERE user_id = ? AND thematique = ?",
+            (0 if en_pause else 1, user_id, thematique))
+    return cur.rowcount
+
+
 # ── Articles ──────────────────────────────────────────────────
 def inserer_article(user_id: str, source_id: int, titre: str, url: str,
                     published_at: str) -> bool:

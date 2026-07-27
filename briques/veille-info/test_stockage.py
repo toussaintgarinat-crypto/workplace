@@ -239,3 +239,46 @@ def test_migration_ajoute_thematique_sur_digests_existant(tmp_path, monkeypatch)
     assert violations == [], (
         "digest_audio doit référencer la table `digests` vivante, pas une `digests_old` "
         f"droppée pendant la migration : {violations}")
+
+
+def test_lister_thematiques_regroupe_par_thematique():
+    stockage.creer_source("pause-alice", "Flux A", "https://a.example/rss", thematique="Tech")
+    stockage.creer_source("pause-alice", "Flux B", "https://b.example/rss", thematique="Tech")
+    stockage.creer_source("pause-alice", "Flux C", "https://c.example/rss", thematique="Cuisine")
+    resultat = stockage.lister_thematiques("pause-alice")
+    par_nom = {r["thematique"]: r for r in resultat}
+    assert par_nom["Tech"]["nb_sources"] == 2
+    assert par_nom["Tech"]["en_pause"] is False
+    assert par_nom["Cuisine"]["nb_sources"] == 1
+    assert par_nom["Cuisine"]["en_pause"] is False
+
+
+def test_basculer_pause_desactive_toutes_les_sources_de_la_thematique():
+    stockage.creer_source("pause-bob", "Flux A", "https://a2.example/rss", thematique="Tech")
+    stockage.creer_source("pause-bob", "Flux B", "https://b2.example/rss", thematique="Tech")
+    stockage.creer_source("pause-bob", "Flux C", "https://c2.example/rss", thematique="Cuisine")
+
+    n = stockage.basculer_pause_thematique("pause-bob", "Tech", en_pause=True)
+    assert n == 2
+
+    resultat = stockage.lister_thematiques("pause-bob")
+    par_nom = {r["thematique"]: r for r in resultat}
+    assert par_nom["Tech"]["en_pause"] is True
+    assert par_nom["Cuisine"]["en_pause"] is False
+    # thematiques_actives ne renvoie plus "Tech" : c'est CE filtre qui fait office de pause
+    # côté pipeline (digest.py) — aucune modif de digest.py nécessaire.
+    assert "Tech" not in stockage.thematiques_actives("pause-bob")
+    assert "Cuisine" in stockage.thematiques_actives("pause-bob")
+
+
+def test_basculer_pause_reprendre():
+    stockage.creer_source("pause-carla", "Flux A", "https://a3.example/rss", thematique="Tech")
+    stockage.basculer_pause_thematique("pause-carla", "Tech", en_pause=True)
+    n = stockage.basculer_pause_thematique("pause-carla", "Tech", en_pause=False)
+    assert n == 1
+    assert "Tech" in stockage.thematiques_actives("pause-carla")
+
+
+def test_basculer_pause_thematique_inexistante_renvoie_zero():
+    n = stockage.basculer_pause_thematique("pause-dan", "Inexistante", en_pause=True)
+    assert n == 0
