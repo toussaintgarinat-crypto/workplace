@@ -79,7 +79,7 @@ def test_lire_digest_dune_autre_personne_404(monkeypatch):
 
 def test_digest_executer_ouvert_si_pas_de_cle_configuree(monkeypatch):
     monkeypatch.setattr(main.digest, "executer_digest_quotidien",
-                        lambda: {"utilisateurs_traites": 0, "digests_crees": 0})
+                        lambda thematique=None: {"utilisateurs_traites": 0, "digests_crees": 0})
     r = client.post("/digest/executer")
     assert r.status_code == 200
     assert "utilisateurs_traites" in r.json()
@@ -87,12 +87,39 @@ def test_digest_executer_ouvert_si_pas_de_cle_configuree(monkeypatch):
 
 def test_digest_executer_gate_si_cle_configuree(monkeypatch):
     monkeypatch.setattr(main.digest, "executer_digest_quotidien",
-                        lambda: {"utilisateurs_traites": 0, "digests_crees": 0})
+                        lambda thematique=None: {"utilisateurs_traites": 0, "digests_crees": 0})
     monkeypatch.setenv("VEILLE_INFO_KEY", "secret-horloge")
     r = client.post("/digest/executer")
     assert r.status_code == 401
     r = client.post("/digest/executer", headers={"Authorization": "Bearer secret-horloge"})
     assert r.status_code == 200
+
+
+def test_digest_executer_relaie_la_thematique_au_pipeline(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    captes = {}
+    def _executer(thematique=None):
+        captes["thematique"] = thematique
+        return {"utilisateurs_traites": 1, "digests_crees": 1}
+    monkeypatch.setattr(main.digest, "executer_digest_quotidien", _executer)
+
+    r = client.post("/digest/executer", headers={"Authorization": "Bearer cle-coeur"},
+                    json={"thematique": "Tech"})
+    assert r.status_code == 200
+    assert captes["thematique"] == "Tech"
+
+
+def test_digest_executer_sans_corps_passe_thematique_none(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    captes = {}
+    def _executer(thematique=None):
+        captes["thematique"] = thematique
+        return {"utilisateurs_traites": 0, "digests_crees": 0}
+    monkeypatch.setattr(main.digest, "executer_digest_quotidien", _executer)
+
+    r = client.post("/digest/executer", headers={"Authorization": "Bearer cle-coeur"})
+    assert r.status_code == 200
+    assert captes["thematique"] is None
 
 
 def test_digest_expose_audio_url_via_lapi(monkeypatch):

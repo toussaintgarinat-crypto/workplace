@@ -221,6 +221,11 @@ def generer_et_envoyer_audio_global_route(body: GenererEtEnvoyerAudioGlobal, req
     return {**audio, "envoi": envoi}
 
 
+class ExecuterDigestBody(BaseModel):
+    thematique: str | None = None
+
+
 @app.post("/digest/executer", tags=["digest"])
-def executer_digest_route(_: None = Depends(verifier_cle_horloge)):
-    return digest.executer_digest_quotidien()
+def executer_digest_route(body: ExecuterDigestBody | None = None,
+                          _: None = Depends(verifier_cle_horloge)):
+    return digest.executer_digest_quotidien(thematique=body.thematique if body else None)
