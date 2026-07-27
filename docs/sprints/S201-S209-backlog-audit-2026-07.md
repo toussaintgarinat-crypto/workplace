@@ -1,5 +1,24 @@
 # S201 → S209 — Backlog issu de l'audit du 2026-07-27
 
+> **✅ TOUS EXÉCUTÉS le 2026-07-27** — commits `2c9b3b2` (S201), `710dc72`+`8085fcd` (S202),
+> `0c00745`+`f85ec01` (S203), `b6b47bd` (S204), `9b9b63b`+`3f43558` (S205/S206), `01255ef`
+> (S207), `74135ed` (S208), `7bbc699` (S209).
+>
+> **Ce que l'exécution a corrigé dans ce document :**
+> - **L'ordre S205 → S206 était le mauvais.** Le blocage de S205 (« wheels qui ne compilent
+>   pas ») venait de Python 3.14 **en local**, alors que les conteneurs tournent en 3.12/3.13.
+>   Tester en conteneur débloquait donc S206 tout seul, et fournissait le filet nécessaire pour
+>   bumper les dépendances en sécurité. S206 a été fait en premier.
+> - **S208 était mal décrit.** « Extraction par domaine » supposait un monolithe de logique ;
+>   `dashboard.py` ne contient qu'UNE route et 3460 lignes de HTML embarqué. Le geste juste
+>   était de sortir le gabarit dans un fichier, pas de découper des domaines.
+> - **S205 cachait un défaut plus grave que ses 29 écarts** : le regex de `audit_deps.py`
+>   ignorait les extras pip, donc 23 briques sur 38 échappaient à l'audit sans que rien ne le
+>   signale. Le compte réel était 44.
+>
+> Le document ci-dessous est conservé **tel qu'écrit avant exécution**, pour garder trace de
+> ce qui avait été anticipé — et de ce qui ne l'avait pas été.
+
 Neuf sprints qui soldent la dette relevée pendant le tour de la solution du 2026-07-27.
 Trois problèmes trouvés ce jour-là (timeout du digest, modèles gratuits figés, sources RSS
 mortes) ont été corrigés et déployés à chaud — commits `1d58233`, `eee78cb`, `f16dabe`. Ce
