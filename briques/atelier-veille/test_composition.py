@@ -77,7 +77,9 @@ def test_creer_source_proxifie_le_corps(monkeypatch):
     r = client.post("/veille/sources", json={"nom": "Flux B", "url": "https://b.example/rss"})
     assert r.status_code == 201
     _, _, _, corps = Faux.dernier_appel
-    assert corps == {"nom": "Flux B", "url": "https://b.example/rss"}
+    # `thematique` a un défaut vide ("") dans le modèle CreerSource depuis S199 : le proxy
+    # le relaie toujours, même quand l'appelant ne l'a pas fourni.
+    assert corps == {"nom": "Flux B", "url": "https://b.example/rss", "thematique": ""}
 
 
 def test_supprimer_source_proxifie(monkeypatch):
