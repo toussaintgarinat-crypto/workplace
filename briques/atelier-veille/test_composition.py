@@ -167,6 +167,21 @@ def test_executer_digest_refuse_relaie_lerreur(monkeypatch):
     assert r.status_code == 401
 
 
+def test_executer_digest_relaie_la_thematique_choisie(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "jeton-horloge")
+    import importlib
+    importlib.reload(M)
+    Faux = _client_json({"utilisateurs_traites": 1, "digests_crees": 1})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+
+    r = TestClient(M.app).post("/veille/digest/executer", json={"thematique": "Tech"})
+    assert r.status_code == 200
+    _, url, headers, corps = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/digest/executer"
+    assert headers == {"Authorization": "Bearer jeton-horloge"}
+    assert corps == {"thematique": "Tech"}
+
+
 # --- retagger_source (PATCH /veille/sources/{id}/thematique) — S199 ---
 
 def test_retagger_source_relaie_lidentite_recue(monkeypatch):
