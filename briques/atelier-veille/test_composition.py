@@ -203,6 +203,37 @@ def test_retagger_source_injoignable_renvoie_502(monkeypatch):
     assert "veille-info" in r.json()["detail"]
 
 
+# --- pause par thématique (GET /veille/thematiques, PATCH .../pause) ---
+
+def test_lister_thematiques_proxifie_vers_veille_info(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json([{"thematique": "Tech", "nb_sources": 2, "en_pause": False}]))
+    r = client.get("/veille/thematiques", headers={"X-User-Id": "toussaint"})
+    assert r.status_code == 200
+    assert r.json()[0]["thematique"] == "Tech"
+
+
+def test_basculer_pause_thematique_proxifie_et_relaie_le_corps(monkeypatch):
+    Faux = _client_json({"ok": True, "nb_sources": 2})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.patch("/veille/thematiques/Tech/pause", json={"en_pause": True},
+                     headers={"X-User-Id": "toussaint"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "nb_sources": 2}
+    _, url, headers, corps = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/thematiques/Tech/pause"
+    assert headers == {"X-User-Id": "toussaint"}
+    assert corps == {"en_pause": True}
+
+
+def test_basculer_pause_thematique_inexistante_relaie_404(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json({"detail": "Thématique introuvable."}, status=404))
+    r = client.patch("/veille/thematiques/Inexistante/pause", json={"en_pause": True},
+                     headers={"X-User-Id": "toussaint"})
+    assert r.status_code == 404
+
+
 # --- generer_audio_global (POST /veille/audio-global/generer) — S199 ---
 
 def test_generer_audio_global_relaie_lidentite_recue(monkeypatch):
