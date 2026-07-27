@@ -1,0 +1,3 @@
+# S206 — binaires système requis par les tests (mêmes que le Dockerfile).
+# La brique versionne les fichiers de l atelier de code avec git.
+git

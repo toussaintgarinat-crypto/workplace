@@ -1,11 +1,11 @@
 # forge/core — runtime deps (S126 socle).
 # Versions alignées sur assistant/backend pour cohérence inter-services.
-fastapi==0.115.0
-starlette==0.38.6
-uvicorn==0.32.0
-httpx==0.27.0
+fastapi==0.115.6
+starlette==0.41.3  # borne de fastapi 0.115.6 (>=0.40,<0.42) — S205
+uvicorn==0.32.1
+httpx==0.28.1
 anyio==4.13.0
-pydantic==2.9.0
+pydantic==2.9.2
 pydantic-settings==2.5.2
 SQLAlchemy==2.0.49
 asyncpg==0.31.0

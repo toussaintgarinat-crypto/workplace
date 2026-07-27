@@ -1,0 +1,3 @@
+# S206 — binaires système requis par les tests (mêmes que le Dockerfile).
+# `audio_global` concatène les pistes des digests avec ffmpeg.
+ffmpeg

@@ -1,0 +1,10 @@
+# S206 — dépendances nécessaires pour EXÉCUTER les tests de la brique forge.
+#
+# La brique est un monolithe à deux étages : `requirements.txt` (ci-dessous) ne couvre que
+# l'adaptateur Workplace, alors que l'essentiel des tests vit dans `forge/core/tests/` et
+# importe le sous-projet — sqlalchemy, openai, cryptography. Sans ce fichier, les 13 modules
+# de test échouaient à la collecte : la plus grosse brique du dépôt n'avait donc AUCUN filet,
+# ce que l'ancien `make test-briques` masquait sous « [ECHEC ou deps manquantes] ».
+-r requirements.txt
+-r forge/core/requirements.txt
+-r forge/core/requirements-dev.txt

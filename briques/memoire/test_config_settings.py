@@ -6,9 +6,16 @@ entrer dans la validation, et le défaut de pydantic-settings (`extra="forbid"`)
 chacune d'elles en `ValidationError` À L'IMPORT du module — c'est-à-dire en backend qui ne
 démarre pas. Ces tests figent l'arbitraire retenu (`extra="ignore"`, motif briques/forge).
 """
+import sys
 import textwrap
+from pathlib import Path
 
-from app.config import Settings
+# Placé à la RACINE de la brique et non dans memory/backend/tests/ : le conftest de ce
+# dossier ouvre une vraie session Postgres, si bien qu'un test de configuration pure y
+# devenait inexécutable sans base — alors qu'il n'en a aucun besoin.
+sys.path.insert(0, str(Path(__file__).parent / "memory" / "backend"))
+
+from app.config import Settings  # noqa: E402
 
 
 def test_une_variable_etrangere_ne_fait_pas_echouer_settings(tmp_path, monkeypatch):
