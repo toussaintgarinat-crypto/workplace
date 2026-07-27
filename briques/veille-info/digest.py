@@ -73,15 +73,26 @@ def _generer_audio(digest_id: int, texte: str) -> None:
         logger.warning("Veille-info audio digest_id=%s : %s", digest_id, e)
 
 
-def _traiter_utilisateur(user_id: str) -> int:
+def _traiter_utilisateur(user_id: str, thematique_forcee: str | None = None) -> int:
     """Traite un utilisateur : fetch ses sources actives, résume PAR THÉMATIQUE s'il y a du
     nouveau (S199 — une thématique = un groupe de sources partageant `sources.thematique`,
-    "" = thématique par défaut). Renvoie le nombre de digests créés (0, 1, ou plusieurs)."""
-    thematiques = stockage.thematiques_actives(user_id)
+    "" = thématique par défaut). Renvoie le nombre de digests créés (0, 1, ou plusieurs).
+
+    `thematique_forcee` (S200 — génération ponctuelle depuis l'atelier) : si fourni, ne
+    traite QUE cette thématique — et fetche ses sources même si elles sont en pause
+    (`stockage.lister_sources_thematique`, pas `lister_sources(actives_seulement=True)`),
+    pour ne pas produire un digest vide sur une thématique en pause depuis longtemps."""
+    if thematique_forcee is not None:
+        thematiques = [thematique_forcee]
+        sources = stockage.lister_sources_thematique(user_id, thematique_forcee)
+    else:
+        thematiques = stockage.thematiques_actives(user_id)
+        sources = stockage.lister_sources(user_id, actives_seulement=True)
+
     if thematiques and all(stockage.digest_existe(user_id, thematique=t) for t in thematiques):
         return 0  # tout est déjà fait aujourd'hui : pas la peine de fetcher (motif historique)
 
-    for source in stockage.lister_sources(user_id, actives_seulement=True):
+    for source in sources:
         try:
             texte = rss.fetcher(source["url"])
             items = rss.parser_items(texte)
@@ -124,24 +135,32 @@ def _traiter_utilisateur(user_id: str) -> int:
     return digests_crees
 
 
-def _traiter_utilisateur_sans_planter(user_id: str) -> int:
+def _traiter_utilisateur_sans_planter(user_id: str, thematique_forcee: str | None = None) -> int:
     """Enrobe `_traiter_utilisateur` : une panne inattendue (ex. un appel `stockage.*` qui
     lève, en dehors des chemins déjà gardés dans `_traiter_utilisateur`) est journalisée
     et compte 0 digest créé pour cette personne, jamais propagée."""
     try:
-        return _traiter_utilisateur(user_id)
+        return _traiter_utilisateur(user_id, thematique_forcee)
     except Exception as e:  # noqa: BLE001 — une personne en échec inattendu ne doit jamais arrêter le lot
         logger.warning("Veille-info échec inattendu (user=%s) : %s", user_id, e)
         return 0
 
 
-def executer_digest_quotidien(user_ids: list[str] | None = None) -> dict:
+def executer_digest_quotidien(user_ids: list[str] | None = None,
+                              thematique: str | None = None) -> dict:
     """Point d'entrée appelé par l'horloge du Cœur (ou à la main). Traite TOUTES les
     personnes ayant au moins une source active, ou seulement `user_ids` si fourni.
 
-    `user_ids` existe pour les tests (cibler précisément un utilisateur sans toucher aux
-    sources laissées par d'autres fichiers de test dans la même DB partagée) — la route HTTP
-    de `main.py` ne le fournit JAMAIS, elle traite toujours tout le monde."""
-    cibles = user_ids if user_ids is not None else stockage.lister_user_ids_actifs()
-    digests_crees = sum(_traiter_utilisateur_sans_planter(uid) for uid in cibles)
+    `thematique` (S200 — génération ponctuelle depuis l'atelier) : si fourni SANS `user_ids`,
+    les cibles sont calculées via `stockage.lister_user_ids_thematique` (inclut les personnes
+    dont cette thématique est en pause), pas `lister_user_ids_actifs`. `user_ids` reste
+    prioritaire quand fourni (chemin réservé aux tests, cf. commentaire historique) — la
+    route HTTP de `main.py` ne le fournit JAMAIS."""
+    if user_ids is not None:
+        cibles = user_ids
+    elif thematique is not None:
+        cibles = stockage.lister_user_ids_thematique(thematique)
+    else:
+        cibles = stockage.lister_user_ids_actifs()
+    digests_crees = sum(_traiter_utilisateur_sans_planter(uid, thematique) for uid in cibles)
     return {"utilisateurs_traites": len(cibles), "digests_crees": digests_crees}
