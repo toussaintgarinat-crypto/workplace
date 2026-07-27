@@ -25,7 +25,15 @@ def test_workplace_css_servi():
 
 def test_front_branche_la_carte_sur_config():
     html = client.get("/").text
-    assert "fetch('/config'" in html or 'fetch("/config"' in html
+    # Depuis 822ede1, les appels fetch sont préfixés par API_BASE en template
+    # literal (`${API_BASE}/config`) au lieu de quotes simples/doubles.
+    # On accepte les deux formes pour ne pas re-casser ce test au prochain
+    # changement de style d'appel.
+    assert (
+        "fetch('/config'" in html
+        or 'fetch("/config"' in html
+        or "fetch(`${API_BASE}/config`" in html
+    )
     assert "geo-iframe" in html
 
 
