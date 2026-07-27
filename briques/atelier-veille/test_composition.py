@@ -213,6 +213,15 @@ def test_lister_thematiques_proxifie_vers_veille_info(monkeypatch):
     assert r.json()[0]["thematique"] == "Tech"
 
 
+def test_lister_thematiques_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json([])
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.get("/veille/thematiques", headers={"X-User-Id": "toussaint", "X-API-Key": "cle-coeur"})
+    _, url, headers = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/thematiques"
+    assert headers == {"X-User-Id": "toussaint", "X-API-Key": "cle-coeur"}
+
+
 def test_basculer_pause_thematique_proxifie_et_relaie_le_corps(monkeypatch):
     Faux = _client_json({"ok": True, "nb_sources": 2})
     monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
