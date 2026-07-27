@@ -26,9 +26,17 @@
 fastapi==0.115.6
 httpx==0.28.1
 python-multipart==0.0.20
-pydantic==2.7.1
-uvicorn==0.32.1
+pydantic==2.9.2
+uvicorn==0.34.0
 
 # Auth & crypto — figées tôt car les libs shared d'auth (S120) en dépendront.
 python-jose==3.3.0
 cryptography==44.0.0
+
+# S205 (2026-07-27) — contraintes relevées vers la réalité du parc, pas l'inverse :
+#   uvicorn 0.32.1 → 0.34.0 : 23 briques sur 38 y étaient déjà. Elles échappaient à l'audit,
+#     dont le regex ignorait les extras (`uvicorn[standard]==…`) — corrigé dans audit_deps.py.
+#   pydantic 2.7.1 → 2.9.2  : plus AUCUN composant n'appliquait 2.7.1, la contrainte était
+#     fictive. 2.9.2 est ce que portent forge et memoire.
+# Règle retenue : on aligne vers le HAUT. Rétrograder 23 briques pour satisfaire un fichier
+# aurait été prendre un risque réel au nom d'une cohérence de façade.

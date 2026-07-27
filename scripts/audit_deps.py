@@ -17,8 +17,18 @@ from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
 CONTRAINTES = RACINE / "constraints-workplace.txt"
-_PIN = re.compile(r"^\s*([A-Za-z0-9_.\-]+)\s*==\s*([^\s#;]+)")
-_NAME = re.compile(r"^\s*([A-Za-z0-9_.\-]+)\s*([<>=!~].*)?$")
+
+# Composants volontairement EN AVANCE sur les contraintes partagées, et qu'on ne rétrograde
+# pas : `oria` est un stack tiers (visio) qui suit son propre amont, `synopsis` a été repris
+# sur des versions récentes. Les exempter explicitement vaut mieux que de les laisser en
+# écart permanent — un rapport qui n'est jamais vert finit par ne plus être lu.
+EXEMPTS = {"oria", "synopsis"}
+# `(?:\[[^\]]*\])?` : les EXTRAS font partie de la syntaxe pip (`uvicorn[standard]==0.34.0`).
+# Sans eux, le regex s'arrêtait au crochet et ne matchait pas — 23 briques sur 38 épinglaient
+# uvicorn avec un extra et échappaient donc SILENCIEUSEMENT à l'audit. Un auditeur qui ne voit
+# pas les deux tiers du parc donne une fausse assurance, ce qui est pire que pas d'auditeur.
+_PIN = re.compile(r"^\s*([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?\s*==\s*([^\s#;]+)")
+_NAME = re.compile(r"^\s*([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?\s*([<>=!~].*)?$")
 
 
 def _norm(n):
@@ -45,6 +55,8 @@ def main():
     ecarts, flottants = [], []
     for r in sorted(reqs):
         comp = Path(r).parent.name
+        if comp in EXEMPTS:
+            continue
         for raw in Path(r).read_text(encoding="utf-8").splitlines():
             raw = raw.strip()
             if not raw or raw.startswith("#") or raw.startswith("-"):
@@ -61,7 +73,8 @@ def main():
                 if nom in cibles and not mn.group(2):
                     flottants.append((comp, nom, cibles[nom]))
 
-    print(f"Contraintes partagées : {', '.join(f'{k}=={v}' for k, v in cibles.items())}\n")
+    print(f"Contraintes partagées : {', '.join(f'{k}=={v}' for k, v in cibles.items())}")
+    print(f"Exemptés (volontairement en avance) : {', '.join(sorted(EXEMPTS))}\n")
     if ecarts:
         print(f"❌ {len(ecarts)} écart(s) de version (paquet contraint épinglé ailleurs) :")
         for comp, nom, ver, cible in ecarts:

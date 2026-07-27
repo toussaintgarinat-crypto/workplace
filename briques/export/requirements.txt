@@ -1,5 +1,5 @@
 fastapi==0.115.6
-uvicorn[standard]==0.32.1
+uvicorn[standard]==0.34.0
 httpx==0.28.1
 markdown==3.10.2
 weasyprint==69.0
