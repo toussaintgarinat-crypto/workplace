@@ -29,7 +29,25 @@ from etat import registre
 router = APIRouter()
 
 _PREFIXE = "/atelier-images-video-app"
-_TIMEOUT = 60.0
+_TIMEOUT = outils_communs.TIMEOUT_PROXY_COURT
+
+# Génération et synergies Studio : un rendu d'image ou de vidéo dépasse couramment la minute
+# (les fournisseurs de `briques/video` pollent jusqu'à 120 s + attente, et le studio leur
+# accorde 200/600 s). Voir `outils_communs.timeout_proxy` pour la règle. Valeurs alignées sur
+# `briques/atelier-images-video/main.py::_relayer`, relevé en même temps que ce proxy — les
+# deux couches plafonnaient à 60 s, donc relever la seule ici n'aurait rien changé.
+_ROUTES_LENTES = (
+    ("/video/generer", 600.0),
+    ("/animer", 600.0),
+    ("/teaser", 600.0),
+    ("/images/generer", 200.0),
+    ("/portrait", 200.0),
+    ("/couverture", 200.0),
+)
+
+
+def _timeout_pour(chemin: str) -> float:
+    return outils_communs.timeout_proxy(chemin, _ROUTES_LENTES)
 
 
 def _base() -> str:
@@ -66,7 +84,7 @@ async def atelier_iv_atelier(request: Request):
 async def atelier_iv_proxy(chemin: str, request: Request):
     """Proxy générique du reste des routes (API + `/workplace.css`)."""
     corps = await request.body()
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_timeout_pour(chemin)) as client:
         r = await client.request(
             request.method, f"{_base()}/{chemin}",
             params=request.query_params, headers=_entetes(request),

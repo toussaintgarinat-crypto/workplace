@@ -31,9 +31,12 @@ class _Resp:
         return self._texte
 
 
+TIMEOUTS = []
+
+
 class _FakeClient:
     def __init__(self, *a, **k):
-        pass
+        TIMEOUTS.append(k.get("timeout"))
 
     async def __aenter__(self):
         return self
@@ -54,6 +57,7 @@ class _FakeClient:
 
 def _setup(monkeypatch):
     APPELS.clear()
+    TIMEOUTS.clear()
     monkeypatch.setattr(atelier_images_video_proxy, "_base", lambda: "http://atelier-iv")
     monkeypatch.setattr(atelier_images_video_proxy, "httpx",
                         type("_H", (), {"AsyncClient": _FakeClient}))
@@ -84,3 +88,29 @@ def test_deux_personnes_appels_distincts(monkeypatch):
     client.get("/atelier-images-video-app/galerie", headers={"X-User-Id": "marina"})
     identites = [e["X-User-Id"] for _, _, e in APPELS]
     assert identites == ["claire", "marina"]
+
+
+# ── S201 : le proxy ne doit jamais couper avant la brique qu'il relaie ──────────
+_ROUTES_LENTES_ATTENDUES = (
+    ("video/generer", 600.0),
+    ("images/generer", 200.0),
+    ("studio/series/s1/personnages/p1/animer", 600.0),
+    ("studio/series/s1/episode/2/couverture", 200.0),
+)
+
+
+def test_routes_de_rendu_ont_le_timeout_de_la_brique(monkeypatch):
+    """Un rendu (image, vidéo, voix) dépasse la minute et la brique s'accorde jusqu'à 600 s :
+    couper à 60 s côté Cœur rendait un 500 alors que le rendu aboutissait — 500 fantôme
+    constaté en prod sur le digest de veille."""
+    for chemin, attendu in _ROUTES_LENTES_ATTENDUES:
+        _setup(monkeypatch)
+        r = client.post(f"/atelier-images-video-app/{chemin}", headers={"X-User-Id": "claire"})
+        assert r.status_code == 200, chemin
+        assert TIMEOUTS == [attendu], f"{chemin} attendait {attendu}s, a eu {TIMEOUTS}"
+
+
+def test_routes_de_lecture_gardent_le_timeout_court(monkeypatch):
+    _setup(monkeypatch)
+    client.get(f"/atelier-images-video-app/series", headers={"X-User-Id": "claire"})
+    assert TIMEOUTS == [atelier_images_video_proxy._TIMEOUT]
