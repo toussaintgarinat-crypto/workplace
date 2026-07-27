@@ -86,6 +86,12 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # extra="ignore" (S204/S206) : `env_file` fait entrer TOUTES les clés du .env dans la
+        # validation, et ce .env est partagé par tout le monorepo. Avec le défaut de
+        # pydantic-settings (extra="forbid"), une variable qui ne concerne même pas ce
+        # service — AGENDA_VAULT_SECRET, lue par le compose — faisait échouer `Settings()` À
+        # L'IMPORT, donc planter le backend au démarrage. Même arbitrage que forge et memoire.
+        extra = "ignore"
 
 
 settings = Settings()
