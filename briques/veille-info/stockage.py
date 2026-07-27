@@ -221,6 +221,29 @@ def basculer_pause_thematique(user_id: str, thematique: str, en_pause: bool) -> 
     return cur.rowcount
 
 
+def lister_sources_thematique(user_id: str, thematique: str) -> list[dict]:
+    """Sources d'une thématique donnée pour cet utilisateur, actives OU en pause — utilisé
+    pour forcer le fetch d'une thématique explicitement choisie (génération ponctuelle,
+    S200), contrairement à lister_sources(actives_seulement=True) qui ne verrait rien si
+    toutes les sources de la thématique sont en pause."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM sources WHERE user_id = ? AND thematique = ?",
+            (user_id, thematique)).fetchall()
+    return [_source_dict(r) for r in rows]
+
+
+def lister_user_ids_thematique(thematique: str) -> list[str]:
+    """Utilisateurs ayant au moins une source (active ou en pause) dans cette thématique.
+    Contrairement à lister_user_ids_actifs(), n'exclut pas quelqu'un dont la seule
+    thématique concernée est en pause (S200 — génération ponctuelle forcée)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT DISTINCT user_id FROM sources WHERE thematique = ?",
+            (thematique,)).fetchall()
+    return [r["user_id"] for r in rows]
+
+
 # ── Articles ──────────────────────────────────────────────────
 def inserer_article(user_id: str, source_id: int, titre: str, url: str,
                     published_at: str) -> bool:
