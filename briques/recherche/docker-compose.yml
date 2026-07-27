@@ -75,4 +75,14 @@ services:
     volumes:
       - ./searxng:/etc/searxng:rw     # settings.yml (format JSON activé, limiteur off)
     restart: unless-stopped
+    # S209 — seul conteneur du parc qui n'avait AUCUN healthcheck : il apparaissait « Up »
+    # dans `docker ps` sans jamais dire s'il servait vraiment, et c'était le seul écart au
+    # « tout healthy » qui sert de repère lors des déploiements. `wget` est présent dans
+    # l'image (base Alpine), contrairement à curl.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # Pas de `ports:` → SearXNG reste INTERNE (joignable seulement via le service recherche).
