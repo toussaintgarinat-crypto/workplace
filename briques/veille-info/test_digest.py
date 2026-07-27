@@ -5,6 +5,8 @@ Chaque test passe explicitement `user_ids=[...]` à `executer_digest_quotidien` 
 JAMAIS traiter les sources laissées par d'autres fichiers de test dans la DB partagée
 (sinon : vrais appels réseau vers leurs URLs factices). Identifiants préfixés `digest-`
 pour ne jamais entrer en collision avec les identifiants d'autres fichiers de test."""
+import logging
+
 import digest
 import stockage
 
@@ -103,6 +105,58 @@ def test_source_en_echec_continue_avec_les_autres(monkeypatch):
     resultat = digest.executer_digest_quotidien(user_ids=["digest-dave"])
     assert resultat["digests_crees"] == 1
     assert stockage.lister_digests("digest-dave")[0]["nb_articles"] == 1
+
+
+def test_echecs_consecutifs_comptes_et_exposes(monkeypatch):
+    """Une source morte doit devenir VISIBLE dans /sources, pas seulement dans les logs."""
+    src = stockage.creer_source("digest-panne", "Flux mort", "https://mort.example/rss")
+    assert src["echecs_consecutifs"] == 0 and src["dernier_echec"] is None
+
+    monkeypatch.setattr(digest.rss, "fetcher",
+                        lambda url: (_ for _ in ()).throw(RuntimeError("404 Not Found")))
+    for attendu in (1, 2, 3):
+        digest.executer_digest_quotidien(user_ids=["digest-panne"])
+        source = stockage.lister_sources("digest-panne")[0]
+        assert source["echecs_consecutifs"] == attendu
+        assert "404 Not Found" in source["dernier_echec"]
+
+
+def test_un_fetch_reussi_efface_le_compteur(monkeypatch):
+    """Le compteur mesure les échecs CONSÉCUTIFS : une coupure passagère ne doit pas
+    laisser la source marquée en panne à vie."""
+    stockage.creer_source("digest-repare", "Flux", "https://repare.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher",
+                        lambda url: (_ for _ in ()).throw(ConnectionError("réseau coupé")))
+    digest.executer_digest_quotidien(user_ids=["digest-repare"])
+    assert stockage.lister_sources("digest-repare")[0]["echecs_consecutifs"] == 1
+
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [])
+    digest.executer_digest_quotidien(user_ids=["digest-repare"])
+    source = stockage.lister_sources("digest-repare")[0]
+    assert source["echecs_consecutifs"] == 0
+    assert source["dernier_echec"] is None
+
+
+def test_source_morte_cesse_de_spammer_les_logs(monkeypatch, caplog):
+    """Au-delà du seuil : une seule remontée en ERROR, puis silence — sinon un feed disparu
+    noie les vrais incidents (constaté en prod : 3 flux 404/405 en boucle)."""
+    stockage.creer_source("digest-bruit", "Flux mort", "https://bruit.example/rss")
+    monkeypatch.setattr(digest.rss, "fetcher",
+                        lambda url: (_ for _ in ()).throw(RuntimeError("405 Not Allowed")))
+    monkeypatch.setattr(digest, "_SEUIL_SOURCE_EN_PANNE", 3)
+
+    niveaux = []
+    for _ in range(6):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger=digest.logger.name):
+            digest.executer_digest_quotidien(user_ids=["digest-bruit"])
+        niveaux.append([r.levelname for r in caplog.records])
+
+    assert niveaux[0] == ["WARNING"] and niveaux[1] == ["WARNING"]
+    assert niveaux[2] == ["ERROR"], "franchissement du seuil = une alerte, une seule"
+    assert niveaux[3:] == [[], [], []], "au-delà du seuil, plus rien dans les logs"
+    assert stockage.lister_sources("digest-bruit")[0]["echecs_consecutifs"] == 6
 
 
 def test_echec_llm_ne_cree_pas_de_digest_partiel(monkeypatch):

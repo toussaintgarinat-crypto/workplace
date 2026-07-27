@@ -56,6 +56,15 @@ def test_front_avertit_que_la_generation_est_pour_tout_le_foyer():
     assert "foyer" in html.lower()
 
 
+def test_front_signale_les_sources_en_panne():
+    """Une source morte doit se voir DANS l'atelier — seul endroit d'où la corriger ; sans ça
+    elle ne vit que dans les logs de veille-info, que personne ne lit."""
+    html = client.get("/").text
+    for marqueur in ("badgeEchecs", "echecs_consecutifs", "dernier_echec",
+                     "SEUIL_SOURCE_EN_PANNE"):
+        assert marqueur in html
+
+
 def test_front_couvre_la_selection_de_thematique_pour_le_digest():
     html = client.get("/").text
     for marqueur in ("chargerThematiquesDigest", "genererDigestThematique",
