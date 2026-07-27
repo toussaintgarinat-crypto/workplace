@@ -282,3 +282,36 @@ def test_basculer_pause_reprendre():
 def test_basculer_pause_thematique_inexistante_renvoie_zero():
     n = stockage.basculer_pause_thematique("pause-dan", "Inexistante", en_pause=True)
     assert n == 0
+
+
+def test_lister_sources_thematique_inclut_les_sources_en_pause():
+    s1 = stockage.creer_source("forcee-alice", "Flux A", "https://a-forcee.example/rss",
+                               thematique="Tech")
+    s2 = stockage.creer_source("forcee-alice", "Flux B", "https://b-forcee.example/rss",
+                               thematique="Tech")
+    stockage.basculer_pause_thematique("forcee-alice", "Tech", en_pause=True)
+
+    sources = stockage.lister_sources_thematique("forcee-alice", "Tech")
+    assert {s["id"] for s in sources} == {s1["id"], s2["id"]}
+    assert all(s["enabled"] is False for s in sources)
+
+
+def test_lister_sources_thematique_isole_par_user_et_thematique():
+    stockage.creer_source("forcee-bob", "Flux Cuisine", "https://cuisine-forcee.example/rss",
+                          thematique="Cuisine")
+    assert stockage.lister_sources_thematique("forcee-bob", "Tech") == []
+
+
+def test_lister_user_ids_thematique_inclut_meme_si_toutes_en_pause():
+    stockage.creer_source("forcee-carol", "Flux", "https://carol-forcee.example/rss",
+                          thematique="Tech")
+    stockage.basculer_pause_thematique("forcee-carol", "Tech", en_pause=True)
+
+    ids = stockage.lister_user_ids_thematique("Tech")
+    assert "forcee-carol" in ids
+    # lister_user_ids_actifs, lui, exclurait carol (aucune source active) :
+    assert "forcee-carol" not in stockage.lister_user_ids_actifs()
+
+
+def test_lister_user_ids_thematique_thematique_inexistante_vide():
+    assert stockage.lister_user_ids_thematique("Inexistante-XYZ") == []
