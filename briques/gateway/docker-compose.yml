@@ -68,6 +68,43 @@ services:
       - proxy_net
     restart: unless-stopped
 
+  # Brique `gateway-sync` (S202) : entretient les modèles free/* de LiteLLM par son API.
+  # Déclarée ICI et non dans son propre compose, à dessein — elle doit joindre LiteLLM sur
+  # le réseau interne du projet (`http://gateway:4000`), ce qu'un compose séparé ne permet
+  # qu'au prix d'un réseau externe au nom fragile. Son code et son manifest vivent bien dans
+  # `briques/gateway-sync/` (le registre du Cœur scanne `briques/*/manifest.json`).
+  # Cf. ADR docs/decisions/2026-07-27-sync-modeles-gratuits-gateway.md.
+  gateway-sync:
+    build:
+      context: ../gateway-sync
+    ports:
+      - "4002:4002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: .env
+        required: false
+      - path: ../../.env
+        required: false
+    environment:
+      - LITELLM_URL=http://gateway:4000
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - FREE_MODELS_TOP_N=${FREE_MODELS_TOP_N:-12}
+      - GATEWAY_SYNC_KEY=${GATEWAY_SYNC_KEY:-}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4002/sante')\" 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - default
+      - proxy_net
+    restart: unless-stopped
+
 volumes:
   gateway_db:
 
