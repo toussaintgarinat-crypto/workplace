@@ -426,3 +426,74 @@ def test_digest_aucun_fetch_si_toutes_thematiques_deja_faites(monkeypatch):
     resultat = digest.executer_digest_quotidien(user_ids=["digest-complet"])
     assert resultat["digests_crees"] == 0
     assert appele["fetch"] is False
+
+
+def test_thematique_forcee_fetch_meme_si_en_pause(monkeypatch):
+    """Cœur de la génération ponctuelle (S200) : une thématique en pause n'est PAS ignorée
+    quand elle est explicitement demandée — ses sources sont fetchées de force, contrairement
+    au chemin normal (thematiques_actives) qui les ignore totalement."""
+    stockage.creer_source("digest-force-alice", "Flux Tech", "https://tech-force.example/rss",
+                          thematique="Tech")
+    stockage.basculer_pause_thematique("digest-force-alice", "Tech", en_pause=True)
+
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article", "url": "https://tech-force.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé forcé.")
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-force-alice"], thematique="Tech")
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 1}
+    digests = stockage.lister_digests("digest-force-alice")
+    assert digests[0]["texte_resume"] == "Résumé forcé."
+    assert digests[0]["thematique"] == "Tech"
+
+
+def test_thematique_choisie_ignore_les_autres_thematiques_actives(monkeypatch):
+    stockage.creer_source("digest-force-bob", "Flux Tech", "https://tech-bob-force.example/rss",
+                          thematique="Tech")
+    stockage.creer_source("digest-force-bob", "Flux Cuisine",
+                          "https://cuisine-bob-force.example/rss", thematique="Cuisine")
+
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: url)
+    monkeypatch.setattr(digest.rss, "parser_items",
+                        lambda texte: [{"titre": "Article", "url": texte + "/1", "published_at": ""}])
+    monkeypatch.setattr(digest, "llm_complete", lambda prompt, system="": "Résumé Tech.")
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-force-bob"], thematique="Tech")
+    assert resultat["digests_crees"] == 1
+    digests = stockage.lister_digests("digest-force-bob")
+    assert {d["thematique"] for d in digests} == {"Tech"}  # Cuisine jamais traitée
+
+
+def test_thematique_choisie_idempotente_si_digest_deja_fait(monkeypatch):
+    stockage.creer_source("digest-force-carol", "Flux Tech",
+                          "https://tech-carol-force.example/rss", thematique="Tech")
+    stockage.inserer_digest("digest-force-carol", "Déjà fait.", 1, thematique="Tech")
+
+    appele = {"llm": False}
+    def _llm(prompt, system=""):
+        appele["llm"] = True
+        return "Ne devrait jamais être appelé."
+    monkeypatch.setattr(digest, "llm_complete", _llm)
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-force-carol"], thematique="Tech")
+    assert resultat["digests_crees"] == 0
+    assert appele["llm"] is False
+
+
+def test_thematique_choisie_decouvre_les_cibles_via_lister_user_ids_thematique(monkeypatch):
+    """Sans `user_ids` explicite (chemin réel emprunté par la route HTTP), les cibles sont
+    calculées via `stockage.lister_user_ids_thematique`, pas `lister_user_ids_actifs` — donc
+    quelqu'un dont la thématique choisie est en pause est bien inclus."""
+    monkeypatch.setattr(stockage, "lister_user_ids_thematique",
+                        lambda thematique: ["digest-force-decouverte"] if thematique == "Tech" else [])
+    monkeypatch.setattr(stockage, "lister_sources_thematique", lambda user_id, thematique: [])
+
+    resultat = digest.executer_digest_quotidien(thematique="Tech")
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 0}
+
+
+def test_thematique_inconnue_ne_traite_personne():
+    resultat = digest.executer_digest_quotidien(thematique="Inexistante-XYZ-123")
+    assert resultat == {"utilisateurs_traites": 0, "digests_crees": 0}
