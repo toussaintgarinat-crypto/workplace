@@ -98,10 +98,9 @@ app.include_router(studio_proxy.router, dependencies=[Depends(exiger_session)] +
 # isolées par personne, cf. core/routers/atelier_images_video_proxy.py.
 app.include_router(atelier_images_video_proxy.router,
                    dependencies=[Depends(exiger_session)] + _tenant)
-# Atelier Veille (S190) : même motif que Studio/Atelier Images & Vidéo — session
-# obligatoire + contexte de tenant, pour que les sources RSS/digests/audio-global soient
-# isolés par personne, cf. core/routers/atelier_veille_proxy.py. Le lien dashboard vers ce
-# proxy (au lieu de l'URL brute) reste une tâche séparée.
+# Atelier Veille : même motif que Studio/Atelier Images & Vidéo — session obligatoire +
+# contexte de tenant, pour que les sources RSS/digests/audio-global soient isolés par
+# personne, cf. core/routers/atelier_veille_proxy.py.
 app.include_router(atelier_veille_proxy.router,
                    dependencies=[Depends(exiger_session)] + _tenant)
 # Fichiers de brique media (images/video/export) : session obligatoire (fichiers nommés
