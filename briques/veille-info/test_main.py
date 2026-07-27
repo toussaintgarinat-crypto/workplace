@@ -208,6 +208,53 @@ def test_source_eteinte_nest_plus_fetchee(monkeypatch):
     assert stockage.lister_sources("perso:main-actif-fetch", actives_seulement=True) == []
 
 
+def test_modifier_url_source_preserve_lhistorique(monkeypatch):
+    """S203 — un flux qui déménage doit se corriger SANS supprimer/recréer la source, sinon
+    on casse `articles.source_id` et on perd l'antériorité."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-url"),
+                    json={"nom": "COSMED", "url": "https://www.cosmed.eu/feed/"})
+    source_id = r.json()["id"]
+    stockage.inserer_article("perso:main-url", source_id, "Vieil article",
+                             "https://mu.example/1", "")
+
+    r = client.patch(f"/sources/{source_id}/url", headers=_entetes("main-url"),
+                     json={"url": "https://www.cosmed.fr/feed/"})
+    assert r.status_code == 200
+
+    source = client.get("/sources", headers=_entetes("main-url")).json()[0]
+    assert source["id"] == source_id, "même source, pas une nouvelle"
+    assert source["url"] == "https://www.cosmed.fr/feed/"
+
+
+def test_modifier_url_source_remet_le_compteur_a_zero(monkeypatch):
+    """Une nouvelle URL mérite une nouvelle chance : sinon la source reste marquée « en
+    panne » alors qu'on vient justement de la réparer."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-url-reset"),
+                    json={"nom": "Flux", "url": "https://mort.example/feed/"})
+    source_id = r.json()["id"]
+    stockage.enregistrer_echec_source(source_id, "404 Not Found")
+    stockage.enregistrer_echec_source(source_id, "404 Not Found")
+    assert client.get("/sources", headers=_entetes("main-url-reset")).json()[0]["echecs_consecutifs"] == 2
+
+    client.patch(f"/sources/{source_id}/url", headers=_entetes("main-url-reset"),
+                 json={"url": "https://vivant.example/rss.xml"})
+    source = client.get("/sources", headers=_entetes("main-url-reset")).json()[0]
+    assert source["echecs_consecutifs"] == 0
+    assert source["dernier_echec"] is None
+
+
+def test_modifier_url_source_dune_autre_personne_echoue(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.post("/sources", headers=_entetes("main-url-a"),
+                    json={"nom": "Privé", "url": "https://mua.example/rss"})
+    source_id = r.json()["id"]
+    r = client.patch(f"/sources/{source_id}/url", headers=_entetes("main-url-b"),
+                     json={"url": "https://pirate.example/rss"})
+    assert r.status_code == 404
+
+
 def test_generer_audio_global_digest_sans_audio_422(monkeypatch):
     monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
     d = stockage.inserer_digest("perso:main-audioglobal-1", "Résumé.", 1, thematique="Tech")

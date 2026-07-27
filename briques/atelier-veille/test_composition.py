@@ -430,3 +430,22 @@ def test_basculer_source_active_injoignable_renvoie_502(monkeypatch):
     monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
     r = client.patch("/veille/sources/7/actif", json={"active": False})
     assert r.status_code == 502
+
+
+# --- modifier_url_source (PATCH /veille/sources/{id}/url) — S203 ---
+
+def test_modifier_url_source_relaie_lidentite_et_le_corps(monkeypatch):
+    Faux = _client_json({"ok": True, "url": "https://www.cosmed.fr/feed/"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.patch("/veille/sources/13/url", json={"url": "https://www.cosmed.fr/feed/"},
+                 headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers, corps = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/sources/13/url"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+    assert corps == {"url": "https://www.cosmed.fr/feed/"}
+
+
+def test_modifier_url_source_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.patch("/veille/sources/13/url", json={"url": "https://x.example/rss"})
+    assert r.status_code == 502

@@ -171,6 +171,8 @@ async function chargerSources() {
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);${s.enabled ? '' : 'opacity:.55'}">
             <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}${s.enabled ? '' : ' <span style="color:var(--mut);font-size:.75rem">· éteinte</span>'}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
             <div style="display:flex;gap:6px">
+              <button onclick="modifierUrlSource(${s.id}, ${JSON.stringify(s.url).replace(/"/g, '&quot;')})"
+                style="border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:8px;padding:5px 10px;cursor:pointer">Corriger l'URL</button>
               <button onclick="basculerSourceActive(${s.id}, ${!s.enabled})"
                 style="border:1px solid var(--line);background:transparent;color:${s.enabled ? 'var(--mut)' : 'var(--ok)'};border-radius:8px;padding:5px 10px;cursor:pointer">
                 ${s.enabled ? 'Éteindre' : 'Rallumer'}
@@ -180,6 +182,25 @@ async function chargerSources() {
           </div>`).join('')}
       </div>`;
     }).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\'instant.</p>';
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function modifierUrlSource(sourceId, urlActuelle) {
+  // Un flux qui déménage (mauvais domaine, chemin changé, site migré) se corrige ici
+  // au lieu d'être supprimé/recréé — ce qui ferait perdre tout son historique d'articles.
+  const url = prompt("Nouvelle URL du flux RSS :", urlActuelle);
+  if (!url || url === urlActuelle) return;
+  const erreur = document.getElementById('erreur-sources');
+  erreur.textContent = '';
+  try {
+    const r = await fetch(`${API_BASE}/veille/sources/${sourceId}/url`, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    await chargerSources();
   } catch (e) {
     erreur.textContent = String(e.message || e);
   }
