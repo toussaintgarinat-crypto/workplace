@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """
 Synchronise les modèles gratuits OpenRouter dans litellm_config.yaml.
-Lancé automatiquement par `make start-gateway`.
+
+Lancé par `make start` (et `make sync`) DANS CE DOSSIER. Le lanceur racine
+« Lancer Workplace.command » et le déploiement HP font un `docker compose up -d`
+générique : ils ne passent PAS par ici, donc après un déploiement direct il faut
+lancer `make sync` à la main, sinon la liste fige.
+
+À relancer régulièrement : un modèle gratuit d'OpenRouter peut passer payant ou
+disparaître du jour au lendemain, et litellm remonte alors des NotFoundError en
+boucle sur ce slug (« model is unavailable for free … use this slug instead »).
 """
 import json
 import os

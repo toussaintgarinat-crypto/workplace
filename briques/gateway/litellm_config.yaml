@@ -61,23 +61,7 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
-  # AUTO-FREE-MODELS-START — 2026-06-06 20:38 (12 modèles)
-  - model_name: free/openrouter/owl-alpha
-    litellm_params:
-      model: openrouter/openrouter/owl-alpha
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 1048756
-  - model_name: free/qwen/qwen3-coder
-    litellm_params:
-      model: openrouter/qwen/qwen3-coder:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 1048576
+  # AUTO-FREE-MODELS-START — 2026-07-27 20:09 (12 modèles)
   - model_name: free/nvidia/nemotron-3-ultra-550b-a55b
     litellm_params:
       model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
@@ -86,17 +70,25 @@ model_list:
       timeout: 10
       num_retries: 0
       # context: 1000000
-  - model_name: free/nvidia/nemotron-3-super-120b-a12b
+  - model_name: free/inclusionai/ling-3.0-flash
     litellm_params:
-      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      model: openrouter/inclusionai/ling-3.0-flash:free
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
       timeout: 10
       num_retries: 0
-      # context: 1000000
-  - model_name: free/poolside/laguna-xs.2
+      # context: 262144
+  - model_name: free/poolside/laguna-s-2.1
     litellm_params:
-      model: openrouter/poolside/laguna-xs.2:free
+      model: openrouter/poolside/laguna-s-2.1:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 262144
+  - model_name: free/poolside/laguna-xs-2.1
+    litellm_params:
+      model: openrouter/poolside/laguna-xs-2.1:free
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
       timeout: 10
@@ -105,14 +97,6 @@ model_list:
   - model_name: free/poolside/laguna-m.1
     litellm_params:
       model: openrouter/poolside/laguna-m.1:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/moonshotai/kimi-k2.6
-    litellm_params:
-      model: openrouter/moonshotai/kimi-k2.6:free
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
       timeout: 10
@@ -134,14 +118,22 @@ model_list:
       timeout: 10
       num_retries: 0
       # context: 262144
-  - model_name: free/qwen/qwen3-next-80b-a3b-instruct
+  - model_name: free/nvidia/nemotron-3-super-120b-a12b
     litellm_params:
-      model: openrouter/qwen/qwen3-next-80b-a3b-instruct:free
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
       timeout: 10
       num_retries: 0
       # context: 262144
+  - model_name: free/cohere/north-mini-code
+    litellm_params:
+      model: openrouter/cohere/north-mini-code:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 256000
   - model_name: free/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
     litellm_params:
       model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
@@ -158,6 +150,14 @@ model_list:
       timeout: 10
       num_retries: 0
       # context: 256000
+  - model_name: free/openrouter/free
+    litellm_params:
+      model: openrouter/openrouter/free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 10
+      num_retries: 0
+      # context: 200000
   # AUTO-FREE-MODELS-END
 
   # --- OpenCode Go ------------------------------------------------------------
