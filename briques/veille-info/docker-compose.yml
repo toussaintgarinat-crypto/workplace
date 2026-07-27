@@ -14,17 +14,15 @@ services:
       - PORT=6120
       - VEILLE_INFO_DB=/data/veille_info.db
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      # API_KEYS, VEILLE_INFO_KEY : ABSENTS du `environment` exprès — viennent du .env racine
-      # via env_file (piège « env shadow » : ne PAS les redéclarer en `=${VAR:-}`, cf.
-      # fix-env-shadow-composes).
-      # VEILLE_INFO_PUBLIC_URL : VIDE par défaut exprès (motif GEO_PUBLIC_URL, cf.
-      # briques/atelier-veille/docker-compose.yml) — le lien audio-global du mail envoyé
-      # dérive alors l'URL de l'hôte de la requête courante (LAN/localhost, cf. main.py::
-      # lien_audio_global). Un défaut figé ici recasserait le lien hors localhost. Ne mettre
-      # une valeur ici QUE pour un déploiement particulier (route atteinte via un hostname
-      # Docker interne — atelier-veille/Gateway — qu'un vrai destinataire de mail ne peut
-      # pas résoudre).
-      - VEILLE_INFO_PUBLIC_URL=${VEILLE_INFO_PUBLIC_URL:-}
+      # API_KEYS, VEILLE_INFO_KEY, VEILLE_INFO_PUBLIC_URL : ABSENTS du `environment` exprès —
+      # viennent du .env racine via env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole
+      # depuis le shell/.env du dossier projet, PAS depuis env_file, et écraserait par du vide,
+      # cf. fix-env-shadow-composes). VEILLE_INFO_PUBLIC_URL vide par défaut dans .env.example
+      # (motif GEO_PUBLIC_URL, cf. briques/atelier-veille/docker-compose.yml) : le lien
+      # audio-global du mail envoyé dérive alors l'URL de l'hôte de la requête courante
+      # (LAN/localhost, cf. main.py::lien_audio_global). Ne renseigner une valeur dans le .env
+      # racine QUE pour un déploiement particulier (route atteinte via un hostname Docker
+      # interne — atelier-veille/Gateway — qu'un vrai destinataire de mail ne peut pas résoudre).
       # GATEWAY_URL : le .env racine ne le définit pas (aucune brique ne le fait) → codé en dur
       # ici, motif synopsis/studio. GATEWAY_KEY vient du .env racine (clé maîtresse partagée).
       - GATEWAY_URL=http://host.docker.internal:4001

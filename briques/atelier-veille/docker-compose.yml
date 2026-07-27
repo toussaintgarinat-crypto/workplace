@@ -14,14 +14,14 @@ services:
       - PORT=6130
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - VEILLE_INFO_URL=http://host.docker.internal:6120
-      # GEO_PUBLIC_URL : VIDE par défaut exprès — /config dérive alors l'URL de la carte
-      # de l'hôte de la requête courante (LAN/mesh/localhost, cf. main.py::config). Un
-      # défaut figé ici (ex. http://localhost:6110/) recasserait la carte hors localhost
-      # (piège S128, cf. core/urls_ui.py) : ne PAS remettre `:-http://localhost:6110/`.
-      - GEO_PUBLIC_URL=${GEO_PUBLIC_URL:-}
-      # VEILLE_INFO_KEY : ABSENTE du `environment` exprès — vient du .env racine via
-      # env_file (piège « env shadow » : ne PAS la redéclarer en `=${VAR:-}`, cf.
-      # fix-env-shadow-composes). VIDE aujourd'hui (mono-tenant, gate horloge no-op).
+      # GEO_PUBLIC_URL, VEILLE_INFO_KEY : ABSENTS du `environment` exprès — viennent du .env
+      # racine via env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole depuis le
+      # shell/.env du dossier projet, PAS depuis env_file, et écraserait par du vide, cf.
+      # fix-env-shadow-composes). GEO_PUBLIC_URL vide par défaut dans .env.example — /config
+      # dérive alors l'URL de la carte de l'hôte de la requête courante (LAN/mesh/localhost,
+      # cf. main.py::config). Un défaut figé ici (ex. http://localhost:6110/) recasserait la
+      # carte hors localhost (piège S128, cf. core/urls_ui.py). VEILLE_INFO_KEY vide
+      # aujourd'hui (mono-tenant, gate horloge no-op).
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6130/sante')"]
