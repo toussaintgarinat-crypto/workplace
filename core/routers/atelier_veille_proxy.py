@@ -35,6 +35,18 @@ router = APIRouter()
 _PREFIXE = "/atelier-veille-app"
 _TIMEOUT = 60.0
 
+# Deux routes d'atelier-veille déclenchent un travail LONG côté veille-info (synthèse LLM du
+# digest, synthèse vocale de l'audio global) : elles dépassent couramment 60 s. Sans ce palier,
+# le Cœur coupait la connexion en `httpx.ReadTimeout` → 500 rendu à l'utilisateur ALORS QUE le
+# travail aboutissait côté brique (constaté en prod : 500 dans les logs du Cœur, 200 OK dans
+# ceux de veille-info pour le même appel). Aligné sur le timeout de `briques/atelier-veille`.
+_TIMEOUT_LONG = 300.0
+_CHEMINS_LENTS = ("veille/digest/executer", "veille/audio-global/generer")
+
+
+def _timeout_pour(chemin: str) -> float:
+    return _TIMEOUT_LONG if chemin.strip("/") in _CHEMINS_LENTS else _TIMEOUT
+
 
 def _base() -> str:
     return orchestrateur._brique_base(registre, "atelier-veille")
@@ -73,7 +85,7 @@ async def atelier_veille_app_atelier(request: Request):
 async def atelier_veille_app_proxy(chemin: str, request: Request):
     """Proxy générique du reste des routes (API `/veille/*`, `/config`, `/workplace.css`)."""
     corps = await request.body()
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_timeout_pour(chemin)) as client:
         r = await client.request(
             request.method, f"{_base()}/{chemin}",
             params=request.query_params, headers=_entetes(request),

@@ -32,9 +32,12 @@ class _Resp:
         return self._texte
 
 
+TIMEOUTS = []
+
+
 class _FakeClient:
     def __init__(self, *a, **k):
-        pass
+        TIMEOUTS.append(k.get("timeout"))
 
     async def __aenter__(self):
         return self
@@ -55,6 +58,7 @@ class _FakeClient:
 
 def _setup(monkeypatch):
     APPELS.clear()
+    TIMEOUTS.clear()
     monkeypatch.setattr(atelier_veille_proxy, "_base", lambda: "http://atelier-veille")
     monkeypatch.setattr(atelier_veille_proxy, "httpx",
                         type("_H", (), {"AsyncClient": _FakeClient}))
@@ -95,3 +99,20 @@ def test_config_forwarde_host_et_proto(monkeypatch):
     methode, url, entetes = APPELS[-1]
     assert entetes["X-Forwarded-Host"] == "workplaceagenda.duckdns.org"
     assert "X-Forwarded-Proto" in entetes
+
+
+def test_routes_lentes_ont_un_timeout_long(monkeypatch):
+    """Digest et audio global font travailler un LLM/TTS bien au-delà de 60 s : couper à
+    _TIMEOUT rendait un 500 à l'utilisateur alors que la brique aboutissait (constaté en
+    prod)."""
+    for chemin in ("veille/digest/executer", "veille/audio-global/generer"):
+        _setup(monkeypatch)
+        r = client.post(f"/atelier-veille-app/{chemin}", headers={"X-User-Id": "toussaint"})
+        assert r.status_code == 200
+        assert TIMEOUTS == [atelier_veille_proxy._TIMEOUT_LONG], chemin
+
+
+def test_routes_courtes_gardent_le_timeout_court(monkeypatch):
+    _setup(monkeypatch)
+    client.get("/atelier-veille-app/veille/sources", headers={"X-User-Id": "toussaint"})
+    assert TIMEOUTS == [atelier_veille_proxy._TIMEOUT]
