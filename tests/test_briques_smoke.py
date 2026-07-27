@@ -107,3 +107,29 @@ def test_aucune_collision_de_port():
         par_port.setdefault(data["port"], []).append(data.get("nom"))
     collisions = {port: noms for port, noms in par_port.items() if len(noms) > 1}
     assert not collisions, f"Collisions de port : {collisions}"
+
+
+# ── S207 : convention de santé ──────────────────────────────────────────────
+# `/sante` est la convention du parc (35 manifests sur 38 la suivaient déjà). Le Cœur, lui,
+# ne répondait qu'à `/health` : une sonde écrite de bonne foi tombait à côté et le croyait
+# muet — c'est arrivé pendant l'audit du 2026-07-27. Les deux briques restées sur `/health`
+# servent désormais AUSSI `/sante`, sans que l'ancien chemin disparaisse (healthchecks Docker
+# et oria-stack pointent dessus).
+#
+# `gateway` est la seule exception admise : c'est l'image officielle LiteLLM, dont on ne peut
+# pas ajouter de route. Elle est nommée ici pour que l'exception reste un choix explicite et
+# non un oubli qui se propage.
+EXCEPTIONS_SANTE = {"gateway"}
+
+
+@pytest.mark.parametrize("path", _manifests(), ids=lambda p: p.parent.name)
+def test_convention_url_sante(path):
+    data = _charger(path)
+    nom = path.parent.name
+    if data.get("couche") != "backend" or not data.get("url_sante"):
+        pytest.skip("contrat réseau non applicable")
+    if nom in EXCEPTIONS_SANTE:
+        pytest.skip(f"{nom} : exception admise (image tierce, route non modifiable)")
+    chemin = data["url_sante"].split("/", 3)[-1]
+    assert chemin.startswith(("sante", "health")), (
+        f"{nom} : url_sante « {data['url_sante']} » ne suit aucune convention connue")

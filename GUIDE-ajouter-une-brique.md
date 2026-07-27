@@ -37,6 +37,13 @@ Règles vérifiées par le filet (à respecter, sinon échec smoke) :
 - **Aucune collision de port** entre briques (piège connu images/dev sur 5950) — choisis un port
   libre. Convention actuelle : 5xxx/6xxx, voir la liste dans `Lancer Workplace.command`.
 - `nom` unique dans tout le registre.
+- **Le chemin de santé est `/sante`** (S207). C'est la convention du parc : une sonde écrite
+  d'après elle doit trouver ta brique. Si tu sers déjà `/health` (héritage, service tiers),
+  expose les DEUX — `@router.get("/health")` + `@router.get("/sante")` sur la même fonction,
+  motif `core/routers/systeme.py` — et ne retire jamais l'ancien chemin : les healthchecks
+  Docker pointent dessus. Seule exception admise à ce jour : `gateway`, image LiteLLM
+  officielle dont on ne peut pas ajouter de route (elle est nommée dans
+  `tests/test_briques_smoke.py::EXCEPTIONS_SANTE`).
 
 ## 2. Rendre la brique pilotable par l'assistant — les `capacites`
 C'est **le** mécanisme déclaratif (le plus simple, **zéro code Cœur**). Chaque entrée de
