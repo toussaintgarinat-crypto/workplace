@@ -19,7 +19,14 @@ class Settings(BaseSettings):
     gardien_default_mode: str = "propose"
     gardien_default_interval_minutes: int = 60
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore" : `env_file` fait entrer TOUTES les clés du .env dans la validation, et
+    # ce .env est partagé (docker-compose, Postgres, autres briques). Avec le défaut de
+    # pydantic-settings (extra="forbid"), une variable qui ne concerne même pas ce service —
+    # MEMOIRE_DB_PASSWORD, lue par le compose — faisait échouer `Settings()` À L'IMPORT, donc
+    # planter le backend au démarrage. Même arbitrage que briques/forge (config.py:101).
+    # Contrepartie assumée : une faute de frappe dans un nom de variable passe désormais
+    # inaperçue au lieu d'être signalée.
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()
