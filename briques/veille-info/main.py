@@ -111,6 +111,20 @@ def retagger_source_route(source_id: int, body: RetaggerSource,
     return {"ok": True}
 
 
+class ModifierUrlSource(BaseModel):
+    url: str
+
+
+@app.patch("/sources/{source_id}/url", tags=["sources"])
+def modifier_url_source_route(source_id: int, body: ModifierUrlSource,
+                              tenant: str = Depends(tenant_actuel)):
+    """Corrige l'URL d'une source (S203) sans perdre son historique d'articles."""
+    ok = stockage.modifier_url_source(tenant, source_id, body.url)
+    if not ok:
+        raise HTTPException(404, "Source introuvable.")
+    return {"ok": True, "url": body.url}
+
+
 class BasculerSourceActive(BaseModel):
     active: bool
 

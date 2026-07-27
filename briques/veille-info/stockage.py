@@ -229,6 +229,21 @@ def thematiques_actives(user_id: str) -> list[str]:
     return [r["thematique"] for r in rows]
 
 
+def modifier_url_source(user_id: str, source_id: int, url: str) -> bool:
+    """Corrige l'URL d'une source SANS perdre son historique (S203).
+
+    Les flux bougent tout le temps — sur les 5 sources « Cosmétique », 3 avaient simplement
+    déménagé (mauvais TLD, chemin changé, site migré). Sans cette route, corriger une URL
+    imposait de supprimer puis recréer la source, donc de casser le lien `articles.source_id`
+    et de perdre l'antériorité. Remet aussi le compteur d'échecs à zéro : une nouvelle URL
+    mérite une nouvelle chance."""
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE sources SET url = ?, echecs_consecutifs = 0, dernier_echec = NULL "
+            "WHERE id = ? AND user_id = ?", (url, source_id, user_id))
+    return cur.rowcount > 0
+
+
 def basculer_source_active(user_id: str, source_id: int, active: bool) -> bool:
     """Allume ou éteint UNE source (S203).
 

@@ -73,6 +73,13 @@ def test_front_permet_deteindre_et_rallumer_une_source():
         assert marqueur in html
 
 
+def test_front_permet_de_corriger_lurl_dune_source():
+    """S203 — un flux qui déménage se corrige sans perdre son historique d'articles."""
+    html = client.get("/").text
+    for marqueur in ("modifierUrlSource", "/url", "Corriger l'URL"):
+        assert marqueur in html
+
+
 def test_front_couvre_la_selection_de_thematique_pour_le_digest():
     html = client.get("/").text
     for marqueur in ("chargerThematiquesDigest", "genererDigestThematique",
