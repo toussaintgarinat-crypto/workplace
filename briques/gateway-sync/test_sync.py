@@ -112,6 +112,7 @@ def test_un_echec_unitaire_ne_bloque_pas_les_autres(monkeypatch):
     assert faux.ajouts == ["free/b/sain"]
     assert len(r["erreurs"]) == 1 and "recalcitrant" in r["erreurs"][0]
     assert r["statut"] == "ok", "un échec unitaire reste un sync réussi"
+    assert r["inchanges"] == 0, "un ajout en échec n'est pas un modèle en place"
 
 
 def test_sans_cle_openrouter_ne_fait_rien(monkeypatch):

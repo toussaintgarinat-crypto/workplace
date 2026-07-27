@@ -35,6 +35,10 @@ services:
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - DATABASE_URL=postgresql://litellm:${GATEWAY_DB_PASSWORD:-litellm}@db:5432/litellm
+      # S202 — sans ce drapeau, /model/new répond 500 « Set STORE_MODEL_IN_DB=True » : les
+      # modèles ne peuvent alors vivre QUE dans le YAML, ce qui interdit à `gateway-sync`
+      # d'entretenir les free/* à chaud. Cf. ADR 2026-07-27-sync-modeles-gratuits-gateway.md.
+      - STORE_MODEL_IN_DB=True
       # URL du serveur Ollama (ex: http://100.x.x.x:11434 via NetBird, ou http://192.168.1.x:11434 en LAN)
       # Laisser vide si pas d'Ollama — les modèles ollama/* seront ignorés
       - OLLAMA_URL=${OLLAMA_URL:-}
