@@ -89,13 +89,29 @@ def sante():
     return {"statut": "ok"}
 
 
+# Un rendu d'image ou de vidéo dépasse couramment la minute : les fournisseurs de
+# `briques/video` pollent jusqu'à 120 s + attente, et `briques/studio` s'accorde 200 s
+# (images) à 600 s (vidéo) pour les mêmes appels. Le défaut de 60 s ne convient qu'aux
+# lectures (listes de fournisseurs, séries, galerie).
+TIMEOUT_COURT = 60
+TIMEOUT_IMAGE = 200
+TIMEOUT_VIDEO = 600
+
+
 async def _relayer(methode: str, url: str, entetes: dict, marque: str,
-                   json_body: Optional[dict] = None, params: Optional[dict] = None) -> dict:
+                   json_body: Optional[dict] = None, params: Optional[dict] = None,
+                   timeout: int = TIMEOUT_COURT) -> dict:
     """Relaie un appel HTTP vers une brique composée (motif atelier-veille::
     _entetes_aval) ; 502 honnête si injoignable ou si la réponse n'est pas du JSON
-    exploitable — jamais un 500 opaque."""
+    exploitable — jamais un 500 opaque.
+
+    `timeout` : à relever sur les routes de RENDU, sinon on coupe la brique aval en plein
+    travail et on rend une erreur alors que le rendu aboutit — 500 fantôme du digest de
+    veille. Le proxy du Cœur (`core/routers/atelier_images_video_proxy.py`) porte les mêmes
+    valeurs : les deux couches doivent être relevées ensemble, relever l'une seule ne change
+    rien."""
     try:
-        async with httpx.AsyncClient(timeout=60) as c:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.request(methode, url, headers=entetes, json=json_body, params=params)
         if r.status_code == 204:
             return {}
@@ -150,7 +166,8 @@ class GenererImage(BaseModel):
 
 @app.post("/images/generer", tags=["images"])
 async def images_generer(body: GenererImage):
-    corps = await _relayer("POST", f"{IMAGES_URL}/generer", {}, "images", body.model_dump())
+    corps = await _relayer("POST", f"{IMAGES_URL}/generer", {}, "images", body.model_dump(),
+                           timeout=TIMEOUT_IMAGE)
     corps["url"] = _url_locale(corps.get("url", ""), "/fichiers/images")
     return corps
 
@@ -180,7 +197,8 @@ class GenererVideo(BaseModel):
 
 @app.post("/video/generer", tags=["video"])
 async def video_generer(body: GenererVideo):
-    corps = await _relayer("POST", f"{VIDEO_URL}/generer", {}, "video", body.model_dump())
+    corps = await _relayer("POST", f"{VIDEO_URL}/generer", {}, "video", body.model_dump(),
+                           timeout=TIMEOUT_VIDEO)
     corps["url"] = _url_locale(corps.get("url", ""), "/fichiers/video")
     return corps
 
@@ -209,25 +227,29 @@ async def studio_serie(serie_id: str, identite: str = Depends(_identite_service)
 @app.post("/studio/series/{serie_id}/personnages/{pid}/portrait", tags=["synergie"])
 async def studio_portrait(serie_id: str, pid: str, identite: str = Depends(_identite_service)):
     url = f"{STUDIO_URL}/series/{serie_id}/personnages/{pid}/portrait"
-    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+    return await _relayer("POST", url, _entetes_studio(identite), "studio",
+                          timeout=TIMEOUT_IMAGE)
 
 
 @app.post("/studio/series/{serie_id}/personnages/{pid}/animer", tags=["synergie"])
 async def studio_animer(serie_id: str, pid: str, identite: str = Depends(_identite_service)):
     url = f"{STUDIO_URL}/series/{serie_id}/personnages/{pid}/animer"
-    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+    return await _relayer("POST", url, _entetes_studio(identite), "studio",
+                          timeout=TIMEOUT_VIDEO)
 
 
 @app.post("/studio/series/{serie_id}/episode/{n}/couverture", tags=["synergie"])
 async def studio_couverture(serie_id: str, n: int, identite: str = Depends(_identite_service)):
     url = f"{STUDIO_URL}/series/{serie_id}/episode/{n}/couverture"
-    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+    return await _relayer("POST", url, _entetes_studio(identite), "studio",
+                          timeout=TIMEOUT_IMAGE)
 
 
 @app.post("/studio/series/{serie_id}/episode/{n}/teaser", tags=["synergie"])
 async def studio_teaser(serie_id: str, n: int, identite: str = Depends(_identite_service)):
     url = f"{STUDIO_URL}/series/{serie_id}/episode/{n}/teaser"
-    return await _relayer("POST", url, _entetes_studio(identite), "studio")
+    return await _relayer("POST", url, _entetes_studio(identite), "studio",
+                          timeout=TIMEOUT_VIDEO)
 
 
 class AjouterGalerie(BaseModel):

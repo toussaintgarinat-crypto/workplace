@@ -26,7 +26,25 @@ from etat import registre
 router = APIRouter()
 
 _PREFIXE = "/studio-app"
-_TIMEOUT = 60.0
+_TIMEOUT = outils_communs.TIMEOUT_PROXY_COURT
+
+# Routes de PRODUCTION du studio : elles font tourner un rendu (image, vidéo, synthèse
+# vocale) et la brique s'accorde bien plus que 60 s pour les mener à bien —
+# `briques/studio/studio.py::_appeler_video` attend jusqu'à 600 s. Un `_TIMEOUT` unique de
+# 60 s côté Cœur coupait donc AVANT la brique et rendait un 500 alors que le rendu
+# aboutissait : exactement le 500 fantôme du digest de veille. Valeurs recopiées de la
+# brique, pas inventées ici.
+_ROUTES_LENTES = (
+    ("/animer", 600.0),      # studio.py::_appeler_video  (timeout=600)
+    ("/teaser", 600.0),      # idem
+    ("/portrait", 200.0),    # studio.py::_appeler_images (timeout=200)
+    ("/couverture", 200.0),  # idem
+    ("/audio", 180.0),       # main.py:1021, rendu voix   (timeout=180)
+)
+
+
+def _timeout_pour(chemin: str) -> float:
+    return outils_communs.timeout_proxy(chemin, _ROUTES_LENTES)
 
 
 def _base() -> str:
@@ -65,7 +83,7 @@ async def studio_app_proxy(chemin: str, request: Request):
     """Proxy générique du reste des routes studio (API + `/manipulation_directe.js` +
     `/workplace.css`)."""
     corps = await request.body()
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_timeout_pour(chemin)) as client:
         r = await client.request(
             request.method, f"{_base()}/{chemin}",
             params=request.query_params, headers=_entetes(request),

@@ -74,6 +74,30 @@ def _entetes_brique(brique: str) -> dict:
     return entetes
 
 
+TIMEOUT_PROXY_COURT = 60.0
+
+
+def timeout_proxy(chemin: str, longs: tuple[tuple[str, float], ...]) -> float:
+    """Timeout qu'un proxy du Cœur doit accorder à ``chemin``, d'après les suffixes ``longs``.
+
+    Règle : **un proxy ne doit jamais couper avant la brique qu'il relaie.** Sinon
+    l'utilisateur reçoit un 500 alors que le travail aboutit derrière — le digest de veille
+    a rendu ce 500 fantôme pendant des semaines (`httpx.ReadTimeout` côté Cœur, 200 OK côté
+    veille-info) parce qu'un ``_TIMEOUT`` unique de 60 s s'appliquait à TOUTES les routes,
+    y compris celles qui font tourner un LLM ou un rendu vidéo.
+
+    Chaque appelant déclare donc ses routes lentes avec la valeur que sa brique aval s'accorde
+    à elle-même — jamais une valeur inventée ici. Le matching se fait par SUFFIXE parce que
+    ces routes portent des identifiants variables (``/series/{id}/episode/{n}/teaser``).
+    Premier suffixe qui correspond gagne, d'où l'ordre du tuple.
+    """
+    chemin = "/" + chemin.strip("/")
+    for suffixe, timeout in longs:
+        if chemin.endswith(suffixe):
+            return timeout
+    return TIMEOUT_PROXY_COURT
+
+
 def _url_dynamique(cap: dict, args: dict) -> str:
     """URL de la capacité, avec substitution des params de chemin ``{x}`` depuis les args."""
     url = cap["url"]
