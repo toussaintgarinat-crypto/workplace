@@ -2,6 +2,6 @@ fastapi==0.115.6
 uvicorn==0.34.0
 httpx==0.28.1
 python-multipart==0.0.20
-respx==0.21.1
+respx==0.22.0  # 0.21 n intercepte pas httpx 0.28 : les mocks passaient au travers (S205)
 pytest==8.3.3
 pytest-asyncio==0.24.0

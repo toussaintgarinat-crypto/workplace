@@ -13,4 +13,4 @@ python-multipart==0.0.20
 
 # Tests (mock HTTP pour le scan antivirus S195, cf. briques/peertube/requirements.txt)
 pytest==8.3.3
-respx==0.21.1
+respx==0.22.0  # 0.21 n intercepte pas httpx 0.28 : les mocks passaient au travers (S205)
