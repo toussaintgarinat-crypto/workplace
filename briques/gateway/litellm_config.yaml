@@ -9,6 +9,25 @@ litellm_settings:
   # envoyé par le client OpenAI sur les embeddings Ollama) au lieu d'échouer en 400.
   drop_params: true
 
+# S202 — mise au frigo des modèles morts. Sans ces réglages (aucun `router_settings`
+# n'existait), un modèle gratuit retiré du catalogue OpenRouter était retenté à CHAQUE
+# requête : 1746 lignes d'erreur / 24 h, dont 48 NotFoundError sur un seul slug.
+# Le sync quotidien (brique `gateway-sync`) finit par le supprimer, mais entre deux passages
+# il faut que la cascade cesse de le tenter tout de suite — d'où ce complément, volontairement
+# indépendant du sync (cf. ADR docs/decisions/2026-07-27-sync-modeles-gratuits-gateway.md).
+router_settings:
+  # 1 h : un modèle disparu du catalogue ne réapparaît pas dans la minute.
+  cooldown_time: 3600
+  allowed_fails: 3
+  allowed_fails_policy:
+    # Le modèle n'existe pas / plus : rien à réessayer, on l'écarte au premier refus.
+    NotFoundErrorAllowedFails: 0
+    # Clé invalide : réessayer ne fera que répéter l'erreur.
+    AuthenticationErrorAllowedFails: 0
+    # À l'inverse, les gratuits rate-limitent BEAUCOUP et restent parfaitement utilisables :
+    # les écarter pour ça viderait la cascade de ses modèles sains.
+    RateLimitErrorAllowedFails: 100
+
 model_list:
   - model_name: openai/gpt-4o
     litellm_params:
@@ -35,8 +54,8 @@ model_list:
       api_base: https://openrouter.ai/api/v1
 
   # DeepSeek V4 Flash — cerveau par défaut de l'assistant du Cœur (rapide, contexte
-  # 1M, function-calling). Payant (≠ free/*), donc déclaré explicitement ici : le
-  # sync des modèles gratuits ne le touche pas (il ne gère que le bloc AUTO ci-dessous).
+  # 1M, function-calling). Payant (≠ free/*), donc déclaré ici : le sync ne touche QUE
+  # les modèles préfixés `free/`, qu'il gère désormais par l'API (S202).
   - model_name: deepseek/deepseek-v4-flash
     litellm_params:
       model: openrouter/deepseek/deepseek-v4-flash
@@ -61,104 +80,11 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
-  # AUTO-FREE-MODELS-START — 2026-07-27 20:09 (12 modèles)
-  - model_name: free/nvidia/nemotron-3-ultra-550b-a55b
-    litellm_params:
-      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 1000000
-  - model_name: free/inclusionai/ling-3.0-flash
-    litellm_params:
-      model: openrouter/inclusionai/ling-3.0-flash:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/poolside/laguna-s-2.1
-    litellm_params:
-      model: openrouter/poolside/laguna-s-2.1:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/poolside/laguna-xs-2.1
-    litellm_params:
-      model: openrouter/poolside/laguna-xs-2.1:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/poolside/laguna-m.1
-    litellm_params:
-      model: openrouter/poolside/laguna-m.1:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/google/gemma-4-26b-a4b-it
-    litellm_params:
-      model: openrouter/google/gemma-4-26b-a4b-it:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/google/gemma-4-31b-it
-    litellm_params:
-      model: openrouter/google/gemma-4-31b-it:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/nvidia/nemotron-3-super-120b-a12b
-    litellm_params:
-      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 262144
-  - model_name: free/cohere/north-mini-code
-    litellm_params:
-      model: openrouter/cohere/north-mini-code:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 256000
-  - model_name: free/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
-    litellm_params:
-      model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 256000
-  - model_name: free/nvidia/nemotron-3-nano-30b-a3b
-    litellm_params:
-      model: openrouter/nvidia/nemotron-3-nano-30b-a3b:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 256000
-  - model_name: free/openrouter/free
-    litellm_params:
-      model: openrouter/openrouter/free
-      api_key: os.environ/OPENROUTER_API_KEY
-      api_base: https://openrouter.ai/api/v1
-      timeout: 10
-      num_retries: 0
-      # context: 200000
-  # AUTO-FREE-MODELS-END
+  # Les modèles gratuits (free/*) NE SONT PLUS déclarés ici : ils sont créés et supprimés à
+  # chaud via l'API LiteLLM par la brique `gateway-sync`, et persistés dans gateway-db.
+  # Les laisser dans ce fichier ferait cohabiter deux sources de vérité — LiteLLM recharge son
+  # YAML au démarrage et réintroduirait les modèles morts par-dessus l'état de la base.
+  # Cf. ADR docs/decisions/2026-07-27-sync-modeles-gratuits-gateway.md.
 
   # --- OpenCode Go ------------------------------------------------------------
   # Abonnement « Go » (forfait en $-équivalent, distinct du crédit « Zen balance »).

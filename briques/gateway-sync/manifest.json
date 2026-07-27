@@ -1,0 +1,31 @@
+{
+  "nom": "gateway-sync",
+  "famille": "ia",
+  "version": "0.1.0",
+  "description": "Entretien des modèles gratuits de la Gateway — sync OpenRouter → LiteLLM",
+  "role": "maintenance",
+  "couche": "backend",
+  "statut": "actif",
+  "chemin_source": "briques/gateway-sync",
+  "port": 4002,
+  "url_sante": "http://host.docker.internal:4002/sante",
+  "depends_on": ["gateway"],
+  "offre": [],
+  "besoin": [
+    "LITELLM_MASTER_KEY",
+    "OPENROUTER_API_KEY"
+  ],
+  "capacites": [],
+  "taches": [
+    {
+      "nom": "sync-modeles-gratuits",
+      "description": "Aligne les modèles free/* de LiteLLM sur le catalogue OpenRouter (un modèle gratuit peut passer payant ou disparaître sans préavis).",
+      "methode": "POST",
+      "chemin": "/sync",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "entete_token_env": "GATEWAY_SYNC_KEY",
+      "tolere_echec": true
+    }
+  ]
+}
