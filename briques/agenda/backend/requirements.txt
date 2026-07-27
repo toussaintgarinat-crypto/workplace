@@ -33,7 +33,7 @@ pyasn1==0.6.3
 pycparser==3.0
 pydantic==2.9.2
 pydantic-settings==2.5.2
-pydantic_core==2.23.2
+pydantic_core==2.23.4  # imposé par pydantic 2.9.2 — S205
 python-dotenv==1.0.1
 python-jose==3.3.0
 python-dateutil==2.9.0.post0
