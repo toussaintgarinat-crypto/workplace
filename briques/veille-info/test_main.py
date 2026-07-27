@@ -209,3 +209,33 @@ def test_envoyer_audio_global_introuvable_404(monkeypatch):
     r = client.post("/audio-global/999999/envoyer", headers=_entetes("main-audioglobal-6"),
                     json={"destinataires": ["x@example.com"]})
     assert r.status_code == 404
+
+
+def test_get_thematiques(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    client.post("/sources", headers=_entetes("main-pause-alice"),
+               json={"nom": "Flux A", "url": "https://a4.example/rss", "thematique": "Tech"})
+    r = client.get("/thematiques", headers=_entetes("main-pause-alice"))
+    assert r.status_code == 200
+    corps = r.json()
+    assert any(t["thematique"] == "Tech" and t["nb_sources"] == 1 for t in corps)
+
+
+def test_patch_pause_thematique(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    client.post("/sources", headers=_entetes("main-pause-bob"),
+               json={"nom": "Flux B", "url": "https://b4.example/rss", "thematique": "Tech"})
+    r = client.patch("/thematiques/Tech/pause", json={"en_pause": True},
+                     headers=_entetes("main-pause-bob"))
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "nb_sources": 1}
+
+    corps = client.get("/thematiques", headers=_entetes("main-pause-bob")).json()
+    assert next(t for t in corps if t["thematique"] == "Tech")["en_pause"] is True
+
+
+def test_patch_pause_thematique_inexistante_404(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    r = client.patch("/thematiques/Inexistante/pause", json={"en_pause": True},
+                     headers=_entetes("main-pause-carla"))
+    assert r.status_code == 404

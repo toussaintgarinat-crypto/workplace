@@ -111,6 +111,24 @@ def retagger_source_route(source_id: int, body: RetaggerSource,
     return {"ok": True}
 
 
+@app.get("/thematiques", tags=["sources"])
+def lister_thematiques_route(tenant: str = Depends(tenant_actuel)):
+    return stockage.lister_thematiques(tenant)
+
+
+class BasculerPauseThematique(BaseModel):
+    en_pause: bool
+
+
+@app.patch("/thematiques/{thematique}/pause", tags=["sources"])
+def basculer_pause_thematique_route(thematique: str, body: BasculerPauseThematique,
+                                    tenant: str = Depends(tenant_actuel)):
+    n = stockage.basculer_pause_thematique(tenant, thematique, body.en_pause)
+    if n == 0:
+        raise HTTPException(404, "Thématique introuvable.")
+    return {"ok": True, "nb_sources": n}
+
+
 @app.get("/digests", tags=["digests"])
 def lister_digests_route(tenant: str = Depends(tenant_actuel)):
     return stockage.lister_digests(tenant)
