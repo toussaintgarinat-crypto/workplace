@@ -21,8 +21,9 @@ import routage_outils
 from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
-from routers import (agenda, assistant, atelier_images_video_proxy, dashboard, invite,
-                     mail_proxy, media_proxy, profil, studio_proxy, systeme, usine)
+from routers import (agenda, assistant, atelier_images_video_proxy, atelier_veille_proxy,
+                     dashboard, invite, mail_proxy, media_proxy, profil, studio_proxy,
+                     systeme, usine)
 from routers import auth as routeur_auth
 
 
@@ -96,6 +97,12 @@ app.include_router(studio_proxy.router, dependencies=[Depends(exiger_session)] +
 # tenant, pour que les synergies (portrait/couverture/teaser/animer) et la galerie soient
 # isolées par personne, cf. core/routers/atelier_images_video_proxy.py.
 app.include_router(atelier_images_video_proxy.router,
+                   dependencies=[Depends(exiger_session)] + _tenant)
+# Atelier Veille (S190) : même motif que Studio/Atelier Images & Vidéo — session
+# obligatoire + contexte de tenant, pour que les sources RSS/digests/audio-global soient
+# isolés par personne, cf. core/routers/atelier_veille_proxy.py. Le lien dashboard vers ce
+# proxy (au lieu de l'URL brute) reste une tâche séparée.
+app.include_router(atelier_veille_proxy.router,
                    dependencies=[Depends(exiger_session)] + _tenant)
 # Fichiers de brique media (images/video/export) : session obligatoire (fichiers nommés
 # par uuid, aucune notion multi-tenant côté brique) — cf. core/routers/media_proxy.py.
