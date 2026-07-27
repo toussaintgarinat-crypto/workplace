@@ -69,8 +69,8 @@
       foyer d'un coup (comme l'horloge quotidienne), pas seulement pour toi.</p>
     <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <label for="select-thematique-digest" style="color:var(--mut);font-size:.85rem">Générer pour une thématique précise :</label>
-      <select id="select-thematique-digest" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)"></select>
-      <button id="btn-generer-digest-thematique" onclick="genererDigestThematique()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">
+      <select id="select-thematique-digest" disabled style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)"></select>
+      <button id="btn-generer-digest-thematique" disabled onclick="genererDigestThematique()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">
         Générer pour cette thématique
       </button>
     </div>
@@ -265,6 +265,7 @@ async function chargerThematiquesDigest() {
       return;
     }
     select.disabled = false;
+    document.getElementById('btn-generer-digest-thematique').disabled = false;
     select.innerHTML = thematiques.map(t => {
       const label = (t.thematique || 'Général') + (t.en_pause ? ' (en pause)' : '');
       return `<option value="${esc(t.thematique)}">${esc(label)}</option>`;
