@@ -67,6 +67,13 @@
     </div>
     <p style="color:var(--mut);font-size:.82rem">Ce bouton déclenche le digest pour TOUT le
       foyer d'un coup (comme l'horloge quotidienne), pas seulement pour toi.</p>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label for="select-thematique-digest" style="color:var(--mut);font-size:.85rem">Générer pour une thématique précise :</label>
+      <select id="select-thematique-digest" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)"></select>
+      <button id="btn-generer-digest-thematique" onclick="genererDigestThematique()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">
+        Générer pour cette thématique
+      </button>
+    </div>
     <div id="liste-digests"></div>
     <div id="erreur-digests" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
   </div>
@@ -94,7 +101,7 @@ function ouvrirOnglet(nom) {
     document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
   }
   if (nom === 'sources') chargerSources();
-  if (nom === 'digests') chargerDigests();
+  if (nom === 'digests') { chargerDigests(); chargerThematiquesDigest(); }
   if (nom === 'audioglobal') { chargerChoixDigests(); chargerHistoriqueAudioGlobal(); }
 }
 
@@ -246,6 +253,54 @@ async function genererDigest() {
   }
 }
 
+async function chargerThematiquesDigest() {
+  const select = document.getElementById('select-thematique-digest');
+  try {
+    const r = await fetch(`${API_BASE}/veille/thematiques`);
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const thematiques = await r.json();
+    if (!thematiques.length) {
+      select.innerHTML = '<option value="" disabled selected>Aucune thématique — ajoute une source dans Sources RSS</option>';
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    select.innerHTML = thematiques.map(t => {
+      const label = (t.thematique || 'Général') + (t.en_pause ? ' (en pause)' : '');
+      return `<option value="${esc(t.thematique)}">${esc(label)}</option>`;
+    }).join('');
+  } catch (e) {
+    select.innerHTML = '<option value="" disabled selected>Erreur de chargement</option>';
+    select.disabled = true;
+  }
+}
+
+async function genererDigestThematique() {
+  const select = document.getElementById('select-thematique-digest');
+  const bouton = document.getElementById('btn-generer-digest-thematique');
+  const erreur = document.getElementById('erreur-digests');
+  erreur.textContent = '';
+  if (select.disabled) return;
+  const thematique = select.value;
+  bouton.disabled = true;
+  try {
+    const r = await fetch(`${API_BASE}/veille/digest/executer`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({thematique})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const resultat = await r.json();
+    if (!resultat.digests_crees) {
+      erreur.textContent = 'Rien à faire — déjà généré aujourd\'hui ou aucun nouvel article pour cette thématique.';
+    }
+    await chargerDigests();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
 let DIGESTS_DISPONIBLES = [];
 let ORDRE_CHOISI = [];
 
@@ -344,6 +399,7 @@ async function chargerHistoriqueAudioGlobal() {
 
 chargerConfig();
 chargerDigests();
+chargerThematiquesDigest();
 </script>
 </body>
 </html>
