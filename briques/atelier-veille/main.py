@@ -325,16 +325,22 @@ async def envoyer_audio_global(audio_id: int, body: EnvoyerAudioGlobal,
     return corps
 
 
+class ExecuterDigest(BaseModel):
+    thematique: str | None = None
+
+
 @app.post("/veille/digest/executer", tags=["veille"])
-async def executer_digest():
+async def executer_digest(body: ExecuterDigest | None = None):
     """Déclenche le digest quotidien pour TOUT le foyer (motif horloge, pas un compte
     personnel) — gardé côté veille-info par un jeton de SERVICE, jamais l'identité du
-    navigateur."""
+    navigateur. `body.thematique` (S200), si fourni, cible une seule thématique, y compris
+    en pause (fetch forcé côté veille-info)."""
     jeton = os.environ.get("VEILLE_INFO_KEY", "")
     entetes = {"Authorization": f"Bearer {jeton}"}
     try:
         async with httpx.AsyncClient(timeout=60) as c:
-            r = await c.post(f"{VEILLE_INFO_URL}/digest/executer", headers=entetes)
+            r = await c.post(f"{VEILLE_INFO_URL}/digest/executer", headers=entetes,
+                             json=body.model_dump() if body else None)
         corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
