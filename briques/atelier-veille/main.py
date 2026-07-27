@@ -218,6 +218,44 @@ async def retagger_source(source_id: int, body: RetaggerSource,
     return corps
 
 
+class BasculerPauseThematique(BaseModel):
+    en_pause: bool
+
+
+@app.get("/veille/thematiques", tags=["veille"])
+async def lister_thematiques(x_user_id: Optional[str] = Header(None),
+                             x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{VEILLE_INFO_URL}/thematiques", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.patch("/veille/thematiques/{thematique}/pause", tags=["veille"])
+async def basculer_pause_thematique(thematique: str, body: BasculerPauseThematique,
+                                    x_user_id: Optional[str] = Header(None),
+                                    x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.patch(f"{VEILLE_INFO_URL}/thematiques/{thematique}/pause",
+                              headers=entetes, json=body.model_dump())
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
 @app.post("/veille/audio-global/generer", tags=["veille"])
 async def generer_audio_global(body: GenererAudioGlobal, x_user_id: Optional[str] = Header(None),
                                x_api_key: Optional[str] = Header(None)):
