@@ -3,3 +3,4 @@
 # `backend/`. Sans ce fichier, le harnais n'installait rien et la brique échouait sur un
 # `No module named 'sqlalchemy'` qui ne disait rien de son code.
 -r backend/requirements.txt
+respx==0.22.0  # mocks httpx des tests backend (0.22 = version compatible httpx 0.28)
