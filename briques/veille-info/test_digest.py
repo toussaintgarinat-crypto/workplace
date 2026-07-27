@@ -18,6 +18,29 @@ def test_user_ids_none_decouvre_via_stockage(monkeypatch):
     assert resultat == {"utilisateurs_traites": 0, "digests_crees": 0}
 
 
+def test_thematique_en_pause_aucun_digest_ni_appel_llm(monkeypatch):
+    """Preuve du mécanisme de pause (S199+) : une thématique dont toutes les sources sont
+    enabled=0 est absente de thematiques_actives() → _traiter_utilisateur ne l'itère jamais
+    → aucun appel LLM, aucun coût. Aucune modification de digest.py n'est nécessaire, le
+    filtre existant suffit — ce test le prouve plutôt que de l'affirmer."""
+    stockage.creer_source("digest-pause-alice", "Flux Tech", "https://pause-a.example/rss",
+                          thematique="Tech")
+    stockage.basculer_pause_thematique("digest-pause-alice", "Tech", en_pause=True)
+
+    appels_llm = []
+    monkeypatch.setattr(digest.rss, "fetcher", lambda url: "<flux/>")
+    monkeypatch.setattr(digest.rss, "parser_items", lambda texte: [
+        {"titre": "Article 1", "url": "https://pause-a.example/1", "published_at": ""},
+    ])
+    monkeypatch.setattr(digest, "llm_complete",
+                        lambda prompt, system="": appels_llm.append(1) or "Résumé.")
+
+    resultat = digest.executer_digest_quotidien(user_ids=["digest-pause-alice"])
+
+    assert resultat == {"utilisateurs_traites": 1, "digests_crees": 0}
+    assert appels_llm == []
+
+
 def test_pipeline_complet_cree_un_digest(monkeypatch):
     stockage.creer_source("digest-alice", "Flux A", "https://a.example/rss")
 
