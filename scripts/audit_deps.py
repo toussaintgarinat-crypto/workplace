@@ -22,7 +22,10 @@ CONTRAINTES = RACINE / "constraints-workplace.txt"
 # pas : `oria` est un stack tiers (visio) qui suit son propre amont, `synopsis` a été repris
 # sur des versions récentes. Les exempter explicitement vaut mieux que de les laisser en
 # écart permanent — un rapport qui n'est jamais vert finit par ne plus être lu.
-EXEMPTS = {"oria", "synopsis"}
+EXEMPTS = {"oria", "synopsis",
+           # Prototype conservé pour mémoire, jamais construit ni déployé : l'aligner
+           # reviendrait à entretenir du code mort.
+           "poc"}
 # `(?:\[[^\]]*\])?` : les EXTRAS font partie de la syntaxe pip (`uvicorn[standard]==0.34.0`).
 # Sans eux, le regex s'arrêtait au crochet et ne matchait pas — 23 briques sur 38 épinglaient
 # uvicorn avec un extra et échappaient donc SILENCIEUSEMENT à l'audit. Un auditeur qui ne voit
@@ -49,9 +52,16 @@ def charger_contraintes():
 
 def main():
     cibles = charger_contraintes()
+    # Les requirements IMBRIQUÉS comptent autant que ceux de surface : `forge` et `memoire`
+    # embarquent un sous-projet avec son propre fichier, et un désaccord entre les deux rend
+    # la brique INSTALLABLE NULLE PART (pip refuse de résoudre). Ne scanner que
+    # `briques/*/requirements.txt` laissait ce conflit invisible — l'audit sortait vert alors
+    # que forge et memoire ne s'installaient plus. Second angle mort après celui des extras.
     reqs = (glob.glob(str(RACINE / "core/requirements.txt"))
             + glob.glob(str(RACINE / "briques/*/requirements.txt"))
+            + glob.glob(str(RACINE / "briques/*/**/requirements.txt"), recursive=True)
             + glob.glob(str(RACINE / "oria-stack/*/requirements.txt")))
+    reqs = [r for r in reqs if "/node_modules/" not in r and "/.venv" not in r]
     ecarts, flottants = [], []
     for r in sorted(reqs):
         comp = Path(r).parent.name
