@@ -1,0 +1,5 @@
+# S206 — dépendances pour exécuter les tests de cette brique.
+# Contrairement aux autres, `agenda` n'a pas de requirements.txt à sa racine : tout vit dans
+# `backend/`. Sans ce fichier, le harnais n'installait rien et la brique échouait sur un
+# `No module named 'sqlalchemy'` qui ne disait rien de son code.
+-r backend/requirements.txt

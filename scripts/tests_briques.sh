@@ -42,8 +42,14 @@ version_python() {
 
 briques=("$@")
 if [ ${#briques[@]} -eq 0 ]; then
+  # Détection RÉCURSIVE : plusieurs briques rangent leurs tests dans un sous-dossier
+  # (`agenda/backend/tests/`, `forge/forge/core/tests/`). Ne regarder que la racine les
+  # excluait silencieusement du filet — un test jamais lancé ne protège de rien.
   for d in "$RACINE"/briques/*/; do
-    compgen -G "$d/test_*.py" >/dev/null && briques+=("$(basename "$d")")
+    if find "$d" -name 'test_*.py' -not -path '*/node_modules/*' -not -path '*/.venv*' \
+         -print -quit 2>/dev/null | grep -q .; then
+      briques+=("$(basename "$d")")
+    fi
   done
 fi
 
