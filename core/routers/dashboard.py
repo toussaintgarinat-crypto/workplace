@@ -3518,7 +3518,7 @@ async def dashboard(request: Request):
         .replace("__MAIL_UI_URL__", u("MAIL"))
         .replace("__AGENDA_UI_URL__", u("AGENDA"))
         .replace("__GEO_UI_URL__", geo_ui)
-        .replace("__ATELIER_VEILLE_UI_URL__", u("ATELIER_VEILLE"))
+        .replace("__ATELIER_VEILLE_UI_URL__", "/atelier-veille-app/atelier")
         .replace("__SYNOPSIS_UI_URL__", u("SYNOPSIS"))
         .replace("__VOIX_UI_URL__", u("VOIX"))
         .replace("__MEMOIRE_UI_URL__", memoire_ui)

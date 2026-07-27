@@ -100,6 +100,15 @@ def test_tuile_atelier_images_video_active():
     assert "http://localhost:6160" not in html
 
 
+def test_dashboard_lien_atelier_veille_proxifie():
+    """S199 : Atelier Veille pointe vers le proxy /atelier-veille-app/atelier du Cœur
+    (même motif que Studio/Atelier Images & Vidéo — session same-origin, PAS l'URL
+    brute :6130 qui contournerait l'injection X-User-Id/tenant de session)."""
+    html = client.get("/dashboard").text
+    assert "/atelier-veille-app/atelier" in html
+    assert ":6130/atelier" not in html
+
+
 # ── S128 — URLs d'iframe relatives à l'hôte de la requête (LAN + mesh) ─────────────
 def test_urls_iframe_suivent_l_hote_lan(monkeypatch):
     """En LAN (Host = l'IP du HP), les iframes pointent sur CETTE IP, même port, en http.
