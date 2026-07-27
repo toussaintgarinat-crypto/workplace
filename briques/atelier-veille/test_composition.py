@@ -9,9 +9,14 @@ import main as M
 client = TestClient(M.app)
 
 
-def _client_json(rep_json, status=200, boom=False, json_boom=False):
+def _client_json(rep_json, status=200, boom=False, json_boom=False, content=None, headers=None):
+    _contenu = content if content is not None else b""
+    _entetes_rep = headers or {}
+
     class FauxRep:
         status_code = status
+        content = _contenu
+        headers = _entetes_rep
         def json(self):
             if json_boom:
                 raise ValueError("réponse non-JSON (flux tronqué)")
@@ -35,6 +40,11 @@ def _client_json(rep_json, status=200, boom=False, json_boom=False):
             if boom:
                 raise RuntimeError("connection refused")
             FauxClient.dernier_appel = ("DELETE", url, headers)
+            return FauxRep()
+        async def patch(self, url, headers=None, json=None, **k):
+            if boom:
+                raise RuntimeError("connection refused")
+            FauxClient.dernier_appel = ("PATCH", url, headers, json)
             return FauxRep()
     return FauxClient
 
@@ -155,3 +165,162 @@ def test_executer_digest_refuse_relaie_lerreur(monkeypatch):
                         _client_json({"detail": "Jeton horloge invalide."}, status=401))
     r = client.post("/veille/digest/executer")
     assert r.status_code == 401
+
+
+# --- retagger_source (PATCH /veille/sources/{id}/thematique) — S199 ---
+
+def test_retagger_source_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json({"id": 2, "thematique": "tech"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.patch("/veille/sources/2/thematique", json={"thematique": "tech"},
+                 headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers, _ = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/sources/2/thematique"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+
+
+def test_retagger_source_sans_identite_ne_fabrique_rien(monkeypatch):
+    Faux = _client_json({"id": 2, "thematique": "tech"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.patch("/veille/sources/2/thematique", json={"thematique": "tech"})
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {}
+
+
+def test_retagger_source_proxifie_le_corps(monkeypatch):
+    Faux = _client_json({"id": 2, "thematique": "tech"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.patch("/veille/sources/2/thematique", json={"thematique": "tech"})
+    assert r.status_code == 200
+    _, _, _, corps = Faux.dernier_appel
+    assert corps == {"thematique": "tech"}
+
+
+def test_retagger_source_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.patch("/veille/sources/2/thematique", json={"thematique": "tech"})
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
+
+
+# --- generer_audio_global (POST /veille/audio-global/generer) — S199 ---
+
+def test_generer_audio_global_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json({"id": 5, "statut": "en_cours"}, status=201)
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/veille/audio-global/generer", json={"ordre_thematiques": [1, 2]},
+                headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers, _ = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/audio-global/generer"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+
+
+def test_generer_audio_global_sans_identite_ne_fabrique_rien(monkeypatch):
+    Faux = _client_json({"id": 5, "statut": "en_cours"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/veille/audio-global/generer", json={"ordre_thematiques": [1, 2]})
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {}
+
+
+def test_generer_audio_global_proxifie_le_corps(monkeypatch):
+    Faux = _client_json({"id": 5, "statut": "en_cours"})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/veille/audio-global/generer", json={"ordre_thematiques": [3, 1, 2]})
+    assert r.status_code == 200
+    _, _, _, corps = Faux.dernier_appel
+    assert corps == {"ordre_thematiques": [3, 1, 2]}
+
+
+def test_generer_audio_global_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.post("/veille/audio-global/generer", json={"ordre_thematiques": [1]})
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
+
+
+# --- lister_audio_global (GET /veille/audio-global) — S199 ---
+
+def test_lister_audio_global_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json([])
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.get("/veille/audio-global", headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/audio-global"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+
+
+def test_lister_audio_global_sans_identite_ne_fabrique_rien(monkeypatch):
+    Faux = _client_json([])
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.get("/veille/audio-global")
+    _, _, headers = Faux.dernier_appel
+    assert headers == {}
+
+
+def test_lister_audio_global_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.get("/veille/audio-global")
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
+
+
+# --- envoyer_audio_global (POST /veille/audio-global/{id}/envoyer) — S199 ---
+
+def test_envoyer_audio_global_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json({"envoye": True})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/veille/audio-global/7/envoyer", json={"destinataires": ["claire@example.fr"]},
+                headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers, _ = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/audio-global/7/envoyer"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+
+
+def test_envoyer_audio_global_sans_identite_ne_fabrique_rien(monkeypatch):
+    Faux = _client_json({"envoye": True})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/veille/audio-global/7/envoyer", json={"destinataires": ["claire@example.fr"]})
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {}
+
+
+def test_envoyer_audio_global_proxifie_le_corps(monkeypatch):
+    Faux = _client_json({"envoye": True})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/veille/audio-global/7/envoyer",
+                    json={"destinataires": ["claire@example.fr"], "sujet": "Veille du jour",
+                          "message": "Voici l'audio."})
+    assert r.status_code == 200
+    _, _, _, corps = Faux.dernier_appel
+    assert corps == {"destinataires": ["claire@example.fr"], "sujet": "Veille du jour",
+                     "message": "Voici l'audio."}
+
+
+def test_envoyer_audio_global_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.post("/veille/audio-global/7/envoyer", json={"destinataires": ["claire@example.fr"]})
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
+
+
+# --- fichier_audio_global (GET /veille/audio-global/{jeton}.mp3) — S199
+# Proxy BINAIRE volontairement sans identité (le jeton EST le contrôle d'accès, cf.
+# docstring de la route dans main.py) : pas de test de relai d'identité ici, ce serait
+# tester une propriété que cette route n'a pas.
+
+def test_fichier_audio_global_relaie_les_octets_bruts(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient",
+                        _client_json(None, content=b"\xff\xfbID3fauxmp3",
+                                    headers={"content-type": "audio/mpeg"}))
+    r = client.get("/veille/audio-global/jeton-abc.mp3")
+    assert r.status_code == 200
+    assert r.content == b"\xff\xfbID3fauxmp3"
+    assert r.headers["content-type"] == "audio/mpeg"
+
+
+def test_fichier_audio_global_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.get("/veille/audio-global/jeton-abc.mp3")
+    assert r.status_code == 502
+    assert "veille-info" in r.json()["detail"]
