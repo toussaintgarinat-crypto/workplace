@@ -54,3 +54,10 @@ def test_front_couvre_les_digests_et_laudio():
 def test_front_avertit_que_la_generation_est_pour_tout_le_foyer():
     html = client.get("/").text
     assert "foyer" in html.lower()
+
+
+def test_front_couvre_la_selection_de_thematique_pour_le_digest():
+    html = client.get("/").text
+    for marqueur in ("chargerThematiquesDigest", "genererDigestThematique",
+                     "select-thematique-digest"):
+        assert marqueur in html
