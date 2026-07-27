@@ -26,6 +26,7 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
   const [isActivated, setIsActivated]   = useState(false)
 
   const bottomRef           = useRef(null)
+  const inputRef            = useRef(null)
   const recognitionRef      = useRef(null)
   const wakeRecognitionRef  = useRef(null)
   const alwaysListeningRef  = useRef(false)
@@ -37,6 +38,14 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Fait grandir le textarea avec le contenu (jusqu'à la limite fixée en CSS)
+  useEffect(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = `${ta.scrollHeight}px`
+  }, [input])
 
   useEffect(() => {
     loadingRef.current = loading
@@ -422,10 +431,16 @@ export default function AgentChatPanel({ agent, moi, onClose }) {
               {isListening ? '🔴' : '🎤'}
             </button>
           )}
-          <input
-            type="text"
+          <textarea
+            ref={inputRef}
+            rows={1}
             value={input}
             onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                sendMessage(e)
+              }
+            }}
             placeholder={alwaysListening ? t('agentChat.listeningOrType') : t('agentChat.messagePlaceholder', { nom: agent.nom })}
             disabled={loading}
             autoFocus

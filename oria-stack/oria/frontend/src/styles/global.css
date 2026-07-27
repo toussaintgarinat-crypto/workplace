@@ -2633,12 +2633,14 @@ input  { font-family: inherit; }
 @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 .agent-chat-input {
   display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ink-800); flex-shrink: 0;
+  align-items: flex-end;
 }
-.agent-chat-input input {
+.agent-chat-input textarea {
   flex: 1; background: var(--ink-800); border: 1px solid var(--ink-700); border-radius: 8px;
   color: var(--text); padding: 8px 12px; font-size: 13px; outline: none;
+  font-family: inherit; resize: none; overflow-y: auto; max-height: 120px; line-height: 1.4;
 }
-.agent-chat-input input:focus { border-color: var(--or-500); }
+.agent-chat-input textarea:focus { border-color: var(--or-500); }
 .agent-chat-input button {
   background: var(--or-500); border: none; color: #fff; border-radius: 8px;
   padding: 8px 14px; font-size: 16px; font-weight: 700;
