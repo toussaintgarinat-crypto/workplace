@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Atelier Veille", version="0.1.0")
@@ -86,6 +86,21 @@ def _entetes_aval(x_user_id: Optional[str], x_api_key: Optional[str]) -> dict:
 class CreerSource(BaseModel):
     nom: str = Field(min_length=1)
     url: str = Field(min_length=1)
+    thematique: str = ""
+
+
+class RetaggerSource(BaseModel):
+    thematique: str = ""
+
+
+class GenererAudioGlobal(BaseModel):
+    ordre_thematiques: list[int] = Field(min_length=1)
+
+
+class EnvoyerAudioGlobal(BaseModel):
+    destinataires: list[str] = Field(min_length=1)
+    sujet: Optional[str] = None
+    message: Optional[str] = None
 
 
 @app.get("/sante", tags=["système"])
@@ -166,6 +181,92 @@ async def lister_digests(x_user_id: Optional[str] = Header(None),
     try:
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.get(f"{VEILLE_INFO_URL}/digests", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.patch("/veille/sources/{source_id}/thematique", tags=["veille"])
+async def retagger_source(source_id: int, body: RetaggerSource,
+                          x_user_id: Optional[str] = Header(None),
+                          x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.patch(f"{VEILLE_INFO_URL}/sources/{source_id}/thematique",
+                              headers=entetes, json=body.model_dump())
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.post("/veille/audio-global/generer", tags=["veille"])
+async def generer_audio_global(body: GenererAudioGlobal, x_user_id: Optional[str] = Header(None),
+                               x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=300) as c:
+            r = await c.post(f"{VEILLE_INFO_URL}/audio-global/generer", headers=entetes,
+                             json=body.model_dump())
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.get("/veille/audio-global", tags=["veille"])
+async def lister_audio_global(x_user_id: Optional[str] = Header(None),
+                              x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{VEILLE_INFO_URL}/audio-global", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.get("/veille/audio-global/{jeton}.mp3", include_in_schema=False, tags=["veille"])
+async def fichier_audio_global(jeton: str):
+    """Sert le fichier mp3 de l'audio global — proxy BINAIRE (pas JSON) vers veille-info,
+    même motif pass-through que les autres routes `/veille/*` de ce fichier. Nécessaire car
+    VEILLE_INFO_URL pointe vers `host.docker.internal` (joignable seulement depuis CE
+    conteneur), jamais depuis le navigateur — contrairement à la carte geo (`/config`), il
+    n'existe pas de port hôte dédié à dériver ici : le navigateur ne parle qu'à l'atelier."""
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.get(f"{VEILLE_INFO_URL}/audio-global/{jeton}.mp3")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        raise HTTPException(r.status_code, "Audio introuvable ou lien expiré.")
+    return Response(content=r.content, media_type=r.headers.get("content-type", "audio/mpeg"))
+
+
+@app.post("/veille/audio-global/{audio_id}/envoyer", tags=["veille"])
+async def envoyer_audio_global(audio_id: int, body: EnvoyerAudioGlobal,
+                               x_user_id: Optional[str] = Header(None),
+                               x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(f"{VEILLE_INFO_URL}/audio-global/{audio_id}/envoyer",
+                             headers=entetes, json=body.model_dump())
         corps = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")

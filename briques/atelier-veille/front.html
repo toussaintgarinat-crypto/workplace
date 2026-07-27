@@ -36,6 +36,7 @@
     <button id="btn-digests" class="actif" onclick="ouvrirOnglet('digests')">Digests</button>
     <button id="btn-sources" onclick="ouvrirOnglet('sources')">Sources RSS</button>
     <button id="btn-carte" onclick="ouvrirOnglet('carte')">Carte</button>
+    <button id="btn-audioglobal" onclick="ouvrirOnglet('audioglobal')">Audio global</button>
   </nav>
 
   <div id="vue-carte" class="vue panel" style="padding:0;overflow:hidden">
@@ -51,8 +52,10 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <input id="nouvelle-source-nom" placeholder="Nom (ex. Le Monde Tech)" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
       <input id="nouvelle-source-url" placeholder="URL du flux RSS" style="flex:2;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+      <input id="nouvelle-source-thematique" placeholder="Thématique (ex. Tech) — optionnel" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
       <button onclick="ajouterSource()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#0b1622;font-weight:600;cursor:pointer">Ajouter</button>
     </div>
+    <p style="color:var(--mut);font-size:.8rem;margin-top:6px">La thématique regroupe les sources : un digest audio séparé est généré par thématique chaque jour.</p>
     <div id="erreur-sources" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
   </div>
   <div id="vue-digests" class="vue actif panel">
@@ -67,15 +70,30 @@
     <div id="liste-digests"></div>
     <div id="erreur-digests" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
   </div>
+
+  <div id="vue-audioglobal" class="vue panel">
+    <h3>Audio global</h3>
+    <p style="color:var(--mut);font-size:.82rem">Concatène plusieurs digests (déjà audio-générés) dans l'ordre choisi, avec un interlude parlé entre chaque thématique.</p>
+    <div id="choix-digests"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btn-generer-audioglobal" onclick="genererAudioGlobal()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">Générer l'audio</button>
+    </div>
+    <div id="erreur-audioglobal" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+    <div id="lecteur-audioglobal" style="margin-top:12px"></div>
+
+    <h3 style="margin-top:24px">Historique</h3>
+    <div id="historique-audioglobal"></div>
+  </div>
 </div>
 <script>
 function ouvrirOnglet(nom) {
-  for (const n of ['carte', 'sources', 'digests']) {
+  for (const n of ['carte', 'sources', 'digests', 'audioglobal']) {
     document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
     document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
   }
   if (nom === 'sources') chargerSources();
   if (nom === 'digests') chargerDigests();
+  if (nom === 'audioglobal') { chargerChoixDigests(); chargerHistoriqueAudioGlobal(); }
 }
 
 async function chargerConfig() {
@@ -105,7 +123,7 @@ async function chargerSources() {
     const sources = await r.json();
     cible.innerHTML = sources.length ? sources.map(s => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
-        <div><b>${esc(s.nom)}</b><br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
+        <div><b>${esc(s.nom)}</b> ${s.thematique ? `<span style="color:var(--accent);font-size:.75rem">· ${esc(s.thematique)}</span>` : ''}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
         <button onclick="supprimerSource(${s.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Retirer</button>
       </div>`).join('') : '<p style="color:var(--mut)">Aucune source suivie pour l\'instant.</p>';
   } catch (e) {
@@ -116,17 +134,19 @@ async function chargerSources() {
 async function ajouterSource() {
   const nom = document.getElementById('nouvelle-source-nom').value.trim();
   const url = document.getElementById('nouvelle-source-url').value.trim();
+  const thematique = document.getElementById('nouvelle-source-thematique').value.trim();
   const erreur = document.getElementById('erreur-sources');
   erreur.textContent = '';
   if (!nom || !url) { erreur.textContent = 'Nom et URL requis.'; return; }
   try {
     const r = await fetch('/veille/sources', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({nom, url})
+      body: JSON.stringify({nom, url, thematique})
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     document.getElementById('nouvelle-source-nom').value = '';
     document.getElementById('nouvelle-source-url').value = '';
+    document.getElementById('nouvelle-source-thematique').value = '';
     chargerSources();
   } catch (e) {
     erreur.textContent = String(e.message || e);
@@ -153,12 +173,17 @@ async function chargerDigests() {
     const r = await fetch('/veille/digests');
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const digests = await r.json();
-    cible.innerHTML = digests.length ? digests.map(d => `
-      <div style="padding:12px 0;border-bottom:1px solid var(--line)">
-        <b>${esc(d.date)}</b> <span style="color:var(--mut);font-size:.8rem">(${d.nb_articles} article${d.nb_articles > 1 ? 's' : ''})</span>
-        <p style="margin:6px 0">${esc(d.texte_resume)}</p>
-        ${d.audio_url ? `<audio controls src="${esc(d.audio_url)}"></audio>` : '<span style="color:var(--mut);font-size:.8rem">Pas encore de version audio.</span>'}
-      </div>`).join('') : '<p style="color:var(--mut)">Aucun digest généré pour l\'instant.</p>';
+    if (!digests.length) { cible.innerHTML = '<p style="color:var(--mut)">Aucun digest généré pour l\'instant.</p>'; return; }
+    const groupes = {};
+    digests.forEach(d => { const t = d.thematique || 'Général'; (groupes[t] = groupes[t] || []).push(d); });
+    cible.innerHTML = Object.keys(groupes).sort().map(t => `
+      <h4 style="margin:16px 0 6px;color:var(--accent)">${esc(t)}</h4>
+      ${groupes[t].map(d => `
+        <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+          <b>${esc(d.date)}</b> <span style="color:var(--mut);font-size:.8rem">(${d.nb_articles} article${d.nb_articles > 1 ? 's' : ''})</span>
+          <p style="margin:6px 0">${esc(d.texte_resume)}</p>
+          ${d.audio_url ? `<audio controls src="${esc(d.audio_url)}"></audio>` : '<span style="color:var(--mut);font-size:.8rem">Pas encore de version audio.</span>'}
+        </div>`).join('')}`).join('');
   } catch (e) {
     erreur.textContent = String(e.message || e);
   }
@@ -177,6 +202,102 @@ async function genererDigest() {
     erreur.textContent = String(e.message || e);
   } finally {
     bouton.disabled = false;
+  }
+}
+
+let DIGESTS_DISPONIBLES = [];
+let ORDRE_CHOISI = [];
+
+async function chargerChoixDigests() {
+  const box = document.getElementById('choix-digests');
+  try {
+    const r = await fetch('/veille/digests');
+    const digests = await r.json();
+    DIGESTS_DISPONIBLES = digests.filter(d => d.audio_url);
+    if (!DIGESTS_DISPONIBLES.length) {
+      box.innerHTML = '<p style="color:var(--mut)">Aucun digest avec audio pour l\'instant — génère d\'abord des digests (onglet Digests).</p>';
+      return;
+    }
+    box.innerHTML = DIGESTS_DISPONIBLES.map(d => `
+      <label style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <input type="checkbox" value="${d.id}" onchange="toggleDigestChoisi(${d.id}, this.checked)">
+        <span><b>${esc(d.thematique || 'Général')}</b> — ${esc(d.date)}</span>
+      </label>`).join('');
+  } catch (e) {
+    box.innerHTML = '<p style="color:var(--bad)">' + esc(e.message || e) + '</p>';
+  }
+}
+
+function toggleDigestChoisi(id, coche) {
+  if (coche) { if (!ORDRE_CHOISI.includes(id)) ORDRE_CHOISI.push(id); }
+  else { ORDRE_CHOISI = ORDRE_CHOISI.filter(x => x !== id); }
+}
+
+async function genererAudioGlobal() {
+  const erreur = document.getElementById('erreur-audioglobal');
+  const bouton = document.getElementById('btn-generer-audioglobal');
+  erreur.textContent = '';
+  if (!ORDRE_CHOISI.length) { erreur.textContent = 'Choisis au moins un digest.'; return; }
+  bouton.disabled = true;
+  try {
+    const r = await fetch('/veille/audio-global/generer', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ordre_thematiques: ORDRE_CHOISI})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const audio = await r.json();
+    document.getElementById('lecteur-audioglobal').innerHTML = `
+      <audio controls src="/veille/audio-global/${audio.jeton}.mp3" style="width:100%"></audio>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <input id="destinataires-audioglobal" placeholder="Destinataires (séparés par des virgules)" style="flex:2;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+        <input id="sujet-audioglobal" placeholder="Sujet (optionnel)" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+        <button onclick="envoyerAudioGlobal(${audio.id})" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#0b1622;font-weight:600;cursor:pointer">Envoyer par email</button>
+      </div>
+      <div id="resultat-envoi-audioglobal" style="margin-top:6px;font-size:.85rem"></div>`;
+    await chargerHistoriqueAudioGlobal();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function envoyerAudioGlobal(audioId) {
+  const dest = document.getElementById('destinataires-audioglobal').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const sujet = document.getElementById('sujet-audioglobal').value.trim();
+  const resultat = document.getElementById('resultat-envoi-audioglobal');
+  if (!dest.length) { resultat.textContent = 'Indique au moins un destinataire.'; return; }
+  resultat.textContent = 'Envoi…';
+  try {
+    const r = await fetch(`/veille/audio-global/${audioId}/envoyer`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({destinataires: dest, sujet: sujet || undefined})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const j = await r.json();
+    const echecs = j.resultats.filter(x => !x.ok);
+    resultat.textContent = echecs.length
+      ? `${j.resultats.length - echecs.length} envoyé(s), ${echecs.length} échec(s).`
+      : `${j.resultats.length} envoyé(s) ✓`;
+    await chargerHistoriqueAudioGlobal();
+  } catch (e) {
+    resultat.textContent = String(e.message || e);
+  }
+}
+
+async function chargerHistoriqueAudioGlobal() {
+  const box = document.getElementById('historique-audioglobal');
+  try {
+    const r = await fetch('/veille/audio-global');
+    const liste = await r.json();
+    box.innerHTML = liste.length ? liste.map(a => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:.85rem">
+        <b>${esc(a.cree_le.slice(0, 10))}</b> — ${a.ordre_thematiques.length} digest(s)
+        <audio controls src="/veille/audio-global/${a.jeton}.mp3" style="display:block;margin-top:4px;width:100%"></audio>
+      </div>`).join('') : '<p style="color:var(--mut)">Aucun audio global généré pour l\'instant.</p>';
+  } catch (e) {
+    box.innerHTML = '<p style="color:var(--bad)">' + esc(e.message || e) + '</p>';
   }
 }
 
