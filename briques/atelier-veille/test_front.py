@@ -65,6 +65,14 @@ def test_front_signale_les_sources_en_panne():
         assert marqueur in html
 
 
+def test_front_permet_deteindre_et_rallumer_une_source():
+    """S203 — l'interrupteur par source doit exister DANS l'UI : c'est le préalable à toute
+    extinction automatique, sinon on éteint ce que l'utilisateur ne peut pas rallumer."""
+    html = client.get("/").text
+    for marqueur in ("basculerSourceActive", "/actif", "Rallumer", "Éteindre"):
+        assert marqueur in html
+
+
 def test_front_couvre_la_selection_de_thematique_pour_le_digest():
     html = client.get("/").text
     for marqueur in ("chargerThematiquesDigest", "genererDigestThematique",

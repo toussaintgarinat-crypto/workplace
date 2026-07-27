@@ -218,6 +218,30 @@ async def retagger_source(source_id: int, body: RetaggerSource,
     return corps
 
 
+class BasculerSourceActive(BaseModel):
+    active: bool
+
+
+@app.patch("/veille/sources/{source_id}/actif", tags=["veille"])
+async def basculer_source_active(source_id: int, body: BasculerSourceActive,
+                                 x_user_id: Optional[str] = Header(None),
+                                 x_api_key: Optional[str] = Header(None)):
+    """Allume/éteint UNE source (S203) — pass-through, l'isolation par personne est faite
+    en aval par veille-info sur l'identité relayée."""
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.patch(f"{VEILLE_INFO_URL}/sources/{source_id}/actif",
+                              headers=entetes, json=body.model_dump())
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-info injoignable ({VEILLE_INFO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
 class BasculerPauseThematique(BaseModel):
     thematique: str
     en_pause: bool

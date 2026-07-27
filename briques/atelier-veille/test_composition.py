@@ -403,3 +403,30 @@ def test_config_repli_sur_host_sans_forwarded():
     r = client.get("/config", headers={"Host": "192.168.1.89:6130"})
     assert r.status_code == 200
     assert "192.168.1.89" in r.json()["geo_url"]
+
+
+# --- basculer_source_active (PATCH /veille/sources/{id}/actif) — S203 ---
+
+def test_basculer_source_active_relaie_lidentite_recue(monkeypatch):
+    Faux = _client_json({"ok": True, "active": False})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.patch("/veille/sources/7/actif", json={"active": False},
+                 headers={"X-User-Id": "claire", "X-API-Key": "cle-coeur"})
+    _, url, headers, corps = Faux.dernier_appel
+    assert url == f"{M.VEILLE_INFO_URL}/sources/7/actif"
+    assert headers == {"X-User-Id": "claire", "X-API-Key": "cle-coeur"}
+    assert corps == {"active": False}
+
+
+def test_basculer_source_active_sans_identite_ne_fabrique_rien(monkeypatch):
+    Faux = _client_json({"ok": True, "active": True})
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.patch("/veille/sources/7/actif", json={"active": True})
+    _, _, headers, _ = Faux.dernier_appel
+    assert headers == {}
+
+
+def test_basculer_source_active_injoignable_renvoie_502(monkeypatch):
+    monkeypatch.setattr(M.httpx, "AsyncClient", _client_json({}, boom=True))
+    r = client.patch("/veille/sources/7/actif", json={"active": False})
+    assert r.status_code == 502

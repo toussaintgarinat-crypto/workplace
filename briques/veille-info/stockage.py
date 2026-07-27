@@ -229,6 +229,25 @@ def thematiques_actives(user_id: str) -> list[str]:
     return [r["thematique"] for r in rows]
 
 
+def basculer_source_active(user_id: str, source_id: int, active: bool) -> bool:
+    """Allume ou éteint UNE source (S203).
+
+    Jusqu'ici `enabled` ne se pilotait qu'au niveau d'une thématique entière
+    (`basculer_pause_thematique`) : impossible d'éteindre le seul flux mort d'un groupe
+    sain, et impossible de rallumer quoi que ce soit individuellement. C'est ce qui
+    interdisait de désactiver automatiquement une source en panne — on aurait laissé
+    l'utilisateur devant un interrupteur qui n'existe pas.
+
+    Attention, la contrainte demeure : « Reprendre » sur la thématique rallume TOUTES ses
+    sources, y compris celles éteintes ici. C'est cohérent (un geste explicite sur le groupe
+    l'emporte sur un geste sur l'élément), mais ça reste le point à trancher avant toute
+    extinction automatique."""
+    with _conn() as c:
+        cur = c.execute("UPDATE sources SET enabled = ? WHERE id = ? AND user_id = ?",
+                        (1 if active else 0, source_id, user_id))
+    return cur.rowcount > 0
+
+
 def retagger_source(user_id: str, source_id: int, thematique: str) -> bool:
     with _conn() as c:
         cur = c.execute("UPDATE sources SET thematique = ? WHERE id = ? AND user_id = ?",
