@@ -1,145 +1,110 @@
-"""Preuve offline du compte client auto (S23) — Keycloak admin + Oria mockés.
+"""Compte client auto à la livraison (S23) — Keycloak admin + Oria mockés, aucun réseau.
 
-On monte un `httpx.MockTransport` qui simule l'API admin Keycloak (recherche/création
-d'utilisateur, execute-actions-email) et l'endpoint Oria `/rejoindre`, puis on vérifie
-le comportement de `client_provisioning.creer_compte_client` :
-
-  1. nouveau client       → compte créé + email d'accès envoyé + rattaché à l'espace ;
-  2. client déjà présent  → idempotent (réutilisé), email renvoyé, rattaché ;
-  3. email invalide/absent→ onboarding ignoré proprement (aucun appel réseau) ;
-  4. Keycloak injoignable → best-effort : statut d'échec clair, AUCUNE exception ;
-  5. envoi d'email KO     → compte quand même créé, email_envoye=False (best-effort).
-
-Lancer : `python3 test_client_provisioning.py` (pytest optionnel, asserts purs).
+Écrit à l'origine comme script autonome (`def run()`), donc jamais exécuté par le filet.
+Converti en tests pytest le 2026-07-28 — les 5 scénarios sont conservés à l'identique.
+Le patch de `httpx.Client` et de `op._token` passe par `monkeypatch` : le script restaurait
+à la main en fin de scénario, et une assertion rouge laissait le module patché pour la suite.
 """
 import json
 
 import httpx
+import pytest
 
 import client_provisioning as cp
 
+# La VRAIE classe, figée à l'import : un brancheur créé après un premier branchement
+# capturerait sinon le FAUX client précédent (cf. le commentaire jumeau de test_pont_crm.py).
+_VRAI_CLIENT = httpx.Client
 
-# ── Faux backend (Keycloak admin + Oria) ────────────────────────────────────────
 
-def make_transport(state):
-    """Retourne un MockTransport qui route Keycloak admin + Oria et journalise les appels."""
-    users = state["users"]  # email -> id
+def _transport(etat):
+    """MockTransport routant l'API admin Keycloak + le `/rejoindre` d'Oria, et journalisant."""
+    comptes = etat["users"]  # email -> id
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        method = request.method
-        state["calls"].append(f"{method} {path}")
+        chemin, methode = request.url.path, request.method
+        etat["calls"].append(f"{methode} {chemin}")
 
-        # Keycloak : recherche d'utilisateur par email
-        if method == "GET" and path.endswith("/users"):
+        if methode == "GET" and chemin.endswith("/users"):       # recherche par email
             email = request.url.params.get("email")
-            uid = users.get(email)
+            uid = comptes.get(email)
             return httpx.Response(200, json=[{"id": uid, "email": email}] if uid else [])
 
-        # Keycloak : création d'utilisateur
-        if method == "POST" and path.endswith("/users"):
-            body = json.loads(request.content)
-            uid = f"kc-{len(users) + 1}"
-            users[body["email"]] = uid
+        if methode == "POST" and chemin.endswith("/users"):      # création
+            corps = json.loads(request.content)
+            uid = f"kc-{len(comptes) + 1}"
+            comptes[corps["email"]] = uid
             base = str(request.url).split("?")[0]
             return httpx.Response(201, headers={"Location": f"{base}/{uid}"})
 
-        # Keycloak : envoi de l'email « définis ton mot de passe »
-        if method == "PUT" and path.endswith("/execute-actions-email"):
-            if state.get("email_ko"):
+        if methode == "PUT" and chemin.endswith("/execute-actions-email"):
+            if etat.get("email_ko"):
                 return httpx.Response(500, json={"error": "smtp down"})
-            state["email_envoye_appel"] = True
+            etat["email_envoye_appel"] = True
             return httpx.Response(204)
 
-        # Oria : rattachement à l'espace
-        if method == "POST" and "/rejoindre" in path:
-            state["rejoindre_appel"] = request.url.params.get("user_id")
+        if methode == "POST" and "/rejoindre" in chemin:         # Oria
+            etat["rejoindre_appel"] = request.url.params.get("user_id")
             return httpx.Response(200, json={"status": "ok"})
 
-        return httpx.Response(404, json={"path": path})
+        return httpx.Response(404, json={"path": chemin})
 
     return httpx.MockTransport(handler)
 
 
-def patch(monkeypatch_state):
-    """Remplace httpx.Client (transport mocké) + op._token (pas de vrai Keycloak)."""
-    transport = make_transport(monkeypatch_state)
-    orig_client = httpx.Client
+@pytest.fixture
+def backend(monkeypatch):
+    """Fabrique un faux backend et branche `client_provisioning` dessus."""
+    def brancher(**options):
+        etat = {"users": options.pop("users", {}), "calls": [], **options}
+        transport = _transport(etat)
 
-    def fake_client(*a, **k):
-        k.pop("timeout", None)
-        return orig_client(transport=transport, headers=k.get("headers"))
+        def faux_client(*a, **k):
+            k.pop("timeout", None)
+            return _VRAI_CLIENT(transport=transport, headers=k.get("headers"))
 
-    cp.httpx.Client = fake_client
-    if monkeypatch_state.get("token_ko"):
-        cp.op._token = lambda: (_ for _ in ()).throw(RuntimeError("keycloak injoignable"))
-    else:
-        cp.op._token = lambda: "fake-token"
+        monkeypatch.setattr(cp.httpx, "Client", faux_client)
+        if etat.get("token_ko"):
+            def jeton_ko():
+                raise RuntimeError("keycloak injoignable")
+            monkeypatch.setattr(cp.op, "_token", jeton_ko)
+        else:
+            monkeypatch.setattr(cp.op, "_token", lambda: "fake-token")
+        return etat
+    return brancher
 
 
-def restore(orig_client, orig_token):
-    cp.httpx.Client = orig_client
-    cp.op._token = orig_token
-
-
-# ── Scénarios ───────────────────────────────────────────────────────────────────
-
-def run():
-    orig_client, orig_token = httpx.Client, cp.op._token
-    ok = 0
-
-    # 1) Nouveau client : créé + email + rattaché
-    st = {"users": {}, "calls": []}
-    patch(st)
+def test_nouveau_client_compte_cree_email_envoye_et_rattache(backend):
+    etat = backend()
     r = cp.creer_compte_client("client@exemple.fr", "Jean Dupont", "world-1", "ACME")
-    restore(orig_client, orig_token)
     assert r["ok"] and r["compte_cree"] and r["email_envoye"] and r["rattache_espace"], r
-    assert st["rejoindre_appel"] == r["user_id"], st
-    assert any("POST" in c and c.endswith("/users") for c in st["calls"]), st["calls"]
-    print("✅ 1. nouveau client : compte créé + email envoyé + rattaché à l'espace")
-    ok += 1
+    assert etat["rejoindre_appel"] == r["user_id"], etat
+    assert any("POST" in c and c.endswith("/users") for c in etat["calls"]), etat["calls"]
 
-    # 2) Client déjà présent : idempotent (pas de POST /users), email renvoyé
-    st = {"users": {"client@exemple.fr": "kc-existant"}, "calls": []}
-    patch(st)
+
+def test_client_deja_present_idempotent_et_email_renvoye(backend):
+    etat = backend(users={"client@exemple.fr": "kc-existant"})
     r = cp.creer_compte_client("client@exemple.fr", "Jean Dupont", "world-1", "ACME")
-    restore(orig_client, orig_token)
     assert r["ok"] and not r["compte_cree"] and r["email_envoye"], r
     assert r["user_id"] == "kc-existant", r
-    assert not any(c == "POST /admin/realms/oria/users" for c in st["calls"]), st["calls"]
-    print("✅ 2. client déjà présent : réutilisé (idempotent), email renvoyé")
-    ok += 1
+    assert not any(c == "POST /admin/realms/oria/users" for c in etat["calls"]), etat["calls"]
 
-    # 3) Email invalide → ignoré, aucun appel réseau
-    st = {"users": {}, "calls": []}
-    patch(st)
+
+def test_email_absent_onboarding_ignore_sans_aucun_appel_reseau(backend):
+    etat = backend()
     r = cp.creer_compte_client("", "Jean", "world-1")
-    restore(orig_client, orig_token)
-    assert not r["ok"] and not st["calls"], (r, st["calls"])
-    print("✅ 3. email absent/invalide : onboarding ignoré, aucun appel réseau")
-    ok += 1
+    assert not r["ok"] and not etat["calls"], (r, etat["calls"])
 
-    # 4) Keycloak injoignable → best-effort, pas d'exception
-    st = {"users": {}, "calls": [], "token_ko": True}
-    patch(st)
+
+def test_keycloak_injoignable_echec_best_effort_sans_exception(backend):
+    """Best-effort : la livraison ne doit jamais tomber parce que l'onboarding a raté."""
+    backend(token_ko=True)
     r = cp.creer_compte_client("client@exemple.fr", "Jean", "world-1")
-    restore(orig_client, orig_token)
     assert not r["ok"] and "Keycloak" in r["message"], r
-    print("✅ 4. Keycloak injoignable : échec best-effort, aucune exception levée")
-    ok += 1
 
-    # 5) Envoi d'email KO → compte quand même créé, email_envoye=False
-    st = {"users": {}, "calls": [], "email_ko": True}
-    patch(st)
+
+def test_smtp_ko_le_compte_est_quand_meme_cree(backend):
+    backend(email_ko=True)
     r = cp.creer_compte_client("client@exemple.fr", "Jean", "world-1")
-    restore(orig_client, orig_token)
     assert r["ok"] and r["compte_cree"] and not r["email_envoye"], r
-    assert r["rattache_espace"], r  # le rattachement reste tenté
-    print("✅ 5. SMTP KO : compte créé, email_envoye=False, rattachement quand même tenté")
-    ok += 1
-
-    print(f"\n{ok}/5 scénarios OK")
-
-
-if __name__ == "__main__":
-    run()
+    assert r["rattache_espace"], "le rattachement reste tenté même si l'email a échoué"

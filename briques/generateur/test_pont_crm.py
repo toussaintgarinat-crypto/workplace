@@ -1,167 +1,148 @@
-"""Preuve offline du pont consenti app→CRM (S24) — brique donnees + forge mockées.
+"""Pont consenti app→CRM (S24) — briques `donnees` et `forge` mockées, aucun réseau.
 
-On monte un `httpx.MockTransport` qui simule :
-  • la brique **donnees** (`GET /apps/{app_id}/export`) → la source des enregistrements ;
-  • la brique **forge** (`POST /crm`, `DELETE /crm/{id}`) → le CRM du cabinet.
+Écrit à l'origine comme script autonome (`def run()`), donc jamais exécuté par le filet.
+Converti en tests pytest le 2026-07-28.
 
-On vérifie le comportement de `pont_crm` :
-
-  1. **consentement = Oui** (liste blanche) → seules les entités choisies remontent,
-     un lead créé par enregistrement, provenance tracée ;
-  2. **idempotence** → un 2ᵉ `pousser()` ne recrée rien (registre) ;
-  3. **consentement = Non** → RIEN ne sort (souveraineté), aucun POST /crm ;
-  4. **révocation sans purge** → pont arrêté, données CONSERVÉES côté CRM ;
-  5. **révocation avec purge** → les leads remontés sont supprimés du CRM (DELETE) ;
-  6. **Forge injoignable** → best-effort, aucune exception, erreurs comptées.
-
-Registre isolé dans une base temporaire (pas la vraie /data/apps.db).
-Lancer : `python3 test_pont_crm.py`.
+⚠ Les 6 scénarios d'origine s'ENCHAÎNAIENT sur un même registre SQLite : l'idempotence
+(2) supposait que (1) ait poussé, et les révocations (4, 5) supposaient les mêmes leads
+encore enregistrés. Un tel filet ne dit plus rien dès qu'un test est lancé seul ou que
+l'ordre change (`-k`, `-p no:randomly`, exécution parallèle). Chaque test reçoit donc
+maintenant un **registre neuf** et pose lui-même ce dont il a besoin.
 """
+import importlib
 import json
 import os
-import tempfile
 
 import httpx
+import pytest
+
+# La VRAIE classe, figée à l'import. Indispensable : un test peut brancher deux backends
+# successifs (pousser avec l'un, révoquer avec l'autre) ; si le second capturait
+# `httpx.Client` au moment de sa création, il capturerait le FAUX client du premier et
+# rejouerait ses appels sur l'ancien transport. Défaut vécu en écrivant ce fichier — la
+# révocation rapportait bien 2 suppressions, mais le backend observé n'en voyait aucune.
+_VRAI_CLIENT = httpx.Client
+
+ENTITES = {
+    "clients": [
+        {"_id": "r1", "nom": "Jean Dupont", "email": "jean@exemple.fr", "telephone": "0102"},
+        {"_id": "r2", "societe": "ACME", "mail": "contact@acme.fr"},
+    ],
+    "factures": [
+        {"_id": "f1", "montant": 1200},
+    ],
+}
+
+CONSENTI = {"actif": True, "entites": ["clients"]}
 
 
-# ── Faux backend (brique donnees + brique forge) ─────────────────────────────────
-
-def make_transport(state):
-    """MockTransport routant donnees (export) + forge (crm) et journalisant les appels."""
+def _transport(etat):
+    """MockTransport routant `donnees` (export) + `forge` (CRM), et journalisant les appels."""
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        method = request.method
-        state["calls"].append(f"{method} {path}")
+        chemin, methode = request.url.path, request.method
+        etat["calls"].append(f"{methode} {chemin}")
 
-        # Forge injoignable simulé (panne réseau).
-        if state.get("forge_ko") and "/crm" in path:
+        if etat.get("forge_ko") and "/crm" in chemin:
             raise httpx.ConnectError("forge down")
 
-        # donnees : export des enregistrements de l'app.
-        if method == "GET" and path.endswith("/export"):
-            return httpx.Response(200, json={"app_id": "app-1", "entites": state["entites"]})
+        if methode == "GET" and chemin.endswith("/export"):
+            return httpx.Response(200, json={"app_id": "app-1", "entites": etat["entites"]})
 
-        # forge : créer un prospect.
-        if method == "POST" and path.endswith("/crm"):
-            body = json.loads(request.content)
-            lead_id = f"lead-{len(state['leads']) + 1}"
-            state["leads"][lead_id] = body
-            return httpx.Response(200, json={"ok": True, "id": lead_id, **body})
+        if methode == "POST" and chemin.endswith("/crm"):
+            corps = json.loads(request.content)
+            lead_id = f"lead-{len(etat['leads']) + 1}"
+            etat["leads"][lead_id] = corps
+            return httpx.Response(200, json={"ok": True, "id": lead_id, **corps})
 
-        # forge : supprimer un prospect.
-        if method == "DELETE" and "/crm/" in path:
-            lead_id = path.rsplit("/", 1)[-1]
-            state["leads"].pop(lead_id, None)
-            state["supprimes"].append(lead_id)
+        if methode == "DELETE" and "/crm/" in chemin:
+            lead_id = chemin.rsplit("/", 1)[-1]
+            etat["leads"].pop(lead_id, None)
+            etat["supprimes"].append(lead_id)
             return httpx.Response(200, json={"ok": True})
 
-        return httpx.Response(404, json={"path": path})
+        return httpx.Response(404, json={"path": chemin})
 
     return httpx.MockTransport(handler)
 
 
-def patch(pc, state):
-    """Remplace httpx.Client de pont_crm par un client au transport mocké."""
-    transport = make_transport(state)
-    orig = httpx.Client
+@pytest.fixture
+def pont(tmp_path, monkeypatch):
+    """`pont_crm` rechargé sur un registre SQLite VIERGE, plus un brancheur de faux backend.
 
-    def fake_client(*a, **k):
-        k.pop("timeout", None)
-        return orig(transport=transport)
-
-    pc.httpx.Client = fake_client
-    return orig
-
-
-# ── Scénarios ───────────────────────────────────────────────────────────────────
-
-def run():
-    # Registre isolé : base temporaire dédiée au test.
-    tmp = tempfile.mkdtemp()
-    os.environ["DB_PATH"] = os.path.join(tmp, "apps_test.db")
-    import importlib
+    Le rechargement est nécessaire : le module lit `DB_PATH` et crée sa table à l'import.
+    Sans ça, tous les tests partageraient le registre — et la vraie `/data/apps.db`.
+    """
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "apps_test.db"))
     import pont_crm as pc
-    importlib.reload(pc)  # relit DB_PATH + recrée la table dans la base temporaire
+    importlib.reload(pc)
 
-    orig_client = httpx.Client
-    ok = 0
+    def brancher(**options):
+        etat = {"entites": ENTITES, "leads": {}, "supprimes": [], "calls": [], **options}
+        transport = _transport(etat)
 
-    # Source commune : 2 entités, seule "clients" est en liste blanche.
-    entites = {
-        "clients": [
-            {"_id": "r1", "nom": "Jean Dupont", "email": "jean@exemple.fr", "telephone": "0102"},
-            {"_id": "r2", "societe": "ACME", "mail": "contact@acme.fr"},
-        ],
-        "factures": [
-            {"_id": "f1", "montant": 1200},
-        ],
-    }
+        def faux_client(*a, **k):
+            k.pop("timeout", None)
+            return _VRAI_CLIENT(transport=transport)
 
-    # 1) Consentement = Oui, liste blanche ["clients"] → 2 leads, factures ignorées.
-    st = {"entites": entites, "leads": {}, "supprimes": [], "calls": []}
-    patch(pc, st)
-    r = pc.pousser("app-1", {"actif": True, "entites": ["clients"]})
-    pc.httpx.Client = orig_client
+        monkeypatch.setattr(pc.httpx, "Client", faux_client)
+        return etat
+
+    return pc, brancher
+
+
+def test_consentement_oui_seules_les_entites_en_liste_blanche_remontent(pont):
+    pc, brancher = pont
+    etat = brancher()
+    r = pc.pousser("app-1", CONSENTI)
     assert r["actif"] and r["pousses"] == 2 and r["erreurs"] == 0, r
-    assert len(st["leads"]) == 2, st["leads"]
-    # repli du nom sur la société, mapping mail→email, provenance tracée
-    noms = {l["nom"] for l in st["leads"].values()}
-    assert "Jean Dupont" in noms and "ACME" in noms, noms
-    assert all("[pont:app-1/clients]" in l["notes"] for l in st["leads"].values()), st["leads"]
-    print("✅ 1. consentement Oui : seules les entités en liste blanche remontent (2 leads, provenance tracée)")
-    ok += 1
+    assert len(etat["leads"]) == 2, "les factures ne doivent PAS remonter"
+    noms = {lead["nom"] for lead in etat["leads"].values()}
+    assert "Jean Dupont" in noms and "ACME" in noms, noms  # repli du nom sur la société
+    assert all("[pont:app-1/clients]" in lead["notes"] for lead in etat["leads"].values()), \
+        etat["leads"]
 
-    # 2) Idempotence : un 2ᵉ pousser ne recrée rien.
-    st2 = {"entites": entites, "leads": {}, "supprimes": [], "calls": []}
-    patch(pc, st2)
-    r = pc.pousser("app-1", {"actif": True, "entites": ["clients"]})
-    pc.httpx.Client = orig_client
+
+def test_idempotence_une_seconde_remontee_ne_recree_rien(pont):
+    pc, brancher = pont
+    brancher()
+    pc.pousser("app-1", CONSENTI)          # 1re remontée : peuple le registre
+    etat = brancher()                      # backend neuf : tout POST serait visible
+    r = pc.pousser("app-1", CONSENTI)
     assert r["pousses"] == 0 and r["ignores"] == 2, r
-    assert len(st2["leads"]) == 0, "aucun nouveau POST /crm attendu"
-    print("✅ 2. idempotence : 2ᵉ remontée → 0 créé, 2 ignorés (registre)")
-    ok += 1
+    assert etat["leads"] == {}, "aucun nouveau POST /crm attendu"
 
-    # 3) Consentement = Non → rien ne sort.
-    st3 = {"entites": entites, "leads": {}, "supprimes": [], "calls": []}
-    patch(pc, st3)
+
+def test_consentement_non_rien_ne_sort_et_aucun_appel_reseau(pont):
+    """Souveraineté : partage désactivé ⇒ on ne contacte même pas la brique `donnees`."""
+    pc, brancher = pont
+    etat = brancher()
     r = pc.pousser("app-2", {"actif": False, "entites": ["clients"]})
-    pc.httpx.Client = orig_client
     assert not r["actif"] and r["pousses"] == 0, r
-    assert st3["calls"] == [], "aucun appel réseau quand le partage est désactivé"
-    print("✅ 3. consentement Non : RIEN ne sort, aucun appel réseau (souveraineté)")
-    ok += 1
+    assert etat["calls"] == [], "aucun appel réseau quand le partage est désactivé"
 
-    # 4) Révocation SANS purge → pont arrêté, données conservées.
-    st4 = {"entites": entites, "leads": {}, "supprimes": [], "calls": []}
-    patch(pc, st4)
+
+def test_revocation_sans_purge_arrete_le_pont_et_conserve_les_donnees(pont):
+    pc, brancher = pont
+    brancher()
+    pc.pousser("app-1", CONSENTI)
+    etat = brancher()
     r = pc.revoquer("app-1", purger=False)
-    pc.httpx.Client = orig_client
     assert not r["purge"] and r["supprimes"] == 0 and r["restants"] == 2, r
-    assert st4["supprimes"] == [], "aucun DELETE quand on ne purge pas"
-    print("✅ 4. révocation sans purge : pont arrêté, 2 prospects conservés côté CRM")
-    ok += 1
+    assert etat["supprimes"] == [], "aucun DELETE quand on ne purge pas"
 
-    # 5) Révocation AVEC purge → les leads remontés sont supprimés du CRM.
-    st5 = {"entites": entites, "leads": {}, "supprimes": [], "calls": []}
-    patch(pc, st5)
+
+def test_revocation_avec_purge_supprime_les_leads_remontes(pont):
+    pc, brancher = pont
+    brancher()
+    pc.pousser("app-1", CONSENTI)
+    etat = brancher()
     r = pc.revoquer("app-1", purger=True)
-    pc.httpx.Client = orig_client
     assert r["purge"] and r["supprimes"] == 2 and r["restants"] == 0, r
-    assert len(st5["supprimes"]) == 2, st5["supprimes"]
-    print("✅ 5. révocation avec purge : 2 prospects supprimés du CRM (DELETE), registre vidé")
-    ok += 1
+    assert len(etat["supprimes"]) == 2, etat["supprimes"]
 
-    # 6) Forge injoignable → best-effort, aucune exception, erreurs comptées.
-    st6 = {"entites": entites, "leads": {}, "supprimes": [], "calls": [], "forge_ko": True}
-    patch(pc, st6)
-    r = pc.pousser("app-3", {"actif": True, "entites": ["clients"]})
-    pc.httpx.Client = orig_client
+
+def test_forge_injoignable_best_effort_erreurs_comptees_sans_exception(pont):
+    pc, brancher = pont
+    brancher(forge_ko=True)
+    r = pc.pousser("app-3", CONSENTI)
     assert r["actif"] and r["pousses"] == 0 and r["erreurs"] == 2, r
-    print("✅ 6. Forge injoignable : best-effort, 0 remonté, 2 erreurs, aucune exception")
-    ok += 1
-
-    print(f"\n{ok}/6 scénarios OK")
-
-
-if __name__ == "__main__":
-    run()

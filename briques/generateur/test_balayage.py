@@ -1,13 +1,9 @@
-"""Preuve offline du balayage périodique « app vivante » (S33) — fonctions pures.
+"""Balayage périodique « app vivante » (S33) — fonctions pures, aucun réseau.
 
-On vérifie :
-  1. `revue.doit_reviser` : souveraineté (pas de consentement → jamais) ;
-  2. respect humain : une revue **validée** en attente n'est pas écrasée ;
-  3. une revue absente / appliquée / rejetée → éligible (nouveau cycle) ;
-  4. le **contrat manifest** : la tâche `revue-app-vivante` est bien formée pour
-     l'horloge S29 (champs requis, cadence numérique, tolere_echec).
-
-Lancer : `python3 test_balayage.py`.
+Écrit à l'origine comme script autonome (`def run()` + `python3 test_balayage.py`), donc
+JAMAIS exécuté par le filet : ni `make test-briques` ni `scripts/tests_briques.sh` ne
+lancent autre chose que pytest. Converti en tests pytest le 2026-07-28 — les 4 scénarios
+sont conservés à l'identique, un test chacun.
 """
 import json
 import pathlib
@@ -15,44 +11,34 @@ import pathlib
 import revue
 
 
-def run():
-    ok = 0
-
-    # 1) Souveraineté : consentement inactif (ou absent) → jamais.
+def test_souverainete_consentement_inactif_ou_absent():
+    """Sans consentement actif, on ne révise jamais — quelle que soit la forme de l'absence."""
     for partage in ({"actif": False, "entites": ["x"]}, {}, None):
         eligible, raison = revue.doit_reviser(partage, None)
         assert not eligible and raison == "consentement inactif", (partage, eligible, raison)
-    print("✅ 1. souveraineté : consentement inactif/absent → non éligible")
-    ok += 1
 
-    # 2) Respect humain : revue validée en attente d'application → non écrasée.
+
+def test_respect_humain_une_revue_validee_en_attente_n_est_pas_ecrasee():
     eligible, raison = revue.doit_reviser({"actif": True}, {"statut": "validee"})
     assert not eligible and "validée" in raison, (eligible, raison)
-    print("✅ 2. respect humain : revue validée en attente → sautée (pas d'écrasement)")
-    ok += 1
 
-    # 3) Consentement actif + revue absente/appliquée/rejetée/propose → éligible.
+
+def test_revue_absente_appliquee_rejetee_ou_proposee_est_eligible():
     for rev in (None, {"statut": "appliquee"}, {"statut": "rejetee"}, {"statut": "propose"}):
         eligible, raison = revue.doit_reviser({"actif": True}, rev)
         assert eligible and raison == "", (rev, eligible, raison)
-    print("✅ 3. consentement actif + revue absente/appliquée/rejetée/propose → éligible")
-    ok += 1
 
-    # 4) Contrat manifest : la tâche est exploitable par l'horloge S29.
-    manifest = json.loads(pathlib.Path("manifest.json").read_text())
-    taches = manifest.get("taches") or []
-    t = next((x for x in taches if x.get("nom") == "revue-app-vivante"), None)
+
+def test_contrat_manifest_la_tache_est_exploitable_par_l_horloge():
+    """La tâche `revue-app-vivante` doit rester bien formée pour `core/horloge.py` (S29).
+
+    Chemin ancré sur `__file__` et non relatif : le script d'origine lisait
+    `manifest.json` depuis le cwd et n'aurait rien trouvé lancé depuis la racine."""
+    manifest = json.loads(
+        (pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
+    t = next((x for x in (manifest.get("taches") or [])
+              if x.get("nom") == "revue-app-vivante"), None)
     assert t, "tâche revue-app-vivante absente du manifest"
     assert t["methode"] == "POST" and t["chemin"] == "/revues/balayage", t
     assert isinstance(t["cadence_heures"], (int, float)) and t["cadence_heures"] > 0, t
     assert t.get("tolere_echec") is True and t.get("idempotent") is True, t
-    print("✅ 4. contrat manifest : tâche revue-app-vivante bien formée pour l'horloge")
-    ok += 1
-
-    print(f"\n{ok}/4 scénarios OK")
-    return ok
-
-
-if __name__ == "__main__":
-    import sys
-    sys.exit(0 if run() == 4 else 1)
