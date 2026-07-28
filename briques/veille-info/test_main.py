@@ -376,3 +376,76 @@ def test_patch_pause_thematique_par_defaut_vide(monkeypatch):
 
     corps = client.get("/thematiques", headers=_entetes("main-pause-defaut")).json()
     assert next(t for t in corps if t["thematique"] == "")["en_pause"] is True
+
+
+# ── Extinction individuelle vs pause de thématique ──────────────────────────
+# `enabled` portait deux intentions confondues : « en pause parce que toute sa thématique
+# l'est » et « éteinte exprès, celle-ci ». D'où deux effets indésirables symétriques,
+# constatés en prod le 2026-07-28 sur les deux flux cosmétiques morts.
+
+def test_reprendre_une_thematique_ne_rallume_pas_ce_qui_fut_eteint_a_la_main(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    e = _entetes("main-intentions")
+    morte = client.post("/sources", headers=e,
+                        json={"nom": "Flux mort", "url": "https://mort.example/rss",
+                              "thematique": "Veille"}).json()["id"]
+    saine = client.post("/sources", headers=e,
+                        json={"nom": "Flux sain", "url": "https://sain.example/rss",
+                              "thematique": "Veille"}).json()["id"]
+
+    client.patch(f"/sources/{morte}/actif", headers=e, json={"active": False})
+    client.patch("/thematiques/pause", headers=e,
+                 json={"thematique": "Veille", "en_pause": True})
+    r = client.patch("/thematiques/pause", headers=e,
+                     json={"thematique": "Veille", "en_pause": False})
+    assert r.status_code == 200
+
+    par_id = {s["id"]: s for s in client.get("/sources", headers=e).json()}
+    assert par_id[saine]["enabled"] is True, "la reprise doit rallumer le groupe"
+    assert par_id[morte]["enabled"] is False, "…mais pas ressusciter un flux écarté exprès"
+    assert par_id[morte]["eteinte_manuellement"] is True
+
+
+def test_un_digest_force_ne_refetche_pas_une_source_eteinte(monkeypatch):
+    """Forcer une thématique veut dire « ignore la pause du groupe », pas « retente les flux
+    que j'ai explicitement écartés »."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    e = _entetes("main-force")
+    morte = client.post("/sources", headers=e,
+                        json={"nom": "Morte", "url": "https://m2.example/rss",
+                              "thematique": "Forcee"}).json()["id"]
+    client.post("/sources", headers=e,
+                json={"nom": "Vivante", "url": "https://v2.example/rss",
+                      "thematique": "Forcee"})
+    client.patch(f"/sources/{morte}/actif", headers=e, json={"active": False})
+    client.patch("/thematiques/pause", headers=e,
+                 json={"thematique": "Forcee", "en_pause": True})
+
+    fetchees = [s["nom"] for s in
+                stockage.lister_sources_thematique("perso:main-force", "Forcee")]
+    assert fetchees == ["Vivante"], f"la source éteinte est refetchée : {fetchees}"
+
+
+def test_rallumer_une_source_efface_la_marque(monkeypatch):
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    e = _entetes("main-rallume")
+    sid = client.post("/sources", headers=e,
+                      json={"nom": "Flux", "url": "https://r2.example/rss"}).json()["id"]
+    client.patch(f"/sources/{sid}/actif", headers=e, json={"active": False})
+    client.patch(f"/sources/{sid}/actif", headers=e, json={"active": True})
+    s = client.get("/sources", headers=e).json()[0]
+    assert s["enabled"] is True and s["eteinte_manuellement"] is False
+
+
+def test_reprise_ne_renvoie_pas_404_si_tout_est_eteint_a_la_main(monkeypatch):
+    """Le compte de sources affectées sert à distinguer « thématique inconnue » (404) : une
+    thématique bien réelle dont tout est éteint ne doit pas être prise pour inexistante."""
+    monkeypatch.setenv("VEILLE_INFO_KEY", "cle-coeur")
+    e = _entetes("main-tout-eteint")
+    sid = client.post("/sources", headers=e,
+                      json={"nom": "Seule", "url": "https://s2.example/rss",
+                            "thematique": "Solo"}).json()["id"]
+    client.patch(f"/sources/{sid}/actif", headers=e, json={"active": False})
+    r = client.patch("/thematiques/pause", headers=e,
+                     json={"thematique": "Solo", "en_pause": False})
+    assert r.status_code == 200
