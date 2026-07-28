@@ -4,19 +4,19 @@ services:
     image: workplace-etl:0.1.0
     container_name: workplace-etl
     env_file:
-      # Secrets partagés (ETL_API_KEYS, CORS_ORIGINS) — source unique à la racine.
+      # Réglages partagés (ETL_API_KEYS, CORS_ORIGINS) — source unique à la racine.
+      #
+      # AUCUN bloc `environment:` ici, et c'est délibéré : `VAR=${VAR:-defaut}` s'interpole
+      # depuis le shell / le `.env` du dossier du compose, JAMAIS depuis `env_file` — donc
+      # une telle ligne ÉCRASE la valeur du .env racine par le défaut (piège « env shadow »,
+      # cf. fix-env-shadow-composes). Vu en vrai sur le HP au déploiement du S211 : un
+      # `CORS_ORIGINS=${CORS_ORIGINS:-*}` mettait la brique en `*` alors que le .env racine
+      # déclarait une liste restreinte. Les deux variables sont lues telles quelles par le
+      # code, avec ses propres défauts (`CORS_ORIGINS` → `*`, `ETL_API_KEYS` vide → ouverte).
       - path: ../../.env
         required: false
     ports:
       - "5200:5200"
-    environment:
-      # ETL_API_KEYS : ABSENTE de `environment` exprès — elle vient du .env racine via
-      # env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole depuis le shell / le
-      # .env du dossier courant, PAS depuis env_file, et écraserait par du vide, cf.
-      # fix-env-shadow-composes). Vide = brique ouverte (dev). C'est une variable DÉDIÉE
-      # et pas la générique API_KEYS : 22 briques lisent celle-là, la poser les fermerait
-      # toutes d'un coup (cf. .env.example).
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     volumes:
       - etl_data:/data
     restart: unless-stopped
