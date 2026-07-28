@@ -686,7 +686,12 @@ Le dossier survit au renommage, vide de tout code mais visible. Retiré au `sudo
 vol — `docker volume rm etl_etl_data`. Tant qu'ils sont là, le retour arrière coûte un
 `git revert` et un `up`.
 
-**Non prouvé, et assumé** : un audit LLM complet de bout en bout (coûteux, et le rename ne
-touche que le chemin de lecture — prouvé ci-dessus), et l'invocation effective d'une capacité
-`ingestion_*` par le LLM en conversation (le catalogue les expose, le filet de contrat S210
-vérifie manifeste↔route ; seul le maillon « le modèle choisit l'outil » reste non rejoué).
+**Les deux derniers maillons, rejoués ensuite** — il ne reste rien de « ça devrait marcher » :
+
+| | |
+|---|---|
+| **Le LLM appelle la capacité renommée** | `POST /assistant/chat` → événement `{"type":"outil","nom":"ingestion_documents_lister","brique":"ingestion"}`, résultat `total: 25`, réponse rendue : « Il y a **25 documents** ingérés au total. » |
+| **Audit LLM complet** | `POST /auditer` sur les 4 documents « Menuiserie Lefèvre » → `termine` en **65 s**, les **4 couches** remplies de contenu réel (DDD/bounded contexts, VSM, Ishikawa, chemin critique). Documents lus à travers la brique **fermée par clé**. Audit de test supprimé ensuite (18 → 17), relecture → 404. |
+
+L'audit a été **borné à 4 documents** au lieu des 25 : même chaîne LLM à 4 couches, une
+fraction du coût. Rien dans le renommage ne dépend du nombre de documents.
