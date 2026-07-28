@@ -169,7 +169,7 @@ async function chargerSources() {
         </div>
         ${groupes[t].map(s => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);${s.enabled ? '' : 'opacity:.55'}">
-            <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}${s.enabled ? '' : ' <span style="color:var(--mut);font-size:.75rem">· éteinte</span>'}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
+            <div><b>${esc(s.nom)}</b>${badgeEchecs(s)}${s.enabled ? '' : (s.eteinte_manuellement ? ' <span style="color:var(--mut);font-size:.75rem" title="Éteinte individuellement : la reprise de la thématique ne la rallumera pas, et un digest forcé ne la réinterrogera pas.">· éteinte</span>' : ' <span style="color:var(--mut);font-size:.75rem" title="En pause avec toute sa thématique.">· en pause</span>')}<br><span style="color:var(--mut);font-size:.8rem">${esc(s.url)}</span></div>
             <div style="display:flex;gap:6px">
               <button onclick="modifierUrlSource(${s.id}, ${JSON.stringify(s.url).replace(/"/g, '&quot;')})"
                 style="border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:8px;padding:5px 10px;cursor:pointer">Corriger l'URL</button>

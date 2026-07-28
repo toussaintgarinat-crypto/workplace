@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS sources (
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     echecs_consecutifs INTEGER NOT NULL DEFAULT 0,
-    dernier_echec TEXT
+    dernier_echec TEXT,
+    eteinte_manuellement INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sources_user ON sources(user_id);
 
@@ -145,6 +146,11 @@ def _migrer_echecs(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE sources ADD COLUMN echecs_consecutifs INTEGER NOT NULL DEFAULT 0")
     if "dernier_echec" not in cols:
         c.execute("ALTER TABLE sources ADD COLUMN dernier_echec TEXT")
+    if "eteinte_manuellement" not in cols:
+        # Les sources déjà éteintes au moment de la migration l'ont forcément été par une
+        # pause de THÉMATIQUE (l'interrupteur individuel n'existait pas encore) : elles
+        # démarrent donc à 0, et « Reprendre » continuera de les rallumer comme avant.
+        c.execute("ALTER TABLE sources ADD COLUMN eteinte_manuellement INTEGER NOT NULL DEFAULT 0")
 
 
 def init() -> None:
@@ -162,7 +168,8 @@ init()  # schéma prêt dès l'import (robuste même sous TestClient)
 def _source_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nom": r["nom"], "url": r["url"], "thematique": r["thematique"],
             "enabled": bool(r["enabled"]), "created_at": r["created_at"],
-            "echecs_consecutifs": r["echecs_consecutifs"], "dernier_echec": r["dernier_echec"]}
+            "echecs_consecutifs": r["echecs_consecutifs"], "dernier_echec": r["dernier_echec"],
+            "eteinte_manuellement": bool(r["eteinte_manuellement"])}
 
 
 def creer_source(user_id: str, nom: str, url: str, thematique: str = "") -> dict:
@@ -245,21 +252,20 @@ def modifier_url_source(user_id: str, source_id: int, url: str) -> bool:
 
 
 def basculer_source_active(user_id: str, source_id: int, active: bool) -> bool:
-    """Allume ou éteint UNE source (S203).
+    """Allume ou éteint UNE source, et MÉMORISE que le geste est individuel (S203+).
 
-    Jusqu'ici `enabled` ne se pilotait qu'au niveau d'une thématique entière
-    (`basculer_pause_thematique`) : impossible d'éteindre le seul flux mort d'un groupe
-    sain, et impossible de rallumer quoi que ce soit individuellement. C'est ce qui
-    interdisait de désactiver automatiquement une source en panne — on aurait laissé
-    l'utilisateur devant un interrupteur qui n'existe pas.
-
-    Attention, la contrainte demeure : « Reprendre » sur la thématique rallume TOUTES ses
-    sources, y compris celles éteintes ici. C'est cohérent (un geste explicite sur le groupe
-    l'emporte sur un geste sur l'élément), mais ça reste le point à trancher avant toute
-    extinction automatique."""
+    `enabled` seul ne suffisait pas : il porte deux intentions différentes — « en pause parce
+    que toute sa thématique l'est » et « éteinte exprès, celle-ci ». Les confondre produisait
+    deux effets indésirables symétriques :
+      • « Reprendre » sur la thématique rallumait un flux mort qu'on venait d'écarter ;
+      • un digest FORCÉ sur la thématique (S200, qui ignore délibérément la pause) refetchait
+        ce même flux mort à chaque passage.
+    `eteinte_manuellement` porte la seconde intention, et seule cette fonction y touche."""
     with _conn() as c:
-        cur = c.execute("UPDATE sources SET enabled = ? WHERE id = ? AND user_id = ?",
-                        (1 if active else 0, source_id, user_id))
+        cur = c.execute(
+            "UPDATE sources SET enabled = ?, eteinte_manuellement = ? "
+            "WHERE id = ? AND user_id = ?",
+            (1 if active else 0, 0 if active else 1, source_id, user_id))
     return cur.rowcount > 0
 
 
@@ -283,24 +289,45 @@ def lister_thematiques(user_id: str) -> list[dict]:
 
 
 def basculer_pause_thematique(user_id: str, thematique: str, en_pause: bool) -> int:
-    """Met en pause (enabled=0) ou reprend (enabled=1) TOUTES les sources de cette
-    thématique pour cet utilisateur. Renvoie le nombre de sources affectées (0 = thématique
-    inconnue pour cet utilisateur)."""
+    """Met en pause (enabled=0) ou reprend (enabled=1) les sources de cette thématique.
+    Renvoie le nombre de sources affectées (0 = thématique inconnue pour cet utilisateur).
+
+    La REPRISE épargne les sources éteintes une par une : rallumer un groupe ne doit pas
+    ressusciter le flux mort qu'on venait d'en écarter. La MISE EN PAUSE, elle, s'applique à
+    tout le groupe — mettre en pause ce qui est déjà éteint est sans effet visible."""
     with _conn() as c:
-        cur = c.execute(
-            "UPDATE sources SET enabled = ? WHERE user_id = ? AND thematique = ?",
-            (0 if en_pause else 1, user_id, thematique))
+        if en_pause:
+            cur = c.execute(
+                "UPDATE sources SET enabled = 0 WHERE user_id = ? AND thematique = ?",
+                (user_id, thematique))
+        else:
+            cur = c.execute(
+                "UPDATE sources SET enabled = 1 "
+                "WHERE user_id = ? AND thematique = ? AND eteinte_manuellement = 0",
+                (user_id, thematique))
+            if cur.rowcount == 0:
+                # Thématique connue mais dont TOUTES les sources sont éteintes à la main :
+                # ne pas rendre 0, qui vaut « thématique inconnue » et ferait répondre 404.
+                existe = c.execute(
+                    "SELECT COUNT(*) FROM sources WHERE user_id = ? AND thematique = ?",
+                    (user_id, thematique)).fetchone()[0]
+                return existe
     return cur.rowcount
 
 
 def lister_sources_thematique(user_id: str, thematique: str) -> list[dict]:
-    """Sources d'une thématique donnée pour cet utilisateur, actives OU en pause — utilisé
-    pour forcer le fetch d'une thématique explicitement choisie (génération ponctuelle,
-    S200), contrairement à lister_sources(actives_seulement=True) qui ne verrait rien si
-    toutes les sources de la thématique sont en pause."""
+    """Sources d'une thématique donnée, actives OU en pause — pour forcer le fetch d'une
+    thématique explicitement choisie (génération ponctuelle, S200), là où
+    `lister_sources(actives_seulement=True)` ne verrait rien si tout le groupe est en pause.
+
+    Les sources éteintes UNE PAR UNE sont exclues : forcer une thématique veut dire « ignore
+    la pause du groupe », pas « retente les flux que j'ai explicitement écartés ». Sans cette
+    exclusion, deux flux morts étaient réinterrogés à chaque digest forcé — constaté en prod
+    le 2026-07-28, leurs compteurs d'échec remontaient tout seuls."""
     with _conn() as c:
         rows = c.execute(
-            "SELECT * FROM sources WHERE user_id = ? AND thematique = ?",
+            "SELECT * FROM sources WHERE user_id = ? AND thematique = ? "
+            "AND eteinte_manuellement = 0",
             (user_id, thematique)).fetchall()
     return [_source_dict(r) for r in rows]
 

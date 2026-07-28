@@ -71,6 +71,10 @@ def test_front_permet_deteindre_et_rallumer_une_source():
     html = client.get("/").text
     for marqueur in ("basculerSourceActive", "/actif", "Rallumer", "Éteindre"):
         assert marqueur in html
+    # Les deux états doivent être DISTINGUÉS : « éteinte » (geste individuel, que la reprise
+    # de la thématique n épargne) et « en pause » (avec tout son groupe).
+    assert "eteinte_manuellement" in html
+    assert "en pause" in html
 
 
 def test_front_permet_de_corriger_lurl_dune_source():
