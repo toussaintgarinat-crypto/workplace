@@ -94,6 +94,38 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 
 ## S211 — ETL : la brique est ouverte et sert de proxy vers le réseau interne
 
+> **✅ FAIT le 2026-07-28.** Garde SSRF dans `briques/etl/reseau.py`, auth+CORS dans
+> `briques/etl/main.py`, clé portée par les 5 chemins câblés du Cœur et par la brique `audit`.
+> Preuves : `briques/etl/test_securite.py` (17 tests) et `core/test_etl_cle_service.py`
+> (8 tests) — `make test-core` 521 ✓, `make smoke` 994 ✓, brique `audit` 11 ✓.
+>
+> Trois choses que le périmètre écrit d'avance ne disait pas :
+>
+> - **La clé seule ne ferme rien.** `_entetes_brique` envoie `{BRIQUE}_KEY` en `X-API-Key`,
+>   mais c'est `API_KEYS` **côté brique** qui décide de refuser. Poser `ETL_KEY` sans
+>   reporter la même valeur dans `API_KEYS` laisse la brique grande ouverte tout en donnant
+>   l'illusion du contraire. C'est écrit noir sur blanc dans `.env.example`.
+> - **Cinq chemins câblés ignoraient `_entetes_brique`**, pas un : usine (`_etape_ingestion`),
+>   cycle de vie (décrocher/reprendre), tick proactif « documents à classer », dépôt de
+>   document du front, outils du domaine `documents`. Les capacités du manifeste, elles,
+>   passaient déjà par le helper. La résolution `{BRIQUE}_KEY` est remontée dans
+>   `orchestrateur.entetes_brique` — `outils_communs` importe `orchestrateur`, l'inverse est
+>   impossible, et les chemins câblés n'avaient donc aucun helper accessible. D'où un test
+>   **par chemin**, pas un test sur le helper.
+> - **`/sante` reste ouverte** : le healthcheck du compose n'a pas de clé à présenter.
+>   La fermer aurait rendu la brique `unhealthy` dès la première clé posée.
+>
+> **Limite assumée, pas corrigée** : entre notre résolution DNS et celle de httpx, un
+> résolveur hostile peut changer sa réponse (DNS rebinding). Fermer ce trou impose de se
+> connecter à l'IP vérifiée avec un `Host` forcé — infaisable en HTTPS sans casser la
+> vérification du certificat. Le cas réaliste (URL interne, redirection vers la loopback)
+> est couvert et testé ; le rebinding actif ne l'est pas. C'est documenté dans le docstring
+> de `reseau.py`.
+>
+> **Reste à faire** : poser `ETL_KEY` + `API_KEYS` dans le `.env` du HP et rebuild
+> `etl`/`audit`/`core` — la preuve bout-en-bout (audit qui ingère avec la clé) est LIVE,
+> pas locale. Sans cette étape le code est en place mais la brique reste ouverte.
+
 **Pourquoi maintenant.** Deux trous qui se combinent mal.
 
 `briques/etl/main.py` ne contient **aucune** occurrence de `API_KEY`, `CORS` ou `Depends` :
@@ -293,8 +325,8 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 
 | Sprint | Objet | Risque traité | Effort | Dépend de |
 |---|---|---|---|---|
-| **S210** | Contrat manifeste ↔ route | capacité morte + 5 dérives silencieuses | ~1 j | — |
-| **S211** | ETL : auth + SSRF + plafond | trou de sécurité exploitable | ~1 j | — |
+| **S210** ✅ | Contrat manifeste ↔ route | capacité morte + 5 dérives silencieuses | ~1 j | — |
+| **S211** ✅ | ETL : auth + SSRF + plafond | trou de sécurité exploitable | ~1 j | — |
 | **S212** | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
 | **S213** | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
 | **S214** | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |

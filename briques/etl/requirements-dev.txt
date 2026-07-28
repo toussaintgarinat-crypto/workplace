@@ -1,0 +1,5 @@
+# S211 — dépendances pour exécuter les tests de cette brique.
+# Le socle du harnais (scripts/tests_briques.sh) fournit déjà pytest/pytest-asyncio/httpx ;
+# il manque de quoi simuler des réponses HTTP distantes sans réseau, indispensable pour
+# prouver le refus d'une redirection vers la loopback.
+respx==0.22.0  # 0.21 n'intercepte pas httpx 0.28 : les mocks passaient au travers (S205)

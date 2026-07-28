@@ -480,26 +480,29 @@ async def assistant_document(fichier: UploadFile = File(...)):
     if not contenu:
         raise HTTPException(status_code=400, detail="Fichier vide.")
 
+    entetes_etl = orchestrateur.entetes_brique("etl")
     async with httpx.AsyncClient(timeout=120) as client:
         # 1) Ingestion (extraction de texte) par l'ETL.
         r = await client.post(
             f"{etl}/ingerer",
             files={"fichier": (fichier.filename or "document", contenu,
                                fichier.content_type or "application/octet-stream")},
+            headers=entetes_etl,
         )
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Ingestion ETL échouée : {r.text}")
         doc_id = r.json().get("id")
 
         # 2) Récupération du texte extrait.
-        d = await client.get(f"{etl}/documents/{doc_id}")
+        d = await client.get(f"{etl}/documents/{doc_id}", headers=entetes_etl)
         texte = d.json().get("texte_extrait", "") if d.status_code < 400 else ""
 
         # 3) Classement par le LLM (même cerveau que l'assistant).
         classement = await classer.classer_texte(texte, fichier.filename or "document")
 
         # 4) Persistance du classement dans les métadonnées du document.
-        await client.patch(f"{etl}/documents/{doc_id}/classement", json=classement)
+        await client.patch(f"{etl}/documents/{doc_id}/classement", json=classement,
+                           headers=entetes_etl)
 
     texte_tronque = texte[:6000] + ("\n…[tronqué]" if len(texte) > 6000 else "")
     return {"doc_id": doc_id, "nom": fichier.filename,
@@ -531,7 +534,8 @@ async def assistant_dossiers():
     etl = orchestrateur._brique_base(registre, "etl")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{etl}/dossiers")
+            r = await client.get(f"{etl}/dossiers",
+                                 headers=orchestrateur.entetes_brique("etl"))
             return r.json() if r.status_code < 400 else {"projets": {}, "categories": {}}
     except httpx.HTTPError:
         return {"projets": {}, "categories": {}}

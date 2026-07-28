@@ -238,7 +238,8 @@ async def _check_documents(registre) -> int:
     try:
         base = orchestrateur._brique_base(registre, "etl")
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{base}/documents", params={"limite": 500})
+            r = await client.get(f"{base}/documents", params={"limite": 500},
+                                 headers=orchestrateur.entetes_brique("etl"))
         docs = r.json().get("documents", []) if r.status_code < 400 else []
         non_classes = [d for d in docs if not (d.get("classement") or {}).get("categorie")]
         if non_classes:

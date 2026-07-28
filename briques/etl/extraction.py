@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 
-import httpx
+import reseau
 
 logger = logging.getLogger(__name__)
 
@@ -132,14 +132,17 @@ def extraire_texte(contenu: bytes, nom_fichier: str, type_mime: str | None = Non
 
 
 async def extraire_depuis_url(url: str) -> tuple[str, str]:
-    """Télécharge une URL et extrait le texte. Retourne (texte, nom_fichier)."""
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-        reponse = await client.get(url)
-        reponse.raise_for_status()
-        type_mime = reponse.headers.get("content-type", "").split(";")[0].strip()
-        # Nom de fichier depuis l'URL
-        nom = url.rstrip("/").split("/")[-1] or "page"
-        if "." not in nom and "html" in type_mime:
-            nom += ".html"
-        texte = extraire_texte(reponse.content, nom, type_mime)
-        return texte, nom
+    """Télécharge une URL et extrait le texte. Retourne (texte, nom_fichier).
+
+    Le téléchargement passe par `reseau.telecharger` : cible publique obligatoire,
+    re-vérifiée à chaque redirection, et plafond de taille (S211). Les exceptions
+    `reseau.UrlInterdite` / `reseau.ContenuTropGros` remontent telles quelles pour
+    que `main.py` distingue « refusé » de « injoignable ».
+    """
+    contenu, url_finale, type_mime = await reseau.telecharger(url)
+    # Nom de fichier depuis l'URL FINALE (après redirections) : c'est le document
+    # réellement récupéré, pas celui demandé.
+    nom = url_finale.rstrip("/").split("/")[-1] or "page"
+    if "." not in nom and "html" in type_mime:
+        nom += ".html"
+    return extraire_texte(contenu, nom, type_mime), nom

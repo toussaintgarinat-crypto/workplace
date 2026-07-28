@@ -14,6 +14,11 @@ from analyse import auditer
 from shared.schemas.audit import Audit
 
 ETL_URL = os.getenv("ETL_URL", "http://host.docker.internal:5200")
+# La brique ETL est fermée par API_KEYS depuis S211 : `audit` déclare `besoin: etl`,
+# elle doit donc porter la clé. Absente → dict vide, et l'ETL en mode ouvert répond
+# comme avant (on ne casse pas un déploiement non configuré).
+_ETL_CLE = os.getenv("ETL_KEY")
+ETL_ENTETES = {"X-API-Key": _ETL_CLE} if _ETL_CLE else {}
 DB_PATH = os.getenv("DB_PATH", "/data/audits.db")
 
 
@@ -73,7 +78,7 @@ async def _recuperer_textes(doc_ids: list[str]) -> tuple[list[str], str]:
     async with httpx.AsyncClient(timeout=60) as client:
         for doc_id in doc_ids:
             try:
-                r = await client.get(f"{ETL_URL}/documents/{doc_id}")
+                r = await client.get(f"{ETL_URL}/documents/{doc_id}", headers=ETL_ENTETES)
                 r.raise_for_status()
                 doc = r.json()
                 texte = doc.get("texte_extrait") or doc.get("contenu") or ""
@@ -89,7 +94,7 @@ async def _recuperer_textes(doc_ids: list[str]) -> tuple[list[str], str]:
 
 async def _recuperer_tous_ids() -> list[str]:
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{ETL_URL}/documents")
+        r = await client.get(f"{ETL_URL}/documents", headers=ETL_ENTETES)
         r.raise_for_status()
         return [d["id"] for d in r.json().get("documents", r.json())]
 

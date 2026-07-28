@@ -52,6 +52,21 @@ def _brique_base(registre, nom: str) -> str:
     return f"http://{BRIQUE_HOST}:{port}"
 
 
+def entetes_brique(nom: str) -> dict:
+    """En-tête `X-API-Key` d'une brique fermée par `API_KEYS`, si la clé est posée.
+
+    Source unique du nommage `{BRIQUE}_KEY` (tiret → underscore : `veille-info` →
+    `VEILLE_INFO_KEY`). Vit ici — et pas dans `outils_communs` — parce que les
+    appels CÂBLÉS (cycle de vie, proactif, routers) ne peuvent pas importer
+    `outils_communs` : c'est lui qui importe `orchestrateur`.
+
+    Dict vide si la clé n'est pas posée : la brique reste alors en mode ouvert
+    (comportement historique), on ne casse pas un déploiement non configuré.
+    """
+    cle = os.environ.get(f"{nom.upper().replace('-', '_')}_KEY")
+    return {"X-API-Key": cle} if cle else {}
+
+
 # ── Persistance des livraisons ───────────────────────────────────────────────
 
 def _connexion() -> sqlite3.Connection:
@@ -227,19 +242,21 @@ async def _attendre_termine(client: httpx.AsyncClient, url: str, etape: str) -> 
 
 async def _etape_ingestion(client, etl_base, fichiers, livraison_id) -> list[str]:
     _maj_etape(livraison_id, "ingestion", "en_cours")
+    entetes = entetes_brique("etl")
     doc_ids: list[str] = []
     if fichiers:
         for nom, contenu, mime in fichiers:
             r = await client.post(
                 f"{etl_base}/ingerer",
                 files={"fichier": (nom, contenu, mime or "application/octet-stream")},
+                headers=entetes,
             )
             if r.status_code >= 400:
                 raise EchecEtape("ingestion", f"ETL a refusé {nom} : {r.text}")
             doc_ids.append(r.json()["id"])
     else:
         # Pas de fichiers fournis → on audite les documents déjà présents dans l'ETL.
-        r = await client.get(f"{etl_base}/documents", params={"limite": 500})
+        r = await client.get(f"{etl_base}/documents", params={"limite": 500}, headers=entetes)
         r.raise_for_status()
         doc_ids = [d["id"] for d in r.json().get("documents", [])]
         if not doc_ids:

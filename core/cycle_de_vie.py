@@ -115,7 +115,8 @@ async def decrocher(registre, livraison_id: str) -> dict:
     async with httpx.AsyncClient(timeout=60) as client:
         for did in doc_ids:
             try:
-                r = await client.get(f"{bases['etl']}/documents/{did}")
+                r = await client.get(f"{bases['etl']}/documents/{did}",
+                                     headers=orchestrateur.entetes_brique("etl"))
                 if r.status_code < 400:
                     dossier["documents"].append(r.json())
             except httpx.HTTPError as e:
@@ -154,7 +155,8 @@ async def decrocher(registre, livraison_id: str) -> dict:
     async with httpx.AsyncClient(timeout=60) as client:
         for did in doc_ids:
             try:
-                await client.delete(f"{bases['etl']}/documents/{did}")
+                await client.delete(f"{bases['etl']}/documents/{did}",
+                                    headers=orchestrateur.entetes_brique("etl"))
             except httpx.HTTPError:
                 pass
         if audit_id:
@@ -190,7 +192,8 @@ async def _reinjecter(registre, data: dict) -> dict:
 
     async with httpx.AsyncClient(timeout=60) as client:
         for doc in data.get("documents") or []:
-            r = await client.post(f"{bases['etl']}/documents/import", json=doc)
+            r = await client.post(f"{bases['etl']}/documents/import", json=doc,
+                                  headers=orchestrateur.entetes_brique("etl"))
             if r.status_code < 400:
                 rapport["documents"] += 1
 
