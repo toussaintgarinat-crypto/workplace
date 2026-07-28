@@ -1,0 +1,106 @@
+{
+  "nom": "connecteurs",
+  "famille": "ingestion",
+  "version": "0.1.0",
+  "description": "Va chercher de la donnée structurée chez un tiers, de façon planifiée et reprenable : les connecteurs Airbyte (600+, catalogue PyPI) pilotés en librairie, sans la plateforme Airbyte. Une source = un connecteur + une configuration chiffrée ; la synchro est incrémentale (curseur persisté) et reprend après interruption. Les données atterrissent dans le cache local de la brique — ce n'est PAS un entrepôt analytique (décision assumée, cf. ADR).",
+  "role": "connecteurs",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/connecteurs",
+  "port": 6200,
+  "url_sante": "http://host.docker.internal:6200/sante",
+  "depends_on": [],
+  "offre": [
+    "connecteurs_tiers_airbyte",
+    "sync_incrementale_reprenable",
+    "configs_chiffrees_au_repos",
+    "planification_par_horloge",
+    "isolation_par_personne"
+  ],
+  "taches": [
+    {
+      "nom": "sync-quotidienne",
+      "description": "Synchronise toutes les sources actives du parc, tous tenants confondus, en ne transférant que le delta depuis le dernier curseur.",
+      "methode": "POST",
+      "chemin": "/sync/executer",
+      "cadence_heures": 24,
+      "idempotent": true,
+      "entete_token_env": "CONNECTEURS_KEY",
+      "tolere_echec": true
+    }
+  ],
+  "capacites": [
+    {
+      "nom": "connecteurs_sources_lister",
+      "description": "Liste les sources tierces synchronisées pour la personne connectée (nom, connecteur, flux suivis, active ou non). Sert « quelles sources est-ce que je synchronise », « est-ce que ma source GitHub est branchée ». Lecture seule — les identifiants ne sont JAMAIS rendus, seulement la présence ou l'absence de chaque champ.",
+      "methode": "GET",
+      "chemin": "/sources",
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "connecteurs_source_lire",
+      "description": "Détail d'une source : son connecteur, les flux retenus, et l'état de son curseur incrémental (où en est la dernière synchro, flux par flux). Sert « où en est ma synchro GitHub », « depuis quand cette source n'a pas bougé ».",
+      "methode": "GET",
+      "chemin": "/sources/{source_id}",
+      "params": {
+        "source_id": {"type": "integer", "description": "Identifiant de la source (champ id de connecteurs_sources_lister).", "requis": true}
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "connecteurs_source_synchroniser",
+      "description": "Déclenche la synchronisation d'une source MAINTENANT, sans attendre la tâche quotidienne. Ne transfère que le delta depuis le dernier curseur, sauf si `complet` est vrai. Rend immédiatement un identifiant de synchro à suivre avec connecteurs_sync_lire — le transfert continue en arrière-plan. Sert « synchronise ma source GitHub tout de suite ».",
+      "methode": "POST",
+      "chemin": "/sources/{source_id}/sync",
+      "params": {
+        "source_id": {"type": "integer", "description": "Identifiant de la source à synchroniser.", "requis": true},
+        "complet": {"type": "boolean", "description": "Vrai pour ignorer le curseur et tout retransférer depuis le début (coûteux — ne le proposer que si la personne le demande explicitement). Défaut : faux, seul le delta est transféré."}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "connecteurs_syncs_lister",
+      "description": "Historique des synchronisations : statut (en cours, réussie, échec, interrompue), volume transféré, durée. Sert « est-ce que mes synchros passent », « qu'est-ce qui a échoué cette nuit ».",
+      "methode": "GET",
+      "chemin": "/syncs",
+      "params": {
+        "source_id": {"type": "integer", "description": "Restreindre à une seule source (optionnel)."},
+        "limite": {"type": "integer", "description": "Nombre maximum de synchros rendues (défaut 50)."}
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "connecteurs_sync_lire",
+      "description": "Détail d'une synchronisation : où elle en est, combien d'enregistrements transférés, et le message d'erreur exact si elle a échoué. Sert à suivre une synchro déclenchée par connecteurs_source_synchroniser.",
+      "methode": "GET",
+      "chemin": "/syncs/{sync_id}",
+      "params": {
+        "sync_id": {"type": "integer", "description": "Identifiant de la synchro (rendu par connecteurs_source_synchroniser)."}
+      },
+      "action": false,
+      "niveau": 0,
+      "socle": false
+    },
+    {
+      "nom": "connecteurs_source_activer",
+      "description": "Allume ou éteint une source : une source éteinte est ignorée par la synchro quotidienne mais garde son curseur et son historique (elle reprendra où elle en était une fois rallumée). Sert « arrête de synchroniser GitHub pour l'instant ».",
+      "methode": "PATCH",
+      "chemin": "/sources/{source_id}/actif",
+      "params": {
+        "source_id": {"type": "integer", "description": "Identifiant de la source.", "requis": true},
+        "active": {"type": "boolean", "description": "Vrai pour allumer, faux pour éteindre.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    }
+  ]
+}
