@@ -33,7 +33,7 @@ def base_brique(registre, nom: str) -> str | None:
     """URL de base d'une brique (override d'env prioritaire), ou None si introuvable.
 
     Même règle que `orchestrateur._brique_base`, mais NON bloquante : une brique sans
-    port (frontend pur, ex. app-builder) renvoie None et sera écartée du catalogue."""
+    port renvoie None et sera écartée du catalogue."""
     override = os.environ.get(f"{nom.upper()}_URL")
     if override:
         return override.rstrip("/")

@@ -18,8 +18,8 @@ BRIQUES_DIR = RACINE / "briques"
 # Champs que le Cœur (registre + dashboard + horloge) suppose présents sur CHAQUE brique.
 CHAMPS_REQUIS = ("nom", "version", "description", "role", "couche", "statut")
 # Le contrat réseau (port + endpoint de santé) n'est exigé que des briques de SERVICE
-# (couche backend) : une brique frontend peut être un HTML statique (port null, ex.
-# app-builder) ou servir son UI sur un port et sonder un backend sur un autre (ex. oria).
+# (couche backend) : une brique frontend peut être un HTML statique (port null) ou servir
+# son UI sur un port et sonder un backend sur un autre (ex. oria).
 CHAMPS_RESEAU = ("port", "url_sante")
 STATUTS_CONNUS = {"actif", "setup_requis", "a_tester", "inactif"}
 
@@ -72,7 +72,7 @@ def test_statut_est_connu(path):
 @pytest.mark.parametrize("path", _manifests(), ids=lambda p: p.parent.name)
 def test_url_sante_contient_le_port(path):
     """Pour une brique backend, url_sante doit pointer sur le port déclaré (sinon le
-    dashboard sonde dans le vide). Les frontends sont exemptés (cf. oria/app-builder)."""
+    dashboard sonde dans le vide). Les frontends sont exemptés (cf. oria)."""
     data = _charger(path)
     if data.get("couche") != "backend" or not data.get("port") or not data.get("url_sante"):
         pytest.skip("contrat réseau non applicable (non-backend ou champs absents)")

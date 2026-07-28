@@ -313,6 +313,43 @@ réintroduit le défaut qu'on vient de corriger).
 
 ## S213 — app-builder : trancher entre la servir et la sortir
 
+> **✅ FAIT le 2026-07-28 — décision : (b) la sortir.** ADR
+> `docs/decisions/2026-07-28-app-builder-hors-stack.md`. Dépôt d'accueil
+> `~/Desktop/strategic-app-builder` (commit initial `2638c9f`). `briques/app-builder/`
+> supprimée, 6 références retirées. `make smoke` **990 ✓** (994 → 990 : les 7 tests
+> paramétrés sur app-builder disparaissent, 4 passés + 3 skips), `make test-core` **527 ✓**
+> inchangé, brique `generateur` **22 ✓** en conteneur.
+>
+> **Le motif retenu n'est pas l'hébergement, c'est la Gateway.** Servir un HTML statique est
+> trivial ; ce qui coûtait, c'était les **16 fournisseurs d'IA appelés en direct depuis le
+> navigateur**, clés en `localStorage`. Le servir sur le mesh transformait un défaut personnel
+> en exposition réelle, et le corriger imposait de réécrire toute sa couche LLM — l'essentiel
+> des ~2 jours de l'option (a), plus un couplage définitif. Sorti, le défaut redevient ce qu'il
+> est : le régime normal d'un outil mono-poste, écrit noir sur blanc dans son README.
+>
+> **Vérifié plutôt que supposé** : aucune brique ne déclare ses offres (`generation_app`,
+> `audit_entreprise`, `dashboard`) en `besoin` — la retirer ne casse rien. Et l'affirmation du
+> backlog « aucune référence à la Gateway `:5100` » **tient** : les 5 occurrences de `5100`
+> dans le fichier sont la couleur CSS `#e65100`.
+>
+> Le symptôme était d'ailleurs déjà dans `core/conscience.py` : `generateur` et `app-builder`
+> y portaient le **même** organe, « mains (fabrication d'applications) », mot pour mot.
+>
+> Les trois défauts d'ouverture corrigés dans le dépôt d'accueil (manifeste PWA réel + icône,
+> version unique `3.0.0`, fichier renommé `index.html`), plus un quatrième non listé : le
+> `favicon.ico` absent faisait un 404 à chaque chargement. Vérifié au navigateur après
+> extraction — la page démarre, le projet de démo se charge, plus aucune erreur console hormis
+> l'avertissement Babel, documenté comme limite assumée avec la dépendance unpkg.com.
+>
+> **Différence assumée avec le précédent Calendrier Familial** : là-bas la brique `agenda`
+> **restait** dans Workplace comme source de vérité, d'où `scripts/export-standalone.sh`. Ici
+> c'est une sortie sèche — pas de script de synchro, le dépôt d'accueil devient la seule source.
+>
+> **Constat de passage, hors périmètre** : 6 des 8 fichiers `test_*.py` de `briques/generateur/`
+> ne contiennent aucun test pytest — ce sont des scripts autonomes (`def run()` + `__main__`).
+> Le filet réel de la brique est donc de 22 tests, pas de ce que le nombre de fichiers laisse
+> croire. Non traité ici : ça mérite sa propre décision.
+
 **Pourquoi maintenant.** État vérifié le 2026-07-28 : `briques/app-builder/` contient un
 manifeste et **un seul fichier HTML de 677 Ko / 11 849 lignes**. Zéro service dans les
 `docker-compose*.yml`, zéro route Caddy, zéro lien depuis le dashboard, zéro test. Ouverte
@@ -442,7 +479,7 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 | **S210** ✅ | Contrat manifeste ↔ route | capacité morte + 5 dérives silencieuses | ~1 j | — |
 | **S211** ✅ | ETL : auth + SSRF + plafond | trou de sécurité exploitable | ~1 j | — |
 | **S212** ✅ | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
-| **S213** | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
+| **S213** ✅ | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
 | **S214** | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |
 | **S215** | Renommer `etl` → `ingestion` | confort | ~0,5 j | S214 |
 

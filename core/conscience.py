@@ -32,7 +32,6 @@ _ORGANES = {
     "calcul":        "muscle (puissance de calcul déportée — le Muscle)",
     "forge":         "mains (agents IA, RAG, CRM, factures, paiements)",
     "generateur":    "mains (fabrication d'applications)",
-    "app-builder":   "mains (fabrication d'applications)",
     "studio":        "imagination (récits audio en série)",
     "personnages":   "imagination (personnages holistiques, casting vocal)",
     "video":         "imagination (vidéo : teasers, portraits animés)",
