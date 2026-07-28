@@ -314,8 +314,10 @@ réintroduit le défaut qu'on vient de corriger).
 ## S213 — app-builder : trancher entre la servir et la sortir
 
 > **✅ FAIT le 2026-07-28 — décision : (b) la sortir.** ADR
-> `docs/decisions/2026-07-28-app-builder-hors-stack.md`. Dépôt d'accueil
-> `~/Desktop/strategic-app-builder` (commit initial `2638c9f`). `briques/app-builder/`
+> `docs/decisions/2026-07-28-app-builder-hors-stack.md`. Dépôt d'accueil publié **public**
+> sous Apache-2.0 : https://github.com/toussaintgarinat-crypto/strategic-app-builder
+> (`2638c9f` + `da9539d`) — scan de secrets fait avant publication, rien en dur.
+> `briques/app-builder/`
 > supprimée, 6 références retirées. `make smoke` **990 ✓** (994 → 990 : les 7 tests
 > paramétrés sur app-builder disparaissent, 4 passés + 3 skips), `make test-core` **527 ✓**
 > inchangé, brique `generateur` **22 ✓** en conteneur.

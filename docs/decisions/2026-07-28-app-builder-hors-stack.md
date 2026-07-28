@@ -6,8 +6,9 @@
   (`core/conscience.py`, `core/catalogue.py`), le bundle du Générateur
   (`briques/generateur/bundle.py`), les filets `tests/test_briques_smoke.py` et
   `core/test_catalogue.py`
-- **Dépôt d'accueil** : `~/Desktop/strategic-app-builder` (dépôt Git séparé, commit initial
-  `2638c9f`)
+- **Dépôt d'accueil** : `~/Desktop/strategic-app-builder` → publié **public** sous Apache-2.0
+  sur https://github.com/toussaintgarinat-crypto/strategic-app-builder (commits `2638c9f`
+  puis `da9539d`)
 
 > **But de ce document** : consigner *pourquoi* un outil qui marche a été retiré du dépôt,
 > *ce qu'on renonce* à faire de lui, et *à quelle condition* on reviendrait sur ce choix.
