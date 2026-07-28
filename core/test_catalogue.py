@@ -90,8 +90,8 @@ def test_ignore_capacite_incomplete_sans_chemin():
 
 
 def test_ignore_brique_sans_port_meme_si_elle_declare():
-    reg = _Registre({"app-builder": {"nom": "app-builder", "port": None, "capacites": [
-        {"nom": "ab_truc", "chemin": "/truc"},
+    reg = _Registre({"x_frontend": {"nom": "x_frontend", "port": None, "capacites": [
+        {"nom": "xf_truc", "chemin": "/truc"},
     ]}})
     assert catalogue.collecter_capacites(reg) == []  # frontend pur → non appelable → écarté
 

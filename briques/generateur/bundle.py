@@ -39,7 +39,7 @@ DECALAGE_DEFAUT = 200
 # Briques « plateforme » : infrastructure du bundle, PAS des briques métier cochables.
 # Elles ne sont jamais tirées comme dépendance métier (la Gateway et le Cœur sont
 # ajoutés comme services dédiés du bundle, cf. S96).
-PLATEFORME = {"gateway", "memoire", "noyau", "oria", "connexion", "app-builder"}
+PLATEFORME = {"gateway", "memoire", "noyau", "oria", "connexion"}
 
 # Ports INTERNES (dans le réseau du bundle) ≠ ports publiés. Les conteneurs se parlent
 # sur ces ports-là (la Gateway écoute 4000, le Cœur 5000), pas sur le port hôte décalé.

@@ -30,7 +30,7 @@ def test_catalogue_garde_metier_ecarte_plateforme(tmp_path):
     _ecrire_manifest(racine, "paiements", port=6020, description="Argent")
     _ecrire_manifest(racine, "gateway", port=4001)      # plateforme → écartée
     _ecrire_manifest(racine, "generateur", port=5400)   # usine → écartée
-    _ecrire_manifest(racine, "app-builder", port=None)   # plateforme + sans port
+    _ecrire_manifest(racine, "connexion", port=5870)     # plateforme → écartée
 
     cochables = main._lister_briques_cochables(racine)
     noms = [b["nom"] for b in cochables]
