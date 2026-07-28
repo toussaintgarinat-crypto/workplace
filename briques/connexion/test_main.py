@@ -1,6 +1,11 @@
 """Tests API (TestClient) : santé, webhooks, sondage, administration des correspondances."""
+import json
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
+import adaptateurs
 import main
 
 client = TestClient(main.app)
@@ -58,3 +63,49 @@ def test_sonder_non_configure():
 def test_envoyer_non_configure():
     r = client.post("/envoyer", json={"reseau": "telegram", "id_externe": "1", "texte": "hi"})
     assert r.status_code == 409
+
+
+# ── S210 : la capacité `connexion_envoyer` telle que l'assistant l'appelle ─────────
+# Elle était MORTE depuis son écriture : le manifeste annonçait `destinataire`/`message`,
+# le modèle `Envoi` exige `reseau`/`id_externe`/`texte` → 422 à chaque envoi. Ce test
+# construit le corps À PARTIR DU MANIFESTE (pas d'une constante recopiée) et vérifie que
+# le message atteint réellement l'adaptateur du réseau.
+def _params_capacite(nom):
+    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
+    cap = next(c for c in manifest["capacites"] if c["nom"] == nom)
+    return cap["params"]
+
+
+class _FauxReseau:
+    """Adaptateur configuré qui note ce qu'on lui demande d'envoyer (rien ne part)."""
+    def __init__(self):
+        self.envoyes = []
+
+    def configure(self):
+        return True
+
+    async def envoyer(self, id_externe, texte):
+        self.envoyes.append((id_externe, texte))
+        return True
+
+
+def test_connexion_envoyer_delivre_avec_les_params_du_manifeste(monkeypatch):
+    faux = _FauxReseau()
+    monkeypatch.setitem(adaptateurs.REGISTRE, "telegram", faux)
+
+    params = _params_capacite("connexion_envoyer")
+    valeurs = {"reseau": "telegram", "id_externe": "424242", "texte": "Le pont fonctionne."}
+    assert set(params) == set(valeurs), (
+        f"Le manifeste déclare {sorted(params)} — ce test ne prouverait pas l'appel réel.")
+
+    r = client.post("/envoyer", json={nom: valeurs[nom] for nom in params})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True}
+    assert faux.envoyes == [("424242", "Le pont fonctionne.")]
+
+
+@pytest.mark.parametrize("params", [_params_capacite("connexion_envoyer")])
+def test_manifeste_declare_tous_les_champs_requis_par_envoi(params):
+    """Filet local du contrat (le filet du parc est `tests/test_contrat_capacites.py`)."""
+    requis = {nom for nom, champ in main.Envoi.model_fields.items() if champ.is_required()}
+    assert requis <= set(params), f"champs requis non déclarés : {sorted(requis - set(params))}"

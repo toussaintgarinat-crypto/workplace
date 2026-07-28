@@ -26,33 +26,8 @@
   "taches": [],
   "capacites": [
     {
-      "nom": "transcription_fichier",
-      "description": "Transcrit un fichier audio uploadé (mp3, wav, m4a, ogg…) en texte. Avec diarisation=true, identifie les locuteurs (Locuteur A, Locuteur B…) — utile pour les réunions, interviews, podcasts.",
-      "methode": "POST",
-      "chemin": "/transcrire",
-      "params": {
-        "url_fichier": {
-          "type": "string",
-          "description": "URL du fichier audio à transcrire (si pas d'upload direct)."
-        },
-        "diarisation": {
-          "type": "boolean",
-          "description": "Identifier les locuteurs dans la transcription (défaut: false)."
-        },
-        "langue": {
-          "type": "string",
-          "description": "Code langue ISO (ex: 'fr', 'en'). Auto-détecté si absent."
-        },
-        "fournisseur": {
-          "type": "string",
-          "description": "Moteur de transcription : 'whisper' (local, défaut), 'groq', 'openai'."
-        }
-      },
-      "action": true
-    },
-    {
       "nom": "transcription_depuis_url",
-      "description": "Transcrit un fichier audio accessible via URL. Avec diarisation=true, identifie les locuteurs. Avec résumé=true, synthétise le texte et extrait les points d'action.",
+      "description": "Transcrit un fichier audio accessible via URL (mp3, wav, m4a, ogg…). Avec diarisation=true, identifie les locuteurs (Locuteur A, Locuteur B…) — réunions, interviews, podcasts. Pour un résumé et des points d'action, enchaîne avec transcription_resumer. SEULE porte d'entrée en conversation : l'upload multipart de POST /transcrire, réservé à l'interface web, n'est pas appelable par l'assistant.",
       "methode": "POST",
       "chemin": "/transcrire-url",
       "params": {
@@ -65,10 +40,6 @@
           "type": "boolean",
           "description": "Identifier les locuteurs (défaut: false)."
         },
-        "resume": {
-          "type": "boolean",
-          "description": "Générer un résumé et des points d'action (défaut: false)."
-        },
         "langue": {
           "type": "string",
           "description": "Code langue ISO (ex: 'fr', 'en')."
@@ -79,6 +50,24 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "transcription_resumer",
+      "description": "Synthétise une transcription en notes de réunion : résumé, points d'action, décisions. Enchaîne après transcription_depuis_url en lui passant le texte obtenu.",
+      "methode": "POST",
+      "chemin": "/resumer",
+      "params": {
+        "texte": {
+          "type": "string",
+          "description": "Texte à synthétiser (la transcription complète).",
+          "requis": true
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue des notes produites (ex: 'fr', 'en'). Défaut : celle du texte."
+        }
+      },
+      "action": false
     }
   ]
 }

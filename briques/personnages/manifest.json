@@ -52,7 +52,7 @@
     },
     {
       "nom": "personnage_fiche_modifier",
-      "description": "Modifie une fiche de personnage existante (nom de scène, catégorie, notes…). ACTION.",
+      "description": "Renomme une fiche de personnage : le nom affiché (nom de scène) change, le nom de naissance et les données cosmiques restent intacts. Pour la ranger dans une catégorie, utilise personnage_fiche_ranger. ACTION.",
       "methode": "PATCH",
       "chemin": "/fiches/{fid}",
       "params": {
@@ -61,13 +61,10 @@
           "description": "Identifiant de la fiche.",
           "requis": true
         },
-        "nom_scene": {
+        "nom": {
           "type": "string",
-          "description": "Nouveau nom de scène (garde le nom de naissance intact)."
-        },
-        "categorie": {
-          "type": "string",
-          "description": "Catégorie libre (ex: 'Famille', 'Collègues')."
+          "description": "Nouveau nom affiché (nom de scène). Ne peut pas être vide.",
+          "requis": true
         }
       },
       "action": true
@@ -88,21 +85,48 @@
     },
     {
       "nom": "personnage_portrait_generer",
-      "description": "Génère un portrait IA d'un personnage holistique (image via la brique images). Retourne l'URL de l'image.",
+      "description": "Portrait holistique ÉCRIT d'un personnage à partir de son état civil (traditions, archétype, forces/faiblesses, pierre d'équilibrage, récit). Aucune image n'est produite. La date de naissance est indispensable.",
       "methode": "POST",
       "chemin": "/holistique/portrait",
       "params": {
-        "fid": {
+        "prenoms": {
           "type": "string",
-          "description": "Identifiant de la fiche du personnage.",
-          "requis": true
+          "description": "Prénom(s) du personnage."
         },
-        "style": {
+        "nom": {
           "type": "string",
-          "description": "Style artistique du portrait (ex: 'réaliste', 'aquarelle')."
+          "description": "Nom de famille du personnage."
+        },
+        "date_naissance": {
+          "type": "string",
+          "description": "Date de naissance 'AAAA-MM-JJ'. Sans elle, la brique refuse (422) : les stats en dérivent."
+        },
+        "heure_naissance": {
+          "type": "string",
+          "description": "Heure de naissance 'HH:MM' (affine l'ascendant et les maisons)."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude du lieu de naissance (décimale)."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude du lieu de naissance (décimale, EST positif)."
+        },
+        "utc_offset": {
+          "type": "number",
+          "description": "Décalage local→UTC à la naissance, en heures."
+        },
+        "systeme_numerologie": {
+          "type": "string",
+          "description": "'classique' (défaut, A=1…Z=26) ou 'pythagoricien'."
+        },
+        "langue_sortie": {
+          "type": "string",
+          "description": "Langue du portrait déterministe : 'fr' (défaut) ou 'en'."
         }
       },
-      "action": true
+      "action": false
     },
     {
       "nom": "personnage_distribution_proposer",
@@ -110,17 +134,22 @@
       "methode": "POST",
       "chemin": "/distribution/proposer",
       "params": {
-        "contexte": {
+        "premisse": {
           "type": "string",
-          "description": "Description de l'histoire, du genre, du nombre de personnages souhaités.",
+          "description": "Prémisse : l'histoire, le genre, l'univers. C'est le contexte narratif dont part la proposition.",
           "requis": true
         },
-        "fiches_ids": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Fiches de personnages existants à inclure dans la distribution (optionnel)."
+        "combien": {
+          "type": "integer",
+          "description": "Nombre de personnages à proposer (défaut : 4)."
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue de rédaction de la distribution (défaut : 'français')."
+        },
+        "deja": {
+          "type": "string",
+          "description": "Personnages déjà existants, en texte libre, pour que la proposition les complète sans les redoubler."
         }
       },
       "action": false

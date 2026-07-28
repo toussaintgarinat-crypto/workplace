@@ -70,10 +70,13 @@
           "description": "Identifiant de l'audit source (obtenu via audit_lire).",
           "requis": true
         },
-        "nom_client": {
+        "contact_client": {
           "type": "string",
-          "description": "Nom du client final pour personnaliser l'app.",
-          "requis": true
+          "description": "Nom du contact chez le client final (personnalise le compte d'accès livré)."
+        },
+        "email_client": {
+          "type": "string",
+          "description": "Email du client final : si fourni, un compte d'accès lui est créé à la livraison et un lien « définis ton mot de passe » lui est envoyé."
         },
         "langue": {
           "type": "string",

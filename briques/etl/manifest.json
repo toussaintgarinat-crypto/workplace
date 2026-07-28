@@ -28,27 +28,35 @@
           "type": "string",
           "description": "URL du document à ingérer (PDF, HTML…).",
           "requis": true
-        },
-        "dossier": {
-          "type": "string",
-          "description": "Dossier/projet dans lequel classer le document (optionnel)."
         }
       },
       "action": true
     },
     {
       "nom": "etl_documents_lister",
-      "description": "Liste les documents ingérés (texte extrait disponible). Filtrable par dossier ou statut. Utilise avant de lire ou classer un document.",
+      "description": "Liste les documents ingérés (texte extrait disponible). Filtrable par catégorie, projet ou entreprise. Utilise avant de lire ou classer un document.",
       "methode": "GET",
       "chemin": "/documents",
       "params": {
-        "dossier": {
+        "categorie": {
           "type": "string",
-          "description": "Filtrer par dossier/projet (optionnel)."
+          "description": "Filtrer par catégorie de classement (optionnel)."
         },
-        "statut": {
+        "projet": {
           "type": "string",
-          "description": "Filtrer par statut : 'ok', 'erreur' (optionnel)."
+          "description": "Filtrer par projet (optionnel)."
+        },
+        "entreprise_id": {
+          "type": "string",
+          "description": "Filtrer par entreprise rattachée (optionnel)."
+        },
+        "limite": {
+          "type": "integer",
+          "description": "Nombre maximum de documents renvoyés (défaut : 50)."
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Décalage pour paginer (défaut : 0)."
         }
       },
       "action": false
