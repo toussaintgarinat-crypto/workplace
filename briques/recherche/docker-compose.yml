@@ -48,7 +48,11 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
       - SYNTHESE_MODEL=${SYNTHESE_MODEL:-deepseek/deepseek-v4-flash}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       # Clés API acceptées : viennent du .env racine via env_file (ne PAS redéclarer
       # ici en =${API_KEYS:-} → l'écraserait par du vide, piège « env shadow »).
     depends_on:

@@ -12,7 +12,11 @@ services:
       - "host.docker.internal:host-gateway"   # joindre images/video/studio/memoire sous Linux
     environment:
       - PORT=6160
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       - IMAGES_URL=http://host.docker.internal:5950
       - VIDEO_URL=http://host.docker.internal:5970
       - STUDIO_URL=http://host.docker.internal:6060

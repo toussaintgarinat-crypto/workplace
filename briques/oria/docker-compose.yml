@@ -10,7 +10,11 @@ services:
       - "6085:6085"
     environment:
       - PORT=6085
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       - ORIA_KC_URL=${ORIA_KC_URL:-http://host.docker.internal:8081}
       - ORIA_KC_REALM=${ORIA_KC_REALM:-oria}
       - ORIA_KC_CLIENT_ID=${ORIA_KC_CLIENT_ID:-core-service}

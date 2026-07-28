@@ -22,7 +22,11 @@ services:
       # le code (main.py, lib/llm_client.py) si la variable est absente.
       # Brique transcription (Whisper) : voie d'entrée des vidéos NON-YouTube (URL/fichier).
       - TRANSCRIPTION_URL=${TRANSCRIPTION_URL:-http://host.docker.internal:5980}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       - API_KEYS=${API_KEYS:-}
     restart: unless-stopped
     healthcheck:

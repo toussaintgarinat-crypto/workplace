@@ -16,7 +16,11 @@ services:
       # Hérité du .env racine ; ne PAS redéclarer en `=${VAR:-}` (piège « env shadow »).
       # URL publique de la brique (liens d'onboarding / retours). VIDE = localhost.
       - PAIEMENTS_PUBLIC_URL=${PAIEMENTS_PUBLIC_URL:-http://localhost:6020}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       # Stripe : clé (de préférence RESTREINTE rk_) + secret webhook. ABSENTS du `environment`
       # exprès (ils viennent du .env racine via env_file) — les redéclarer en `=${VAR:-}` les
       # écraserait par du VIDE (piège « env shadow »). Sans clé : rail MOCK honnête.
