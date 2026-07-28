@@ -2,7 +2,11 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 httpx==0.28.1
-markitdown==0.0.1a3
+# S212 — sortie de l'alpha `0.0.1a3`, qui tenait la position PRINCIPALE de l'extraction.
+# Les extras sont OBLIGATOIRES depuis la 0.1.0 : le paquet nu ne sait plus lire ni PDF, ni
+# Word, ni Excel — il les refuserait en silence, et seuls les fallbacks de `extraction.py`
+# répondraient encore (Excel n'en a aucun). `test_extraction.py` est le filet qui l'a vérifié.
+markitdown[docx,pdf,pptx,xlsx]==0.1.6
 pymupdf==1.25.1
 python-docx==1.1.2
 openpyxl==3.1.5
