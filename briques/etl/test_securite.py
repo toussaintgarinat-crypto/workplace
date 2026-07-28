@@ -52,17 +52,17 @@ def client(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client_ferme(tmp_path, monkeypatch):
-    """La brique avec `API_KEYS` posé — `main.API_KEYS` étant lu à l'import, il faut recharger."""
+    """La brique fermée — `main.API_KEYS` étant lu à l'import, il faut recharger le module."""
     import main
     import stockage
-    monkeypatch.setenv("API_KEYS", "cle-de-test")
+    monkeypatch.setenv("ETL_API_KEYS", "cle-de-test")
     importlib.reload(main)
     monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
     with TestClient(main.app) as c:
         yield c
     # Rendre la brique à son mode ouvert pour les autres modules de test : le rechargement
     # doit se faire APRÈS avoir retiré la variable, sinon la clé survit au test.
-    monkeypatch.delenv("API_KEYS", raising=False)
+    monkeypatch.delenv("ETL_API_KEYS", raising=False)
     importlib.reload(main)
 
 
@@ -213,6 +213,38 @@ def test_sante_reste_ouverte_pour_le_healthcheck(client_ferme):
     assert client_ferme.get("/sante").status_code == 200
 
 
-def test_sans_API_KEYS_la_brique_reste_ouverte(client):
+def test_sans_cle_configuree_la_brique_reste_ouverte(client):
     """Déploiement non configuré : comportement historique inchangé, on ne casse personne."""
     assert client.get("/documents").status_code == 200
+
+
+def _cles_lues(monkeypatch, **env) -> set[str]:
+    """Recharge `main` avec l'environnement donné et rend la liste de clés retenue."""
+    import main
+    for nom in ("ETL_API_KEYS", "API_KEYS"):
+        monkeypatch.delenv(nom, raising=False)
+    for nom, valeur in env.items():
+        monkeypatch.setenv(nom, valeur)
+    importlib.reload(main)
+    lues = set(main.API_KEYS)
+    for nom in ("ETL_API_KEYS", "API_KEYS"):
+        monkeypatch.delenv(nom, raising=False)
+    importlib.reload(main)
+    return lues
+
+
+def test_ETL_API_KEYS_prime_sur_la_variable_generique(monkeypatch):
+    """`API_KEYS` est partagée par 22 briques via le .env racine : s'appuyer dessus pour
+    fermer l'ETL les basculerait TOUTES en fail-closed d'un coup. La variable dédiée gagne,
+    et elle gagne seule — pas d'union avec la générique, sinon fermer l'ETL rouvrirait
+    l'accès à quiconque détient n'importe quelle clé de la flotte."""
+    assert _cles_lues(monkeypatch, ETL_API_KEYS="a,b", API_KEYS="z") == {"a", "b"}
+
+
+def test_la_variable_generique_reste_un_repli(monkeypatch):
+    """Déploiement fermé de bout en bout (toute la flotte sur API_KEYS) : la convention marche."""
+    assert _cles_lues(monkeypatch, API_KEYS="z") == {"z"}
+
+
+def test_aucune_des_deux_laisse_la_brique_ouverte(monkeypatch):
+    assert _cles_lues(monkeypatch) == set()

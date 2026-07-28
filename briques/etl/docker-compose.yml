@@ -4,16 +4,18 @@ services:
     image: workplace-etl:0.1.0
     container_name: workplace-etl
     env_file:
-      # Secrets partagés (API_KEYS, ETL_KEY, CORS_ORIGINS) — source unique à la racine.
+      # Secrets partagés (ETL_API_KEYS, CORS_ORIGINS) — source unique à la racine.
       - path: ../../.env
         required: false
     ports:
       - "5200:5200"
     environment:
-      # API_KEYS et ETL_KEY : ABSENTS de `environment` exprès — ils viennent du .env
-      # racine via env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole depuis le
-      # shell / le .env du dossier courant, PAS depuis env_file, et écraserait par du
-      # vide, cf. fix-env-shadow-composes). API_KEYS vide = brique ouverte (dev).
+      # ETL_API_KEYS : ABSENTE de `environment` exprès — elle vient du .env racine via
+      # env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole depuis le shell / le
+      # .env du dossier courant, PAS depuis env_file, et écraserait par du vide, cf.
+      # fix-env-shadow-composes). Vide = brique ouverte (dev). C'est une variable DÉDIÉE
+      # et pas la générique API_KEYS : 22 briques lisent celle-là, la poser les fermerait
+      # toutes d'un coup (cf. .env.example).
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
     volumes:
       - etl_data:/data
