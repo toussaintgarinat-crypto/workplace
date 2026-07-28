@@ -640,3 +640,44 @@ d'idempotence. Source de preuve supprimée ensuite (sinon sync quotidienne inuti
 
 S213 est passée sans casse : `briques/app-builder` retirée du disque, aucun conteneur ne
 l'utilisait. Disque du HP : 87 Go / 327 Go utilisés (l'image `connecteurs` pèse 1,32 Go).
+
+---
+
+## SLIVE 2026-07-28 — S215 déployé sur le HP
+
+Le dernier sprint du lot. Les six sont désormais LIVE.
+
+**L'ordre était le sujet, pas le renommage.** La seule vraie difficulté du déploiement tenait
+en une contrainte : la brique est fermée par une clé dont le NOM change, et son volume change
+de nom en même temps. Séquence tenue, et elle a supprimé la fenêtre ouverte que l'ADR
+annonçait comme risque accepté :
+
+1. **`.env` d'abord, avant le `git pull`** — renommer `ETL_KEY`/`ETL_API_KEYS` en
+   `INGESTION_*` (mêmes valeurs, `diff` des secrets à l'appui). Les conteneurs en cours ont
+   lu leur environnement au démarrage : les renommer sur disque ne les dérange pas. Résultat :
+   au moment du `up`, les nouveaux noms sont **déjà en place** → **fenêtre ouverte = zéro**,
+   là où l'ADR tablait sur « courte et bornée ». À refaire dans cet ordre.
+2. **`docker compose down` de l'ancienne brique AVANT le pull** — après le pull, son dossier
+   n'existe plus et le conteneur devient un orphelin qu'aucun compose ne pilote.
+3. `git pull` → `scripts/migration_etl_vers_ingestion.sh` → `up -d --build`.
+
+**Preuves LIVE** :
+
+| | |
+|---|---|
+| Baseline avant migration | `{"service":"etl","documents_ingeres":25}`, base de 1,18 Mo |
+| Après migration | `{"service":"ingestion","documents_ingeres":25}` — **25 documents transportés, 0 perdu** |
+| Fermeture effective | `GET /documents` sans clé → **401** ; avec la clé du `.env` → 200, 25 documents |
+| Cœur → brique fermée | `/assistant/dossiers` rend `{"prochain sprint":1}` + 4 catégories, **identique** à l'appel direct avec clé → `INGESTION_KEY` est bien portée |
+| `audit` → brique fermée | `INGESTION_URL=http://host.docker.internal:5200`, en-tête porteur d'une clé : `True` |
+| Registre du Cœur | **39/39 briques ok**, `ingestion` présente, `etl` **absente** |
+| Conteneurs | tous `healthy`, 64 conteneurs, disque 87 Go / 327 Go |
+
+**Détail imprévu, sans gravité** : `git pull` ne supprime pas `briques/etl/` parce que le
+`__pycache__` qu'il contient est **non suivi et appartient à root** (écrit par le conteneur).
+Le dossier survit au renommage, vide de tout code mais visible. Retiré au `sudo`.
+
+**Filet de retour arrière laissé en place** : le volume `etl_etl_data` et l'image
+`workplace-etl:0.1.0` existent toujours. À supprimer quand la brique aura quelques jours de
+vol — `docker volume rm etl_etl_data`. Tant qu'ils sont là, le retour arrière coûte un
+`git revert` et un `up`.
