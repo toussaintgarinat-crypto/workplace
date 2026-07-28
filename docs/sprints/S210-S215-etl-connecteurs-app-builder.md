@@ -101,10 +101,17 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 >
 > Trois choses que le périmètre écrit d'avance ne disait pas :
 >
-> - **La clé seule ne ferme rien.** `_entetes_brique` envoie `{BRIQUE}_KEY` en `X-API-Key`,
->   mais c'est `API_KEYS` **côté brique** qui décide de refuser. Poser `ETL_KEY` sans
->   reporter la même valeur dans `API_KEYS` laisse la brique grande ouverte tout en donnant
->   l'illusion du contraire. C'est écrit noir sur blanc dans `.env.example`.
+> - **La clé seule ne ferme rien, et la fermer par `API_KEYS` aurait cassé la flotte.**
+>   `_entetes_brique` envoie `{BRIQUE}_KEY` en `X-API-Key`, mais c'est la liste **côté
+>   brique** qui décide de refuser — il faut donc deux variables. Le réflexe (réutiliser la
+>   variable générique `API_KEYS`, motif des 8 briques durcies) s'est révélé **faux ici** :
+>   sur le HP, `API_KEYS` n'est posée nulle part et **22 briques la lisent via `env_file`**
+>   depuis le `.env` racine. La poser pour fermer l'ETL les aurait toutes basculées en
+>   fail-closed d'un coup, alors que leurs appelants présentent une clé dédiée
+>   (`{BRIQUE}_KEY`) qui n'y figure pas → 401 partout. D'où **`ETL_API_KEYS`**, dédiée, qui
+>   prime sur la générique sans s'unir à elle (une union rouvrirait l'ETL à quiconque
+>   détient n'importe quelle clé de la flotte). `API_KEYS` reste un repli pour un
+>   déploiement fermé de bout en bout.
 > - **Cinq chemins câblés ignoraient `_entetes_brique`**, pas un : usine (`_etape_ingestion`),
 >   cycle de vie (décrocher/reprendre), tick proactif « documents à classer », dépôt de
 >   document du front, outils du domaine `documents`. Les capacités du manifeste, elles,
@@ -122,9 +129,9 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 > est couvert et testé ; le rebinding actif ne l'est pas. C'est documenté dans le docstring
 > de `reseau.py`.
 >
-> **Reste à faire** : poser `ETL_KEY` + `API_KEYS` dans le `.env` du HP et rebuild
-> `etl`/`audit`/`core` — la preuve bout-en-bout (audit qui ingère avec la clé) est LIVE,
-> pas locale. Sans cette étape le code est en place mais la brique reste ouverte.
+> **Déploiement** : poser `ETL_KEY` **et** `ETL_API_KEYS` (même valeur) dans le `.env`
+> racine du HP, puis rebuild `etl` / `audit` / `core`. Sans cette étape le code est en
+> place mais la brique reste ouverte.
 
 **Pourquoi maintenant.** Deux trous qui se combinent mal.
 

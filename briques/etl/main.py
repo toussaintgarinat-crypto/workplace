@@ -41,9 +41,19 @@ app = FastAPI(
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
-# API_KEYS vide = mode ouvert (dev). Dès qu'une clé est posée, tout est fermé sauf
-# /sante (le healthcheck Docker n'a pas de clé à présenter).
-API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
+# Liste des clés acceptées. Vide = mode ouvert (dev) ; dès qu'une clé est posée, tout
+# est fermé sauf /sante (le healthcheck Docker n'a pas de clé à présenter).
+#
+# `ETL_API_KEYS` d'abord, `API_KEYS` en repli — et l'ordre compte. `API_KEYS` est la
+# variable GÉNÉRIQUE du .env racine : 22 briques la lisent par `env_file`. La poser pour
+# fermer l'ETL les ferait toutes basculer en fail-closed d'un coup, alors que leurs
+# appelants présentent une clé DÉDIÉE ({BRIQUE}_KEY) qui n'y figure pas → 401 partout.
+# `ETL_API_KEYS` ferme donc cette brique SEULE. Variable dédiée et non
+# `environment: API_KEYS=${ETL_API_KEYS:-}` dans le compose : l'interpolation ne lit pas
+# l'env_file, elle écraserait par du vide (piège « env shadow »).
+API_KEYS = {k.strip()
+            for k in (os.getenv("ETL_API_KEYS") or os.getenv("API_KEYS", "")).split(",")
+            if k.strip()}
 
 
 def cle_api(x_api_key: str | None = Header(None),
