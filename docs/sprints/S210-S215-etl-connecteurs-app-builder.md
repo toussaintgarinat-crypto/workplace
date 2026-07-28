@@ -672,6 +672,10 @@ annonçait comme risque accepté :
 | `audit` → brique fermée | `INGESTION_URL=http://host.docker.internal:5200`, en-tête porteur d'une clé : `True` |
 | Registre du Cœur | **39/39 briques ok**, `ingestion` présente, `etl` **absente** |
 | Conteneurs | tous `healthy`, 64 conteneurs, disque 87 Go / 327 Go |
+| **Capacités vues par l'assistant** | les 3 `ingestion_*` exposées (248 au parc), les 3 `etl_*` disparues |
+| **Écriture réelle** | `POST /ingerer` → extraction → relecture du texte → compteur 25→26 → suppression → 25. Le chemin d'écriture, pas seulement la lecture |
+| `audit` → lecture effective | `_recuperer_tous_ids()` rend **25 ids** et `_recuperer_textes()` rend le contenu, à travers la brique fermée |
+| Badge du dashboard | `.role-ingestion` présent (×1) et `.role-etl` absent dans le fichier servi ; libellé `ingestion:'Ingestion'` ; registre → `role: ingestion` |
 
 **Détail imprévu, sans gravité** : `git pull` ne supprime pas `briques/etl/` parce que le
 `__pycache__` qu'il contient est **non suivi et appartient à root** (écrit par le conteneur).
@@ -681,3 +685,8 @@ Le dossier survit au renommage, vide de tout code mais visible. Retiré au `sudo
 `workplace-etl:0.1.0` existent toujours. À supprimer quand la brique aura quelques jours de
 vol — `docker volume rm etl_etl_data`. Tant qu'ils sont là, le retour arrière coûte un
 `git revert` et un `up`.
+
+**Non prouvé, et assumé** : un audit LLM complet de bout en bout (coûteux, et le rename ne
+touche que le chemin de lecture — prouvé ci-dessus), et l'invocation effective d'une capacité
+`ingestion_*` par le LLM en conversation (le catalogue les expose, le filet de contrat S210
+vérifie manifeste↔route ; seul le maillon « le modèle choisit l'outil » reste non rejoué).
