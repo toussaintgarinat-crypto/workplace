@@ -155,9 +155,13 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 > depuis le dossier du compose, pas depuis l'`env_file`, et mettait donc la brique en CORS
 > `*` alors que le `.env` racine déclare une liste restreinte. Corrigé en supprimant le bloc
 > `environment:` (le code a déjà les bons défauts) ; vérifié dans le conteneur.
-> **`veille-info` et `mail` portent le même défaut, préexistant** (`CORS_ORIGINS=*` effectif
-> au lieu de la liste du `.env` racine, alors que `transcription`, sans cette ligne, l'hérite
-> correctement) — hors périmètre S211, à balayer sur toute la flotte.
+> Le même défaut était **préexistant sur 13 autres briques** — pas seulement `veille-info` et
+> `mail` : oria, dev, restaurant, paiements, veille-prospection, atelier-images-video,
+> telephonie, recherche, atelier-veille, synopsis, voix, geo. Balayé dans la foulée
+> (`ceb24de`), les 14 recréées sur le HP, toutes 200 sur leur port de manifeste. Restreindre
+> le CORS ne casse aucun front : ils appellent tous en chemin relatif (`API_BASE` vide en
+> autoporté, ou préfixe `/atelier-veille-app` quand le Cœur les sert) → même origine.
+> `peertube` et `calcul.pi` gardent leur ligne : ils n'héritent pas du `.env` racine.
 
 **Pourquoi maintenant.** Deux trous qui se combinent mal.
 
