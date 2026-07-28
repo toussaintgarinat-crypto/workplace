@@ -21,6 +21,30 @@ Chaque sprint est indépendant, sauf mention explicite. Le plan d'implémentatio
 
 ## S210 — Le contrat manifeste ↔ route n'est vérifié nulle part
 
+> **✅ FAIT le 2026-07-28.** Filet : `tests/test_contrat_capacites.py` (242 capacités, 3 règles).
+> Décisions consignées dans `docs/decisions/2026-07-28-contrat-manifeste-route.md`.
+> **11 écarts trouvés, pas 6** — le scan préparatoire en ratait la moitié :
+>
+> | Brique | Capacité | Écart réel | Correction |
+> |---|---|---|---|
+> | `connexion` | `connexion_envoyer` | 422 — **morte** | manifeste → `id_externe`/`texte` |
+> | `donnees` | `donnees_modifier` | 404 — **morte**, segment `/enregistrements` absent du `chemin` | chemin corrigé |
+> | `donnees` | `donnees_supprimer` | 404 — **morte**, même cause | chemin corrigé |
+> | `transcription` | `transcription_fichier` | multipart, **inappelable** par l'assistant | capacité retirée |
+> | `transcription` | `transcription_depuis_url` | `resume` fantôme | param retiré, `transcription_resumer` ajoutée (`POST /resumer`, jamais déclarée) |
+> | `etl` | `etl_documents_lister` | `dossier`/`statut` fantômes | vrais filtres déclarés |
+> | `etl` | `etl_ingerer_url` | `dossier` fantôme | param retiré |
+> | `generateur` | `generateur_app_generer` | `nom_client` fantôme | → `contact_client` + `email_client` |
+> | `personnages` | `personnage_fiche_modifier` | `nom` requis non déclaré ; `categorie` vit sur une autre route | réduite au renommage |
+> | `personnages` | `personnage_portrait_generer` | `fid`/`style` fantômes **et description fausse** (aucune image produite) | params réels + description honnête |
+> | `personnages` | `personnage_distribution_proposer` | `contexte`/`fiches_ids` fantômes | → `premisse`/`combien`/`langue`/`deja` |
+>
+> Ce que le backlog n'avait pas vu : les deux capacités mortes de `donnees` (l'écart est dans
+> le **chemin**, pas dans les params), et le fait que `agenda` s'introspecte très bien (ses 17
+> capacités sont couvertes) — **aucune exemption** n'a été nécessaire. Zone laissée non
+> vérifiée, et assumée : les corps `dict` libres des proxys `forge` (skip explicite).
+> Preuve d'appel réel : `briques/connexion/test_main.py::test_connexion_envoyer_delivre_avec_les_params_du_manifeste`.
+
 **Pourquoi maintenant.** Ce n'est pas une hypothèse, c'est mesuré. Un scan des 36 briques
 portant du code compare les `params` déclarés dans `capacites` au code de la brique. Cinq
 paramètres déclarés n'existent nulle part, sur quatre briques — et le pire est le premier :
