@@ -397,6 +397,60 @@ test, soit elle n'est plus dans `briques/`. Pas de troisième état.
 
 ## S214 — Brique `connecteurs` : les connecteurs Airbyte sans la plateforme Airbyte
 
+> **✅ CODÉ + PROUVÉ EN CONTENEUR le 2026-07-28.** Brique `briques/connecteurs/` (port 6200),
+> 64 tests hors-ligne + 9 tests d'intégration réels. ADR :
+> `docs/decisions/2026-07-28-connecteurs-pyairbyte-venv-isole.md`.
+> **⚠ Le critère de sortie n'est atteint qu'à moitié** — détail plus bas.
+>
+> **La prémisse du backlog était fausse.** « PyAirbyte, une simple librairie Python » : c'est
+> une lib **grasse et inco-installable** avec le parc. Prouvé avant d'écrire une ligne :
+>
+> ```
+> $ pip install --dry-run 'airbyte==0.53.2' 'fastapi==0.115.6' 'pydantic==2.9.2'
+> ERROR: ResolutionImpossible
+> ```
+>
+> `airbyte` tire `fastmcp>=3` → `starlette>=1.0.1` + `pydantic>=2.11.7`, quand
+> `constraints-workplace.txt` fige `fastapi==0.115.6` (→ starlette <0.42). Toutes les
+> versions ≥0.30 traînent `fastmcp`. `pip install airbyte` seul = **703 Mo** de
+> site-packages (il embarque *tous* ses backends de cache : duckdb, snowflake, bigquery,
+> postgres). Image finale : **1,32 Go**, la plus grosse du parc.
+>
+> **Décision** : PyAirbyte vit dans `/opt/pyairbyte` (venv étanche) et n'est joint qu'en
+> **sous-processus**, contrat JSON. La cloison rend deux services qu'il aurait fallu bâtir
+> de toute façon : la boucle d'événements ne bloque jamais (le défaut que S212 a corrigé sur
+> `etl` ne peut pas se produire ici), et un connecteur tiers qui plante n'emporte pas la
+> brique. Image `python:3.11-slim` et pas 3.12 : plusieurs connecteurs PyPI exigent `<3.12`
+> (`source-stripe`, `source-declarative-manifest`).
+>
+> **Preuves LIVE en conteneur (2026-07-28)** :
+>
+> | Ce qui est prouvé | Mesure |
+> |---|---|
+> | Fail-closed sans coffre | création de source → **503**, refus d'écrire un identifiant en clair |
+> | Chiffrement au repos | la config n'est **pas** lisible dans les octets de `/data/connecteurs.db` |
+> | Connecteur réel installé | `source-faker` 7.2.1, `check` OK en 58 s (venv créé sur le **volume**) |
+> | Sync réelle | 300 enregistrements, curseur recopié dans SQLite |
+> | **Non-blocage** | route `202` en **15 ms** pendant une sync de 11 s ; `/sante` à **2-3 ms** pendant le transfert |
+> | Interruption | conteneur redémarré en plein transfert → sync passée de `en_cours` à **`interrompue`**, curseur survivant |
+> | État repassé au connecteur | fichier `--state` de PyAirbyte **non vide** au 2ᵉ tour (test d'intégration) |
+>
+> **⚠ CE QUI N'EST PAS PROUVÉ : la réduction du delta.** Le curseur est capté, persisté et
+> repassé — mais *diminuer le volume* est une propriété du **CONNECTEUR**, pas de la brique.
+> Deux connecteurs sans identifiants ont été mesurés et ne la présentent pas :
+> - `source-faker` écrit son curseur (`loop_offset`) et **l'ignore en entrée** : `count`
+>   porté de 500 à 800 avec un curseur à 500 retransfère **800**, pas 300 ;
+> - un manifeste déclaratif écrit à la main : l'état arrive bien dans le fichier `--state`
+>   (vérifié à l'octet), mais la requête repart de `start_datetime`.
+>
+> Le connecteur choisi pour le premier tour était donc un **mauvais canari** — il ne pouvait
+> pas prouver ce que le sprint demandait. Reste à faire : `source-github` avec un jeton réel,
+> LIVE sur le HP. Tant que ce n'est pas fait, S214 est **codé, pas soldé**.
+>
+> **Piège de déploiement** : sans `VAULT_SECRET` **ni** `CONNECTEURS_ENCRYPTION_KEY` dans le
+> `.env` racine, toute création de source répond 503. C'est voulu, mais il faut le savoir
+> avant de déployer sur le HP (le `.env` du poste n'a ni l'un ni l'autre).
+
 **Pourquoi maintenant.** Le manque réel que révèle la comparaison avec Airbyte est précis :
 **Workplace sait ingérer du document, mais ne sait pas aller chercher de la donnée structurée
 chez un tiers, de façon planifiée et reprenable.** Aujourd'hui chaque brique bricole son
@@ -482,7 +536,7 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 | **S211** ✅ | ETL : auth + SSRF + plafond | trou de sécurité exploitable | ~1 j | — |
 | **S212** ✅ | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
 | **S213** ✅ | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
-| **S214** | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |
+| **S214** ⚠ | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |
 | **S215** | Renommer `etl` → `ingestion` | confort | ~0,5 j | S214 |
 
 Total ~7 à 9 jours. S210 et S211 sont les deux seuls que je ferais **sans attendre** :

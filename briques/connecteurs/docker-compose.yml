@@ -1,0 +1,49 @@
+services:
+  connecteurs:
+    build:
+      # Contexte RACINE : le Dockerfile copie `constraints-workplace.txt` (S117) pour
+      # installer l'API sous les contraintes du parc. Motif GUIDE-ajouter-une-brique §3.
+      context: ../..
+      dockerfile: briques/connecteurs/Dockerfile
+    container_name: workplace_connecteurs
+    image: workplace/connecteurs:0.1.0   # tag épinglé (pas de :latest flottant)
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6200:6200"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # motif fleet-wide (fix extra_hosts S-hygiène)
+    environment:
+      - PORT=6200
+      - CONNECTEURS_DB=/data/connecteurs.db
+      # Racine de travail de PyAirbyte, SUR LE VOLUME et pas dans la couche image :
+      #   /travail/connecteurs — un venv par connecteur, installé au premier usage ;
+      #   /travail/cache       — le cache DuckDB (données + état incrémental).
+      # C'est ce qui rend la reprise possible après un redémarrage du conteneur : si ces
+      # deux chemins vivaient dans l'image, chaque `up --build` repartirait de zéro et
+      # retransférerait tout. Piège tenu par un test (test_pont.py).
+      - CONNECTEURS_TRAVAIL=/travail
+      - DO_NOT_TRACK=1                       # télémétrie PyAirbyte coupée (elle est ON par défaut)
+      # API_KEYS, CONNECTEURS_KEY, CONNECTEURS_ENCRYPTION_KEY, VAULT_SECRET, CORS_ORIGINS :
+      # ABSENTS d'`environment` EXPRÈS — ils viennent du .env racine via env_file. Écrire
+      # `VAR=${VAR:-}` ici les écraserait par du vide : `${…}` s'interpole depuis le dossier
+      # du compose, PAS depuis l'env_file (piège « env shadow », cf. fix-env-shadow-composes
+      # et le commentaire jumeau dans briques/veille-info/docker-compose.yml).
+    volumes:
+      - connecteurs_data:/data
+      - connecteurs_travail:/travail
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6200/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # 15 s comme le reste du parc : la brique démarre vite. Les ~700 Mo de PyAirbyte
+      # sont dans l'image, pas installés au boot ; seuls les venvs de CONNECTEUR sont
+      # créés à la demande, hors du chemin de démarrage.
+      start_period: 15s
+
+volumes:
+  connecteurs_data:
+  connecteurs_travail:

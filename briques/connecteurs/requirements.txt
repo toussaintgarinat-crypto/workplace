@@ -1,0 +1,14 @@
+# Brique connecteurs — dépendances de l'API SEULEMENT.
+#
+# PyAirbyte n'est PAS ici, et ce n'est pas un oubli : il est INSTALLABLE mais pas
+# CO-installable. `airbyte==0.53.2` tire `fastmcp>=3` → `starlette>=1.0.1` et
+# `pydantic>=2.11.7`, quand constraints-workplace.txt fige `fastapi==0.115.6`
+# (→ starlette <0.42) et `pydantic==2.9.2`. Un `pip install` des deux ensemble rend
+# un `ResolutionImpossible` — prouvé avant d'écrire une ligne de cette brique.
+# Il vit donc dans son propre venv (`/opt/pyairbyte`, cf. Dockerfile) et n'est joint
+# qu'en sous-processus (cf. pont.py). Voir docs/decisions/2026-07-28-connecteurs-pyairbyte-venv-isole.md
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+# Chiffrement au repos des configs de source (identifiants tiers) — motif agenda S180.
+cryptography==44.0.0
