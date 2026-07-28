@@ -20,7 +20,11 @@ services:
       # RESTAURANT_ENV=prod ⇒ refuse de démarrer avec le secret de dev (garde-fou).
       - RESTAURANT_ENV=${RESTAURANT_ENV:-}
       # Origines navigateur autorisées (CSV). VIDE/"*" = ouvert (dev/démo).
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       # URL publique vue par le smartphone du client (contenu des QR). NON listée ici :
       # vient du .env racine via env_file (la redéclarer en `=${VAR:-}` l'écraserait par du
       # vide — piège « env shadow »). Si absente, l'URL est déduite de la requête = localhost,

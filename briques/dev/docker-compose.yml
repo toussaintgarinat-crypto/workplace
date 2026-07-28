@@ -26,7 +26,11 @@ services:
       - DEV_DB=/data/chantiers.json
       - DEV_TRACES=/data/traces
       - DEV_SKILLS_DIR=/data/skills
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       # DEV_KEY (garde X-API-Key, vide=ouvert), DEV_REBUILD (1=rebuild réel au merge),
       # DEV_BRIQUES_DEBLOQUEES, GATEWAY_URL/KEY/MODEL : viennent du .env racine via env_file.
       # NE PAS les redéclarer en `=${VAR:-}` (piège « env shadow » : écraserait par du vide).

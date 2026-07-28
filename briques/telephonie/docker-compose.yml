@@ -12,7 +12,11 @@ services:
     environment:
       - PORT=6050
       - TELEPHONIE_DB=/data/telephonie.db
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
+      # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
+      # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
+      # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
+      # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
       # API_KEYS (clés des solutions autorisées) + credentials Twilio (TWILIO_ACCOUNT_SID,
       # TWILIO_AUTH_TOKEN, TWILIO_FROM) viennent du .env racine via env_file. NE PAS les
       # redéclarer ici en `=${VAR:-}` : ça les écraserait par du VIDE (piège « env shadow »).
