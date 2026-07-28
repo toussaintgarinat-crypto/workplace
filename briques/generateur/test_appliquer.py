@@ -1,118 +1,103 @@
-"""Preuve offline de « appliquer l'incrément » (S32) — fonction pure, aucun réseau.
+"""« Appliquer l'incrément » (S32/S34) — fonctions pures, aucun réseau.
 
-On vérifie `appliquer.construire_plan_enrichi` :
-
-  1. **ajout** : les modules proposés deviennent de vraies entités CRUD (id slugifié,
-     champs par défaut, description = raison, origine=increment), plan enrichi ;
-  2. **idempotence** : un module dont l'id existe déjà n'est PAS dupliqué ;
-  3. **honnêteté** : proposition sans module (repli heuristique) → aucun ajout, plan
-     inchangé ;
-  4. **robustesse** : entrées dégénérées (nom vide, module non-dict, plan vide) tolérées
-     sans exception ;
-  5. **gabarit** : le plan enrichi se régénère réellement en HTML (le nouveau module
-     apparaît dans l'app) — branche le module sur le vrai moteur de rendu.
-
-Lancer : `python3 test_appliquer.py`.
+Écrit à l'origine comme script autonome (`def run()`), donc jamais exécuté par le filet.
+Converti en tests pytest le 2026-07-28 — les 7 scénarios sont conservés à l'identique.
+Le remplacement de `gateway.appeler_llm` passe désormais par `monkeypatch` : le script
+d'origine restaurait à la main, et un échec au milieu laissait la Gateway mockée pour la
+suite du fichier.
 """
-import appliquer
+import asyncio
 
+import pytest
+
+import appliquer
+import gateway
+from gabarit import generer_html
 
 PLAN = {"nom_app": "Cabinet", "entites": [
     {"id": "planning", "nom": "Planning"},
     {"id": "devis", "nom": "Devis"},
 ]}
 
+PROPOSITION = {"modules_proposes": [
+    {"nom": "Gestion des absences", "raison": "planning saturé"},
+]}
 
-def run():
-    ok = 0
 
-    # 1) Ajout : 1 module proposé → 1 entité fonctionnelle.
-    prop = {"modules_proposes": [
-        {"nom": "Gestion des absences", "raison": "planning saturé"},
-    ]}
-    plan2, ajoutes = appliquer.construire_plan_enrichi(PLAN, prop)
+def test_un_module_propose_devient_une_entite_crud():
+    plan2, ajoutes = appliquer.construire_plan_enrichi(PLAN, PROPOSITION)
     assert ajoutes == [{"id": "gestion-des-absences", "nom": "Gestion des absences"}], ajoutes
     nouvelle = next(e for e in plan2["entites"] if e["id"] == "gestion-des-absences")
     assert nouvelle["description"] == "planning saturé", nouvelle
     assert nouvelle["origine"] == "increment", nouvelle
-    assert {c["cle"] for c in nouvelle["champs"]} == {"libelle", "statut", "date", "montant", "notes"}, nouvelle["champs"]
-    assert len(plan2["entites"]) == 3 and PLAN["entites"] != plan2["entites"], "plan d'origine non muté en place"
-    print("✅ 1. ajout : module proposé → entité CRUD (champs défaut, origine=increment), plan enrichi")
-    ok += 1
+    assert {c["cle"] for c in nouvelle["champs"]} == {
+        "libelle", "statut", "date", "montant", "notes"}, nouvelle["champs"]
+    assert len(plan2["entites"]) == 3
+    assert PLAN["entites"] != plan2["entites"], "plan d'origine non muté en place"
 
-    # 2) Idempotence : un module déjà présent (par slug du nom) n'est pas dupliqué.
-    prop_dup = {"modules_proposes": [
-        {"nom": "Planning", "raison": "déjà là"},          # id 'planning' existe
-        {"nom": "Gestion des absences", "raison": "neuf"},  # nouveau
+
+def test_idempotence_un_module_deja_present_n_est_pas_duplique():
+    prop = {"modules_proposes": [
+        {"nom": "Planning", "raison": "déjà là"},           # id 'planning' existe
+        {"nom": "Gestion des absences", "raison": "neuf"},   # nouveau
     ]}
-    plan3, ajoutes3 = appliquer.construire_plan_enrichi(PLAN, prop_dup)
-    assert [a["id"] for a in ajoutes3] == ["gestion-des-absences"], ajoutes3
-    assert sum(1 for e in plan3["entites"] if e["id"] == "planning") == 1, "pas de doublon planning"
-    print("✅ 2. idempotence : module déjà présent ignoré, pas de doublon")
-    ok += 1
+    plan, ajoutes = appliquer.construire_plan_enrichi(PLAN, prop)
+    assert [a["id"] for a in ajoutes] == ["gestion-des-absences"], ajoutes
+    assert sum(1 for e in plan["entites"] if e["id"] == "planning") == 1, "pas de doublon"
 
-    # 3) Honnêteté : repli heuristique (aucun module proposé) → aucun ajout.
-    plan4, ajoutes4 = appliquer.construire_plan_enrichi(PLAN, {"modules_proposes": [], "source": "heuristique"})
-    assert ajoutes4 == [], ajoutes4
-    assert len(plan4["entites"]) == 2, "plan inchangé sans proposition"
-    print("✅ 3. honnêteté : proposition sans module → aucun ajout, plan inchangé")
-    ok += 1
 
-    # 4) Robustesse : entrées dégénérées tolérées.
-    sale = {"modules_proposes": [{"nom": "  "}, "pas un dict", {"raison": "sans nom"}, {"nom": "Suivi RGPD"}]}
-    plan5, ajoutes5 = appliquer.construire_plan_enrichi({}, sale)
-    assert [a["id"] for a in ajoutes5] == ["suivi-rgpd"], ajoutes5
-    assert appliquer.construire_plan_enrichi(None, None) == ({"entites": []}, []), "plan/proposition None tolérés"
-    print("✅ 4. robustesse : nom vide / non-dict / plan vide tolérés, aucune exception")
-    ok += 1
+def test_honnetete_une_proposition_sans_module_n_ajoute_rien():
+    plan, ajoutes = appliquer.construire_plan_enrichi(
+        PLAN, {"modules_proposes": [], "source": "heuristique"})
+    assert ajoutes == []
+    assert len(plan["entites"]) == 2, "plan inchangé sans proposition"
 
-    # 5) Gabarit : le plan enrichi se régénère réellement en HTML.
-    from gabarit import generer_html
-    plan6, _ = appliquer.construire_plan_enrichi(PLAN, prop)
-    html = generer_html({"nom_entreprise": "Cabinet"}, plan6)
-    assert "Gestion des absences" in html, "le module ajouté doit apparaître dans l'app régénérée"
-    print("✅ 5. gabarit : plan enrichi régénéré, le nouveau module apparaît dans l'app")
-    ok += 1
 
-    # 6) Schéma fin LLM (S34) : champs spécifiques au lieu du générique.
-    import asyncio
+def test_robustesse_entrees_degenerees_tolerees_sans_exception():
+    sale = {"modules_proposes": [{"nom": "  "}, "pas un dict",
+                                 {"raison": "sans nom"}, {"nom": "Suivi RGPD"}]}
+    _, ajoutes = appliquer.construire_plan_enrichi({}, sale)
+    assert [a["id"] for a in ajoutes] == ["suivi-rgpd"], ajoutes
+    assert appliquer.construire_plan_enrichi(None, None) == ({"entites": []}, []), \
+        "plan/proposition None tolérés"
 
+
+def test_le_plan_enrichi_se_regenere_reellement_en_html():
+    """Branche le module sur le vrai moteur de rendu : le nouveau module doit apparaître."""
+    plan, _ = appliquer.construire_plan_enrichi(PLAN, PROPOSITION)
+    html = generer_html({"nom_entreprise": "Cabinet"}, plan)
+    assert "Gestion des absences" in html
+
+
+def test_schema_fin_llm_champs_specifiques_au_lieu_du_generique(monkeypatch):
     async def faux_schema(prompt, langue="fr"):
         return {"icone": "bi-calendar-x", "champs": [
             {"cle": "salarie", "label": "Salarié", "type": "texte"},
-            {"cle": "motif", "label": "Motif", "type": "statut", "options": ["Congé", "Maladie", "RTT"]},
+            {"cle": "motif", "label": "Motif", "type": "statut",
+             "options": ["Congé", "Maladie", "RTT"]},
             {"cle": "debut", "label": "Début", "type": "date"},
         ]}
-    import gateway
-    gw_orig = gateway.appeler_llm
-    gateway.appeler_llm = faux_schema
-    plan7, ajoutes7 = asyncio.run(appliquer.construire_plan_enrichi_llm(PLAN, prop, {"nom_entreprise": "Cabinet"}))
-    gateway.appeler_llm = gw_orig
-    nv = next(e for e in plan7["entites"] if e["id"] == "gestion-des-absences")
-    assert ajoutes7[0]["schema"] == "llm", ajoutes7
+
+    monkeypatch.setattr(gateway, "appeler_llm", faux_schema)
+    plan, ajoutes = asyncio.run(appliquer.construire_plan_enrichi_llm(
+        PLAN, PROPOSITION, {"nom_entreprise": "Cabinet"}))
+    nv = next(e for e in plan["entites"] if e["id"] == "gestion-des-absences")
+    assert ajoutes[0]["schema"] == "llm", ajoutes
     assert nv["icone"] == "bi-calendar-x", nv
     assert {c["cle"] for c in nv["champs"]} == {"salarie", "motif", "debut"}, nv["champs"]
     motif = next(c for c in nv["champs"] if c["cle"] == "motif")
     assert motif["type"] == "statut" and motif["options"] == ["Congé", "Maladie", "RTT"], motif
-    print("✅ 6. schéma fin LLM : champs spécifiques + icône, type statut normalisé")
-    ok += 1
 
-    # 7) Repli générique (S34) : LLM en panne → schéma CRUD, source=generique, 0 exception.
+
+def test_repli_generique_quand_le_llm_est_en_panne(monkeypatch):
+    """Gateway KO → schéma CRUD générique, source=generique, aucune exception remontée."""
     async def schema_ko(prompt, langue="fr"):
         raise RuntimeError("Gateway indisponible")
-    gateway.appeler_llm = schema_ko
-    plan8, ajoutes8 = asyncio.run(appliquer.construire_plan_enrichi_llm(PLAN, prop, {"nom_entreprise": "Cabinet"}))
-    gateway.appeler_llm = gw_orig
-    nv8 = next(e for e in plan8["entites"] if e["id"] == "gestion-des-absences")
-    assert ajoutes8[0]["schema"] == "generique", ajoutes8
-    assert {c["cle"] for c in nv8["champs"]} == {"libelle", "statut", "date", "montant", "notes"}, nv8["champs"]
-    print("✅ 7. repli générique : LLM KO → schéma CRUD, source=generique, aucune exception")
-    ok += 1
 
-    print(f"\n{ok}/7 scénarios OK")
-    return ok
-
-
-if __name__ == "__main__":
-    import sys
-    sys.exit(0 if run() == 7 else 1)
+    monkeypatch.setattr(gateway, "appeler_llm", schema_ko)
+    plan, ajoutes = asyncio.run(appliquer.construire_plan_enrichi_llm(
+        PLAN, PROPOSITION, {"nom_entreprise": "Cabinet"}))
+    nv = next(e for e in plan["entites"] if e["id"] == "gestion-des-absences")
+    assert ajoutes[0]["schema"] == "generique", ajoutes
+    assert {c["cle"] for c in nv["champs"]} == {
+        "libelle", "statut", "date", "montant", "notes"}, nv["champs"]

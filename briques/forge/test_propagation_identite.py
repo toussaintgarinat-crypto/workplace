@@ -5,10 +5,15 @@ Avec un token utilisateur (capté du ContextVar) → c'est LUI qui part en Beare
 token de service n'est même pas demandé.
 
 Aucun réseau : `client.request` est faux et capture les en-têtes.
-Lancer : `python3 test_propagation_identite.py`.
-"""
 
+Écrit à l'origine comme script autonome (`def run()` + `python3 test_propagation_identite.py`),
+donc jamais exécuté par le filet. Converti en tests pytest le 2026-07-28 — les 3 scénarios
+sont conservés à l'identique. Le remplacement de `main._auth` passe par `monkeypatch` : le
+script restaurait à la main, et une assertion rouge laissait l'adaptateur mocké.
+"""
 import asyncio
+
+import pytest
 
 import main
 
@@ -19,6 +24,7 @@ class _FakeResponse:
 
 class _FakeClient:
     """Capture les en-têtes du dernier appel ; ne touche pas le réseau."""
+
     def __init__(self):
         self.dernier_headers = None
 
@@ -27,67 +33,71 @@ class _FakeClient:
         return _FakeResponse()
 
 
-def run():
-    ok = 0
+@pytest.fixture(autouse=True)
+def _contextvar_propre():
+    """Le ContextVar est global au processus : sans remise à zéro, un test en teinterait
+    un autre (exactement la fuite que le scénario 3 cherche à interdire)."""
+    jeton = main._JETON_UTILISATEUR.set(None)
+    yield
+    main._JETON_UTILISATEUR.reset(jeton)
 
-    # ── 1. Repli service : pas de token utilisateur → token de service en Bearer ──
-    main._JETON_UTILISATEUR.set(None)
 
+def test_sans_token_utilisateur_le_token_de_service_est_propage(monkeypatch):
     class _AuthOK:
         configure = True
+
         async def token(self, client):
             return "SERVICE-TOKEN"
-    orig_auth = main._auth
-    main._auth = _AuthOK()
+
+    monkeypatch.setattr(main, "_auth", _AuthOK())
     client = _FakeClient()
     asyncio.run(main._appel_protege(client, "GET", "/api/agents"))
-    main._auth = orig_auth
-    assert client.dernier_headers["Authorization"] == "Bearer SERVICE-TOKEN", client.dernier_headers
-    print("✅ 1. repli : sans token utilisateur → token de service propagé (S17 inchangé)")
-    ok += 1
+    assert client.dernier_headers["Authorization"] == "Bearer SERVICE-TOKEN", \
+        client.dernier_headers
 
-    # ── 2. Propagation : token utilisateur présent → c'est lui, service non sollicité ──
-    jeton = main._JETON_UTILISATEUR.set("USER-JWT-123")
 
+def test_avec_token_utilisateur_le_service_n_est_pas_sollicite(monkeypatch):
     class _AuthExplose:
         configure = True
+
         async def token(self, client):
             raise AssertionError("le token de service ne doit PAS être demandé")
-    main._auth = _AuthExplose()
-    client2 = _FakeClient()
-    asyncio.run(main._appel_protege(client2, "GET", "/api/poles/p1/crm"))
-    main._auth = orig_auth
-    main._JETON_UTILISATEUR.reset(jeton)
-    assert client2.dernier_headers["Authorization"] == "Bearer USER-JWT-123", client2.dernier_headers
-    print("✅ 2. propagation : token utilisateur présent → propagé, service non sollicité")
-    ok += 1
 
-    # ── 3. Middleware : X-Forge-User-Token (avec ou sans préfixe Bearer) → ContextVar ──
-    captures = {}
+    main._JETON_UTILISATEUR.set("USER-JWT-123")
+    monkeypatch.setattr(main, "_auth", _AuthExplose())
+    client = _FakeClient()
+    asyncio.run(main._appel_protege(client, "GET", "/api/poles/p1/crm"))
+    assert client.dernier_headers["Authorization"] == "Bearer USER-JWT-123", \
+        client.dernier_headers
 
-    class _Req:
-        def __init__(self, val):
-            self.headers = {"X-Forge-User-Token": val} if val is not None else {}
 
-    async def _next(_req):
-        captures["token"] = main._JETON_UTILISATEUR.get()
+class _Req:
+    def __init__(self, valeur):
+        self.headers = {"X-Forge-User-Token": valeur} if valeur is not None else {}
+
+
+def _capter(valeur):
+    """Fait passer une requête dans le middleware et rend le jeton vu par la suite."""
+    vu = {}
+
+    async def _suite(_req):
+        vu["token"] = main._JETON_UTILISATEUR.get()
         return _FakeResponse()
 
-    asyncio.run(main._capter_jeton_utilisateur(_Req("Bearer ABC"), _next))
-    assert captures["token"] == "ABC", captures
-    asyncio.run(main._capter_jeton_utilisateur(_Req("XYZ"), _next))
-    assert captures["token"] == "XYZ", captures
-    asyncio.run(main._capter_jeton_utilisateur(_Req(None), _next))
-    assert captures["token"] is None, captures
-    # Le ContextVar est bien remis à zéro après chaque requête (pas de fuite).
+    asyncio.run(main._capter_jeton_utilisateur(_Req(valeur), _suite))
+    return vu["token"]
+
+
+@pytest.mark.parametrize("entete,attendu", [
+    ("Bearer ABC", "ABC"),   # préfixe Bearer toléré
+    ("XYZ", "XYZ"),          # jeton nu accepté
+    (None, None),            # en-tête absent → pas de jeton
+])
+def test_le_middleware_capte_l_entete_x_forge_user_token(entete, attendu):
+    assert _capter(entete) == attendu
+
+
+def test_le_contextvar_est_remis_a_zero_apres_chaque_requete():
+    """Sans ce reset, le jeton d'une personne fuiterait sur la requête suivante."""
+    _capter("Bearer ABC")
     assert main._JETON_UTILISATEUR.get() is None, "fuite de token entre requêtes"
-    print("✅ 3. middleware : X-Forge-User-Token capté (Bearer toléré), reset après requête")
-    ok += 1
-
-    print(f"\n{ok}/3 scénarios OK")
-    return ok
-
-
-if __name__ == "__main__":
-    import sys
-    sys.exit(0 if run() == 3 else 1)
