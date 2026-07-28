@@ -435,17 +435,46 @@ test, soit elle n'est plus dans `briques/`. Pas de troisième état.
 > | Interruption | conteneur redémarré en plein transfert → sync passée de `en_cours` à **`interrompue`**, curseur survivant |
 > | État repassé au connecteur | fichier `--state` de PyAirbyte **non vide** au 2ᵉ tour (test d'intégration) |
 >
-> **⚠ CE QUI N'EST PAS PROUVÉ : la réduction du delta.** Le curseur est capté, persisté et
-> repassé — mais *diminuer le volume* est une propriété du **CONNECTEUR**, pas de la brique.
-> Deux connecteurs sans identifiants ont été mesurés et ne la présentent pas :
-> - `source-faker` écrit son curseur (`loop_offset`) et **l'ignore en entrée** : `count`
->   porté de 500 à 800 avec un curseur à 500 retransfère **800**, pas 300 ;
-> - un manifeste déclaratif écrit à la main : l'état arrive bien dans le fichier `--state`
->   (vérifié à l'octet), mais la requête repart de `start_datetime`.
+> **✅ LE DELTA EST PROUVÉ — et la première conclusion était fausse.** J'ai d'abord écrit
+> que « la réduction du delta est une propriété du connecteur, que `source-faker`
+> n'implémente pas ». C'était **une erreur de configuration de ma part**.
 >
-> Le connecteur choisi pour le premier tour était donc un **mauvais canari** — il ne pouvait
-> pas prouver ce que le sprint demandait. Reste à faire : `source-github` avec un jeton réel,
-> LIVE sur le HP. Tant que ce n'est pas fait, S214 est **codé, pas soldé**.
+> `source-faker` porte une option **`always_updated`, à `True` par défaut** : *« setting
+> this to false will cause the source to stop emitting records after COUNT records have
+> been emitted »*. À `True` il régénère tout à chaque passage — il écrit son curseur, rien
+> ne diminue, et l'incrémental **paraît** cassé alors qu'il fonctionne.
+>
+> Chemin parcouru avant de trouver (instructif, d'où sa trace) : 4 variantes de manifeste
+> déclaratif (`step`, `cursor_granularity`, `is_client_side_incremental`) → même résultat ;
+> catalogue configuré vérifié (`sync_mode=incremental` ✓) ; fichier `--state` vérifié non
+> vide ✓ ; puis **connecteur piloté à la main, PyAirbyte hors circuit, état écrit à la
+> main → 300 enregistrements quand même**. Ce dernier test a innocenté la plomberie et
+> renvoyé vers le `spec` du connecteur. **Leçon : lire le `spec` AVANT de soupçonner sa
+> propre plomberie.**
+>
+> Avec `always_updated: False`, tenu par un test d'intégration :
+> **tour 1 = 300, tour 2 = 0**, curseur inchangé ; `complet=true` retransfère bien 300.
+>
+> **⚠ CE QUI N'EST TOUJOURS PAS TENU : la reprise en cours de sync.** Cette fois ce n'est
+> pas de la configuration — c'est le modèle d'écriture de PyAirbyte. Mesuré deux fois, avec
+> `records_per_slice: 1000` (donc des `STATE` fréquents côté connecteur) :
+>
+> | Sync | Tuée après | État survivant | 2ᵉ passage |
+> |---|---|---|---|
+> | 120 000 enreg. | 35 s | **`{}`** | 120 000 (tout) |
+> | 400 000 enreg. | 120 s | **`{}`** | 400 000 (tout) |
+>
+> PyAirbyte lit la source dans des fichiers de lot puis traite le lot vers le cache, et
+> n'écrit l'état qu'**au terme** de ce traitement. Un processus tué avant la fin ne laisse
+> aucun point de reprise. **Ni perte ni doublon** (curseur intact, écriture en `merge`),
+> mais **le travail est perdu** : la sync suivante repart du dernier curseur *complété*.
+> Correct, pas efficient. Sans conséquence pour une sync quotidienne de quelques minutes ;
+> douloureux pour un premier plein de plusieurs heures. C'est le principal argument qui
+> ferait rouvrir l'option « protocole Airbyte en direct » (ADR).
+>
+> **Bilan honnête du critère de sortie** : moitié gauche (delta, état vérifié) **atteinte
+> et testée** ; moitié droite (reprise en cours de sync) **non atteinte, limite documentée
+> de PyAirbyte**, pas un défaut de la brique.
 >
 > **Piège de déploiement** : sans `VAULT_SECRET` **ni** `CONNECTEURS_ENCRYPTION_KEY` dans le
 > `.env` racine, toute création de source répond 503. C'est voulu, mais il faut le savoir

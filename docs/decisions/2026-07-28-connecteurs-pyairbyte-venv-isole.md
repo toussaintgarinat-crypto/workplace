@@ -99,16 +99,59 @@ porte sans le dire.
 qui s'épaissit, API PyAirbyte qu'on n'atteint plus), l'option 3 — le protocole Airbyte en
 direct — redevient la bonne, et fait tomber l'image à ~150 Mo.
 
-## Ce qui reste ouvert
+## Le delta : une option de config, pas un défaut de plomberie
 
-Le critère de sortie du sprint (« deux syncs de suite ne retransfèrent que le delta ») n'est
-**pas** déclaré atteint. La brique capte le curseur, le recopie dans SQLite et PyAirbyte le
-repasse bien au connecteur (fichier `--state` non vide, vérifié) — mais la *réduction* du
-volume est une propriété du **connecteur**. Deux connecteurs sans identifiants ont été
-mesurés le 2026-07-28 et ne la présentent pas : `source-faker` écrit son curseur et
-l'ignore en entrée ; un manifeste déclaratif écrit à la main repart de `start_datetime`.
-La preuve du delta demande un connecteur qui l'implémente (`source-github` avec un jeton),
-à faire LIVE. Voir le doc de sprint.
+Première conclusion, **fausse** : « la réduction du delta est une propriété du connecteur,
+`source-faker` ne l'implémente pas ». La cause réelle était dans **notre configuration**.
+
+`source-faker` porte une option `always_updated`, à **`True` par défaut** — *« Should the
+updated_at values for every record be new each sync? Setting this to false will cause the
+source to stop emitting records after COUNT records have been emitted »*. À `True`, il
+régénère ses `count` enregistrements à chaque passage : il écrit bien son curseur, rien ne
+diminue jamais, et l'incrémental **paraît** cassé alors qu'il fonctionne.
+
+Chemin parcouru avant de trouver, à consigner parce qu'il est instructif : quatre variantes
+de manifeste déclaratif (`step`, `cursor_granularity`, `is_client_side_incremental`) toutes
+au même résultat ; le catalogue configuré vérifié (`sync_mode=incremental`,
+`cursor_field=['updated_at']` — correct) ; le fichier `--state` vérifié non vide ; puis le
+connecteur piloté **à la main**, PyAirbyte hors circuit, avec un état écrit à la main → 300
+enregistrements quand même. C'est ce dernier test qui a innocenté toute la plomberie et
+renvoyé vers la spec du connecteur.
+
+**Leçon transférable** : avant de soupçonner sa propre plomberie, lire le `spec` du
+connecteur. Un connecteur Airbyte peut avoir des options qui changent radicalement sa
+sémantique incrémentale, et le défaut n'est pas toujours celui qu'on croit.
+
+Avec `always_updated: False`, le critère est atteint et tenu par un test :
+**tour 1 = 300, tour 2 = 0**, curseur inchangé ; et `complet=true` (`force_full_refresh`)
+retransfère bien 300.
+
+## La limite réelle : PyAirbyte ne consigne pas d'état en cours de sync
+
+Le second volet du critère de sortie — « une sync interrompue reprend où elle en était » —
+n'est **pas** tenu, et cette fois ce n'est pas de la configuration.
+
+Mesuré deux fois le 2026-07-28, avec `records_per_slice: 1000` (donc des messages `STATE`
+émis fréquemment côté connecteur) :
+
+| Sync | Tuée après | État survivant | 2ᵉ passage |
+|---|---|---|---|
+| 120 000 enregistrements | 35 s | **`{}`** | 120 000 (tout) |
+| 400 000 enregistrements | 120 s | **`{}`** | 400 000 (tout) |
+
+PyAirbyte lit d'abord la source dans des fichiers de lot, puis traite le lot vers le cache,
+et n'écrit l'état qu'**au terme** de ce traitement. Un processus tué avant la fin ne laisse
+donc aucun point de reprise, quelle que soit la fréquence des `STATE` du connecteur.
+
+**Conséquence, à dire sans l'enjoliver** : sur interruption il n'y a ni perte de donnée ni
+doublon (le curseur n'a pas bougé, la stratégie d'écriture est en `merge`), mais **le
+travail est perdu** — la sync suivante recommence au dernier curseur *complété*. Le système
+est correct, pas efficient. Pour une sync quotidienne de quelques minutes c'est sans
+conséquence ; pour un premier plein de plusieurs heures, c'en est une.
+
+C'est le principal argument qui ferait rouvrir l'**option 3** (parler le protocole Airbyte
+en direct) : en lisant nous-mêmes les messages `STATE` du connecteur, on consignerait un
+point de reprise réel. À rouvrir si un premier plein long devient douloureux, pas avant.
 
 ## Références
 

@@ -9,20 +9,18 @@ Sauté par défaut : ces tests installent un vrai connecteur depuis PyPI (venv +
       sh -c "pip install -q pytest pytest-asyncio && pytest -q test_integration_pyairbyte.py"
 
 ────────────────────────────────────────────────────────────────────────────────
-Ce que ces tests prouvent, et ce qu'ils NE prouvent PAS.
+⚠ `always_updated: False` DANS LA CONFIG — ce n'est pas un détail de mise au point.
 
-PROUVÉ : le curseur est capté après une sync, recopié dans SQLite, et REPASSÉ au
-connecteur au tour suivant (on lit le fichier `--state` que PyAirbyte fabrique).
+`source-faker` a l'option à `True` par défaut : « Should the updated_at values for every
+record be new each sync? ». À `True`, il régénère ses `count` enregistrements à CHAQUE
+passage — il écrit bien son curseur, mais rien ne diminue jamais, et l'incrémental paraît
+cassé alors qu'il fonctionne. Coût de l'omission, mesuré : une demi-journée passée à
+soupçonner la brique, puis PyAirbyte, puis le CDK. Le connecteur a fini par être piloté à
+la main, PyAirbyte hors circuit, avec un `--state` écrit à la main : 300 enregistrements
+quand même. La cause était dans la config, pas dans la plomberie.
 
-PAS PROUVÉ ICI : que le volume transféré DIMINUE. C'est une propriété du CONNECTEUR, pas
-de cette brique. Mesuré le 2026-07-28 sur deux connecteurs sans identifiants :
-  • `source-faker` : curseur écrit (`loop_offset`) mais ignoré en entrée — un `count`
-    porté de 500 à 800 avec un curseur à 500 retransfère 800, pas 300 ;
-  • un manifeste déclaratif écrit à la main : l'état arrive bien dans le fichier `--state`
-    (vérifié), mais la requête repart de `start_datetime`.
-La réduction réelle du delta se constate donc sur un connecteur qui l'implémente
-(`source-github` avec un jeton) — à faire LIVE. Voir le doc de sprint : le critère de
-sortie de S214 n'est PAS déclaré atteint sur ce point.
+À `False`, le connecteur s'arrête après COUNT enregistrements émis et le delta est réel :
+tour 1 = 300, tour 2 = **0**.
 """
 import asyncio
 import json
@@ -38,13 +36,30 @@ pytestmark = pytest.mark.skipif(
     reason="intégration réelle : CONNECTEURS_TEST_RESEAU=1 (réseau + venv connecteur)")
 
 CONNECTEUR = "source-faker"
-CONFIG = {"count": 300, "seed": 42}
+# `always_updated: False` : sans lui le connecteur régénère tout à chaque sync et le delta
+# est invisible (cf. l'avertissement en tête de module). `seed` fixe = données identiques
+# d'un passage à l'autre, donc test déterministe.
+CONFIG = {"count": 300, "seed": 42, "always_updated": False}
 FLUX = ["users"]
 
 
 @pytest.fixture(scope="module")
 def racine(tmp_path_factory):
+    """Racine PARTAGÉE : l'installation du venv coûte ~1 min, on ne la refait pas par test.
+
+    Le cache — donc le curseur — y est cumulatif. Les tests qui raisonnent sur le VOLUME
+    transféré ne peuvent donc pas s'en servir : ils prennent `racine_neuve`."""
     return str(tmp_path_factory.mktemp("travail"))
+
+
+@pytest.fixture
+def racine_neuve(racine, tmp_path):
+    """Cache vierge, mais venvs de connecteur RÉUTILISÉS (lien vers la racine partagée) :
+    un test de delta doit partir sans curseur, sans repayer une minute d'installation."""
+    neuve = tmp_path / "travail"
+    neuve.mkdir()
+    (neuve / "connecteurs").symlink_to(Path(racine) / "connecteurs")
+    return str(neuve)
 
 
 def _job(action, racine, **extra):
@@ -99,6 +114,42 @@ def test_le_curseur_survit_au_processus_et_est_relu_sans_synchroniser(racine):
     r = _executer(_job("etats", racine))
     assert r["ok"] is True, r
     assert r["etats"].get("users"), "curseur perdu entre deux processus"
+
+
+def test_une_seconde_sync_ne_retransfere_que_le_delta(racine_neuve):
+    """**Le critère de sortie de S214.**
+
+    Première sync : 300 enregistrements. Seconde sync, rien de neuf chez le tiers : **0**.
+    Le curseur ne bouge pas non plus — c'est ce qui distingue « le tiers n'a rien de neuf »
+    de « la brique a perdu son état et a tout relu en silence ».
+
+    Ce test dépend de `always_updated: False` (cf. en-tête du module) : c'est la config qui
+    fait de `source-faker` une source incrémentale plutôt qu'un générateur de fixtures.
+    """
+    premiere = _executer(_job("sync", racine_neuve))
+    assert premiere["ok"] is True, premiere
+    assert premiere["nb_enregistrements"] == 300
+    curseur_apres_premiere = premiere["etats"]["users"]
+
+    seconde = _executer(_job("sync", racine_neuve))
+    assert seconde["ok"] is True, seconde
+    assert seconde["nb_enregistrements"] == 0, (
+        f"le delta n'est pas appliqué : {seconde['nb_enregistrements']} enregistrements "
+        "retransférés alors que rien n'a changé chez le tiers")
+    assert seconde["etats"]["users"] == curseur_apres_premiere
+
+
+def test_le_drapeau_complet_ignore_le_curseur_et_retransfere_tout(racine_neuve):
+    """L'échappatoire : `complet=true` → `force_full_refresh`. Sans elle, une source dont
+    le curseur a dérivé serait définitivement coincée sur un delta faux."""
+    assert _executer(_job("sync", racine_neuve))["nb_enregistrements"] == 300
+    assert _executer(_job("sync", racine_neuve))["nb_enregistrements"] == 0   # delta
+
+    plein = _executer(_job("sync", racine_neuve, complet=True))
+    assert plein["ok"] is True, plein
+    assert plein["nb_enregistrements"] == 300, (
+        "complet=true n'a pas ignoré le curseur — la personne qui demande un plein "
+        "obtiendrait un delta, en silence")
 
 
 def test_le_curseur_est_effectivement_repasse_au_connecteur(racine):
