@@ -105,7 +105,12 @@ async def ingerer_fichier(fichier: UploadFile = File(...), _cle: str = Depends(c
         raise HTTPException(status_code=413, detail="Fichier trop grand (max 50 Mo)")
 
     logger.info("Ingestion fichier : %s (%d octets)", fichier.filename, taille)
-    texte = extraction.extraire_texte(contenu, fichier.filename or "inconnu", fichier.content_type)
+    # `_async` et non `extraire_texte` : l'extraction est du CPU synchrone (PyMuPDF puis
+    # Tesseract page par page). Appelée telle quelle depuis cet `async def`, elle gelait la
+    # boucle d'événements — donc `/sante` — le temps de l'OCR, et Docker déclarait la brique
+    # unhealthy alors qu'elle travaillait (S212). Cf. le docstring d'`extraction.py`.
+    texte = await extraction.extraire_texte_async(
+        contenu, fichier.filename or "inconnu", fichier.content_type)
 
     doc_id = stockage.sauvegarder(
         nom=fichier.filename or "inconnu",

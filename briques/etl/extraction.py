@@ -1,17 +1,48 @@
-"""Extraction de texte depuis différents types de fichiers."""
+"""Extraction de texte depuis différents types de fichiers.
 
+Tout ce qui est ici est **synchrone et gourmand en CPU** : PyMuPDF ouvre le PDF,
+Tesseract océrise page par page à 200 dpi. Sur un scan de plusieurs dizaines de
+pages, `extraire_texte` tient la seconde de CPU par page.
+
+Les endpoints d'ingestion sont `async` : appelé directement, ce code s'exécuterait
+donc **dans la boucle d'événements** et la brique entière cesserait de répondre
+pendant l'OCR — `/sante` compris, donc healthcheck rouge (timeout 10 s, 3 essais)
+sur un simple gros document. C'est le motif du « 500 fantôme du digest » : le travail
+aboutit, la plateforme dit qu'il a échoué. D'où `extraire_texte_async` ci-dessous, seul
+point d'entrée que les endpoints doivent utiliser (S212).
+"""
+
+import asyncio
 import io
 import logging
 import mimetypes
 import os
 import re
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 import reseau
 
 logger = logging.getLogger(__name__)
 
 _CTRL_RE = re.compile(r"[\x00\x01-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF]")
+
+# Pool DÉDIÉ, et pas `fastapi.concurrency.run_in_threadpool` : ce dernier partage le
+# threadpool AnyIO (40 jetons) qui sert AUSSI tout endpoint déclaré `def` — dont
+# `/sante`. Une rafale d'ingestions y prendrait des jetons au healthcheck, et on
+# retomberait sur l'indisponibilité qu'on vient de corriger, en plus discret.
+# Ici l'extraction ne peut jamais prendre le jeton de personne : au-delà de
+# ETL_EXTRACTIONS_PARALLELES, les ingestions font la queue en `await` (boucle libre).
+# 2 par défaut : Tesseract sature un cœur à lui seul, le HP en a 6 pour ~54 conteneurs.
+_PARALLELISME = max(1, int(os.getenv("ETL_EXTRACTIONS_PARALLELES", "2")))
+_POOL = ThreadPoolExecutor(max_workers=_PARALLELISME, thread_name_prefix="etl-extraction")
+
+
+async def extraire_texte_async(contenu: bytes, nom_fichier: str,
+                               type_mime: str | None = None) -> str:
+    """`extraire_texte` sans bloquer la boucle d'événements — à utiliser depuis un endpoint."""
+    return await asyncio.get_running_loop().run_in_executor(
+        _POOL, extraire_texte, contenu, nom_fichier, type_mime)
 
 
 def _nettoyer(texte: str) -> str:
@@ -107,6 +138,14 @@ def extraire_texte(contenu: bytes, nom_fichier: str, type_mime: str | None = Non
     if mime.startswith("image/"):
         return _nettoyer(_extraire_image_ocr(contenu))
 
+    # Texte brut : décodage DIRECT, markitdown court-circuité (S212). Il n'a rien à
+    # convertir ici, mais il fait quand même deviner l'encodage par charset-normalizer —
+    # et un octet nul dans le fichier suffit à lui faire conclure « UTF-16 ». Mesuré :
+    # `a\x00b\x07Griffon-Sextant-42` ressortait en `愀戇䝲楦景渭卥硴慮琭㐲`, stocké tel
+    # quel, sans la moindre erreur. Une corruption muette, le pire genre.
+    if mime.startswith("text/plain") or nom_fichier.lower().endswith((".txt", ".md", ".log")):
+        return _nettoyer(contenu.decode("utf-8", errors="replace"))
+
     # MarkItDown couvre PDF, Word, Excel, PowerPoint, HTML, CSV…
     texte = _essayer_markitdown(contenu, nom_fichier)
     if texte:
@@ -115,8 +154,14 @@ def extraire_texte(contenu: bytes, nom_fichier: str, type_mime: str | None = Non
     # Fallbacks
     if mime == "application/pdf" or nom_fichier.lower().endswith(".pdf"):
         texte = _extraire_pdf_texte(contenu)
+        # Moins de 100 caractères = probablement un scan : on TENTE l'OCR. Mais on ne
+        # remplace la couche texte que si l'OCR rend davantage (S212) — sinon un OCR
+        # qui échoue (Tesseract absent, page illisible) renvoyait "" et faisait perdre
+        # le peu de texte réel qu'on avait déjà. Le document finissait vide en base.
         if len(texte.strip()) < 100:
-            texte = _extraire_pdf_ocr(contenu)
+            ocr = _extraire_pdf_ocr(contenu)
+            if len(ocr.strip()) > len(texte.strip()):
+                texte = ocr
         return _nettoyer(texte)
 
     if mime in (
@@ -145,4 +190,5 @@ async def extraire_depuis_url(url: str) -> tuple[str, str]:
     nom = url_finale.rstrip("/").split("/")[-1] or "page"
     if "." not in nom and "html" in type_mime:
         nom += ".html"
-    return extraire_texte(contenu, nom, type_mime), nom
+    # `_async` : une URL peut pointer sur un PDF scanné aussi bien qu'un upload (S212).
+    return await extraire_texte_async(contenu, nom, type_mime), nom
