@@ -200,6 +200,55 @@ plafond. La brique `audit` continue d'ingérer, prouvé bout-en-bout.
 
 ## S212 — ETL : l'OCR gèle la brique entière
 
+> **✅ FAIT le 2026-07-28.** Pool d'extraction dédié dans `briques/etl/extraction.py`,
+> filet d'extraction (`test_extraction.py`), preuve du non-blocage (`test_ocr_non_bloquant.py`),
+> round-trip du rangement (`test_classement.py` + `core/test_classement_documents.py`).
+> Brique **51 ✓**, `make test-core` **527 ✓**, `make smoke` **994 ✓**.
+>
+> **Le troisième point du périmètre reposait sur une prémisse fausse, et n'a pas été fait.**
+> « Aucune capacité ne déclare `PATCH /classement` ni `GET /dossiers` » est exact ; la
+> conclusion « tout le rangement est inaccessible en conversation » ne l'est pas. Les deux
+> gestes sont **câblés en dur depuis S6** — `classer_document` et `lister_dossiers` dans
+> `core/outils.py`, dispatch dans `core/outils_domaines/documents.py`, gate de confirmation
+> compris. Les ajouter au manifeste aurait donné à l'assistant **deux outils jumeaux** pour
+> le même geste, soit exactement le brouillage que S210 vient de nettoyer. Ce qui manquait
+> vraiment, ce n'était pas la capacité mais la **preuve** : rien ne vérifiait qu'un document
+> classé se retrouve dans son dossier, ni que le corps envoyé par le Cœur soit le bon. C'est
+> ce qui a été écrit à la place (9 tests). Une migration hardcodé → manifeste reste possible,
+> mais c'est un autre sujet que celui de ce sprint.
+>
+> **Le filet d'extraction a trouvé deux corruptions muettes**, écrites avant le bump comme le
+> périmètre l'exigeait — et c'est lui qui a payé, pas le bump :
+>
+> | Défaut | Effet mesuré | Correction |
+> |---|---|---|
+> | markitdown recevait le **texte brut** et faisait deviner l'encodage : un octet nul → « UTF-16 » | `a\x00b\x07Griffon-Sextant-42` stocké en `愀戇䝲楦景渭卥硴慮琭㐲`, sans erreur | court-circuit du texte brut avant markitdown |
+> | PDF de moins de 100 caractères : l'OCR écrasait la couche texte **même en échouant** (`""`) | document réel arrivé **vide** en base si Tesseract manque ou que la page résiste | l'OCR ne remplace que s'il rend davantage |
+>
+> **Le bump markitdown est passé sans casse** : `0.0.1a3` → **`0.1.6`**, stable. Piège évité
+> grâce au filet : depuis la 0.1.0 les formats sont derrière des **extras**, le paquet nu ne
+> lit plus ni PDF, ni Word, ni Excel. D'où `markitdown[docx,pdf,pptx,xlsx]`. Excel est le
+> canari — c'est le seul format sans aucun fallback dans `extraction.py`. Coût mesuré de
+> l'image : **1,16 Go → 1,2 Go** (+~40 Mo ; `magika`/`onnxruntime` arrivent, mais `pandas` et
+> `numpy` étaient déjà là).
+>
+> **Pool dédié, et non `run_in_threadpool`** : ce dernier partage le threadpool AnyIO (40
+> jetons) qui sert AUSSI tout endpoint `def` — dont `/sante`. Une rafale d'ingestions y aurait
+> repris des jetons au healthcheck, et on retombait sur la même indisponibilité, en plus
+> discret. `ETL_EXTRACTIONS_PARALLELES` (défaut 2) borne l'extraction sans jamais toucher au
+> reste.
+>
+> **Le test du healthcheck monte un vrai uvicorn**, pas un `TestClient`. Avec `TestClient` (ou
+> `httpx.ASGITransport`) le client vit DANS la boucle qu'on mesure : si elle gèle, le client
+> gèle avec elle et l'attente devient invisible — le test serait passé au vert sur le code
+> d'avant. Discrimination vérifiée en remettant l'ancien appel : `/sante` **2,99 s** contre
+> quelques millisecondes après correction, seuil à 1 s.
+>
+> **Limite assumée** : `stockage.sauvegarder` reste appelé dans la boucle sur les deux chemins
+> d'ingestion. C'est un `INSERT` SQLite, de l'ordre de la milliseconde ; sur un texte de
+> plusieurs dizaines de Mo il peut coûter une centaine de millisecondes. Loin des 10 s du
+> healthcheck, donc laissé tel quel plutôt que d'ajouter un aller-retour de thread par document.
+
 **Pourquoi maintenant.** `ingerer_fichier` est `async def` (`main.py:62`) et appelle
 directement `extraction.extraire_texte`, qui est du CPU **synchrone** : PyMuPDF, puis
 Tesseract à 200 dpi page par page (`extraction.py:56-62`). Ça s'exécute dans la boucle
@@ -364,7 +413,7 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 |---|---|---|---|---|
 | **S210** ✅ | Contrat manifeste ↔ route | capacité morte + 5 dérives silencieuses | ~1 j | — |
 | **S211** ✅ | ETL : auth + SSRF + plafond | trou de sécurité exploitable | ~1 j | — |
-| **S212** | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
+| **S212** ✅ | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
 | **S213** | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
 | **S214** | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |
 | **S215** | Renommer `etl` → `ingestion` | confort | ~0,5 j | S214 |
