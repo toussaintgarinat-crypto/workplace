@@ -21,7 +21,7 @@
       "nom": "donnees_modifier",
       "description": "Modifie un enregistrement existant dans le magasin de données. Utilise consulter_donnees pour trouver l'id d'enregistrement.",
       "methode": "PUT",
-      "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
+      "chemin": "/apps/{app_id}/entites/{entite_id}/enregistrements/{rec_id}",
       "params": {
         "app_id": {
           "type": "string",
@@ -50,7 +50,7 @@
       "nom": "donnees_supprimer",
       "description": "Supprime un enregistrement du magasin de données. ACTION irréversible.",
       "methode": "DELETE",
-      "chemin": "/apps/{app_id}/entites/{entite_id}/{rec_id}",
+      "chemin": "/apps/{app_id}/entites/{entite_id}/enregistrements/{rec_id}",
       "params": {
         "app_id": {
           "type": "string",

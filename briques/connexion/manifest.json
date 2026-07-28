@@ -48,12 +48,12 @@
           "description": "Réseau cible : 'telegram', 'whatsapp', 'discord'.",
           "requis": true
         },
-        "destinataire": {
+        "id_externe": {
           "type": "string",
-          "description": "ID externe du destinataire (chat_id Telegram, numéro WhatsApp…).",
+          "description": "Identifiant du destinataire SUR CE RÉSEAU : chat_id Telegram, numéro WhatsApp au format international, id Discord. Obtenu via connexion_etat (correspondances connues).",
           "requis": true
         },
-        "message": {
+        "texte": {
           "type": "string",
           "description": "Texte du message à envoyer.",
           "requis": true
