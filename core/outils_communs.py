@@ -66,9 +66,9 @@ def _entetes_brique(brique: str) -> dict:
       Cf. ADR docs/decisions/2026-07-13-surface-de-service-role-admin.md.
     """
     entetes: dict = {"X-Compte-Id": os.environ.get("ADMIN_COMPTE_ID", "admin")}
-    cle = os.environ.get(f"{brique.upper().replace('-', '_')}_KEY")
-    if cle:
-        entetes["X-API-Key"] = cle
+    # La résolution {BRIQUE}_KEY → X-API-Key vit dans orchestrateur (S211) : les appels
+    # câblés qui ne peuvent pas importer ce module en ont besoin aussi.
+    entetes.update(orchestrateur.entetes_brique(brique))
     if brique.lower() in BRIQUES_PAR_PERSONNE:
         entetes.update(contexte_tenant.entetes_par_personne())
     return entetes

@@ -17,6 +17,9 @@ services:
       - audit_data:/data
     environment:
       - ETL_URL=http://host.docker.internal:5200
+      # ETL_KEY (S211, ETL fermée par API_KEYS) vient du .env racine via env_file —
+      # NE PAS la redéclarer en `ETL_KEY=${ETL_KEY:-}` (piège « env shadow » : chaîne
+      # vide qui écrase la vraie valeur → l'audit ne lit plus aucun document).
       - GATEWAY_URL=http://host.docker.internal:4001
       # GATEWAY_KEY vient du .env racine (env_file ci-dessus).
       - GATEWAY_MODEL=openai/gpt-4o-mini

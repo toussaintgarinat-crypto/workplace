@@ -76,6 +76,22 @@ def test_auditer_docs_valide_retourne_202(client, monkeypatch):
     assert "statut" in data
 
 
+def test_les_appels_a_letl_portent_la_cle_de_service(monkeypatch):
+    """S211 : l'ETL est fermée par API_KEYS — `audit` déclare `besoin: etl`, elle doit
+    présenter ETL_KEY, sinon elle ne lit plus un seul document (401)."""
+    import importlib
+    import main as audit_main
+
+    monkeypatch.setenv("ETL_KEY", "cle-etl-de-test")
+    importlib.reload(audit_main)
+    assert audit_main.ETL_ENTETES == {"X-API-Key": "cle-etl-de-test"}
+
+    monkeypatch.delenv("ETL_KEY", raising=False)
+    importlib.reload(audit_main)
+    # Sans clé : dict vide, pas d'en-tête bidon — une ETL en mode ouvert répond comme avant.
+    assert audit_main.ETL_ENTETES == {}
+
+
 def test_auditer_tout_sans_etl_retourne_502(client, monkeypatch):
     import main as audit_main
 

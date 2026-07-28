@@ -5,7 +5,7 @@ S134 : memoire_rappeler/memoire_retenir migrés vers briques/memoire/manifest.js
 """
 import json
 import contexte_tenant
-from outils_communs import _confirmation, _base
+from outils_communs import _confirmation, _base, _entetes_brique
 
 
 async def dispatch(nom: str, args: dict, registre, client) -> str | None:
@@ -14,7 +14,8 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
         params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
                   if args.get(k)}
         params["limite"] = 200
-        r = await client.get(f"{_base(registre, 'etl')}/documents", params=params)
+        r = await client.get(f"{_base(registre, 'etl')}/documents", params=params,
+                             headers=_entetes_brique("etl"))
         docs = r.json().get("documents", []) if r.status_code < 400 else []
         q = (args.get("q") or "").lower()
         if q:
@@ -24,11 +25,13 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
         return json.dumps({"documents": apercu, "total": len(apercu)}, ensure_ascii=False)
 
     if nom == "lister_dossiers":
-        r = await client.get(f"{_base(registre, 'etl')}/dossiers")
+        r = await client.get(f"{_base(registre, 'etl')}/dossiers",
+                             headers=_entetes_brique("etl"))
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else "ETL injoignable."
 
     if nom == "lire_document":
-        r = await client.get(f"{_base(registre, 'etl')}/documents/{args.get('doc_id','')}")
+        r = await client.get(f"{_base(registre, 'etl')}/documents/{args.get('doc_id','')}",
+                             headers=_entetes_brique("etl"))
         if r.status_code >= 400:
             return "Document introuvable."
         d = r.json()
@@ -47,7 +50,8 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
         url = args.get("url", "")
         if not args.get("confirme"):
             return _confirmation("ingérer le document", url)
-        r = await client.post(f"{_base(registre, 'etl')}/ingerer/url", json={"url": url})
+        r = await client.post(f"{_base(registre, 'etl')}/ingerer/url", json={"url": url},
+                              headers=_entetes_brique("etl"))
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec ingestion : {r.text}"
 
     if nom == "classer_document":
@@ -58,7 +62,8 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
                       ("categorie", "tags", "entreprise_id", "projet", "resume")
                       if args.get(k) is not None}
         r = await client.patch(
-            f"{_base(registre, 'etl')}/documents/{doc_id}/classement", json=classement)
+            f"{_base(registre, 'etl')}/documents/{doc_id}/classement", json=classement,
+            headers=_entetes_brique("etl"))
         return json.dumps(r.json(), ensure_ascii=False) if r.status_code < 400 else f"Échec classement : {r.text}"
 
     if nom == "creer_enregistrement":
