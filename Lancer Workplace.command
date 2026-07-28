@@ -51,7 +51,7 @@ BRIQUES=(
   "gateway|$RACINE/briques/gateway|http://localhost:4001/health"
   "memoire|$RACINE/briques/memoire|http://localhost:5600/sante"
   "forge|$RACINE/briques/forge|http://localhost:5700/sante"
-  "etl|$RACINE/briques/etl|http://localhost:5200/sante"
+  "ingestion|$RACINE/briques/ingestion|http://localhost:5200/sante"
   "donnees|$RACINE/briques/donnees|http://localhost:5500/sante"
   "audit|$RACINE/briques/audit|http://localhost:5300/sante"
   "generateur|$RACINE/briques/generateur|http://localhost:5400/sante"

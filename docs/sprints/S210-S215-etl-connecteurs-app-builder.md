@@ -533,6 +533,43 @@ rouvrir seulement si `connecteurs` tourne et déborde.
 
 ## S215 — Renommer `etl` en `ingestion` — confort, sautable
 
+> **✅ FAIT le 2026-07-28.** Décisions consignées dans
+> `docs/decisions/2026-07-28-renommage-etl-en-ingestion.md`.
+>
+> **Ce que le périmètre n'avait pas vu.** Le backlog annonçait « tout est mécanique sauf le
+> volume ». Il y avait en fait **deux** pertes de données silencieuses empilées, pas une :
+>
+> 1. le **volume** change de nom (`etl_etl_data` → `ingestion_ingestion_data`, le nom de
+>    projet Compose vient du dossier) → `up` part sur un volume VIDE ;
+> 2. le **fichier** change de nom DANS le volume (`etl.db` → `ingestion.db`) → même volume
+>    recopié, `sqlite3.connect` crée une base vide à côté de l'ancienne.
+>
+> Aucune des deux ne lève d'erreur : la brique démarre, le healthcheck passe, `/sante`
+> répond `documents_ingeres: 0`. D'où **deux** correctifs, dont aucun ne remplace l'autre :
+> `scripts/migration_etl_vers_ingestion.sh` (traverse les volumes, refuse d'écraser une base
+> en service, laisse l'ancien volume comme retour arrière) et
+> `stockage.reprendre_base_heritee()` (renomme dans le volume, câblée au démarrage).
+>
+> **Le point tranché, et ce n'est pas celui qu'on attendait** : pas de repli
+> `os.getenv("INGESTION_API_KEYS") or os.getenv("ETL_API_KEYS")`. Un repli ne fait pas
+> « marcher quand même », il maintient une brique fermée par une variable dont plus rien
+> dans le dépôt ne parle — jusqu'au jour où quelqu'un nettoie la ligne orpheline du `.env`
+> et rouvre la brique sans le savoir. Sans repli, la panne est courte et connue (fenêtre
+> ouverte entre le pull et l'édition du `.env`, réseau Docker, garde SSRF S211 en place)
+> plutôt que durable et invisible. **Le `.env` du HP se renomme dans la même opération que
+> le `git pull`.**
+>
+> Renommés aussi, au-delà du périmètre annoncé : les **3 capacités** du manifeste
+> (`ingestion_*` — ce sont les noms d'outils vus par l'assistant), le `role` du manifeste,
+> qui pilotait la **classe CSS du badge** du dashboard (`.role-etl`) et sa table de
+> libellés, et la clé de `core/conscience.py` (table des « organes »). Non renommé, assumé :
+> les entrées **datées** du journal de `WORKPLACE.md` et les rapports de sprint archivés —
+> réécrire un compte-rendu daté, ce n'est pas le mettre à jour.
+>
+> Preuves : `briques/ingestion/test_reprise_base_heritee.py` (4 cas, dont un démarrage
+> complet par `TestClient`), 51 tests verts sur `ingestion` + `audit` + Cœur, filet de
+> contrat des 242 capacités toujours vert, `bash -n` sur le script de migration.
+
 **Pourquoi maintenant, et pas avant.** La brique `etl` **n'est pas un ETL**. Elle extrait du
 texte de documents non structurés (PDF, Word, images, HTML) vers SQLite, pour la brique
 `audit`. Elle ne réplique aucune table, ne suit aucun curseur, ne planifie rien. Sa `famille`
@@ -566,7 +603,7 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 | **S212** ✅ | ETL : OCR non bloquant, markitdown, classement | indisponibilité + alpha en position critique | ~1 j | S210 |
 | **S213** ✅ | app-builder : servir ou sortir | ambiguïté du repo + clés en `localStorage` | 0,5-2 j | — |
 | **S214** ⚠ | Brique `connecteurs` (PyAirbyte) | *valeur neuve* | ~3-4 j | après S210 |
-| **S215** | Renommer `etl` → `ingestion` | confort | ~0,5 j | S214 |
+| **S215** ✅ | Renommer `etl` → `ingestion` | confort + 2 pertes muettes évitées | ~0,5 j | S214 |
 
 Total ~7 à 9 jours. S210 et S211 sont les deux seuls que je ferais **sans attendre** :
 l'un répare des capacités qui ne marchent pas, l'autre ferme une porte ouverte.

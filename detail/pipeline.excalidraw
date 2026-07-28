@@ -96,13 +96,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "ETL :5200 → Audit :5300 → Generateur :5400 → Donnees :5500",
+      "text": "Ingestion :5200 → Audit :5300 → Generateur :5400 → Donnees :5500",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "ETL :5200 → Audit :5300 → Generateur :5400 → Donnees :5500",
+      "originalText": "Ingestion :5200 → Audit :5300 → Generateur :5400 → Donnees :5500",
       "lineHeight": 1.35
     },
     {
@@ -142,7 +142,7 @@
       "lineHeight": 1.35
     },
     {
-      "id": "etl-in-bg",
+      "id": "ingestion-in-bg",
       "type": "rectangle",
       "x": 0,
       "y": 0,
@@ -157,8 +157,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-in"
+        "grp-ingestion",
+        "grp-ingestion-in"
       ],
       "roundness": {
         "type": 3
@@ -173,7 +173,7 @@
       "locked": false
     },
     {
-      "id": "etl-in-t",
+      "id": "ingestion-in-t",
       "type": "text",
       "x": 10,
       "y": 8,
@@ -188,8 +188,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-in"
+        "grp-ingestion",
+        "grp-ingestion-in"
       ],
       "roundness": null,
       "seed": 426461,
@@ -200,17 +200,17 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "ETL / INGESTION  :5200",
+      "text": "INGESTION  :5200",
       "fontSize": 15,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "ETL / INGESTION  :5200",
+      "originalText": "INGESTION  :5200",
       "lineHeight": 1.35
     },
     {
-      "id": "etl-in-b",
+      "id": "ingestion-in-b",
       "type": "text",
       "x": 10,
       "y": 34.0,
@@ -225,8 +225,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-in"
+        "grp-ingestion",
+        "grp-ingestion-in"
       ],
       "roundness": null,
       "seed": 730613,
@@ -237,17 +237,17 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Formats supportes :\n  PDF, Word, Excel, PowerPoint\n  HTML, CSV, images\n\nExtracteurs :\n  MarkItDown (principal)\n  PyMuPDF (fallback PDF)\n  Tesseract OCR (fra+eng)\n\nSQLite : /data/etl.db\nVolume Docker : etl_data",
+      "text": "Formats supportes :\n  PDF, Word, Excel, PowerPoint\n  HTML, CSV, images\n\nExtracteurs :\n  MarkItDown (principal)\n  PyMuPDF (fallback PDF)\n  Tesseract OCR (fra+eng)\n\nSQLite : /data/ingestion.db\nVolume Docker : ingestion_data",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Formats supportes :\n  PDF, Word, Excel, PowerPoint\n  HTML, CSV, images\n\nExtracteurs :\n  MarkItDown (principal)\n  PyMuPDF (fallback PDF)\n  Tesseract OCR (fra+eng)\n\nSQLite : /data/etl.db\nVolume Docker : etl_data",
+      "originalText": "Formats supportes :\n  PDF, Word, Excel, PowerPoint\n  HTML, CSV, images\n\nExtracteurs :\n  MarkItDown (principal)\n  PyMuPDF (fallback PDF)\n  Tesseract OCR (fra+eng)\n\nSQLite : /data/ingestion.db\nVolume Docker : ingestion_data",
       "lineHeight": 1.35
     },
     {
-      "id": "etl-api-bg",
+      "id": "ingestion-api-bg",
       "type": "rectangle",
       "x": 0,
       "y": 195,
@@ -262,8 +262,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-api"
+        "grp-ingestion",
+        "grp-ingestion-api"
       ],
       "roundness": {
         "type": 3
@@ -278,7 +278,7 @@
       "locked": false
     },
     {
-      "id": "etl-api-t",
+      "id": "ingestion-api-t",
       "type": "text",
       "x": 10,
       "y": 203,
@@ -293,8 +293,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-api"
+        "grp-ingestion",
+        "grp-ingestion-api"
       ],
       "roundness": null,
       "seed": 211116,
@@ -305,17 +305,17 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Endpoints ETL",
+      "text": "Endpoints Ingestion",
       "fontSize": 15,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Endpoints ETL",
+      "originalText": "Endpoints Ingestion",
       "lineHeight": 1.35
     },
     {
-      "id": "etl-api-b",
+      "id": "ingestion-api-b",
       "type": "text",
       "x": 10,
       "y": 229.0,
@@ -330,8 +330,8 @@
       "roughness": 0,
       "opacity": 100,
       "groupIds": [
-        "grp-etl",
-        "grp-etl-api"
+        "grp-ingestion",
+        "grp-ingestion-api"
       ],
       "roundness": null,
       "seed": 174106,

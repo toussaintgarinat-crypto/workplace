@@ -237,13 +237,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Pipeline\nETL→Audit\n→Gen→Pack",
+      "text": "Pipeline\nIngestion→Audit\n→Gen→Pack",
       "fontSize": 10,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Pipeline\nETL→Audit\n→Gen→Pack",
+      "originalText": "Pipeline\nIngestion→Audit\n→Gen→Pack",
       "lineHeight": 1.35
     },
     {
@@ -1182,13 +1182,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "~35 outils\nagent/ETL\nmem/forge",
+      "text": "~35 outils\nagent/Ingestion\nmem/forge",
       "fontSize": 10,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "~35 outils\nagent/ETL\nmem/forge",
+      "originalText": "~35 outils\nagent/Ingestion\nmem/forge",
       "lineHeight": 1.35
     },
     {
@@ -2107,7 +2107,7 @@
       "opacity": 100,
       "groupIds": [
         "grp-pipe",
-        "grp-pipe-etl"
+        "grp-pipe-ingestion"
       ],
       "roundness": {
         "type": 3
@@ -2138,7 +2138,7 @@
       "opacity": 100,
       "groupIds": [
         "grp-pipe",
-        "grp-pipe-etl"
+        "grp-pipe-ingestion"
       ],
       "roundness": null,
       "seed": 200470,
@@ -2149,13 +2149,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "ETL\n:5200",
+      "text": "Ingestion\n:5200",
       "fontSize": 15,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "ETL\n:5200",
+      "originalText": "Ingestion\n:5200",
       "lineHeight": 1.35
     },
     {
@@ -2175,7 +2175,7 @@
       "opacity": 100,
       "groupIds": [
         "grp-pipe",
-        "grp-pipe-etl"
+        "grp-pipe-ingestion"
       ],
       "roundness": null,
       "seed": 149376,
@@ -2186,13 +2186,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "MarkItDown\nPyMuPDF + Tesseract\nSQLite /data/etl.db\nPOST /ingerer",
+      "text": "MarkItDown\nPyMuPDF + Tesseract\nSQLite /data/ingestion.db\nPOST /ingerer",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "MarkItDown\nPyMuPDF + Tesseract\nSQLite /data/etl.db\nPOST /ingerer",
+      "originalText": "MarkItDown\nPyMuPDF + Tesseract\nSQLite /data/ingestion.db\nPOST /ingerer",
       "lineHeight": 1.35
     },
     {
@@ -4340,13 +4340,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "S0-S36 COMPLETES\nETL Audit Gen Donnees\nOria Forge CRM Stripe\nEmails App-vivante\nBriefing S30 Horloge S29\n\nA planifier : CORS=* 13 briques",
+      "text": "S0-S36 COMPLETES\nIngestion Audit Gen Donnees\nOria Forge CRM Stripe\nEmails App-vivante\nBriefing S30 Horloge S29\n\nA planifier : CORS=* 13 briques",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "S0-S36 COMPLETES\nETL Audit Gen Donnees\nOria Forge CRM Stripe\nEmails App-vivante\nBriefing S30 Horloge S29\n\nA planifier : CORS=* 13 briques",
+      "originalText": "S0-S36 COMPLETES\nIngestion Audit Gen Donnees\nOria Forge CRM Stripe\nEmails App-vivante\nBriefing S30 Horloge S29\n\nA planifier : CORS=* 13 briques",
       "lineHeight": 1.35
     }
   ],

@@ -5,7 +5,7 @@ sur du code bloquant — le client synchrone attend de toute façon la réponse,
 d'événements qu'il faudrait observer n'est pas celle de l'application. Le fait que la sync
 soit non bloquante n'est donc PAS affirmé par ces tests-là : il est tenu par
 `test_la_sync_rend_la_main_avant_la_fin_du_transfert`, qui mesure le temps de réponse
-pendant qu'un exécuteur lent tourne encore. Voir aussi briques/etl/test_ocr_non_bloquant.py.
+pendant qu'un exécuteur lent tourne encore. Voir aussi briques/ingestion/test_ocr_non_bloquant.py.
 """
 import asyncio
 import json

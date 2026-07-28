@@ -98,7 +98,7 @@ Ordre : **gateway → (keycloak si Niveau B) → briques socle → core**. Chaqu
 > (sinon images périmées — piège connu du launcher).
 
 Minimal pour prouver S114→S121 (Niveau A) : `gateway`, `donnees`, `agenda`, `forge`,
-`etl`, `audit`, `generateur`, puis `core`. (Sur macOS : `./Lancer\ Workplace.command`
+`ingestion`, `audit`, `generateur`, puis `core`. (Sur macOS : `./Lancer\ Workplace.command`
 monte tout le stack ; sur Linux/Proxmox, faire les `docker compose up -d --build` à la main.)
 
 ---

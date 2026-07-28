@@ -38,7 +38,7 @@ _ORGANES = {
     "transcription": "ouïe (audio → texte souverain)",
     "agenda":        "agenda (rendez-vous, pont Google consenti)",
     "donnees":       "registres (données saisies dans les apps)",
-    "etl":           "tri (documents déposés → dossiers, classement)",
+    "ingestion":     "tri (documents déposés → dossiers, classement)",
     "audit":         "proprioception (audit de l'usine)",
     "oria":          "visage (interface de collaboration)",
 }

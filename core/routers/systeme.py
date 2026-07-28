@@ -238,5 +238,5 @@ async def sante_globale():
 
 
 # ── Usine à applications (S5) ────────────────────────────────────────────────
-# Le Cœur pilote la chaîne ETL→Audit→Génération(→Packaging) en une commande et
+# Le Cœur pilote la chaîne Ingestion→Audit→Génération(→Packaging) en une commande et
 # tient le tableau des entreprises livrées.

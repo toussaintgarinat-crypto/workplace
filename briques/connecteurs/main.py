@@ -98,7 +98,7 @@ def verifier_cle_horloge(authorization: Optional[str] = Header(None)) -> None:
 @app.get("/sante", tags=["système"])
 def sante():
     """Reste réactif PENDANT une sync : le transfert tourne dans un autre processus
-    (cf. pont.py). C'est le défaut que S212 a corrigé sur `etl`, évité ici par construction."""
+    (cf. pont.py). C'est le défaut que S212 a corrigé sur `ingestion`, évité ici par construction."""
     return {"statut": "ok", "version": VERSION, "pont_pyairbyte": pont.disponible()}
 
 

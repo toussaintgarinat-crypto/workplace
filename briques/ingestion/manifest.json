@@ -1,12 +1,12 @@
 {
-  "nom": "etl",
+  "nom": "ingestion",
   "famille": "ingestion",
   "version": "0.1.0",
   "description": "Ingestion de documents — extraction de texte (PDF, Word, images, Excel, HTML…) et stockage pour l'Audit",
-  "role": "etl",
+  "role": "ingestion",
   "couche": "backend",
   "statut": "actif",
-  "chemin_source": "~/Desktop/Workplace/briques/etl",
+  "chemin_source": "~/Desktop/Workplace/briques/ingestion",
   "port": 5200,
   "url_sante": "http://host.docker.internal:5200/sante",
   "depends_on": [],
@@ -19,7 +19,7 @@
   "besoin": [],
   "capacites": [
     {
-      "nom": "etl_ingerer_url",
+      "nom": "ingestion_ingerer_url",
       "description": "Ingère un document depuis une URL distante (PDF en ligne, page web, article). Le texte est extrait et indexé. Utilise cette capacité quand l'utilisateur donne un lien vers un document à ajouter.",
       "methode": "POST",
       "chemin": "/ingerer/url",
@@ -33,7 +33,7 @@
       "action": true
     },
     {
-      "nom": "etl_documents_lister",
+      "nom": "ingestion_documents_lister",
       "description": "Liste les documents ingérés (texte extrait disponible). Filtrable par catégorie, projet ou entreprise. Utilise avant de lire ou classer un document.",
       "methode": "GET",
       "chemin": "/documents",
@@ -62,14 +62,14 @@
       "action": false
     },
     {
-      "nom": "etl_supprimer_document",
-      "description": "Supprime définitivement un document ingéré (par son id obtenu via etl_documents_lister). ACTION irréversible.",
+      "nom": "ingestion_supprimer_document",
+      "description": "Supprime définitivement un document ingéré (par son id obtenu via ingestion_documents_lister). ACTION irréversible.",
       "methode": "DELETE",
       "chemin": "/documents/{doc_id}",
       "params": {
         "doc_id": {
           "type": "string",
-          "description": "Identifiant du document (obtenu via etl_documents_lister).",
+          "description": "Identifiant du document (obtenu via ingestion_documents_lister).",
           "requis": true
         }
       },

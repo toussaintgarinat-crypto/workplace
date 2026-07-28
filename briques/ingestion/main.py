@@ -1,4 +1,4 @@
-"""Brique ETL / Ingestion — Workplace v0.1.0"""
+"""Brique Ingestion — Workplace v0.1.0"""
 
 import logging
 import os
@@ -13,18 +13,18 @@ import reseau
 import stockage
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
-logger = logging.getLogger("etl")
+logger = logging.getLogger("ingestion")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     stockage.initialiser()
-    logger.info("Brique ETL démarrée — DB initialisée")
+    logger.info("Brique Ingestion démarrée — DB initialisée")
     yield
 
 
 app = FastAPI(
-    title="Workplace — Brique ETL",
+    title="Workplace — Brique Ingestion",
     description="Ingestion de documents : extraction de texte et stockage pour l'Audit.",
     version="0.1.0",
     lifespan=lifespan,
@@ -32,8 +32,8 @@ app = FastAPI(
 
 # ── Auth & CORS (S211) ───────────────────────────────────────────────────────
 # La brique était grande ouverte sur le port 5200 : le sprint « CORS + API_KEYS
-# briques autonomes » avait durci 8 briques, `etl` était passée à travers. Motif
-# repris à l'identique de `briques/transcription/main.py`.
+# briques autonomes » avait durci 8 briques, celle-ci (alors nommée `etl`) était
+# passée à travers. Motif repris à l'identique de `briques/transcription/main.py`.
 #
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut
 # "*" = comportement historique, à restreindre dès qu'un autre tenant partage la
@@ -44,15 +44,15 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 # Liste des clés acceptées. Vide = mode ouvert (dev) ; dès qu'une clé est posée, tout
 # est fermé sauf /sante (le healthcheck Docker n'a pas de clé à présenter).
 #
-# `ETL_API_KEYS` d'abord, `API_KEYS` en repli — et l'ordre compte. `API_KEYS` est la
+# `INGESTION_API_KEYS` d'abord, `API_KEYS` en repli — et l'ordre compte. `API_KEYS` est la
 # variable GÉNÉRIQUE du .env racine : 22 briques la lisent par `env_file`. La poser pour
-# fermer l'ETL les ferait toutes basculer en fail-closed d'un coup, alors que leurs
+# fermer l'ingestion les ferait toutes basculer en fail-closed d'un coup, alors que leurs
 # appelants présentent une clé DÉDIÉE ({BRIQUE}_KEY) qui n'y figure pas → 401 partout.
-# `ETL_API_KEYS` ferme donc cette brique SEULE. Variable dédiée et non
-# `environment: API_KEYS=${ETL_API_KEYS:-}` dans le compose : l'interpolation ne lit pas
+# `INGESTION_API_KEYS` ferme donc cette brique SEULE. Variable dédiée et non
+# `environment: API_KEYS=${INGESTION_API_KEYS:-}` dans le compose : l'interpolation ne lit pas
 # l'env_file, elle écraserait par du vide (piège « env shadow »).
 API_KEYS = {k.strip()
-            for k in (os.getenv("ETL_API_KEYS") or os.getenv("API_KEYS", "")).split(",")
+            for k in (os.getenv("INGESTION_API_KEYS") or os.getenv("API_KEYS", "")).split(",")
             if k.strip()}
 
 
@@ -92,7 +92,7 @@ class ReponseDocumentComplet(ReponseDocument):
 @app.get("/sante")
 def sante():
     nb = stockage.compter()
-    return {"statut": "ok", "service": "etl", "documents_ingeres": nb}
+    return {"statut": "ok", "service": "ingestion", "documents_ingeres": nb}
 
 
 @app.post("/ingerer", summary="Uploader et ingérer un fichier")

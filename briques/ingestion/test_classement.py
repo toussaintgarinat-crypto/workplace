@@ -6,8 +6,8 @@ le Cœur les câble depuis S6 en outils `classer_document` / `lister_dossiers`
 (`core/outils.py`, dispatch dans `core/outils_domaines/documents.py`). Les déclarer AUSSI
 au manifeste aurait donné deux outils jumeaux à l'assistant pour le même geste.
 
-Ce qui manquait vraiment, c'est la preuve que le geste ABOUTIT. `core/test_etl_cle_service.py`
-ne vérifie que le port de la clé ; côté brique, `test_etl.py` ne couvre que le 404. Personne
+Ce qui manquait vraiment, c'est la preuve que le geste ABOUTIT. `core/test_ingestion_cle_service.py`
+ne vérifie que le port de la clé ; côté brique, `test_ingestion.py` ne couvre que le 404. Personne
 ne vérifiait qu'un document classé se retrouve ensuite dans son dossier — or c'est exactement
 le genre d'écart muet que S210 a trouvé partout ailleurs : l'appel réussit, et rien ne range.
 """
@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     import stockage
-    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
     from main import app
     with TestClient(app) as c:
         yield c

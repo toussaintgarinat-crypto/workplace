@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     import stockage
-    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
     from main import app
     with TestClient(app) as c:
         yield c

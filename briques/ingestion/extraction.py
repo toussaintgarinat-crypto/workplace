@@ -32,10 +32,10 @@ _CTRL_RE = re.compile(r"[\x00\x01-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF]")
 # `/sante`. Une rafale d'ingestions y prendrait des jetons au healthcheck, et on
 # retomberait sur l'indisponibilité qu'on vient de corriger, en plus discret.
 # Ici l'extraction ne peut jamais prendre le jeton de personne : au-delà de
-# ETL_EXTRACTIONS_PARALLELES, les ingestions font la queue en `await` (boucle libre).
+# INGESTION_EXTRACTIONS_PARALLELES, les ingestions font la queue en `await` (boucle libre).
 # 2 par défaut : Tesseract sature un cœur à lui seul, le HP en a 6 pour ~54 conteneurs.
-_PARALLELISME = max(1, int(os.getenv("ETL_EXTRACTIONS_PARALLELES", "2")))
-_POOL = ThreadPoolExecutor(max_workers=_PARALLELISME, thread_name_prefix="etl-extraction")
+_PARALLELISME = max(1, int(os.getenv("INGESTION_EXTRACTIONS_PARALLELES", "2")))
+_POOL = ThreadPoolExecutor(max_workers=_PARALLELISME, thread_name_prefix="ingestion-extraction")
 
 
 async def extraire_texte_async(contenu: bytes, nom_fichier: str,

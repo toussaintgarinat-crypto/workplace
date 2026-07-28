@@ -5,7 +5,7 @@ build:
 
 up:
 	docker compose up -d --build
-	@echo "Brique ETL démarrée sur http://localhost:5200"
+	@echo "Brique Ingestion démarrée sur http://localhost:5200"
 	@echo "Santé : http://localhost:5200/sante"
 	@echo "Docs  : http://localhost:5200/docs"
 

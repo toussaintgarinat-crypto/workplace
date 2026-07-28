@@ -2,7 +2,7 @@
 
 L'assistant n'est pas cantonné à l'usine : il sert **toute la solution**. Chaque
 outil est une spec function-calling + un répartiteur `executer(nom, args)` qui
-appelle les **contrats HTTP existants** des briques (ETL, Audit, Générateur,
+appelle les **contrats HTTP existants** des briques (Ingestion, Audit, Générateur,
 Données, Mémoire) et les fonctions internes du Cœur (orchestrateur, cycle de vie).
 Aucune logique métier n'est réécrite.
 
@@ -47,7 +47,7 @@ OUTILS: list[dict] = [
         "parameters": _p({"livraison_id": {"type": "string"}}, ["livraison_id"])}},
     {"type": "function", "function": {
         "name": "etat_briques",
-        "description": "Liste les briques de la solution (ETL, Audit, Générateur, Données, Mémoire…) et leur santé.",
+        "description": "Liste les briques de la solution (Ingestion, Audit, Générateur, Données, Mémoire…) et leur santé.",
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "mes_capacites",
@@ -87,7 +87,7 @@ OUTILS: list[dict] = [
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "chercher_documents",
-        "description": "Cherche dans les documents ingérés (ETL) et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
+        "description": "Cherche dans les documents ingérés et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
         "parameters": _p({
             "q": {"type": "string", "description": "Filtre texte sur le nom/contenu (optionnel)."},
             "categorie": {"type": "string", "description": "Filtre par catégorie (devis, facture, contrat…)."},
@@ -100,7 +100,7 @@ OUTILS: list[dict] = [
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "lire_document",
-        "description": "Lit le texte extrait d'un document de l'ETL.",
+        "description": "Lit le texte extrait d'un document ingéré.",
         "parameters": _p({"doc_id": {"type": "string"}}, ["doc_id"])}},
     {"type": "function", "function": {
         "name": "lister_apps",
@@ -117,7 +117,7 @@ OUTILS: list[dict] = [
     # — ACTION (gardées par confirmation) —
     {"type": "function", "function": {
         "name": "livrer_entreprise",
-        "description": "Lance une livraison (audit→génération) sur les documents déjà dans l'ETL. ACTION : confirme=true requis après accord.",
+        "description": "Lance une livraison (audit→génération) sur les documents déjà ingérés. ACTION : confirme=true requis après accord.",
         "parameters": _p({
             "nom_entreprise": {"type": "string"},
             "persistance": {"type": "string", "enum": ["hebergee", "autonome"]},
@@ -135,7 +135,7 @@ OUTILS: list[dict] = [
         "parameters": _p({"livraison_id": {"type": "string"}, "confirme": {"type": "boolean"}}, ["livraison_id"])}},
     {"type": "function", "function": {
         "name": "ingerer_document",
-        "description": "Ingère un document dans l'ETL depuis une URL. ACTION : confirme=true requis après accord.",
+        "description": "Ingère un document depuis une URL. ACTION : confirme=true requis après accord.",
         "parameters": _p({"url": {"type": "string"}, "confirme": {"type": "boolean"}}, ["url"])}},
     {"type": "function", "function": {
         "name": "classer_document",

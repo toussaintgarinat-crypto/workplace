@@ -471,38 +471,38 @@ async def assistant_cle_fournisseur(corps: dict):
 
 @router.post("/assistant/document", tags=["assistant"])
 async def assistant_document(fichier: UploadFile = File(...)):
-    """Dépose un document : l'ingère (ETL), le fait CLASSER par le LLM, puis range
+    """Dépose un document : l'ingère (brique `ingestion`), le fait CLASSER par le LLM, puis range
     le classement dans ses métadonnées. Renvoie le classement au front.
 
     Le résumé n'est PAS écrit en Mémoire ici (action sensible) : le front le propose."""
-    etl = orchestrateur._brique_base(registre, "etl")
+    ingestion = orchestrateur._brique_base(registre, "ingestion")
     contenu = await fichier.read()
     if not contenu:
         raise HTTPException(status_code=400, detail="Fichier vide.")
 
-    entetes_etl = orchestrateur.entetes_brique("etl")
+    entetes_ingestion = orchestrateur.entetes_brique("ingestion")
     async with httpx.AsyncClient(timeout=120) as client:
-        # 1) Ingestion (extraction de texte) par l'ETL.
+        # 1) Ingestion (extraction de texte) par la brique dédiée.
         r = await client.post(
-            f"{etl}/ingerer",
+            f"{ingestion}/ingerer",
             files={"fichier": (fichier.filename or "document", contenu,
                                fichier.content_type or "application/octet-stream")},
-            headers=entetes_etl,
+            headers=entetes_ingestion,
         )
         if r.status_code >= 400:
-            raise HTTPException(status_code=502, detail=f"Ingestion ETL échouée : {r.text}")
+            raise HTTPException(status_code=502, detail=f"Ingestion échouée : {r.text}")
         doc_id = r.json().get("id")
 
         # 2) Récupération du texte extrait.
-        d = await client.get(f"{etl}/documents/{doc_id}", headers=entetes_etl)
+        d = await client.get(f"{ingestion}/documents/{doc_id}", headers=entetes_ingestion)
         texte = d.json().get("texte_extrait", "") if d.status_code < 400 else ""
 
         # 3) Classement par le LLM (même cerveau que l'assistant).
         classement = await classer.classer_texte(texte, fichier.filename or "document")
 
         # 4) Persistance du classement dans les métadonnées du document.
-        await client.patch(f"{etl}/documents/{doc_id}/classement", json=classement,
-                           headers=entetes_etl)
+        await client.patch(f"{ingestion}/documents/{doc_id}/classement", json=classement,
+                           headers=entetes_ingestion)
 
     texte_tronque = texte[:6000] + ("\n…[tronqué]" if len(texte) > 6000 else "")
     return {"doc_id": doc_id, "nom": fichier.filename,
@@ -530,12 +530,12 @@ async def assistant_rappel_vu(rappel_id: str):
 
 @router.get("/assistant/dossiers", tags=["assistant"])
 async def assistant_dossiers():
-    """Dossiers (projets + catégories avec compteurs), relayés depuis l'ETL."""
-    etl = orchestrateur._brique_base(registre, "etl")
+    """Dossiers (projets + catégories avec compteurs), relayés depuis la brique `ingestion`."""
+    ingestion = orchestrateur._brique_base(registre, "ingestion")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{etl}/dossiers",
-                                 headers=orchestrateur.entetes_brique("etl"))
+            r = await client.get(f"{ingestion}/dossiers",
+                                 headers=orchestrateur.entetes_brique("ingestion"))
             return r.json() if r.status_code < 400 else {"projets": {}, "categories": {}}
     except httpx.HTTPError:
         return {"projets": {}, "categories": {}}

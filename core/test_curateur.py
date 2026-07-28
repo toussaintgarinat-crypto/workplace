@@ -87,7 +87,7 @@ def test_proposer_capacite_llm():
         async def _comp(messages, **kw):
             import json
             return llm_pipeline.Resultat(message={"content": json.dumps(
-                {"nom": "chercher_contrat", "brique_suggeree": "etl",
+                {"nom": "chercher_contrat", "brique_suggeree": "ingestion",
                  "description": "cherche un contrat", "methode": "GET",
                  "chemin": "/contrats", "raison": "comble la complétude"})},
                 modele_utilise="free/test")
@@ -95,7 +95,7 @@ def test_proposer_capacite_llm():
         b = _run(curateur.proposer_capacite(_Reg(), _faiblesse("completude", "S70"), {}, None))
         d = b["declaration"]
         assert d["genere_par"] == "llm" and d["nom"] == "chercher_contrat"
-        assert d["brique_suggeree"] == "etl" and d["methode"] == "GET"
+        assert d["brique_suggeree"] == "ingestion" and d["methode"] == "GET"
     finally:
         config_assistant.chaine_modeles, llm_pipeline.completer = _oc, _ocomp
 
