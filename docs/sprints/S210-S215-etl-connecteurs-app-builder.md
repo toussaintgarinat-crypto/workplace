@@ -129,9 +129,26 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 > est couvert et testé ; le rebinding actif ne l'est pas. C'est documenté dans le docstring
 > de `reseau.py`.
 >
-> **Déploiement** : poser `ETL_KEY` **et** `ETL_API_KEYS` (même valeur) dans le `.env`
-> racine du HP, puis rebuild `etl` / `audit` / `core`. Sans cette étape le code est en
-> place mais la brique reste ouverte.
+> **✅ LIVE sur le HP le 2026-07-28** (`4fe3749`) — `ETL_KEY` + `ETL_API_KEYS` posées dans
+> le `.env` racine, `etl` / `audit` / `core` rebuildés, stack entier healthy.
+>
+> La faille a été prouvée **avant** correction, pas seulement décrite : un `POST
+> /ingerer/url` **sans aucune clé** sur `http://192.168.1.89:5100/dashboard` a fait
+> récupérer et stocker la page de login Keycloak, relisible via `/documents/{id}`.
+>
+> | Preuve LIVE | Avant | Après |
+> |---|---|---|
+> | `GET /documents` sans clé | 200 | **401** |
+> | `GET /documents` mauvaise clé | 200 | **401** |
+> | `GET /documents` bonne clé | 200 | 200 |
+> | `GET /sante` sans clé (healthcheck) | 200 | 200 |
+> | `POST /ingerer/url` → `192.168.1.89` | 200 + corps stocké | **403** |
+> | `POST /ingerer/url` → `example.com` | 200 | 200 |
+> | `audit._recuperer_tous_ids()` | 27 docs | 27 docs |
+> | `GET /assistant/dossiers` (Cœur) | 200 | 200 |
+>
+> La générique `API_KEYS` est restée **absente** du `.env` racine : les 22 autres briques
+> qui la lisent n'ont pas bougé. Documents créés par ces tests supprimés après coup.
 
 **Pourquoi maintenant.** Deux trous qui se combinent mal.
 
