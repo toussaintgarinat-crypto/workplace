@@ -151,7 +151,19 @@ conséquence ; pour un premier plein de plusieurs heures, c'en est une.
 
 C'est le principal argument qui ferait rouvrir l'**option 3** (parler le protocole Airbyte
 en direct) : en lisant nous-mêmes les messages `STATE` du connecteur, on consignerait un
-point de reprise réel. À rouvrir si un premier plein long devient douloureux, pas avant.
+point de reprise réel.
+
+**Décision du 2026-07-28 : accepter, ne pas rouvrir.** Motif : le coût est nul tant que les
+syncs durent quelques minutes — mesuré à 300 enregistrements en 11 s sur le HP. Rouvrir
+maintenant reviendrait à jeter la moitié de S214 et à reprendre ~300 lignes de protocole
+tiers pour un problème qui ne s'est pas encore produit. **Condition de réouverture** : un
+premier plein réellement long (dépôt GitHub volumineux) qui se fait couper et coûte assez
+pour qu'on le remarque. À ce moment-là on aura un cas d'usage, pas une hypothèse.
+
+Conséquence pratique, déjà câblée : la description de la capacité `connecteurs_sync_lire`
+dit à l'assistant ce que signifie un statut `interrompue` — aucune perte, aucun doublon,
+mais le travail est à refaire — pour qu'il ne promette pas une reprise à chaud qui n'existe
+pas.
 
 ## Références
 
