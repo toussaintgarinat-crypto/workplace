@@ -244,6 +244,34 @@ plafond. La brique `audit` continue d'ingérer, prouvé bout-en-bout.
 > d'avant. Discrimination vérifiée en remettant l'ancien appel : `/sante` **2,99 s** contre
 > quelques millisecondes après correction, seuil à 1 s.
 >
+> **✅ LIVE sur le HP le 2026-07-28** (`5a9e6c5`) — brique rebuildée, 63 conteneurs healthy,
+> aucun `unhealthy`. La panne a été **prouvée avant correction**, pas seulement décrite : le
+> conteneur a été repassé à l'appel synchrone d'avant-S212 (`docker exec -i`, `docker restart`,
+> code vérifié dans `/app/main.py`), puis le **même document** — un PDF de 96 pages sans couche
+> texte, entièrement à océriser — a été ingéré des deux côtés.
+>
+> | Le même PDF de 96 pages | AVANT (appel synchrone) | APRÈS (pool dédié) |
+> |---|---|---|
+> | `/sante` pendant l'OCR | **> 10 s** (5 sondes consécutives en timeout) | **1,4 à 5,1 ms** |
+> | `FailingStreak` Docker | 1 → 2 → **3** | **0** |
+> | Statut du conteneur | **`unhealthy` à t+130 s** | `healthy` du début à la fin |
+> | Caractères extraits | 145 150 | 145 150 |
+>
+> Le travail aboutissait dans les deux cas : c'est bien la plateforme qui déclarait l'échec.
+>
+> | Autre preuve LIVE | Résultat |
+> |---|---|
+> | `.xlsx` ingéré après le bump | `## Sheet \| Griffon-Sextant-42 chiffre affaires \|` — Excel tient |
+> | `.docx` ingéré après le bump | `Griffon-Sextant-42 devis toiture Martin` |
+> | `.txt` contenant `\x00`/`\x07` | `abGriffon-Sextant-42 texte brut` — plus de mojibake UTF-16 |
+> | `PATCH /classement` puis `GET /dossiers` | `{"projets":{"Toiture Martin":1},…}` |
+> | `GET /documents?projet=Toiture%20Martin` | `['note.docx']` ; filtre bidon → `[]` |
+> | `audit._recuperer_tous_ids()` | 25 documents (contrat S211 intact) |
+> | `GET /assistant/dossiers` (Cœur) | 200 |
+>
+> Les 10 documents créés par ces tests ont été supprimés après coup (35 → 25, dossiers rendus
+> à leur état d'origine).
+>
 > **Limite assumée** : `stockage.sauvegarder` reste appelé dans la boucle sur les deux chemins
 > d'ingestion. C'est un `INSERT` SQLite, de l'ordre de la milliseconde ; sur un texte de
 > plusieurs dizaines de Mo il peut coûter une centaine de millisecondes. Loin des 10 s du
