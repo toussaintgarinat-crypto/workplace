@@ -79,7 +79,7 @@
     },
     {
       "nom": "connecteurs_sync_lire",
-      "description": "Détail d'une synchronisation : où elle en est, combien d'enregistrements transférés, et le message d'erreur exact si elle a échoué. Sert à suivre une synchro déclenchée par connecteurs_source_synchroniser.",
+      "description": "Détail d'une synchronisation : où elle en est, combien d'enregistrements transférés, et le message d'erreur exact si elle a échoué. Sert à suivre une synchro déclenchée par connecteurs_source_synchroniser. Si le statut est « interrompue », la synchro a été coupée en plein transfert (redémarrage du serveur) : AUCUNE donnée n'est perdue ni dupliquée, mais le travail déjà fait est à refaire — la synchro suivante repart du dernier curseur complété, pas du point d'interruption. Le dire tel quel à la personne plutôt que de promettre une reprise à chaud.",
       "methode": "GET",
       "chemin": "/syncs/{sync_id}",
       "params": {
