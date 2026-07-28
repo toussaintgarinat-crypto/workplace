@@ -570,3 +570,36 @@ ingérés sont toujours lisibles après migration (ou leur perte est un choix é
 
 Total ~7 à 9 jours. S210 et S211 sont les deux seuls que je ferais **sans attendre** :
 l'un répare des capacités qui ne marchent pas, l'autre ferme une porte ouverte.
+
+---
+
+## SLIVE 2026-07-28 — S213 + S214 déployés sur le HP
+
+`git pull` du HP de `5a9e6c5` → **`eaf3665`** (6 commits : S212 fin, S213, S214).
+
+**Prérequis posé avant le build** : le `.env` du HP n'avait **ni** `VAULT_SECRET` **ni**
+`CONNECTEURS_ENCRYPTION_KEY` → la création de source aurait répondu 503. Clé **dédiée**
+générée (`openssl rand -hex 32`) et ajoutée au `.env` ; **pas** `VAULT_SECRET`, pour ne rien
+changer au comportement de l'agenda (dont le chiffrement retombe dessus à défaut de clé
+propre). Sauvegarde du fichier d'origine : `~/workplace/.env.avant-s214`.
+⚠ **Cette clé est à sauvegarder** : sans elle, les configs de source déjà chiffrées sont
+définitivement illisibles.
+
+**Preuves LIVE sur le HP** :
+
+| | |
+|---|---|
+| Brique | `workplace_connecteurs` **healthy**, `/sante` → `pont_pyairbyte: true` |
+| Découverte par le Cœur | **39/39 briques ok**, les 6 capacités `connecteurs_*` exposées (248 capacités au parc) |
+| Connecteur réel | `source-faker` 7.2.1 installé, `check` OK |
+| **Delta** | sync n°1 = **300** enregistrements, sync n°2 = **0**, curseur `loop_offset: 300` |
+| Non-blocage | route `202` en **3,5 ms**, `/sante` en **1,2 ms** pendant le transfert |
+| **Tâche horloge** | déclenchée d'elle-même à 13:18:30, statut `ok`, prochaine échéance J+1 |
+| **Garde d'idempotence** | le POST manuel est tombé sur la sync de l'horloge → `deja_en_cours: true` au lieu d'ouvrir une seconde sync |
+
+Les deux dernières lignes n'étaient pas planifiées : l'horloge a tiré pendant la preuve, ce
+qui a éprouvé en conditions réelles la tâche déclarée au manifeste **et** la garde
+d'idempotence. Source de preuve supprimée ensuite (sinon sync quotidienne inutile).
+
+S213 est passée sans casse : `briques/app-builder` retirée du disque, aucun conteneur ne
+l'utilisait. Disque du HP : 87 Go / 327 Go utilisés (l'image `connecteurs` pèse 1,32 Go).
