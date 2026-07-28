@@ -149,6 +149,15 @@ Le test de contrat passe sur toutes les briques non exemptées, et **échoue** s
 >
 > La générique `API_KEYS` est restée **absente** du `.env` racine : les 22 autres briques
 > qui la lisent n'ont pas bougé. Documents créés par ces tests supprimés après coup.
+>
+> **Défaut trouvé APRÈS coup, sur le stack en marche** (`a1ccb7d`) : le `CORS_ORIGINS=${CORS_ORIGINS:-*}`
+> que j'avais ajouté dans `environment:` reproduisait le piège env-shadow — il s'interpole
+> depuis le dossier du compose, pas depuis l'`env_file`, et mettait donc la brique en CORS
+> `*` alors que le `.env` racine déclare une liste restreinte. Corrigé en supprimant le bloc
+> `environment:` (le code a déjà les bons défauts) ; vérifié dans le conteneur.
+> **`veille-info` et `mail` portent le même défaut, préexistant** (`CORS_ORIGINS=*` effectif
+> au lieu de la liste du `.env` racine, alors que `transcription`, sans cette ligne, l'hérite
+> correctement) — hors périmètre S211, à balayer sur toute la flotte.
 
 **Pourquoi maintenant.** Deux trous qui se combinent mal.
 
