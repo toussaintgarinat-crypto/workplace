@@ -13,12 +13,13 @@ from pydantic import BaseModel
 from analyse import auditer
 from shared.schemas.audit import Audit
 
-ETL_URL = os.getenv("ETL_URL", "http://host.docker.internal:5200")
-# La brique ETL est fermée par API_KEYS depuis S211 : `audit` déclare `besoin: etl`,
-# elle doit donc porter la clé. Absente → dict vide, et l'ETL en mode ouvert répond
+INGESTION_URL = os.getenv("INGESTION_URL", "http://host.docker.internal:5200")
+# La brique `ingestion` est fermée par API_KEYS depuis S211 : `audit` déclare
+# `besoin: ingestion`, elle doit donc porter la clé. Absente → dict vide, et une brique
+# en mode ouvert répond
 # comme avant (on ne casse pas un déploiement non configuré).
-_ETL_CLE = os.getenv("ETL_KEY")
-ETL_ENTETES = {"X-API-Key": _ETL_CLE} if _ETL_CLE else {}
+_INGESTION_CLE = os.getenv("INGESTION_KEY")
+INGESTION_ENTETES = {"X-API-Key": _INGESTION_CLE} if _INGESTION_CLE else {}
 DB_PATH = os.getenv("DB_PATH", "/data/audits.db")
 
 
@@ -72,13 +73,13 @@ def _audit_vers_dict(row: sqlite3.Row) -> dict:
 
 
 async def _recuperer_textes(doc_ids: list[str]) -> tuple[list[str], str]:
-    """Récupère le contenu textuel des documents depuis l'ETL. Retourne (textes, nom_entreprise)."""
+    """Récupère le contenu textuel des documents depuis la brique `ingestion`. Retourne (textes, nom_entreprise)."""
     textes = []
     nom_entreprise = "Entreprise inconnue"
     async with httpx.AsyncClient(timeout=60) as client:
         for doc_id in doc_ids:
             try:
-                r = await client.get(f"{ETL_URL}/documents/{doc_id}", headers=ETL_ENTETES)
+                r = await client.get(f"{INGESTION_URL}/documents/{doc_id}", headers=INGESTION_ENTETES)
                 r.raise_for_status()
                 doc = r.json()
                 texte = doc.get("texte_extrait") or doc.get("contenu") or ""
@@ -94,7 +95,7 @@ async def _recuperer_textes(doc_ids: list[str]) -> tuple[list[str], str]:
 
 async def _recuperer_tous_ids() -> list[str]:
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{ETL_URL}/documents", headers=ETL_ENTETES)
+        r = await client.get(f"{INGESTION_URL}/documents", headers=INGESTION_ENTETES)
         r.raise_for_status()
         return [d["id"] for d in r.json().get("documents", r.json())]
 
@@ -163,9 +164,9 @@ async def auditer_tout(background_tasks: BackgroundTasks):
     try:
         doc_ids = await _recuperer_tous_ids()
     except Exception as e:
-        raise HTTPException(502, f"ETL inaccessible : {e}")
+        raise HTTPException(502, f"Brique ingestion inaccessible : {e}")
     if not doc_ids:
-        raise HTTPException(404, "Aucun document dans l'ETL")
+        raise HTTPException(404, "Aucun document ingéré")
     audit_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     with _connexion() as conn:

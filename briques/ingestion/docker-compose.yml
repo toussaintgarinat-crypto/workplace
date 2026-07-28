@@ -1,10 +1,10 @@
 services:
-  etl:
+  ingestion:
     build: .
-    image: workplace-etl:0.1.0
-    container_name: workplace-etl
+    image: workplace-ingestion:0.1.0
+    container_name: workplace-ingestion
     env_file:
-      # Réglages partagés (ETL_API_KEYS, CORS_ORIGINS) — source unique à la racine.
+      # Réglages partagés (INGESTION_API_KEYS, CORS_ORIGINS) — source unique à la racine.
       #
       # AUCUN bloc `environment:` ici, et c'est délibéré : `VAR=${VAR:-defaut}` s'interpole
       # depuis le shell / le `.env` du dossier du compose, JAMAIS depuis `env_file` — donc
@@ -12,13 +12,18 @@ services:
       # cf. fix-env-shadow-composes). Vu en vrai sur le HP au déploiement du S211 : un
       # `CORS_ORIGINS=${CORS_ORIGINS:-*}` mettait la brique en `*` alors que le .env racine
       # déclarait une liste restreinte. Les deux variables sont lues telles quelles par le
-      # code, avec ses propres défauts (`CORS_ORIGINS` → `*`, `ETL_API_KEYS` vide → ouverte).
+      # code, avec ses propres défauts (`CORS_ORIGINS` → `*`, `INGESTION_API_KEYS` vide →
+      # ouverte).
       - path: ../../.env
         required: false
     ports:
       - "5200:5200"
     volumes:
-      - etl_data:/data
+      # Renommé avec la brique (S215). Sur un déploiement qui tournait déjà, ce nom
+      # désigne un volume VIDE : recopier l'ancien AVANT le premier `up`, avec
+      # `scripts/migration_etl_vers_ingestion.sh`, sinon les documents déjà ingérés
+      # restent bloqués dans `etl_etl_data` et la brique repart de zéro sans le dire.
+      - ingestion_data:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5200/sante')"]
@@ -28,4 +33,4 @@ services:
       start_period: 20s
 
 volumes:
-  etl_data:
+  ingestion_data:

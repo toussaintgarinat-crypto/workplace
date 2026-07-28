@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Workplace — Cœur",
-    description="Orchestrateur central du projet Workplace. Découvre les briques via leurs manifests et pilote l'usine à applications (ETL→Audit→Génération→Déploiement).",
+    description="Orchestrateur central du projet Workplace. Découvre les briques via leurs manifests et pilote l'usine à applications (Ingestion→Audit→Génération→Déploiement).",
     version="0.2.0",
     lifespan=lifespan,
 )

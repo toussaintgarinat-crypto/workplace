@@ -6,7 +6,7 @@ seule donnée de `connecteurs` qui a une valeur en dehors de Workplace.
 
 Motif repris tel quel de `briques/agenda/backend/crypto.py` (S180) — AES-GCM, enveloppe
 `base64(version || nonce(12) || ciphertext)` — mais SANS SQLAlchemy : cette brique stocke
-en `sqlite3` nu, comme `etl` et `veille-info`. La clé dérive de
+en `sqlite3` nu, comme `ingestion` et `veille-info`. La clé dérive de
 `CONNECTEURS_ENCRYPTION_KEY` (dédiée) ou, à défaut, d'une sous-clé HKDF **distincte** de
 `VAULT_SECRET` (séparation des usages : la même racine ne doit jamais produire la même
 clé pour deux briques). Sans aucune clé : on lève — fail-closed, jamais de repli en clair.

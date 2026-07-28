@@ -43,7 +43,7 @@ DOSSIERS=(
   "generateur|$RACINE/briques/generateur"
   "audit|$RACINE/briques/audit"
   "donnees|$RACINE/briques/donnees"
-  "etl|$RACINE/briques/etl"
+  "ingestion|$RACINE/briques/ingestion"
   "forge|$RACINE/briques/forge"
   "memoire|$RACINE/briques/memoire"
   "gateway|$RACINE/briques/gateway"

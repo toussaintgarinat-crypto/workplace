@@ -6,7 +6,7 @@ l'on aurait dû construire de toute façon :
 
   • **la boucle d'événements ne bloque jamais.** Une sync de plusieurs minutes tourne dans
     un processus séparé, attendue en asyncio ; `/sante` répond pendant ce temps. C'est
-    exactement le défaut que S212 a corrigé sur `etl`, où l'OCR faisait tomber le
+    exactement le défaut que S212 a corrigé sur `ingestion`, où l'OCR faisait tomber le
     healthcheck — ici il ne peut pas se produire.
   • **un connecteur tiers qui plante n'emporte pas la brique.** Les connecteurs Airbyte
     sont du code tiers ; un segfault ou une fuite mémoire reste de l'autre côté.

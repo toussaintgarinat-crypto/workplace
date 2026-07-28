@@ -44,7 +44,7 @@ def dns(monkeypatch):
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     import stockage
-    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
     from main import app
     with TestClient(app) as c:
         yield c
@@ -55,14 +55,14 @@ def client_ferme(tmp_path, monkeypatch):
     """La brique fermée — `main.API_KEYS` étant lu à l'import, il faut recharger le module."""
     import main
     import stockage
-    monkeypatch.setenv("ETL_API_KEYS", "cle-de-test")
+    monkeypatch.setenv("INGESTION_API_KEYS", "cle-de-test")
     importlib.reload(main)
-    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
     with TestClient(main.app) as c:
         yield c
     # Rendre la brique à son mode ouvert pour les autres modules de test : le rechargement
     # doit se faire APRÈS avoir retiré la variable, sinon la clé survit au test.
-    monkeypatch.delenv("ETL_API_KEYS", raising=False)
+    monkeypatch.delenv("INGESTION_API_KEYS", raising=False)
     importlib.reload(main)
 
 
@@ -221,24 +221,24 @@ def test_sans_cle_configuree_la_brique_reste_ouverte(client):
 def _cles_lues(monkeypatch, **env) -> set[str]:
     """Recharge `main` avec l'environnement donné et rend la liste de clés retenue."""
     import main
-    for nom in ("ETL_API_KEYS", "API_KEYS"):
+    for nom in ("INGESTION_API_KEYS", "API_KEYS"):
         monkeypatch.delenv(nom, raising=False)
     for nom, valeur in env.items():
         monkeypatch.setenv(nom, valeur)
     importlib.reload(main)
     lues = set(main.API_KEYS)
-    for nom in ("ETL_API_KEYS", "API_KEYS"):
+    for nom in ("INGESTION_API_KEYS", "API_KEYS"):
         monkeypatch.delenv(nom, raising=False)
     importlib.reload(main)
     return lues
 
 
-def test_ETL_API_KEYS_prime_sur_la_variable_generique(monkeypatch):
+def test_INGESTION_API_KEYS_prime_sur_la_variable_generique(monkeypatch):
     """`API_KEYS` est partagée par 22 briques via le .env racine : s'appuyer dessus pour
-    fermer l'ETL les basculerait TOUTES en fail-closed d'un coup. La variable dédiée gagne,
-    et elle gagne seule — pas d'union avec la générique, sinon fermer l'ETL rouvrirait
+    fermer l'ingestion les basculerait TOUTES en fail-closed d'un coup. La variable dédiée gagne,
+    et elle gagne seule — pas d'union avec la générique, sinon fermer l'ingestion rouvrirait
     l'accès à quiconque détient n'importe quelle clé de la flotte."""
-    assert _cles_lues(monkeypatch, ETL_API_KEYS="a,b", API_KEYS="z") == {"a", "b"}
+    assert _cles_lues(monkeypatch, INGESTION_API_KEYS="a,b", API_KEYS="z") == {"a", "b"}
 
 
 def test_la_variable_generique_reste_un_repli(monkeypatch):

@@ -1,6 +1,6 @@
 """Orchestrateur de l'usine à applications (Sprint S5).
 
-Le Cœur pilote toute la chaîne de l'objectif 1 — ETL → Audit → Génération
+Le Cœur pilote toute la chaîne de l'objectif 1 — Ingestion → Audit → Génération
 (→ Packaging) — en une seule commande, en appelant les briques par HTTP et en
 suivant l'avancement étape par étape. Chaque livraison d'entreprise est
 persistée (SQLite) pour alimenter le « tableau des entreprises livrées ».
@@ -39,7 +39,7 @@ def _maintenant() -> str:
 
 def _brique_base(registre, nom: str) -> str:
     """URL de base d'une brique. Priorité à une variable d'env d'override
-    (`ETL_URL`, `AUDIT_URL`, `GENERATEUR_URL`…), sinon dérivée du registre."""
+    (`INGESTION_URL`, `AUDIT_URL`, `GENERATEUR_URL`…), sinon dérivée du registre."""
     override = os.environ.get(f"{nom.upper()}_URL")
     if override:
         return override.rstrip("/")
@@ -240,27 +240,27 @@ async def _attendre_termine(client: httpx.AsyncClient, url: str, etape: str) -> 
         await anyio.sleep(POLL_INTERVALLE)
 
 
-async def _etape_ingestion(client, etl_base, fichiers, livraison_id) -> list[str]:
+async def _etape_ingestion(client, ingestion_base, fichiers, livraison_id) -> list[str]:
     _maj_etape(livraison_id, "ingestion", "en_cours")
-    entetes = entetes_brique("etl")
+    entetes = entetes_brique("ingestion")
     doc_ids: list[str] = []
     if fichiers:
         for nom, contenu, mime in fichiers:
             r = await client.post(
-                f"{etl_base}/ingerer",
+                f"{ingestion_base}/ingerer",
                 files={"fichier": (nom, contenu, mime or "application/octet-stream")},
                 headers=entetes,
             )
             if r.status_code >= 400:
-                raise EchecEtape("ingestion", f"ETL a refusé {nom} : {r.text}")
+                raise EchecEtape("ingestion", f"Ingestion a refusé {nom} : {r.text}")
             doc_ids.append(r.json()["id"])
     else:
-        # Pas de fichiers fournis → on audite les documents déjà présents dans l'ETL.
-        r = await client.get(f"{etl_base}/documents", params={"limite": 500}, headers=entetes)
+        # Pas de fichiers fournis → on audite les documents déjà ingérés.
+        r = await client.get(f"{ingestion_base}/documents", params={"limite": 500}, headers=entetes)
         r.raise_for_status()
         doc_ids = [d["id"] for d in r.json().get("documents", [])]
         if not doc_ids:
-            raise EchecEtape("ingestion", "aucun fichier fourni et aucun document dans l'ETL")
+            raise EchecEtape("ingestion", "aucun fichier fourni et aucun document ingéré")
     _maj(livraison_id, doc_ids=json.dumps(doc_ids, ensure_ascii=False))
     _maj_etape(livraison_id, "ingestion", "termine", f"{len(doc_ids)} document(s)")
     return doc_ids
@@ -318,11 +318,11 @@ async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
                            email_client: str | None = None,
                            contact_client: str | None = None,
                            langue: str = "fr"):
-    """Enchaîne ETL → Audit → Génération (→ Packaging). Met à jour la livraison
+    """Enchaîne Ingestion → Audit → Génération (→ Packaging). Met à jour la livraison
     à chaque étape ; capture toute erreur en l'attribuant à son étape.
     `langue` (S37) = langue de l'app livrée, propagée au générateur."""
     try:
-        etl_base = _brique_base(registre, "etl")
+        ingestion_base = _brique_base(registre, "ingestion")
         audit_base = _brique_base(registre, "audit")
         gen_base = _brique_base(registre, "generateur")
     except RuntimeError as e:
@@ -331,7 +331,7 @@ async def executer_pipeline(registre, livraison_id: str, fichiers: list[tuple],
 
     async with httpx.AsyncClient(timeout=60) as client:
         try:
-            doc_ids = await _etape_ingestion(client, etl_base, fichiers, livraison_id)
+            doc_ids = await _etape_ingestion(client, ingestion_base, fichiers, livraison_id)
             audit = await _etape_audit(client, audit_base, doc_ids, livraison_id)
             app_id = await _etape_generation(
                 client, gen_base, audit["id"], mode, messagerie, livraison_id,

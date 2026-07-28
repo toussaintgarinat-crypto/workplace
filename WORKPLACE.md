@@ -17,9 +17,9 @@ document qu'on met à jour — jamais les deux qui divergent en silence.
 ### 🎯 Objectif 1 — L'usine à applications sur-mesure
 Une chaîne en 3 temps qui transforme une entreprise en application :
 
-1. **Audit / ETL** — un mode *Extract-Transform-Load* qui aspire **toutes** les
-   informations d'une entreprise (documents, PDF, fichiers, données…).
-2. **Ingestion par l'IA** — l'IA lit et **comprend** l'entreprise.
+1. **Ingestion** — aspirer **toutes** les informations d'une entreprise
+   (documents, PDF, fichiers, données…) et en extraire le texte.
+2. **Audit par l'IA** — l'IA lit et **comprend** l'entreprise.
 3. **Génération** — création automatique d'une **application sur-mesure** pour cette
    entreprise : **tableau de bord** + **messagerie interne** + **autres outils**.
 
@@ -90,8 +90,8 @@ la mémoire, les projets, la collaboration. C'est le cœur qui orchestre tout le
 
    ────────────── BRIQUES MÉTIER (Objectif 1 — à construire) ──────────────
    ┌────────────┐      ┌────────────┐      ┌─────────────────────────────┐
-   │ 1. ETL /   │  →   │ 2. AUDIT   │  →   │ 3. GÉNÉRATEUR D'APP          │
-   │  INGESTION │      │  (l'IA     │      │   • Tableau de bord          │
+   │ 1.         │  →   │ 2. AUDIT   │  →   │ 3. GÉNÉRATEUR D'APP          │
+   │ INGESTION  │      │  (l'IA     │      │   • Tableau de bord          │
    │ docs/PDF/  │      │  comprend  │      │   • Messagerie interne (Oria)│
    │ OCR/web    │      │ l'entreprise)│    │   • Autres outils            │
    └────────────┘      └────────────┘      └─────────────────────────────┘
@@ -121,7 +121,7 @@ Le cœur lit les `manifest.json`, découvre les briques et les branche automatiq
 | **Gateway** | Cerveau LLM | `workspace/gateway` | 91 lignes (config LiteLLM) | config ✅ | 🟢 Prêt (clé OpenRouter requise) |
 | **Oria** | Collaboration / messagerie | `workspace/oria` | ~18 600 lignes (84 py + 50 ts) | config ✅ | 🟡 Setup Matrix avant 1er démarrage |
 | **Forge** | Agents IA + RAG | `briques/forge` (core vendorisé) | ~28 400 lignes (la plus grosse) | brique ✅ branchée (Gateway+Mémoire+Keycloak+Qdrant) | 🟢 **Fonctionnel prouvé** (S17) — agent + RAG tournent depuis l'assistant (auth de service, schéma migré, Qdrant) ; **S19** UI intégrée au dashboard (iframe, SSO realm `oria`) ; **S20** 1ers routers métier rebranchés : **`facturation`** (devis/factures/encaissement) + **`crm`** (prospects/pipeline), prouvés E2E ; **S21** Stripe **réel** (SDK + clé au coffre chiffré + **webhook signé**) — code livré, prouvé **offline** (signature/chiffrement), live à rejouer avec clé `sk_test_` ; **S22** emails **réels** + **relances d'impayés** J+7/15/30 (anti-doublon) — prouvé offline (envoi SMTP local réel), live à rejouer avec SMTP |
-| ~~Assistant (stub ETL/OCR)~~ | retiré | `workspace/assistant` | — | — | ⚪ Stub jamais activé, **retiré du registre** (S8) — l'ETL réel est `briques/etl` ; le projet `workspace/assistant` reste le modèle de l'assistant du Cœur (S7) |
+| ~~Assistant (stub ETL/OCR)~~ | retiré | `workspace/assistant` | — | — | ⚪ Stub jamais activé, **retiré du registre** (S8) — l'ingestion réelle est `briques/ingestion` ; le projet `workspace/assistant` reste le modèle de l'assistant du Cœur (S7) |
 | ~~Strategic App Builder~~ | sorti du monorepo | dépôt séparé `Desktop/strategic-app-builder` | 678 Ko (1 fichier HTML) | marche déjà | ⚪ **Sorti** (S213, 2026-07-28) — jamais une brique en réalité (aucun port, service, route ni test, et rien n'en dépendait). Cf. ADR `docs/decisions/2026-07-28-app-builder-hors-stack.md` |
 | **Donnees** | Persistance serveur des apps | `briques/donnees` | FastAPI + SQLite (port 5500) | conteneur ✅ + CRUD bout-en-bout ✅ | 🟢 Livré (S2, 2026-06-04) |
 
@@ -134,7 +134,7 @@ Le cœur lit les `manifest.json`, découvre les briques et les branche automatiq
   couche collaboration de Workplace (objectif 2). Bonus : visio (LiveKit) + agents
   IA résidents dans les canaux.
 - **Forge** → moteur d'**agents + RAG**, base de l'audit/ingestion.
-- **Assistant** → contient déjà l'**ETL** (markitdown, Tesseract OCR, pdf2image).
+- **Assistant** → contient déjà l'**ingestion** (markitdown, Tesseract OCR, pdf2image).
 - **Strategic App Builder** → base du **générateur d'app**.
 
 ---
@@ -147,7 +147,7 @@ Sur les 5 grandes briques du Jarvis (Cœur, Mémoire, LLM, Collaboration, Agents
 1. **Le Cœur Workplace + le registre de briques** — l'orchestrateur qui découvre et
    branche les briques (le « Neovim » du projet).
 2. **Les 3 briques métier de l'objectif 1** :
-   - **ETL / Ingestion** — aspirer + lire les infos de l'entreprise (s'appuie sur Assistant + Forge/RAG).
+   - **Ingestion** — aspirer + lire les infos de l'entreprise (s'appuie sur Assistant + Forge/RAG).
    - **Audit** — l'IA analyse et produit une fiche de compréhension de l'entreprise.
    - **Générateur d'app** — assemble dashboard + messagerie (Oria) + outils (s'appuie sur App Builder).
 
@@ -175,15 +175,15 @@ Sur les 5 grandes briques du Jarvis (Cœur, Mémoire, LLM, Collaboration, Agents
       10 services healthy : backend (8000), frontend (3003), keycloak (8081), dendrite/Matrix (8010),
       livekit (7880), minio (9106), pgbouncer, redis, etcd, db.
       Cœur confirme Oria ok via `/sante-globale`. Lancement : `cd ~/Desktop/workspace/oria && docker compose up -d`
-- [x] **6. Brique ETL / Ingestion** — premier vrai morceau de l'objectif 1. ✅ (2026-06-02).
+- [x] **6. Brique Ingestion** (nommée `etl` jusqu'à S215) — premier vrai morceau de l'objectif 1. ✅ (2026-06-02).
       FastAPI sur port **5200**. Endpoints : `POST /ingerer`, `POST /ingerer/url`, `GET /documents`, `GET /documents/{id}`.
       Extraction : MarkItDown (PDF/Word/Excel/PowerPoint/HTML/CSV) + PyMuPDF fallback + OCR Tesseract (fra+eng).
-      Stockage SQLite dans volume Docker `/data/etl.db`. Cœur confirme ETL ok via `/sante-globale`.
-      Lancement : `cd ~/Desktop/Workplace/briques/etl && make up`
+      Stockage SQLite dans volume Docker `/data/ingestion.db`. Cœur confirme la brique ok via `/sante-globale`.
+      Lancement : `cd ~/Desktop/Workplace/briques/ingestion && make up`
 - [x] **7. Brique Audit** — l'IA comprend une entreprise test. ✅ (2026-06-02).
       FastAPI sur port **5300**. 4 couches LLM séquentielles : Territoire, Flux, Problèmes, Priorités.
       Audit asynchrone + stockage SQLite. Endpoint : `POST /auditer/tout`, `GET /audits/{id}`.
-      Correctifs : `texte_extrait` (ETL) et liste paginée `documents.documents[]` gérés.
+      Correctifs : `texte_extrait` (ingestion) et liste paginée `documents.documents[]` gérés.
       Lancement : `cd ~/Desktop/Workplace/briques/audit && make up`
 - [x] **8. Brique Générateur** — premier tableau de bord généré bout-en-bout. ✅ (2026-06-02).
       FastAPI sur port **5400**. Lit `GET /audits/{id}`, appelle LLM pour un plan (couleurs, KPIs, actions),
@@ -397,17 +397,17 @@ Le cœur de l'app (tableau de bord + saisies + persistance) tourne sans cette br
 
 #### ✅ S5 v1 livré — le Cœur pilote l'usine en une commande (2026-06-04)
 Le **Cœur (v0.2.0, port 5100)** n'est plus seulement un registre passif : il **orchestre toute
-la chaîne de l'objectif 1** — ETL → Audit → Génération (→ Packaging) — **en une seule commande**,
+la chaîne de l'objectif 1** — Ingestion → Audit → Génération (→ Packaging) — **en une seule commande**,
 et tient le **tableau des entreprises livrées**. Prouvé bout-en-bout (Playwright + API).
 
 - **Orchestrateur** (`core/orchestrateur.py`) : enchaîne les briques **uniquement par leurs
   contrats HTTP** (aucune logique métier réécrite). Résolution des URLs depuis le **registre**
-  (port du manifest + `BRIQUE_HOST`, override possible par env `ETL_URL`/`AUDIT_URL`/`GENERATEUR_URL`).
+  (port du manifest + `BRIQUE_HOST`, override possible par env `INGESTION_URL`/`AUDIT_URL`/`GENERATEUR_URL`).
   Polling des étapes async (audit, génération) jusqu'à `termine`/`erreur` (timeout configurable).
   Toute erreur est **attribuée à son étape** (`EchecEtape`) → diagnostic clair.
 - **Une commande** : `POST /usine/livrer` (multipart) — `fichiers` (uploads, optionnels),
   `nom_entreprise`, `persistance` (`hebergee`/`autonome`), `messagerie` (Oria), `packager` (bundle
-  Docker S4). Sans fichiers, l'audit porte sur les documents déjà présents dans l'ETL. Le **nom
+  Docker S4). Sans fichiers, l'audit porte sur les documents déjà ingérés. Le **nom
   saisi par l'utilisateur prime** ; le nom dérivé par l'audit ne sert que si l'utilisateur a laissé
   le défaut. Lance un pipeline asynchrone et rend un `id` de livraison à suivre.
 - **Tableau des entreprises livrées** : `GET /usine/livraisons`, `GET /usine/livraisons/{id}`
@@ -430,7 +430,7 @@ réseau local de dev). Le déploiement reste local (`docker compose` sur la mach
 multi-tenant viendra plus tard.
 
 #### ✅ S6 v1 livré — cycle de vie : décrocher / reprendre une entreprise (2026-06-05)
-Une entreprise livrée a son état **éparpillé dans plusieurs briques** : documents (ETL), audit
+Une entreprise livrée a son état **éparpillé dans plusieurs briques** : documents (Ingestion), audit
 (Audit), app générée + HTML + refs Oria (Générateur), enregistrements saisis (Données). S6 permet
 de la **sortir entièrement** de la solution principale (sans la perdre) puis de la **réinjecter** à
 l'identique pour la modifier — aller-retour **sans perte**, autant de fois qu'on veut.
@@ -440,7 +440,7 @@ l'identique pour la modifier — aller-retour **sans perte**, autant de fois qu'
   groupés par entité **avec leurs `_id`/horodatages**), + `app.html` (consultable hors-ligne) +
   `LISEZMOI.txt`. Écrit **avant** toute suppression (le dossier est la source de vérité une fois décroché).
 - **Décrocher** (`POST /usine/livraisons/{id}/decrocher`) : collecte (lecture seule) l'état des briques,
-  écrit le dossier, **puis retire vraiment** l'entreprise des bases centrales (DELETE docs ETL, audit,
+  écrit le dossier, **puis retire vraiment** l'entreprise des bases centrales (DELETE docs Ingestion, audit,
   app Générateur, données Données). La livraison passe `livree → decrochee` et pointe vers le dossier.
   **La solution principale redevient propre.**
 - **Reprendre** (`POST /usine/livraisons/{id}/reprendre`) : relit le dossier sur disque et **réinjecte**
@@ -448,7 +448,7 @@ l'identique pour la modifier — aller-retour **sans perte**, autant de fois qu'
   mêmes `doc_ids`/`audit_id`/`app_id`/`_id` d'enregistrements). Statut `decrochee → livree`. L'entreprise
   est de nouveau modifiable, puis re-décrochable.
 - **Pattern « noyau + briques » respecté** : le Cœur (`core/cycle_de_vie.py`) ne réécrit aucune logique
-  métier — il n'orchestre que des **contrats HTTP export/import** ajoutés à chaque brique (ETL
+  métier — il n'orchestre que des **contrats HTTP export/import** ajoutés à chaque brique (Ingestion
   `POST /documents/import` ; Audit `POST /audits/import` ; Générateur `GET /apps/{id}/export` +
   `POST /apps/import` ; Données `GET|POST /apps/{id}/export|import`). Volume `apps_exportees:/export`
   monté sur le Cœur (`EXPORT_DIR`).
@@ -515,7 +515,7 @@ en intégrant le projet **Memory** (`~/Desktop/Memory`) comme brique.
 - **Assistant élargi** (`core/outils.py`, ex-`outils_usine.py`) : *lecture* sur toute la solution —
   `lister_entreprises`, `details_entreprise`, `etat_briques`, `chercher_documents`, `lire_document`,
   `lister_apps`, `consulter_donnees`, `memoire_rappeler` ; *actions* (confirmation obligatoire) —
-  `livrer/decrocher/reprendre_entreprise`, `ingerer_document` (ETL), `creer_enregistrement` (Données),
+  `livrer/decrocher/reprendre_entreprise`, `ingerer_document` (Ingestion), `creer_enregistrement` (Données),
   `memoire_retenir`. Le prompt système annonce la mémoire (rappeler au besoin, retenir ce que
   l'utilisateur veut garder) et renforce la règle de confirmation (un « oui » explicite → `confirme=true`
   immédiat).
@@ -856,6 +856,7 @@ mais le backend **Oria** validait en **mono-realm** (`routers/auth.py` : `Keyclo
 | 2026-07-03 | **S139 — CORS hardening** : `CORS_ORIGINS=*` commenté dans `.env.example` (valeur par défaut sécurisée `localhost:5100,3003`). `donnees` reçoit `env_file: ../../.env` (manquant). Les 8 briques avec `env_file` injectent CORS depuis le `.env` racine (sans écraser via `environment:`). `.env` HP : origines réelles `192.168.1.89:5100,3003`. **PROUVÉ LIVE (HP)** : origine inconnue → ACAO absent (400) ; origine légitime → `Access-Control-Allow-Origin: http://192.168.1.89:5100` ✅. |
 | 2026-07-03 | **S140 — Secrets PeerTube** : `.env` peertube contient des secrets forts (non commité, protégé par `.gitignore`), `.env.example` avec placeholders clairs, `postgres:16.14-alpine` épinglé, `PEERTUBE_HOST` paramétré. Brique sécurisée, prête pour le HP. |
 | 2026-07-03 | **S141 — Mot de passe DB Forge** : `FORGE_DB_PASSWORD` fort généré (`openssl rand -hex 24`) et ajouté dans `.env` racine. `.env.example` ligne 78 décommentée avec placeholder `GENERER_openssl_rand_-hex_24`. Le docker-compose Forge lit déjà la variable — le placeholder `forge_secret_change_this` n'est plus utilisé. ⚠️ Si le volume `forge-db` existe avec l'ancien mot de passe, recréer le volume au prochain démarrage. |
+| 2026-07-28 | **S215 — la brique `etl` s'appelle `ingestion`** : le nom mentait depuis l'origine (aucune réplication de table, aucun curseur, aucune planification — sa `famille` disait déjà `ingestion`). Le renommage n'était pas rentable seul ; il l'est devenu quand S214 a livré `connecteurs`, qui fait un vrai ETL — deux briques voisines dont l'une porte le nom du travail de l'autre. Renommés : dossier `briques/ingestion`, `nom`/`role` du manifeste, les 3 capacités (`ingestion_ingerer_url`, `ingestion_documents_lister`, `ingestion_supprimer_document`), service/image/conteneur Docker, base `/data/ingestion.db`, volume `ingestion_data`, et les variables **`INGESTION_URL` / `INGESTION_KEY` / `INGESTION_API_KEYS` / `INGESTION_EXTRACTIONS_PARALLELES`**. ⚠️ **Aucun repli sur les anciens noms de variables** : un `.env` resté en `ETL_API_KEYS` rouvre la brique en silence — renommer dans le `.env` **dans la même opération** que le `git pull`. ⚠️ Le volume change de nom, donc un `up` part sur un volume VIDE : lancer `scripts/migration_etl_vers_ingestion.sh` **avant** le premier démarrage. Cf. ADR `docs/decisions/2026-07-28-renommage-etl-en-ingestion.md`. |
 
 ---
 

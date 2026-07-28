@@ -6,7 +6,13 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-DB_CHEMIN = Path("/data/etl.db")
+DB_CHEMIN = Path("/data/ingestion.db")
+
+# Nom d'avant S215, quand la brique s'appelait `etl`. Dérivé de `DB_CHEMIN` (et non
+# écrit en dur) pour que la reprise soit exerçable en test, où la base vit dans un
+# `tmp_path`. Gardé pour la SEULE reprise décrite ci-dessous — aucune écriture ne vise
+# plus ce chemin.
+NOM_BASE_HERITEE = "etl.db"
 
 
 def _conn() -> sqlite3.Connection:
@@ -16,7 +22,28 @@ def _conn() -> sqlite3.Connection:
     return con
 
 
+def reprendre_base_heritee() -> bool:
+    """Renomme `etl.db` en `ingestion.db` si l'ancienne base est encore là (S215).
+
+    Le renommage de la brique change AUSSI le nom du volume Docker (`etl_data` →
+    `ingestion_data`), donc un `docker compose up` sur le nouveau compose part sur un
+    volume VIDE : cette reprise ne suffit pas seule, il faut d'abord recopier l'ancien
+    volume dans le nouveau (`scripts/migration_etl_vers_ingestion.sh`). Elle couvre le
+    cas d'après : le fichier est là sous son ancien nom, on le reprend au lieu de
+    créer une base vide à côté et de faire disparaître les documents en silence.
+
+    Ne fait rien si la nouvelle base existe déjà — la base en service gagne toujours,
+    on ne veut pas qu'un vieux fichier oublié écrase le travail en cours.
+    """
+    heritee = DB_CHEMIN.with_name(NOM_BASE_HERITEE)
+    if DB_CHEMIN.exists() or not heritee.exists():
+        return False
+    heritee.rename(DB_CHEMIN)
+    return True
+
+
 def initialiser():
+    reprendre_base_heritee()
     with _conn() as con:
         con.execute("""
             CREATE TABLE IF NOT EXISTS documents (

@@ -39,7 +39,7 @@ DELAI_SANTE_MAX = 1.0
 def base_url(tmp_path, monkeypatch):
     """Un vrai uvicorn sur un port libre, dans un fil — `lifespan` coupé, DB jetable."""
     import stockage
-    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "etl.db")
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
     stockage.initialiser()          # le lifespan ne tournera pas, on le fait à la main
 
     from main import app
@@ -124,7 +124,7 @@ async def test_ingestion_url_extrait_aussi_hors_boucle(monkeypatch):
     await extraction.extraire_depuis_url("http://exemple.test/scan.pdf")
 
     assert fils, "l'extraction n'a pas été appelée"
-    assert fils[0].startswith("etl-extraction"), (
+    assert fils[0].startswith("ingestion-extraction"), (
         f"extraction exécutée dans {fils[0]!r} : elle doit passer par le pool dédié, "
         f"pas par la boucle d'événements ni par le threadpool partagé d'AnyIO.")
 

@@ -31,7 +31,7 @@ Toussaint est un interlocuteur exigeant, rapide, qui pense en systèmes. Il n'a 
 | Projet | Nature | Stack principale |
 |---|---|---|
 | **Workplace** | Usine à apps : noyau « Cœur » (FastAPI, port 5100) + briques plugins communiquant par contrats HTTP (modèle Neovim), assistant intégré, tout en français. **Absorbe progressivement les projets satellites sous forme de briques.** | Python / FastAPI / Docker / LiteLLM |
-| ↳ briques | Gateway LiteLLM, ETL, Audit, Générateur, Données, **Mémoire** (ex-Memory, remplace MemPalace), Agenda, messagerie Oria, **Forge** (core branché, santé prouvée — agents/RAG complets à venir) | Conteneurs isolés, contrats HTTP |
+| ↳ briques | Gateway LiteLLM, Ingestion, Audit, Générateur, Données, **Mémoire** (ex-Memory, remplace MemPalace), Agenda, messagerie Oria, **Forge** (core branché, santé prouvée — agents/RAG complets à venir) | Conteneurs isolés, contrats HTTP |
 | **workspace** | Projet frère « agent personnel » : Jarvis de référence (agent ReAct, persona, RAG, voix, vault OAuth, calendar, toolhub). Sert de modèle à la couche assistant de Workplace, rapatrié morceau par morceau. | FastAPI / React |
 
 ### Produits / projets indépendants

@@ -29,7 +29,7 @@ async def livrer(
     génère l'app (→ packaging optionnel). Renvoie un id de livraison à suivre.
 
     - `fichiers` : documents de l'entreprise (optionnel — sinon on audite les
-      documents déjà présents dans l'ETL).
+      documents déjà ingérés).
     - `persistance` : « hebergee » (multi-utilisateur, défaut) ou « autonome ».
     - `messagerie` : embarquer la messagerie Oria (mode hébergé requis).
     - `packager` : produire en plus un bundle Docker de déploiement.

@@ -1,7 +1,7 @@
 """Cycle de vie des entreprises (Sprint S6).
 
 Une entreprise livrée a son état éparpillé dans plusieurs briques : documents
-(ETL), audit (Audit), app générée + HTML + refs Oria (Générateur), enregistrements
+(Ingestion), audit (Audit), app générée + HTML + refs Oria (Générateur), enregistrements
 (Données). Ce module permet de :
 
   • DÉCROCHER : rassembler tout cet état dans UN dossier portable (`dossier.json`)
@@ -48,7 +48,7 @@ def _bases(registre) -> dict:
     """URLs de base des briques métier impliquées dans le cycle de vie."""
     try:
         return {
-            "etl": orchestrateur._brique_base(registre, "etl"),
+            "ingestion": orchestrateur._brique_base(registre, "ingestion"),
             "audit": orchestrateur._brique_base(registre, "audit"),
             "generateur": orchestrateur._brique_base(registre, "generateur"),
             "donnees": orchestrateur._brique_base(registre, "donnees"),
@@ -115,12 +115,12 @@ async def decrocher(registre, livraison_id: str) -> dict:
     async with httpx.AsyncClient(timeout=60) as client:
         for did in doc_ids:
             try:
-                r = await client.get(f"{bases['etl']}/documents/{did}",
-                                     headers=orchestrateur.entetes_brique("etl"))
+                r = await client.get(f"{bases['ingestion']}/documents/{did}",
+                                     headers=orchestrateur.entetes_brique("ingestion"))
                 if r.status_code < 400:
                     dossier["documents"].append(r.json())
             except httpx.HTTPError as e:
-                raise EchecCycle(f"ETL injoignable pour le document {did} : {e}")
+                raise EchecCycle(f"Brique ingestion injoignable pour le document {did} : {e}")
 
         if audit_id:
             try:
@@ -155,8 +155,8 @@ async def decrocher(registre, livraison_id: str) -> dict:
     async with httpx.AsyncClient(timeout=60) as client:
         for did in doc_ids:
             try:
-                await client.delete(f"{bases['etl']}/documents/{did}",
-                                    headers=orchestrateur.entetes_brique("etl"))
+                await client.delete(f"{bases['ingestion']}/documents/{did}",
+                                    headers=orchestrateur.entetes_brique("ingestion"))
             except httpx.HTTPError:
                 pass
         if audit_id:
@@ -192,8 +192,8 @@ async def _reinjecter(registre, data: dict) -> dict:
 
     async with httpx.AsyncClient(timeout=60) as client:
         for doc in data.get("documents") or []:
-            r = await client.post(f"{bases['etl']}/documents/import", json=doc,
-                                  headers=orchestrateur.entetes_brique("etl"))
+            r = await client.post(f"{bases['ingestion']}/documents/import", json=doc,
+                                  headers=orchestrateur.entetes_brique("ingestion"))
             if r.status_code < 400:
                 rapport["documents"] += 1
 

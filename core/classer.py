@@ -1,10 +1,10 @@
 """Classement automatique d'un document par le LLM (Sprint S9).
 
-Quand l'utilisateur dépose un document, le Cœur l'ingère (ETL) puis demande au
+Quand l'utilisateur dépose un document, le Cœur l'ingère (brique `ingestion`) puis demande au
 **même cerveau** que l'assistant (via le Gateway, modèle réglé dans le panneau
 ⚙ Cerveau) de le RANGER : catégorie, mots-clés, entreprise rattachée, projet,
 et un court résumé. Le résultat est un JSON strict, fusionné ensuite dans les
-`metadonnees.classement` du document (cf. ETL `PATCH /documents/{id}/classement`).
+`metadonnees.classement` du document (cf. `ingestion` : `PATCH /documents/{id}/classement`).
 
 Réutilisé par l'endpoint d'upload ET par l'outil `classer_document` de l'assistant.
 Aucune logique métier réécrite : on ne fait qu'appeler le LLM et normaliser sa réponse.
@@ -25,7 +25,7 @@ CATEGORIES = ["devis", "facture", "contrat", "compte_rendu", "specification",
 
 def _prompt(langue=None) -> str:
     """Prompt de classement. Les CLÉS et les CATÉGORIES restent structurelles (lues
-    par l'ETL) ; seul le `resume` suit la langue du Jarvis (S39, défaut `fr`)."""
+    par l'ingestion) ; seul le `resume` suit la langue du Jarvis (S39, défaut `fr`)."""
     return (
         "Tu es un archiviste. On te donne le NOM et le TEXTE d'un document, et la liste "
         "des ENTREPRISES connues de la solution. Range ce document.\n"

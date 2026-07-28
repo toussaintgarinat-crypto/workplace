@@ -6,7 +6,7 @@ dans le Cœur, SANS Redis ni push ni canaux externes. Les « rappels » sont per
 SQLite et dédoublonnés (pas de spam) ; le front les affiche via une pastille 🔔.
 
 Vérifications Workplace : rendez-vous imminents (agenda, S10) et documents non classés
-(ETL, S9). Extensible : ajouter une coroutine dans `CHECKS`.
+(Ingestion, S9). Extensible : ajouter une coroutine dans `CHECKS`.
 """
 
 import asyncio
@@ -236,10 +236,10 @@ async def _pousser_messagerie(registre, titre: str, corps: str, utilisateur: str
 async def _check_documents(registre) -> int:
     """Documents ingérés mais non classés (sans metadonnees.classement)."""
     try:
-        base = orchestrateur._brique_base(registre, "etl")
+        base = orchestrateur._brique_base(registre, "ingestion")
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(f"{base}/documents", params={"limite": 500},
-                                 headers=orchestrateur.entetes_brique("etl"))
+                                 headers=orchestrateur.entetes_brique("ingestion"))
         docs = r.json().get("documents", []) if r.status_code < 400 else []
         non_classes = [d for d in docs if not (d.get("classement") or {}).get("categorie")]
         if non_classes:

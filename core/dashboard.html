@@ -41,7 +41,7 @@
   .role-llm        { background: #3b2a5f; color: #c084fc; }
   .role-collaboration { background: #1f3a2f; color: #4ade80; }
   .role-agents     { background: #3a2a1f; color: #fb923c; }
-  .role-etl        { background: #2a2a1f; color: #facc15; }
+  .role-ingestion  { background: #2a2a1f; color: #facc15; }
   .role-generateur { background: #1f3a3a; color: #22d3ee; }
   .card-desc { font-size: 0.82rem; color: #94a3b8; line-height: 1.5; margin-bottom: 14px; }
   .card-footer { display: flex; align-items: center; justify-content: space-between; }
@@ -490,7 +490,7 @@
           <label class="check"><input type="checkbox" name="packager"> Bundle Docker</label>
           <button class="btn" type="submit" id="btn-livrer">Livrer</button>
         </div>
-        <div class="liv-sub" style="margin-top:10px">Sans documents, l'audit porte sur les fichiers déjà ingérés dans l'ETL. Avec un email client, un compte d'accès Oria est créé et un lien « définis ton mot de passe » lui est envoyé.</div>
+        <div class="liv-sub" style="margin-top:10px">Sans documents, l'audit porte sur les fichiers déjà ingérés. Avec un email client, un compte d'accès Oria est créé et un lien « définis ton mot de passe » lui est envoyé.</div>
       </form>
     </div>
     <div id="livraisons"></div>
@@ -1018,7 +1018,7 @@
 <script>
 const ROLES_LABELS = {
   memoire:'Mémoire', llm:'LLM', collaboration:'Collaboration',
-  agents:'Agents', etl:'ETL', generateur:'Générateur', persistance:'Persistance',
+  agents:'Agents', ingestion:'Ingestion', generateur:'Générateur', persistance:'Persistance',
   agenda:'Agenda'
 };
 let VUE = 'briques';
@@ -1370,7 +1370,7 @@ async function ouvrirProjetModal(pid) {
 }
 function fermerProjetModal() { document.getElementById('modal-projet').style.display = 'none'; }
 
-// Documents = dossiers existants (projets + catégories de l'ETL), cochables.
+// Documents = dossiers existants (projets + catégories de l'ingestion), cochables.
 async function rendreDocsProjet(selection) {
   const box = document.getElementById('pm-docs');
   let dossiers = { projets: {}, categories: {} };

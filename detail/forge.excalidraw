@@ -342,13 +342,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Base vectorielle Qdrant\nEmbeddings : minilm-l6-v2\nChunking : 512 tokens / 50 overlap\nRecherche : top-k cosinus\nReranking : cross-encoder\nIngestion : via ETL ou direct",
+      "text": "Base vectorielle Qdrant\nEmbeddings : minilm-l6-v2\nChunking : 512 tokens / 50 overlap\nRecherche : top-k cosinus\nReranking : cross-encoder\nIngestion : via brique dediee ou direct",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Base vectorielle Qdrant\nEmbeddings : minilm-l6-v2\nChunking : 512 tokens / 50 overlap\nRecherche : top-k cosinus\nReranking : cross-encoder\nIngestion : via ETL ou direct",
+      "originalText": "Base vectorielle Qdrant\nEmbeddings : minilm-l6-v2\nChunking : 512 tokens / 50 overlap\nRecherche : top-k cosinus\nReranking : cross-encoder\nIngestion : via brique dediee ou direct",
       "lineHeight": 1.35
     },
     {

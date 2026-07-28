@@ -10,7 +10,7 @@
   "port": 5300,
   "url_sante": "http://host.docker.internal:5300/sante",
   "depends_on": [
-    "etl",
+    "ingestion",
     "gateway"
   ],
   "offre": [
@@ -51,13 +51,13 @@
     },
     {
       "nom": "audit_lancer",
-      "description": "Lance un AUDIT d'entreprise sur des documents déjà ingérés (brique etl), en 4 couches IA : Territoire, Flux, Problèmes, Priorités. ACTION (travail LLM long et coûteux, démarre en tâche de fond) : confirme=true requis.",
+      "description": "Lance un AUDIT d'entreprise sur des documents déjà ingérés (brique ingestion), en 4 couches IA : Territoire, Flux, Problèmes, Priorités. ACTION (travail LLM long et coûteux, démarre en tâche de fond) : confirme=true requis.",
       "methode": "POST",
       "chemin": "/auditer",
       "params": {
         "doc_ids": {
           "type": "array",
-          "description": "Liste des identifiants de documents à auditer (voir les documents via la brique etl).",
+          "description": "Liste des identifiants de documents à auditer (voir les documents via la brique ingestion).",
           "requis": true
         }
       },

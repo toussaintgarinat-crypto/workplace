@@ -117,7 +117,7 @@ const TREE = {
   "color": "c-blue",
   "port": "",
   "status": "🟢 Actif",
-  "desc": "Assistant IA modulaire + Usine à applications sur-mesure.\n\nPrincipe : noyau + briques (modèle Neovim).\nChaque brique a un manifest.json (port, description, tâches).\nLe Cœur les découvre et les branche automatiquement au démarrage.\n\nObjectif 1 : ETL → Audit → App sur-mesure\nObjectif 2 : Jarvis personnel (Cœur)\n\n~128 000 lignes de Python réel (hors venv/vendor/apps exportées), état 2026-07-21.\nVoir la section ÉTAT SPRINTS pour l'ordre chronologique des ajouts.\nDéployé sur : Mac Intel (dev) + HP Proxmox (prod)",
+  "desc": "Assistant IA modulaire + Usine à applications sur-mesure.\n\nPrincipe : noyau + briques (modèle Neovim).\nChaque brique a un manifest.json (port, description, tâches).\nLe Cœur les découvre et les branche automatiquement au démarrage.\n\nObjectif 1 : Ingestion → Audit → App sur-mesure\nObjectif 2 : Jarvis personnel (Cœur)\n\n~128 000 lignes de Python réel (hors venv/vendor/apps exportées), état 2026-07-21.\nVoir la section ÉTAT SPRINTS pour l'ordre chronologique des ajouts.\nDéployé sur : Mac Intel (dev) + HP Proxmox (prod)",
   "children": [
     {
       "id": "coeur",
@@ -144,7 +144,7 @@ const TREE = {
               "color": "c-blue",
               "port": "POST /livrer",
               "status": "🟢 Actif",
-              "desc": "Pipeline complet en 1 commande : ETL → Audit → Génération → Packaging.\n\nConstantes :\n  ETAPES = [ingestion, audit, generation, packaging]\n  POLL_INTERVALLE = 3s\n  POLL_TIMEOUT   = 900s\n  BRIQUE_HOST    = host.docker.internal\n\nLogique :\n  1. POST :5200/ingerer pour chaque doc\n  2. POST :5300/auditer/tout { doc_ids }\n  3. Polling GET :5300/audits/{id} jusqu'à status=termine\n  4. POST :5400/generer { audit_id, mode }\n  5. Polling GET :5400/apps/{id}\n  6. POST packaging si activé\n\nPersistance : SQLite livraisons.db (/data/)",
+              "desc": "Pipeline complet en 1 commande : Ingestion → Audit → Génération → Packaging.\n\nConstantes :\n  ETAPES = [ingestion, audit, generation, packaging]\n  POLL_INTERVALLE = 3s\n  POLL_TIMEOUT   = 900s\n  BRIQUE_HOST    = host.docker.internal\n\nLogique :\n  1. POST :5200/ingerer pour chaque doc\n  2. POST :5300/auditer/tout { doc_ids }\n  3. Polling GET :5300/audits/{id} jusqu'à status=termine\n  4. POST :5400/generer { audit_id, mode }\n  5. Polling GET :5400/apps/{id}\n  6. POST packaging si activé\n\nPersistance : SQLite livraisons.db (/data/)",
               "children": [
                 {
                   "id": "orch-ep",
@@ -163,7 +163,7 @@ const TREE = {
                   "color": "c-slate",
                   "port": "",
                   "status": "",
-                  "desc": "→ ETL         :5200  (ingestion)\n→ AUDIT       :5300  (4 couches LLM)\n→ GENERATEUR  :5400  (HTML + app)\n→ GATEWAY     :4001  (LLM si besoin)\n→ DONNEES     :5500  (si mode hébergé)",
+                  "desc": "→ INGESTION   :5200  (extraction de texte)\n→ AUDIT       :5300  (4 couches LLM)\n→ GENERATEUR  :5400  (HTML + app)\n→ GATEWAY     :4001  (LLM si besoin)\n→ DONNEES     :5500  (si mode hébergé)",
                   "children": []
                 }
               ]
@@ -197,9 +197,9 @@ const TREE = {
                       "children": []
                     },
                     {
-                      "id": "o-etl",
+                      "id": "o-ingestion",
                       "icon": "📥",
-                      "label": "Groupe ETL",
+                      "label": "Groupe Ingestion",
                       "color": "c-green",
                       "port": "",
                       "status": "",
@@ -401,7 +401,7 @@ const TREE = {
               "color": "c-slate",
               "port": "Interne",
               "status": "🟢 Livré S6",
-              "desc": "Cycle de vie des entreprises livrées.\n\nDÉCROCHER :\n  1. Dump SQLite livraisons.db + apps.db + donnees.db\n  2. Export Oria (world + salons)\n  3. ZIP → dossier portable horodaté\n  4. Retire des tables centrales (soft delete)\n\nREPRENDRE :\n  1. Unzip du dossier portable\n  2. Réinjecte dans ETL (re-index docs)\n  3. Restaure Données (POST /seed)\n  4. Reconnecte Oria (world existant ou nouveau)\n\nAller-retour sans perte de données.\nPermet de garder la solution principale propre.",
+              "desc": "Cycle de vie des entreprises livrées.\n\nDÉCROCHER :\n  1. Dump SQLite livraisons.db + apps.db + donnees.db\n  2. Export Oria (world + salons)\n  3. ZIP → dossier portable horodaté\n  4. Retire des tables centrales (soft delete)\n\nREPRENDRE :\n  1. Unzip du dossier portable\n  2. Réinjecte dans Ingestion (re-index docs)\n  3. Restaure Données (POST /seed)\n  4. Reconnecte Oria (world existant ou nouveau)\n\nAller-retour sans perte de données.\nPermet de garder la solution principale propre.",
               "children": []
             },
             {
@@ -491,7 +491,7 @@ const TREE = {
                   "color": "c-slate",
                   "port": "",
                   "status": "",
-                  "desc": "BRIQUE_HOST=host.docker.internal\nGATEWAY_URL=http://host.docker.internal:4001\nLLM_MASTER_KEY=sk-master-change-this\nETL_URL=http://host.docker.internal:5200\nAUDIT_URL=http://host.docker.internal:5300\nGENERATEUR_URL=http://host.docker.internal:5400\nDONNEES_URL=http://host.docker.internal:5500\nMEMOIRE_URL=http://host.docker.internal:5600\nFORGE_URL=http://host.docker.internal:5700\nCORS_ORIGINS=*\nLIVRAISONS_DB=/data/livraisons.db\nVAULT_SECRET=change-in-production",
+                  "desc": "BRIQUE_HOST=host.docker.internal\nGATEWAY_URL=http://host.docker.internal:4001\nLLM_MASTER_KEY=sk-master-change-this\nINGESTION_URL=http://host.docker.internal:5200\nAUDIT_URL=http://host.docker.internal:5300\nGENERATEUR_URL=http://host.docker.internal:5400\nDONNEES_URL=http://host.docker.internal:5500\nMEMOIRE_URL=http://host.docker.internal:5600\nFORGE_URL=http://host.docker.internal:5700\nCORS_ORIGINS=*\nLIVRAISONS_DB=/data/livraisons.db\nVAULT_SECRET=change-in-production",
                   "children": []
                 }
               ]
@@ -837,16 +837,16 @@ const TREE = {
       "desc": "Chaîne en 4 briques : docs → audit → app sur-mesure.\nProuvé E2E avec Menuiserie Lefèvre & Fils (S9).\nCommande unique via Cœur : POST :5100/livrer",
       "children": [
         {
-          "id": "etl",
+          "id": "ingestion",
           "icon": "📥",
-          "label": "ETL / INGESTION",
+          "label": "INGESTION",
           "color": "c-green",
           "port": "Port 5200",
           "status": "🟢 Actif",
-          "desc": "Extraction de texte depuis tous formats.\nDémarrage : cd ~/Desktop/Workplace/briques/etl && make up\nSQLite : /data/etl.db  •  Volume : etl_data",
+          "desc": "Extraction de texte depuis tous formats.\nDémarrage : cd ~/Desktop/Workplace/briques/ingestion && make up\nSQLite : /data/ingestion.db  •  Volume : ingestion_data",
           "children": [
             {
-              "id": "etl-formats",
+              "id": "ingestion-formats",
               "icon": "📄",
               "label": "Formats supportés",
               "color": "c-green",
@@ -856,7 +856,7 @@ const TREE = {
               "children": []
             },
             {
-              "id": "etl-api",
+              "id": "ingestion-api",
               "icon": "📡",
               "label": "Endpoints",
               "color": "c-green",
@@ -866,13 +866,13 @@ const TREE = {
               "children": []
             },
             {
-              "id": "etl-env",
+              "id": "ingestion-env",
               "icon": "📝",
               "label": "Config .env",
               "color": "c-green",
               "port": "",
               "status": "",
-              "desc": "PORT=5200\nETL_DB=/data/etl.db\nMAX_FILE_SIZE_MB=50\nTESSERACT_LANGS=fra+eng\nMARKITDOWN_TIMEOUT=30",
+              "desc": "PORT=5200\nINGESTION_DB=/data/ingestion.db\nMAX_FILE_SIZE_MB=50\nTESSERACT_LANGS=fra+eng\nMARKITDOWN_TIMEOUT=30",
               "children": []
             }
           ]
@@ -1448,7 +1448,7 @@ const TREE = {
           "color": "c-green",
           "port": "Port 5960",
           "status": "🟢 Actif",
-          "desc": "Analyse d'images (OCR avancé, classification, description).\nComplémentaire à Tesseract (ETL). Câblée comme outil pilotable par l'assistant.\nCas : factures, tableaux scannés, import carte Restaurant.\nAPI : POST /vision/analyser { image, mode }",
+          "desc": "Analyse d'images (OCR avancé, classification, description).\nComplémentaire à Tesseract (Ingestion). Câblée comme outil pilotable par l'assistant.\nCas : factures, tableaux scannés, import carte Restaurant.\nAPI : POST /vision/analyser { image, mode }",
           "children": []
         },
         {
@@ -1588,7 +1588,7 @@ const TREE = {
               "color": "c-slate",
               "port": "",
               "status": "",
-              "desc": "Script : Lancer Workplace.command\n  → lance core (make up dans core/)\n  → lance ETL, Audit, Gen, Données, Mémoire\n\nScript : Arrêter Workplace.command\n  → docker compose down sur chaque brique\n\nMakefile à la racine : make up / make down",
+              "desc": "Script : Lancer Workplace.command\n  → lance core (make up dans core/)\n  → lance Ingestion, Audit, Gen, Données, Mémoire\n\nScript : Arrêter Workplace.command\n  → docker compose down sur chaque brique\n\nMakefile à la racine : make up / make down",
               "children": []
             }
           ]
@@ -1609,7 +1609,7 @@ const TREE = {
               "color": "c-cyan",
               "port": "",
               "status": "",
-              "desc": "git pull + rebuild brique par brique.\nRunbook : MIGRATION-HP.md à la racine.\n\nCommandes utiles :\n  ssh debian@192.168.1.89\n  cd ~/workplace\n  git pull\n  docker compose -f briques/etl/docker-compose.yml up -d --build\n  docker ps  (vérification)",
+              "desc": "git pull + rebuild brique par brique.\nRunbook : MIGRATION-HP.md à la racine.\n\nCommandes utiles :\n  ssh debian@192.168.1.89\n  cd ~/workplace\n  git pull\n  docker compose -f briques/ingestion/docker-compose.yml up -d --build\n  docker ps  (vérification)",
               "children": []
             }
           ]

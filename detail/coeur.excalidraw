@@ -237,13 +237,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Pipeline complet en 1 commande :\n  POST /livrer  (ETL→Audit→Gen→Pack)\n\nPolling async toutes les 3s\nTimeout 900s par etape\nSQLite livraisons.db\nBRIQUE_HOST=host.docker.internal",
+      "text": "Pipeline complet en 1 commande :\n  POST /livrer  (Ingestion→Audit→Gen→Pack)\n\nPolling async toutes les 3s\nTimeout 900s par etape\nSQLite livraisons.db\nBRIQUE_HOST=host.docker.internal",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Pipeline complet en 1 commande :\n  POST /livrer  (ETL→Audit→Gen→Pack)\n\nPolling async toutes les 3s\nTimeout 900s par etape\nSQLite livraisons.db\nBRIQUE_HOST=host.docker.internal",
+      "originalText": "Pipeline complet en 1 commande :\n  POST /livrer  (Ingestion→Audit→Gen→Pack)\n\nPolling async toutes les 3s\nTimeout 900s par etape\nSQLite livraisons.db\nBRIQUE_HOST=host.docker.internal",
       "lineHeight": 1.35
     },
     {
@@ -447,13 +447,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Groupes d'outils :\n  • Usine : livrer, etat_livraison\n  • ETL : ingerer_doc, lister_docs\n  • Audit : lancer_audit, voir_audit\n  • Gen : generer_app, voir_app\n  • Memoire : retenir, rappeler\n  • Forge : agents, RAG\n  • Agenda : rdv, creer_evenement\n  • Voix : parler, lire_texte",
+      "text": "Groupes d'outils :\n  • Usine : livrer, etat_livraison\n  • Ingestion : ingerer_doc, lister_docs\n  • Audit : lancer_audit, voir_audit\n  • Gen : generer_app, voir_app\n  • Memoire : retenir, rappeler\n  • Forge : agents, RAG\n  • Agenda : rdv, creer_evenement\n  • Voix : parler, lire_texte",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Groupes d'outils :\n  • Usine : livrer, etat_livraison\n  • ETL : ingerer_doc, lister_docs\n  • Audit : lancer_audit, voir_audit\n  • Gen : generer_app, voir_app\n  • Memoire : retenir, rappeler\n  • Forge : agents, RAG\n  • Agenda : rdv, creer_evenement\n  • Voix : parler, lire_texte",
+      "originalText": "Groupes d'outils :\n  • Usine : livrer, etat_livraison\n  • Ingestion : ingerer_doc, lister_docs\n  • Audit : lancer_audit, voir_audit\n  • Gen : generer_app, voir_app\n  • Memoire : retenir, rappeler\n  • Forge : agents, RAG\n  • Agenda : rdv, creer_evenement\n  • Voix : parler, lire_texte",
       "lineHeight": 1.35
     },
     {
@@ -1182,13 +1182,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Decrocher une entreprise :\n  → dossier portable ZIP\n  → retiree des bases centrales\nReprendre :\n  → reinjecte dans ETL/Donnees\nAller-retour sans perte de donnees",
+      "text": "Decrocher une entreprise :\n  → dossier portable ZIP\n  → retiree des bases centrales\nReprendre :\n  → reinjecte dans Ingestion/Donnees\nAller-retour sans perte de donnees",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Decrocher une entreprise :\n  → dossier portable ZIP\n  → retiree des bases centrales\nReprendre :\n  → reinjecte dans ETL/Donnees\nAller-retour sans perte de donnees",
+      "originalText": "Decrocher une entreprise :\n  → dossier portable ZIP\n  → retiree des bases centrales\nReprendre :\n  → reinjecte dans Ingestion/Donnees\nAller-retour sans perte de donnees",
       "lineHeight": 1.35
     },
     {

@@ -35,7 +35,7 @@ services:
       # racine via env_file — NE PAS la redéclarer en `AGENDA_KEY=${AGENDA_KEY:-}` (piège
       # « env shadow » : chaîne VIDE qui écrase la vraie valeur → agenda vu vide/401).
       # Idem pour ECOUTE_KEY (S184, commandes de mot-clé sur mesure) : vient du .env racine,
-      # ne pas la redéclarer ici. Idem pour ETL_KEY (S211, ingestion de documents fermée) :
+      # ne pas la redéclarer ici. Idem pour INGESTION_KEY (S211, brique `ingestion` fermée) :
       # sans elle le Cœur ne peut plus déposer/lire/classer un document (401).
       # Dossiers portables des entreprises décrochées (cycle de vie S6).
       - EXPORT_DIR=/export
