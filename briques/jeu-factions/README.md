@@ -1,0 +1,33 @@
+# jeu-factions — création de personnage + factions/territoire (PvE)
+
+Premier sous-projet du jeu holistique (voir `docs/superpowers/specs/2026-07-29-jeu-factions-design.md`).
+Réutilise le moteur de `personnages` (5900) en HTTP — aucun calcul de tradition/stat dupliqué ici.
+
+## Démarrer
+
+```bash
+docker compose up -d --build      # API sur http://localhost:6210
+curl localhost:6210/sante
+```
+
+## Concepts
+
+- **Nation** = élément du signe solaire (Feu/Terre/Air/Eau).
+- **Guilde** = signe solaire (12).
+- **Classe** = archétype calculé (10) — orthogonal à la politique.
+- **Zones de signe** (12) : PvE **partagé**, tous comptes confondus, pas de possession exclusive (pas de PvP dans ce spec).
+- **Voies d'archétype** (10 × 3 étapes) : PvE **personnel et séquentiel**, non-rejouable une fois vaincu. Groupes ouverts : n'importe qui peut aider (« carry »), mais seul celui pour qui l'étape est sa PROCHAINE progresse réellement.
+
+## Exception au cloisonnement
+
+Contrairement au reste de Workplace, `/zones` et `/archetypes/*/etapes` sont un **monde partagé** : toute clé API valide les voit toutes. Seuls `/personnages` et `/groupes` restent cloisonnés par propriétaire. Voir le spec pour la justification.
+
+## Non fait ici (specs séparés à venir)
+
+Combat temps réel, PvP, vrais comptes/hébergement public, progression idle, effets de compétences, lore riche.
+
+## Tests
+
+```bash
+python -m pytest -q
+```

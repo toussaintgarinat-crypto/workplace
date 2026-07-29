@@ -81,6 +81,7 @@ BRIQUES=(
   "export|$RACINE/briques/export|http://localhost:6150/sante"
   "transferts|$RACINE/briques/transferts|http://localhost:6180/sante"
   "connecteurs|$RACINE/briques/connecteurs|http://localhost:6200/sante"
+  "jeu-factions|$RACINE/briques/jeu-factions|http://localhost:6210/sante"
   # Atelier dev : code/améliore les briques depuis l'assistant. Avant le Cœur
   # pour qu'il la découvre via son manifest au démarrage.
   "dev|$RACINE/briques/dev|http://localhost:5955/sante"
