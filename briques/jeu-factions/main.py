@@ -5,15 +5,17 @@ docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet.
 """
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import archetypes
+import combat
 import groupes
 import mobs
 import moteur_personnages
@@ -176,6 +178,45 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
     if not stockage.lire_personnage(cle, pid):
         raise HTTPException(404, "Personnage introuvable.")
     return archetypes.lister_competences_debloquees(pid)
+
+
+def _cle_depuis_query(api_key: str) -> str | None:
+    """Même validation que `cle_api` (Header) mais pour le WebSocket : le navigateur ne
+    peut pas poser d'en-tête personnalisé à la connexion — la clé passe en query param."""
+    if not API_KEYS:
+        return api_key or "public"
+    return api_key if api_key in API_KEYS else None
+
+
+@app.websocket("/zones/{zone_id}/combat")
+async def combat_ws(websocket: WebSocket, zone_id: str,
+                    personnage_id: str = Query(...), api_key: str = Query("")):
+    await websocket.accept()
+    cle = _cle_depuis_query(api_key)
+    if cle is None:
+        await websocket.close(code=4401)
+        return
+    perso = stockage.lire_personnage(cle, personnage_id)
+    zone = zones.lire_zone(zone_id)
+    if not perso or not zone:
+        await websocket.close(code=4404)
+        return
+    signe = zones.signe_personnage(perso["snapshot_holistique"]) or "Bélier"
+    element = dict(zones.ZONES_SEED).get(signe, "Feu")
+    gabarits = mobs.lister_mobs_zone(zone_id)
+    inst = await combat.rejoindre(zone_id, personnage_id, element, signe, gabarits)
+    combat.enregistrer_connexion(inst, personnage_id, websocket)
+    competences = archetypes.lister_toutes_competences_avec_effet()
+    combat.demarrer_boucle_si_necessaire(inst, competences)
+    await websocket.send_json({"type": "etat", **combat.etat_public(inst)})
+    try:
+        while True:
+            message = await websocket.receive_json()
+            combat.empiler_action(inst, personnage_id, message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        combat.quitter(inst, personnage_id, time.monotonic())
 
 
 @app.get("/", response_class=FileResponse, include_in_schema=False)
