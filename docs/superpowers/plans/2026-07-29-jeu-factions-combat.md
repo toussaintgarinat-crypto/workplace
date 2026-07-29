@@ -452,7 +452,9 @@ def test_degats_appliques_et_mob_tue():
     etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_DEGATS,
                               horodatage=0.0, respawn_delai_s=60.0)
     assert etat["mobs"][mob_id]["pv"] == 20
-    etat, ev2 = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_DEGATS,
+    # cooldown décrémenté par `dt`, pas par l'écart de `horodatage` — dt=3.0 simule les 3s
+    # écoulées (un vrai appelant à fréquence fixe a toujours dt == l'écart entre horodatages)
+    etat, ev2 = CM.avancer_tick(etat, actions, dt=3.0, competences=COMPETENCE_DEGATS,
                                 horodatage=3.0, respawn_delai_s=60.0)
     assert mob_id not in etat["mobs"]
     mort = next(e for e in ev2 if e["type"] == "boss_tue")
@@ -474,7 +476,11 @@ def test_cooldown_bloque_la_reutilisation_immediate():
 
 
 def test_plusieurs_sorts_au_meme_tick_dans_lordre():
-    etat = CM.nouvel_etat_instance("zone-1", 800, MOB_ZONE)
+    # pv_max relevé à 200 (au lieu des 50 de MOB_ZONE) : deux sorts à 30 dégâts dans le même
+    # tick totalisent 60 — avec pv_max=50 le mob mourrait et disparaîtrait de `etat["mobs"]`
+    # avant qu'on puisse lire `degats_recus_par_guilde` dessus.
+    mob_zone_resistant = [{**MOB_ZONE[0], "pv_max": 200}]
+    etat = CM.nouvel_etat_instance("zone-1", 800, mob_zone_resistant)
     etat = CM.ajouter_joueur(etat, "p1", "Feu", "Bélier")
     etat = CM.ajouter_joueur(etat, "p2", "Eau", "Cancer")
     mob_id = next(iter(etat["mobs"]))
@@ -507,14 +513,17 @@ def test_effet_soin_augmente_les_pv():
 
 
 def test_effet_bouclier_absorbe_les_degats_suivants():
+    # NE PAS coller le joueur au mob avant ce premier tick : phase 3 (sorts) et phase 5 (IA
+    # des mobs) tournent dans le MÊME appel — un mob déjà à portée attaquerait sur ce tick-là
+    # aussi, avant même l'assertion sur le bouclier fraîchement posé.
     etat = _etat_avec_joueur()
     mob_id = next(iter(etat["mobs"]))
-    etat = _joueur_colle_au_mob(etat, mob_id)
     actions = [{"type": "sort", "personnage_id": "p1", "competence_id": "sort-bouclier", "cible_id": "p1"}]
     etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_BOUCLIER,
                               horodatage=0.0, respawn_delai_s=60.0)
     assert etat["joueurs"]["p1"]["bouclier"] == 20
-    # le boss (degats_attaque=5, cooldown_restant=0, joueur dans sa portee_attaque) attaque :
+    etat = _joueur_colle_au_mob(etat, mob_id)
+    # le boss (degats_attaque=5, cooldown_restant=0, joueur maintenant dans sa portee_attaque) attaque :
     etat, _ = CM.avancer_tick(etat, [], dt=0.1, competences={}, horodatage=1.0, respawn_delai_s=60.0)
     assert etat["joueurs"]["p1"]["pv"] == 100  # entièrement absorbé
     assert etat["joueurs"]["p1"]["bouclier"] == 15
@@ -541,7 +550,9 @@ def test_effet_dot_inflige_des_degats_dans_la_duree():
     etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_DOT,
                               horodatage=0.0, respawn_delai_s=60.0)
     etat, _ = CM.avancer_tick(etat, [], dt=0.1, competences={}, horodatage=1.0, respawn_delai_s=60.0)
-    assert etat["mobs"][mob_id]["pv"] == 49  # 50 - (10 dégâts/s * 0.1s à ce tick)
+    # le DOT s'applique dès le tick où il est posé (phase 4 tourne juste après la phase 3
+    # sorts, dans le même appel) — 50 - 1 (tick de lancer) - 1 (tick suivant) = 48
+    assert etat["mobs"][mob_id]["pv"] == 48
 
 
 def test_boss_respawn_apres_le_delai():
@@ -783,7 +794,7 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd briques/jeu-factions && python -m pytest test_combat_moteur.py -v`
-Expected: PASS (14 tests).
+Expected: PASS (13 tests).
 
 - [ ] **Step 5: Commit**
 
