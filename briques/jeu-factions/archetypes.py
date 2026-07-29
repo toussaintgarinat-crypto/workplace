@@ -145,9 +145,14 @@ def prochaine_etape(personnage_id: str, archetype: str) -> str | None:
 
 
 def calculer_resolution(membres_stats: list[dict], stats_cles: tuple[str, str, str],
-                        difficulte: int) -> dict:
-    """Fonction PURE : `membres_stats` = [{"personnage_id", "stats": {...}}]."""
-    total = sum(sum(int(m["stats"].get(s, 0)) for s in stats_cles) for m in membres_stats)
+                        difficulte: int, bonus_par_membre: dict[str, int] | None = None) -> dict:
+    """Fonction PURE : `membres_stats` = [{"personnage_id", "stats": {...}}].
+    `bonus_par_membre` (S216 idle) ajoute des points à la contribution d'un membre précis
+    avant sommation — absent de `membres_stats` -> ignoré silencieusement."""
+    bonus_par_membre = bonus_par_membre or {}
+    total = sum(sum(int(m["stats"].get(s, 0)) for s in stats_cles) +
+               bonus_par_membre.get(m["personnage_id"], 0)
+               for m in membres_stats)
     return {"total": total, "vaincue": total >= difficulte}
 
 
