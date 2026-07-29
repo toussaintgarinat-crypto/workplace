@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import archetypes
@@ -168,3 +169,13 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
     if not stockage.lire_personnage(cle, pid):
         raise HTTPException(404, "Personnage introuvable.")
     return archetypes.lister_competences_debloquees(pid)
+
+
+@app.get("/", response_class=FileResponse, include_in_schema=False)
+def accueil():
+    return FileResponse("front.html")
+
+
+@app.get("/workplace.css", include_in_schema=False)
+def design_system():
+    return FileResponse("workplace.css")
