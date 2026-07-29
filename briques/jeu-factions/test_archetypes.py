@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import archetypes as A
 
 
@@ -108,3 +110,33 @@ def test_seed_competences_backfill_une_ligne_deja_existante_sans_effet():
         n = c.execute("SELECT COUNT(*) AS n FROM competences WHERE archetype=? AND ordre_etape=?",
                       ("Le Sage Contemplatif", etape["ordre"])).fetchone()["n"]
     assert n == 1
+
+
+def test_bonus_idle_sans_presence_est_nul():
+    assert A.bonus_idle(None, datetime.now(timezone.utc), taux_par_heure=2.0, plafond_heures=24) == 0
+
+
+def test_bonus_idle_arrondit_a_lentier_inferieur():
+    maintenant = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+    derniere = datetime(2026, 7, 30, 11, 20, 0, tzinfo=timezone.utc)  # 40 min plus tôt
+    bonus = A.bonus_idle(derniere.isoformat(), maintenant, taux_par_heure=1.0, plafond_heures=24)
+    assert bonus == 0  # 0.667h x 1 pt/h = 0.667 → arrondi à 0
+
+
+def test_bonus_idle_proportionnel_au_temps_ecoule():
+    maintenant = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+    derniere = datetime(2026, 7, 30, 7, 0, 0, tzinfo=timezone.utc)  # 5h plus tôt
+    bonus = A.bonus_idle(derniere.isoformat(), maintenant, taux_par_heure=2.0, plafond_heures=24)
+    assert bonus == 10  # 5h x 2 pts/h
+
+
+def test_bonus_idle_plafonne_au_dela_du_plafond():
+    maintenant = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
+    derniere = datetime(2026, 7, 29, 12, 0, 0, tzinfo=timezone.utc)  # 48h plus tôt
+    bonus = A.bonus_idle(derniere.isoformat(), maintenant, taux_par_heure=2.0, plafond_heures=24)
+    assert bonus == 48  # plafonné à 24h x 2 pts/h, pas 48h x 2
+
+
+def test_bonus_idle_futur_ou_maintenant_est_nul():
+    maintenant = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+    assert A.bonus_idle(maintenant.isoformat(), maintenant, taux_par_heure=2.0, plafond_heures=24) == 0

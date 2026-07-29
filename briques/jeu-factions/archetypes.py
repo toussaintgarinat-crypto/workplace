@@ -3,7 +3,9 @@ ordonnées non-rejouables. `ARCHETYPES_SIGNATURE` mirrore `personnages/synthese.
 (donnée de référence : quelles 3 stats définissent chaque archétype — pas un recalcul)."""
 from __future__ import annotations
 
+import os
 import uuid
+from datetime import datetime
 
 import stockage as S
 
@@ -19,6 +21,25 @@ ARCHETYPES_SIGNATURE: dict[str, tuple[str, str, str]] = {
     "L'Âme Empathique": ("Émotivité", "Sagesse", "Créativité"),
     "L'Électron Libre": ("Créativité", "Énergie", "Discrétion"),
 }
+
+# S216 — progression idle : bonus de points de voie d'archétype pendant l'absence.
+# Plafonné à un cycle de tick (même variable d'env que `tick.TICK_INTERVAL_HOURS`, lue ici
+# indépendamment pour éviter un import circulaire archetypes -> tick -> groupes -> archetypes).
+TAUX_IDLE_PAR_HEURE = 2.0
+PLAFOND_IDLE_HEURES = float(os.getenv("TICK_INTERVAL_HOURS", "24"))
+
+
+def bonus_idle(derniere_presence: str | None, maintenant: datetime,
+               taux_par_heure: float, plafond_heures: float) -> int:
+    """Fonction PURE : points de progression accumulés depuis `derniere_presence`, plafonnés
+    à `plafond_heures` d'absence. `derniere_presence=None` (jamais de heartbeat) -> 0."""
+    if not derniere_presence:
+        return 0
+    depuis = datetime.fromisoformat(derniere_presence)
+    heures_ecoulees = (maintenant - depuis).total_seconds() / 3600
+    if heures_ecoulees <= 0:
+        return 0
+    return int(taux_par_heure * min(heures_ecoulees, plafond_heures))
 
 # 3 étapes par voie pour la V1 — contenu narratif à enrichir plus tard (mécanique déjà complète).
 _DIFFICULTES = (80, 140, 200)
