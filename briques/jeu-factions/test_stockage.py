@@ -54,3 +54,35 @@ def test_migration_colonnes_effet_est_presente_et_idempotente():
         colonnes = {row["name"] for row in c.execute("PRAGMA table_info(competences)").fetchall()}
     assert {"effet_type", "magnitude", "portee", "cooldown_s"} <= colonnes
     S._conn()  # rejouer la migration ne doit pas lever d'erreur (ALTER TABLE idempotent)
+
+
+def test_enregistrer_presence_puis_lire():
+    S.assurer_joueur("cleF", "Finn")
+    assert S.lire_derniere_presence("cleF") is None
+    S.enregistrer_presence("cleF")
+    assert S.lire_derniere_presence("cleF") is not None
+
+
+def test_enregistrer_presence_cree_le_joueur_si_absent():
+    assert S.lire_derniere_presence("cleG") is None
+    S.enregistrer_presence("cleG")
+    assert S.lire_derniere_presence("cleG") is not None
+
+
+def test_lire_derniere_presence_personnage_suit_le_compte_proprietaire():
+    S.assurer_joueur("cleH", "Hugo")
+    p = S.creer_personnage("cleH", "Perso", {"date_naissance": "1990-01-01"}, {"portrait": {}})
+    assert S.lire_derniere_presence_personnage(p["id"]) is None
+    S.enregistrer_presence("cleH")
+    assert S.lire_derniere_presence_personnage(p["id"]) is not None
+
+
+def test_lire_derniere_presence_personnage_inconnu_est_none():
+    assert S.lire_derniere_presence_personnage("perso-inconnu") is None
+
+
+def test_migration_derniere_presence_est_presente_et_idempotente():
+    with S._conn() as c:
+        colonnes = {row["name"] for row in c.execute("PRAGMA table_info(joueurs)").fetchall()}
+    assert "derniere_presence" in colonnes
+    S._conn()  # rejouer la migration ne doit pas lever d'erreur
