@@ -123,6 +123,10 @@ def lire_personnage_route(pid: str, cle: str = Depends(cle_api)):
     return p
 
 
+# Ne pilote plus aucune résolution passive (celle-ci a disparu avec
+# `zones.resoudre_toutes_zones`, cf. spec combat) — purement cosmétique : « dernière zone
+# visitée », affichée par défaut dans le front. Entrer en combat = ouvrir le WebSocket
+# `/zones/{zone_id}/combat`, indépendamment de cette valeur.
 @app.patch("/personnages/{pid}/zone", tags=["personnages"])
 def assigner_zone_route(pid: str, body: AssignerZone, cle: str = Depends(cle_api)):
     if not zones.lire_zone(body.zone_id):

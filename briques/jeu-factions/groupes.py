@@ -56,12 +56,12 @@ def rejoindre_groupe(groupe_id: str, personnage_id: str) -> dict:
 
 
 def resoudre_groupes_actifs() -> list[dict]:
-    """Orchestration DB — même discipline de connexions que `zones.resoudre_toutes_zones`
-    (voir son docstring) : chaque lecture/écriture utilise sa PROPRE connexion courte,
-    refermée avant d'appeler une fonction qui ouvre la sienne (`archetypes.py`,
-    `stockage.log_resolution`). Tenir une connexion ouverte pendant ces appels imbriqués
-    se verrouille elle-même (`database is locked`) — NE PAS envelopper toute la fonction
-    dans un seul `with S._conn() as c:`."""
+    """Orchestration DB — même discipline de connexions courtes que `zones.ajouter_score`/
+    `marquer_vaincue_si_premiere_fois` (voir stockage.py) : chaque lecture/écriture utilise sa
+    PROPRE connexion courte, refermée avant d'appeler une fonction qui ouvre la sienne
+    (`archetypes.py`, `stockage.log_resolution`). Tenir une connexion ouverte pendant ces
+    appels imbriqués se verrouille elle-même (`database is locked`) — NE PAS envelopper toute
+    la fonction dans un seul `with S._conn() as c:`."""
     resultats = []
     with S._conn() as c:
         groupes_actifs = c.execute("SELECT * FROM groupes WHERE etat='actif'").fetchall()
