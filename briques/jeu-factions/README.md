@@ -26,9 +26,17 @@ Si la brique `personnages` a `API_KEYS` configuré, définis `PERSONNAGES_KEY` (
 
 Contrairement au reste de Workplace, `/zones` et `/archetypes/*/etapes` sont un **monde partagé** : toute clé API valide les voit toutes. Seuls `/personnages` et `/groupes` restent cloisonnés par propriétaire. Voir le spec pour la justification.
 
+## Combat temps réel
+
+`GET /zones/{zone_id}/combat` (WebSocket) : rejoint (ou crée) une instance de combat pour la zone,
+simulée à tick fixe (`combat_moteur.py`, fonction pure) et diffusée à toutes les connexions —
+état des joueurs/mobs, dégâts/soin/bouclier/étourdissement/DOT selon la compétence, et les
+événements du tick (`evenements`). Front minimal : `front_combat.html` (Phaser, HUD PV + journal
+de combat). Voir `docs/superpowers/specs/2026-07-29-jeu-factions-combat-design.md`.
+
 ## Non fait ici (specs séparés à venir)
 
-Combat temps réel, PvP, vrais comptes/hébergement public, progression idle, effets de compétences, lore riche.
+PvP, vrais comptes/hébergement public, progression idle, lore riche.
 
 ## Tests
 

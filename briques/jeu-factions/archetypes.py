@@ -56,7 +56,9 @@ def seed_competences() -> None:
     with S._conn() as c:
         etapes = c.execute("SELECT * FROM zones_archetype").fetchall()
         for e in etapes:
-            effet = EFFETS_PAR_ETAPE[e["ordre"]]
+            effet = EFFETS_PAR_ETAPE.get(e["ordre"])
+            if effet is None:
+                continue
             existe = c.execute(
                 "SELECT id, effet_type FROM competences WHERE archetype=? AND ordre_etape=?",
                 (e["archetype"], e["ordre"])).fetchone()

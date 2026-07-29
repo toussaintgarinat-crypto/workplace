@@ -93,12 +93,17 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
 
     # 1. Déplacement
     for a in actions:
-        if a["type"] != "deplacement":
+        if a.get("type") != "deplacement":
             continue
-        j = etat["joueurs"].get(a["personnage_id"])
+        j = etat["joueurs"].get(a.get("personnage_id"))
         if not j or j["etat"] != "actif":
             continue
-        dx, dy = a["direction"].get("x", 0), a["direction"].get("y", 0)
+        direction = a.get("direction")
+        if not isinstance(direction, dict):
+            continue
+        dx, dy = direction.get("x", 0), direction.get("y", 0)
+        if not isinstance(dx, (int, float)) or not isinstance(dy, (int, float)):
+            continue
         norme = math.hypot(dx, dy)
         if norme == 0:
             continue
@@ -114,13 +119,13 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
 
     # 3. Sorts
     for a in actions:
-        if a["type"] != "sort":
+        if a.get("type") != "sort":
             continue
-        j = etat["joueurs"].get(a["personnage_id"])
+        j = etat["joueurs"].get(a.get("personnage_id"))
         comp = competences.get(a.get("competence_id", ""))
         if not j or j["etat"] != "actif" or not comp or not comp.get("effet_type"):
             continue
-        if j["cooldowns"].get(a["competence_id"], 0) > 0:
+        if j["cooldowns"].get(a.get("competence_id"), 0) > 0:
             continue
         cible, genre = _trouver_entite(etat, a.get("cible_id", ""))
         if cible is None:
@@ -132,14 +137,16 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
             continue
         if _distance(j, cible) > comp["portee"]:
             continue
-        j["cooldowns"][a["competence_id"]] = comp["cooldown_s"]
+        j["cooldowns"][a.get("competence_id")] = comp["cooldown_s"]
         if effet == "degats":
             reels = _infliger_degats(cible, comp["magnitude"])
             cible["degats_recus_par_guilde"][j["signe"]] = \
                 cible["degats_recus_par_guilde"].get(j["signe"], 0) + reels
-            evenements.append({"type": "mob_touche", "mob_id": a["cible_id"], "degats": reels})
+            evenements.append({"type": "mob_touche", "mob_id": a.get("cible_id"), "degats": reels})
         elif effet == "soin":
             cible["pv"] = min(cible["pv_max"], cible["pv"] + comp["magnitude"])
+            if cible.get("etat") == "ko" and cible["pv"] > 0:
+                cible["etat"] = "actif"
         elif effet == "bouclier":
             cible["bouclier"] = cible.get("bouclier", 0) + comp["magnitude"]
         elif effet == "etourdissement":

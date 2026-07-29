@@ -129,8 +129,9 @@ def etat_public(inst: InstanceCombat) -> dict:
             "joueurs": inst.etat["joueurs"], "mobs": inst.etat["mobs"]}
 
 
-async def diffuser_etat(inst: InstanceCombat) -> None:
-    message = {"type": "etat", **etat_public(inst)}
+async def diffuser_etat(inst: InstanceCombat, evenements: list[dict] | None = None,
+                        horodatage: float | None = None) -> None:
+    message = {"type": "etat", **etat_public(inst), "evenements": evenements or []}
     deconnectes = []
     for personnage_id, ws in inst.connexions.items():
         try:
@@ -139,6 +140,8 @@ async def diffuser_etat(inst: InstanceCombat) -> None:
             deconnectes.append(personnage_id)
     for personnage_id in deconnectes:
         inst.connexions.pop(personnage_id, None)
+    if deconnectes and not inst.connexions:
+        inst.derniere_activite = horodatage if horodatage is not None else time.monotonic()
 
 
 def demarrer_boucle_si_necessaire(inst: InstanceCombat, competences: dict[str, dict]) -> None:
@@ -153,9 +156,17 @@ async def _boucle_instance(inst: InstanceCombat, competences: dict[str, dict]) -
     dt = 1.0 / tick_hz()
     while True:
         await asyncio.sleep(dt)
-        actions = vider_actions(inst)
-        await un_tick(inst, actions, dt, competences, time.monotonic())
-        await diffuser_etat(inst)
-        if instance_expiree(inst, time.monotonic()):
-            fermer_instance(inst)
-            return
+        try:
+            horodatage = time.monotonic()
+            actions = vider_actions(inst)
+            evenements = await un_tick(inst, actions, dt, competences, horodatage)
+            await diffuser_etat(inst, evenements, horodatage)
+            if instance_expiree(inst, time.monotonic()):
+                fermer_instance(inst)
+                return
+        except Exception as e:
+            # Défense en profondeur : une exception inattendue dans un tick ne doit jamais
+            # tuer silencieusement la Task et figer l'instance (fix 1 de combat_moteur.py
+            # empêche déjà la cause connue — ceci couvre l'imprévu).
+            print(f"[combat] tick error instance={inst.id}: {e}")
+            continue

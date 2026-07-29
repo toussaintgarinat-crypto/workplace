@@ -209,11 +209,11 @@ async def combat_ws(websocket: WebSocket, zone_id: str,
     element = dict(zones.ZONES_SEED).get(signe, "Feu")
     gabarits = mobs.lister_mobs_zone(zone_id)
     inst = await combat.rejoindre(zone_id, personnage_id, element, signe, gabarits)
-    combat.enregistrer_connexion(inst, personnage_id, websocket)
     competences = archetypes.lister_toutes_competences_avec_effet()
     combat.demarrer_boucle_si_necessaire(inst, competences)
-    await websocket.send_json({"type": "etat", **combat.etat_public(inst)})
     try:
+        combat.enregistrer_connexion(inst, personnage_id, websocket)
+        await websocket.send_json({"type": "etat", **combat.etat_public(inst), "evenements": []})
         while True:
             message = await websocket.receive_json()
             combat.empiler_action(inst, personnage_id, message)
