@@ -237,6 +237,15 @@ est déjà encodé dans les stats calculées à la naissance.
    - Les membres qui ont déjà complété cette étape, ou qui n'y sont pas encore arrivés dans
      leur propre séquence, contribuent leurs stats mais ne voient **pas** leur progression
      changer (pas de saut, pas de re-completion).
+   - **Cas particulier assumé (1ʳᵉ étape d'une voie)** : `progression_archetype` ne distingue
+     pas « jamais touché cet archétype » de « vise réellement cette étape » — l'absence de
+     ligne vaut « pas encore vaincue » dans les deux cas, donc la 1ʳᵉ étape est TOUJOURS la
+     « prochaine étape » de quiconque n'a rien tenté sur cette voie. Rejoindre un groupe sur
+     l'étape 1 d'un archétype qu'on n'a jamais entamé fait donc AUSSI avancer sa propre
+     progression dessus — ce n'est pas une triche, c'est assumé : aider un ami sur ses
+     premiers pas t'y engage aussi. La garantie « l'aide ne progresse pas » ne s'applique
+     qu'à partir de la 2ᵉ étape, où un personnage qui n'a pas complété la précédente reste
+     bloqué (sa propre prochaine étape diffère alors de celle du groupe).
    - Logger dans `resolutions` (`zone_archetype_id` renseigné, `zone_id` NULL).
 5. Rejoindre un groupe ciblant une étape déjà `vaincue` **pour le personnage cible** → `400`,
    rien à faire.
