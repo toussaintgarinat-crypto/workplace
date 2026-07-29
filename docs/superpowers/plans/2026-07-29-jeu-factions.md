@@ -233,7 +233,7 @@ volumes:
 
 - [ ] **Step 10: Verify the manifest contract passes the repo-wide smoke test**
 
-Run: `cd /Users/garinat_t/Desktop/Workplace && python -m pytest tests/test_briques_smoke.py -k jeu_factions -v`
+Run (from the repo root — the worktree root you're already working in, NOT the original checkout path): `python -m pytest tests/test_briques_smoke.py -k jeu-factions -v`
 Expected: PASS (no missing fields, no port collision — 6210 is free).
 
 - [ ] **Step 11: Commit**
@@ -2182,7 +2182,7 @@ Expected: PASS — every test file from Tasks 1–12.
 
 - [ ] **Step 5: Run the repo-wide smoke test**
 
-Run: `cd /Users/garinat_t/Desktop/Workplace && python -m pytest tests/test_briques_smoke.py -v`
+Run (from the repo root — the worktree root, NOT the original checkout path): `python -m pytest tests/test_briques_smoke.py -v`
 Expected: PASS — manifest valid, port 6210 unique, `/sante` reachable path declared correctly.
 
 - [ ] **Step 6: Build and boot the brick standalone, prove health end-to-end**
