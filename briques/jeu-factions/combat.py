@@ -161,12 +161,13 @@ async def _boucle_instance(inst: InstanceCombat, competences: dict[str, dict]) -
             actions = vider_actions(inst)
             evenements = await un_tick(inst, actions, dt, competences, horodatage)
             await diffuser_etat(inst, evenements, horodatage)
-            if instance_expiree(inst, time.monotonic()):
-                fermer_instance(inst)
-                return
         except Exception as e:
             # Défense en profondeur : une exception inattendue dans un tick ne doit jamais
             # tuer silencieusement la Task et figer l'instance (fix 1 de combat_moteur.py
             # empêche déjà la cause connue — ceci couvre l'imprévu).
             print(f"[combat] tick error instance={inst.id}: {e}")
-            continue
+        # Vérification d'expiration : s'exécute même après une exception pour permettre
+        # la fermeture d'instances devenues vides dont le délai de grâce a expiré.
+        if instance_expiree(inst, time.monotonic()):
+            fermer_instance(inst)
+            return
