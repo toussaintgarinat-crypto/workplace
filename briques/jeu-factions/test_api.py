@@ -71,3 +71,32 @@ def test_lire_personnage_inconnu_404():
 def test_assigner_zone_personnage_inconnu_404():
     r = client.patch("/personnages/inconnu/zone", json={"zone_id": "zone-belier"})
     assert r.status_code == 404
+
+
+import zones
+
+
+def test_lister_zones_renvoie_les_12_zones():
+    zones.seed_zones()
+    r = client.get("/zones")
+    assert r.status_code == 200
+    assert len(r.json()) == 12
+
+
+def test_lire_zone():
+    zones.seed_zones()
+    zid = zones.lister_zones()[0]["id"]
+    r = client.get(f"/zones/{zid}")
+    assert r.status_code == 200
+    assert r.json()["id"] == zid
+
+
+def test_lire_zone_inconnue_404():
+    assert client.get("/zones/inconnue").status_code == 404
+
+
+def test_zones_visibles_dun_autre_tenant(monkeypatch):
+    """Confirme l'exception au cloisonnement : une autre clé API voit les mêmes zones."""
+    zones.seed_zones()
+    r = client.get("/zones", headers={"X-API-Key": "nimporte-quelle-cle"})
+    assert len(r.json()) == 12
