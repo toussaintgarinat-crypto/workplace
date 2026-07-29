@@ -1425,18 +1425,33 @@ def test_resoudre_groupes_actifs_avance_la_cible_et_debloque_competence():
 
 
 def test_resoudre_groupes_actifs_carry_naide_pas_la_progression_de_laide():
+    """Le carry ne triche pas la progression À PARTIR DE LA 2E ÉTAPE : un aide qui n'a pas
+    complété l'étape précédente reste à SA propre étape, même s'il a contribué ses stats au
+    groupe d'un autre. (Cas particulier assumé sur la toute PREMIÈRE étape d'une voie jamais
+    touchée : `progression_archetype` ne distingue pas « jamais engagé » de « vise vraiment
+    cette étape » — un aide totalement neuf y avance aussi si le groupe est vaincu, ce n'est
+    pas une triche, c'est documenté dans le spec. La garantie testée ici démarre donc à
+    l'étape 2, où la distinction redevient possible : SI l'aide n'a pas complété l'étape 1,
+    l'étape 2 n'est structurellement pas sa propre prochaine étape.)"""
     A.seed_zones_archetype()
     A.seed_competences()
-    p = _personnage("cleG6", "Cible5", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    p = _personnage("cleG6", "Cible5", {"Charisme": 200, "Combativité": 200, "Énergie": 200})
     aide = _personnage("cleG6b", "Copain", {"Charisme": 200, "Combativité": 200, "Énergie": 200})
     etapes = A.lister_etapes("Le Meneur Charismatique")
-    g = G.creer_groupe(p["id"], etapes[0]["id"])
-    G.rejoindre_groupe(g["id"], aide["id"])
+    # p complète l'étape 1 seul ; aide n'y touche jamais (reste à l'étape 1 dans sa séquence).
+    G.creer_groupe(p["id"], etapes[0]["id"])
     G.resoudre_groupes_actifs()
-    # la cible avance grâce à l'aide du copain...
     assert A.prochaine_etape(p["id"], "Le Meneur Charismatique") == etapes[1]["id"]
-    # ...mais le copain (qui n'était pas à CETTE étape dans SA propre séquence, il n'a
-    # jamais rien tenté) ne voit pas sa progression sauter à l'étape 2 :
+    assert A.prochaine_etape(aide["id"], "Le Meneur Charismatique") == etapes[0]["id"]
+    # p vise maintenant l'étape 2 ; aide vient l'aider sans avoir fait l'étape 1 lui-même.
+    g2 = G.creer_groupe(p["id"], etapes[1]["id"])
+    G.rejoindre_groupe(g2["id"], aide["id"])
+    G.resoudre_groupes_actifs()
+    # p avance à l'étape 3 grâce à l'aide du copain...
+    assert A.prochaine_etape(p["id"], "Le Meneur Charismatique") == etapes[2]["id"]
+    # ...mais le copain reste bloqué à l'étape 1 : l'étape 2 n'était pas SA propre prochaine
+    # étape (il n'a jamais complété la 1ʳᵉ), donc sa progression ne saute pas, même si ses
+    # stats ont compté dans le total du groupe.
     assert A.prochaine_etape(aide["id"], "Le Meneur Charismatique") == etapes[0]["id"]
 
 
