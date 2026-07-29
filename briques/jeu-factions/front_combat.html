@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Jeu-factions — Combat</title>
+<link rel="stylesheet" href="/workplace.css">
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  #hud { display: flex; gap: 16px; align-items: center; padding: 8px; }
+  .barre { width: 200px; height: 14px; background: #333; border-radius: 4px; overflow: hidden; }
+  .barre-remplissage { height: 100%; background: #4ade80; }
+  #sorts button { margin-right: 4px; }
+  #jeu { width: 800px; max-width: 100%; }
+</style>
+</head>
+<body>
+<h1>Jeu-factions — Combat</h1>
+<div id="hud">
+  <div>PV : <div class="barre"><div id="pv-joueur" class="barre-remplissage" style="width:100%"></div></div></div>
+  <div>Boss : <div class="barre"><div id="pv-boss" class="barre-remplissage" style="width:100%"></div></div></div>
+</div>
+<div id="sorts"></div>
+<div id="jeu"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const zoneId = params.get("zone");
+const cleApi = localStorage.getItem("jeu_factions_cle") || "";
+
+let personnageId = null;
+let dernierEtat = {joueurs: {}, mobs: {}};
+let cibleActive = null;
+let ws;
+
+async function initPersonnage() {
+  const r = await fetch("/personnages", {headers: cleApi ? {"X-API-Key": cleApi} : {}});
+  const mine = await r.json();
+  if (!mine.length) {
+    document.getElementById("jeu").textContent = "Crée d'abord un personnage sur la page principale.";
+    throw new Error("aucun personnage");
+  }
+  personnageId = mine[0].id;
+  const rc = await fetch(`/personnages/${personnageId}/competences`,
+    {headers: cleApi ? {"X-API-Key": cleApi} : {}});
+  const sorts = (await rc.json()).filter(c => c.effet_type);
+  document.getElementById("sorts").innerHTML = sorts.map(s =>
+    `<button data-id="${s.id}">${s.nom}</button>`).join("");
+  document.querySelectorAll("#sorts button").forEach(b => b.addEventListener("click", () => {
+    if (cibleActive && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: "sort", competence_id: b.dataset.id, cible_id: cibleActive}));
+    }
+  }));
+}
+
+function connecter() {
+  const protocole = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${protocole}//${location.host}/zones/${zoneId}/combat` +
+    `?personnage_id=${personnageId}&api_key=${encodeURIComponent(cleApi)}`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type !== "etat") return;
+    dernierEtat = msg;
+    const moi = msg.joueurs[personnageId];
+    if (moi) document.getElementById("pv-joueur").style.width = `${(moi.pv / moi.pv_max) * 100}%`;
+    const boss = Object.values(msg.mobs).find(m => m.role === "boss");
+    document.getElementById("pv-boss").style.width = boss ? `${(boss.pv / boss.pv_max) * 100}%` : "0%";
+  };
+}
+
+class SceneCombat extends Phaser.Scene {
+  create() {
+    this.formes = new Map();
+    this.cursors = this.input.keyboard.createCursorKeys();
+  }
+  _forme(id, couleur, rayon) {
+    let f = this.formes.get(id);
+    if (!f) {
+      f = this.add.circle(0, 0, rayon, couleur).setInteractive();
+      f.on("pointerdown", () => { cibleActive = id; });
+      this.formes.set(id, f);
+    }
+    return f;
+  }
+  update() {
+    let dx = 0, dy = 0;
+    if (this.cursors.left.isDown) dx = -1;
+    if (this.cursors.right.isDown) dx = 1;
+    if (this.cursors.up.isDown) dy = -1;
+    if (this.cursors.down.isDown) dy = 1;
+    if ((dx || dy) && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: "deplacement", direction: {x: dx, y: dy}}));
+    }
+    const vus = new Set();
+    for (const [id, j] of Object.entries(dernierEtat.joueurs || {})) {
+      const f = this._forme(id, id === personnageId ? 0xfacc15 : 0x60a5fa, 10);
+      f.setPosition(j.x, j.y);
+      vus.add(id);
+    }
+    for (const [id, m] of Object.entries(dernierEtat.mobs || {})) {
+      const f = this._forme(id, m.role === "boss" ? 0xef4444 : 0xf97316, m.role === "boss" ? 20 : 12);
+      f.setPosition(m.x, m.y);
+      vus.add(id);
+    }
+    for (const [id, f] of this.formes) {
+      if (!vus.has(id)) { f.destroy(); this.formes.delete(id); }
+    }
+  }
+}
+
+(async () => {
+  await initPersonnage();
+  connecter();
+  new Phaser.Game({
+    type: Phaser.AUTO, width: 800, height: 800, parent: "jeu",
+    backgroundColor: "#1e293b", scene: SceneCombat,
+  });
+})();
+</script>
+</body>
+</html>
