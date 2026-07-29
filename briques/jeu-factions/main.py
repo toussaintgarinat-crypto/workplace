@@ -6,6 +6,7 @@ docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet.
 import asyncio
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -108,9 +109,25 @@ async def creer_personnage_route(body: CreerPersonnage, cle: str = Depends(cle_a
     return stockage.creer_personnage(cle, body.nom, donnees_naissance, resultat)
 
 
+@app.post("/presence", tags=["personnages"])
+def enregistrer_presence_route(cle: str = Depends(cle_api)):
+    stockage.enregistrer_presence(cle)
+    return {"ok": True}
+
+
 @app.get("/personnages", tags=["personnages"])
 def lister_personnages_route(cle: str = Depends(cle_api)):
-    return stockage.lister_personnages(cle)
+    personnages = stockage.lister_personnages(cle)
+    derniere_presence = stockage.lire_derniere_presence(cle)
+    maintenant = datetime.now(timezone.utc)
+    for p in personnages:
+        archetype = (p["snapshot_holistique"].get("portrait") or {}).get("archetype")
+        prochaine = archetypes.prochaine_etape(p["id"], archetype) if archetype else None
+        p["bonus_idle_actuel"] = (
+            archetypes.bonus_idle(derniere_presence, maintenant,
+                                  archetypes.TAUX_IDLE_PAR_HEURE, archetypes.PLAFOND_IDLE_HEURES)
+            if prochaine else 0)
+    return personnages
 
 
 @app.get("/personnages/{pid}", tags=["personnages"])

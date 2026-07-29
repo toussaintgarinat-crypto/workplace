@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 from main import app
 
@@ -217,3 +219,46 @@ def test_combat_ws_connexion_valide_recoit_un_etat_initial(monkeypatch):
         assert pid in premier["joueurs"]
     instance = combat._INSTANCES[zone_id][0]
     assert pid not in instance.etat["joueurs"]  # retiré à la déconnexion (finally du handler)
+
+
+def test_presence_route_ok():
+    r = client.post("/presence", headers={"X-API-Key": "cle-presence"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+def test_presence_route_rejette_une_cle_invalide():
+    import main
+    main.API_KEYS = {"bonnecle"}
+    try:
+        r = client.post("/presence", headers={"X-API-Key": "mauvaise"})
+        assert r.status_code == 401
+    finally:
+        main.API_KEYS = set()
+
+
+def test_personnages_expose_bonus_idle_actuel(monkeypatch):
+    _patch_moteur(monkeypatch)
+    _seed_archetypes()
+    import main
+    monkeypatch.setattr(main.archetypes, "TAUX_IDLE_PAR_HEURE", 1000.0)
+    r = client.post("/personnages", json={"nom": "Idle1", "date_naissance": "1990-01-01"},
+                    headers={"X-API-Key": "cle-idle-api"})
+    pid = r.json()["id"]
+    with main.stockage._conn() as c:
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "cle-idle-api"))
+    items = client.get("/personnages", headers={"X-API-Key": "cle-idle-api"}).json()
+    perso = next(p for p in items if p["id"] == pid)
+    assert perso["bonus_idle_actuel"] > 0
+
+
+def test_personnages_sans_presence_a_bonus_idle_nul(monkeypatch):
+    _patch_moteur(monkeypatch)
+    _seed_archetypes()
+    r = client.post("/personnages", json={"nom": "Idle2", "date_naissance": "1990-01-01"},
+                    headers={"X-API-Key": "cle-idle-api2"})
+    pid = r.json()["id"]
+    items = client.get("/personnages", headers={"X-API-Key": "cle-idle-api2"}).json()
+    perso = next(p for p in items if p["id"] == pid)
+    assert perso["bonus_idle_actuel"] == 0
