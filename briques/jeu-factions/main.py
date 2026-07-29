@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 import moteur_personnages
 import stockage
+import zones
 
 app = FastAPI(title="Jeu-factions — factions & territoire (PvE)", version="0.1.0")
 
@@ -30,6 +31,11 @@ def cle_api(x_api_key: Optional[str] = Header(None),
     if presentee in API_KEYS:
         return presentee
     raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
+
+
+@app.on_event("startup")
+def _seed_donnees_globales():
+    zones.seed_zones()
 
 
 @app.get("/sante", tags=["système"])
@@ -98,3 +104,16 @@ def assigner_zone_route(pid: str, body: AssignerZone, cle: str = Depends(cle_api
     if not p:
         raise HTTPException(404, "Personnage introuvable.")
     return p
+
+
+@app.get("/zones", tags=["zones"])
+def lister_zones_route(cle: str = Depends(cle_api)):
+    return zones.lister_zones()
+
+
+@app.get("/zones/{zid}", tags=["zones"])
+def lire_zone_route(zid: str, cle: str = Depends(cle_api)):
+    z = zones.lire_zone(zid)
+    if not z:
+        raise HTTPException(404, "Zone introuvable.")
+    return z
