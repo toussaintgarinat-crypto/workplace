@@ -147,10 +147,10 @@ def log_resolution(zone_id: str | None, zone_archetype_id: str | None,
 
 
 def enregistrer_presence(cle_api: str) -> None:
+    assurer_joueur(cle_api)
     with _conn() as c:
-        c.execute("""INSERT INTO joueurs (cle_api, pseudo, derniere_presence) VALUES (?,?,?)
-                     ON CONFLICT(cle_api) DO UPDATE SET derniere_presence=excluded.derniere_presence""",
-                  (cle_api, cle_api, _maintenant()))
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  (_maintenant(), cle_api))
 
 
 def lire_derniere_presence(cle_api: str) -> str | None:
