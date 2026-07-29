@@ -19,7 +19,7 @@ async def _appeler(chemin: str, corps: dict, client: httpx.AsyncClient | None = 
     async def _via(c: httpx.AsyncClient) -> dict:
         try:
             r = await c.post(f"{PERSONNAGES_URL}{chemin}", headers=_entetes(), json=corps)
-        except Exception as e:  # noqa: BLE001
+        except httpx.TransportError as e:
             raise HTTPException(503, f"personnages injoignable ({PERSONNAGES_URL}) : {str(e)[:150]}")
         try:
             corps_reponse = r.json()

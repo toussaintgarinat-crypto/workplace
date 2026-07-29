@@ -44,6 +44,18 @@ async def test_portrait_propage_lerreur_amont():
 
 
 @pytest.mark.asyncio
+async def test_portrait_ne_masque_pas_une_erreur_qui_nest_pas_de_connexion():
+    """Regression test: non-connection errors must propagate as-is, not be swallowed into a 503."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise ValueError("pas une erreur de connexion")
+
+    async with _client(handler) as c:
+        with pytest.raises(ValueError) as exc:
+            await MP.portrait({"date_naissance": "1990-09-05"}, client=c)
+    assert str(exc.value) == "pas une erreur de connexion"
+
+
+@pytest.mark.asyncio
 async def test_recherche_inverse_relaie_le_resultat():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/holistique/recherche-inverse"
