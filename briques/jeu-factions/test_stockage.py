@@ -1,0 +1,49 @@
+import stockage as S
+
+
+def test_creer_et_lire_personnage():
+    S.assurer_joueur("cleA", "Alice")
+    p = S.creer_personnage("cleA", "Aria", {"date_naissance": "1990-09-05"},
+                           {"portrait": {"archetype": "Le Sage Contemplatif", "stats": {"Sagesse": 100}}})
+    assert p["nom"] == "Aria"
+    assert p["zone_actuelle"] is None
+    lu = S.lire_personnage("cleA", p["id"])
+    assert lu["snapshot_holistique"]["portrait"]["archetype"] == "Le Sage Contemplatif"
+
+
+def test_lire_personnage_dun_autre_compte_renvoie_none():
+    S.assurer_joueur("cleB", "Bob")
+    p = S.creer_personnage("cleB", "Vorn", {"date_naissance": "1985-01-01"}, {"portrait": {}})
+    assert S.lire_personnage("cleA", p["id"]) is None
+
+
+def test_lister_personnages_filtre_par_compte():
+    S.assurer_joueur("cleC", "Cid")
+    S.creer_personnage("cleC", "Un", {"date_naissance": "2000-01-01"}, {"portrait": {}})
+    S.creer_personnage("cleC", "Deux", {"date_naissance": "2000-01-02"}, {"portrait": {}})
+    noms = {p["nom"] for p in S.lister_personnages("cleC")}
+    assert noms == {"Un", "Deux"}
+
+
+def test_un_compte_peut_avoir_plusieurs_personnages():
+    S.assurer_joueur("cleD", "Dora")
+    a = S.creer_personnage("cleD", "A", {"date_naissance": "1999-01-01"}, {"portrait": {}})
+    b = S.creer_personnage("cleD", "B", {"date_naissance": "1999-01-02"}, {"portrait": {}})
+    assert a["id"] != b["id"]
+    assert len(S.lister_personnages("cleD")) == 2
+
+
+def test_assigner_zone():
+    S.assurer_joueur("cleE", "Eve")
+    p = S.creer_personnage("cleE", "Zed", {"date_naissance": "2001-05-05"}, {"portrait": {}})
+    maj = S.assigner_zone("cleE", p["id"], "zone-belier")
+    assert maj["zone_actuelle"] == "zone-belier"
+
+
+def test_assigner_zone_personnage_absent_renvoie_none():
+    assert S.assigner_zone("cleE", "inconnu", "zone-belier") is None
+
+
+def test_log_resolution_ne_leve_pas():
+    S.log_resolution("zone-belier", None, {"Bélier": 10}, "vaincue")
+    S.log_resolution(None, "arch-1", {"perso-1": 5}, "en_cours")
