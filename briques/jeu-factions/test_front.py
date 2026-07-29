@@ -14,3 +14,8 @@ def test_accueil_sert_le_html():
 def test_css_servi():
     r = client.get("/workplace.css")
     assert r.status_code == 200
+
+
+def test_front_contient_le_heartbeat_de_presence():
+    r = client.get("/")
+    assert "/presence" in r.text
