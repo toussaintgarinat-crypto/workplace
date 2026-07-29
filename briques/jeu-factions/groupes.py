@@ -63,6 +63,7 @@ def resoudre_groupes_actifs() -> list[dict]:
     appels imbriqués se verrouille elle-même (`database is locked`) — NE PAS envelopper toute
     la fonction dans un seul `with S._conn() as c:`."""
     resultats = []
+    maintenant = datetime.now(timezone.utc)
     with S._conn() as c:
         groupes_actifs = c.execute("SELECT * FROM groupes WHERE etat='actif'").fetchall()
     for gr in groupes_actifs:
@@ -82,7 +83,17 @@ def resoudre_groupes_actifs() -> list[dict]:
                 snap = json.loads(row["snapshot_holistique"])
                 stats = (snap.get("portrait") or {}).get("stats") or {}
                 membres_stats.append({"personnage_id": mid, "stats": stats})
-        res = A.calculer_resolution(membres_stats, stats_cles, etape["difficulte_pve"])
+        # S216 — bonus idle : uniquement pour le(s) membre(s) dont c'est réellement leur
+        # propre prochaine étape (jamais un carry), jamais persisté (recalculé à chaque tick).
+        bonus_par_membre = {}
+        for mid in membres_ids:
+            if A.prochaine_etape(mid, etape["archetype"]) == gr["zone_archetype_id"]:
+                derniere_presence = S.lire_derniere_presence_personnage(mid)
+                bonus = A.bonus_idle(derniere_presence, maintenant,
+                                     A.TAUX_IDLE_PAR_HEURE, A.PLAFOND_IDLE_HEURES)
+                if bonus:
+                    bonus_par_membre[mid] = bonus
+        res = A.calculer_resolution(membres_stats, stats_cles, etape["difficulte_pve"], bonus_par_membre)
         etat_resultant = "vaincue" if res["vaincue"] else "en_cours"
         if res["vaincue"]:
             for mid in membres_ids:

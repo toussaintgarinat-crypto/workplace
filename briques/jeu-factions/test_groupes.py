@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import archetypes as A
 import stockage as S
 import groupes as G
@@ -106,3 +108,50 @@ def test_resoudre_groupes_actifs_pas_vaincu_reste_actif():
     with S._conn() as c:
         row = c.execute("SELECT etat FROM groupes WHERE id=?", (g["id"],)).fetchone()
     assert row["etat"] == "actif"
+
+
+def test_resoudre_groupes_actifs_bonus_idle_comble_lecart(monkeypatch):
+    A.seed_zones_archetype()
+    monkeypatch.setattr(A, "TAUX_IDLE_PAR_HEURE", 1000.0)
+    p = _personnage("cleG8", "Fatigue", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    with S._conn() as c:
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "cleG8"))
+    etapes = A.lister_etapes("Le Meneur Charismatique")
+    G.creer_groupe(p["id"], etapes[0]["id"])
+    resultats = G.resoudre_groupes_actifs()
+    # stats brutes = 30, bien sous la difficulté 80 de l'étape 1 — seul le bonus idle
+    # (1h x 1000 pts/h, monkeypatché) permet de la franchir.
+    assert any(r["etat_resultant"] == "vaincue" for r in resultats)
+    assert A.prochaine_etape(p["id"], "Le Meneur Charismatique") == etapes[1]["id"]
+
+
+def test_resoudre_groupes_actifs_bonus_idle_du_carry_ne_beneficie_pas_a_la_cible(monkeypatch):
+    A.seed_zones_archetype()
+    monkeypatch.setattr(A, "TAUX_IDLE_PAR_HEURE", 1000.0)
+    p = _personnage("cleG10", "Cible7", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    aide = _personnage("cleG10b", "Portefaix", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    etapes = A.lister_etapes("Le Meneur Charismatique")
+    # p franchit l'étape 1 seul grâce à SON propre bonus idle (stats brutes 30, insuffisantes
+    # seules face à la difficulté 80).
+    with S._conn() as c:
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "cleG10"))
+    G.creer_groupe(p["id"], etapes[0]["id"])
+    G.resoudre_groupes_actifs()
+    assert A.prochaine_etape(p["id"], "Le Meneur Charismatique") == etapes[1]["id"]
+    assert A.prochaine_etape(aide["id"], "Le Meneur Charismatique") == etapes[0]["id"]
+    # p "revient" (présence remise à maintenant -> bonus nul pour la suite) ; aide reste idle
+    # depuis 1h (bonus énorme avec le taux monkeypatché) mais rejoint en CARRY sur l'étape 2
+    # de p — pas structurellement SA prochaine étape (la sienne reste l'étape 1).
+    S.enregistrer_presence("cleG10")
+    with S._conn() as c:
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "cleG10b"))
+    g2 = G.creer_groupe(p["id"], etapes[1]["id"])
+    G.rejoindre_groupe(g2["id"], aide["id"])
+    resultats = G.resoudre_groupes_actifs()
+    # total brut = 30 (p) + 30 (aide) = 60, bien sous la difficulté 140 — si le bonus de aide
+    # fuitait dans le total du groupe (1000+ pts), l'étape 2 serait vaincue à tort.
+    assert all(r["etat_resultant"] == "en_cours" for r in resultats if r["groupe_id"] == g2["id"])
+    assert A.prochaine_etape(p["id"], "Le Meneur Charismatique") == etapes[1]["id"]
