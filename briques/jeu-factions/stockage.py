@@ -25,12 +25,21 @@ def _migrer_colonnes_effet_competences(c: sqlite3.Connection) -> None:
             c.execute(f"ALTER TABLE competences ADD COLUMN {nom} {type_sql}")
 
 
+def _migrer_colonne_presence(c: sqlite3.Connection) -> None:
+    """Ajoute `derniere_presence` à `joueurs` si absente (même motif que
+    `_migrer_colonnes_effet_competences` ci-dessus)."""
+    colonnes = {row["name"] for row in c.execute("PRAGMA table_info(joueurs)").fetchall()}
+    if "derniere_presence" not in colonnes:
+        c.execute("ALTER TABLE joueurs ADD COLUMN derniere_presence TEXT")
+
+
 def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS joueurs (
         cle_api TEXT PRIMARY KEY, pseudo TEXT NOT NULL)""")
+    _migrer_colonne_presence(c)
     c.execute("""CREATE TABLE IF NOT EXISTS personnages_jeu (
         id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, nom TEXT NOT NULL,
         donnees_naissance TEXT NOT NULL, snapshot_holistique TEXT NOT NULL,
@@ -135,3 +144,25 @@ def log_resolution(zone_id: str | None, zone_archetype_id: str | None,
                      contributions, etat_resultant) VALUES (?,?,?,?,?,?)""",
                   (uuid.uuid4().hex, zone_id, zone_archetype_id, _maintenant(),
                    json.dumps(contributions, ensure_ascii=False), etat_resultant))
+
+
+def enregistrer_presence(cle_api: str) -> None:
+    with _conn() as c:
+        c.execute("""INSERT INTO joueurs (cle_api, pseudo, derniere_presence) VALUES (?,?,?)
+                     ON CONFLICT(cle_api) DO UPDATE SET derniere_presence=excluded.derniere_presence""",
+                  (cle_api, cle_api, _maintenant()))
+
+
+def lire_derniere_presence(cle_api: str) -> str | None:
+    with _conn() as c:
+        row = c.execute("SELECT derniere_presence FROM joueurs WHERE cle_api=?",
+                        (cle_api,)).fetchone()
+    return row["derniere_presence"] if row else None
+
+
+def lire_derniere_presence_personnage(personnage_id: str) -> str | None:
+    with _conn() as c:
+        row = c.execute("""SELECT j.derniere_presence FROM personnages_jeu p
+                            JOIN joueurs j ON j.cle_api = p.cle_api
+                            WHERE p.id=?""", (personnage_id,)).fetchone()
+    return row["derniere_presence"] if row else None
