@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Jeu-factions</title>
+<link rel="stylesheet" href="/workplace.css">
+</head>
+<body>
+<h1>Jeu-factions — factions &amp; territoire (PvE)</h1>
+
+<section id="creation">
+  <h2>Créer un personnage</h2>
+  <label><input type="radio" name="mode" value="date" checked> Par date de naissance</label>
+  <label><input type="radio" name="mode" value="description"> Par description</label>
+  <form id="formCreation">
+    <input id="nom" placeholder="Nom du personnage" required>
+    <div id="champsDate">
+      <input id="date_naissance" type="date">
+    </div>
+    <div id="champsDescription" style="display:none">
+      <textarea id="description" placeholder="Décris le caractère..."></textarea>
+    </div>
+    <button type="submit">Créer</button>
+  </form>
+  <pre id="resultatCreation"></pre>
+</section>
+
+<section id="mesPersonnages">
+  <h2>Mes personnages</h2>
+  <ul id="listePersonnages"></ul>
+</section>
+
+<section id="zones">
+  <h2>Zones de signe (PvE partagé)</h2>
+  <ul id="listeZones"></ul>
+</section>
+
+<script>
+const cleApi = localStorage.getItem("jeu_factions_cle") || "";
+const entetes = () => cleApi ? {"X-API-Key": cleApi, "Content-Type": "application/json"}
+                             : {"Content-Type": "application/json"};
+
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", e => {
+  document.getElementById("champsDate").style.display = e.target.value === "date" ? "block" : "none";
+  document.getElementById("champsDescription").style.display = e.target.value === "description" ? "block" : "none";
+}));
+
+document.getElementById("formCreation").addEventListener("submit", async e => {
+  e.preventDefault();
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const corps = {nom: document.getElementById("nom").value};
+  if (mode === "date") corps.date_naissance = document.getElementById("date_naissance").value;
+  else corps.description = document.getElementById("description").value;
+  const r = await fetch("/personnages", {method: "POST", headers: entetes(), body: JSON.stringify(corps)});
+  document.getElementById("resultatCreation").textContent = JSON.stringify(await r.json(), null, 2);
+  chargerPersonnages();
+});
+
+async function chargerPersonnages() {
+  const r = await fetch("/personnages", {headers: entetes()});
+  const items = await r.json();
+  document.getElementById("listePersonnages").innerHTML = items.map(p =>
+    `<li>${p.nom} — ${(p.snapshot_holistique.portrait || {}).archetype || "?"} (zone: ${p.zone_actuelle || "aucune"})</li>`
+  ).join("");
+}
+
+async function chargerZones() {
+  const r = await fetch("/zones", {headers: entetes()});
+  const items = await r.json();
+  document.getElementById("listeZones").innerHTML = items.map(z =>
+    `<li>${z.nom} (${z.element_natif}) — ${z.etat}</li>`
+  ).join("");
+}
+
+chargerPersonnages();
+chargerZones();
+</script>
+</body>
+</html>
