@@ -41,7 +41,8 @@ premier sous-projet d'une décomposition en cinq :
 
 ## Architecture
 
-Nouvelle brique **`jeu-factions`**, FastAPI + Docker, port **6200**, au motif exact des
+Nouvelle brique **`jeu-factions`**, FastAPI + Docker, port **6210** (6200 est déjà pris par
+`connecteurs`), au motif exact des
 40 autres briques (`manifest.json`, `Dockerfile`, `docker-compose.yml`, `API_KEYS` = tenant,
 front HTML sans build, `requirements.txt`, tests pytest).
 
