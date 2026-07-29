@@ -74,15 +74,39 @@ def test_lire_zone_inclut_scores_et_historique():
     assert "scores" in z and "historique" in z
 
 
-def test_lire_zone_scores_reflete_la_resolution():
+def test_lire_zone_scores_reflete_ajouter_score():
     Z.seed_zones()
-    S.assurer_joueur("cleScore", "Score")
-    p = S.creer_personnage("cleScore", "Ram", {"date_naissance": "1990-01-01"},
-                           {"traditions": {"signe_solaire": {"nom": "Bélier"}},
-                            "portrait": {"stats": {"Combativité": 200, "Énergie": 200}}})
     belier = next(z for z in Z.lister_zones() if z["signe_natif"] == "Bélier")
-    S.assigner_zone("cleScore", p["id"], belier["id"])
-    Z.resoudre_toutes_zones(["Combativité", "Énergie"])
+    Z.ajouter_score(belier["id"], "Bélier", 400)
     z = Z.lire_zone(belier["id"])
     assert z["scores"] == [{"guilde": "Bélier", "points_cumules": 400}]
-    assert len(z["historique"]) == 1
+
+
+def test_marquer_vaincue_si_premiere_fois():
+    Z.seed_zones()
+    zid = Z.lister_zones()[0]["id"]
+    assert Z.marquer_vaincue_si_premiere_fois(zid) is True
+    assert Z.lire_zone(zid)["etat"] == "vaincue"
+    assert Z.marquer_vaincue_si_premiere_fois(zid) is False  # déjà vaincue, pas de re-déclenchement
+
+
+def test_ajouter_score_cumule_par_guilde():
+    Z.seed_zones()
+    zid = Z.lister_zones()[0]["id"]
+    Z.ajouter_score(zid, "Bélier", 30)
+    Z.ajouter_score(zid, "Bélier", 20)
+    Z.ajouter_score(zid, "Lion", 5)
+    scores = {s["guilde"]: s["points_cumules"] for s in Z.lire_zone(zid)["scores"]}
+    assert scores == {"Bélier": 50, "Lion": 5}
+
+
+def test_ajouter_score_ignore_les_points_a_zero():
+    Z.seed_zones()
+    zid = Z.lister_zones()[0]["id"]
+    Z.ajouter_score(zid, "Bélier", 0)
+    assert Z.lire_zone(zid)["scores"] == []
+
+
+def test_signe_personnage_lit_le_snapshot():
+    assert Z.signe_personnage({"traditions": {"signe_solaire": {"nom": "Lion"}}}) == "Lion"
+    assert Z.signe_personnage({}) is None
