@@ -3,6 +3,7 @@
 Réutilise le moteur holistique de `personnages` en HTTP (aucun calcul dupliqué). Voir
 docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet.
 """
+import asyncio
 import os
 from typing import Optional
 
@@ -14,6 +15,7 @@ import archetypes
 import groupes
 import moteur_personnages
 import stockage
+import tick
 import zones
 
 app = FastAPI(title="Jeu-factions — factions & territoire (PvE)", version="0.1.0")
@@ -36,10 +38,12 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 
 
 @app.on_event("startup")
-def _seed_donnees_globales():
+async def _seed_donnees_globales():
     zones.seed_zones()
     archetypes.seed_zones_archetype()
     archetypes.seed_competences()
+    if os.getenv("JEU_FACTIONS_TICK_AUTOSTART", "1") != "0":
+        asyncio.create_task(tick.boucle_tick())
 
 
 @app.get("/sante", tags=["système"])
