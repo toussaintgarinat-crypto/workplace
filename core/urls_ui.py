@@ -33,6 +33,7 @@ BRIQUES_UI = {
     "GEO":           (6110, "/"),          # GeoHub : carte de veille (Leaflet autoporté)
     "ATELIER_VEILLE": (6130, "/atelier"),  # front unique famille veille (S190)
     "AGENDA":        (8400, "/app"),       # appli agenda autonome (calendar-app, S172)
+    "JEU_FACTIONS":  (6210, "/"),          # jeu-factions : création perso + zones/archétypes PvE
 }
 
 

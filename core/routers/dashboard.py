@@ -87,4 +87,5 @@ async def dashboard(request: Request):
         .replace("__MEMOIRE_UI_URL__", memoire_ui)
         .replace("__DEV_IDE_URL__", u("DEV_IDE"))
         .replace("__GENERATEUR_BUNDLES_URL__", u("GENERATEUR"))
-        .replace("__GATEWAY_UI_URL__", u("GATEWAY")))
+        .replace("__GATEWAY_UI_URL__", u("GATEWAY"))
+        .replace("__JEU_FACTIONS_UI_URL__", u("JEU_FACTIONS")))
