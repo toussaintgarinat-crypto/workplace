@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 import archetypes
 import groupes
+import mobs
 import moteur_personnages
 import stockage
 import tick
@@ -44,6 +45,7 @@ async def _seed_donnees_globales():
     zones.seed_zones()
     archetypes.seed_zones_archetype()
     archetypes.seed_competences()
+    mobs.seed_mobs()
     if os.getenv("JEU_FACTIONS_TICK_AUTOSTART", "1") != "0":
         asyncio.create_task(tick.boucle_tick())
 
