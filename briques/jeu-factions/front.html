@@ -68,7 +68,8 @@ async function chargerZones() {
   const r = await fetch("/zones", {headers: entetes()});
   const items = await r.json();
   document.getElementById("listeZones").innerHTML = items.map(z =>
-    `<li>${z.nom} (${z.element_natif}) — ${z.etat}</li>`
+    `<li>${z.nom} (${z.element_natif}) — ${z.etat} ` +
+    `<a href="/front_combat.html?zone=${z.id}">Rejoindre le combat</a></li>`
   ).join("");
 }
 
