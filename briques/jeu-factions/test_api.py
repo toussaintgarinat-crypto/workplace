@@ -100,3 +100,73 @@ def test_zones_visibles_dun_autre_tenant(monkeypatch):
     zones.seed_zones()
     r = client.get("/zones", headers={"X-API-Key": "nimporte-quelle-cle"})
     assert len(r.json()) == 12
+
+
+import archetypes
+
+
+def _seed_archetypes():
+    archetypes.seed_zones_archetype()
+    archetypes.seed_competences()
+
+
+def _perso(nom, cle="cleH", monkeypatch=None, **overrides):
+    donnees = {"nom": nom, "date_naissance": "1990-01-01"}
+    r = client.post("/personnages", json=donnees, headers={"X-API-Key": cle} if cle != "public" else {})
+    return r.json()
+
+
+def test_lister_etapes_archetype_inconnu_404():
+    assert client.get("/archetypes/Inexistant/etapes").status_code == 404
+
+
+def test_lister_etapes_archetype_connu(monkeypatch):
+    _seed_archetypes()
+    r = client.get("/archetypes/Le Sage Contemplatif/etapes")
+    assert r.status_code == 200
+    assert len(r.json()) == 3
+
+
+def test_creer_groupe_et_rejoindre_via_api(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Meneur Charismatique",
+                    "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
+        "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
+    _seed_archetypes()
+    p = client.post("/personnages", json={"nom": "Cible", "date_naissance": "1990-01-01"}).json()
+    etape = client.get("/archetypes/Le Meneur Charismatique/etapes").json()[0]
+    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]})
+    assert r.status_code == 200
+    gid = r.json()["id"]
+    aide = client.post("/personnages", json={"nom": "Aide", "date_naissance": "1991-01-01"}).json()
+    r2 = client.post(f"/groupes/{gid}/rejoindre", json={"personnage_id": aide["id"]})
+    assert r2.status_code == 200
+    assert aide["id"] in r2.json()["membres"]
+
+
+def test_creer_groupe_personnage_cible_inconnu_404():
+    r = client.post("/groupes", json={"personnage_cible_id": "inconnu", "zone_archetype_id": "x"})
+    assert r.status_code == 404
+
+
+def test_creer_groupe_etape_sautee_400(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Sage Contemplatif", "stats": {}},
+        "traditions": {"signe_solaire": {"nom": "Vierge"}}, "empreinte": []})
+    _seed_archetypes()
+    p = client.post("/personnages", json={"nom": "Sauteur2", "date_naissance": "1990-01-01"}).json()
+    etapes = client.get("/archetypes/Le Sage Contemplatif/etapes").json()
+    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etapes[1]["id"]})
+    assert r.status_code == 400
+
+
+def test_lister_competences_personnage_inconnu_404():
+    assert client.get("/personnages/inconnu/competences").status_code == 404
+
+
+def test_lister_competences_personnage_connu(monkeypatch):
+    _patch_moteur(monkeypatch)
+    p = client.post("/personnages", json={"nom": "Vide2", "date_naissance": "1990-01-01"}).json()
+    r = client.get(f"/personnages/{p['id']}/competences")
+    assert r.status_code == 200
+    assert r.json() == []

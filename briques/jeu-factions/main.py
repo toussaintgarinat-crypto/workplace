@@ -10,6 +10,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import archetypes
+import groupes
 import moteur_personnages
 import stockage
 import zones
@@ -36,6 +38,8 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 @app.on_event("startup")
 def _seed_donnees_globales():
     zones.seed_zones()
+    archetypes.seed_zones_archetype()
+    archetypes.seed_competences()
 
 
 @app.get("/sante", tags=["système"])
@@ -56,6 +60,15 @@ class CreerPersonnage(BaseModel):
 
 class AssignerZone(BaseModel):
     zone_id: str
+
+
+class CreerGroupe(BaseModel):
+    personnage_cible_id: str
+    zone_archetype_id: str
+
+
+class RejoindreGroupe(BaseModel):
+    personnage_id: str
 
 
 @app.post("/personnages", tags=["personnages"])
@@ -117,3 +130,37 @@ def lire_zone_route(zid: str, cle: str = Depends(cle_api)):
     if not z:
         raise HTTPException(404, "Zone introuvable.")
     return z
+
+
+@app.get("/archetypes/{archetype}/etapes", tags=["archetypes"])
+def lister_etapes_route(archetype: str):
+    if archetype not in archetypes.ARCHETYPES_SIGNATURE:
+        raise HTTPException(404, "Archétype inconnu.")
+    return archetypes.lister_etapes(archetype)
+
+
+@app.post("/groupes", tags=["archetypes"])
+def creer_groupe_route(body: CreerGroupe, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, body.personnage_cible_id):
+        raise HTTPException(404, "Personnage introuvable.")
+    try:
+        return groupes.creer_groupe(body.personnage_cible_id, body.zone_archetype_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/groupes/{gid}/rejoindre", tags=["archetypes"])
+def rejoindre_groupe_route(gid: str, body: RejoindreGroupe, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, body.personnage_id):
+        raise HTTPException(404, "Personnage introuvable.")
+    try:
+        return groupes.rejoindre_groupe(gid, body.personnage_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/personnages/{pid}/competences", tags=["personnages"])
+def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, pid):
+        raise HTTPException(404, "Personnage introuvable.")
+    return archetypes.lister_competences_debloquees(pid)
