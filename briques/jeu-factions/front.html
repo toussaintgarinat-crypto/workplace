@@ -59,9 +59,11 @@ document.getElementById("formCreation").addEventListener("submit", async e => {
 async function chargerPersonnages() {
   const r = await fetch("/personnages", {headers: entetes()});
   const items = await r.json();
-  document.getElementById("listePersonnages").innerHTML = items.map(p =>
-    `<li>${p.nom} — ${(p.snapshot_holistique.portrait || {}).archetype || "?"} (zone: ${p.zone_actuelle || "aucune"})</li>`
-  ).join("");
+  document.getElementById("listePersonnages").innerHTML = items.map(p => {
+    const bonus = p.bonus_idle_actuel > 0
+      ? ` — +${p.bonus_idle_actuel} vers la prochaine étape (voie d'archétype)` : "";
+    return `<li>${p.nom} — ${(p.snapshot_holistique.portrait || {}).archetype || "?"} (zone: ${p.zone_actuelle || "aucune"})${bonus}</li>`;
+  }).join("");
 }
 
 async function chargerZones() {
@@ -75,6 +77,10 @@ async function chargerZones() {
 
 chargerPersonnages();
 chargerZones();
+
+if (cleApi) {
+  setInterval(() => fetch("/presence", {method: "POST", headers: entetes()}), 30_000);
+}
 </script>
 </body>
 </html>
