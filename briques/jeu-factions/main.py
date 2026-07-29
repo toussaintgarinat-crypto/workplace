@@ -8,6 +8,10 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+import moteur_personnages
+import stockage
 
 app = FastAPI(title="Jeu-factions — factions & territoire (PvE)", version="0.1.0")
 
@@ -31,3 +35,66 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 @app.get("/sante", tags=["système"])
 def sante():
     return {"statut": "ok"}
+
+
+class CreerPersonnage(BaseModel):
+    nom: str
+    prenoms: str = ""
+    date_naissance: Optional[str] = None
+    heure_naissance: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    utc_offset: Optional[float] = None
+    description: Optional[str] = None
+
+
+class AssignerZone(BaseModel):
+    zone_id: str
+
+
+@app.post("/personnages", tags=["personnages"])
+async def creer_personnage_route(body: CreerPersonnage, cle: str = Depends(cle_api)):
+    a_une_date = bool((body.date_naissance or "").strip())
+    a_une_description = bool((body.description or "").strip())
+    if not a_une_date and not a_une_description:
+        raise HTTPException(422, "Fournis une date de naissance ou une description.")
+
+    if a_une_date:
+        donnees_naissance = {"date_naissance": body.date_naissance,
+                             "heure_naissance": body.heure_naissance,
+                             "latitude": body.latitude, "longitude": body.longitude,
+                             "utc_offset": body.utc_offset}
+        fiche = {**donnees_naissance, "prenoms": body.prenoms, "nom": body.nom}
+    else:
+        donnees_naissance = {"description": body.description}
+        ri = await moteur_personnages.recherche_inverse(body.description)
+        exemple_date = ri.get("exemple_date")
+        if not exemple_date:
+            raise HTTPException(422, "Description trop vague : aucune date déduite. "
+                                     "Précise le caractère ou fournis une date.")
+        fiche = {"date_naissance": exemple_date, "prenoms": body.prenoms, "nom": body.nom}
+
+    resultat = await moteur_personnages.portrait(fiche)
+    stockage.assurer_joueur(cle)
+    return stockage.creer_personnage(cle, body.nom, donnees_naissance, resultat)
+
+
+@app.get("/personnages", tags=["personnages"])
+def lister_personnages_route(cle: str = Depends(cle_api)):
+    return stockage.lister_personnages(cle)
+
+
+@app.get("/personnages/{pid}", tags=["personnages"])
+def lire_personnage_route(pid: str, cle: str = Depends(cle_api)):
+    p = stockage.lire_personnage(cle, pid)
+    if not p:
+        raise HTTPException(404, "Personnage introuvable.")
+    return p
+
+
+@app.patch("/personnages/{pid}/zone", tags=["personnages"])
+def assigner_zone_route(pid: str, body: AssignerZone, cle: str = Depends(cle_api)):
+    p = stockage.assigner_zone(cle, pid, body.zone_id)
+    if not p:
+        raise HTTPException(404, "Personnage introuvable.")
+    return p
