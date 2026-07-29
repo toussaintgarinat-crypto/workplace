@@ -165,6 +165,35 @@ def test_effet_dot_inflige_des_degats_dans_la_duree():
     assert etat["mobs"][mob_id]["pv"] == 48  # 50 - 1 (tick de cast) - 1 (tick suivant)
 
 
+def test_actions_malformees_sont_des_noop_silencieux():
+    etat = _etat_avec_joueur()
+    x_avant, y_avant = etat["joueurs"]["p1"]["x"], etat["joueurs"]["p1"]["y"]
+    actions = [
+        {"personnage_id": "p1"},                                            # type manquant
+        {"type": "deplacement", "personnage_id": "p1"},                     # direction manquante
+        {"type": "deplacement", "personnage_id": "p1", "direction": "nord"},  # direction non-dict
+        {"type": "sort", "personnage_id": "p1"},                            # competence_id manquant
+        {"type": "sort"},                                                   # personnage_id manquant
+    ]
+    etat, evenements = CM.avancer_tick(etat, actions, dt=1.0, competences={}, horodatage=0.0,
+                                       respawn_delai_s=60.0)
+    assert etat["joueurs"]["p1"]["x"] == x_avant
+    assert etat["joueurs"]["p1"]["y"] == y_avant
+    assert evenements == []
+
+
+def test_soin_revive_un_joueur_ko():
+    etat = _etat_avec_joueur()
+    etat = CM.ajouter_joueur(etat, "p2", "Eau", "Cancer")
+    etat["joueurs"]["p2"]["pv"] = 0
+    etat["joueurs"]["p2"]["etat"] = "ko"
+    actions = [{"type": "sort", "personnage_id": "p1", "competence_id": "sort-soin", "cible_id": "p2"}]
+    etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_SOIN,
+                              horodatage=0.0, respawn_delai_s=60.0)
+    assert etat["joueurs"]["p2"]["etat"] == "actif"
+    assert etat["joueurs"]["p2"]["pv"] == 15
+
+
 def test_boss_respawn_apres_le_delai():
     etat = _etat_avec_joueur()
     mob_id = next(iter(etat["mobs"]))
