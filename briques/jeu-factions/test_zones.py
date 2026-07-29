@@ -59,3 +59,30 @@ def test_resoudre_toutes_zones_ignore_les_zones_deja_vaincues():
         c.execute("UPDATE zones SET etat='vaincue' WHERE id=?", (scorpion["id"],))
     resultats = Z.resoudre_toutes_zones(["Combativité", "Énergie"])
     assert all(r["zone_id"] != scorpion["id"] for r in resultats)
+
+
+def test_lister_zones_inclut_les_scores():
+    Z.seed_zones()
+    zs = Z.lister_zones()
+    assert all("scores" in z for z in zs)
+
+
+def test_lire_zone_inclut_scores_et_historique():
+    Z.seed_zones()
+    zid = Z.lister_zones()[0]["id"]
+    z = Z.lire_zone(zid)
+    assert "scores" in z and "historique" in z
+
+
+def test_lire_zone_scores_reflete_la_resolution():
+    Z.seed_zones()
+    S.assurer_joueur("cleScore", "Score")
+    p = S.creer_personnage("cleScore", "Ram", {"date_naissance": "1990-01-01"},
+                           {"traditions": {"signe_solaire": {"nom": "Bélier"}},
+                            "portrait": {"stats": {"Combativité": 200, "Énergie": 200}}})
+    belier = next(z for z in Z.lister_zones() if z["signe_natif"] == "Bélier")
+    S.assigner_zone("cleScore", p["id"], belier["id"])
+    Z.resoudre_toutes_zones(["Combativité", "Énergie"])
+    z = Z.lire_zone(belier["id"])
+    assert z["scores"] == [{"guilde": "Bélier", "points_cumules": 400}]
+    assert len(z["historique"]) == 1

@@ -5,6 +5,7 @@ docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet.
 """
 import asyncio
 import os
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -113,11 +114,15 @@ def lire_personnage_route(pid: str, cle: str = Depends(cle_api)):
     p = stockage.lire_personnage(cle, pid)
     if not p:
         raise HTTPException(404, "Personnage introuvable.")
+    p["progressions"] = archetypes.lister_progressions_personnage(pid)
+    p["competences"] = archetypes.lister_competences_debloquees(pid)
     return p
 
 
 @app.patch("/personnages/{pid}/zone", tags=["personnages"])
 def assigner_zone_route(pid: str, body: AssignerZone, cle: str = Depends(cle_api)):
+    if not zones.lire_zone(body.zone_id):
+        raise HTTPException(404, "Zone introuvable.")
     p = stockage.assigner_zone(cle, pid, body.zone_id)
     if not p:
         raise HTTPException(404, "Personnage introuvable.")
@@ -138,7 +143,7 @@ def lire_zone_route(zid: str, cle: str = Depends(cle_api)):
 
 
 @app.get("/archetypes/{archetype}/etapes", tags=["archetypes"])
-def lister_etapes_route(archetype: str):
+def lister_etapes_route(archetype: str, cle: str = Depends(cle_api)):
     if archetype not in archetypes.ARCHETYPES_SIGNATURE:
         raise HTTPException(404, "Archétype inconnu.")
     return archetypes.lister_etapes(archetype)
@@ -173,9 +178,9 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
 
 @app.get("/", response_class=FileResponse, include_in_schema=False)
 def accueil():
-    return FileResponse("front.html")
+    return FileResponse(Path(__file__).parent / "front.html")
 
 
 @app.get("/workplace.css", include_in_schema=False)
 def design_system():
-    return FileResponse("workplace.css")
+    return FileResponse(Path(__file__).parent / "workplace.css", media_type="text/css")

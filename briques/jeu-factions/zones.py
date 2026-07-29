@@ -33,16 +33,36 @@ def _ligne_zone(r) -> dict:
             "etat": r["etat"]}
 
 
+def _scores_zone(zone_id: str) -> list[dict]:
+    with S._conn() as c:
+        rows = c.execute(
+            "SELECT guilde, points_cumules FROM scores_zone_guilde WHERE zone_id=? "
+            "ORDER BY points_cumules DESC", (zone_id,)).fetchall()
+    return [{"guilde": r["guilde"], "points_cumules": r["points_cumules"]} for r in rows]
+
+
+def _historique_zone(zone_id: str, limite: int = 5) -> list[dict]:
+    import json
+    with S._conn() as c:
+        rows = c.execute(
+            "SELECT horodatage, contributions, etat_resultant FROM resolutions "
+            "WHERE zone_id=? ORDER BY horodatage DESC LIMIT ?", (zone_id, limite)).fetchall()
+    return [{"horodatage": r["horodatage"], "etat_resultant": r["etat_resultant"],
+             "contributions": json.loads(r["contributions"])} for r in rows]
+
+
 def lister_zones() -> list[dict]:
     with S._conn() as c:
         rows = c.execute("SELECT * FROM zones ORDER BY nom").fetchall()
-    return [_ligne_zone(r) for r in rows]
+    return [{**_ligne_zone(r), "scores": _scores_zone(r["id"])} for r in rows]
 
 
 def lire_zone(zone_id: str) -> dict | None:
     with S._conn() as c:
         r = c.execute("SELECT * FROM zones WHERE id=?", (zone_id,)).fetchone()
-    return _ligne_zone(r) if r else None
+    if not r:
+        return None
+    return {**_ligne_zone(r), "scores": _scores_zone(zone_id), "historique": _historique_zone(zone_id)}
 
 
 def calculer_resolution(personnages: list[dict], stats_cles: list[str], difficulte: int) -> dict:

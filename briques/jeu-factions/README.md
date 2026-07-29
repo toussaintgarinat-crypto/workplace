@@ -10,6 +10,10 @@ docker compose up -d --build      # API sur http://localhost:6210
 curl localhost:6210/sante
 ```
 
+## Configuration
+
+Si la brique `personnages` a `API_KEYS` configuré, définis `PERSONNAGES_KEY` (même valeur des deux côtés, voir `.env.example` racine) — sinon chaque création de personnage se fait rejeter (401) par `moteur_personnages.py`.
+
 ## Concepts
 
 - **Nation** = élément du signe solaire (Feu/Terre/Air/Eau).
