@@ -210,12 +210,16 @@ est déjà encodé dans les stats calculées à la naissance.
    tick suivant ne fait plus rien pour cette zone (no-op, pas une erreur).
 4. À chaque tick, pour chaque zone `etat = 'en_cours'` : sommer les stats combat-pertinentes
    (Combativité + Énergie, cf. Configuration) de tous les personnages actuellement assignés,
-   tous comptes confondus. Si la somme ≥ `difficulte_pve` :
-   - `etat` → `vaincue`.
-   - Répartir les points de ce tick dans `scores_zone_guilde`, par guilde (signe) des
-     personnages contributeurs — un score cumulatif, purement informatif (classement, pas
-     de possession exclusive : cf. Non-objectifs, pas de PvP).
-   - Logger dans `resolutions`.
+   tous comptes confondus.
+   - **Répartir les points de CE tick dans `scores_zone_guilde`, par guilde (signe) des
+     personnages présents — à chaque tick, que la zone soit vaincue ou non ce tick-là.**
+     Décision assumée (revue finale) : la présence prolongée sur une zone est elle-même une
+     forme de contribution valable au classement, pas un exploit à corriger — le score reste
+     purement informatif (classement, pas de possession exclusive : cf. Non-objectifs, pas de
+     PvP), donc mesurer le temps investi plutôt que le seul instant de la victoire est
+     acceptable ici.
+   - Si la somme ≥ `difficulte_pve` : `etat` → `vaincue`.
+   - Logger dans `resolutions` à chaque tick (pas seulement à la victoire).
 
 ## Flux — voies d'archétype + groupes
 
