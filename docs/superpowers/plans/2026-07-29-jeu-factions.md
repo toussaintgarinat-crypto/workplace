@@ -1518,14 +1518,21 @@ def rejoindre_groupe(groupe_id: str, personnage_id: str) -> dict:
 
 
 def resoudre_groupes_actifs() -> list[dict]:
+    """Orchestration DB — même discipline de connexions que `zones.resoudre_toutes_zones`
+    (voir son docstring) : chaque lecture/écriture utilise sa PROPRE connexion courte,
+    refermée avant d'appeler une fonction qui ouvre la sienne (`archetypes.py`,
+    `stockage.log_resolution`). Tenir une connexion ouverte pendant ces appels imbriqués
+    se verrouille elle-même (`database is locked`) — NE PAS envelopper toute la fonction
+    dans un seul `with S._conn() as c:`."""
     resultats = []
     with S._conn() as c:
         groupes_actifs = c.execute("SELECT * FROM groupes WHERE etat='actif'").fetchall()
-        for gr in groupes_actifs:
-            etape = A.lire_etape(gr["zone_archetype_id"])
-            if not etape:
-                continue
-            stats_cles = A.ARCHETYPES_SIGNATURE[etape["archetype"]]
+    for gr in groupes_actifs:
+        etape = A.lire_etape(gr["zone_archetype_id"])
+        if not etape:
+            continue
+        stats_cles = A.ARCHETYPES_SIGNATURE[etape["archetype"]]
+        with S._conn() as c:
             membres_ids = [r["personnage_id"] for r in c.execute(
                 "SELECT personnage_id FROM membres_groupe WHERE groupe_id=?", (gr["id"],)).fetchall()]
             membres_stats = []
@@ -1537,18 +1544,19 @@ def resoudre_groupes_actifs() -> list[dict]:
                 snap = json.loads(row["snapshot_holistique"])
                 stats = (snap.get("portrait") or {}).get("stats") or {}
                 membres_stats.append({"personnage_id": mid, "stats": stats})
-            res = A.calculer_resolution(membres_stats, stats_cles, etape["difficulte_pve"])
-            etat_resultant = "vaincue" if res["vaincue"] else "en_cours"
-            if res["vaincue"]:
-                for mid in membres_ids:
-                    if A.prochaine_etape(mid, etape["archetype"]) == gr["zone_archetype_id"]:
-                        A.marquer_etape_vaincue(mid, gr["zone_archetype_id"])
-                        A.debloquer_competence_si_existe(mid, gr["zone_archetype_id"])
+        res = A.calculer_resolution(membres_stats, stats_cles, etape["difficulte_pve"])
+        etat_resultant = "vaincue" if res["vaincue"] else "en_cours"
+        if res["vaincue"]:
+            for mid in membres_ids:
+                if A.prochaine_etape(mid, etape["archetype"]) == gr["zone_archetype_id"]:
+                    A.marquer_etape_vaincue(mid, gr["zone_archetype_id"])
+                    A.debloquer_competence_si_existe(mid, gr["zone_archetype_id"])
+            with S._conn() as c:
                 c.execute("UPDATE groupes SET etat='dissous' WHERE id=?", (gr["id"],))
-            contributions = {m["personnage_id"]: sum(int(m["stats"].get(s, 0)) for s in stats_cles)
-                             for m in membres_stats}
-            S.log_resolution(None, gr["zone_archetype_id"], contributions, etat_resultant)
-            resultats.append({"groupe_id": gr["id"], "etat_resultant": etat_resultant, **res})
+        contributions = {m["personnage_id"]: sum(int(m["stats"].get(s, 0)) for s in stats_cles)
+                         for m in membres_stats}
+        S.log_resolution(None, gr["zone_archetype_id"], contributions, etat_resultant)
+        resultats.append({"groupe_id": gr["id"], "etat_resultant": etat_resultant, **res})
     return resultats
 ```
 
