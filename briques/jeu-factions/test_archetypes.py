@@ -140,3 +140,25 @@ def test_bonus_idle_plafonne_au_dela_du_plafond():
 def test_bonus_idle_futur_ou_maintenant_est_nul():
     maintenant = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
     assert A.bonus_idle(maintenant.isoformat(), maintenant, taux_par_heure=2.0, plafond_heures=24) == 0
+
+
+def test_calculer_resolution_sans_bonus_est_inchangee():
+    membres = [{"personnage_id": "p1", "stats": {"Charisme": 40, "Combativité": 30, "Énergie": 20}}]
+    res = A.calculer_resolution(membres, ("Charisme", "Combativité", "Énergie"), difficulte=100)
+    assert res["total"] == 90
+    assert res["vaincue"] is False
+
+
+def test_calculer_resolution_bonus_sur_membre_absent_est_ignore():
+    membres = [{"personnage_id": "p1", "stats": {"Charisme": 40, "Combativité": 30, "Énergie": 20}}]
+    res = A.calculer_resolution(membres, ("Charisme", "Combativité", "Énergie"), difficulte=100,
+                                bonus_par_membre={"pX": 999})
+    assert res["total"] == 90
+
+
+def test_calculer_resolution_bonus_ajoute_au_membre_concerne():
+    membres = [{"personnage_id": "p1", "stats": {"Charisme": 40, "Combativité": 30, "Énergie": 20}}]
+    res = A.calculer_resolution(membres, ("Charisme", "Combativité", "Énergie"), difficulte=100,
+                                bonus_par_membre={"p1": 15})
+    assert res["total"] == 105
+    assert res["vaincue"] is True
