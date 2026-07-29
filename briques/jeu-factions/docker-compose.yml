@@ -1,0 +1,30 @@
+services:
+  jeu-factions:
+    build: .
+    container_name: workplace_jeu_factions
+    image: workplace/jeu-factions:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6210:6210"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PORT=6210
+      - PERSONNAGES_URL=http://host.docker.internal:5900
+      - JEU_FACTIONS_DB=/data/jeu_factions.db
+      - TICK_INTERVAL_HOURS=24
+      - STATS_ZONE_SIGNE=Combativité,Énergie
+    volumes:
+      - jeu_factions_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6210/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  jeu_factions_data:
