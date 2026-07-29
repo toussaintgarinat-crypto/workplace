@@ -14,6 +14,17 @@ from pathlib import Path
 DB_PATH = os.getenv("JEU_FACTIONS_DB", "/data/jeu_factions.db")
 
 
+def _migrer_colonnes_effet_competences(c: sqlite3.Connection) -> None:
+    """Ajoute les colonnes d'effet de compétence si absentes (brique déployée avant ce
+    plan) — `ALTER TABLE` idempotent, vérifié via `PRAGMA table_info` (SQLite n'a pas
+    d'`ADD COLUMN IF NOT EXISTS`)."""
+    colonnes = {row["name"] for row in c.execute("PRAGMA table_info(competences)").fetchall()}
+    for nom, type_sql in (("effet_type", "TEXT"), ("magnitude", "INTEGER"),
+                          ("portee", "INTEGER"), ("cooldown_s", "REAL")):
+        if nom not in colonnes:
+            c.execute(f"ALTER TABLE competences ADD COLUMN {nom} {type_sql}")
+
+
 def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
@@ -57,6 +68,7 @@ def _conn() -> sqlite3.Connection:
     c.execute("""CREATE TABLE IF NOT EXISTS competences (
         id TEXT PRIMARY KEY, nom TEXT NOT NULL, texte TEXT NOT NULL,
         archetype TEXT NOT NULL, ordre_etape INTEGER NOT NULL)""")
+    _migrer_colonnes_effet_competences(c)
     c.execute("""CREATE TABLE IF NOT EXISTS competences_debloquees (
         personnage_id TEXT NOT NULL, competence_id TEXT NOT NULL, date TEXT NOT NULL,
         PRIMARY KEY (personnage_id, competence_id))""")

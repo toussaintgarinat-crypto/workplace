@@ -47,3 +47,10 @@ def test_assigner_zone_personnage_absent_renvoie_none():
 def test_log_resolution_ne_leve_pas():
     S.log_resolution("zone-belier", None, {"Bélier": 10}, "vaincue")
     S.log_resolution(None, "arch-1", {"perso-1": 5}, "en_cours")
+
+
+def test_migration_colonnes_effet_est_presente_et_idempotente():
+    with S._conn() as c:
+        colonnes = {row["name"] for row in c.execute("PRAGMA table_info(competences)").fetchall()}
+    assert {"effet_type", "magnitude", "portee", "cooldown_s"} <= colonnes
+    S._conn()  # rejouer la migration ne doit pas lever d'erreur (ALTER TABLE idempotent)
