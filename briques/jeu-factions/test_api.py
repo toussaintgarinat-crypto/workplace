@@ -177,3 +177,43 @@ def test_lister_competences_personnage_connu(monkeypatch):
     r = client.get(f"/personnages/{p['id']}/competences")
     assert r.status_code == 200
     assert r.json() == []
+
+
+import combat
+import mobs
+
+
+def test_combat_ws_rejette_une_cle_invalide(monkeypatch):
+    import main
+    main.API_KEYS = {"bonnecle"}
+    try:
+        with client.websocket_connect(
+                "/zones/inconnue/combat?personnage_id=x&api_key=mauvaise") as ws:
+            message = ws.receive()
+            assert message["type"] == "websocket.close"
+            assert message["code"] == 4401
+    finally:
+        main.API_KEYS = set()
+
+
+def test_combat_ws_zone_ou_personnage_inconnu_est_rejete():
+    with client.websocket_connect(
+            "/zones/inconnue/combat?personnage_id=inconnu&api_key=") as ws:
+        message = ws.receive()
+        assert message["type"] == "websocket.close"
+        assert message["code"] == 4404
+
+
+def test_combat_ws_connexion_valide_recoit_un_etat_initial(monkeypatch):
+    _patch_moteur(monkeypatch)
+    zones.seed_zones()
+    mobs.seed_mobs()
+    r = client.post("/personnages", json={"nom": "Combattant", "date_naissance": "1990-01-01"})
+    pid = r.json()["id"]
+    zone_id = zones.lister_zones()[0]["id"]
+    with client.websocket_connect(f"/zones/{zone_id}/combat?personnage_id={pid}") as ws:
+        premier = ws.receive_json()
+        assert premier["type"] == "etat"
+        assert pid in premier["joueurs"]
+    instance = combat._INSTANCES[zone_id][0]
+    assert pid not in instance.etat["joueurs"]  # retiré à la déconnexion (finally du handler)
