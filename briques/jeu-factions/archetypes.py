@@ -126,6 +126,17 @@ def debloquer_competence_si_existe(personnage_id: str, zone_archetype_id: str) -
                   (personnage_id, comp["id"]))
 
 
+def lister_progressions_personnage(personnage_id: str) -> list[dict]:
+    """Toute la progression connue d'un personnage, toutes voies d'archétype confondues."""
+    with S._conn() as c:
+        rows = c.execute(
+            "SELECT p.zone_archetype_id, p.etat, p.date_completion, z.archetype, z.ordre, z.nom "
+            "FROM progression_archetype p JOIN zones_archetype z ON z.id = p.zone_archetype_id "
+            "WHERE p.personnage_id=? ORDER BY z.archetype, z.ordre", (personnage_id,)).fetchall()
+    return [{"archetype": r["archetype"], "ordre": r["ordre"], "nom": r["nom"],
+             "etat": r["etat"], "date_completion": r["date_completion"]} for r in rows]
+
+
 def lister_competences_debloquees(personnage_id: str) -> list[dict]:
     with S._conn() as c:
         rows = c.execute("""SELECT c.id, c.nom, c.texte, c.archetype, c.ordre_etape, cd.date

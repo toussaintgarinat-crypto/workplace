@@ -10,10 +10,6 @@ def test_sante():
     assert r.json() == {"statut": "ok"}
 
 
-import httpx
-import stockage
-
-
 def _patch_moteur(monkeypatch, portrait_reponse=None, ri_reponse=None):
     async def _portrait(fiche, client=None):
         return portrait_reponse or {"portrait": {"archetype": "Le Sage Contemplatif",
@@ -73,6 +69,23 @@ def test_assigner_zone_personnage_inconnu_404():
     assert r.status_code == 404
 
 
+def test_assigner_zone_inconnue_404(monkeypatch):
+    _patch_moteur(monkeypatch)
+    r = client.post("/personnages", json={"nom": "SansZone", "date_naissance": "1990-01-01"})
+    pid = r.json()["id"]
+    r2 = client.patch(f"/personnages/{pid}/zone", json={"zone_id": "zone-qui-nexiste-pas"})
+    assert r2.status_code == 404
+
+
+def test_lire_personnage_inclut_progressions_et_competences(monkeypatch):
+    _patch_moteur(monkeypatch)
+    r = client.post("/personnages", json={"nom": "Enrichi", "date_naissance": "1990-01-01"})
+    pid = r.json()["id"]
+    detail = client.get(f"/personnages/{pid}").json()
+    assert "progressions" in detail and detail["progressions"] == []
+    assert "competences" in detail and detail["competences"] == []
+
+
 import zones
 
 
@@ -108,12 +121,6 @@ import archetypes
 def _seed_archetypes():
     archetypes.seed_zones_archetype()
     archetypes.seed_competences()
-
-
-def _perso(nom, cle="cleH", monkeypatch=None, **overrides):
-    donnees = {"nom": nom, "date_naissance": "1990-01-01"}
-    r = client.post("/personnages", json=donnees, headers={"X-API-Key": cle} if cle != "public" else {})
-    return r.json()
 
 
 def test_lister_etapes_archetype_inconnu_404():

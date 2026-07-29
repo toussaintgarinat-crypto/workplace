@@ -62,7 +62,8 @@ def test_groupe_dun_tenant_pas_manipulable_par_un_autre(monkeypatch):
                     headers={"X-API-Key": "tenant-c"})
     pid = r.json()["id"]
     archetypes.seed_zones_archetype()
-    etape = client.get("/archetypes/Le Sage Contemplatif/etapes").json()[0]
+    etape = client.get("/archetypes/Le Sage Contemplatif/etapes",
+                       headers={"X-API-Key": "tenant-c"}).json()[0]
     r2 = client.post("/groupes", json={"personnage_cible_id": pid, "zone_archetype_id": etape["id"]},
                      headers={"X-API-Key": "tenant-d"})
     assert r2.status_code == 404
