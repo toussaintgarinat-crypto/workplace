@@ -15,7 +15,11 @@ services:
       - PERSONNAGES_URL=http://host.docker.internal:5900
       - JEU_FACTIONS_DB=/data/jeu_factions.db
       - TICK_INTERVAL_HOURS=24
-      - STATS_ZONE_SIGNE=Combativité,Énergie
+      - COMBAT_TICK_HZ=10
+      - JEU_FACTIONS_INSTANCE_CAPACITE=30
+      - COMBAT_INSTANCE_GRACE_S=30
+      - COMBAT_BOSS_RESPAWN_S=60
+      - COMBAT_ARENE_TAILLE=800
     volumes:
       - jeu_factions_data:/data
     restart: unless-stopped

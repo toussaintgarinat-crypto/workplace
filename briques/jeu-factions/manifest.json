@@ -2,7 +2,7 @@
   "nom": "jeu-factions",
   "famille": "metier",
   "version": "0.1.0",
-  "description": "Création de personnage (via la brique personnages) + factions à deux niveaux (nation=élément, guilde=signe, classe=archétype) + zones de signe en PvE partagé + voies d'archétype personnelles avec groupes ouverts. Premier sous-projet du jeu holistique.",
+  "description": "Création de personnage (via la brique personnages) + factions à deux niveaux (nation=élément, guilde=signe, classe=archétype) + combat 2D temps réel joué en zones de signe (PvE partagé, shardé par instance) + voies d'archétype personnelles avec groupes ouverts. Sous-projets 1 et 2 du jeu holistique.",
   "role": "jeu-factions",
   "couche": "backend",
   "statut": "a_tester",
@@ -12,6 +12,7 @@
   "depends_on": ["personnages"],
   "offre": [
     "creation_personnage_holistique",
+    "combat_temps_reel_pve",
     "zones_signe_pve_partage",
     "voies_archetype_personnelles",
     "groupes_ouverts"
