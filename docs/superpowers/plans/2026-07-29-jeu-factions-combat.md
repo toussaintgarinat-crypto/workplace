@@ -490,7 +490,10 @@ def test_plusieurs_sorts_au_meme_tick_dans_lordre():
               {"type": "sort", "personnage_id": "p2", "competence_id": "sort-degats", "cible_id": mob_id}]
     etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_DEGATS,
                               horodatage=0.0, respawn_delai_s=60.0)
-    assert etat["mobs"][mob_id]["degats_recus_par_guilde"] == {"Bélier": 30, "Cancer": 20}
+    # pv_max=200 : les deux coups à 30 dégâts s'appliquent intégralement, aucun n'est
+    # tronqué par la mort du mob (contrairement à pv_max=50, où le second aurait été
+    # plafonné à 20 réels) — d'où 30/30 et pas 30/20.
+    assert etat["mobs"][mob_id]["degats_recus_par_guilde"] == {"Bélier": 30, "Cancer": 30}
 
 
 def test_mob_nattaque_que_dans_sa_portee_daggro():
