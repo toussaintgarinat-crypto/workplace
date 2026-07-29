@@ -45,20 +45,47 @@ def seed_zones_archetype() -> None:
                            lore.format(archetype=archetype)))
 
 
+EFFETS_PAR_ETAPE: dict[int, dict] = {
+    1: {"effet_type": "degats", "magnitude": 20, "portee": 120, "cooldown_s": 3.0},
+    2: {"effet_type": "soin", "magnitude": 15, "portee": 100, "cooldown_s": 6.0},
+    3: {"effet_type": "bouclier", "magnitude": 30, "portee": 80, "cooldown_s": 10.0},
+}
+
+
 def seed_competences() -> None:
     with S._conn() as c:
         etapes = c.execute("SELECT * FROM zones_archetype").fetchall()
         for e in etapes:
+            effet = EFFETS_PAR_ETAPE[e["ordre"]]
             existe = c.execute(
-                "SELECT 1 FROM competences WHERE archetype=? AND ordre_etape=?",
+                "SELECT id, effet_type FROM competences WHERE archetype=? AND ordre_etape=?",
                 (e["archetype"], e["ordre"])).fetchone()
             if existe:
+                if existe["effet_type"] is None:
+                    c.execute("""UPDATE competences
+                                 SET effet_type=?, magnitude=?, portee=?, cooldown_s=?
+                                 WHERE id=?""",
+                              (effet["effet_type"], effet["magnitude"], effet["portee"],
+                               effet["cooldown_s"], existe["id"]))
                 continue
-            c.execute("""INSERT INTO competences (id, nom, texte, archetype, ordre_etape)
-                         VALUES (?,?,?,?,?)""",
+            c.execute("""INSERT INTO competences
+                         (id, nom, texte, archetype, ordre_etape, effet_type, magnitude,
+                          portee, cooldown_s)
+                         VALUES (?,?,?,?,?,?,?,?,?)""",
                       (uuid.uuid4().hex, f"Compétence — {e['nom']}",
-                       f"Débloquée en achevant « {e['nom']} ». Effet à définir (spec combat).",
-                       e["archetype"], e["ordre"]))
+                       f"Débloquée en achevant « {e['nom']} ». "
+                       f"Effet : {effet['effet_type']} ({effet['magnitude']}).",
+                       e["archetype"], e["ordre"], effet["effet_type"], effet["magnitude"],
+                       effet["portee"], effet["cooldown_s"]))
+
+
+def lister_toutes_competences_avec_effet() -> dict[str, dict]:
+    with S._conn() as c:
+        rows = c.execute(
+            "SELECT id, effet_type, magnitude, portee, cooldown_s FROM competences "
+            "WHERE effet_type IS NOT NULL").fetchall()
+    return {r["id"]: {"effet_type": r["effet_type"], "magnitude": r["magnitude"],
+                      "portee": r["portee"], "cooldown_s": r["cooldown_s"]} for r in rows}
 
 
 def _ligne_etape(r) -> dict:

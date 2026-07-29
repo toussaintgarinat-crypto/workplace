@@ -67,3 +67,44 @@ def test_debloquer_competence_deux_fois_ne_duplique_pas():
     A.debloquer_competence_si_existe("perso-w", etapes[0]["id"])
     A.debloquer_competence_si_existe("perso-w", etapes[0]["id"])
     assert len(A.lister_competences_debloquees("perso-w")) == 1
+
+
+def test_seed_competences_definit_un_effet_pour_chaque_etape():
+    A.seed_zones_archetype()
+    A.seed_competences()
+    effets = A.lister_toutes_competences_avec_effet()
+    assert len(effets) == 30  # 10 archétypes x 3 étapes
+    assert all(e["effet_type"] in ("degats", "soin", "bouclier") for e in effets.values())
+    assert all(isinstance(e["magnitude"], int) and e["magnitude"] > 0 for e in effets.values())
+
+
+def test_seed_competences_est_idempotent_et_backfill_les_lignes_existantes():
+    A.seed_zones_archetype()
+    A.seed_competences()
+    avant = A.lister_toutes_competences_avec_effet()
+    A.seed_competences()
+    apres = A.lister_toutes_competences_avec_effet()
+    assert avant == apres
+
+
+def test_seed_competences_backfill_une_ligne_deja_existante_sans_effet():
+    A.seed_zones_archetype()
+    # simule une compétence seedée AVANT ce plan (pas d'effet), motif déjà utilisé en
+    # production sur le HP — le seed doit la compléter, pas la dupliquer.
+    import stockage as S
+    import uuid
+    etape = A.lister_etapes("Le Sage Contemplatif")[0]
+    with S._conn() as c:
+        c.execute("""INSERT INTO competences (id, nom, texte, archetype, ordre_etape)
+                     VALUES (?,?,?,?,?)""",
+                  (uuid.uuid4().hex, "Compétence — ancienne", "texte", "Le Sage Contemplatif",
+                   etape["ordre"]))
+    A.seed_competences()
+    effets = A.lister_toutes_competences_avec_effet()
+    trouvee = [e for cid, e in effets.items()]
+    assert any(e["effet_type"] == "degats" for e in trouvee)  # ordre 1 → degats
+    # une seule ligne pour cette étape (pas de doublon inséré par-dessus l'ancienne)
+    with S._conn() as c:
+        n = c.execute("SELECT COUNT(*) AS n FROM competences WHERE archetype=? AND ordre_etape=?",
+                      ("Le Sage Contemplatif", etape["ordre"])).fetchone()["n"]
+    assert n == 1
