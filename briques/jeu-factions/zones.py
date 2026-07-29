@@ -77,7 +77,7 @@ def calculer_resolution(personnages: list[dict], stats_cles: list[str], difficul
     return {"total": total, "par_guilde": par_guilde, "vaincue": total >= difficulte}
 
 
-def _signe_personnage(snapshot: dict) -> str | None:
+def signe_personnage(snapshot: dict) -> str | None:
     return ((snapshot.get("traditions") or {}).get("signe_solaire") or {}).get("nom")
 
 
@@ -105,7 +105,7 @@ def resoudre_toutes_zones(stats_cles: list[str]) -> list[dict]:
             personnages = []
             for r in rows:
                 snap = json.loads(r["snapshot_holistique"])
-                signe = _signe_personnage(snap)
+                signe = signe_personnage(snap)
                 if not signe:
                     continue
                 personnages.append({"id": r["id"], "signe": signe, "stats": _stats_personnage(snap)})
@@ -122,3 +122,20 @@ def resoudre_toutes_zones(stats_cles: list[str]) -> list[dict]:
         S.log_resolution(zr["id"], None, res["par_guilde"], etat_resultant)
         resultats.append({"zone_id": zr["id"], "etat_resultant": etat_resultant, **res})
     return resultats
+
+
+def marquer_vaincue_si_premiere_fois(zone_id: str) -> bool:
+    with S._conn() as c:
+        cur = c.execute("UPDATE zones SET etat='vaincue' WHERE id=? AND etat='en_cours'", (zone_id,))
+        return cur.rowcount > 0
+
+
+def ajouter_score(zone_id: str, guilde: str, points: float) -> None:
+    if points <= 0:
+        return
+    with S._conn() as c:
+        c.execute("""INSERT INTO scores_zone_guilde (zone_id, guilde, points_cumules)
+                     VALUES (?,?,?)
+                     ON CONFLICT(zone_id, guilde) DO UPDATE SET
+                     points_cumules = points_cumules + excluded.points_cumules""",
+                  (zone_id, guilde, int(points)))
