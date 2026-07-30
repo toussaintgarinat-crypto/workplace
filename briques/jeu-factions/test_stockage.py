@@ -97,6 +97,8 @@ def test_migrer_public_reattribue_joueur_et_personnages():
     with S._conn() as c:
         assert c.execute("SELECT 1 FROM joueurs WHERE cle_api='public'").fetchone() is None
         assert c.execute("SELECT 1 FROM joueurs WHERE cle_api=?", ("sub-reel-1",)).fetchone() is not None
+        assert c.execute("SELECT pseudo FROM joueurs WHERE cle_api=?",
+                         ("sub-reel-1",)).fetchone()["pseudo"] == "sub-reel-1"
 
 
 def test_migrer_public_est_idempotente_pour_la_meme_identite():

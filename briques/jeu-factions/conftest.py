@@ -1,4 +1,4 @@
-"""Config de test : DB temporaire + mode auth ouvert AVANT tout import des modules."""
+"""Config de test : DB temporaire + secrets de test AVANT tout import des modules."""
 import os
 import tempfile
 

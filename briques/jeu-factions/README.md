@@ -14,6 +14,8 @@ curl localhost:6210/sante
 
 Si la brique `personnages` a `API_KEYS` configuré, définis `PERSONNAGES_KEY` (même valeur des deux côtés, voir `.env.example` racine) — sinon chaque création de personnage se fait rejeter (401) par `moteur_personnages.py`.
 
+`JEU_FACTIONS_KEY` (S217) est **obligatoire** — secret partagé avec le Cœur pour le jeton signé de la tuile du dashboard. Sans elle, la brique refuse tout accès (aucun repli mono-tenant, contrairement aux autres briques cercle privé) : voir `.env.example` racine.
+
 ## Concepts
 
 - **Nation** = élément du signe solaire (Feu/Terre/Air/Eau).
@@ -24,7 +26,7 @@ Si la brique `personnages` a `API_KEYS` configuré, définis `PERSONNAGES_KEY` (
 
 ## Exception au cloisonnement
 
-Contrairement au reste de Workplace, `/zones` et `/archetypes/*/etapes` sont un **monde partagé** : toute clé API valide les voit toutes. Seuls `/personnages` et `/groupes` restent cloisonnés par propriétaire. Voir le spec pour la justification.
+Contrairement au reste de Workplace, `/zones` et `/archetypes/*/etapes` sont un **monde partagé** : toute identité authentifiée les voit toutes. Seuls `/personnages` et `/groupes` restent cloisonnés par propriétaire. Voir le spec pour la justification.
 
 ## Combat temps réel
 
@@ -36,7 +38,7 @@ de combat). Voir `docs/superpowers/specs/2026-07-29-jeu-factions-combat-design.m
 
 ## Non fait ici (specs séparés à venir)
 
-PvP, vrais comptes/hébergement public, progression idle, lore riche.
+PvP, hébergement public (cercle privé uniquement, S217), lore riche.
 
 ## Tests
 

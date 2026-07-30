@@ -257,6 +257,7 @@ def accueil(request: Request):
     return reponse
 
 
+# Statique, pas de données — l'auth réelle est sur les fetch() qu'il déclenche (personnages/WS).
 @app.get("/front_combat.html", response_class=FileResponse, include_in_schema=False)
 def combat_front():
     return FileResponse(Path(__file__).parent / "front_combat.html")
