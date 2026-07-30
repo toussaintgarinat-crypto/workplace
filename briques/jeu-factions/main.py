@@ -1,7 +1,9 @@
 """Brique « jeu-factions » — création de personnage + factions/territoire (PvE).
 
 Réutilise le moteur holistique de `personnages` en HTTP (aucun calcul dupliqué). Voir
-docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet.
+docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet, et
+docs/superpowers/specs/2026-07-30-jeu-factions-identite-design.md pour l'identité réelle
+(S217) : `cle_api` est désormais un `sub` Keycloak vérifié par cookie, plus une clé partagée.
 """
 import asyncio
 import os
@@ -10,14 +12,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import archetypes
 import combat
 import groupes
+import jeton
 import mobs
 import moteur_personnages
 import stockage
@@ -29,18 +32,15 @@ app = FastAPI(title="Jeu-factions — factions & territoire (PvE)", version="0.1
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
-API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
 
-
-def cle_api(x_api_key: Optional[str] = Header(None),
-            authorization: Optional[str] = Header(None)) -> str:
-    """Valide la clé API et sert de tenant. Vide = mode ouvert → tenant "public"."""
-    presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
-    if not API_KEYS:
-        return presentee or "public"
-    if presentee in API_KEYS:
-        return presentee
-    raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
+def cle_api(request: Request) -> str:
+    """Identité réelle (S217) : uniquement le cookie posé par `GET /` après vérification du
+    jeton signé par le Cœur — plus de clé partagée, plus de mode ouvert (spec, Non-objectifs)."""
+    identite = jeton.verifier(request.cookies.get(jeton.COOKIE_NOM))
+    if not identite:
+        raise HTTPException(401, "Session Cœur requise — rouvre la tuile Jeu-factions depuis le Cœur.")
+    stockage.migrer_public_si_premiere_connexion(identite)
+    return identite
 
 
 @app.on_event("startup")
@@ -201,23 +201,16 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
     return archetypes.lister_competences_debloquees(pid)
 
 
-def _cle_depuis_query(api_key: str) -> str | None:
-    """Même validation que `cle_api` (Header) mais pour le WebSocket : le navigateur ne
-    peut pas poser d'en-tête personnalisé à la connexion — la clé passe en query param."""
-    if not API_KEYS:
-        return api_key or "public"
-    return api_key if api_key in API_KEYS else None
-
-
 @app.websocket("/zones/{zone_id}/combat")
-async def combat_ws(websocket: WebSocket, zone_id: str,
-                    personnage_id: str = Query(...), api_key: str = Query("")):
+async def combat_ws(websocket: WebSocket, zone_id: str, personnage_id: str = Query(...)):
     await websocket.accept()
-    cle = _cle_depuis_query(api_key)
-    if cle is None:
+    # S217 : le cookie posé par `GET /` est déjà là au moment du handshake — même origine,
+    # envoyé automatiquement par le navigateur, pas de query param `api_key`.
+    identite = jeton.verifier(websocket.cookies.get(jeton.COOKIE_NOM))
+    if identite is None:
         await websocket.close(code=4401)
         return
-    perso = stockage.lire_personnage(cle, personnage_id)
+    perso = stockage.lire_personnage(identite, personnage_id)
     zone = zones.lire_zone(zone_id)
     if not perso or not zone:
         await websocket.close(code=4404)
@@ -240,9 +233,28 @@ async def combat_ws(websocket: WebSocket, zone_id: str,
         combat.quitter(inst, personnage_id, time.monotonic())
 
 
-@app.get("/", response_class=FileResponse, include_in_schema=False)
-def accueil():
-    return FileResponse(Path(__file__).parent / "front.html")
+_PAGE_REOUVRIR = """<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Jeu-factions</title>
+<link rel="stylesheet" href="/workplace.css"></head>
+<body><p>Session expirée ou absente — rouvre la tuile Jeu-factions depuis le tableau de
+bord du Cœur.</p></body></html>"""
+
+
+@app.get("/", include_in_schema=False)
+def accueil(request: Request):
+    """Point d'entrée : lit le jeton d'URL (posé par le Cœur, `?j=`) en priorité, sinon le
+    cookie d'une navigation précédente (S217). Ni l'un ni l'autre -> page d'invite (401,
+    HTML — cette route est la seule atteinte par une navigation humaine directe)."""
+    jeton_url = request.query_params.get("j")
+    identite = jeton.verifier(jeton_url) or jeton.verifier(request.cookies.get(jeton.COOKIE_NOM))
+    if not identite:
+        return HTMLResponse(_PAGE_REOUVRIR, status_code=401)
+    contenu = (Path(__file__).parent / "front.html").read_text(encoding="utf-8")
+    reponse = HTMLResponse(contenu)
+    if jeton_url:
+        reponse.set_cookie(jeton.COOKIE_NOM, jeton.emettre(identite, ttl=8 * 3600),
+                           max_age=8 * 3600, httponly=True, samesite="lax")
+    return reponse
 
 
 @app.get("/front_combat.html", response_class=FileResponse, include_in_schema=False)

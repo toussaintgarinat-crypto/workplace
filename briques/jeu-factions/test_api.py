@@ -1,9 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+
+import jeton
 from main import app
 
 client = TestClient(app)
+
+
+def _cookies(identite: str) -> dict:
+    return {jeton.COOKIE_NOM: jeton.emettre(identite, ttl=3600)}
 
 
 def test_sante():
@@ -29,7 +35,8 @@ def _patch_moteur(monkeypatch, portrait_reponse=None, ri_reponse=None):
 
 def test_creer_personnage_par_date(monkeypatch):
     _patch_moteur(monkeypatch)
-    r = client.post("/personnages", json={"nom": "Aria", "date_naissance": "1990-09-05"})
+    r = client.post("/personnages", json={"nom": "Aria", "date_naissance": "1990-09-05"},
+                    cookies=_cookies("cree-tenant-1"))
     assert r.status_code == 200
     corps = r.json()
     assert corps["nom"] == "Aria"
@@ -38,52 +45,65 @@ def test_creer_personnage_par_date(monkeypatch):
 
 def test_creer_personnage_par_description(monkeypatch):
     _patch_moteur(monkeypatch)
-    r = client.post("/personnages", json={"nom": "Vorn", "description": "guerrier colérique"})
+    r = client.post("/personnages", json={"nom": "Vorn", "description": "guerrier colérique"},
+                    cookies=_cookies("cree-tenant-2"))
     assert r.status_code == 200
     assert r.json()["donnees_naissance"] == {"description": "guerrier colérique"}
 
 
 def test_creer_personnage_sans_date_ni_description_422():
-    r = client.post("/personnages", json={"nom": "Vide"})
+    r = client.post("/personnages", json={"nom": "Vide"}, cookies=_cookies("cree-tenant-3"))
     assert r.status_code == 422
 
 
 def test_creer_personnage_description_sans_date_deduite_422(monkeypatch):
     _patch_moteur(monkeypatch, ri_reponse={"exemple_date": None})
-    r = client.post("/personnages", json={"nom": "Flou", "description": "quelque chose"})
+    r = client.post("/personnages", json={"nom": "Flou", "description": "quelque chose"},
+                    cookies=_cookies("cree-tenant-4"))
     assert r.status_code == 422
+
+
+def test_route_personnages_rejette_un_cookie_absent_ou_invalide():
+    assert client.get("/personnages").status_code == 401
+    assert client.get("/personnages",
+                      cookies={jeton.COOKIE_NOM: "pas-un-jeton"}).status_code == 401
 
 
 def test_lister_et_lire_personnage(monkeypatch):
     _patch_moteur(monkeypatch)
-    r = client.post("/personnages", json={"nom": "Lu", "date_naissance": "1990-01-01"})
+    r = client.post("/personnages", json={"nom": "Lu", "date_naissance": "1990-01-01"},
+                    cookies=_cookies("lire-tenant"))
     pid = r.json()["id"]
-    assert any(p["id"] == pid for p in client.get("/personnages").json())
-    assert client.get(f"/personnages/{pid}").json()["nom"] == "Lu"
+    assert any(p["id"] == pid for p in client.get("/personnages", cookies=_cookies("lire-tenant")).json())
+    assert client.get(f"/personnages/{pid}", cookies=_cookies("lire-tenant")).json()["nom"] == "Lu"
 
 
 def test_lire_personnage_inconnu_404():
-    assert client.get("/personnages/inconnu").status_code == 404
+    assert client.get("/personnages/inconnu", cookies=_cookies("lire-tenant-2")).status_code == 404
 
 
 def test_assigner_zone_personnage_inconnu_404():
-    r = client.patch("/personnages/inconnu/zone", json={"zone_id": "zone-belier"})
+    r = client.patch("/personnages/inconnu/zone", json={"zone_id": "zone-belier"},
+                     cookies=_cookies("zone-tenant-1"))
     assert r.status_code == 404
 
 
 def test_assigner_zone_inconnue_404(monkeypatch):
     _patch_moteur(monkeypatch)
-    r = client.post("/personnages", json={"nom": "SansZone", "date_naissance": "1990-01-01"})
+    r = client.post("/personnages", json={"nom": "SansZone", "date_naissance": "1990-01-01"},
+                    cookies=_cookies("zone-tenant-2"))
     pid = r.json()["id"]
-    r2 = client.patch(f"/personnages/{pid}/zone", json={"zone_id": "zone-qui-nexiste-pas"})
+    r2 = client.patch(f"/personnages/{pid}/zone", json={"zone_id": "zone-qui-nexiste-pas"},
+                      cookies=_cookies("zone-tenant-2"))
     assert r2.status_code == 404
 
 
 def test_lire_personnage_inclut_progressions_et_competences(monkeypatch):
     _patch_moteur(monkeypatch)
-    r = client.post("/personnages", json={"nom": "Enrichi", "date_naissance": "1990-01-01"})
+    r = client.post("/personnages", json={"nom": "Enrichi", "date_naissance": "1990-01-01"},
+                    cookies=_cookies("enrichi-tenant"))
     pid = r.json()["id"]
-    detail = client.get(f"/personnages/{pid}").json()
+    detail = client.get(f"/personnages/{pid}", cookies=_cookies("enrichi-tenant")).json()
     assert "progressions" in detail and detail["progressions"] == []
     assert "competences" in detail and detail["competences"] == []
 
@@ -93,7 +113,7 @@ import zones
 
 def test_lister_zones_renvoie_les_12_zones():
     zones.seed_zones()
-    r = client.get("/zones")
+    r = client.get("/zones", cookies=_cookies("zones-tenant"))
     assert r.status_code == 200
     assert len(r.json()) == 12
 
@@ -101,19 +121,19 @@ def test_lister_zones_renvoie_les_12_zones():
 def test_lire_zone():
     zones.seed_zones()
     zid = zones.lister_zones()[0]["id"]
-    r = client.get(f"/zones/{zid}")
+    r = client.get(f"/zones/{zid}", cookies=_cookies("zones-tenant-2"))
     assert r.status_code == 200
     assert r.json()["id"] == zid
 
 
 def test_lire_zone_inconnue_404():
-    assert client.get("/zones/inconnue").status_code == 404
+    assert client.get("/zones/inconnue", cookies=_cookies("zones-tenant-3")).status_code == 404
 
 
 def test_zones_visibles_dun_autre_tenant(monkeypatch):
-    """Confirme l'exception au cloisonnement : une autre clé API voit les mêmes zones."""
+    """Confirme l'exception au cloisonnement : une autre identité voit les mêmes zones."""
     zones.seed_zones()
-    r = client.get("/zones", headers={"X-API-Key": "nimporte-quelle-cle"})
+    r = client.get("/zones", cookies=_cookies("nimporte-quelle-identite"))
     assert len(r.json()) == 12
 
 
@@ -126,12 +146,12 @@ def _seed_archetypes():
 
 
 def test_lister_etapes_archetype_inconnu_404():
-    assert client.get("/archetypes/Inexistant/etapes").status_code == 404
+    assert client.get("/archetypes/Inexistant/etapes", cookies=_cookies("etapes-tenant")).status_code == 404
 
 
 def test_lister_etapes_archetype_connu(monkeypatch):
     _seed_archetypes()
-    r = client.get("/archetypes/Le Sage Contemplatif/etapes")
+    r = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=_cookies("etapes-tenant-2"))
     assert r.status_code == 200
     assert len(r.json()) == 3
 
@@ -142,19 +162,21 @@ def test_creer_groupe_et_rejoindre_via_api(monkeypatch):
                     "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
         "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
     _seed_archetypes()
-    p = client.post("/personnages", json={"nom": "Cible", "date_naissance": "1990-01-01"}).json()
-    etape = client.get("/archetypes/Le Meneur Charismatique/etapes").json()[0]
-    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]})
+    ck = _cookies("groupe-tenant")
+    p = client.post("/personnages", json={"nom": "Cible", "date_naissance": "1990-01-01"}, cookies=ck).json()
+    etape = client.get("/archetypes/Le Meneur Charismatique/etapes", cookies=ck).json()[0]
+    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]}, cookies=ck)
     assert r.status_code == 200
     gid = r.json()["id"]
-    aide = client.post("/personnages", json={"nom": "Aide", "date_naissance": "1991-01-01"}).json()
-    r2 = client.post(f"/groupes/{gid}/rejoindre", json={"personnage_id": aide["id"]})
+    aide = client.post("/personnages", json={"nom": "Aide", "date_naissance": "1991-01-01"}, cookies=ck).json()
+    r2 = client.post(f"/groupes/{gid}/rejoindre", json={"personnage_id": aide["id"]}, cookies=ck)
     assert r2.status_code == 200
     assert aide["id"] in r2.json()["membres"]
 
 
 def test_creer_groupe_personnage_cible_inconnu_404():
-    r = client.post("/groupes", json={"personnage_cible_id": "inconnu", "zone_archetype_id": "x"})
+    r = client.post("/groupes", json={"personnage_cible_id": "inconnu", "zone_archetype_id": "x"},
+                    cookies=_cookies("groupe-tenant-2"))
     assert r.status_code == 404
 
 
@@ -163,20 +185,22 @@ def test_creer_groupe_etape_sautee_400(monkeypatch):
         "portrait": {"archetype": "Le Sage Contemplatif", "stats": {}},
         "traditions": {"signe_solaire": {"nom": "Vierge"}}, "empreinte": []})
     _seed_archetypes()
-    p = client.post("/personnages", json={"nom": "Sauteur2", "date_naissance": "1990-01-01"}).json()
-    etapes = client.get("/archetypes/Le Sage Contemplatif/etapes").json()
-    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etapes[1]["id"]})
+    ck = _cookies("groupe-tenant-3")
+    p = client.post("/personnages", json={"nom": "Sauteur2", "date_naissance": "1990-01-01"}, cookies=ck).json()
+    etapes = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=ck).json()
+    r = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etapes[1]["id"]}, cookies=ck)
     assert r.status_code == 400
 
 
 def test_lister_competences_personnage_inconnu_404():
-    assert client.get("/personnages/inconnu/competences").status_code == 404
+    assert client.get("/personnages/inconnu/competences", cookies=_cookies("comp-tenant")).status_code == 404
 
 
 def test_lister_competences_personnage_connu(monkeypatch):
     _patch_moteur(monkeypatch)
-    p = client.post("/personnages", json={"nom": "Vide2", "date_naissance": "1990-01-01"}).json()
-    r = client.get(f"/personnages/{p['id']}/competences")
+    ck = _cookies("comp-tenant-2")
+    p = client.post("/personnages", json={"nom": "Vide2", "date_naissance": "1990-01-01"}, cookies=ck).json()
+    r = client.get(f"/personnages/{p['id']}/competences", cookies=ck)
     assert r.status_code == 200
     assert r.json() == []
 
@@ -185,22 +209,16 @@ import combat
 import mobs
 
 
-def test_combat_ws_rejette_une_cle_invalide(monkeypatch):
-    import main
-    main.API_KEYS = {"bonnecle"}
-    try:
-        with client.websocket_connect(
-                "/zones/inconnue/combat?personnage_id=x&api_key=mauvaise") as ws:
-            message = ws.receive()
-            assert message["type"] == "websocket.close"
-            assert message["code"] == 4401
-    finally:
-        main.API_KEYS = set()
+def test_combat_ws_rejette_une_session_absente():
+    with client.websocket_connect("/zones/inconnue/combat?personnage_id=x") as ws:
+        message = ws.receive()
+        assert message["type"] == "websocket.close"
+        assert message["code"] == 4401
 
 
 def test_combat_ws_zone_ou_personnage_inconnu_est_rejete():
-    with client.websocket_connect(
-            "/zones/inconnue/combat?personnage_id=inconnu&api_key=") as ws:
+    with client.websocket_connect("/zones/inconnue/combat?personnage_id=inconnu",
+                                  cookies=_cookies("combat-tenant-1")) as ws:
         message = ws.receive()
         assert message["type"] == "websocket.close"
         assert message["code"] == 4404
@@ -210,10 +228,11 @@ def test_combat_ws_connexion_valide_recoit_un_etat_initial(monkeypatch):
     _patch_moteur(monkeypatch)
     zones.seed_zones()
     mobs.seed_mobs()
-    r = client.post("/personnages", json={"nom": "Combattant", "date_naissance": "1990-01-01"})
+    ck = _cookies("combat-tenant-2")
+    r = client.post("/personnages", json={"nom": "Combattant", "date_naissance": "1990-01-01"}, cookies=ck)
     pid = r.json()["id"]
     zone_id = zones.lister_zones()[0]["id"]
-    with client.websocket_connect(f"/zones/{zone_id}/combat?personnage_id={pid}") as ws:
+    with client.websocket_connect(f"/zones/{zone_id}/combat?personnage_id={pid}", cookies=ck) as ws:
         premier = ws.receive_json()
         assert premier["type"] == "etat"
         assert pid in premier["joueurs"]
@@ -222,19 +241,14 @@ def test_combat_ws_connexion_valide_recoit_un_etat_initial(monkeypatch):
 
 
 def test_presence_route_ok():
-    r = client.post("/presence", headers={"X-API-Key": "cle-presence"})
+    r = client.post("/presence", cookies=_cookies("presence-tenant"))
     assert r.status_code == 200
     assert r.json() == {"ok": True}
 
 
-def test_presence_route_rejette_une_cle_invalide():
-    import main
-    main.API_KEYS = {"bonnecle"}
-    try:
-        r = client.post("/presence", headers={"X-API-Key": "mauvaise"})
-        assert r.status_code == 401
-    finally:
-        main.API_KEYS = set()
+def test_presence_route_rejette_sans_cookie():
+    r = client.post("/presence")
+    assert r.status_code == 401
 
 
 def test_personnages_expose_bonus_idle_actuel(monkeypatch):
@@ -242,13 +256,13 @@ def test_personnages_expose_bonus_idle_actuel(monkeypatch):
     _seed_archetypes()
     import main
     monkeypatch.setattr(main.archetypes, "TAUX_IDLE_PAR_HEURE", 1000.0)
-    r = client.post("/personnages", json={"nom": "Idle1", "date_naissance": "1990-01-01"},
-                    headers={"X-API-Key": "cle-idle-api"})
+    ck = _cookies("idle-tenant-1")
+    r = client.post("/personnages", json={"nom": "Idle1", "date_naissance": "1990-01-01"}, cookies=ck)
     pid = r.json()["id"]
     with main.stockage._conn() as c:
         c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
-                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "cle-idle-api"))
-    items = client.get("/personnages", headers={"X-API-Key": "cle-idle-api"}).json()
+                  ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(), "idle-tenant-1"))
+    items = client.get("/personnages", cookies=ck).json()
     perso = next(p for p in items if p["id"] == pid)
     assert perso["bonus_idle_actuel"] > 0
 
@@ -256,9 +270,9 @@ def test_personnages_expose_bonus_idle_actuel(monkeypatch):
 def test_personnages_sans_presence_a_bonus_idle_nul(monkeypatch):
     _patch_moteur(monkeypatch)
     _seed_archetypes()
-    r = client.post("/personnages", json={"nom": "Idle2", "date_naissance": "1990-01-01"},
-                    headers={"X-API-Key": "cle-idle-api2"})
+    ck = _cookies("idle-tenant-2")
+    r = client.post("/personnages", json={"nom": "Idle2", "date_naissance": "1990-01-01"}, cookies=ck)
     pid = r.json()["id"]
-    items = client.get("/personnages", headers={"X-API-Key": "cle-idle-api2"}).json()
+    items = client.get("/personnages", cookies=ck).json()
     perso = next(p for p in items if p["id"] == pid)
     assert perso["bonus_idle_actuel"] == 0
