@@ -181,5 +181,6 @@ def migrer_public_si_premiere_connexion(cle_api_reelle: str) -> None:
         public = c.execute("SELECT 1 FROM joueurs WHERE cle_api='public'").fetchone()
         if not public:
             return
-        c.execute("UPDATE joueurs SET cle_api=? WHERE cle_api='public'", (cle_api_reelle,))
+        c.execute("UPDATE joueurs SET cle_api=?, pseudo=? WHERE cle_api='public'",
+                  (cle_api_reelle, cle_api_reelle))
         c.execute("UPDATE personnages_jeu SET cle_api=? WHERE cle_api='public'", (cle_api_reelle,))
