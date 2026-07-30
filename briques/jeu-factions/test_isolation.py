@@ -1,14 +1,19 @@
 # test_isolation.py
-"""Filet dédié : personnages/groupes restent cloisonnés par cle_api, zones/scores/étapes
-restent un monde PARTAGÉ (exception délibérée documentée dans le spec — cf.
-docs/superpowers/specs/2026-07-29-jeu-factions-design.md § Architecture)."""
+"""Filet dédié : personnages/groupes restent cloisonnés par cle_api (identité réelle depuis
+S217), zones/scores/étapes restent un monde PARTAGÉ (exception délibérée documentée dans le
+spec — cf. docs/superpowers/specs/2026-07-29-jeu-factions-design.md § Architecture)."""
 from fastapi.testclient import TestClient
 
 import archetypes
+import jeton
 import zones
 from main import app
 
 client = TestClient(app)
+
+
+def _cookies(identite: str) -> dict:
+    return {jeton.COOKIE_NOM: jeton.emettre(identite, ttl=3600)}
 
 
 def _patch_moteur(monkeypatch):
@@ -30,27 +35,25 @@ def _patch_moteur(monkeypatch):
 def test_personnage_invisible_pour_un_autre_tenant(monkeypatch):
     _patch_moteur(monkeypatch)
     r = client.post("/personnages", json={"nom": "Secret", "date_naissance": "1990-01-01"},
-                    headers={"X-API-Key": "tenant-a"})
+                    cookies=_cookies("tenant-a"))
     pid = r.json()["id"]
-    assert client.get(f"/personnages/{pid}", headers={"X-API-Key": "tenant-a"}).status_code == 200
-    assert client.get(f"/personnages/{pid}", headers={"X-API-Key": "tenant-b"}).status_code == 404
+    assert client.get(f"/personnages/{pid}", cookies=_cookies("tenant-a")).status_code == 200
+    assert client.get(f"/personnages/{pid}", cookies=_cookies("tenant-b")).status_code == 404
     assert not any(p["id"] == pid for p in
-                  client.get("/personnages", headers={"X-API-Key": "tenant-b"}).json())
+                  client.get("/personnages", cookies=_cookies("tenant-b")).json())
 
 
 def test_zones_identiques_pour_tous_les_tenants():
     zones.seed_zones()
-    a = client.get("/zones", headers={"X-API-Key": "tenant-a"}).json()
-    b = client.get("/zones", headers={"X-API-Key": "tenant-b"}).json()
+    a = client.get("/zones", cookies=_cookies("tenant-a")).json()
+    b = client.get("/zones", cookies=_cookies("tenant-b")).json()
     assert {z["id"] for z in a} == {z["id"] for z in b}
 
 
 def test_etapes_archetype_identiques_pour_tous_les_tenants():
     archetypes.seed_zones_archetype()
-    a = client.get("/archetypes/Le Sage Contemplatif/etapes",
-                   headers={"X-API-Key": "tenant-a"}).json()
-    b = client.get("/archetypes/Le Sage Contemplatif/etapes",
-                   headers={"X-API-Key": "tenant-b"}).json()
+    a = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=_cookies("tenant-a")).json()
+    b = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=_cookies("tenant-b")).json()
     assert [e["id"] for e in a] == [e["id"] for e in b]
 
 
@@ -59,11 +62,10 @@ def test_groupe_dun_tenant_pas_manipulable_par_un_autre(monkeypatch):
     même si ce personnage existe (appartient à un autre tenant)."""
     _patch_moteur(monkeypatch)
     r = client.post("/personnages", json={"nom": "AutreTenant", "date_naissance": "1990-01-01"},
-                    headers={"X-API-Key": "tenant-c"})
+                    cookies=_cookies("tenant-c"))
     pid = r.json()["id"]
     archetypes.seed_zones_archetype()
-    etape = client.get("/archetypes/Le Sage Contemplatif/etapes",
-                       headers={"X-API-Key": "tenant-c"}).json()[0]
+    etape = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=_cookies("tenant-c")).json()[0]
     r2 = client.post("/groupes", json={"personnage_cible_id": pid, "zone_archetype_id": etape["id"]},
-                     headers={"X-API-Key": "tenant-d"})
+                     cookies=_cookies("tenant-d"))
     assert r2.status_code == 404
