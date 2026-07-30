@@ -30,7 +30,6 @@
 <script>
 const params = new URLSearchParams(location.search);
 const zoneId = params.get("zone");
-const cleApi = localStorage.getItem("jeu_factions_cle") || "";
 
 let personnageId = null;
 let dernierEtat = {joueurs: {}, mobs: {}};
@@ -38,15 +37,19 @@ let cibleActive = null;
 let ws;
 
 async function initPersonnage() {
-  const r = await fetch("/personnages", {headers: cleApi ? {"X-API-Key": cleApi} : {}});
+  const r = await fetch("/personnages");
+  if (r.status === 401) {
+    document.getElementById("jeu").textContent =
+      "Session expirée — rouvre cette page depuis le tableau de bord du Cœur.";
+    throw new Error("session expirée");
+  }
   const mine = await r.json();
   if (!mine.length) {
     document.getElementById("jeu").textContent = "Crée d'abord un personnage sur la page principale.";
     throw new Error("aucun personnage");
   }
   personnageId = mine[0].id;
-  const rc = await fetch(`/personnages/${personnageId}/competences`,
-    {headers: cleApi ? {"X-API-Key": cleApi} : {}});
+  const rc = await fetch(`/personnages/${personnageId}/competences`);
   const sorts = (await rc.json()).filter(c => c.effet_type);
   document.getElementById("sorts").innerHTML = sorts.map(s =>
     `<button data-id="${s.id}">${s.nom}</button>`).join("");
@@ -79,8 +82,7 @@ function texteEvenement(ev) {
 
 function connecter() {
   const protocole = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocole}//${location.host}/zones/${zoneId}/combat` +
-    `?personnage_id=${personnageId}&api_key=${encodeURIComponent(cleApi)}`);
+  ws = new WebSocket(`${protocole}//${location.host}/zones/${zoneId}/combat?personnage_id=${personnageId}`);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type !== "etat") return;
