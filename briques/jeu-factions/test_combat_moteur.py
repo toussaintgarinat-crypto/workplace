@@ -206,3 +206,36 @@ def test_boss_respawn_apres_le_delai():
     etat, ev3 = CM.avancer_tick(etat, [], dt=0.1, competences={}, horodatage=6.0, respawn_delai_s=5.0)
     assert any(m["role"] == "boss" for m in etat["mobs"].values())
     assert any(e["type"] == "boss_reapparu" for e in ev3)
+
+
+def test_ajouter_joueur_cle_contribution_par_defaut_est_le_signe():
+    etat = _etat_avec_joueur()
+    assert etat["joueurs"]["p1"]["cle_contribution"] == "Bélier"
+
+
+def test_ajouter_joueur_cle_contribution_explicite_bucket_par_cle():
+    etat = CM.nouvel_etat_instance("zone-1", 800, MOB_ZONE)
+    etat = CM.ajouter_joueur(etat, "p1", "Archétype", "p1", cle_contribution="perso-1")
+    mob_id = next(iter(etat["mobs"]))
+    etat = _joueur_colle_au_mob(etat, mob_id)
+    actions = [{"type": "sort", "personnage_id": "p1", "competence_id": "sort-degats",
+               "cible_id": mob_id}]
+    etat, _ = CM.avancer_tick(etat, actions, dt=0.1, competences=COMPETENCE_DEGATS,
+                              horodatage=0.0, respawn_delai_s=60.0)
+    assert etat["mobs"][mob_id]["degats_recus_par_guilde"] == {"perso-1": 30}
+
+
+def test_appliquer_bonus_degats_reduit_les_pv_du_boss():
+    etat = _etat_avec_joueur()
+    mob_id = next(iter(etat["mobs"]))
+    etat = CM.appliquer_bonus_degats(etat, 20, "perso-1")
+    assert etat["mobs"][mob_id]["pv"] == 30
+    assert etat["mobs"][mob_id]["degats_recus_par_guilde"] == {"perso-1": 20}
+
+
+def test_appliquer_bonus_degats_zero_est_un_noop():
+    etat = _etat_avec_joueur()
+    mob_id = next(iter(etat["mobs"]))
+    etat = CM.appliquer_bonus_degats(etat, 0, "perso-1")
+    assert etat["mobs"][mob_id]["pv"] == 50
+    assert etat["mobs"][mob_id]["degats_recus_par_guilde"] == {}

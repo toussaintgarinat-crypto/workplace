@@ -43,12 +43,13 @@ def nouvel_etat_instance(zone_id: str, arene_taille: int, mobs_zone: list[dict])
             "_gabarit_boss": gabarit_boss, "boss_mort_horodatage": None}
 
 
-def ajouter_joueur(etat: dict, personnage_id: str, element: str, signe: str) -> dict:
+def ajouter_joueur(etat: dict, personnage_id: str, element: str, signe: str,
+                   cle_contribution: str | None = None) -> dict:
     bord = etat["arene_taille"] * 0.05
     etat["joueurs"][personnage_id] = {
         "x": bord, "y": bord, "pv": PV_MAX_JOUEUR, "pv_max": PV_MAX_JOUEUR,
-        "element": element, "signe": signe, "etat": "actif",
-        "cooldowns": {}, "bouclier": 0, "dots": [],
+        "element": element, "signe": signe, "cle_contribution": cle_contribution or signe,
+        "etat": "actif", "cooldowns": {}, "bouclier": 0, "dots": [],
     }
     return etat
 
@@ -82,6 +83,19 @@ def _infliger_degats(cible: dict, degats: float) -> float:
     avant = cible["pv"]
     cible["pv"] = max(0, cible["pv"] - reste)
     return avant - cible["pv"]
+
+
+def appliquer_bonus_degats(etat: dict, degats: float, cle_contribution: str) -> dict:
+    """Dégâts immédiats appliqués au boss actif de l'instance (S216 idle bonus : progression
+    accumulée pendant l'absence, convertie en dégâts au moment où le personnage rejoint le
+    combat — jamais un tick serveur, cf. archetypes.bonus_idle)."""
+    boss = next((m for m in etat["mobs"].values() if m["role"] == "boss"), None)
+    if boss is None or degats <= 0:
+        return etat
+    reels = _infliger_degats(boss, degats)
+    boss["degats_recus_par_guilde"][cle_contribution] = \
+        boss["degats_recus_par_guilde"].get(cle_contribution, 0) + reels
+    return etat
 
 
 def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[str, dict],
@@ -140,8 +154,8 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
         j["cooldowns"][a.get("competence_id")] = comp["cooldown_s"]
         if effet == "degats":
             reels = _infliger_degats(cible, comp["magnitude"])
-            cible["degats_recus_par_guilde"][j["signe"]] = \
-                cible["degats_recus_par_guilde"].get(j["signe"], 0) + reels
+            cible["degats_recus_par_guilde"][j["cle_contribution"]] = \
+                cible["degats_recus_par_guilde"].get(j["cle_contribution"], 0) + reels
             evenements.append({"type": "mob_touche", "mob_id": a.get("cible_id"), "degats": reels})
         elif effet == "soin":
             cible["pv"] = min(cible["pv_max"], cible["pv"] + comp["magnitude"])
@@ -154,7 +168,7 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
         elif effet == "dot":
             cible.setdefault("dots", []).append(
                 {"degats_par_seconde": comp["magnitude"], "expire_a": horodatage + DUREE_DOT_S,
-                 "guilde": j["signe"]})
+                 "cle_contribution": j["cle_contribution"]})
 
     # 4. DOT (joueurs et mobs)
     for entites in (etat["joueurs"], etat["mobs"]):
@@ -165,8 +179,8 @@ def avancer_tick(etat: dict, actions: list[dict], dt: float, competences: dict[s
                     continue
                 reels = _infliger_degats(e, d["degats_par_seconde"] * dt)
                 if "degats_recus_par_guilde" in e:
-                    e["degats_recus_par_guilde"][d["guilde"]] = \
-                        e["degats_recus_par_guilde"].get(d["guilde"], 0) + reels
+                    e["degats_recus_par_guilde"][d["cle_contribution"]] = \
+                        e["degats_recus_par_guilde"].get(d["cle_contribution"], 0) + reels
                 actifs.append(d)
             e["dots"] = actifs
 
