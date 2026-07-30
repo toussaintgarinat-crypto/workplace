@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 import auth
+import jeu_factions_jeton
 import memoire_jeton
 from etat import registre
 from urls_ui import GENERATEUR_URL_PUBLIQUE, GEO_KEY, PERSONNAGES_KEY, url_brique
@@ -71,6 +72,14 @@ async def dashboard(request: Request):
     if jeton_memoire:
         sep = "&" if "?" in memoire_ui else "?"
         memoire_ui = f"{memoire_ui}{sep}m={jeton_memoire}"
+    # Jeu-factions (S217) : même motif jeton signé que Mémoire. Contrairement à Mémoire, PAS
+    # de repli mono-tenant si JEU_FACTIONS_KEY est absente — la brique refuse tout sans jeton
+    # valide (spec S217, Non-objectifs), donc la tuile reste simplement inutilisable.
+    jeu_factions_ui = u("JEU_FACTIONS")
+    jeton_jf = jeu_factions_jeton.emettre(auth.sub_session_optionnel(request) or "perso")
+    if jeton_jf:
+        sep = "&" if "?" in jeu_factions_ui else "?"
+        jeu_factions_ui = f"{jeu_factions_ui}{sep}j={jeton_jf}"
     return HTMLResponse(content=_GABARIT
         .replace("__FORGE_UI_URL__", u("FORGE"))
         .replace("__STUDIO_UI_URL__", studio_ui)
@@ -88,4 +97,4 @@ async def dashboard(request: Request):
         .replace("__DEV_IDE_URL__", u("DEV_IDE"))
         .replace("__GENERATEUR_BUNDLES_URL__", u("GENERATEUR"))
         .replace("__GATEWAY_UI_URL__", u("GATEWAY"))
-        .replace("__JEU_FACTIONS_UI_URL__", u("JEU_FACTIONS")))
+        .replace("__JEU_FACTIONS_UI_URL__", jeu_factions_ui))

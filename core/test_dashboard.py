@@ -87,6 +87,7 @@ def test_urls_briques_injectees():
     assert "__STUDIO_UI_URL__" not in html
     assert "__PERSONNAGES_UI_URL__" not in html
     assert "__ATELIER_IMAGES_VIDEO_UI_URL__" not in html
+    assert "__JEU_FACTIONS_UI_URL__" not in html
 
 
 def test_tuile_atelier_images_video_active():
