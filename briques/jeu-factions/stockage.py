@@ -166,3 +166,20 @@ def lire_derniere_presence_personnage(personnage_id: str) -> str | None:
                             JOIN joueurs j ON j.cle_api = p.cle_api
                             WHERE p.id=?""", (personnage_id,)).fetchone()
     return row["derniere_presence"] if row else None
+
+
+def migrer_public_si_premiere_connexion(cle_api_reelle: str) -> None:
+    """Idempotent : no-op dès que `cle_api_reelle` a déjà une ligne dans `joueurs` (le cas
+    courant, à partir de la 2e requête). Sinon, réattribue les données historiques sous le
+    tenant partagé "public" à cette première identité réelle vue — `groupes`/`membres_groupe`
+    n'ont pas de colonne `cle_api`, ils suivent `personnages_jeu` sans migration propre
+    (spec S217)."""
+    with _conn() as c:
+        existe = c.execute("SELECT 1 FROM joueurs WHERE cle_api=?", (cle_api_reelle,)).fetchone()
+        if existe:
+            return
+        public = c.execute("SELECT 1 FROM joueurs WHERE cle_api='public'").fetchone()
+        if not public:
+            return
+        c.execute("UPDATE joueurs SET cle_api=? WHERE cle_api='public'", (cle_api_reelle,))
+        c.execute("UPDATE personnages_jeu SET cle_api=? WHERE cle_api='public'", (cle_api_reelle,))

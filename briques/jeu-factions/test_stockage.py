@@ -86,3 +86,37 @@ def test_migration_derniere_presence_est_presente_et_idempotente():
         colonnes = {row["name"] for row in c.execute("PRAGMA table_info(joueurs)").fetchall()}
     assert "derniere_presence" in colonnes
     S._conn()  # rejouer la migration ne doit pas lever d'erreur
+
+
+def test_migrer_public_reattribue_joueur_et_personnages():
+    S.assurer_joueur("public")
+    p = S.creer_personnage("public", "Ancien", {"date_naissance": "1990-01-01"}, {"portrait": {}})
+    S.migrer_public_si_premiere_connexion("sub-reel-1")
+    assert S.lire_personnage("public", p["id"]) is None
+    assert S.lire_personnage("sub-reel-1", p["id"]) is not None
+    with S._conn() as c:
+        assert c.execute("SELECT 1 FROM joueurs WHERE cle_api='public'").fetchone() is None
+        assert c.execute("SELECT 1 FROM joueurs WHERE cle_api=?", ("sub-reel-1",)).fetchone() is not None
+
+
+def test_migrer_public_est_idempotente_pour_la_meme_identite():
+    S.assurer_joueur("public")
+    S.creer_personnage("public", "Ancien", {"date_naissance": "1990-01-01"}, {"portrait": {}})
+    S.migrer_public_si_premiere_connexion("sub-reel-2")
+    S.migrer_public_si_premiere_connexion("sub-reel-2")  # rejoué : ne doit pas lever d'erreur
+    assert len(S.lister_personnages("sub-reel-2")) == 1
+
+
+def test_migrer_public_ne_vole_pas_les_donnees_dune_identite_deja_migree():
+    S.assurer_joueur("public")
+    S.creer_personnage("public", "Ancien", {"date_naissance": "1990-01-01"}, {"portrait": {}})
+    S.migrer_public_si_premiere_connexion("sub-premier")
+    S.migrer_public_si_premiere_connexion("sub-second")
+    assert S.lister_personnages("sub-second") == []
+    assert len(S.lister_personnages("sub-premier")) == 1
+
+
+def test_migrer_public_sans_donnees_publiques_ne_cree_rien():
+    S.migrer_public_si_premiere_connexion("sub-frais")
+    with S._conn() as c:
+        assert c.execute("SELECT 1 FROM joueurs WHERE cle_api=?", ("sub-frais",)).fetchone() is None
