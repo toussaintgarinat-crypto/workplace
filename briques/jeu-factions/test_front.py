@@ -40,3 +40,15 @@ def test_css_servi():
 def test_front_contient_le_heartbeat_de_presence():
     r = client.get("/" + _jeton_url("front-tenant-2"))
     assert "/presence" in r.text
+
+
+def test_front_ne_contient_plus_de_cle_api_localstorage():
+    r = client.get("/" + _jeton_url("front-tenant-3"))
+    assert "localStorage" not in r.text
+    assert "jeu_factions_cle" not in r.text
+    assert "X-API-Key" not in r.text
+
+
+def test_front_gere_une_session_expiree():
+    r = client.get("/" + _jeton_url("front-tenant-4"))
+    assert "Session expirée" in r.text
