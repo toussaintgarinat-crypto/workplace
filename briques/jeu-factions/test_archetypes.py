@@ -162,3 +162,13 @@ def test_calculer_resolution_bonus_ajoute_au_membre_concerne():
                                 bonus_par_membre={"p1": 15})
     assert res["total"] == 105
     assert res["vaincue"] is True
+
+
+def test_seed_zones_archetype_a_un_contenu_narratif_distinct_par_archetype():
+    A.seed_zones_archetype()
+    noms = set()
+    for archetype in A.ARCHETYPES_SIGNATURE:
+        for e in A.lister_etapes(archetype):
+            assert "étape" not in e["nom"].lower()
+            noms.add(e["nom"])
+    assert len(noms) == 30  # aucun texte dupliqué entre archétypes/étapes
