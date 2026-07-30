@@ -54,6 +54,11 @@ def _conn() -> sqlite3.Connection:
         pv_max INTEGER NOT NULL, degats_attaque INTEGER NOT NULL,
         cooldown_attaque_s REAL NOT NULL, portee_aggro INTEGER NOT NULL,
         portee_attaque INTEGER NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS mobs_zone_archetype (
+        id TEXT PRIMARY KEY, zone_archetype_id TEXT NOT NULL, nom TEXT NOT NULL,
+        role TEXT NOT NULL, pv_max INTEGER NOT NULL, degats_attaque INTEGER NOT NULL,
+        cooldown_attaque_s REAL NOT NULL, portee_aggro INTEGER NOT NULL,
+        portee_attaque INTEGER NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS scores_zone_guilde (
         zone_id TEXT NOT NULL, guilde TEXT NOT NULL, points_cumules INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (zone_id, guilde))""")
