@@ -24,7 +24,6 @@ import jeton
 import mobs
 import moteur_personnages
 import stockage
-import tick
 import zones
 
 app = FastAPI(title="Jeu-factions — factions & territoire (PvE)", version="0.1.0")
@@ -49,8 +48,6 @@ async def _seed_donnees_globales():
     archetypes.seed_zones_archetype()
     archetypes.seed_competences()
     mobs.seed_mobs()
-    if os.getenv("JEU_FACTIONS_TICK_AUTOSTART", "1") != "0":
-        asyncio.create_task(tick.boucle_tick())
 
 
 @app.get("/sante", tags=["système"])
