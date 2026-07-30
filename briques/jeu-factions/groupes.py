@@ -3,7 +3,6 @@
 prochaine étape voient leur progression avancer (pas de saut, pas de re-completion)."""
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 
@@ -55,55 +54,19 @@ def rejoindre_groupe(groupe_id: str, personnage_id: str) -> dict:
         return _ligne_groupe(c, groupe_id)
 
 
-def resoudre_groupes_actifs() -> list[dict]:
-    """Orchestration DB — même discipline de connexions courtes que `zones.ajouter_score`/
-    `marquer_vaincue_si_premiere_fois` (voir stockage.py) : chaque lecture/écriture utilise sa
-    PROPRE connexion courte, refermée avant d'appeler une fonction qui ouvre la sienne
-    (`archetypes.py`, `stockage.log_resolution`). Tenir une connexion ouverte pendant ces
-    appels imbriqués se verrouille elle-même (`database is locked`) — NE PAS envelopper toute
-    la fonction dans un seul `with S._conn() as c:`."""
-    resultats = []
-    maintenant = datetime.now(timezone.utc)
+def lire_groupe(groupe_id: str) -> dict | None:
     with S._conn() as c:
-        groupes_actifs = c.execute("SELECT * FROM groupes WHERE etat='actif'").fetchall()
-    for gr in groupes_actifs:
-        etape = A.lire_etape(gr["zone_archetype_id"])
-        if not etape:
-            continue
-        stats_cles = A.ARCHETYPES_SIGNATURE[etape["archetype"]]
-        with S._conn() as c:
-            membres_ids = [r["personnage_id"] for r in c.execute(
-                "SELECT personnage_id FROM membres_groupe WHERE groupe_id=?", (gr["id"],)).fetchall()]
-            membres_stats = []
-            for mid in membres_ids:
-                row = c.execute("SELECT snapshot_holistique FROM personnages_jeu WHERE id=?",
-                                (mid,)).fetchone()
-                if not row:
-                    continue
-                snap = json.loads(row["snapshot_holistique"])
-                stats = (snap.get("portrait") or {}).get("stats") or {}
-                membres_stats.append({"personnage_id": mid, "stats": stats})
-        # S216 — bonus idle : uniquement pour le(s) membre(s) dont c'est réellement leur
-        # propre prochaine étape (jamais un carry), jamais persisté (recalculé à chaque tick).
-        bonus_par_membre = {}
-        for mid in membres_ids:
-            if A.prochaine_etape(mid, etape["archetype"]) == gr["zone_archetype_id"]:
-                derniere_presence = S.lire_derniere_presence_personnage(mid)
-                bonus = A.bonus_idle(derniere_presence, maintenant,
-                                     A.TAUX_IDLE_PAR_HEURE, A.PLAFOND_IDLE_HEURES)
-                if bonus:
-                    bonus_par_membre[mid] = bonus
-        res = A.calculer_resolution(membres_stats, stats_cles, etape["difficulte_pve"], bonus_par_membre)
-        etat_resultant = "vaincue" if res["vaincue"] else "en_cours"
-        if res["vaincue"]:
-            for mid in membres_ids:
-                if A.prochaine_etape(mid, etape["archetype"]) == gr["zone_archetype_id"]:
-                    A.marquer_etape_vaincue(mid, gr["zone_archetype_id"])
-                    A.debloquer_competence_si_existe(mid, gr["zone_archetype_id"])
-            with S._conn() as c:
-                c.execute("UPDATE groupes SET etat='dissous' WHERE id=?", (gr["id"],))
-        contributions = {m["personnage_id"]: sum(int(m["stats"].get(s, 0)) for s in stats_cles)
-                         for m in membres_stats}
-        S.log_resolution(None, gr["zone_archetype_id"], contributions, etat_resultant)
-        resultats.append({"groupe_id": gr["id"], "etat_resultant": etat_resultant, **res})
-    return resultats
+        existe = c.execute("SELECT 1 FROM groupes WHERE id=?", (groupe_id,)).fetchone()
+        if not existe:
+            return None
+        return _ligne_groupe(c, groupe_id)
+
+
+def dissoudre_groupes_de_letape(zone_archetype_id: str) -> None:
+    """Appelée par `combat.persister_evenements` (contexte archétype) à la mort du boss d'une
+    étape : tous les groupes encore actifs sur CETTE étape sont clos — la voie est franchie,
+    même précédent que l'ancien `resoudre_groupes_actifs` qui dissolvait le groupe au seuil
+    atteint (mais désormais côté combat joué, pas côté comparaison de stats)."""
+    with S._conn() as c:
+        c.execute("UPDATE groupes SET etat='dissous' WHERE zone_archetype_id=? AND etat='actif'",
+                  (zone_archetype_id,))
