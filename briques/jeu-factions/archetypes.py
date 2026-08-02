@@ -23,8 +23,10 @@ ARCHETYPES_SIGNATURE: dict[str, tuple[str, str, str]] = {
 }
 
 # S216 — progression idle : bonus de points de voie d'archétype pendant l'absence.
-# Plafonné à un cycle de tick (même variable d'env que `tick.TICK_INTERVAL_HOURS`, lue ici
-# indépendamment pour éviter un import circulaire archetypes -> tick -> groupes -> archetypes).
+# Plafond exprimé en heures d'absence maximum prises en compte (variable d'env historique
+# `TICK_INTERVAL_HOURS`, conservée telle quelle — S218 a retiré la résolution passive par tick
+# et le module `tick.py` qui la portait, mais le nom de la variable reste un réglage valide et
+# déployé, sans lien de couplage avec un autre module désormais).
 TAUX_IDLE_PAR_HEURE = 2.0
 PLAFOND_IDLE_HEURES = float(os.getenv("TICK_INTERVAL_HOURS", "24"))
 
@@ -158,15 +160,23 @@ _CONTENU_VOIE: dict[str, tuple[tuple[str, str], tuple[str, str], tuple[str, str]
 
 
 def seed_zones_archetype() -> None:
+    """Idempotent ET self-healing : la vérification d'existence porte sur (archetype, ordre)
+    — la vraie clé d'unicité de la table — pas sur l'archetype seul. Une ligne déjà présente
+    est mise à jour (nom/lore/difficulté) plutôt que sautée, pour que du contenu narratif
+    révisé (S219) atteigne aussi une DB déjà seedée par une version antérieure de ce fichier."""
     with S._conn() as c:
         for archetype in ARCHETYPES_SIGNATURE:
-            existe = c.execute(
-                "SELECT 1 FROM zones_archetype WHERE archetype=?", (archetype,)).fetchone()
-            if existe:
-                continue
             contenu = _CONTENU_VOIE[archetype]
             for ordre, difficulte in enumerate(_DIFFICULTES, start=1):
                 nom, lore = contenu[ordre - 1]
+                existe = c.execute(
+                    "SELECT id FROM zones_archetype WHERE archetype=? AND ordre=?",
+                    (archetype, ordre)).fetchone()
+                if existe:
+                    c.execute("""UPDATE zones_archetype
+                                 SET nom=?, texte_lore=?, difficulte_pve=? WHERE id=?""",
+                              (nom, lore, difficulte, existe["id"]))
+                    continue
                 c.execute("""INSERT INTO zones_archetype
                              (id, archetype, ordre, nom, difficulte_pve, texte_lore)
                              VALUES (?,?,?,?,?,?)""",
