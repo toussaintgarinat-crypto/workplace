@@ -40,3 +40,7 @@ def test_verifier_mauvais_mot_de_passe():
 def test_hachage_nest_jamais_le_mot_de_passe_en_clair():
     h = J.hacher_mot_de_passe("motdepasse123")
     assert h != "motdepasse123"
+
+
+def test_verifier_mot_de_passe_avec_hash_none_renvoie_false():
+    assert J.verifier_mot_de_passe("motdepasse123", None) is False

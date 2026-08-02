@@ -26,7 +26,7 @@ def hacher_mot_de_passe(mot_de_passe: str) -> str:
 def verifier_mot_de_passe(mot_de_passe: str, hash_: str) -> bool:
     try:
         return bcrypt.verify(mot_de_passe, hash_)
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 
