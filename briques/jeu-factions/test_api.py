@@ -360,7 +360,11 @@ def test_combat_voie_ws_reconnexion_ne_reapplique_pas_le_bonus_idle(monkeypatch)
     with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={p['id']}",
                                   cookies=ck) as ws:
         premier = ws.receive_json()
-    pv_boss_1 = next(m["pv"] for m in premier["mobs"].values() if m["role"] == "boss")
+    boss_1 = next(m for m in premier["mobs"].values() if m["role"] == "boss")
+    pv_boss_1 = boss_1["pv"]
+    # pin que le bonus a réellement joué au premier join (sinon l'assertion finale passerait
+    # même si tout le mécanisme de bonus idle était supprimé — vue lors de la revue finale).
+    assert pv_boss_1 < boss_1["pv_max"]
 
     with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={p['id']}",
                                   cookies=ck) as ws:
