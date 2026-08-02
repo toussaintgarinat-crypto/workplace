@@ -4,10 +4,11 @@ docs/superpowers/specs/2026-08-03-jeu-factions-public-design.md."""
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ import zones
 import archetypes
 import mobs_archetype
 import groupes
+import combat
 
 app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0")
 
@@ -247,3 +249,75 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
     if not stockage.lire_personnage(cle, pid):
         raise HTTPException(404, "Personnage introuvable.")
     return archetypes.lister_competences_debloquees(pid)
+
+
+@app.websocket("/zones/{zone_id}/combat")
+async def combat_ws(websocket: WebSocket, zone_id: str, personnage_id: str = Query(...)):
+    await websocket.accept()
+    identite = jeton.verifier(websocket.cookies.get(jeton.COOKIE_NOM))
+    if identite is None:
+        await websocket.close(code=4401)
+        return
+    perso = stockage.lire_personnage(identite, personnage_id)
+    zone = zones.lire_zone(zone_id)
+    if not perso or not zone:
+        await websocket.close(code=4404)
+        return
+    signe = zones.signe_personnage(perso["snapshot_holistique"]) or "Bélier"
+    element = dict(zones.ZONES_SEED).get(signe, "Feu")
+    gabarits = mobs.lister_mobs_zone(zone_id)
+    inst = await combat.rejoindre(zone_id, personnage_id, element, signe, gabarits)
+    competences = archetypes.lister_toutes_competences_avec_effet()
+    combat.demarrer_boucle_si_necessaire(inst, competences)
+    try:
+        combat.enregistrer_connexion(inst, personnage_id, websocket)
+        await websocket.send_json({"type": "etat", **combat.etat_public(inst), "evenements": []})
+        while True:
+            message = await websocket.receive_json()
+            combat.empiler_action(inst, personnage_id, message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        combat.quitter(inst, personnage_id, time.monotonic())
+
+
+@app.websocket("/groupes/{groupe_id}/combat")
+async def combat_voie_ws(websocket: WebSocket, groupe_id: str, personnage_id: str = Query(...)):
+    await websocket.accept()
+    identite = jeton.verifier(websocket.cookies.get(jeton.COOKIE_NOM))
+    if identite is None:
+        await websocket.close(code=4401)
+        return
+    perso = stockage.lire_personnage(identite, personnage_id)
+    gr = groupes.lire_groupe(groupe_id)
+    if not perso or not gr or gr["etat"] != "actif" or personnage_id not in gr["membres"]:
+        await websocket.close(code=4404)
+        return
+    etape = archetypes.lire_etape(gr["zone_archetype_id"])
+    if not etape:
+        await websocket.close(code=4404)
+        return
+    gabarits = mobs_archetype.lister_mobs_etape(gr["zone_archetype_id"])
+    signe = zones.signe_personnage(perso["snapshot_holistique"]) or "Bélier"
+    inst = await combat.rejoindre(gr["zone_archetype_id"], personnage_id, etape["archetype"],
+                                  signe, gabarits, contexte="archetype",
+                                  cle_contribution=personnage_id)
+    if archetypes.prochaine_etape(personnage_id, etape["archetype"]) == gr["zone_archetype_id"]:
+        derniere_presence = stockage.lire_derniere_presence_personnage(personnage_id)
+        bonus = archetypes.bonus_idle(derniere_presence, datetime.now(timezone.utc),
+                                      archetypes.TAUX_IDLE_PAR_HEURE, archetypes.PLAFOND_IDLE_HEURES)
+        if bonus:
+            combat.appliquer_bonus_idle(inst, bonus, personnage_id)
+            stockage.enregistrer_presence(identite)
+    competences = archetypes.lister_toutes_competences_avec_effet()
+    combat.demarrer_boucle_si_necessaire(inst, competences)
+    try:
+        combat.enregistrer_connexion(inst, personnage_id, websocket)
+        await websocket.send_json({"type": "etat", **combat.etat_public(inst), "evenements": []})
+        while True:
+            message = await websocket.receive_json()
+            combat.empiler_action(inst, personnage_id, message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        combat.quitter(inst, personnage_id, time.monotonic())
