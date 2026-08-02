@@ -30,6 +30,7 @@
 <script>
 const params = new URLSearchParams(location.search);
 const zoneId = params.get("zone");
+const groupeId = params.get("groupe");
 
 let personnageId = null;
 let dernierEtat = {joueurs: {}, mobs: {}};
@@ -82,7 +83,8 @@ function texteEvenement(ev) {
 
 function connecter() {
   const protocole = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocole}//${location.host}/zones/${zoneId}/combat?personnage_id=${personnageId}`);
+  const route = groupeId ? `/groupes/${groupeId}/combat` : `/zones/${zoneId}/combat`;
+  ws = new WebSocket(`${protocole}//${location.host}${route}?personnage_id=${personnageId}`);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type !== "etat") return;
