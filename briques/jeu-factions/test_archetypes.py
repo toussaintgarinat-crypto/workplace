@@ -164,6 +164,24 @@ def test_calculer_resolution_bonus_ajoute_au_membre_concerne():
     assert res["vaincue"] is True
 
 
+def test_seed_zones_archetype_backfill_une_ligne_stale_deja_existante():
+    """Fix critique (revue S218/S219) : une ligne déjà présente pour (archetype, ordre) doit
+    être mise à jour vers le contenu narratif courant, pas sautée — sinon une révision de lore
+    (comme S219) n'atteint jamais une DB déjà seedée par une version antérieure."""
+    import stockage as S
+    import uuid
+    with S._conn() as c:
+        c.execute("""INSERT INTO zones_archetype
+                     (id, archetype, ordre, nom, difficulte_pve, texte_lore)
+                     VALUES (?,?,?,?,?,?)""",
+                  (uuid.uuid4().hex, "Le Sage Contemplatif", 1, "ancien nom", 80, "ancien lore"))
+    A.seed_zones_archetype()
+    premiere = A.lister_etapes("Le Sage Contemplatif")[0]
+    assert premiere["nom"] != "ancien nom"
+    assert premiere["texte_lore"] != "ancien lore"
+    assert premiere["nom"] == "Le silence qui enseigne"
+
+
 def test_seed_zones_archetype_a_un_contenu_narratif_distinct_par_archetype():
     A.seed_zones_archetype()
     noms = set()
