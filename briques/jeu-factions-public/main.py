@@ -15,13 +15,18 @@ import moderation
 import stockage
 import mobs
 import zones
+import archetypes
+import mobs_archetype
 
 app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0")
 
 @app.on_event("startup")
 async def _seed_donnees_globales():
     zones.seed_zones()
+    archetypes.seed_zones_archetype()
+    archetypes.seed_competences()
     mobs.seed_mobs()
+    mobs_archetype.seed_mobs_archetype()
 
 _cors = [o.strip() for o in os.getenv("JEU_FACTIONS_PUBLIC_CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -111,3 +116,10 @@ def lire_zone_route(zid: str, cle: str = Depends(cle_api)):
     if not z:
         raise HTTPException(404, "Zone introuvable.")
     return z
+
+
+@app.get("/archetypes/{archetype}/etapes", tags=["archetypes"])
+def lister_etapes_route(archetype: str, cle: str = Depends(cle_api)):
+    if archetype not in archetypes.ARCHETYPES_SIGNATURE:
+        raise HTTPException(404, "Archétype inconnu.")
+    return archetypes.lister_etapes(archetype)
