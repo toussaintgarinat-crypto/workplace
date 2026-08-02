@@ -129,12 +129,14 @@ def persister_evenements(inst: InstanceCombat, evenements: list[dict]) -> None:
             stockage.log_resolution(None, inst.zone_id, contributions, ev["type"])
             if ev["type"] == "boss_tue":
                 etape = archetypes.lire_etape(inst.zone_id)
+                personnages_progresses = []
                 if etape:
                     for personnage_id in contributions:
                         if archetypes.prochaine_etape(personnage_id, etape["archetype"]) == inst.zone_id:
                             archetypes.marquer_etape_vaincue(personnage_id, inst.zone_id)
                             archetypes.debloquer_competence_si_existe(personnage_id, inst.zone_id)
-                groupes.dissoudre_groupes_de_letape(inst.zone_id)
+                            personnages_progresses.append(personnage_id)
+                groupes.dissoudre_groupes_de_letape(inst.zone_id, personnages_progresses)
 
 
 async def un_tick(inst: InstanceCombat, actions: list[dict], dt: float,
