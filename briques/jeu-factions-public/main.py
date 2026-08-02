@@ -13,8 +13,15 @@ import jeton
 import limiteur
 import moderation
 import stockage
+import mobs
+import zones
 
 app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0")
+
+@app.on_event("startup")
+async def _seed_donnees_globales():
+    zones.seed_zones()
+    mobs.seed_mobs()
 
 _cors = [o.strip() for o in os.getenv("JEU_FACTIONS_PUBLIC_CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -91,3 +98,16 @@ def connexion_route(body: Connexion, request: Request, response: Response):
 def deconnexion_route(response: Response):
     response.delete_cookie(jeton.COOKIE_NOM)
     return {"ok": True}
+
+
+@app.get("/zones", tags=["zones"])
+def lister_zones_route(cle: str = Depends(cle_api)):
+    return zones.lister_zones()
+
+
+@app.get("/zones/{zid}", tags=["zones"])
+def lire_zone_route(zid: str, cle: str = Depends(cle_api)):
+    z = zones.lire_zone(zid)
+    if not z:
+        raise HTTPException(404, "Zone introuvable.")
+    return z
