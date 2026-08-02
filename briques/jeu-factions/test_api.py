@@ -334,3 +334,37 @@ def test_combat_voie_ws_non_membre_du_groupe_est_rejete(monkeypatch):
         message = ws.receive()
         assert message["type"] == "websocket.close"
         assert message["code"] == 4404
+
+
+def test_combat_voie_ws_reconnexion_ne_reapplique_pas_le_bonus_idle(monkeypatch):
+    """Fix critique (revue S218/S219) : le bonus idle doit se consommer à l'entrée, sinon
+    reconnecter (rechargement de page, plusieurs onglets) le réapplique à chaque fois."""
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Meneur Charismatique",
+                    "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
+        "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
+    archetypes.seed_zones_archetype()
+    import mobs_archetype
+    mobs_archetype.seed_mobs_archetype()
+    import main
+    ck = _cookies("voie-tenant-idle")
+    p = client.post("/personnages", json={"nom": "Fatigue", "date_naissance": "1990-01-01"},
+                    cookies=ck).json()
+    etape = client.get("/archetypes/Le Meneur Charismatique/etapes", cookies=ck).json()[0]
+    g = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]},
+                    cookies=ck).json()
+    with main.stockage._conn() as c:
+        c.execute("UPDATE joueurs SET derniere_presence=? WHERE cle_api=?",
+                  ((datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(), "voie-tenant-idle"))
+
+    with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={p['id']}",
+                                  cookies=ck) as ws:
+        premier = ws.receive_json()
+    pv_boss_1 = next(m["pv"] for m in premier["mobs"].values() if m["role"] == "boss")
+
+    with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={p['id']}",
+                                  cookies=ck) as ws:
+        second = ws.receive_json()
+    pv_boss_2 = next(m["pv"] for m in second["mobs"].values() if m["role"] == "boss")
+
+    assert pv_boss_2 >= pv_boss_1

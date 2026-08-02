@@ -248,8 +248,9 @@ async def combat_voie_ws(websocket: WebSocket, groupe_id: str, personnage_id: st
         await websocket.close(code=4404)
         return
     gabarits = mobs_archetype.lister_mobs_etape(gr["zone_archetype_id"])
+    signe = zones.signe_personnage(perso["snapshot_holistique"]) or "Bélier"
     inst = await combat.rejoindre(gr["zone_archetype_id"], personnage_id, etape["archetype"],
-                                  personnage_id, gabarits, contexte="archetype",
+                                  signe, gabarits, contexte="archetype",
                                   cle_contribution=personnage_id)
     if archetypes.prochaine_etape(personnage_id, etape["archetype"]) == gr["zone_archetype_id"]:
         derniere_presence = stockage.lire_derniere_presence_personnage(personnage_id)
@@ -257,6 +258,10 @@ async def combat_voie_ws(websocket: WebSocket, groupe_id: str, personnage_id: st
                                       archetypes.TAUX_IDLE_PAR_HEURE, archetypes.PLAFOND_IDLE_HEURES)
         if bonus:
             combat.appliquer_bonus_idle(inst, bonus, personnage_id)
+            # Consomme le bonus : sans ce reset, chaque reconnexion (rechargement de page,
+            # plusieurs onglets) recalcule et réapplique le même bonus (fix critique —
+            # revue de branche S218/S219, exploitable pour tuer un boss sans jouer le combat).
+            stockage.enregistrer_presence(identite)
     competences = archetypes.lister_toutes_competences_avec_effet()
     combat.demarrer_boucle_si_necessaire(inst, competences)
     try:
