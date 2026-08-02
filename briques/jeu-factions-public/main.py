@@ -17,6 +17,7 @@ import mobs
 import zones
 import archetypes
 import mobs_archetype
+import groupes
 
 app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0")
 
@@ -59,6 +60,15 @@ class Inscription(BaseModel):
 class Connexion(BaseModel):
     email: str
     mot_de_passe: str
+
+
+class CreerGroupe(BaseModel):
+    personnage_cible_id: str
+    zone_archetype_id: str
+
+
+class RejoindreGroupe(BaseModel):
+    personnage_id: str
 
 
 def _poser_cookie_session(response: Response, compte_id: str) -> None:
@@ -123,3 +133,23 @@ def lister_etapes_route(archetype: str, cle: str = Depends(cle_api)):
     if archetype not in archetypes.ARCHETYPES_SIGNATURE:
         raise HTTPException(404, "Archétype inconnu.")
     return archetypes.lister_etapes(archetype)
+
+
+@app.post("/groupes", tags=["archetypes"])
+def creer_groupe_route(body: CreerGroupe, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, body.personnage_cible_id):
+        raise HTTPException(404, "Personnage introuvable.")
+    try:
+        return groupes.creer_groupe(body.personnage_cible_id, body.zone_archetype_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/groupes/{gid}/rejoindre", tags=["archetypes"])
+def rejoindre_groupe_route(gid: str, body: RejoindreGroupe, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, body.personnage_id):
+        raise HTTPException(404, "Personnage introuvable.")
+    try:
+        return groupes.rejoindre_groupe(gid, body.personnage_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
