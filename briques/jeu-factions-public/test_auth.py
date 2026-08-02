@@ -70,3 +70,13 @@ def test_rate_limiting_sur_connexion():
 def test_deconnexion_supprime_le_cookie():
     r = client.post("/deconnexion")
     assert r.status_code == 200
+
+
+def test_inscription_email_deja_pris_meme_si_precheck_rate_409(monkeypatch):
+    """Simule la course (TOCTOU) : le pre-check ne voit pas la ligne, mais l'INSERT
+    heurte quand même la contrainte UNIQUE — doit rester 409, jamais un 500."""
+    _inscrire(email="course@example.com")
+    import stockage
+    monkeypatch.setattr(stockage, "lire_compte_par_email", lambda email: None)
+    r = _inscrire(email="course@example.com")
+    assert r.status_code == 409
