@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Jeu-factions</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<h1>Jeu-factions</h1>
+
+<section id="auth">
+  <h2>Connexion</h2>
+  <form id="formConnexion">
+    <input id="connexionEmail" type="email" placeholder="Email" required>
+    <input id="connexionMdp" type="password" placeholder="Mot de passe" required>
+    <button type="submit">Se connecter</button>
+  </form>
+  <h2>Inscription</h2>
+  <form id="formInscription">
+    <input id="inscriptionPseudo" placeholder="Pseudo" required>
+    <input id="inscriptionEmail" type="email" placeholder="Email" required>
+    <input id="inscriptionMdp" type="password" placeholder="Mot de passe (8 caractères min.)" required>
+    <button type="submit">Créer un compte</button>
+  </form>
+  <p id="messageAuthErreur"></p>
+</section>
+
+<section id="jeuConnecte" style="display:none">
+  <button id="boutonDeconnexion">Se déconnecter</button>
+
+  <h2>Créer un personnage</h2>
+  <label><input type="radio" name="mode" value="date" checked> Par date de naissance</label>
+  <label><input type="radio" name="mode" value="description"> Par description</label>
+  <form id="formCreation">
+    <input id="nom" placeholder="Nom du personnage" required>
+    <div id="champsDate">
+      <input id="date_naissance" type="date">
+    </div>
+    <div id="champsDescription" style="display:none">
+      <textarea id="description" placeholder="Décris le caractère..."></textarea>
+    </div>
+    <button type="submit">Créer</button>
+  </form>
+  <pre id="resultatCreation"></pre>
+
+  <h2>Mes personnages</h2>
+  <ul id="listePersonnages"></ul>
+
+  <h2>Zones de signe (PvE partagé)</h2>
+  <ul id="listeZones"></ul>
+</section>
+
+<script>
+const entetes = () => ({"Content-Type": "application/json"});
+
+function afficherErreurAuth(texte) {
+  document.getElementById("messageAuthErreur").textContent = texte;
+}
+
+document.getElementById("formConnexion").addEventListener("submit", async e => {
+  e.preventDefault();
+  const r = await fetch("/connexion", {method: "POST", headers: entetes(), body: JSON.stringify({
+    email: document.getElementById("connexionEmail").value,
+    mot_de_passe: document.getElementById("connexionMdp").value,
+  })});
+  if (!r.ok) { afficherErreurAuth((await r.json()).detail || "Connexion refusée."); return; }
+  location.reload();
+});
+
+document.getElementById("formInscription").addEventListener("submit", async e => {
+  e.preventDefault();
+  const r = await fetch("/inscription", {method: "POST", headers: entetes(), body: JSON.stringify({
+    pseudo: document.getElementById("inscriptionPseudo").value,
+    email: document.getElementById("inscriptionEmail").value,
+    mot_de_passe: document.getElementById("inscriptionMdp").value,
+  })});
+  if (!r.ok) { afficherErreurAuth((await r.json()).detail || "Inscription refusée."); return; }
+  location.reload();
+});
+
+document.getElementById("boutonDeconnexion").addEventListener("click", async () => {
+  await fetch("/deconnexion", {method: "POST"});
+  location.reload();
+});
+
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", e => {
+  document.getElementById("champsDate").style.display = e.target.value === "date" ? "block" : "none";
+  document.getElementById("champsDescription").style.display = e.target.value === "description" ? "block" : "none";
+}));
+
+document.getElementById("formCreation").addEventListener("submit", async e => {
+  e.preventDefault();
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const corps = {nom: document.getElementById("nom").value};
+  if (mode === "date") corps.date_naissance = document.getElementById("date_naissance").value;
+  else corps.description = document.getElementById("description").value;
+  const r = await fetch("/personnages", {method: "POST", headers: entetes(), body: JSON.stringify(corps)});
+  document.getElementById("resultatCreation").textContent = JSON.stringify(await r.json(), null, 2);
+  chargerPersonnages();
+});
+
+async function chargerPersonnages() {
+  const r = await fetch("/personnages", {headers: entetes()});
+  const items = await r.json();
+  document.getElementById("listePersonnages").innerHTML = items.map(p => {
+    const bonus = p.bonus_idle_actuel > 0
+      ? ` — +${p.bonus_idle_actuel} vers la prochaine étape (voie d'archétype)` : "";
+    return `<li>${p.nom} — ${(p.snapshot_holistique.portrait || {}).archetype || "?"} (zone: ${p.zone_actuelle || "aucune"})${bonus}</li>`;
+  }).join("");
+}
+
+async function chargerZones() {
+  const r = await fetch("/zones", {headers: entetes()});
+  const items = await r.json();
+  document.getElementById("listeZones").innerHTML = items.map(z =>
+    `<li>${z.nom} (${z.element_natif}) — ${z.etat} ` +
+    `<a href="/front_combat.html?zone=${z.id}">Rejoindre le combat</a></li>`
+  ).join("");
+}
+
+(async () => {
+  const r = await fetch("/personnages", {headers: entetes()});
+  if (r.status === 401) {
+    document.getElementById("auth").style.display = "block";
+    document.getElementById("jeuConnecte").style.display = "none";
+    return;
+  }
+  document.getElementById("auth").style.display = "none";
+  document.getElementById("jeuConnecte").style.display = "block";
+  chargerPersonnages();
+  chargerZones();
+  setInterval(() => fetch("/presence", {method: "POST", headers: entetes()}).catch(() => {}), 30_000);
+})();
+</script>
+</body>
+</html>
