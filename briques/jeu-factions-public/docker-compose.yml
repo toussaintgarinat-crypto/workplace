@@ -1,0 +1,38 @@
+services:
+  jeu-factions-public:
+    build: .
+    container_name: workplace_jeu_factions_public
+    image: workplace/jeu-factions-public:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6220:6220"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PORT=6220
+      - PERSONNAGES_URL=http://host.docker.internal:5900
+      - JEU_FACTIONS_PUBLIC_DB=/data/jeu_factions_public.db
+      - TICK_INTERVAL_HOURS=24
+      - COMBAT_TICK_HZ=10
+      - JEU_FACTIONS_INSTANCE_CAPACITE=30
+      - COMBAT_INSTANCE_GRACE_S=30
+      - COMBAT_BOSS_RESPAWN_S=60
+      - COMBAT_ARENE_TAILLE=800
+      # JEU_FACTIONS_PUBLIC_SECRET, PERSONNAGES_KEY, JEU_FACTIONS_PUBLIC_CORS_ORIGINS :
+      # ABSENTES d'ici EXPRÈS — elles viennent du .env racine via env_file. Les déclarer
+      # ici avec une valeur vide les figerait et écraserait la vraie valeur du .env
+      # racine (piège déjà documenté : fix-env-shadow-composes.md).
+    volumes:
+      - jeu_factions_public_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6220/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  jeu_factions_public_data:
