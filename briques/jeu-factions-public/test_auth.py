@@ -56,7 +56,7 @@ def test_connexion_email_inconnu_401():
 
 
 def test_route_protegee_sans_cookie_401():
-    assert client.get("/personnages_test_placeholder").status_code == 404  # route pas encore créée (Task 9)
+    assert client.get("/personnages").status_code == 401
 
 
 def test_rate_limiting_sur_connexion():
