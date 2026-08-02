@@ -4,10 +4,14 @@ docs/superpowers/specs/2026-08-03-jeu-factions-public-design.md."""
 import os
 import re
 import sqlite3
+from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+import moteur_personnages
 
 import jeton
 import limiteur
@@ -55,6 +59,21 @@ class Inscription(BaseModel):
     email: str
     mot_de_passe: str
     pseudo: str
+
+
+class CreerPersonnage(BaseModel):
+    nom: str
+    prenoms: str = ""
+    date_naissance: Optional[str] = None
+    heure_naissance: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    utc_offset: Optional[float] = None
+    description: Optional[str] = None
+
+
+class AssignerZone(BaseModel):
+    zone_id: str
 
 
 class Connexion(BaseModel):
@@ -153,3 +172,78 @@ def rejoindre_groupe_route(gid: str, body: RejoindreGroupe, cle: str = Depends(c
         return groupes.rejoindre_groupe(gid, body.personnage_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/personnages", tags=["personnages"])
+async def creer_personnage_route(body: CreerPersonnage, cle: str = Depends(cle_api)):
+    a_une_date = bool((body.date_naissance or "").strip())
+    a_une_description = bool((body.description or "").strip())
+    if not a_une_date and not a_une_description:
+        raise HTTPException(422, "Fournis une date de naissance ou une description.")
+
+    if a_une_date:
+        donnees_naissance = {"date_naissance": body.date_naissance,
+                             "heure_naissance": body.heure_naissance,
+                             "latitude": body.latitude, "longitude": body.longitude,
+                             "utc_offset": body.utc_offset}
+        fiche = {**donnees_naissance, "prenoms": body.prenoms, "nom": body.nom}
+    else:
+        donnees_naissance = {"description": body.description}
+        ri = await moteur_personnages.recherche_inverse(body.description)
+        exemple_date = ri.get("exemple_date")
+        if not exemple_date:
+            raise HTTPException(422, "Description trop vague : aucune date déduite. "
+                                     "Précise le caractère ou fournis une date.")
+        fiche = {"date_naissance": exemple_date, "prenoms": body.prenoms, "nom": body.nom}
+
+    resultat = await moteur_personnages.portrait(fiche)
+    stockage.assurer_joueur(cle)
+    return stockage.creer_personnage(cle, body.nom, donnees_naissance, resultat)
+
+
+@app.post("/presence", tags=["personnages"])
+def enregistrer_presence_route(cle: str = Depends(cle_api)):
+    stockage.enregistrer_presence(cle)
+    return {"ok": True}
+
+
+@app.get("/personnages", tags=["personnages"])
+def lister_personnages_route(cle: str = Depends(cle_api)):
+    personnages = stockage.lister_personnages(cle)
+    derniere_presence = stockage.lire_derniere_presence(cle)
+    maintenant = datetime.now(timezone.utc)
+    for p in personnages:
+        archetype = (p["snapshot_holistique"].get("portrait") or {}).get("archetype")
+        prochaine = archetypes.prochaine_etape(p["id"], archetype) if archetype else None
+        p["bonus_idle_actuel"] = (
+            archetypes.bonus_idle(derniere_presence, maintenant,
+                                  archetypes.TAUX_IDLE_PAR_HEURE, archetypes.PLAFOND_IDLE_HEURES)
+            if prochaine else 0)
+    return personnages
+
+
+@app.get("/personnages/{pid}", tags=["personnages"])
+def lire_personnage_route(pid: str, cle: str = Depends(cle_api)):
+    p = stockage.lire_personnage(cle, pid)
+    if not p:
+        raise HTTPException(404, "Personnage introuvable.")
+    p["progressions"] = archetypes.lister_progressions_personnage(pid)
+    p["competences"] = archetypes.lister_competences_debloquees(pid)
+    return p
+
+
+@app.patch("/personnages/{pid}/zone", tags=["personnages"])
+def assigner_zone_route(pid: str, body: AssignerZone, cle: str = Depends(cle_api)):
+    if not zones.lire_zone(body.zone_id):
+        raise HTTPException(404, "Zone introuvable.")
+    p = stockage.assigner_zone(cle, pid, body.zone_id)
+    if not p:
+        raise HTTPException(404, "Personnage introuvable.")
+    return p
+
+
+@app.get("/personnages/{pid}/competences", tags=["personnages"])
+def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
+    if not stockage.lire_personnage(cle, pid):
+        raise HTTPException(404, "Personnage introuvable.")
+    return archetypes.lister_competences_debloquees(pid)
