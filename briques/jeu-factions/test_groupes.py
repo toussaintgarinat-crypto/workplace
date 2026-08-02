@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta, timezone
-
 import archetypes as A
 import stockage as S
 import groupes as G
@@ -47,7 +45,7 @@ def test_rejoindre_groupe_dissous_leve_valueerror():
     p = _personnage("cleG4", "Cible3", {"Charisme": 200, "Combativité": 200, "Énergie": 200})
     etapes = A.lister_etapes("Le Meneur Charismatique")
     g = G.creer_groupe(p["id"], etapes[0]["id"])
-    G.dissoudre_groupes_de_letape(etapes[0]["id"])
+    G.dissoudre_groupes_de_letape(etapes[0]["id"], [p["id"]])
     try:
         G.rejoindre_groupe(g["id"], p["id"])
         assert False, "aurait dû lever ValueError"
@@ -72,5 +70,5 @@ def test_dissoudre_groupes_de_letape_ne_touche_pas_les_autres_etapes():
     p = _personnage("cleG12", "Autre", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
     etapes = A.lister_etapes("Le Meneur Charismatique")
     g1 = G.creer_groupe(p["id"], etapes[0]["id"])
-    G.dissoudre_groupes_de_letape("etape-qui-nexiste-pas")
+    G.dissoudre_groupes_de_letape("etape-qui-nexiste-pas", ["quelquun"])
     assert G.lire_groupe(g1["id"])["etat"] == "actif"

@@ -62,11 +62,17 @@ def lire_groupe(groupe_id: str) -> dict | None:
         return _ligne_groupe(c, groupe_id)
 
 
-def dissoudre_groupes_de_letape(zone_archetype_id: str) -> None:
+def dissoudre_groupes_de_letape(zone_archetype_id: str, personnages_progresses: list[str]) -> None:
     """Appelée par `combat.persister_evenements` (contexte archétype) à la mort du boss d'une
-    étape : tous les groupes encore actifs sur CETTE étape sont clos — la voie est franchie,
-    même précédent que l'ancien `resoudre_groupes_actifs` qui dissolvait le groupe au seuil
-    atteint (mais désormais côté combat joué, pas côté comparaison de stats)."""
+    étape : dissout uniquement les groupes dont la cible fait partie de `personnages_progresses`
+    (ceux dont c'était réellement leur propre prochaine étape, cf. la règle carry appliquée
+    par l'appelant) — les groupes d'autres personnes visant la même étape, mais qui n'ont pas
+    elles-mêmes progressé, restent actifs (cloisonnement par propriétaire, cf. README)."""
+    if not personnages_progresses:
+        return
     with S._conn() as c:
-        c.execute("UPDATE groupes SET etat='dissous' WHERE zone_archetype_id=? AND etat='actif'",
-                  (zone_archetype_id,))
+        marks = ",".join("?" for _ in personnages_progresses)
+        c.execute(f"""UPDATE groupes SET etat='dissous'
+                      WHERE zone_archetype_id=? AND etat='actif'
+                      AND personnage_cible_id IN ({marks})""",
+                  (zone_archetype_id, *personnages_progresses))

@@ -36,9 +36,14 @@ simulée à tick fixe (`combat_moteur.py`, fonction pure) et diffusée à toutes
 événements du tick (`evenements`). Front minimal : `front_combat.html` (Phaser, HUD PV + journal
 de combat). Voir `docs/superpowers/specs/2026-07-29-jeu-factions-combat-design.md`.
 
+`GET /groupes/{groupe_id}/combat` (WebSocket, S218) : même moteur de combat temps réel, mais pour
+une étape de voie d'archétype — la mort du boss fait progresser chaque membre du groupe pour qui
+c'était réellement sa propre prochaine étape (règle carry), et ne dissout que les groupes de ces
+personnages-là, jamais ceux d'autres tenants visant la même étape sans avoir progressé.
+
 ## Non fait ici (specs séparés à venir)
 
-PvP, hébergement public (cercle privé uniquement, S217), lore riche.
+PvP, hébergement public (cercle privé uniquement, S217).
 
 ## Tests
 

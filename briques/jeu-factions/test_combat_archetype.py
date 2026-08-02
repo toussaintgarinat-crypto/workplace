@@ -75,6 +75,21 @@ async def test_boss_tue_ne_fait_pas_progresser_un_carry_sans_sa_propre_etape():
     assert A.prochaine_etape(aide["id"], etape1["archetype"]) == etape1["id"]
 
 
+async def test_boss_tue_ne_dissout_que_le_groupe_du_personnage_qui_a_progresse():
+    """Fix Important (décision humaine, revue S218/S219) : deux personnages de tenants
+    différents créent chacun leur propre groupe sur la même étape (leur propre première étape
+    à tous les deux). Seul celui qui rejoint réellement le combat et tue le boss voit son
+    groupe dissous — le groupe de l'autre, jamais rejoint, reste cloisonné et actif."""
+    etape = _etape_fixture()
+    combattant = _personnage("cleCA5", "Combattant")
+    spectateur = _personnage("cleCA5b", "Spectateur")
+    g_combattant = G.creer_groupe(combattant["id"], etape["id"])
+    g_spectateur = G.creer_groupe(spectateur["id"], etape["id"])
+    await _rejoindre_et_tuer_le_boss(etape, combattant["id"])
+    assert G.lire_groupe(g_combattant["id"])["etat"] == "dissous"
+    assert G.lire_groupe(g_spectateur["id"])["etat"] == "actif"
+
+
 async def test_idle_bonus_applique_a_lentree_reduit_les_pv_du_boss():
     etape = _etape_fixture()
     p = _personnage("cleCA4", "Fatigue")
