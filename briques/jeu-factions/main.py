@@ -5,7 +5,6 @@ docs/superpowers/specs/2026-07-29-jeu-factions-design.md pour le design complet,
 docs/superpowers/specs/2026-07-30-jeu-factions-identite-design.md pour l'identité réelle
 (S217) : `cle_api` est désormais un `sub` Keycloak vérifié par cookie, plus une clé partagée.
 """
-import asyncio
 import os
 import time
 from datetime import datetime, timezone
