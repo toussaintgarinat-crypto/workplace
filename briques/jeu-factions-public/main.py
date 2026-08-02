@@ -3,6 +3,7 @@ de passe propres à la brique, AUCUNE dépendance à core/ ni à Keycloak — vo
 docs/superpowers/specs/2026-08-03-jeu-factions-public-design.md."""
 import os
 import re
+import sqlite3
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,8 +66,11 @@ def inscription_route(body: Inscription, request: Request, response: Response):
         raise HTTPException(422, "Pseudo refusé.")
     if stockage.lire_compte_par_email(body.email):
         raise HTTPException(409, "Cet email a déjà un compte.")
-    compte = stockage.creer_compte(body.email, jeton.hacher_mot_de_passe(body.mot_de_passe),
-                                   body.pseudo)
+    try:
+        compte = stockage.creer_compte(body.email, jeton.hacher_mot_de_passe(body.mot_de_passe),
+                                       body.pseudo)
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Cet email a déjà un compte.")
     stockage.assurer_joueur(compte["id"], body.pseudo)
     _poser_cookie_session(response, compte["id"])
     return {"ok": True}
