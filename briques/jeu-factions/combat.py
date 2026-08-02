@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import combat_moteur as CM
 import stockage
 import zones
+import archetypes
+import groupes
 
 
 def capacite() -> int:
@@ -39,6 +41,7 @@ class InstanceCombat:
     id: str
     zone_id: str
     etat: dict
+    contexte: str = "zone"                              # "zone" | "archetype"
     connexions: dict = field(default_factory=dict)     # personnage_id -> WebSocket
     file_actions: list = field(default_factory=list)   # actions en attente du prochain tick
     derniere_activite: float | None = None              # horodatage depuis lequel vide
@@ -48,25 +51,30 @@ class InstanceCombat:
 _INSTANCES: dict[str, list[InstanceCombat]] = {}
 
 
-def _instance_disponible(zone_id: str) -> InstanceCombat | None:
-    for inst in _INSTANCES.get(zone_id, []):
+def _cle_partition(cle: str, contexte: str) -> str:
+    return cle if contexte == "zone" else f"{contexte}:{cle}"
+
+
+def _instance_disponible(cle: str, contexte: str) -> InstanceCombat | None:
+    for inst in _INSTANCES.get(_cle_partition(cle, contexte), []):
         if len(inst.connexions) < capacite():
             return inst
     return None
 
 
-def _creer_instance(zone_id: str, mobs_zone: list[dict]) -> InstanceCombat:
+def _creer_instance(zone_id: str, mobs_zone: list[dict], contexte: str) -> InstanceCombat:
     import uuid
     etat = CM.nouvel_etat_instance(zone_id, arene_taille(), mobs_zone)
-    inst = InstanceCombat(id=uuid.uuid4().hex, zone_id=zone_id, etat=etat)
-    _INSTANCES.setdefault(zone_id, []).append(inst)
+    inst = InstanceCombat(id=uuid.uuid4().hex, zone_id=zone_id, etat=etat, contexte=contexte)
+    _INSTANCES.setdefault(_cle_partition(zone_id, contexte), []).append(inst)
     return inst
 
 
 async def rejoindre(zone_id: str, personnage_id: str, element: str, signe: str,
-                    mobs_zone: list[dict]) -> InstanceCombat:
-    inst = _instance_disponible(zone_id) or _creer_instance(zone_id, mobs_zone)
-    inst.etat = CM.ajouter_joueur(inst.etat, personnage_id, element, signe)
+                    mobs_zone: list[dict], contexte: str = "zone",
+                    cle_contribution: str | None = None) -> InstanceCombat:
+    inst = _instance_disponible(zone_id, contexte) or _creer_instance(zone_id, mobs_zone, contexte)
+    inst.etat = CM.ajouter_joueur(inst.etat, personnage_id, element, signe, cle_contribution)
     inst.derniere_activite = None
     return inst
 
@@ -101,27 +109,44 @@ def instance_expiree(inst: InstanceCombat, horodatage: float) -> bool:
 def fermer_instance(inst: InstanceCombat) -> None:
     if inst.tache:
         inst.tache.cancel()
-    liste = _INSTANCES.get(inst.zone_id, [])
+    liste = _INSTANCES.get(_cle_partition(inst.zone_id, inst.contexte), [])
     if inst in liste:
         liste.remove(inst)
 
 
-def persister_evenements(zone_id: str, evenements: list[dict]) -> None:
+def persister_evenements(inst: InstanceCombat, evenements: list[dict]) -> None:
     for ev in evenements:
-        if ev["type"] in ("mob_tue", "boss_tue"):
-            for guilde, points in ev.get("contributions", {}).items():
-                zones.ajouter_score(zone_id, guilde, points)
-            stockage.log_resolution(zone_id, None, ev.get("contributions", {}), ev["type"])
-        if ev["type"] == "boss_tue":
-            zones.marquer_vaincue_si_premiere_fois(zone_id)
+        if ev["type"] not in ("mob_tue", "boss_tue"):
+            continue
+        contributions = ev.get("contributions", {})
+        if inst.contexte == "zone":
+            for guilde, points in contributions.items():
+                zones.ajouter_score(inst.zone_id, guilde, points)
+            stockage.log_resolution(inst.zone_id, None, contributions, ev["type"])
+            if ev["type"] == "boss_tue":
+                zones.marquer_vaincue_si_premiere_fois(inst.zone_id)
+        else:
+            stockage.log_resolution(None, inst.zone_id, contributions, ev["type"])
+            if ev["type"] == "boss_tue":
+                etape = archetypes.lire_etape(inst.zone_id)
+                if etape:
+                    for personnage_id in contributions:
+                        if archetypes.prochaine_etape(personnage_id, etape["archetype"]) == inst.zone_id:
+                            archetypes.marquer_etape_vaincue(personnage_id, inst.zone_id)
+                            archetypes.debloquer_competence_si_existe(personnage_id, inst.zone_id)
+                groupes.dissoudre_groupes_de_letape(inst.zone_id)
 
 
 async def un_tick(inst: InstanceCombat, actions: list[dict], dt: float,
                   competences: dict[str, dict], horodatage: float) -> list[dict]:
     inst.etat, evenements = CM.avancer_tick(inst.etat, actions, dt, competences, horodatage,
                                             respawn_delai_s())
-    persister_evenements(inst.zone_id, evenements)
+    persister_evenements(inst, evenements)
     return evenements
+
+
+def appliquer_bonus_idle(inst: InstanceCombat, degats: float, cle_contribution: str) -> None:
+    inst.etat = CM.appliquer_bonus_degats(inst.etat, degats, cle_contribution)
 
 
 def etat_public(inst: InstanceCombat) -> dict:
