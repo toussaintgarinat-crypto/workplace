@@ -276,3 +276,61 @@ def test_personnages_sans_presence_a_bonus_idle_nul(monkeypatch):
     items = client.get("/personnages", cookies=ck).json()
     perso = next(p for p in items if p["id"] == pid)
     assert perso["bonus_idle_actuel"] == 0
+
+
+def test_combat_voie_ws_rejette_une_session_absente():
+    with client.websocket_connect("/groupes/inconnu/combat?personnage_id=x") as ws:
+        message = ws.receive()
+        assert message["type"] == "websocket.close"
+        assert message["code"] == 4401
+
+
+def test_combat_voie_ws_groupe_ou_membre_inconnu_est_rejete():
+    with client.websocket_connect("/groupes/inconnu/combat?personnage_id=inconnu",
+                                  cookies=_cookies("voie-tenant-1")) as ws:
+        message = ws.receive()
+        assert message["type"] == "websocket.close"
+        assert message["code"] == 4404
+
+
+def test_combat_voie_ws_connexion_valide_recoit_un_etat_initial(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Meneur Charismatique",
+                    "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
+        "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
+    archetypes.seed_zones_archetype()
+    import mobs_archetype
+    mobs_archetype.seed_mobs_archetype()
+    ck = _cookies("voie-tenant-2")
+    p = client.post("/personnages", json={"nom": "Voie", "date_naissance": "1990-01-01"},
+                    cookies=ck).json()
+    etape = client.get("/archetypes/Le Meneur Charismatique/etapes", cookies=ck).json()[0]
+    g = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]},
+                    cookies=ck).json()
+    with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={p['id']}",
+                                  cookies=ck) as ws:
+        message = ws.receive_json()
+        assert message["type"] == "etat"
+        assert p["id"] in message["joueurs"]
+
+
+def test_combat_voie_ws_non_membre_du_groupe_est_rejete(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Sage Contemplatif", "stats": {}},
+        "traditions": {"signe_solaire": {"nom": "Vierge"}}, "empreinte": []})
+    archetypes.seed_zones_archetype()
+    import mobs_archetype
+    mobs_archetype.seed_mobs_archetype()
+    ck = _cookies("voie-tenant-3")
+    p = client.post("/personnages", json={"nom": "Cible", "date_naissance": "1990-01-01"},
+                    cookies=ck).json()
+    autre = client.post("/personnages", json={"nom": "PasMembre", "date_naissance": "1990-01-01"},
+                        cookies=ck).json()
+    etape = client.get("/archetypes/Le Sage Contemplatif/etapes", cookies=ck).json()[0]
+    g = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]},
+                    cookies=ck).json()
+    with client.websocket_connect(f"/groupes/{g['id']}/combat?personnage_id={autre['id']}",
+                                  cookies=ck) as ws:
+        message = ws.receive()
+        assert message["type"] == "websocket.close"
+        assert message["code"] == 4404
