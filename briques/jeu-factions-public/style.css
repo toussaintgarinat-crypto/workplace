@@ -1,0 +1,12 @@
+body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif;
+       max-width: 900px; margin: 0 auto; padding: 24px; }
+h1, h2 { color: #facc15; }
+section { background: #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+input, textarea, button { background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+       border-radius: 4px; padding: 8px; margin: 4px 0; }
+button { background: #facc15; color: #0f172a; font-weight: bold; cursor: pointer; border: none; }
+button:hover { background: #eab308; }
+#messageAuthErreur { color: #f87171; }
+ul { list-style: none; padding: 0; }
+li { padding: 6px 0; border-bottom: 1px solid #334155; }
+a { color: #60a5fa; }

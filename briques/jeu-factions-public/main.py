@@ -6,10 +6,12 @@ import re
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import moteur_personnages
@@ -321,3 +323,18 @@ async def combat_voie_ws(websocket: WebSocket, groupe_id: str, personnage_id: st
         pass
     finally:
         combat.quitter(inst, personnage_id, time.monotonic())
+
+
+@app.get("/", include_in_schema=False)
+def accueil():
+    return FileResponse(Path(__file__).parent / "front.html")
+
+
+@app.get("/front_combat.html", response_class=FileResponse, include_in_schema=False)
+def combat_front():
+    return FileResponse(Path(__file__).parent / "front_combat.html")
+
+
+@app.get("/style.css", include_in_schema=False)
+def design_system():
+    return FileResponse(Path(__file__).parent / "style.css", media_type="text/css")
