@@ -66,6 +66,9 @@
   </form>
   <pre id="resultatCreation"></pre>
 
+  <h2>Groupes ouverts</h2>
+  <ul id="listeGroupes"></ul>
+
   <h2>Mes personnages</h2>
   <ul id="listePersonnages"></ul>
 
@@ -75,6 +78,7 @@
 
 <script>
 const entetes = () => ({"Content-Type": "application/json"});
+let personnagesGlobaux = [];
 
 function afficherErreurAuth(texte) {
   document.getElementById("messageAuthErreur").textContent = texte;
@@ -168,6 +172,7 @@ document.getElementById("formCreation").addEventListener("submit", async e => {
 async function chargerPersonnages() {
   const r = await fetch("/personnages", {headers: entetes()});
   const items = await r.json();
+  personnagesGlobaux = items;
   const liste = document.getElementById("listePersonnages");
   liste.innerHTML = "";
   for (const p of items) {
@@ -175,7 +180,30 @@ async function chargerPersonnages() {
       ? ` — +${p.bonus_idle_actuel} vers la prochaine étape (voie d'archétype)` : "";
     const archetype = (p.snapshot_holistique.portrait || {}).archetype || "?";
     const li = document.createElement("li");
-    li.textContent = `${p.nom} — ${archetype} (zone: ${p.zone_actuelle || "aucune"})${bonus}`;
+    const texteContainer = document.createElement("div");
+    texteContainer.textContent = `${p.nom} — ${archetype} (zone: ${p.zone_actuelle || "aucune"})${bonus}`;
+    li.appendChild(texteContainer);
+
+    if (p.prochaine_etape_id) {
+      const btn = document.createElement("button");
+      btn.textContent = "Ouvrir un groupe sur cette étape";
+      btn.addEventListener("click", async () => {
+        const res = await fetch("/groupes", {
+          method: "POST",
+          headers: entetes(),
+          body: JSON.stringify({
+            personnage_cible_id: p.id,
+            zone_archetype_id: p.prochaine_etape_id
+          })
+        });
+        if (!res.ok) {
+          alert("Erreur: " + (await res.json()).detail);
+          return;
+        }
+        chargerGroupes();
+      });
+      li.appendChild(btn);
+    }
     liste.appendChild(li);
   }
 }
@@ -187,6 +215,48 @@ async function chargerZones() {
     `<li>${z.nom} (${z.element_natif}) — ${z.etat} ` +
     `<a href="/front_combat.html?zone=${z.id}">Rejoindre le combat</a></li>`
   ).join("");
+}
+
+async function chargerGroupes() {
+  const r = await fetch("/groupes", {headers: entetes()});
+  const items = await r.json();
+  const liste = document.getElementById("listeGroupes");
+  liste.innerHTML = "";
+  if (items.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "Aucun groupe ouvert.";
+    liste.appendChild(li);
+    return;
+  }
+  for (const g of items) {
+    const li = document.createElement("li");
+    const texteContainer = document.createElement("div");
+    texteContainer.textContent = `${g.personnage_cible_nom} — ${g.archetype} (étape ${g.ordre}: ${g.etape_nom}) — ${g.nb_membres} membre(s)`;
+    li.appendChild(texteContainer);
+
+    const btn = document.createElement("button");
+    btn.textContent = "Rejoindre pour aider";
+    btn.addEventListener("click", async () => {
+      if (personnagesGlobaux.length === 0) {
+        alert("Erreur: tu n'as pas de personnage.");
+        return;
+      }
+      const res = await fetch(`/groupes/${g.id}/rejoindre`, {
+        method: "POST",
+        headers: entetes(),
+        body: JSON.stringify({
+          personnage_id: personnagesGlobaux[0].id
+        })
+      });
+      if (!res.ok) {
+        alert("Erreur: " + (await res.json()).detail);
+        return;
+      }
+      chargerGroupes();
+    });
+    li.appendChild(btn);
+    liste.appendChild(li);
+  }
 }
 
 (async () => {
@@ -210,6 +280,7 @@ async function chargerZones() {
   document.getElementById("jeuConnecte").style.display = "block";
   chargerPersonnages();
   chargerZones();
+  chargerGroupes();
   setInterval(() => fetch("/presence", {method: "POST", headers: entetes()}).catch(() => {}), 30_000);
 })();
 </script>
