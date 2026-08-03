@@ -35,6 +35,8 @@ def _conn() -> sqlite3.Connection:
     c.execute("""CREATE TABLE IF NOT EXISTS comptes (
         id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
         mot_de_passe_hash TEXT NOT NULL, pseudo TEXT NOT NULL, cree_le TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS reinitialisations_utilisees (
+        jeton_hash TEXT PRIMARY KEY, utilise_le TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS joueurs (
         cle_api TEXT PRIMARY KEY, pseudo TEXT NOT NULL)""")
     _migrer_colonne_presence(c)
@@ -104,6 +106,26 @@ def lire_compte_par_email(email: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM comptes WHERE email=?", (email,)).fetchone()
     return dict(r) if r else None
+
+
+def marquer_reinitialisation_utilisee(jeton: str) -> bool:
+    """Atomique : True si c'est la première fois que CE jeton précis est marqué utilisé
+    (insertion réussie), False s'il l'était déjà (rejeu) — même motif que le TOCTOU corrigé
+    en Task 5 (INSERT + catch IntegrityError, pas de check-then-insert séparé)."""
+    import hashlib as _hashlib
+    hash_jeton = _hashlib.sha256(jeton.encode()).hexdigest()
+    with _conn() as c:
+        try:
+            c.execute("INSERT INTO reinitialisations_utilisees (jeton_hash, utilise_le) VALUES (?,?)",
+                      (hash_jeton, _maintenant()))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def mettre_a_jour_mot_de_passe(compte_id: str, mot_de_passe_hash: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE comptes SET mot_de_passe_hash=? WHERE id=?", (mot_de_passe_hash, compte_id))
 
 
 def assurer_joueur(cle_api: str, pseudo: str = "") -> None:

@@ -26,6 +26,7 @@ import archetypes
 import mobs_archetype
 import groupes
 import combat
+import email_envoi
 
 app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0",
              docs_url=None, redoc_url=None, openapi_url=None)
@@ -53,7 +54,7 @@ def _ip_client(request: Request) -> str:
 
 def cle_api(request: Request) -> str:
     identite = jeton.verifier(request.cookies.get(jeton.COOKIE_NOM))
-    if not identite:
+    if not identite or ":" in identite:
         raise HTTPException(401, "Session requise — connecte-toi.")
     return identite
 
@@ -87,6 +88,15 @@ class AssignerZone(BaseModel):
 class Connexion(BaseModel):
     email: str
     mot_de_passe: str = Field(..., max_length=200)
+
+
+class MotDePasseOublie(BaseModel):
+    email: str
+
+
+class ReinitialiserMotDePasse(BaseModel):
+    jeton: str
+    nouveau_mot_de_passe: str = Field(..., min_length=8, max_length=200)
 
 
 class CreerGroupe(BaseModel):
@@ -150,6 +160,34 @@ def connexion_route(body: Connexion, request: Request, response: Response):
 @app.post("/deconnexion", tags=["auth"])
 def deconnexion_route(response: Response):
     response.delete_cookie(jeton.COOKIE_NOM, httponly=True, samesite="lax", secure=True)
+    return {"ok": True}
+
+
+@app.post("/mot-de-passe-oublie", tags=["auth"])
+def mot_de_passe_oublie_route(body: MotDePasseOublie, request: Request):
+    if not limiteur.autorise(_ip_client(request)):
+        raise HTTPException(429, "Trop de tentatives — réessaie plus tard.")
+    email = body.email.strip().lower()
+    compte = stockage.lire_compte_par_email(email)
+    if compte:
+        jeton_reset = jeton.emettre_reinitialisation(compte["id"])
+        base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
+        lien = f"{base}/reinitialiser?jeton={jeton_reset}"
+        email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
+                            f"Clique sur ce lien pour choisir un nouveau mot de passe "
+                            f"(valable 15 minutes) :\n{lien}\n\n"
+                            f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
+    return {"ok": True}
+
+
+@app.post("/reinitialiser-mot-de-passe", tags=["auth"])
+def reinitialiser_mot_de_passe_route(body: ReinitialiserMotDePasse):
+    compte_id = jeton.verifier_reinitialisation(body.jeton)
+    if not compte_id:
+        raise HTTPException(400, "Lien de réinitialisation invalide ou expiré.")
+    if not stockage.marquer_reinitialisation_utilisee(body.jeton):
+        raise HTTPException(400, "Ce lien a déjà été utilisé.")
+    stockage.mettre_a_jour_mot_de_passe(compte_id, jeton.hacher_mot_de_passe(body.nouveau_mot_de_passe))
     return {"ok": True}
 
 

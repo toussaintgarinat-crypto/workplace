@@ -97,3 +97,112 @@ def test_inscription_email_deja_pris_meme_si_precheck_rate_409(monkeypatch):
     monkeypatch.setattr(stockage, "lire_compte_par_email", lambda email: None)
     r = _inscrire(email="course@example.com")
     assert r.status_code == 409
+
+
+def test_mot_de_passe_oublie_email_inexistant_renvoie_200():
+    """Pas d'énumération de comptes : retour 200 que l'email existe ou non."""
+    limiteur._reinitialiser()
+    r = client.post("/mot-de-passe-oublie", json={"email": "jamais@example.com"})
+    assert r.status_code == 200
+
+
+def test_mot_de_passe_oublie_email_existant_appelle_envoyer(monkeypatch):
+    """Avec un email existant, on appelle email_envoi.envoyer et on retourne 200."""
+    limiteur._reinitialiser()
+    _inscrire(email="exist@example.com")
+
+    # Mock email_envoi.envoyer pour capturer l'appel
+    appels = []
+    import email_envoi
+    original_envoyer = email_envoi.envoyer
+
+    def mock_envoyer(dest, sujet, corps):
+        appels.append({"dest": dest, "sujet": sujet, "corps": corps})
+        return "simule"
+
+    monkeypatch.setattr(email_envoi, "envoyer", mock_envoyer)
+
+    r = client.post("/mot-de-passe-oublie", json={"email": "exist@example.com"})
+    assert r.status_code == 200
+    assert len(appels) == 1
+    assert appels[0]["dest"] == "exist@example.com"
+    assert "Réinitialisation de mot de passe" in appels[0]["sujet"]
+
+
+def test_reinitialiser_mot_de_passe_avec_jeton_valide():
+    """Avec un jeton valide, on peut définir un nouveau mot de passe."""
+    limiteur._reinitialiser()
+    _inscrire(email="change@example.com", mdp="ancienmdp12345")
+
+    # Générer un jeton de reset valide
+    import stockage
+    compte = stockage.lire_compte_par_email("change@example.com")
+    import jeton
+    jeton_reset = jeton.emettre_reinitialisation(compte["id"], ttl=60)
+
+    # Utiliser le jeton pour changer le mot de passe
+    r = client.post("/reinitialiser-mot-de-passe",
+                    json={"jeton": jeton_reset, "nouveau_mot_de_passe": "nouveaumdp456"})
+    assert r.status_code == 200
+
+    # Vérifier que l'ancien mot de passe ne fonctionne plus
+    r2 = client.post("/connexion",
+                     json={"email": "change@example.com", "mot_de_passe": "ancienmdp12345"})
+    assert r2.status_code == 401
+
+    # Vérifier que le nouveau mot de passe fonctionne
+    r3 = client.post("/connexion",
+                     json={"email": "change@example.com", "mot_de_passe": "nouveaumdp456"})
+    assert r3.status_code == 200
+
+
+def test_reinitialiser_mot_de_passe_jeton_invalide_renvoie_400():
+    limiteur._reinitialiser()
+    r = client.post("/reinitialiser-mot-de-passe",
+                    json={"jeton": "jeton-invalide", "nouveau_mot_de_passe": "nouveaumdp456"})
+    assert r.status_code == 400
+    assert "invalide ou expiré" in r.json()["detail"]
+
+
+def test_reinitialiser_mot_de_passe_jeton_expire_renvoie_400():
+    limiteur._reinitialiser()
+    _inscrire(email="expire@example.com", mdp="motdepasse123")
+    import stockage
+    compte = stockage.lire_compte_par_email("expire@example.com")
+    import jeton
+    jeton_expire = jeton.emettre_reinitialisation(compte["id"], ttl=-1)
+
+    r = client.post("/reinitialiser-mot-de-passe",
+                    json={"jeton": jeton_expire, "nouveau_mot_de_passe": "nouveaumdp456"})
+    assert r.status_code == 400
+    assert "invalide ou expiré" in r.json()["detail"]
+
+
+def test_reinitialiser_mot_de_passe_jeton_rejeu_renvoie_400():
+    """Rejouer le même jeton deux fois doit échouer la deuxième fois."""
+    limiteur._reinitialiser()
+    _inscrire(email="rejeu@example.com", mdp="motdepasse123")
+    import stockage
+    compte = stockage.lire_compte_par_email("rejeu@example.com")
+    import jeton
+    jeton_reset = jeton.emettre_reinitialisation(compte["id"], ttl=60)
+
+    # Première utilisation : succès
+    r1 = client.post("/reinitialiser-mot-de-passe",
+                     json={"jeton": jeton_reset, "nouveau_mot_de_passe": "nouveaumdp456"})
+    assert r1.status_code == 200
+
+    # Deuxième utilisation du même jeton : échec
+    r2 = client.post("/reinitialiser-mot-de-passe",
+                     json={"jeton": jeton_reset, "nouveau_mot_de_passe": "autremdp789"})
+    assert r2.status_code == 400
+    assert "déjà été utilisé" in r2.json()["detail"]
+
+
+def test_rate_limiting_sur_mot_de_passe_oublie():
+    """Rate limiting sur /mot-de-passe-oublie (même motif que sur /connexion)."""
+    limiteur._reinitialiser()
+    for _ in range(limiteur.MAX_TENTATIVES):
+        client.post("/mot-de-passe-oublie", json={"email": "x@example.com"})
+    r = client.post("/mot-de-passe-oublie", json={"email": "x@example.com"})
+    assert r.status_code == 429

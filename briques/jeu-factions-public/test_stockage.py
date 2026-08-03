@@ -108,3 +108,31 @@ def test_creer_compte_email_deja_pris_leve_integrityerror():
         assert False, "devait lever IntegrityError"
     except sqlite3.IntegrityError:
         pass
+
+
+def test_marquer_reinitialisation_utilisee_premiere_fois_renvoie_true():
+    jeton = "jeton-test-unique-123"
+    assert S.marquer_reinitialisation_utilisee(jeton) is True
+
+
+def test_marquer_reinitialisation_utilisee_deuxieme_fois_renvoie_false():
+    jeton = "jeton-test-rejeu-456"
+    assert S.marquer_reinitialisation_utilisee(jeton) is True
+    assert S.marquer_reinitialisation_utilisee(jeton) is False
+
+
+def test_deux_jetons_differents_marquables_independemment():
+    jeton1 = "jeton-1"
+    jeton2 = "jeton-2"
+    assert S.marquer_reinitialisation_utilisee(jeton1) is True
+    assert S.marquer_reinitialisation_utilisee(jeton2) is True
+    assert S.marquer_reinitialisation_utilisee(jeton1) is False
+    assert S.marquer_reinitialisation_utilisee(jeton2) is False
+
+
+def test_mettre_a_jour_mot_de_passe():
+    c = S.creer_compte("test@example.com", "ancien-hash", "Test")
+    compte_id = c["id"]
+    S.mettre_a_jour_mot_de_passe(compte_id, "nouveau-hash")
+    relu = S.lire_compte_par_email("test@example.com")
+    assert relu["mot_de_passe_hash"] == "nouveau-hash"
