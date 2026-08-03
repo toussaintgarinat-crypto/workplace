@@ -23,6 +23,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./Caddyfile.briques:/etc/caddy/Caddyfile.briques:ro   # S128 : sites HTTPS par brique
+      - ./Caddyfile.jeu-factions-public:/etc/caddy/Caddyfile.jeu-factions-public:ro   # S220
       - caddy_data:/data          # garde la CA interne + les certs stables entre redémarrages
       - caddy_config:/config
 volumes:
