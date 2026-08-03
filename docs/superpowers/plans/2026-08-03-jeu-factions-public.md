@@ -1995,17 +1995,27 @@ git commit -m "test(jeu-factions-public): isolation stricte entre comptes réels
 `outils/mesh-https/Caddyfile.jeu-factions-public` :
 
 ```caddyfile
-# Exposition PUBLIQUE de jeu-factions-public (S220) — dossier séparé du Caddyfile.duckdns
-# (mesh privé uniquement) et du Caddyfile principal (briques cercle privé). Ce fichier
-# suppose un port-forward déjà en place sur la box domicile vers ce HP (action réseau côté
-# utilisateur, hors de ce repo) et un domaine public dont le A record pointe vers l'IP
-# publique du foyer (pas l'IP mesh, contrairement à Caddyfile.duckdns).
+# Exposition PUBLIQUE de jeu-factions-public (S220) — site importé dans l'instance Caddy
+# UNIQUE déjà en place (`mesh_caddy`, network_mode: host, port 443 déjà possédé — un second
+# conteneur Caddy entrerait en conflit sur ce port). Même motif que Caddyfile.briques
+# (import depuis le Caddyfile principal), pas un déploiement séparé.
 #
-# Remplacer <TON-DOMAINE-PUBLIC> avant de déployer, puis :
-#   docker compose -f docker-compose.jeu-factions-public.yml up -d --build
-{
-    email ton-email@exemple.fr
-}
+# Contrairement à Caddyfile.briques (domaine mesh *.duckdns.org, cert DNS-01), ce domaine est
+# un vrai domaine public distinct — Caddy lui délivre automatiquement un certificat Let's
+# Encrypt standard (HTTP-01/TLS-ALPN) sans config ACME dédiée, à condition que le port 443
+# soit bien joignable depuis Internet pour ce domaine (port-forward sur la box domicile,
+# hors de ce repo).
+#
+# Aucun bloc d'options globales ici : le Caddyfile principal en a déjà un
+# (`acme_dns duckdns`), Caddy n'en accepte qu'un seul par config complète.
+#
+# Déploiement :
+#   1. Remplacer <TON-DOMAINE-PUBLIC> ci-dessous.
+#   2. Ajouter `import Caddyfile.jeu-factions-public` dans outils/mesh-https/Caddyfile
+#      (à côté du `import Caddyfile.briques` déjà présent).
+#   3. docker restart mesh_caddy   (PAS `caddy reload` — piège bind-mount déjà documenté :
+#      un `reload` ne relit pas un Caddyfile modifié sur un volume bind-monté de la même
+#      façon qu'un restart, cf. mémoire "piège Caddy bind-mount inode").
 
 https://<TON-DOMAINE-PUBLIC> {
     reverse_proxy localhost:6220
