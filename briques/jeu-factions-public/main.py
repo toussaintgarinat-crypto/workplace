@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import moteur_personnages
 
@@ -27,7 +27,8 @@ import mobs_archetype
 import groupes
 import combat
 
-app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0")
+app = FastAPI(title="Jeu-factions-public — exposition publique du jeu (PvE)", version="0.1.0",
+             docs_url=None, redoc_url=None, openapi_url=None)
 
 @app.on_event("startup")
 async def _seed_donnees_globales():
@@ -37,8 +38,11 @@ async def _seed_donnees_globales():
     mobs.seed_mobs()
     mobs_archetype.seed_mobs_archetype()
 
-_cors = [o.strip() for o in os.getenv("JEU_FACTIONS_PUBLIC_CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+_cors = [o.strip() for o in os.getenv("JEU_FACTIONS_PUBLIC_CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
+
+if not os.environ.get("JEU_FACTIONS_PUBLIC_SECRET"):
+    raise RuntimeError("JEU_FACTIONS_PUBLIC_SECRET doit être définie — voir .env.example.")
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -61,19 +65,19 @@ def sante():
 
 class Inscription(BaseModel):
     email: str
-    mot_de_passe: str
+    mot_de_passe: str = Field(..., max_length=200)
     pseudo: str
 
 
 class CreerPersonnage(BaseModel):
-    nom: str
+    nom: str = Field(..., max_length=60)
     prenoms: str = ""
     date_naissance: Optional[str] = None
     heure_naissance: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     utc_offset: Optional[float] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=500)
 
 
 class AssignerZone(BaseModel):
@@ -82,7 +86,7 @@ class AssignerZone(BaseModel):
 
 class Connexion(BaseModel):
     email: str
-    mot_de_passe: str
+    mot_de_passe: str = Field(..., max_length=200)
 
 
 class CreerGroupe(BaseModel):
@@ -99,6 +103,12 @@ def _poser_cookie_session(response: Response, compte_id: str) -> None:
                         httponly=True, samesite="lax", secure=True)
 
 
+# Hash bcrypt factice constant (calculé une fois à l'import) — payé en cas de "compte
+# inconnu" pour que le coût bcrypt (~250ms) soit identique que le compte existe ou non,
+# et empêcher un attaquant d'énumérer les emails enregistrés par timing (fix S220 revue finale).
+_HASH_FACTICE = jeton.hacher_mot_de_passe("valeur-non-utilisee-timing-uniforme")
+
+
 @app.post("/inscription", tags=["auth"])
 def inscription_route(body: Inscription, request: Request, response: Response):
     if not limiteur.autorise(_ip_client(request)):
@@ -109,10 +119,11 @@ def inscription_route(body: Inscription, request: Request, response: Response):
         raise HTTPException(422, "Mot de passe trop court (8 caractères minimum).")
     if not body.pseudo.strip() or moderation.contient_mot_banni(body.pseudo):
         raise HTTPException(422, "Pseudo refusé.")
-    if stockage.lire_compte_par_email(body.email):
+    email = body.email.strip().lower()
+    if stockage.lire_compte_par_email(email):
         raise HTTPException(409, "Cet email a déjà un compte.")
     try:
-        compte = stockage.creer_compte(body.email, jeton.hacher_mot_de_passe(body.mot_de_passe),
+        compte = stockage.creer_compte(email, jeton.hacher_mot_de_passe(body.mot_de_passe),
                                        body.pseudo)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Cet email a déjà un compte.")
@@ -125,8 +136,12 @@ def inscription_route(body: Inscription, request: Request, response: Response):
 def connexion_route(body: Connexion, request: Request, response: Response):
     if not limiteur.autorise(_ip_client(request)):
         raise HTTPException(429, "Trop de tentatives — réessaie plus tard.")
-    compte = stockage.lire_compte_par_email(body.email)
-    if not compte or not jeton.verifier_mot_de_passe(body.mot_de_passe, compte["mot_de_passe_hash"]):
+    email = body.email.strip().lower()
+    compte = stockage.lire_compte_par_email(email)
+    if not compte:
+        jeton.verifier_mot_de_passe(body.mot_de_passe, _HASH_FACTICE)  # coût bcrypt uniforme
+        raise HTTPException(401, "Email ou mot de passe incorrect.")
+    if not jeton.verifier_mot_de_passe(body.mot_de_passe, compte["mot_de_passe_hash"]):
         raise HTTPException(401, "Email ou mot de passe incorrect.")
     _poser_cookie_session(response, compte["id"])
     return {"ok": True}
@@ -134,7 +149,7 @@ def connexion_route(body: Connexion, request: Request, response: Response):
 
 @app.post("/deconnexion", tags=["auth"])
 def deconnexion_route(response: Response):
-    response.delete_cookie(jeton.COOKIE_NOM)
+    response.delete_cookie(jeton.COOKIE_NOM, httponly=True, samesite="lax", secure=True)
     return {"ok": True}
 
 
@@ -179,7 +194,12 @@ def rejoindre_groupe_route(gid: str, body: RejoindreGroupe, cle: str = Depends(c
 
 
 @app.post("/personnages", tags=["personnages"])
-async def creer_personnage_route(body: CreerPersonnage, cle: str = Depends(cle_api)):
+async def creer_personnage_route(body: CreerPersonnage, request: Request, cle: str = Depends(cle_api)):
+    if not limiteur.autorise(_ip_client(request)):
+        raise HTTPException(429, "Trop de tentatives — réessaie plus tard.")
+    if not body.nom.strip() or moderation.contient_mot_banni(body.nom):
+        raise HTTPException(422, "Nom refusé.")
+
     a_une_date = bool((body.date_naissance or "").strip())
     a_une_description = bool((body.description or "").strip())
     if not a_une_date and not a_une_description:
@@ -193,14 +213,24 @@ async def creer_personnage_route(body: CreerPersonnage, cle: str = Depends(cle_a
         fiche = {**donnees_naissance, "prenoms": body.prenoms, "nom": body.nom}
     else:
         donnees_naissance = {"description": body.description}
-        ri = await moteur_personnages.recherche_inverse(body.description)
+        try:
+            ri = await moteur_personnages.recherche_inverse(body.description)
+        except HTTPException as e:
+            if e.status_code >= 500:
+                raise HTTPException(503, "Service de personnages temporairement indisponible.")
+            raise
         exemple_date = ri.get("exemple_date")
         if not exemple_date:
             raise HTTPException(422, "Description trop vague : aucune date déduite. "
                                      "Précise le caractère ou fournis une date.")
         fiche = {"date_naissance": exemple_date, "prenoms": body.prenoms, "nom": body.nom}
 
-    resultat = await moteur_personnages.portrait(fiche)
+    try:
+        resultat = await moteur_personnages.portrait(fiche)
+    except HTTPException as e:
+        if e.status_code >= 500:
+            raise HTTPException(503, "Service de personnages temporairement indisponible.")
+        raise
     stockage.assurer_joueur(cle)
     return stockage.creer_personnage(cle, body.nom, donnees_naissance, resultat)
 

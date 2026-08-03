@@ -72,6 +72,23 @@ def test_deconnexion_supprime_le_cookie():
     assert r.status_code == 200
 
 
+def test_inscription_email_normalise_pour_la_deduplication_409():
+    """Fix S220 revue finale : Bob@x.com et bob@x.com doivent désigner le même compte."""
+    r1 = _inscrire(email="Test@Example.com")
+    assert r1.status_code == 200
+    r2 = _inscrire(email="test@example.com")
+    assert r2.status_code == 409
+
+
+def test_connexion_avec_email_de_casse_differente_reussit():
+    """Fix S220 revue finale : une capitale ou une casse différente à la connexion ne doit
+    pas empêcher de matcher un compte existant."""
+    r = _inscrire(email="test@example.com")
+    assert r.status_code == 200
+    r2 = client.post("/connexion", json={"email": "TEST@EXAMPLE.COM", "mot_de_passe": "motdepasse123"})
+    assert r2.status_code == 200
+
+
 def test_inscription_email_deja_pris_meme_si_precheck_rate_409(monkeypatch):
     """Simule la course (TOCTOU) : le pre-check ne voit pas la ligne, mais l'INSERT
     heurte quand même la contrainte UNIQUE — doit rester 409, jamais un 500."""
