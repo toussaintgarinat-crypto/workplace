@@ -1,0 +1,15 @@
+# Exposition PUBLIQUE de jeu-factions-public (S220) — dossier séparé du Caddyfile.duckdns
+# (mesh privé uniquement) et du Caddyfile principal (briques cercle privé). Ce fichier
+# suppose un port-forward déjà en place sur la box domicile vers ce HP (action réseau côté
+# utilisateur, hors de ce repo) et un domaine public dont le A record pointe vers l'IP
+# publique du foyer (pas l'IP mesh, contrairement à Caddyfile.duckdns).
+#
+# Remplacer <TON-DOMAINE-PUBLIC> avant de déployer, puis :
+#   docker compose -f docker-compose.jeu-factions-public.yml up -d --build
+{
+    email ton-email@exemple.fr
+}
+
+https://<TON-DOMAINE-PUBLIC> {
+    reverse_proxy localhost:6220
+}
