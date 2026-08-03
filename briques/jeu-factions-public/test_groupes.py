@@ -72,3 +72,48 @@ def test_dissoudre_groupes_de_letape_ne_touche_pas_les_autres_etapes():
     g1 = G.creer_groupe(p["id"], etapes[0]["id"])
     G.dissoudre_groupes_de_letape("etape-qui-nexiste-pas", ["quelquun"])
     assert G.lire_groupe(g1["id"])["etat"] == "actif"
+
+
+def test_lister_groupes_actifs_vide_si_aucun_groupe():
+    A.seed_zones_archetype()
+    groupes = G.lister_groupes_actifs()
+    assert groupes == []
+
+
+def test_lister_groupes_actifs_inclut_groupe_cree_avec_bons_champs():
+    A.seed_zones_archetype()
+    p = _personnage("cleG20", "Cible", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    etapes = A.lister_etapes("Le Meneur Charismatique")
+    g = G.creer_groupe(p["id"], etapes[0]["id"])
+    groupes = G.lister_groupes_actifs()
+    assert len(groupes) == 1
+    groupe = groupes[0]
+    assert groupe["id"] == g["id"]
+    assert groupe["zone_archetype_id"] == etapes[0]["id"]
+    assert groupe["personnage_cible_nom"] == "Cible"
+    assert groupe["archetype"] == "Le Meneur Charismatique"
+    assert groupe["ordre"] == 1
+    assert groupe["etape_nom"] == etapes[0]["nom"]
+    assert groupe["nb_membres"] == 1
+
+
+def test_lister_groupes_actifs_compte_membres():
+    A.seed_zones_archetype()
+    p = _personnage("cleG21", "Cible", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    aide = _personnage("cleG21b", "Aide", {"Charisme": 50, "Combativité": 50, "Énergie": 50})
+    etapes = A.lister_etapes("Le Meneur Charismatique")
+    g = G.creer_groupe(p["id"], etapes[0]["id"])
+    G.rejoindre_groupe(g["id"], aide["id"])
+    groupes = G.lister_groupes_actifs()
+    assert len(groupes) == 1
+    assert groupes[0]["nb_membres"] == 2
+
+
+def test_lister_groupes_actifs_exclut_groupes_dissous():
+    A.seed_zones_archetype()
+    p = _personnage("cleG22", "Cible", {"Charisme": 10, "Combativité": 10, "Énergie": 10})
+    etapes = A.lister_etapes("Le Meneur Charismatique")
+    g = G.creer_groupe(p["id"], etapes[0]["id"])
+    G.dissoudre_groupes_de_letape(etapes[0]["id"], [p["id"]])
+    groupes = G.lister_groupes_actifs()
+    assert groupes == []

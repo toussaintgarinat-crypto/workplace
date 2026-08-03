@@ -423,3 +423,64 @@ def test_combat_voie_ws_reconnexion_ne_reapplique_pas_le_bonus_idle(monkeypatch)
     pv_boss_2 = next(m["pv"] for m in second["mobs"].values() if m["role"] == "boss")
 
     assert pv_boss_2 >= pv_boss_1
+
+
+def test_lister_personnages_inclut_prochaine_etape_id(monkeypatch):
+    _patch_moteur(monkeypatch)
+    _seed_archetypes()
+    ck = _cookies("prochaine-tenant-1")
+    r = client.post("/personnages", json={"nom": "Prochaine", "date_naissance": "1990-01-01"}, cookies=ck)
+    pid = r.json()["id"]
+    items = client.get("/personnages", cookies=ck).json()
+    perso = next(p for p in items if p["id"] == pid)
+    assert "prochaine_etape_id" in perso
+
+
+def test_lister_personnages_prochaine_etape_id_non_none_si_archetype_avec_voie(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Meneur Charismatique",
+                    "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
+        "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
+    _seed_archetypes()
+    ck = _cookies("prochaine-tenant-2")
+    r = client.post("/personnages", json={"nom": "Prochaine2", "date_naissance": "1990-01-01"}, cookies=ck)
+    pid = r.json()["id"]
+    items = client.get("/personnages", cookies=ck).json()
+    perso = next(p for p in items if p["id"] == pid)
+    assert perso["prochaine_etape_id"] is not None
+
+
+def test_lister_groupes_rejette_sans_cookie():
+    assert client.get("/groupes").status_code == 401
+
+
+def test_lister_groupes_avec_cookie_ok():
+    _seed_archetypes()
+    r = client.get("/groupes", cookies=_cookies("groupes-tenant-1"))
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_lister_groupes_vide_par_defaut():
+    _seed_archetypes()
+    r = client.get("/groupes", cookies=_cookies("groupes-tenant-2"))
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_lister_groupes_inclut_groupe_actif(monkeypatch):
+    _patch_moteur(monkeypatch, portrait_reponse={
+        "portrait": {"archetype": "Le Meneur Charismatique",
+                    "stats": {"Charisme": 10, "Combativité": 10, "Énergie": 10}},
+        "traditions": {"signe_solaire": {"nom": "Lion"}}, "empreinte": []})
+    _seed_archetypes()
+    ck = _cookies("groupes-tenant-3")
+    p = client.post("/personnages", json={"nom": "Cible", "date_naissance": "1990-01-01"}, cookies=ck).json()
+    etape = client.get("/archetypes/Le Meneur Charismatique/etapes", cookies=ck).json()[0]
+    groupe = client.post("/groupes", json={"personnage_cible_id": p["id"], "zone_archetype_id": etape["id"]}, cookies=ck).json()
+    groupes = client.get("/groupes", cookies=ck).json()
+    assert len(groupes) == 1
+    assert groupes[0]["id"] == groupe["id"]
+    assert groupes[0]["personnage_cible_nom"] == "Cible"
+    assert groupes[0]["archetype"] == "Le Meneur Charismatique"
+    assert groupes[0]["nb_membres"] == 1

@@ -276,6 +276,11 @@ def rejoindre_groupe_route(gid: str, body: RejoindreGroupe, cle: str = Depends(c
         raise HTTPException(400, str(e))
 
 
+@app.get("/groupes", tags=["archetypes"])
+def lister_groupes_route(cle: str = Depends(cle_api)):
+    return groupes.lister_groupes_actifs()
+
+
 @app.post("/personnages", tags=["personnages"])
 async def creer_personnage_route(body: CreerPersonnage, request: Request, cle: str = Depends(cle_api)):
     if not limiteur.autorise(_ip_client(request)):
@@ -336,6 +341,7 @@ def lister_personnages_route(cle: str = Depends(cle_api)):
             archetypes.bonus_idle(derniere_presence, maintenant,
                                   archetypes.TAUX_IDLE_PAR_HEURE, archetypes.PLAFOND_IDLE_HEURES)
             if prochaine else 0)
+        p["prochaine_etape_id"] = prochaine
     return personnages
 
 
