@@ -3,7 +3,22 @@ import jeton as J
 
 def test_roundtrip_emettre_puis_verifier():
     j = J.emettre("compte-alice", ttl=60)
-    assert J.verifier(j) == "compte-alice"
+    assert J.verifier(j) == ("compte-alice", 0)
+
+
+def test_roundtrip_conserve_une_epoque_non_nulle():
+    """L'époque de session voyage dans le jeton signé — c'est elle que main.py compare à
+    l'époque en base pour invalider les sessions antérieures à un reset (S220, revue Task 14)."""
+    j = J.emettre("compte-alice", epoque=5, ttl=60)
+    assert J.verifier(j) == ("compte-alice", 5)
+
+
+def test_epoque_nest_pas_falsifiable_sans_le_secret():
+    """Rejouer le même compte avec une autre époque exige une signature valide."""
+    j = J.emettre("compte-alice", epoque=5, ttl=60)
+    compte_id, epoque, expire, signature = j.rsplit(":", 3)
+    forge = f"{compte_id}:0:{expire}:{signature}"
+    assert J.verifier(forge) is None
 
 
 def test_verifier_signature_invalide():
@@ -73,17 +88,18 @@ def test_verifier_reinitialisation_sans_secret_configure(monkeypatch):
 
 
 def test_session_token_rejeté_par_verifier_reinitialisation():
-    """Un jeton de session soumis à verifier_reinitialisation doit retourner None."""
+    """Un jeton de session (format 4 segments) soumis à verifier_reinitialisation doit
+    retourner None : son premier segment est le compte_id, jamais le préfixe "reset"."""
     session_token = J.emettre("compte-alice", ttl=60)
     assert J.verifier_reinitialisation(session_token) is None
+    assert J.verifier_reinitialisation(J.emettre("compte-alice", epoque=3, ttl=60)) is None
 
 
-def test_reset_token_accepté_par_verifier_session_contient_colon():
-    """Un jeton de reset soumis à verifier (session) ne lève pas, mais retourne
-    une chaîne contenant ':' (le préfixe 'reset:' reste visible). Cela documente
-    le comportement de défense en profondeur sans dépendre d'une vraie table."""
-    reset_token = J.emettre_reinitialisation("compte-alice", ttl=60)
-    resultat = J.verifier(reset_token)
-    # Le résultat doit être la chaîne "reset:compte-alice", laquelle contient ':'
-    assert resultat is not None
-    assert ":" in resultat
+def test_reset_token_rejeté_par_verifier_session():
+    """Un jeton de reset soumis à verifier (session) doit retourner None SANS lever — avec le
+    format 4 segments (S220, revue Task 14), rsplit(":", 3) place le compte_id à l'emplacement
+    de l'époque, dont la conversion int() échoue : ValueError attrapée, None renvoyé. Le jeton
+    de reset ne peut donc plus du tout être glissé comme cookie de session."""
+    assert J.verifier(J.emettre_reinitialisation("compte-alice", ttl=60)) is None
+    # Même avec un compte_id réaliste (hex uuid), non convertible en entier.
+    assert J.verifier(J.emettre_reinitialisation("9f1c2ab34de5", ttl=60)) is None

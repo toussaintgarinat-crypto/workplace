@@ -30,26 +30,30 @@ def verifier_mot_de_passe(mot_de_passe: str, hash_: str) -> bool:
         return False
 
 
-def emettre(compte_id: str, ttl: int = TTL_SESSION) -> str:
+def emettre(compte_id: str, epoque: int = 0, ttl: int = TTL_SESSION) -> str:
     expire = int(time.time()) + ttl
-    message = f"{compte_id}:{expire}"
+    message = f"{compte_id}:{epoque}:{expire}"
     signature = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
     return f"{message}:{signature}"
 
 
-def verifier(jeton: Optional[str]) -> Optional[str]:
+def verifier(jeton: Optional[str]) -> Optional[tuple[str, int]]:
+    """Renvoie (compte_id, epoque_du_jeton) — l'appelant compare epoque_du_jeton à l'époque
+    actuelle en base (stockage.lire_epoch_session) pour savoir si ce jeton a été invalidé par
+    une réinitialisation de mot de passe depuis son émission (S220, revue Task 14)."""
     if not jeton or not _secret():
         return None
     try:
-        compte_id, expire, signature = jeton.rsplit(":", 2)
+        compte_id, epoque, expire, signature = jeton.rsplit(":", 3)
+        epoque_i = int(epoque)
         expire_i = int(expire)
     except ValueError:
         return None
-    message = f"{compte_id}:{expire}"
+    message = f"{compte_id}:{epoque}:{expire}"
     attendue = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature, attendue) or time.time() > expire_i:
         return None
-    return compte_id
+    return (compte_id, epoque_i)
 
 
 def emettre_reinitialisation(compte_id: str, ttl: int = 900) -> str:
