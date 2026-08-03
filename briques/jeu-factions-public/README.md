@@ -18,6 +18,14 @@ curl localhost:6220/sante
 brique (pas partagé avec le Cœur). `JEU_FACTIONS_PUBLIC_CORS_ORIGINS` doit être le domaine
 public exact en production — voir `.env.example` racine.
 
+### Réinitialisation de mot de passe
+
+Les variables SMTP (`JEU_FACTIONS_PUBLIC_SMTP_HOST`, `JEU_FACTIONS_PUBLIC_SMTP_USER`, etc.)
+sont **optionnelles**. Laisser vides → mode simulé (dev/test), aucun email ne part réellement.
+Configurées → la brique envoie des emails de réinitialisation via le fournisseur SMTP spécifié.
+`JEU_FACTIONS_PUBLIC_URL` doit être le domaine public exact pour que le lien de réinitialisation
+(clic utilisateur) pointe vers l'adresse joignable (pas l'IP LAN interne du conteneur).
+
 ## Concepts
 
 Identiques à `jeu-factions` (cercle privé) — voir son README pour le détail des concepts
