@@ -56,6 +56,57 @@ def test_creer_personnage_sans_date_ni_description_422():
     assert r.status_code == 422
 
 
+def test_creer_personnage_nom_banni_422(monkeypatch):
+    """Fix S220 revue finale : le filtre de modération (spec § Anti-abus) doit aussi
+    s'appliquer à la création de personnage, pas seulement à l'inscription."""
+    _patch_moteur(monkeypatch)
+    r = client.post("/personnages", json={"nom": "SuperConnard", "date_naissance": "1990-01-01"},
+                    cookies=_cookies("nom-banni-tenant"))
+    assert r.status_code == 422
+
+
+def test_creer_personnage_nom_trop_long_422():
+    r = client.post("/personnages", json={"nom": "x" * 61, "date_naissance": "1990-01-01"},
+                    cookies=_cookies("nom-long-tenant"))
+    assert r.status_code == 422
+
+
+def test_rate_limiting_sur_creation_personnage():
+    """Fix S220 revue finale : /personnages proxy vers un appel LLM facturable en aval,
+    doit être limité en taux comme /inscription et /connexion."""
+    import limiteur
+    limiteur._reinitialiser()
+    ck = _cookies("rate-perso-tenant")
+    for _ in range(limiteur.MAX_TENTATIVES):
+        client.post("/personnages", json={"nom": "Vide"}, cookies=ck)
+    r = client.post("/personnages", json={"nom": "Vide"}, cookies=ck)
+    assert r.status_code == 429
+
+
+def test_creer_personnage_erreur_upstream_5xx_ne_fuit_pas_la_topologie(monkeypatch):
+    """Fix S220 revue finale : moteur_personnages.py relaie l'URL interne et l'erreur de
+    transport brute sur 5xx (fichier copié verbatim, ne pas éditer) — main.py doit
+    intercepter et renvoyer un message générique, sans fuiter la topologie interne."""
+    from fastapi import HTTPException as _HTTPException
+
+    async def _portrait_en_panne(fiche, client=None):
+        raise _HTTPException(503, "personnages injoignable (http://internal-secret:5900) : "
+                                  "some raw transport error")
+
+    async def _ri(description, combien=3, client=None):
+        return {"exemple_date": "1990-04-01"}
+
+    import main
+    monkeypatch.setattr(main.moteur_personnages, "portrait", _portrait_en_panne)
+    monkeypatch.setattr(main.moteur_personnages, "recherche_inverse", _ri)
+    r = client.post("/personnages", json={"nom": "Panne", "date_naissance": "1990-01-01"},
+                    cookies=_cookies("panne-tenant"))
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert "internal-secret" not in detail
+    assert "5900" not in detail
+
+
 def test_creer_personnage_description_sans_date_deduite_422(monkeypatch):
     _patch_moteur(monkeypatch, ri_reponse={"exemple_date": None})
     r = client.post("/personnages", json={"nom": "Flou", "description": "quelque chose"},
