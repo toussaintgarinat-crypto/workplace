@@ -136,3 +136,36 @@ def test_mettre_a_jour_mot_de_passe():
     S.mettre_a_jour_mot_de_passe(compte_id, "nouveau-hash")
     relu = S.lire_compte_par_email("test@example.com")
     assert relu["mot_de_passe_hash"] == "nouveau-hash"
+
+
+def test_lire_epoch_session_compte_inexistant_renvoie_none():
+    """None = « pas un vrai compte » : c'est ce qui laisse passer sans contrôle d'époque les
+    identités fabriquées par les tests de logique de jeu (S220, revue Task 14)."""
+    assert S.lire_epoch_session("compte-qui-nexiste-pas") is None
+
+
+def test_lire_epoch_session_compte_neuf_vaut_zero():
+    c = S.creer_compte("epoch-neuf@example.com", "hash", "Neuf")
+    assert S.lire_epoch_session(c["id"]) == 0
+
+
+def test_incrementer_epoch_session():
+    c = S.creer_compte("epoch-inc@example.com", "hash", "Inc")
+    S.incrementer_epoch_session(c["id"])
+    assert S.lire_epoch_session(c["id"]) == 1
+
+
+def test_incrementer_epoch_session_nest_pas_idempotent():
+    """Chaque réinitialisation doit pousser l'époque plus loin, sinon un jeton émis entre deux
+    resets resterait valide."""
+    c = S.creer_compte("epoch-deux@example.com", "hash", "Deux")
+    S.incrementer_epoch_session(c["id"])
+    S.incrementer_epoch_session(c["id"])
+    assert S.lire_epoch_session(c["id"]) == 2
+
+
+def test_migration_colonne_epoch_session_presente_et_idempotente():
+    with S._conn() as c:
+        colonnes = {row["name"] for row in c.execute("PRAGMA table_info(comptes)").fetchall()}
+    assert "epoch_session" in colonnes
+    S._conn()

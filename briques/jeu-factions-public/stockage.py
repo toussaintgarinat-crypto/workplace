@@ -28,6 +28,12 @@ def _migrer_colonne_presence(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE joueurs ADD COLUMN derniere_presence TEXT")
 
 
+def _migrer_colonne_epoch_session(c: sqlite3.Connection) -> None:
+    colonnes = {row["name"] for row in c.execute("PRAGMA table_info(comptes)").fetchall()}
+    if "epoch_session" not in colonnes:
+        c.execute("ALTER TABLE comptes ADD COLUMN epoch_session INTEGER NOT NULL DEFAULT 0")
+
+
 def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
@@ -35,6 +41,7 @@ def _conn() -> sqlite3.Connection:
     c.execute("""CREATE TABLE IF NOT EXISTS comptes (
         id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
         mot_de_passe_hash TEXT NOT NULL, pseudo TEXT NOT NULL, cree_le TEXT NOT NULL)""")
+    _migrer_colonne_epoch_session(c)
     c.execute("""CREATE TABLE IF NOT EXISTS reinitialisations_utilisees (
         jeton_hash TEXT PRIMARY KEY, utilise_le TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS joueurs (
@@ -106,6 +113,19 @@ def lire_compte_par_email(email: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM comptes WHERE email=?", (email,)).fetchone()
     return dict(r) if r else None
+
+
+def lire_epoch_session(compte_id: str) -> int | None:
+    """None si aucun compte réel à cet id (cas normal des identités fabriquées par les tests
+    de logique de jeu, cf. jeton.py — le contrôle d'époque ne s'applique alors pas)."""
+    with _conn() as c:
+        r = c.execute("SELECT epoch_session FROM comptes WHERE id=?", (compte_id,)).fetchone()
+    return r["epoch_session"] if r else None
+
+
+def incrementer_epoch_session(compte_id: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE comptes SET epoch_session = epoch_session + 1 WHERE id=?", (compte_id,))
 
 
 def marquer_reinitialisation_utilisee(jeton: str) -> bool:

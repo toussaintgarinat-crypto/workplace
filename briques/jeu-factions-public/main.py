@@ -52,9 +52,30 @@ def _ip_client(request: Request) -> str:
     return request.client.host if request.client else "inconnu"
 
 
+def _identite_depuis_jeton(jeton_valeur: str | None) -> str | None:
+    """Point d'entrée UNIQUE de résolution d'identité depuis un jeton de session — HTTP
+    (cle_api) ET les deux WebSockets partagent cette fonction (S220, revue Task 14) : la garde
+    ":" et le contrôle d'époque doivent s'appliquer aux TROIS points d'entrée identiquement,
+    pas seulement à cle_api, sans quoi un jeton de réinitialisation glissé comme cookie de
+    session ou une session antérieure à un reset de mot de passe pourrait quand même atteindre
+    les routes WS. Époque : None si l'identité ne correspond à aucun vrai compte (cas des
+    identités fabriquées par les tests de logique de jeu, cf. jeton.py/stockage.py) — le
+    contrôle d'époque ne s'applique alors pas, comportement inchangé pour ce cas."""
+    resultat = jeton.verifier(jeton_valeur)
+    if not resultat:
+        return None
+    compte_id, epoque = resultat
+    if ":" in compte_id:
+        return None
+    epoque_actuelle = stockage.lire_epoch_session(compte_id)
+    if epoque_actuelle is not None and epoque_actuelle != epoque:
+        return None
+    return compte_id
+
+
 def cle_api(request: Request) -> str:
-    identite = jeton.verifier(request.cookies.get(jeton.COOKIE_NOM))
-    if not identite or ":" in identite:
+    identite = _identite_depuis_jeton(request.cookies.get(jeton.COOKIE_NOM))
+    if not identite:
         raise HTTPException(401, "Session requise — connecte-toi.")
     return identite
 
@@ -109,7 +130,8 @@ class RejoindreGroupe(BaseModel):
 
 
 def _poser_cookie_session(response: Response, compte_id: str) -> None:
-    response.set_cookie(jeton.COOKIE_NOM, jeton.emettre(compte_id), max_age=jeton.TTL_SESSION,
+    epoque = stockage.lire_epoch_session(compte_id) or 0
+    response.set_cookie(jeton.COOKIE_NOM, jeton.emettre(compte_id, epoque), max_age=jeton.TTL_SESSION,
                         httponly=True, samesite="lax", secure=True)
 
 
@@ -173,10 +195,17 @@ def mot_de_passe_oublie_route(body: MotDePasseOublie, request: Request):
         jeton_reset = jeton.emettre_reinitialisation(compte["id"])
         base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
         lien = f"{base}/reinitialiser?jeton={jeton_reset}"
-        email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
-                            f"Clique sur ce lien pour choisir un nouveau mot de passe "
-                            f"(valable 15 minutes) :\n{lien}\n\n"
-                            f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
+        # Un échec SMTP ne doit JAMAIS remonter en 500 : un email inconnu répond 200, donc un
+        # 500 sur un email connu redonnerait exactement l'oracle d'énumération que cette route
+        # existe pour fermer — et seulement en production (SMTP configuré), là où ça compte
+        # (S220, revue Task 14).
+        try:
+            email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
+                                f"Clique sur ce lien pour choisir un nouveau mot de passe "
+                                f"(valable 15 minutes) :\n{lien}\n\n"
+                                f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
+        except Exception as e:
+            print(f"[reset] envoi échoué pour {email} : {e}")
     return {"ok": True}
 
 
@@ -188,6 +217,10 @@ def reinitialiser_mot_de_passe_route(body: ReinitialiserMotDePasse):
     if not stockage.marquer_reinitialisation_utilisee(body.jeton):
         raise HTTPException(400, "Ce lien a déjà été utilisé.")
     stockage.mettre_a_jour_mot_de_passe(compte_id, jeton.hacher_mot_de_passe(body.nouveau_mot_de_passe))
+    # Invalide TOUTES les sessions déjà émises pour ce compte : leur cookie embarque l'ancienne
+    # époque, qui ne correspondra plus. Sans ça, un reset motivé par « quelqu'un d'autre a accès
+    # à mon compte » laissait la session de l'intrus valide jusqu'à 30 jours (S220, revue Task 14).
+    stockage.incrementer_epoch_session(compte_id)
     return {"ok": True}
 
 
@@ -324,7 +357,7 @@ def lister_competences_route(pid: str, cle: str = Depends(cle_api)):
 @app.websocket("/zones/{zone_id}/combat")
 async def combat_ws(websocket: WebSocket, zone_id: str, personnage_id: str = Query(...)):
     await websocket.accept()
-    identite = jeton.verifier(websocket.cookies.get(jeton.COOKIE_NOM))
+    identite = _identite_depuis_jeton(websocket.cookies.get(jeton.COOKIE_NOM))
     if identite is None:
         await websocket.close(code=4401)
         return
@@ -354,7 +387,7 @@ async def combat_ws(websocket: WebSocket, zone_id: str, personnage_id: str = Que
 @app.websocket("/groupes/{groupe_id}/combat")
 async def combat_voie_ws(websocket: WebSocket, groupe_id: str, personnage_id: str = Query(...)):
     await websocket.accept()
-    identite = jeton.verifier(websocket.cookies.get(jeton.COOKIE_NOM))
+    identite = _identite_depuis_jeton(websocket.cookies.get(jeton.COOKIE_NOM))
     if identite is None:
         await websocket.close(code=4401)
         return
