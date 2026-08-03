@@ -2125,3 +2125,448 @@ identique depuis Task 2 (`stockage.py`) jusqu'à Task 12 (`test_isolation.py`). 
 `jeton.verifier` gardent la même signature de Task 3 à Task 12. `JEU_FACTIONS_PUBLIC_CORS_ORIGINS`
 (jamais `CORS_ORIGINS`) est utilisé de façon cohérente entre Task 1 (docker-compose), Task 5
 (main.py) et Task 13 (.env.example).
+
+---
+
+## Addendum post-revue finale (2026-08-03) — Tasks 14-17
+
+La revue finale (whole-branch, sur commits d196c30..0a04b26) a trouvé 1 Critical déjà corrigé
+en batch (rate limiter aveugle derrière Caddy) et plusieurs Important déjà corrigés en même
+temps (modération jamais câblée sur `/personnages`, fuite de topologie interne, docs API
+publiques, CORS `"*"` par défaut silencieux, email non normalisé, `innerHTML` non échappé —
+voir commit de revue pour le détail). Deux findings restants sont un vrai changement de
+périmètre décidé explicitement par l'utilisateur après la revue (pas une correction de bug) :
+aucun chemin de récupération de compte (mot de passe oublié = compte perdu définitivement), et
+les groupes « carry » codés/testés côté backend mais totalement indécouvrables depuis le front
+public. Un troisième finding (SRI/CSP pour `phaser.js` chargé depuis un CDN) est documenté
+comme dette V1 acceptée, pas traité ici — pas d'accès réseau fiable dans cet environnement pour
+calculer/vérifier un hash SRI correct sans risquer de casser le chargement du jeu.
+
+### Task 14 — Réinitialisation de mot de passe (backend)
+
+**Pourquoi.** Sans reset, un compte avec un email mal tapé ou un mot de passe oublié est perdu
+définitivement — inacceptable pour un produit à « ambition réelle » (décision explicite de
+l'utilisateur après la revue finale, pas dans le spec V1 d'origine qui n'en parlait pas, au même
+titre qu'OAuth/comptes anonymes déjà écartés).
+
+**Décisions de conception :**
+- **Jeton HMAC dédié, pas de dépendance à la brique `mail`.** La brique `mail` (6030) gère des
+  boîtes IMAP/SMTP personnelles connectées (« répondre depuis MA boîte »), pas un envoi
+  transactionnel de service — la coupler ici irait contre le motif « facile à sortir du repo »
+  déjà tranché pour toute cette brique. Envoi SMTP direct, propre à `jeu-factions-public`,
+  nouvelles variables d'env dédiées.
+- **Le jeton de réinitialisation est cryptographiquement distinct d'un jeton de session** —
+  préfixe `"reset:"` dans le message signé (`jeton.py`), fonctions de vérification séparées
+  (`verifier_reinitialisation` ≠ `verifier`). Analyse de sécurité (à ne pas re-dériver en revue,
+  déjà faite ici) : un jeton de session soumis à `verifier_reinitialisation` échoue toujours
+  (pas de préfixe `"reset:"` dans le message, `split(":", 2)` lève `ValueError` faute de 2e
+  séparateur). Un jeton de reset soumis à `cle_api()`/`verifier()` (session) *pourrait*
+  techniquement re-signer correctement en repliant `"reset:<id>"` comme si c'était l'identité
+  — mais `<id>` reste un UUID hex (jamais de `:`), donc `"reset:<id>"` ne correspond JAMAIS à un
+  `cle_api` réel en base (toujours vide en pratique) : aucune prise de contrôle de compte
+  possible, juste un « compte fantôme » vide et inatteignable. Durcissement volontaire quand
+  même (défense en profondeur, coût nul) : `cle_api()` rejette toute identité contenant `:`.
+- **Usage unique, contrainte par une table dédiée** (pas une simple expiration courte) — un
+  lien de reset qui fuite (log, forward d'email) ne doit pas rester rejouable jusqu'à expiration.
+  `INSERT` atomique sur `jeton_hash` (PRIMARY KEY) : succès = première utilisation, échec
+  (`IntegrityError`) = déjà utilisé — même motif atomique que le TOCTOU corrigé en Task 5.
+- **`POST /mot-de-passe-oublie` renvoie toujours 200`, que le compte existe ou non** — évite
+  l'énumération de comptes par cette route (distincte du problème de timing déjà noté sur
+  `/connexion`, non traité ici, accepté comme dette V1 mineure déjà documentée en revue).
+- **Mode simulé si SMTP non configuré** (dev/test — pas de vrai départ d'email), erreur réelle
+  propagée si SMTP configuré mais en échec (jamais un faux « envoyé » silencieux en prod).
+
+**Files:**
+- Modify: `briques/jeu-factions-public/jeton.py` (2 nouvelles fonctions)
+- Modify: `briques/jeu-factions-public/stockage.py` (1 table + 2 fonctions)
+- Create: `briques/jeu-factions-public/email_envoi.py`
+- Modify: `briques/jeu-factions-public/main.py` (2 routes + durcissement `cle_api`)
+- Test: `briques/jeu-factions-public/test_jeton.py` (ajouts)
+- Test: `briques/jeu-factions-public/test_stockage.py` (ajouts)
+- Test: `briques/jeu-factions-public/test_email_envoi.py` (nouveau)
+- Test: `briques/jeu-factions-public/test_auth.py` (ajouts)
+
+**Interfaces:**
+- Produces: `jeton.emettre_reinitialisation(compte_id: str, ttl: int = 900) -> str`,
+  `jeton.verifier_reinitialisation(jeton: str | None) -> str | None`,
+  `stockage.marquer_reinitialisation_utilisee(jeton: str) -> bool` (True = 1re utilisation,
+  False = déjà utilisé), `stockage.mettre_a_jour_mot_de_passe(compte_id: str, mot_de_passe_hash: str) -> None`,
+  `email_envoi.envoyer(destinataire: str, sujet: str, corps: str) -> str` (renvoie `"envoye"` ou
+  `"simule"`), routes `POST /mot-de-passe-oublie`, `POST /reinitialiser-mot-de-passe`.
+
+- [ ] **Step 1: `jeton.py` — jeton de réinitialisation**
+
+Ajouter à `jeton.py` (après `verifier`) :
+
+```python
+def emettre_reinitialisation(compte_id: str, ttl: int = 900) -> str:
+    expire = int(time.time()) + ttl
+    message = f"reset:{compte_id}:{expire}"
+    signature = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
+    return f"{message}:{signature}"
+
+
+def verifier_reinitialisation(jeton: Optional[str]) -> Optional[str]:
+    if not jeton or not _secret():
+        return None
+    try:
+        message, signature = jeton.rsplit(":", 1)
+        prefixe, compte_id, expire = message.split(":", 2)
+        expire_i = int(expire)
+    except ValueError:
+        return None
+    if prefixe != "reset":
+        return None
+    attendue = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, attendue) or time.time() > expire_i:
+        return None
+    return compte_id
+```
+
+Tests à ajouter dans `test_jeton.py` : roundtrip émettre/vérifier ; expiré → `None` ; signature
+trafiquée → `None` ; malformé → `None` ; **un jeton de session (`emettre(...)`) soumis à
+`verifier_reinitialisation` → `None`** ; **un jeton de reset (`emettre_reinitialisation(...)`)
+soumis à `verifier` (session) → ne lève pas, renvoie une chaîne, MAIS cette chaîne contient
+`":"` (assertion explicite `":" in resultat`) — documente le comportement analysé ci-dessus
+sans dépendre d'une vraie table `comptes` dans ce test unitaire pur.**
+
+- [ ] **Step 2: `stockage.py` — table + fonctions**
+
+Ajouter à `stockage.py`, dans `_conn()` (après la création de la table `comptes`) :
+
+```python
+    c.execute("""CREATE TABLE IF NOT EXISTS reinitialisations_utilisees (
+        jeton_hash TEXT PRIMARY KEY, utilise_le TEXT NOT NULL)""")
+```
+
+Ajouter (après `lire_compte_par_email`) :
+
+```python
+def marquer_reinitialisation_utilisee(jeton: str) -> bool:
+    """Atomique : True si c'est la première fois que CE jeton précis est marqué utilisé
+    (insertion réussie), False s'il l'était déjà (rejeu) — même motif que le TOCTOU corrigé
+    en Task 5 (INSERT + catch IntegrityError, pas de check-then-insert séparé)."""
+    import hashlib as _hashlib
+    hash_jeton = _hashlib.sha256(jeton.encode()).hexdigest()
+    with _conn() as c:
+        try:
+            c.execute("INSERT INTO reinitialisations_utilisees (jeton_hash, utilise_le) VALUES (?,?)",
+                      (hash_jeton, _maintenant()))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def mettre_a_jour_mot_de_passe(compte_id: str, mot_de_passe_hash: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE comptes SET mot_de_passe_hash=? WHERE id=?", (mot_de_passe_hash, compte_id))
+```
+
+Tests à ajouter dans `test_stockage.py` : `marquer_reinitialisation_utilisee` renvoie `True` la
+1re fois pour un jeton donné, `False` la 2e fois (même jeton exact) ; deux jetons différents
+sont chacun marquables indépendamment ; `mettre_a_jour_mot_de_passe` change bien
+`mot_de_passe_hash` en base (relire directement via `_conn()`).
+
+- [ ] **Step 3: `email_envoi.py`**
+
+```python
+"""Envoi d'email transactionnel (réinitialisation de mot de passe) — SMTP direct, propre à
+cette brique. PAS un appel à la brique `mail` (6030) : celle-ci gère des boîtes personnelles
+connectées, pas un envoi de service — la coupler ici casserait le motif « facile à sortir du
+repo » de toute cette brique (cf. spec § contexte). Mode simulé si SMTP non configuré (dev/
+test, aucun email ne part) ; erreur SMTP réelle propagée telle quelle si configuré."""
+import os
+import smtplib
+from email.message import EmailMessage
+
+
+def _config() -> dict | None:
+    host = os.environ.get("JEU_FACTIONS_PUBLIC_SMTP_HOST", "").strip()
+    if not host:
+        return None
+    return {
+        "host": host,
+        "port": int(os.environ.get("JEU_FACTIONS_PUBLIC_SMTP_PORT", "587")),
+        "user": os.environ.get("JEU_FACTIONS_PUBLIC_SMTP_USER", ""),
+        "password": os.environ.get("JEU_FACTIONS_PUBLIC_SMTP_PASSWORD", ""),
+        "expediteur": os.environ.get("JEU_FACTIONS_PUBLIC_SMTP_FROM", ""),
+    }
+
+
+def envoyer(destinataire: str, sujet: str, corps: str) -> str:
+    """Renvoie "envoye" ou "simule"."""
+    config = _config()
+    if not config:
+        return "simule"
+    msg = EmailMessage()
+    msg["Subject"] = sujet
+    msg["From"] = config["expediteur"] or config["user"]
+    msg["To"] = destinataire
+    msg.set_content(corps)
+    with smtplib.SMTP(config["host"], config["port"], timeout=10) as s:
+        s.starttls()
+        if config["user"]:
+            s.login(config["user"], config["password"])
+        s.send_message(msg)
+    return "envoye"
+```
+
+Tests dans `test_email_envoi.py` : sans `JEU_FACTIONS_PUBLIC_SMTP_HOST` configuré → `envoyer(...)`
+renvoie `"simule"`, aucune connexion tentée (facile à vérifier : ne pas monkeypatcher
+`smtplib.SMTP` et confirmer qu'aucune exception réseau n'est levée puisqu'il ne doit jamais être
+appelé) ; avec un host configuré (monkeypatch `smtplib.SMTP` par un faux contextmanager qui
+enregistre `starttls()`/`login()`/`send_message()` appelés) → renvoie `"envoye"`, `login()`
+appelé seulement si `user` est configuré.
+
+- [ ] **Step 4: routes `main.py` + durcissement `cle_api`**
+
+Ajouter en tête de `main.py` : `import email_envoi`.
+
+Durcir `cle_api()` (défense en profondeur, cf. analyse ci-dessus) :
+
+```python
+def cle_api(request: Request) -> str:
+    identite = jeton.verifier(request.cookies.get(jeton.COOKIE_NOM))
+    if not identite or ":" in identite:
+        raise HTTPException(401, "Session requise — connecte-toi.")
+    return identite
+```
+
+Ajouter les modèles Pydantic (après `class Connexion`) :
+
+```python
+class MotDePasseOublie(BaseModel):
+    email: str
+
+
+class ReinitialiserMotDePasse(BaseModel):
+    jeton: str
+    nouveau_mot_de_passe: str = Field(..., min_length=8, max_length=200)
+```
+
+Ajouter les routes (après `deconnexion_route`) :
+
+```python
+@app.post("/mot-de-passe-oublie", tags=["auth"])
+def mot_de_passe_oublie_route(body: MotDePasseOublie, request: Request):
+    if not limiteur.autorise(_ip_client(request)):
+        raise HTTPException(429, "Trop de tentatives — réessaie plus tard.")
+    email = body.email.strip().lower()
+    compte = stockage.lire_compte_par_email(email)
+    if compte:
+        jeton_reset = jeton.emettre_reinitialisation(compte["id"])
+        base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
+        lien = f"{base}/reinitialiser?jeton={jeton_reset}"
+        email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
+                            f"Clique sur ce lien pour choisir un nouveau mot de passe "
+                            f"(valable 15 minutes) :\n{lien}\n\n"
+                            f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
+    return {"ok": True}
+
+
+@app.post("/reinitialiser-mot-de-passe", tags=["auth"])
+def reinitialiser_mot_de_passe_route(body: ReinitialiserMotDePasse):
+    compte_id = jeton.verifier_reinitialisation(body.jeton)
+    if not compte_id:
+        raise HTTPException(400, "Lien de réinitialisation invalide ou expiré.")
+    if not stockage.marquer_reinitialisation_utilisee(body.jeton):
+        raise HTTPException(400, "Ce lien a déjà été utilisé.")
+    stockage.mettre_a_jour_mot_de_passe(compte_id, jeton.hacher_mot_de_passe(body.nouveau_mot_de_passe))
+    return {"ok": True}
+```
+
+Note : `body.jeton` masque le nom du module `jeton` importé en tête de fichier UNIQUEMENT à
+l'intérieur du corps de cette fonction (portée locale Python normale) — `jeton.verifier_reinitialisation`
+appelé AVANT toute réutilisation du nom local `body.jeton` n'est pas affecté, mais par clarté,
+utiliser `body.jeton` (l'attribut) partout dans cette fonction, jamais une variable locale
+nommée `jeton` seule.
+
+Tests à ajouter dans `test_auth.py` : `/mot-de-passe-oublie` avec un email inexistant → `200`
+(pas d'énumération) ; avec un email existant → `200`, et `email_envoi.envoyer` a été appelé
+(monkeypatch pour vérifier l'appel + capturer le lien envoyé, en extraire le `jeton=...` de la
+query string) ; `/reinitialiser-mot-de-passe` avec ce jeton extrait → `200`, et une connexion
+ultérieure avec le NOUVEAU mot de passe réussit (et l'ANCIEN échoue) ; rejouer le MÊME jeton une
+2e fois → `400` ; jeton expiré (`jeton.emettre_reinitialisation(compte_id, ttl=-1)` fabriqué
+directement) → `400` ; rate limiting sur `/mot-de-passe-oublie` (même motif que
+`test_rate_limiting_sur_connexion`).
+
+- [ ] **Step 5: Lancer les tests, commit**
+
+Run: `cd /Users/garinat_t/Desktop/Workplace/briques/jeu-factions-public && . .venv/bin/activate && python -m pytest -q`
+
+```bash
+git add briques/jeu-factions-public/jeton.py briques/jeu-factions-public/stockage.py briques/jeu-factions-public/email_envoi.py briques/jeu-factions-public/main.py briques/jeu-factions-public/test_jeton.py briques/jeu-factions-public/test_stockage.py briques/jeu-factions-public/test_email_envoi.py briques/jeu-factions-public/test_auth.py
+git commit -m "feat(jeu-factions-public): réinitialisation de mot de passe (backend, post-revue)"
+```
+
+### Task 15 — Réinitialisation de mot de passe (front + config)
+
+**Files:**
+- Modify: `briques/jeu-factions-public/front.html`
+- Modify: `.env.example`
+- Modify: `briques/jeu-factions-public/README.md`
+
+- [ ] **Step 1: `front.html` — lien « mot de passe oublié » + formulaire de reset**
+
+Sous le formulaire de connexion existant, ajouter un lien qui révèle un petit formulaire email
+→ `POST /mot-de-passe-oublie`, affichant toujours le même message générique après soumission
+(« Si ce compte existe, un email vient d'être envoyé. ») — jamais un message différent selon que
+le compte existe ou non (cohérent avec le choix anti-énumération de Task 14).
+
+Au chargement de la page, si `location.search` contient `?jeton=...`, afficher à la place un
+formulaire « nouveau mot de passe » (un seul champ + confirmation) qui `POST
+/reinitialiser-mot-de-passe` avec `{jeton, nouveau_mot_de_passe}` extrait de l'URL, puis
+redirige vers `/` (sans le paramètre `jeton`) en cas de succès.
+
+Utiliser le même style que le reste de `front.html` (formulaires `#auth`), pas de nouvelle page
+HTML séparée — tout reste dans `front.html`, gated par la présence ou non de `?jeton=` dans
+l'URL.
+
+- [ ] **Step 2: `.env.example`**
+
+Insérer après la section `JEU_FACTIONS_PUBLIC_CORS_ORIGINS` (Task 13) :
+
+```
+# SMTP pour l'envoi de l'email de réinitialisation de mot de passe (jeu-factions-public
+# uniquement — PAS la brique mail, qui gère des BAL personnelles, pas un envoi de service).
+# VIDE = mode simulé (dev/test), aucun email ne part réellement, juste un renvoi "simule".
+JEU_FACTIONS_PUBLIC_SMTP_HOST=
+JEU_FACTIONS_PUBLIC_SMTP_PORT=587
+JEU_FACTIONS_PUBLIC_SMTP_USER=
+JEU_FACTIONS_PUBLIC_SMTP_PASSWORD=
+JEU_FACTIONS_PUBLIC_SMTP_FROM=
+# Domaine public de la brique (pour construire le lien de réinitialisation dans l'email) —
+# le même domaine que celui posé dans outils/mesh-https/Caddyfile.jeu-factions-public.
+JEU_FACTIONS_PUBLIC_URL=
+```
+
+- [ ] **Step 3: README.md**
+
+Ajouter une note dans la section Configuration mentionnant le SMTP optionnel (mode simulé par
+défaut) et le flux `/mot-de-passe-oublie` → `/reinitialiser-mot-de-passe`.
+
+- [ ] **Step 4: Tests, commit**
+
+Run: `python -m pytest -q` (pas de nouveau test Python attendu pour ce step front-only, mais
+confirmer que rien n'a régressé).
+
+```bash
+git add briques/jeu-factions-public/front.html .env.example briques/jeu-factions-public/README.md
+git commit -m "feat(jeu-factions-public): réinitialisation de mot de passe (front + config, post-revue)"
+```
+
+### Task 16 — Groupes « carry » : découvrabilité (backend)
+
+**Pourquoi.** `POST /groupes`/`POST /groupes/{gid}/rejoindre`/le WS `/groupes/{gid}/combat` sont
+codés et testés depuis Task 8/10, mais rien dans `main.py` ne permet de LISTER les groupes
+ouverts — un joueur ne peut aider personne sans déjà connaître un `groupe_id` par un autre
+canal. Décision explicite de l'utilisateur après la revue finale (hérité du même trou dans la
+brique privée, mais ici jugé bloquant pour un produit public où « carry » est un mécanisme
+central).
+
+**Files:**
+- Modify: `briques/jeu-factions-public/groupes.py` (diverge désormais de la copie stricte de
+  `jeu-factions/groupes.py` — attendu et documenté, cette fonction n'existe pas côté privé)
+- Modify: `briques/jeu-factions-public/main.py`
+- Test: `briques/jeu-factions-public/test_groupes.py` (ajouts)
+- Test: `briques/jeu-factions-public/test_api.py` (ajouts)
+
+**Interfaces:**
+- Produces: `groupes.lister_groupes_actifs() -> list[dict]` (chaque entrée :
+  `id, zone_archetype_id, cree_le, personnage_cible_nom, archetype, ordre, etape_nom,
+  nb_membres`), route `GET /groupes`. `GET /personnages` (existant, Task 9) gagne un champ
+  `prochaine_etape_id` par personnage (`None` si aucune voie en cours).
+
+- [ ] **Step 1: `groupes.py` — lister les groupes actifs**
+
+Ajouter à la fin de `groupes.py` :
+
+```python
+def lister_groupes_actifs() -> list[dict]:
+    """Groupes ouverts (« carry ») visibles par tout le monde — nom du personnage cible
+    seulement, cohérent avec le monde partagé des voies d'archétype (cf. README, exception
+    déjà documentée au cloisonnement)."""
+    with S._conn() as c:
+        rows = c.execute("""
+            SELECT g.id, g.zone_archetype_id, g.cree_le, p.nom AS personnage_cible_nom,
+                   z.archetype, z.ordre, z.nom AS etape_nom,
+                   (SELECT COUNT(*) FROM membres_groupe m WHERE m.groupe_id = g.id) AS nb_membres
+            FROM groupes g
+            JOIN personnages_jeu p ON p.id = g.personnage_cible_id
+            JOIN zones_archetype z ON z.id = g.zone_archetype_id
+            WHERE g.etat='actif'
+            ORDER BY g.cree_le DESC
+        """).fetchall()
+    return [{"id": r["id"], "zone_archetype_id": r["zone_archetype_id"], "cree_le": r["cree_le"],
+             "personnage_cible_nom": r["personnage_cible_nom"], "archetype": r["archetype"],
+             "ordre": r["ordre"], "etape_nom": r["etape_nom"], "nb_membres": r["nb_membres"]}
+            for r in rows]
+```
+
+Tests dans `test_groupes.py` : liste vide si aucun groupe actif ; un groupe créé apparaît avec
+les bons champs joints (nom du personnage, archétype, nom d'étape, `nb_membres=1`) ; rejoindre
+fait passer `nb_membres` à 2 ; un groupe dissous n'apparaît plus dans la liste.
+
+- [ ] **Step 2: `main.py` — route + champ `prochaine_etape_id`**
+
+Ajouter la route (après `rejoindre_groupe_route`) :
+
+```python
+@app.get("/groupes", tags=["archetypes"])
+def lister_groupes_route(cle: str = Depends(cle_api)):
+    return groupes.lister_groupes_actifs()
+```
+
+Dans `lister_personnages_route` (Task 9), à côté du calcul existant de `bonus_idle_actuel`,
+ajouter le champ `prochaine_etape_id` en réutilisant la variable `prochaine` déjà calculée :
+
+```python
+        p["prochaine_etape_id"] = prochaine
+```
+
+(placer cette ligne juste après l'assignation existante de `p["bonus_idle_actuel"]`, dans la
+même boucle — `prochaine` vaut déjà `archetypes.prochaine_etape(p["id"], archetype)` ou `None`).
+
+Tests dans `test_api.py` : `GET /personnages` inclut `prochaine_etape_id` (non `None` dès
+qu'un personnage a un archétype connu et une voie non terminée) ; `GET /groupes` sans cookie →
+`401` ; avec cookie → `200` + liste (vide par défaut).
+
+- [ ] **Step 3: Tests, commit**
+
+Run: `python -m pytest -q`
+
+```bash
+git add briques/jeu-factions-public/groupes.py briques/jeu-factions-public/main.py briques/jeu-factions-public/test_groupes.py briques/jeu-factions-public/test_api.py
+git commit -m "feat(jeu-factions-public): groupes carry — découvrabilité (backend, post-revue)"
+```
+
+### Task 17 — Groupes « carry » : découvrabilité (front)
+
+**Files:**
+- Modify: `briques/jeu-factions-public/front.html`
+
+- [ ] **Step 1: Section « Groupes ouverts » + bouton « ouvrir un groupe »**
+
+Ajouter une section listant les groupes actifs (`GET /groupes`), affichant pour chacun : nom du
+personnage cible, archétype, nom de l'étape, nombre de membres, et un bouton « Rejoindre pour
+aider » qui `POST /groupes/{gid}/rejoindre` avec `personnage_id` = le premier personnage du
+joueur (même simplification déjà en place dans `front_combat.html`, `mine[0]` — pas de
+sélecteur de personnage, cohérent avec le niveau de simplicité existant du front).
+
+Pour chaque personnage du joueur listé dans la section « Mes personnages » dont
+`prochaine_etape_id` n'est pas `null` (nouveau champ, Task 16), ajouter un bouton « Ouvrir un
+groupe sur cette étape » qui `POST /groupes` avec `{personnage_cible_id: <id du personnage>,
+zone_archetype_id: <prochaine_etape_id>}`, puis recharge la liste des groupes.
+
+Après une action réussie (rejoindre ou créer), recharger la liste des groupes (`chargerGroupes()`
+même motif que `chargerPersonnages()`/`chargerZones()` existants).
+
+- [ ] **Step 2: Tests, commit**
+
+Pas de nouveau test Python (front-only). Run `python -m pytest -q` pour confirmer l'absence de
+régression.
+
+```bash
+git add briques/jeu-factions-public/front.html
+git commit -m "feat(jeu-factions-public): groupes carry — découvrabilité (front, post-revue)"
+```
