@@ -9,19 +9,42 @@
 <h1>Jeu-factions</h1>
 
 <section id="auth">
-  <h2>Connexion</h2>
-  <form id="formConnexion">
-    <input id="connexionEmail" type="email" placeholder="Email" required>
-    <input id="connexionMdp" type="password" placeholder="Mot de passe" required>
-    <button type="submit">Se connecter</button>
-  </form>
-  <h2>Inscription</h2>
-  <form id="formInscription">
-    <input id="inscriptionPseudo" placeholder="Pseudo" required>
-    <input id="inscriptionEmail" type="email" placeholder="Email" required>
-    <input id="inscriptionMdp" type="password" placeholder="Mot de passe (8 caractères min.)" required>
-    <button type="submit">Créer un compte</button>
-  </form>
+  <div id="authFormes">
+    <h2>Connexion</h2>
+    <form id="formConnexion">
+      <input id="connexionEmail" type="email" placeholder="Email" required>
+      <input id="connexionMdp" type="password" placeholder="Mot de passe" required>
+      <button type="submit">Se connecter</button>
+    </form>
+    <p><a href="#" id="lienMotDePasseOublie">Mot de passe oublié ?</a></p>
+    <h2>Inscription</h2>
+    <form id="formInscription">
+      <input id="inscriptionPseudo" placeholder="Pseudo" required>
+      <input id="inscriptionEmail" type="email" placeholder="Email" required>
+      <input id="inscriptionMdp" type="password" placeholder="Mot de passe (8 caractères min.)" required>
+      <button type="submit">Créer un compte</button>
+    </form>
+  </div>
+
+  <div id="authOublieMotDePasse" style="display:none">
+    <h2>Mot de passe oublié</h2>
+    <form id="formMotDePasseOublie">
+      <input id="oublieEmail" type="email" placeholder="Email" required>
+      <button type="submit">Envoyer le lien de réinitialisation</button>
+    </form>
+    <p><a href="#" id="lienRetourConnexion">Retour à la connexion</a></p>
+    <p id="messageOublie" style="display:none; font-style:italic; color:green;"></p>
+  </div>
+
+  <div id="authReinitialisationMotDePasse" style="display:none">
+    <h2>Réinitialiser le mot de passe</h2>
+    <form id="formReinitialisationMotDePasse">
+      <input id="resetNouveauMdp" type="password" placeholder="Nouveau mot de passe" required>
+      <input id="resetConfirmMdp" type="password" placeholder="Confirmer le mot de passe" required>
+      <button type="submit">Réinitialiser</button>
+    </form>
+  </div>
+
   <p id="messageAuthErreur"></p>
 </section>
 
@@ -78,6 +101,49 @@ document.getElementById("formInscription").addEventListener("submit", async e =>
   location.reload();
 });
 
+document.getElementById("lienMotDePasseOublie").addEventListener("click", e => {
+  e.preventDefault();
+  document.getElementById("authFormes").style.display = "none";
+  document.getElementById("authOublieMotDePasse").style.display = "block";
+  document.getElementById("messageAuthErreur").textContent = "";
+});
+
+document.getElementById("lienRetourConnexion").addEventListener("click", e => {
+  e.preventDefault();
+  document.getElementById("authFormes").style.display = "block";
+  document.getElementById("authOublieMotDePasse").style.display = "none";
+  document.getElementById("messageOublie").style.display = "none";
+  document.getElementById("messageAuthErreur").textContent = "";
+});
+
+document.getElementById("formMotDePasseOublie").addEventListener("submit", async e => {
+  e.preventDefault();
+  const r = await fetch("/mot-de-passe-oublie", {method: "POST", headers: entetes(), body: JSON.stringify({
+    email: document.getElementById("oublieEmail").value,
+  })});
+  // Afficher toujours le même message, peu importe la réponse
+  document.getElementById("messageOublie").textContent = "Si ce compte existe, un email vient d'être envoyé.";
+  document.getElementById("messageOublie").style.display = "block";
+  document.getElementById("oublieEmail").value = "";
+});
+
+document.getElementById("formReinitialisationMotDePasse").addEventListener("submit", async e => {
+  e.preventDefault();
+  const mdp1 = document.getElementById("resetNouveauMdp").value;
+  const mdp2 = document.getElementById("resetConfirmMdp").value;
+  if (mdp1 !== mdp2) {
+    afficherErreurAuth("Les mots de passe ne correspondent pas.");
+    return;
+  }
+  const jeton = new URLSearchParams(location.search).get("jeton");
+  const r = await fetch("/reinitialiser-mot-de-passe", {method: "POST", headers: entetes(), body: JSON.stringify({
+    jeton,
+    nouveau_mot_de_passe: mdp1,
+  })});
+  if (!r.ok) { afficherErreurAuth((await r.json()).detail || "Réinitialisation refusée."); return; }
+  location.href = "/";
+});
+
 document.getElementById("boutonDeconnexion").addEventListener("click", async () => {
   await fetch("/deconnexion", {method: "POST"});
   location.reload();
@@ -124,6 +190,16 @@ async function chargerZones() {
 }
 
 (async () => {
+  const jeton = new URLSearchParams(location.search).get("jeton");
+  if (jeton) {
+    // Mode réinitialisation de mot de passe — afficher le formulaire dédié
+    document.getElementById("auth").style.display = "block";
+    document.getElementById("jeuConnecte").style.display = "none";
+    document.getElementById("authFormes").style.display = "none";
+    document.getElementById("authReinitialisationMotDePasse").style.display = "block";
+    return;
+  }
+
   const r = await fetch("/personnages", {headers: entetes()});
   if (r.status === 401) {
     document.getElementById("auth").style.display = "block";
