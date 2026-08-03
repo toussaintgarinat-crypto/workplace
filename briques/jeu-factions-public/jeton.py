@@ -50,3 +50,27 @@ def verifier(jeton: Optional[str]) -> Optional[str]:
     if not hmac.compare_digest(signature, attendue) or time.time() > expire_i:
         return None
     return compte_id
+
+
+def emettre_reinitialisation(compte_id: str, ttl: int = 900) -> str:
+    expire = int(time.time()) + ttl
+    message = f"reset:{compte_id}:{expire}"
+    signature = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
+    return f"{message}:{signature}"
+
+
+def verifier_reinitialisation(jeton: Optional[str]) -> Optional[str]:
+    if not jeton or not _secret():
+        return None
+    try:
+        message, signature = jeton.rsplit(":", 1)
+        prefixe, compte_id, expire = message.split(":", 2)
+        expire_i = int(expire)
+    except ValueError:
+        return None
+    if prefixe != "reset":
+        return None
+    attendue = hmac.new(_secret(), message.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, attendue) or time.time() > expire_i:
+        return None
+    return compte_id
