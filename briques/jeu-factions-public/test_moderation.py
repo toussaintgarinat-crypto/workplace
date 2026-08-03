@@ -47,3 +47,14 @@ def test_mot_banni_frontiere_au_debut_avec_espace_est_detecte():
 def test_mot_banni_frontiere_entre_espaces_est_detecte():
     """'nique' entre espaces est un mot autonome et doit être détecté."""
     assert M.contient_mot_banni("salut nique toi") is True
+
+
+def test_faux_positif_nazim_ne_contient_pas_nazi_comme_mot():
+    """'Nazim' (prénom réel) contient 'nazi' en substring mais 'nazi' n'est pas un mot
+    autonome (revue finale S220 : nazi déplacé en frontière de mot, même motif que
+    nique/pute)."""
+    assert M.contient_mot_banni("Nazim") is False
+
+
+def test_mot_banni_frontiere_nazi_en_mot_autonome_est_detecte():
+    assert M.contient_mot_banni("nazi") is True
