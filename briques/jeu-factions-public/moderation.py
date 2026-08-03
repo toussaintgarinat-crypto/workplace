@@ -9,10 +9,12 @@ substring nu, produiraient de faux positifs sur des mots/prénoms français ordi
 import re
 
 MOTS_BANNIS = {
-    "connard", "connasse", "salope", "encule", "enculé",
-    "nazi", "hitler", "batard", "bâtard",
+    "connard", "connasse", "salope", "encule", "enculé", "hitler", "batard", "bâtard",
 }
-MOTS_BANNIS_FRONTIERE = {"nique", "pute"}
+# "nazi" en substring nu faux-positive sur des prénoms réels (ex. "Nazim") — même motif que
+# nique/pute, frontière de mot requise (élargi ici plutôt qu'à la création, un nom de
+# personnage a plus de chances qu'un pseudo de heurter un prénom existant).
+MOTS_BANNIS_FRONTIERE = {"nique", "pute", "nazi"}
 
 _PATTERN_FRONTIERE = re.compile(
     r"\b(?:" + "|".join(re.escape(m) for m in MOTS_BANNIS_FRONTIERE) + r")\b",
