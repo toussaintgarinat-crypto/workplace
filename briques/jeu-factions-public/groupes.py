@@ -76,3 +76,24 @@ def dissoudre_groupes_de_letape(zone_archetype_id: str, personnages_progresses: 
                       WHERE zone_archetype_id=? AND etat='actif'
                       AND personnage_cible_id IN ({marks})""",
                   (zone_archetype_id, *personnages_progresses))
+
+
+def lister_groupes_actifs() -> list[dict]:
+    """Groupes ouverts (« carry ») visibles par tout le monde — nom du personnage cible
+    seulement, cohérent avec le monde partagé des voies d'archétype (cf. README, exception
+    déjà documentée au cloisonnement)."""
+    with S._conn() as c:
+        rows = c.execute("""
+            SELECT g.id, g.zone_archetype_id, g.cree_le, p.nom AS personnage_cible_nom,
+                   z.archetype, z.ordre, z.nom AS etape_nom,
+                   (SELECT COUNT(*) FROM membres_groupe m WHERE m.groupe_id = g.id) AS nb_membres
+            FROM groupes g
+            JOIN personnages_jeu p ON p.id = g.personnage_cible_id
+            JOIN zones_archetype z ON z.id = g.zone_archetype_id
+            WHERE g.etat='actif'
+            ORDER BY g.cree_le DESC
+        """).fetchall()
+    return [{"id": r["id"], "zone_archetype_id": r["zone_archetype_id"], "cree_le": r["cree_le"],
+             "personnage_cible_nom": r["personnage_cible_nom"], "archetype": r["archetype"],
+             "ordre": r["ordre"], "etape_nom": r["etape_nom"], "nb_membres": r["nb_membres"]}
+            for r in rows]
