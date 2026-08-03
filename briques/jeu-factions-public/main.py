@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -185,27 +185,36 @@ def deconnexion_route(response: Response):
     return {"ok": True}
 
 
+def _envoyer_email_reinitialisation(email: str, jeton_reset: str) -> None:
+    base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
+    lien = f"{base}/reinitialiser?jeton={jeton_reset}"
+    # Un échec SMTP ne doit JAMAIS remonter en 500 : un email inconnu répond 200, donc un
+    # 500 sur un email connu redonnerait exactement l'oracle d'énumération que cette route
+    # existe pour fermer — et seulement en production (SMTP configuré), là où ça compte
+    # (S220, revue Task 14).
+    try:
+        email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
+                            f"Clique sur ce lien pour choisir un nouveau mot de passe "
+                            f"(valable 15 minutes) :\n{lien}\n\n"
+                            f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
+    except Exception as e:
+        print(f"[reset] envoi échoué pour {email} : {e}")
+
+
 @app.post("/mot-de-passe-oublie", tags=["auth"])
-def mot_de_passe_oublie_route(body: MotDePasseOublie, request: Request):
+def mot_de_passe_oublie_route(body: MotDePasseOublie, request: Request,
+                              background_tasks: BackgroundTasks):
     if not limiteur.autorise(_ip_client(request)):
         raise HTTPException(429, "Trop de tentatives — réessaie plus tard.")
     email = body.email.strip().lower()
     compte = stockage.lire_compte_par_email(email)
     if compte:
         jeton_reset = jeton.emettre_reinitialisation(compte["id"])
-        base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
-        lien = f"{base}/reinitialiser?jeton={jeton_reset}"
-        # Un échec SMTP ne doit JAMAIS remonter en 500 : un email inconnu répond 200, donc un
-        # 500 sur un email connu redonnerait exactement l'oracle d'énumération que cette route
-        # existe pour fermer — et seulement en production (SMTP configuré), là où ça compte
-        # (S220, revue Task 14).
-        try:
-            email_envoi.envoyer(email, "Réinitialisation de mot de passe — jeu-factions-public",
-                                f"Clique sur ce lien pour choisir un nouveau mot de passe "
-                                f"(valable 15 minutes) :\n{lien}\n\n"
-                                f"Si tu n'es pas à l'origine de cette demande, ignore cet email.")
-        except Exception as e:
-            print(f"[reset] envoi échoué pour {email} : {e}")
+        # L'envoi SMTP part en tâche de fond : le temps de réponse ne doit pas non plus
+        # distinguer "compte connu" de "compte inconnu" (S220, revue Task 14 suite —
+        # sinon l'oracle de statut fermé plus haut fuit quand même par le temps de réponse,
+        # jusqu'à `timeout=10` si le SMTP est en panne).
+        background_tasks.add_task(_envoyer_email_reinitialisation, email, jeton_reset)
     return {"ok": True}
 
 
