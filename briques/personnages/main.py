@@ -232,7 +232,8 @@ def holistique_portrait(body: FicheHolistique, _cle: str = Depends(cle_api)):
         raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
     p = synthese.portrait(trad, nom=body.prenoms or body.nom, langue=body.langue_sortie)
     return {"traditions": trad, "portrait": p,
-            "empreinte": significations.expliquer(trad, body.langue_sortie)}
+            "empreinte": significations.expliquer(trad, body.langue_sortie),
+            "glossaire": significations.glossaire(body.langue_sortie)}
 
 
 @app.post("/holistique/lecture-approfondie", tags=["holistique"])
