@@ -85,6 +85,19 @@
   .ec .ecv{font-family:Georgia,serif;font-size:.98rem;margin:2px 0}
   .ec .ecv b{color:var(--accent)}
   .ec .ecs{font-size:.76rem;color:var(--mut);line-height:1.45}
+  /* Bulle glossaire (ℹ️ à côté d'un libellé, définition au survol/clic/clavier) */
+  .glossaire-ic{display:inline-block;margin-left:5px;cursor:help;font-size:.7rem;
+    color:var(--accent);opacity:.75;vertical-align:middle;user-select:none;
+    border:1px solid var(--line);border-radius:999px;padding:0 .32rem;
+    line-height:1.5;transition:opacity .12s,background .12s}
+  .glossaire-ic:hover,.glossaire-ic:focus-visible,.glossaire-ic.on{opacity:1;background:var(--panel2);outline:none}
+  .glossaire-pop{position:fixed;z-index:999;max-width:320px;min-width:200px;
+    background:var(--panel2);border:1px solid var(--accent);color:var(--ink);
+    padding:12px 14px;border-radius:10px;font-size:.84rem;line-height:1.5;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transform:translateY(4px);
+    transition:opacity .12s,transform .12s;pointer-events:none}
+  .glossaire-pop.open{opacity:1;transform:translateY(0)}
+  .glossaire-pop .g-titre{font-weight:600;color:var(--accent2);display:block;margin-bottom:4px}
   /* Appui long → suppression : retour visuel pendant le maintien */
   .lp-arming{position:relative;overflow:hidden}
   .lp-arming::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;
@@ -120,6 +133,7 @@
 </head>
 <body>
 <div class="toast" id="toast"></div>
+<div id="glossaire-pop" class="glossaire-pop" role="tooltip" aria-hidden="true"></div>
 
 <!-- Socle « manipulation directe » (S101) : modale (confirm/saisie) + menu contextuel
      + cliquer-déposer, source unique partagée. Expose confirmer / demanderTexte /
@@ -363,6 +377,68 @@ let _dernierPortrait=null;   // mémorise le dernier portrait pour l'envoi au St
 let _dernierContexte=null;   // état-civil saisi au moment de la génération (pour la fiche)
 let _lectureApprofondie=null; // lecture réécrite par l'IA (si l'utilisateur l'a demandée)
 
+// ── Glossaire (bulles ℹ️ + légende PDF) — alimenté par d.glossaire, fourni par le backend ──
+let GLOSSAIRE={};        // { id: definition } — aplati depuis les groupes par thème
+let GLOSSAIRE_LABELS={}; // { id: label }
+
+function chargerGlossaire(groups){
+  // Pas de tableau (ex. réouverture d'une fiche enregistrée avant cette fonctionnalité,
+  // qui ne stocke pas le glossaire) → on garde le dernier chargé plutôt que de tout effacer ;
+  // les définitions sont statiques et valables pour n'importe quel portrait.
+  if(!Array.isArray(groups)) return;
+  GLOSSAIRE={}; GLOSSAIRE_LABELS={};
+  for(const grp of groups) for(const it of (grp.items||[])){
+    GLOSSAIRE[it.id]=it.definition; GLOSSAIRE_LABELS[it.id]=it.label;
+  }
+}
+
+function icGlossaire(id){
+  if(!id || !GLOSSAIRE[id]) return '';
+  return ` <span class="glossaire-ic" data-glossaire="${id}" role="button" tabindex="0"
+    aria-label="Définition : ${esc(GLOSSAIRE_LABELS[id]||id)}">ℹ️</span>`;
+}
+
+const STAT_VERS_ID={
+  'Charisme':'stat_charisme', 'Combativité':'stat_combativite', 'Sagesse':'stat_sagesse',
+  'Créativité':'stat_creativite', 'Discrétion':'stat_discretion', 'Stabilité':'stat_stabilite',
+  'Émotivité':'stat_emotivite', 'Énergie':'stat_energie',
+};
+
+// Délégation d'événements : une seule bulle ouverte à la fois, hover + clic + clavier.
+(function(){
+  const pop=document.getElementById('glossaire-pop');
+  let courant=null;
+  function ouvrir(ic){
+    const id=ic.getAttribute('data-glossaire');
+    if(!id || !GLOSSAIRE[id]) return;
+    if(courant && courant!==ic) courant.classList.remove('on');
+    pop.innerHTML=`<span class="g-titre">${esc(GLOSSAIRE_LABELS[id]||id)}</span>${esc(GLOSSAIRE[id])}`;
+    pop.classList.add('open'); pop.setAttribute('aria-hidden','false');
+    const r=ic.getBoundingClientRect();
+    const x=Math.min(r.left, window.innerWidth-pop.offsetWidth-12);
+    let y=r.bottom+8;
+    if(y+pop.offsetHeight>window.innerHeight-12) y=r.top-pop.offsetHeight-8;
+    pop.style.left=Math.max(12,x)+'px'; pop.style.top=Math.max(12,y)+'px';
+    courant=ic; ic.classList.add('on');
+  }
+  function fermer(){
+    pop.classList.remove('open'); pop.setAttribute('aria-hidden','true');
+    if(courant){ courant.classList.remove('on'); courant=null; }
+  }
+  function ic(node){ return node && node.closest && node.closest('.glossaire-ic'); }
+  document.addEventListener('mouseover', e=>{ const x=ic(e.target); if(x) ouvrir(x); });
+  document.addEventListener('mouseout', e=>{ if(!ic(e.relatedTarget) && ic(e.target)===courant) fermer(); });
+  document.addEventListener('click', e=>{ const x=ic(e.target);
+    if(x){ if(courant===x) fermer(); else ouvrir(x); e.stopPropagation(); } else if(courant) fermer(); });
+  document.addEventListener('keydown', e=>{ const x=ic(e.target);
+    if(x && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); if(courant===x) fermer(); else ouvrir(x); }
+    if(e.key==='Escape' && courant) fermer(); });
+  document.addEventListener('focusin', e=>{ const x=ic(e.target); if(x) ouvrir(x); });
+  document.addEventListener('focusout', e=>{ if(!ic(e.relatedTarget)) fermer(); });
+  window.addEventListener('scroll', fermer, {passive:true});
+  window.addEventListener('resize', fermer, {passive:true});
+})();
+
 // Demande à l'IA gratuite une réécriture littéraire de la lecture symbolique (opt-in).
 // Repli honnête côté serveur : source='repli' = l'IA était indisponible, on a le déterministe.
 async function approfondir(){
@@ -451,6 +527,9 @@ function ficheHtml(autoprint){
     `<div class="ecv"><b>${esc(e.valeur)}</b></div><div class="ecs">${esc(e.sens)}</div></div>`).join('');
   const recit = mdToHtml(p.recit||'');
   const approf = _lectureApprofondie ? mdToHtml(_lectureApprofondie) : '';
+  const legende = (d.glossaire||[]).map(g=>
+    `<h3>${esc(g.theme)}</h3><dl>${(g.items||[]).map(it=>
+      `<dt>${esc(it.label)}</dt><dd>${esc(it.definition)}</dd>`).join('')}</dl>`).join('');
   const html =
 `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <title>Fiche cosmique — ${esc(nom)}</title>
@@ -485,6 +564,11 @@ function ficheHtml(autoprint){
          padding:18px;white-space:pre-wrap;font-size:.92rem}
   .recit em{color:var(--mut)}
   .foot{margin-top:34px;color:var(--mut);font-size:.72rem;border-top:1px solid var(--line);padding-top:14px}
+  .legende h3{margin:18px 0 6px;font-size:.9rem;color:var(--accent2);border-bottom:1px solid var(--line);padding-bottom:4px}
+  .legende dl{margin:4px 0 10px}
+  .legende dt{font-weight:600;margin-top:8px}
+  .legende dd{margin:2px 0 8px 0;color:var(--mut);font-size:.82rem;line-height:1.5}
+  @media print{.legende dd{color:#555}}
   .toolbar{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;
     background:rgba(14,12,16,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
     padding:12px 24px;font-size:.82rem;color:var(--mut)}
@@ -508,6 +592,7 @@ function ficheHtml(autoprint){
   ${emp?`<h2>Empreinte multi-culturelle</h2><div class="emp">${emp}</div>`:''}
   ${recit?`<h2>Lecture symbolique</h2><div class="recit">${recit}</div>`:''}
   ${approf?`<h2>Lecture approfondie (IA)</h2><div class="recit">${approf}</div>`:''}
+  ${legende?`<h2>Légende</h2><div class="legende">${legende}</div>`:''}
   <div class="foot">Fiche cosmique générée par l'Atelier holistique · ${esc(c.systeme||'')} ·
   les calculs (astronomie, numérologie) sont exacts ; les interprétations relèvent du divertissement.</div>
 </div>
@@ -798,22 +883,24 @@ async function supprimerFiche(id, row, nom){
 function renderPortrait(d){
   _dernierPortrait=d;
   const t=d.traditions, p=d.portrait;
-  $('o-arche').textContent = p.archetype;
-  $('o-sub').textContent = 'Forces : '+p.forces.join(' · ')+' — à travailler : '+p.faiblesse;
+  chargerGlossaire(d.glossaire);
+  $('o-arche').innerHTML = esc(p.archetype)+icGlossaire('archetype');
+  $('o-sub').innerHTML = 'Forces : '+esc(p.forces.join(' · '))+icGlossaire('forces')+
+    ' — à travailler : '+esc(p.faiblesse)+icGlossaire('faiblesse');
   // stats triées décroissantes
   const ents = Object.entries(p.stats).sort((a,b)=>b[1]-a[1]);
   $('o-stats').innerHTML = ents.map(([k,v],i)=>{
     const cls = i===0?'top':(k===p.faiblesse?'low':'');
-    return `<div class="stat ${cls}"><span class="nm">${esc(k)}</span>`+
+    return `<div class="stat ${cls}"><span class="nm">${esc(k)}${icGlossaire(STAT_VERS_ID[k]||'')}</span>`+
       `<span class="bar"><span class="fill" style="width:${v}%"></span></span>`+
       `<span class="vv">${v}</span></div>`;
   }).join('');
   const g=p.pierre_equilibrage;
   $('o-gem').innerHTML = `<span class="ic">💎</span><div>Cristal allié : <b>${esc(g.pierre)}</b> — `+
-    `${esc(g.vertu)} (compense ${esc(g.compense)}).</div>`;
+    `${esc(g.vertu)} (compense ${esc(g.compense)}).${icGlossaire('pierre')}</div>`;
   // empreinte expliquée (label + valeur + sens), fournie par le backend
   $('o-chips').innerHTML = (d.empreinte||[]).map(e=>
-    `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}</div>`+
+    `<div class="ec"><div class="ecl">${esc(e.cle)}${e.role?' · '+esc(e.role):''}${icGlossaire(e.id)}</div>`+
     `<div class="ecv"><b>${esc(e.valeur)}</b></div>`+
     `<div class="ecs">${esc(e.sens)}</div></div>`).join('');
   // recit (markdown gras → <b>)

@@ -109,3 +109,58 @@ def test_toutes_les_tables_en_completes():
         assert Z.NAKSHATRA_SENS_EN.get(n), f"nakshatra sans sens EN : {n}"
     for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 22, 33):
         assert Z.NOMBRE_SENS_EN.get(n), f"nombre sans sens EN : {n}"
+
+
+# ── Glossaire (bulles + légende PDF) ───────────────────────────────
+def test_glossaire_fr_structure():
+    g = Z.glossaire("fr")
+    assert [t["theme"] for t in g] == [
+        "Astrologie occidentale", "Astrologie chinoise", "Astrologie védique",
+        "Autres traditions", "Numérologie",
+        "Statistiques de personnalité", "Synthèse du portrait",
+    ]
+    ids = {it["id"] for t in g for it in t["items"]}
+    assert {"soleil", "lune", "ascendant", "chinoise", "animal_heure",
+            "vedique", "nakshatra", "egypte", "celte", "totem", "maya",
+            "chemin_de_vie", "expression", "archetype", "forces",
+            "faiblesse", "pierre"} <= ids
+    assert {"stat_charisme", "stat_combativite", "stat_sagesse",
+            "stat_creativite", "stat_discretion", "stat_stabilite",
+            "stat_emotivite", "stat_energie"} <= ids
+    for t in g:
+        for it in t["items"]:
+            assert it["label"] and it["definition"], f"entrée glossaire incomplète : {it}"
+
+
+def test_glossaire_en_memes_ids_memes_themes():
+    """Mêmes ids, mêmes thèmes (en anglais), que en français."""
+    fr = Z.glossaire("fr")
+    en = Z.glossaire("en")
+    fr_ids = {it["id"] for t in fr for it in t["items"]}
+    en_ids = {it["id"] for t in en for it in t["items"]}
+    assert fr_ids == en_ids
+    assert [t["theme"] for t in en] != [t["theme"] for t in fr]  # thèmes traduits
+    for t in en:
+        for it in t["items"]:
+            assert it["label"] and it["definition"], f"entrée EN incomplète : {it}"
+
+
+def test_glossaire_completude_ids_dans_tables():
+    """Chaque id du glossaire existe dans GLOSSAIRE_FR et GLOSSAIRE_EN."""
+    ids_TH = set(Z._GLOSSAIRE_THEMES_IDS)  # union des ids par thème
+    for i in ids_TH:
+        assert Z.GLOSSAIRE_FR.get(i), f"id sans définition FR : {i}"
+        assert Z.GLOSSAIRE_EN.get(i), f"id sans définition EN : {i}"
+
+
+def test_expliquer_empreinte_possede_ids_stables():
+    """Chaque entrée de l'empreinte porte un `id` stable connu du glossaire."""
+    trad = _fiche_complete()
+    emp = Z.expliquer(trad, "fr")
+    ids_connus = {it["id"] for t in Z.glossaire("fr") for it in t["items"]}
+    for e in emp:
+        assert e.get("id") and e["id"] in ids_connus, f"entrée sans id stable : {e}"
+    cles_vers_ids = {e["cle"]: e["id"] for e in emp}
+    assert cles_vers_ids["Soleil"] == "soleil"
+    assert cles_vers_ids["Lune"] == "lune"
+    assert cles_vers_ids["Ascendant"] == "ascendant"
