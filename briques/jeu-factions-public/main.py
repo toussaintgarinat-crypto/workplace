@@ -187,7 +187,10 @@ def deconnexion_route(response: Response):
 
 def _envoyer_email_reinitialisation(email: str, jeton_reset: str) -> None:
     base = os.environ.get("JEU_FACTIONS_PUBLIC_URL", "").rstrip("/")
-    lien = f"{base}/reinitialiser?jeton={jeton_reset}"
+    # front.html gère le formulaire de réinitialisation directement sur "/" via ?jeton= dans
+    # l'URL (pas de route /reinitialiser dédiée côté serveur, cf. revue Task 15) — le lien
+    # émis doit donc pointer sur la racine, pas sur un chemin qui n'existe pas.
+    lien = f"{base}/?jeton={jeton_reset}"
     # Un échec SMTP ne doit JAMAIS remonter en 500 : un email inconnu répond 200, donc un
     # 500 sur un email connu redonnerait exactement l'oracle d'énumération que cette route
     # existe pour fermer — et seulement en production (SMTP configuré), là où ça compte
