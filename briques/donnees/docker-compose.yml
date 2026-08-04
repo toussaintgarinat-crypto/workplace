@@ -24,5 +24,29 @@ services:
       retries: 3
       start_period: 20s
 
+  litestream:
+    image: litestream/litestream:0.5.15
+    container_name: workplace_donnees_litestream
+    depends_on:
+      donnees:
+        condition: service_healthy
+    env_file:
+      - path: ../../.env
+        required: false
+    volumes:
+      - donnees_data:/data
+      - ./litestream.yml:/etc/litestream.yml:ro
+    networks:
+      - default
+      - proxy_net
+    command: ["replicate"]
+    restart: unless-stopped
+
 volumes:
   donnees_data:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net
