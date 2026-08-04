@@ -300,6 +300,28 @@ def test_exiger_session_generation_a_jour_ne_redirige_pas():
         auth._cache_access_token.clear()
 
 
+def test_sub_session_optionnel_generation_perimee_renvoie_none():
+    """Critical 1 (revue finale whole-branch) : sub_session_optionnel est le chemin
+    d'identité de assistant/agenda/profil (via lire_contexte_tenant) — il doit lui aussi
+    traiter une génération périmée comme "pas de session", pas juste exiger_session."""
+    session_registre.nouvelle_session("marina-optionnel-perimee", "iPhone")
+    session_registre.nouvelle_session("marina-optionnel-perimee", "MacBook")
+    cookie = auth.chiffrer_cookie({
+        "sub": "marina-optionnel-perimee", "refresh_token": "rt-123", "generation": 1,
+    })
+    r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: cookie}))
+    assert r is None
+
+
+def test_sub_session_optionnel_generation_a_jour_renvoie_le_sub():
+    generation, _ = session_registre.nouvelle_session("marina-optionnel-a-jour", "iPhone")
+    cookie = auth.chiffrer_cookie({
+        "sub": "marina-optionnel-a-jour", "refresh_token": "rt-123", "generation": generation,
+    })
+    r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: cookie}))
+    assert r == "marina-optionnel-a-jour"
+
+
 def test_exiger_session_cookie_sans_registre_reste_valide():
     """Cookie émis avant ce chantier (pas de champ `generation`, pas d'entrée au
     registre) : comportement historique préservé, pas de redirection surprise."""
