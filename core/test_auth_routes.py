@@ -128,6 +128,22 @@ def test_logout_supprime_le_cookie_et_termine_la_session_sso():
     assert "post_logout_redirect_uri=" in location
 
 
+def test_logout_purge_le_registre_de_session():
+    """Important 4 (revue finale whole-branch) : sans ça, un logout propre suivi d'une
+    reconnexion normale déclenche quand même un checkpoint fantôme (le registre croit
+    encore une session active pour ce compte)."""
+    session_registre.nouvelle_session("marina-purge-logout", "iPhone")
+    assert session_registre.generation_actuelle("marina-purge-logout") == 1
+
+    cookie = auth.chiffrer_cookie({
+        "sub": "marina-purge-logout", "refresh_token": "rt-1", "generation": 1,
+        "registre_id": session_registre.identifiant_registre(),
+    })
+    r = client.get("/auth/logout", cookies={auth.COOKIE_SESSION: cookie}, follow_redirects=False)
+    assert r.status_code == 303
+    assert session_registre.generation_actuelle("marina-purge-logout") is None
+
+
 def test_dashboard_accessible_sans_session_quand_auth_desactivee():
     """Non-régression : AUTH_ENABLED=false (défaut) — comportement historique inchangé,
     /dashboard reste accessible en accès direct (core/test_dashboard.py doit continuer

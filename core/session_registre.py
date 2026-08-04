@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+import uuid
 from typing import NamedTuple, Optional
 
 DB = os.getenv("SESSION_REGISTRE_DB", "/data/session_registre.db")
@@ -48,6 +49,17 @@ def init_db() -> None:
                 generation INTEGER NOT NULL,
                 appareil TEXT,
                 connecte_a REAL NOT NULL
+            )
+            """
+        )
+        # Important 6 (revue finale whole-branch) : identité de CETTE instance du registre
+        # (cf. `identifiant_registre` plus bas) — table générique à clé/valeur pour ne pas
+        # ajouter une colonne dédiée juste pour un seul enregistrement.
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meta (
+                cle TEXT PRIMARY KEY,
+                valeur TEXT
             )
             """
         )
@@ -112,3 +124,46 @@ def generation_actuelle(sub: str) -> Optional[int]:
             "SELECT generation FROM sessions_actives WHERE sub = ?", (sub,)
         ).fetchone()
         return row["generation"] if row is not None else None
+
+
+def fermer_session(sub: str) -> None:
+    """Supprime l'entrée du registre pour `sub` (Important 4, revue finale whole-branch).
+
+    Appelée au logout explicite (`core/routers/auth.py::auth_logout`) — sans ça, un logout
+    propre suivi d'une reconnexion normale sur le MÊME appareil déclenchait quand même un
+    checkpoint (le registre croyait encore une session active pour ce compte). Après cet
+    appel, `generation_actuelle(sub)` redevient `None` : la prochaine connexion repart à la
+    génération 1 comme un tout premier login, et ne compte plus comme une éviction."""
+    init_db()
+    with _conn() as c:
+        c.execute("DELETE FROM sessions_actives WHERE sub = ?", (sub,))
+
+
+def identifiant_registre() -> str:
+    """Identifiant stable de CETTE instance du registre (UUID4), généré au tout premier
+    appel puis relu depuis la table `meta` — jamais régénéré une fois posé.
+
+    Important 6 (revue finale whole-branch) : détecte une perte du volume `core_data`. Sans
+    cet identifiant, un registre repartant de zéro après une perte de volume ferait
+    repartir TOUTES les générations à 1 — et un cookie évincé portant justement
+    `generation=1` (le cas majoritaire : c'est la génération de toute première connexion)
+    redeviendrait valide par pure coïncidence numérique dès qu'un autre appareil se
+    reconnecte sur le même compte. En comparant aussi l'identifiant d'instance porté par le
+    cookie à celui du registre courant, ce cas est rejeté même quand la génération coïncide.
+
+    Concurrence au tout premier appel : l'INSERT est un no-op silencieux si un autre thread/
+    processus a déjà posé la ligne entre-temps (`ON CONFLICT DO NOTHING`), puis un second
+    SELECT relit la valeur qui a réellement gagné — jamais deux identifiants différents pour
+    la même instance de registre, même sous concurrence (même motif que `nouvelle_session`,
+    Critical 2)."""
+    init_db()
+    with _conn() as c:
+        row = c.execute("SELECT valeur FROM meta WHERE cle = 'registre_id'").fetchone()
+        if row is not None:
+            return row["valeur"]
+        c.execute(
+            "INSERT INTO meta (cle, valeur) VALUES ('registre_id', ?) ON CONFLICT(cle) DO NOTHING",
+            (str(uuid.uuid4()),),
+        )
+        row = c.execute("SELECT valeur FROM meta WHERE cle = 'registre_id'").fetchone()
+        return row["valeur"]

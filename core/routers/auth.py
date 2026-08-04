@@ -81,9 +81,14 @@ async def auth_callback(request: Request, code: str, state: str):
     nouvelle_generation, ancienne = session_registre.nouvelle_session(sub, appareil)
     if ancienne is not None:
         # Une session existait déjà pour ce compte : on la considère comme évincée par
-        # celle-ci. Le point de contrôle s'assure qu'aucune écriture en attente côté
-        # ancien appareil n'est perdue avant que sa prochaine requête ne le déconnecte
-        # (cf. core/auth.py::exiger_session, qui compare la génération à chaque appel).
+        # celle-ci. Le point de contrôle VISE À s'assurer qu'aucune écriture en attente côté
+        # ancien appareil n'est perdue avant que sa prochaine requête ne le déconnecte (cf.
+        # core/auth.py::exiger_session/sub_session_optionnel, qui comparent la génération à
+        # chaque appel) — c'est un stub aujourd'hui (cf. checkpoint_session.py), et même une
+        # fois branché sur une vraie réplication, il ne couvrira pas la fenêtre d'écriture
+        # APRÈS ce point tant que l'ancien appareil n'a pas fait sa prochaine requête
+        # protégée (découverte différée, pas éviction nette — détail dans
+        # checkpoint_session.py, Important 5).
         checkpoint_session.declencher_checkpoint(sub)
 
     session = {
@@ -92,6 +97,11 @@ async def auth_callback(request: Request, code: str, state: str):
         "avatarEmoji": payload.get("avatarEmoji"),
         "refresh_token": refresh_token,
         "generation": nouvelle_generation,
+        # Identifiant de CETTE instance du registre (Important 6, revue finale
+        # whole-branch) — détecte une perte du volume core_data : sans lui, un registre
+        # neuf reparti à generation=1 rendrait valide un cookie évincé portant justement
+        # generation=1 (cas majoritaire), par coïncidence numérique.
+        "registre_id": session_registre.identifiant_registre(),
     }
     resp = RedirectResponse(_next_sur(pending.get("next")), status_code=307)
     resp.set_cookie(
@@ -109,7 +119,16 @@ async def auth_logout(request: Request):
     sans ça, la prochaine visite de /auth/login relogue silencieusement via la session SSO
     encore active côté Keycloak, donnant l'impression que le bouton « Déconnexion » ne fait
     rien. GET (navigation, pas fetch) : la chaîne de redirections traverse Keycloak, une
-    autre origine que le Cœur — un fetch() la suivrait et se ferait bloquer par CORS."""
+    autre origine que le Cœur — un fetch() la suivrait et se ferait bloquer par CORS.
+
+    Purge aussi l'entrée du registre de session (Important 4, revue finale whole-branch) —
+    sans ça, un logout propre suivi d'une reconnexion normale (même appareil ou un autre)
+    déclenchait quand même un checkpoint fantôme : le registre croyait encore une session
+    active pour ce compte alors qu'elle venait d'être fermée proprement ici."""
+    sub = auth.sub_session_optionnel(request)
+    if sub:
+        session_registre.fermer_session(sub)
+
     params = {
         "client_id": auth.KEYCLOAK_CLIENT_ID,
         "post_logout_redirect_uri": str(request.url_for("auth_login")),

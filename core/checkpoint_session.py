@@ -9,6 +9,17 @@ sera le seul à modifier pour déclencher un vrai cliché de réplication imméd
 vers un futur point de contrôle Litestream, ou `wal-g wal-push` forcé) au lieu d'attendre le
 cycle normal de réplication (quelques secondes) — aucun appelant de ce module n'aura à
 changer.
+
+Important 5 (revue finale whole-branch) : même une vraie implémentation future ne fera PAS
+de ce point de contrôle un instant d'éviction net. Il est déclenché au moment du LOGIN du
+nouvel appareil (`auth_callback`), pas au moment où l'ancien appareil apprend qu'il a été
+évincé (sa prochaine requête protégée, potentiellement bien plus tard). L'ancien appareil
+peut donc continuer à écrire APRÈS ce checkpoint, tant qu'il n'a pas encore fait cette
+prochaine requête — une fenêtre d'écriture non couverte par le cliché. C'est une découverte
+différée de l'éviction, pas un instant net : toute implémentation future devra soit accepter
+cette fenêtre (documentée, pas résolue), soit ajouter un second checkpoint déclenché à la
+découverte réelle côté ancien appareil (`exiger_session`/`sub_session_optionnel`), ce qui
+sort du périmètre de ce chantier.
 """
 from __future__ import annotations
 

@@ -101,3 +101,46 @@ def test_connexions_concurrentes_ne_recoivent_jamais_la_meme_generation():
         f"deux connexions concurrentes ont reçu la même génération : {resultats}"
     )
     assert sorted(resultats) == [1, 2]
+
+
+def test_fermer_session_purge_le_registre():
+    """Important 4 (revue finale whole-branch) : après un logout explicite, la prochaine
+    connexion ne doit plus être vue comme une éviction."""
+    session_registre.nouvelle_session("marina-logout", "iPhone")
+    assert session_registre.generation_actuelle("marina-logout") == 1
+
+    session_registre.fermer_session("marina-logout")
+    assert session_registre.generation_actuelle("marina-logout") is None
+
+    generation, ancienne = session_registre.nouvelle_session("marina-logout", "MacBook")
+    assert generation == 1  # repart comme un tout premier login, pas une éviction
+    assert ancienne is None
+
+
+def test_fermer_session_compte_inconnu_ne_leve_pas():
+    session_registre.fermer_session("jamais-connecte-logout")  # ne doit pas lever
+
+
+def test_identifiant_registre_premier_appel_genere_un_id_stable():
+    identifiant_1 = session_registre.identifiant_registre()
+    assert isinstance(identifiant_1, str)
+    assert len(identifiant_1) > 0
+
+    identifiant_2 = session_registre.identifiant_registre()
+    assert identifiant_2 == identifiant_1
+
+
+def test_identifiant_registre_deux_registres_distincts_ont_des_id_differents():
+    """Simule une perte du volume core_data : un nouveau fichier de registre (donc une
+    nouvelle instance) doit avoir un identifiant différent de l'ancien."""
+    ancien = session_registre.DB
+    try:
+        session_registre.DB = os.path.join(tempfile.mkdtemp(), "registre_a.db")
+        id_a = session_registre.identifiant_registre()
+
+        session_registre.DB = os.path.join(tempfile.mkdtemp(), "registre_b.db")
+        id_b = session_registre.identifiant_registre()
+
+        assert id_a != id_b
+    finally:
+        session_registre.DB = ancien

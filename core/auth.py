@@ -149,6 +149,42 @@ async def rafraichir_access_token(refresh_token: str) -> dict:
 _cache_access_token: dict[str, tuple[str, float]] = {}
 
 
+def _session_perimee(session: dict, sub: str) -> bool:
+    """Vrai si `session` porte une génération ou un identifiant de registre périmés pour
+    `sub` — factorise la vérification partagée par `exiger_session` et
+    `sub_session_optionnel` (Critical 1 + Important 6, revue finale whole-branch) pour que
+    les deux chemins d'identité restent verrouillés au même comportement.
+
+    Vérifie deux choses :
+    - la génération du cookie contre `session_registre.generation_actuelle(sub)` (une
+      connexion plus récente a évincé celle-ci) ;
+    - l'identifiant d'instance du registre (`session_registre.identifiant_registre()`)
+      contre celui porté par le cookie — nécessaire car une perte du volume `core_data`
+      ferait repartir toutes les générations à 1, et un cookie évincé portant justement
+      `generation=1` (cas majoritaire) redeviendrait valide par coïncidence numérique sans
+      cette vérification supplémentaire (Important 6).
+
+    Best-effort (Important 7) : un hoquet SQLite (registre indisponible, fichier verrouillé…)
+    ne doit jamais faire planter l'appelant — `exiger_session` a une discipline explicite de
+    ce fichier de ne jamais laisser fuiter un 500 nu sur ce chemin. Un échec du registre est
+    donc traité comme « pas périmée » (dégradation côté disponibilité, pas de faux positif
+    d'éviction pour une panne qui n'en est pas une)."""
+    try:
+        generation_registre = session_registre.generation_actuelle(sub)
+        registre_id_actuel = session_registre.identifiant_registre()
+    except Exception:
+        return False
+    if generation_registre is None:
+        # Pas encore d'entrée pour ce compte dans CE registre (cookie antérieur à ce
+        # chantier, ou compte pas encore reconnecté depuis une perte de volume) : on laisse
+        # passer, comportement historique préservé.
+        return False
+    return (
+        session.get("generation") != generation_registre
+        or session.get("registre_id") != registre_id_actuel
+    )
+
+
 async def exiger_session(request: Request) -> dict:
     """Dépendance FastAPI : exige une session Cœur valide.
 
@@ -168,12 +204,11 @@ async def exiger_session(request: Request) -> dict:
     if not sub or not refresh_token:
         raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
 
-    generation_registre = session_registre.generation_actuelle(sub)
-    if generation_registre is not None and session.get("generation") != generation_registre:
-        # Une connexion plus récente a évincé celle-ci (relai propre entre appareils,
-        # cf. core/routers/auth.py::auth_callback). `generation_registre is None` = pas
-        # encore de registre pour ce compte (cookie antérieur à ce chantier) : on laisse
-        # passer, comportement historique préservé.
+    if _session_perimee(session, sub):
+        # Une connexion plus récente a évincé celle-ci (relai propre entre appareils, cf.
+        # core/routers/auth.py::auth_callback), ou le registre a été recréé depuis
+        # l'émission de ce cookie (perte du volume core_data, Important 6) — voir le
+        # détail des deux cas dans la docstring de `_session_perimee`.
         destination = urllib.parse.quote("/dashboard?motif=reprise_ailleurs", safe="")
         raise HTTPException(status_code=303, headers={"Location": f"/auth/login?next={destination}"})
 
@@ -221,10 +256,6 @@ def sub_session_optionnel(request: Request) -> str | None:
     sub = session.get("sub")
     if not sub:
         return None
-    try:
-        generation_registre = session_registre.generation_actuelle(sub)
-    except Exception:
-        return sub  # dégradation : le registre est best-effort ici, jamais bloquant (Important 7)
-    if generation_registre is not None and session.get("generation") != generation_registre:
+    if _session_perimee(session, sub):
         return None
     return sub

@@ -3,6 +3,7 @@
 $ cd core && python3 -m pytest test_auth.py -v
 """
 import os
+import sqlite3
 
 os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
 os.environ.setdefault("GATEWAY_KEY", "test")
@@ -291,6 +292,7 @@ def test_exiger_session_generation_a_jour_ne_redirige_pas():
         generation, _ = session_registre.nouvelle_session("marina-a-jour", "iPhone")
         cookie = auth.chiffrer_cookie({
             "sub": "marina-a-jour", "refresh_token": "rt-123", "generation": generation,
+            "registre_id": session_registre.identifiant_registre(),
         })
         r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
         assert r["sub"] == "marina-a-jour"
@@ -317,9 +319,88 @@ def test_sub_session_optionnel_generation_a_jour_renvoie_le_sub():
     generation, _ = session_registre.nouvelle_session("marina-optionnel-a-jour", "iPhone")
     cookie = auth.chiffrer_cookie({
         "sub": "marina-optionnel-a-jour", "refresh_token": "rt-123", "generation": generation,
+        "registre_id": session_registre.identifiant_registre(),
     })
     r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: cookie}))
     assert r == "marina-optionnel-a-jour"
+
+
+def test_exiger_session_registre_id_perime_redirige_meme_avec_generation_coincidente():
+    """Important 6 (revue finale whole-branch) : simule une perte du volume core_data.
+    Le registre a été recréé (nouvel identifiant), et le cookie évincé porte justement
+    generation=1 (cas majoritaire — c'est la génération de toute première connexion) :
+    sans la vérification de registre_id, cette coïncidence numérique le rendrait valide
+    à tort."""
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina-volume-perdu", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        # Cookie émis par une instance de registre disparue (id fictif jamais posé ici).
+        cookie = auth.chiffrer_cookie({
+            "sub": "marina-volume-perdu", "refresh_token": "rt-123", "generation": 1,
+            "registre_id": "instance-de-registre-disparue",
+        })
+        # Le "nouveau" registre (celui de ce test) enregistre une connexion fraîche pour
+        # ce même sub : generation=1 aussi, par coïncidence, mais un registre_id différent.
+        session_registre.nouvelle_session("marina-volume-perdu", "MacBook")
+        try:
+            _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+            assert False, "devait lever HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 303
+            assert exc.headers["Location"] == "/auth/login?next=%2Fdashboard%3Fmotif%3Dreprise_ailleurs"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
+
+
+def test_sub_session_optionnel_registre_id_perime_renvoie_none():
+    session_registre.nouvelle_session("marina-optionnel-volume-perdu", "MacBook")
+    cookie = auth.chiffrer_cookie({
+        "sub": "marina-optionnel-volume-perdu", "refresh_token": "rt-123", "generation": 1,
+        "registre_id": "instance-de-registre-disparue",
+    })
+    r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: cookie}))
+    assert r is None
+
+
+def test_exiger_session_registre_en_panne_ne_leve_pas_500(monkeypatch):
+    """Important 7 (revue finale whole-branch) : un hoquet SQLite du registre (fichier
+    verrouillé, disque plein…) ne doit jamais faire fuiter une exception brute — discipline
+    explicite de ce fichier ("jamais de 500 nu sur ce chemin"). Dégradation attendue :
+    la session est traitée comme valide plutôt que de planter."""
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina-registre-en-panne", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    def _generation_actuelle_qui_leve(sub):
+        raise sqlite3.OperationalError("database is locked")
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    monkeypatch.setattr(session_registre, "generation_actuelle", _generation_actuelle_qui_leve)
+    try:
+        cookie = auth.chiffrer_cookie({
+            "sub": "marina-registre-en-panne", "refresh_token": "rt-123", "generation": 1,
+        })
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r["sub"] == "marina-registre-en-panne"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
 
 
 def test_exiger_session_cookie_sans_registre_reste_valide():
