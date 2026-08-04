@@ -126,19 +126,6 @@ def generation_actuelle(sub: str) -> Optional[int]:
         return row["generation"] if row is not None else None
 
 
-def fermer_session(sub: str) -> None:
-    """Supprime l'entrée du registre pour `sub` (Important 4, revue finale whole-branch).
-
-    Appelée au logout explicite (`core/routers/auth.py::auth_logout`) — sans ça, un logout
-    propre suivi d'une reconnexion normale sur le MÊME appareil déclenchait quand même un
-    checkpoint (le registre croyait encore une session active pour ce compte). Après cet
-    appel, `generation_actuelle(sub)` redevient `None` : la prochaine connexion repart à la
-    génération 1 comme un tout premier login, et ne compte plus comme une éviction."""
-    init_db()
-    with _conn() as c:
-        c.execute("DELETE FROM sessions_actives WHERE sub = ?", (sub,))
-
-
 def identifiant_registre() -> str:
     """Identifiant stable de CETTE instance du registre (UUID4), généré au tout premier
     appel puis relu depuis la table `meta` — jamais régénéré une fois posé.

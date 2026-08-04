@@ -3,6 +3,7 @@
 $ cd core && python3 -m pytest test_auth_routes.py -v
 """
 import os
+import sqlite3
 import tempfile
 
 os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
@@ -176,20 +177,22 @@ def test_logout_supprime_le_cookie_et_termine_la_session_sso():
     assert "post_logout_redirect_uri=" in location
 
 
-def test_logout_purge_le_registre_de_session():
-    """Important 4 (revue finale whole-branch) : sans ça, un logout propre suivi d'une
-    reconnexion normale déclenche quand même un checkpoint fantôme (le registre croit
-    encore une session active pour ce compte)."""
-    session_registre.nouvelle_session("marina-purge-logout", "iPhone")
-    assert session_registre.generation_actuelle("marina-purge-logout") == 1
+def test_logout_ne_purge_pas_le_registre_de_session():
+    """Régression trouvée en re-revue (RE-REVUE opus, 3477445..92042a8) : purger le registre
+    au logout (ancien comportement, Important 4 de la revue finale whole-branch) rendait
+    l'éviction NON DURABLE — le prochain login (même normal) repartait de `generation=1`,
+    redonnant vie à un ancien cookie évincé qui portait justement `generation=1` (cas
+    majoritaire). Le logout ne doit donc plus toucher au registre : la ligne survit."""
+    session_registre.nouvelle_session("marina-logout-registre", "iPhone")
+    assert session_registre.generation_actuelle("marina-logout-registre") == 1
 
     cookie = auth.chiffrer_cookie({
-        "sub": "marina-purge-logout", "refresh_token": "rt-1", "generation": 1,
+        "sub": "marina-logout-registre", "refresh_token": "rt-1", "generation": 1,
         "registre_id": session_registre.identifiant_registre(),
     })
     r = client.get("/auth/logout", cookies={auth.COOKIE_SESSION: cookie}, follow_redirects=False)
     assert r.status_code == 303
-    assert session_registre.generation_actuelle("marina-purge-logout") is None
+    assert session_registre.generation_actuelle("marina-logout-registre") == 1
 
 
 def test_dashboard_accessible_sans_session_quand_auth_desactivee():
@@ -342,3 +345,43 @@ def test_deuxieme_callback_incremente_la_generation_et_declenche_le_checkpoint(m
     deuxieme = _callback()
     assert deuxieme["generation"] == 2
     assert appels_checkpoint == ["generation-relai"]  # checkpoint déclenché pour CE sub
+
+
+def test_callback_registre_en_panne_ne_bloque_pas_la_connexion(monkeypatch):
+    """I7 (re-revue 3477445..92042a8) : un hoquet du registre de session (verrou SQLite,
+    /data non inscriptible…) ne doit jamais faire planter /auth/callback en 500 nu — c'est
+    justement la route dont le commentaire du fichier revendique "jamais de 500 nu sur ce
+    chemin facilement atteignable". Reproduit exactement le scénario du reviewer :
+    `session_registre.nouvelle_session` lève, la connexion doit quand même aboutir (307 vers
+    le dashboard), sans protection d'éviction pour cette session (generation/registre_id à
+    None dans le cookie)."""
+    def _nouvelle_session_qui_echoue(sub, appareil):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(session_registre, "nouvelle_session", _nouvelle_session_qui_echoue)
+
+    async def _echanger_fake(code, code_verifier, redirect_uri):
+        return {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 300}
+
+    async def _verify_fake(token, kc):
+        return {"sub": "registre-en-panne", "nom": "Test", "avatarEmoji": "🧪"}
+
+    monkeypatch.setattr(auth, "echanger_code", _echanger_fake)
+    monkeypatch.setattr(auth, "verify_token", _verify_fake)
+
+    r = client.get("/auth/login", follow_redirects=False)
+    pending_cookie = r.cookies[auth.COOKIE_PENDING]
+    pending = auth.dechiffrer_cookie(pending_cookie)
+
+    r2 = client.get(
+        "/auth/callback",
+        params={"code": "code-abc", "state": pending["state"]},
+        cookies={auth.COOKIE_PENDING: pending_cookie},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 307
+    assert r2.headers["location"] == "/dashboard"
+    session = auth.dechiffrer_cookie(r2.cookies[auth.COOKIE_SESSION])
+    assert session["sub"] == "registre-en-panne"
+    assert session["generation"] is None
+    assert session["registre_id"] is None
