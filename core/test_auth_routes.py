@@ -3,6 +3,7 @@
 $ cd core && python3 -m pytest test_auth_routes.py -v
 """
 import os
+import tempfile
 
 os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
 os.environ.setdefault("GATEWAY_KEY", "test")
@@ -10,9 +11,32 @@ os.environ.setdefault("AUTH_SESSION_SECRET", "test-session-secret-0123456789")
 
 import main  # noqa: E402
 import auth  # noqa: E402
+import session_registre  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+import pytest  # noqa: E402
 
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def _registre_isole():
+    """Repointe `session_registre.DB` vers un fichier neuf à CHAQUE test (Task 4).
+
+    Depuis que `exiger_session` consulte `session_registre.generation_actuelle` (Task 4),
+    des tests de ce fichier sans rapport entre eux mais réutilisant le même sub factice
+    (`marina`, motif hérité de S171) se contaminent : un test qui passe par le vrai
+    `/auth/callback` (p. ex. `test_callback_ok_pose_session_et_redirige_dashboard`) inscrit
+    une génération réelle pour `marina` au registre PARTAGÉ ; un test plus loin qui fabrique
+    à la main un cookie « valide » sans champ `generation` pour ce même sub se fait alors
+    évincer par erreur — pas un bug d'`exiger_session`, un couplage d'ordre entre tests.
+    Repartir d'un registre neuf à chaque test (attribut relu dynamiquement par `_conn()`,
+    jamais figé dans une closure) élimine ce couplage sans toucher au sub de chaque test."""
+    ancien = session_registre.DB
+    session_registre.DB = os.path.join(tempfile.mkdtemp(), "session_registre.db")
+    try:
+        yield
+    finally:
+        session_registre.DB = ancien
 
 
 def test_login_redirige_vers_keycloak_avec_pkce():
@@ -196,7 +220,6 @@ def test_parcours_complet_login_callback_puis_dashboard_avec_refresh_a_froid(mon
 
 
 import checkpoint_session  # noqa: E402
-import session_registre  # noqa: E402
 
 
 def test_callback_pose_une_generation_dans_le_cookie(monkeypatch):

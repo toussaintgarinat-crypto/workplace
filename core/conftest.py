@@ -61,6 +61,7 @@ _CHEMINS = {
     "PROJETS_PATH": "projets.json",
     "PROPRIOCEPTION_PATH": "proprioception.jsonl",
     "RAPPELS_DB": "rappels.db",
+    "SESSION_REGISTRE_DB": "session_registre.db",
     "SHADOW_RUNS_PATH": "shadow_runs.jsonl",
     "USAGE_LLM_PATH": "usage_llm.jsonl",
     "GATEWAY_ENV_PATH": "gateway.env",
