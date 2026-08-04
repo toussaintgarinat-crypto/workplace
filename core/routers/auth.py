@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 import auth
+import checkpoint_session
+import session_registre
 
 router = APIRouter(tags=["auth"])
 
@@ -75,11 +77,21 @@ async def auth_callback(request: Request, code: str, state: str):
         # renvoie vers le point d'entrée normal plutôt que de laisser fuiter l'exception.
         return RedirectResponse("/auth/login", status_code=303)
 
+    appareil = request.headers.get("user-agent", "inconnu")[:200]
+    nouvelle_generation, ancienne = session_registre.nouvelle_session(sub, appareil)
+    if ancienne is not None:
+        # Une session existait déjà pour ce compte : on la considère comme évincée par
+        # celle-ci. Le point de contrôle s'assure qu'aucune écriture en attente côté
+        # ancien appareil n'est perdue avant que sa prochaine requête ne le déconnecte
+        # (cf. core/auth.py::exiger_session, qui compare la génération à chaque appel).
+        checkpoint_session.declencher_checkpoint(sub)
+
     session = {
         "sub": sub,
         "nom": payload.get("nom"),
         "avatarEmoji": payload.get("avatarEmoji"),
         "refresh_token": refresh_token,
+        "generation": nouvelle_generation,
     }
     resp = RedirectResponse(_next_sur(pending.get("next")), status_code=307)
     resp.set_cookie(

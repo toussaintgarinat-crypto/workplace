@@ -193,3 +193,65 @@ def test_parcours_complet_login_callback_puis_dashboard_avec_refresh_a_froid(mon
     finally:
         auth.AUTH_ENABLED = ancien
         auth._cache_access_token.clear()
+
+
+import checkpoint_session  # noqa: E402
+import session_registre  # noqa: E402
+
+
+def test_callback_pose_une_generation_dans_le_cookie(monkeypatch):
+    r = client.get("/auth/login", follow_redirects=False)
+    pending_cookie = r.cookies[auth.COOKIE_PENDING]
+    pending = auth.dechiffrer_cookie(pending_cookie)
+
+    async def _echanger_fake(code, code_verifier, redirect_uri):
+        return {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 300}
+
+    async def _verify_fake(token, kc):
+        return {"sub": "generation-test", "nom": "Test", "avatarEmoji": "🧪"}
+
+    monkeypatch.setattr(auth, "echanger_code", _echanger_fake)
+    monkeypatch.setattr(auth, "verify_token", _verify_fake)
+
+    r2 = client.get(
+        "/auth/callback",
+        params={"code": "code-abc", "state": pending["state"]},
+        cookies={auth.COOKIE_PENDING: pending_cookie},
+        follow_redirects=False,
+    )
+    session = auth.dechiffrer_cookie(r2.cookies[auth.COOKIE_SESSION])
+    assert session["generation"] == 1
+
+
+def test_deuxieme_callback_incremente_la_generation_et_declenche_le_checkpoint(monkeypatch):
+    appels_checkpoint = []
+    monkeypatch.setattr(checkpoint_session, "declencher_checkpoint", appels_checkpoint.append)
+
+    async def _echanger_fake(code, code_verifier, redirect_uri):
+        return {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 300}
+
+    async def _verify_fake(token, kc):
+        return {"sub": "generation-relai", "nom": "Test", "avatarEmoji": "🧪"}
+
+    monkeypatch.setattr(auth, "echanger_code", _echanger_fake)
+    monkeypatch.setattr(auth, "verify_token", _verify_fake)
+
+    def _callback():
+        r = client.get("/auth/login", follow_redirects=False)
+        pending_cookie = r.cookies[auth.COOKIE_PENDING]
+        pending = auth.dechiffrer_cookie(pending_cookie)
+        r2 = client.get(
+            "/auth/callback",
+            params={"code": "code-abc", "state": pending["state"]},
+            cookies={auth.COOKIE_PENDING: pending_cookie},
+            follow_redirects=False,
+        )
+        return auth.dechiffrer_cookie(r2.cookies[auth.COOKIE_SESSION])
+
+    premiere = _callback()
+    assert premiere["generation"] == 1
+    assert appels_checkpoint == []  # pas d'ancienne session au tout premier login
+
+    deuxieme = _callback()
+    assert deuxieme["generation"] == 2
+    assert appels_checkpoint == ["generation-relai"]  # checkpoint déclenché pour CE sub
