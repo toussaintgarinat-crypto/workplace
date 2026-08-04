@@ -57,6 +57,48 @@ services:
     # (lui en restart) tourne en boucle faute de pouvoir s'y connecter.
     restart: unless-stopped
 
+  # Conteneur JETABLE : pousse la toute première sauvegarde de base WAL-G si elle
+  # n'existe pas encore (re-revue finale whole-branch C2, .superpowers/sdd/progress.md —
+  # sans elle, les WAL archivés en continu n'ont rien sur quoi se rejouer : restauration
+  # impossible malgré restaurer_postgres.sh écrit). Idempotent : sur un déploiement déjà
+  # sauvegardé (HP après le premier démarrage, ou local), il constate juste que
+  # `wal-g backup-list` n'est pas vide et sort sans rien faire. `restart: "no"` — ce n'est
+  # pas un service permanent, juste une étape de démarrage.
+  memoire-db-premiere-sauvegarde:
+    image: workplace/memoire-db-walg:0.1.0
+    depends_on:
+      memoire-db:
+        condition: service_healthy
+    env_file:
+      - path: ../../.env
+        required: false
+      - path: .env
+        required: false
+    environment:
+      - PGHOST=memoire-db
+      - PGUSER=memory
+      - PGDATABASE=memory
+      - PGPASSWORD=${MEMOIRE_DB_PASSWORD:-memory}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if wal-g backup-list 2>/dev/null | grep -q base_; then
+          echo "Sauvegarde de base deja presente, rien a faire."
+        else
+          echo "Aucune sauvegarde de base : premiere sauvegarde en cours..."
+          wal-g backup-push /var/lib/postgresql/data
+        fi
+    # :ro suffit — vérifié en pratique (docker compose run --rm), wal-g backup-push lit
+    # PGDATA en lecture seule et écrit ses fichiers temporaires de compression ailleurs
+    # (pas dans PGDATA). Si un futur upgrade WAL-G change ce comportement, l'échec sera
+    # un "Read-only file system" explicite dans les logs de ce conteneur, pas un défaut
+    # silencieux — repasser en lecture-écriture serait alors la correction évidente.
+    volumes:
+      - memoire_pgdata:/var/lib/postgresql/data:ro
+    networks:
+      - default
+    restart: "no"
+
   # Backend du projet Memory (désormais inclus dans la brique : ./memory/backend).
   # Schéma auto-créé au démarrage. Embeddings réels via le Gateway (cf. env plus bas).
   memoire-backend:
