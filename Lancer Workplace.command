@@ -124,7 +124,18 @@ for ligne in "${BRIQUES[@]}"; do
   # supprimée (prune) et que sa reconstruction échoue, l'erreur reste visible —
   # sinon la panne est silencieuse et noyée parmi les ~40 briques (cas vécu :
   # transcription 5980, image fauchée par un prune, vocal cassé sans message).
-  sortie=$( cd "$dossier" && docker compose up -d 2>&1 )
+  # --env-file racine en premier (fournit les secrets partagés, ex. SAUVEGARDE_S3_*
+  # pour l'interpolation ${...} des briques Postgres/WAL-G) PUIS le .env local de la
+  # brique s'il existe (en dernier, donc prioritaire sur les clés en commun — Docker
+  # Compose applique les --env-file dans l'ordre, le dernier gagnant sur les clés
+  # partagées, cf. Task 4 sauvegarde). Sans le .env local en second, une brique dont
+  # le volume a été initialisé avec un mot de passe défini UNIQUEMENT dans son .env
+  # local (ex. memoire : MEMOIRE_DB_PASSWORD) retomberait sur la valeur par défaut du
+  # docker-compose.yml et échouerait l'authentification (vécu : memoire-backend et
+  # gateway cassés en test avec --env-file racine seul, faute du .env local en second).
+  env_args=(--env-file "$RACINE/.env")
+  [ -f "$dossier/.env" ] && env_args+=(--env-file "$dossier/.env")
+  sortie=$( cd "$dossier" && docker compose "${env_args[@]}" up -d 2>&1 )
   if [ $? -ne 0 ]; then
     err "Échec du démarrage des conteneurs de « $nom » :"
     echo "$sortie" | tail -15 | sed 's/^/      /'
