@@ -6,7 +6,7 @@ from __future__ import annotations
 import urllib.parse
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 import auth
 import checkpoint_session
@@ -23,8 +23,40 @@ def _next_sur(brut: str | None) -> str:
     return "/dashboard"
 
 
+def _page_arret_reprise(next_sur: str) -> HTMLResponse:
+    """Page d'arrêt minimaliste (Important 3, revue finale whole-branch) — casse le
+    ping-pong d'éviction : sans elle, l'appareil évincé se reconnecte AUTOMATIQUEMENT via
+    la session SSO Keycloak encore active (ce n'est pas un logout, `auth_logout` n'a pas été
+    appelé côté ancien appareil) et évince à son tour l'appareil qui vient de l'évincer —
+    boucle indéfinie entre les deux, chacun rechargeant sa page à tour de rôle. Le lien
+    ci-dessous relance le VRAI flux Keycloak seulement sur un clic explicite de l'humain
+    (`reprise_confirmee=1`, jamais posé automatiquement par ce serveur)."""
+    lien = f"/auth/login?next={urllib.parse.quote(next_sur, safe='')}&reprise_confirmee=1"
+    html = f"""<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Session reprise sur un autre appareil</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 32rem;
+             margin: 15vh auto; text-align: center; padding: 0 1rem;">
+  <p>Ce compte est utilisé sur un autre appareil.</p>
+  <p><a href="{lien}">Reprendre la main ici</a></p>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
 @router.get("/auth/login")
 async def auth_login(request: Request):
+    next_sur = _next_sur(request.query_params.get("next"))
+    if (
+        "motif=reprise_ailleurs" in next_sur
+        and request.cookies.get(auth.COOKIE_SESSION) is not None
+        and request.query_params.get("reprise_confirmee") != "1"
+    ):
+        # Éviction détectée (cf. core/auth.py::exiger_session/sub_session_optionnel) ET un
+        # cookie de session (même périmé) est encore présent : NE PAS enchaîner
+        # automatiquement sur Keycloak, cf. `_page_arret_reprise`.
+        return _page_arret_reprise(next_sur)
+
     verifier, challenge = auth.generer_pkce()
     state = auth.jeton_aleatoire()
     redirect_uri = str(request.url_for("auth_callback"))
@@ -32,8 +64,9 @@ async def auth_login(request: Request):
         "code_verifier": verifier,
         "state": state,
         "redirect_uri": redirect_uri,
-        # Destination après login (ex. accepter une invitation d'agenda) ; validée à l'aller.
-        "next": _next_sur(request.query_params.get("next")),
+        # Destination après login (ex. accepter une invitation d'agenda) ; déjà validée
+        # ci-dessus (next_sur).
+        "next": next_sur,
     })
 
     params = {

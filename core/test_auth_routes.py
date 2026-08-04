@@ -50,6 +50,54 @@ def test_login_redirige_vers_keycloak_avec_pkce():
     assert auth.COOKIE_PENDING in r.cookies
 
 
+def test_login_avec_motif_reprise_et_cookie_perime_affiche_arret_sans_keycloak():
+    """Important 3 (revue finale whole-branch) : ping-pong d'éviction. Sans cet arrêt,
+    l'appareil évincé se reconnecte automatiquement via la session SSO Keycloak encore
+    active (pas un logout) et évince l'autre appareil à son tour, indéfiniment."""
+    cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-perime"})
+    r = client.get(
+        "/auth/login",
+        params={"next": "/dashboard?motif=reprise_ailleurs"},
+        cookies={auth.COOKIE_SESSION: cookie},
+        follow_redirects=False,
+    )
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "reprendre la main ici" in r.text.lower()
+    assert auth.KEYCLOAK_URL not in r.text
+    # Pas de redirection Keycloak déclenchée automatiquement.
+    assert auth.COOKIE_PENDING not in r.cookies
+
+
+def test_login_avec_motif_reprise_et_reprise_confirmee_relance_keycloak():
+    """Le lien de la page d'arrêt (reprise_confirmee=1) doit relancer le VRAI flux."""
+    cookie = auth.chiffrer_cookie({"sub": "marina", "refresh_token": "rt-perime"})
+    r = client.get(
+        "/auth/login",
+        params={"next": "/dashboard?motif=reprise_ailleurs", "reprise_confirmee": "1"},
+        cookies={auth.COOKIE_SESSION: cookie},
+        follow_redirects=False,
+    )
+    assert r.status_code == 307
+    assert r.headers["location"].startswith(
+        f"{auth.KEYCLOAK_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/auth?"
+    )
+
+
+def test_login_avec_motif_reprise_sans_cookie_relance_keycloak_normalement():
+    """Pas de cookie de session présent (ex. déjà expiré/supprimé par le navigateur) : pas
+    de ping-pong possible, pas besoin d'arrêt — comportement normal."""
+    r = client.get(
+        "/auth/login",
+        params={"next": "/dashboard?motif=reprise_ailleurs"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 307
+    assert r.headers["location"].startswith(
+        f"{auth.KEYCLOAK_URL}/realms/{auth.KEYCLOAK_REALM}/protocol/openid-connect/auth?"
+    )
+
+
 def test_callback_state_invalide_renvoie_400():
     r = client.get("/auth/login", follow_redirects=False)
     pending_cookie = r.cookies[auth.COOKIE_PENDING]

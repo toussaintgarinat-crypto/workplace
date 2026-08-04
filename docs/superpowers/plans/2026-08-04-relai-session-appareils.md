@@ -730,3 +730,22 @@ git commit -m "chore(core): variable SESSION_REGISTRE_DB pour le registre de ses
   fencing/watchdog Patroni à ce moment-là (cf. conversation utilisateur) — non traité ici,
   ce plan ne fait que du registre applicatif, aucune réplique à chaud n'existe encore sur
   ces deux briques.
+- **Ping-pong d'éviction, corrigé (Important 3, revue finale whole-branch)** : sans
+  correctif, l'appareil évincé se reconnectait AUTOMATIQUEMENT via la session SSO Keycloak
+  encore active (redirection `/auth/login` → Keycloak → callback → nouvelle éviction de
+  l'AUTRE appareil, qui rejouait la même boucle à son tour) — une boucle indéfinie entre
+  deux appareils, chacun rechargeant sa page à tour de rôle. Choix de conception retenu :
+  `auth_login` (`core/routers/auth.py`) n'enchaîne plus automatiquement sur Keycloak quand
+  la redirection porte `motif=reprise_ailleurs` ET qu'un cookie de session (même périmé)
+  est encore présent — il affiche à la place une page d'arrêt minimaliste ("Ce compte est
+  utilisé sur un autre appareil. Reprendre la main ici.") dont le lien relance le vrai flux
+  Keycloak seulement sur un clic explicite de l'humain (`reprise_confirmee=1`, jamais posé
+  automatiquement par le serveur). Alternative envisagée et écartée : détecter/forcer un
+  vrai logout Keycloak côté serveur pour l'ancien appareil — écarté car il n'existe aucun
+  moyen de distinguer, côté serveur, "l'ancien appareil n'a pas encore refait de requête"
+  de "l'ancien appareil est parti pour de bon" ; forcer une déconnexion SSO qu'on ne peut
+  pas cibler avec certitude aurait un rayon d'impact plus large que le clic explicite retenu
+  ici. Ce correctif ne couvre que le CAS le plus courant (rechargement automatique de page,
+  onglet resté ouvert) ; un utilisateur qui retaperait l'URL Keycloak à la main contournerait
+  la page d'arrêt — accepté, hors du besoin exprimé (bascule involontaire entre appareils,
+  pas contournement délibéré).
