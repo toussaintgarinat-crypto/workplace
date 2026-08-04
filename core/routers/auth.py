@@ -3,6 +3,7 @@ realm Keycloak `forge`, client `assistant-app` (déjà déclaré, jamais câblé
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +14,7 @@ import checkpoint_session
 import session_registre
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def _next_sur(brut: str | None) -> str:
@@ -111,8 +113,7 @@ async def auth_callback(request: Request, code: str, state: str):
         return RedirectResponse("/auth/login", status_code=303)
 
     appareil = request.headers.get("user-agent", "inconnu")[:200]
-    nouvelle_generation, ancienne = session_registre.nouvelle_session(sub, appareil)
-    if ancienne is not None:
+    try:
         # Une session existait déjà pour ce compte : on la considère comme évincée par
         # celle-ci. Le point de contrôle VISE À s'assurer qu'aucune écriture en attente côté
         # ancien appareil n'est perdue avant que sa prochaine requête ne le déconnecte (cf.
@@ -122,7 +123,28 @@ async def auth_callback(request: Request, code: str, state: str):
         # APRÈS ce point tant que l'ancien appareil n'a pas fait sa prochaine requête
         # protégée (découverte différée, pas éviction nette — détail dans
         # checkpoint_session.py, Important 5).
-        checkpoint_session.declencher_checkpoint(sub)
+        nouvelle_generation, ancienne = session_registre.nouvelle_session(sub, appareil)
+        if ancienne is not None:
+            checkpoint_session.declencher_checkpoint(sub)
+        # Identifiant de CETTE instance du registre (Important 6, revue finale
+        # whole-branch) — détecte une perte du volume core_data : sans lui, un registre
+        # neuf reparti à generation=1 rendrait valide un cookie évincé portant justement
+        # generation=1 (cas majoritaire), par coïncidence numérique.
+        registre_id = session_registre.identifiant_registre()
+    except Exception:
+        # Registre indisponible (verrou SQLite, /data non inscriptible…) : dégradation
+        # gracieuse, PAS de 500 nu (I7, re-revue 3477445..92042a8 — même famille que le
+        # Critical 1 déjà fermé ailleurs dans ce fichier, mais sur ce 3e site précis). La
+        # connexion continue sans protection d'éviction pour cette session : `generation`/
+        # `registre_id` restent `None` dans le cookie, et `_session_perimee` (core/auth.py)
+        # traite déjà `generation_registre is None` comme « pas périmée » — même repli que
+        # pour un cookie antérieur à ce chantier. Le compte se connecte, juste sans le
+        # relai de session propre tant que le registre ne s'est pas rétabli.
+        logger.warning(
+            "Registre de session indisponible au login de %s : connexion sans protection "
+            "d'éviction", sub,
+        )
+        nouvelle_generation, registre_id = None, None
 
     session = {
         "sub": sub,
@@ -130,11 +152,7 @@ async def auth_callback(request: Request, code: str, state: str):
         "avatarEmoji": payload.get("avatarEmoji"),
         "refresh_token": refresh_token,
         "generation": nouvelle_generation,
-        # Identifiant de CETTE instance du registre (Important 6, revue finale
-        # whole-branch) — détecte une perte du volume core_data : sans lui, un registre
-        # neuf reparti à generation=1 rendrait valide un cookie évincé portant justement
-        # generation=1 (cas majoritaire), par coïncidence numérique.
-        "registre_id": session_registre.identifiant_registre(),
+        "registre_id": registre_id,
     }
     resp = RedirectResponse(_next_sur(pending.get("next")), status_code=307)
     resp.set_cookie(
@@ -154,14 +172,21 @@ async def auth_logout(request: Request):
     rien. GET (navigation, pas fetch) : la chaîne de redirections traverse Keycloak, une
     autre origine que le Cœur — un fetch() la suivrait et se ferait bloquer par CORS.
 
-    Purge aussi l'entrée du registre de session (Important 4, revue finale whole-branch) —
-    sans ça, un logout propre suivi d'une reconnexion normale (même appareil ou un autre)
-    déclenchait quand même un checkpoint fantôme : le registre croyait encore une session
-    active pour ce compte alors qu'elle venait d'être fermée proprement ici."""
-    sub = auth.sub_session_optionnel(request)
-    if sub:
-        session_registre.fermer_session(sub)
-
+    NE purge PAS l'entrée du registre de session (`session_registre`) — compromis assumé,
+    trouvé en re-revue (RE-REVUE opus, 3477445..92042a8). Une purge ici avait été ajoutée
+    (Important 4, revue finale whole-branch) pour éviter un checkpoint fantôme au login
+    suivant, mais ça rendait l'ÉVICTION NON DURABLE : une fois la ligne supprimée, le
+    PROCHAIN login pour ce compte (même normal, même appareil) repart de `generation=1` —
+    et un ancien cookie évincé qui portait justement `generation=1` (cas majoritaire : un
+    seul login dans sa vie) redevenait valide, ressuscitant silencieusement un appareil
+    qu'on venait précisément d'évincer. Compromis retenu : laisser la ligne survivre au
+    logout. Conséquence acceptée : un logout normal suivi d'une reconnexion normale (même
+    appareil, des jours plus tard) déclenchera quand même un `checkpoint_session.
+    declencher_checkpoint` (car `ancienne is not None` reste vrai dans `auth_callback`) —
+    un faux positif sans conséquence réelle aujourd'hui (le stub ne fait que journaliser,
+    cf. `checkpoint_session.py`), largement préférable à la résurrection silencieuse d'un
+    appareil évincé. Ne PAS réintroduire cette purge sans revoir aussi la garantie
+    d'éviction durable qu'elle casse."""
     params = {
         "client_id": auth.KEYCLOAK_CLIENT_ID,
         "post_logout_redirect_uri": str(request.url_for("auth_login")),

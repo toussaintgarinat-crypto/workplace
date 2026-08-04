@@ -103,24 +103,6 @@ def test_connexions_concurrentes_ne_recoivent_jamais_la_meme_generation():
     assert sorted(resultats) == [1, 2]
 
 
-def test_fermer_session_purge_le_registre():
-    """Important 4 (revue finale whole-branch) : après un logout explicite, la prochaine
-    connexion ne doit plus être vue comme une éviction."""
-    session_registre.nouvelle_session("marina-logout", "iPhone")
-    assert session_registre.generation_actuelle("marina-logout") == 1
-
-    session_registre.fermer_session("marina-logout")
-    assert session_registre.generation_actuelle("marina-logout") is None
-
-    generation, ancienne = session_registre.nouvelle_session("marina-logout", "MacBook")
-    assert generation == 1  # repart comme un tout premier login, pas une éviction
-    assert ancienne is None
-
-
-def test_fermer_session_compte_inconnu_ne_leve_pas():
-    session_registre.fermer_session("jamais-connecte-logout")  # ne doit pas lever
-
-
 def test_identifiant_registre_premier_appel_genere_un_id_stable():
     identifiant_1 = session_registre.identifiant_registre()
     assert isinstance(identifiant_1, str)
