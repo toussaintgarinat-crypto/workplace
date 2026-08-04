@@ -58,8 +58,21 @@ def nouvelle_session(sub: str, appareil: Optional[str]) -> tuple[int, Optional[A
 
     Renvoie `(nouvelle_generation, ancienne_session_ou_None)`. Si `ancienne_session_ou_None`
     n'est pas `None`, l'appelant DOIT déclencher `checkpoint_session.declencher_checkpoint`
-    avant de considérer l'ancienne session comme close — c'est ce qui garantit qu'aucune
-    écriture de l'ancien appareil n'est perdue au moment du relai (cf. `auth_callback`).
+    avant de considérer l'ancienne session comme close — c'est ce qui contribuera à ce
+    qu'aucune écriture de l'ancien appareil ne soit perdue au moment du relai (cf.
+    `auth_callback`).
+
+    L'incrément de génération est calculé PAR SQLite lui-même, dans l'UPSERT (`generation =
+    sessions_actives.generation + 1`, `RETURNING generation`) — pas en Python après un SELECT
+    séparé. Deux appels concurrents sur le même `sub` ne peuvent donc JAMAIS recevoir le même
+    numéro de génération (SQLite sérialise les écritures conflictuelles sur une même ligne) ;
+    avant ce correctif (Critical 2, revue finale whole-branch), le SELECT-puis-calcul-puis-
+    écriture était reproductible 5/5 en concurrence réelle. Le `SELECT` initial ci-dessous ne
+    sert plus qu'à capturer l'« ancienne session » pour le retour — une légère staleness y est
+    possible sous vraie concurrence (l'ancienne session rapportée à l'appelant peut ne pas
+    être exactement celle qui vient d'être remplacée), acceptable ici : ce n'est qu'un
+    déclencheur best-effort de checkpoint (cf. `checkpoint_session.py`), pas la garantie de
+    génération elle-même.
     """
     init_db()
     with _conn() as c:
@@ -72,17 +85,20 @@ def nouvelle_session(sub: str, appareil: Optional[str]) -> tuple[int, Optional[A
             if row is not None
             else None
         )
-        nouvelle_generation = (ancienne.generation + 1) if ancienne else 1
         maintenant = time.time()
-        c.execute(
+        cur = c.execute(
             """
             INSERT INTO sessions_actives (sub, generation, appareil, connecte_a)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(sub) DO UPDATE SET generation = ?, appareil = ?, connecte_a = ?
+            VALUES (?, 1, ?, ?)
+            ON CONFLICT(sub) DO UPDATE SET
+                generation = sessions_actives.generation + 1,
+                appareil = excluded.appareil,
+                connecte_a = excluded.connecte_a
+            RETURNING generation
             """,
-            (sub, nouvelle_generation, appareil, maintenant,
-             nouvelle_generation, appareil, maintenant),
+            (sub, appareil, maintenant),
         )
+        nouvelle_generation = cur.fetchone()[0]
     return nouvelle_generation, ancienne
 
 

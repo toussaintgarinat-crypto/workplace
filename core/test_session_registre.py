@@ -65,3 +65,39 @@ def test_deux_comptes_ont_des_generations_independantes():
     session_registre.nouvelle_session("compte_a", "MacBook")
     assert session_registre.generation_actuelle("compte_a") == 2
     assert session_registre.generation_actuelle("compte_b") == 1
+
+
+def test_connexions_concurrentes_ne_recoivent_jamais_la_meme_generation():
+    """Race condition (Critical 2, revue finale whole-branch) : le SELECT puis le calcul
+    `generation+1` en Python puis l'INSERT...ON CONFLICT n'étaient PAS atomiques — deux
+    connexions quasi-simultanées pouvaient lire la même ancienne génération et écrire la
+    même nouvelle (reproduit 5/5 sur l'ancien code par le reviewer). Deux threads
+    synchronisés par une barrière pour maximiser la fenêtre de recouvrement : sur le code
+    non corrigé, cette assertion échoue de façon fiable (dupliqués observés en pratique)."""
+    import threading
+
+    sub = "course-concurrente"
+    barriere = threading.Barrier(2)
+    resultats: list[int] = []
+    verrou = threading.Lock()
+
+    def _connecter(appareil: str) -> None:
+        barriere.wait()
+        generation, _ = session_registre.nouvelle_session(sub, appareil)
+        with verrou:
+            resultats.append(generation)
+
+    threads = [
+        threading.Thread(target=_connecter, args=("iPhone",)),
+        threading.Thread(target=_connecter, args=("MacBook",)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(resultats) == 2
+    assert resultats[0] != resultats[1], (
+        f"deux connexions concurrentes ont reçu la même génération : {resultats}"
+    )
+    assert sorted(resultats) == [1, 2]
