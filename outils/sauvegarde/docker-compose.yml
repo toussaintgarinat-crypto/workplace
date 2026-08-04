@@ -20,6 +20,15 @@ services:
     networks:
       - default
       - proxy_net
+      # memoire_default/gateway_default : réseaux SUPPLÉMENTAIRES (revue finale
+      # whole-branch I6, .superpowers/sdd/progress.md) — memoire-db et gateway/db ont été
+      # retirés de proxy_net (rayon d'exposition trop large), mais WAL-G doit encore
+      # joindre minio (AWS_ENDPOINT=http://minio:9000). Plutôt que de remettre Postgres
+      # sur le bus partagé, c'est minio qui rejoint leurs réseaux internes respectifs.
+      # Réseaux externes créés par memoire/gateway docker-compose.yml (default: sans nom
+      # explicite → <projet>_default), pas par ce fichier.
+      - memoire_default
+      - gateway_default
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -58,3 +67,9 @@ networks:
   proxy_net:
     external: true
     name: proxy_net
+  memoire_default:
+    external: true
+    name: memoire_default
+  gateway_default:
+    external: true
+    name: gateway_default

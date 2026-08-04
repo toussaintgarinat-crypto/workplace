@@ -48,6 +48,11 @@ ok "Docker est prêt"
 # Ordre = ordre de dépendances. La santé vide ("") signifie « pas de check, on
 # se contente du up -d » (cas d'Oria, gros stack lent à démarrer).
 BRIQUES=(
+  # MinIO (cible S3 locale pour Litestream/WAL-G) — AVANT gateway/memoire : leurs bases
+  # Postgres émettent du WAL vers lui dès leur propre démarrage (archive_command).
+  # Santé vide : MinIO a son propre healthcheck interne mais pas de route /sante
+  # compatible avec le motif du reste du parc (revue finale whole-branch I4).
+  "sauvegarde|$RACINE/outils/sauvegarde|"
   "gateway|$RACINE/briques/gateway|http://localhost:4001/health"
   "memoire|$RACINE/briques/memoire|http://localhost:5600/sante"
   "forge|$RACINE/briques/forge|http://localhost:5700/sante"
@@ -124,8 +129,7 @@ for ligne in "${BRIQUES[@]}"; do
   # supprimée (prune) et que sa reconstruction échoue, l'erreur reste visible —
   # sinon la panne est silencieuse et noyée parmi les ~40 briques (cas vécu :
   # transcription 5980, image fauchée par un prune, vocal cassé sans message).
-  # --env-file racine en premier (fournit les secrets partagés, ex. SAUVEGARDE_S3_*
-  # pour l'interpolation ${...} des briques Postgres/WAL-G) PUIS le .env local de la
+  # --env-file racine en premier (fournit les secrets partagés) PUIS le .env local de la
   # brique s'il existe (en dernier, donc prioritaire sur les clés en commun — Docker
   # Compose applique les --env-file dans l'ordre, le dernier gagnant sur les clés
   # partagées, cf. Task 4 sauvegarde). Sans le .env local en second, une brique dont
@@ -133,6 +137,13 @@ for ligne in "${BRIQUES[@]}"; do
   # local (ex. memoire : MEMOIRE_DB_PASSWORD) retomberait sur la valeur par défaut du
   # docker-compose.yml et échouerait l'authentification (vécu : memoire-backend et
   # gateway cassés en test avec --env-file racine seul, faute du .env local en second).
+  # ⚠ Depuis la revue finale whole-branch (C1, .superpowers/sdd/progress.md), --env-file
+  # N'EST PLUS la seule ligne de défense pour WAL-G/SAUVEGARDE_S3_* : ces variables sont
+  # passées en `env_file:` DANS les docker-compose.yml de memoire/gateway (lu par Docker
+  # Compose quelle que soit l'invocation, avec ou sans --env-file — donc ça marche
+  # identiquement sur le HP où la procédure fait des `docker compose up -d` nus). Ce
+  # --env-file reste utile pour les composes qui interpolent encore ${...} directement
+  # (ex. MinIO, Task 1) et pour MEMOIRE_DB_PASSWORD/GATEWAY_DB_PASSWORD ci-dessus.
   env_args=(--env-file "$RACINE/.env")
   [ -f "$dossier/.env" ] && env_args+=(--env-file "$dossier/.env")
   sortie=$( cd "$dossier" && docker compose "${env_args[@]}" up -d 2>&1 )
