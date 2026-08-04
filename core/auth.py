@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.parse
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -32,6 +33,8 @@ import httpx
 from fastapi import HTTPException, Request
 
 from shared.workplace_auth import KeycloakSettings, verify_token
+
+import session_registre
 
 # ── Configuration (motif `os.environ.get` au niveau module — core/ n'a pas de config.py,
 # contrairement à l'agenda ; cf. core/urls_ui.py pour le même motif). ──────────────────
@@ -164,6 +167,15 @@ async def exiger_session(request: Request) -> dict:
     refresh_token = session.get("refresh_token") if session else None
     if not sub or not refresh_token:
         raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+
+    generation_registre = session_registre.generation_actuelle(sub)
+    if generation_registre is not None and session.get("generation") != generation_registre:
+        # Une connexion plus récente a évincé celle-ci (relai propre entre appareils,
+        # cf. core/routers/auth.py::auth_callback). `generation_registre is None` = pas
+        # encore de registre pour ce compte (cookie antérieur à ce chantier) : on laisse
+        # passer, comportement historique préservé.
+        destination = urllib.parse.quote("/dashboard?motif=reprise_ailleurs", safe="")
+        raise HTTPException(status_code=303, headers={"Location": f"/auth/login?next={destination}"})
 
     maintenant = time.time()
     cache = _cache_access_token.get(sub)
