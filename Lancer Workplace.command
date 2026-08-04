@@ -48,13 +48,19 @@ ok "Docker est prêt"
 # Ordre = ordre de dépendances. La santé vide ("") signifie « pas de check, on
 # se contente du up -d » (cas d'Oria, gros stack lent à démarrer).
 BRIQUES=(
-  # MinIO (cible S3 locale pour Litestream/WAL-G) — AVANT gateway/memoire : leurs bases
-  # Postgres émettent du WAL vers lui dès leur propre démarrage (archive_command).
+  "gateway|$RACINE/briques/gateway|http://localhost:4001/health"
+  "memoire|$RACINE/briques/memoire|http://localhost:5600/sante"
+  # MinIO (cible S3 locale pour Litestream/WAL-G) — APRÈS gateway/memoire, pas avant : depuis
+  # la revue finale (I6), MinIO rejoint DIRECTEMENT les réseaux memoire_default/gateway_default
+  # (externes) au lieu qu'eux rejoignent proxy_net — ces réseaux n'existent qu'une fois
+  # gateway/memoire démarrés une première fois. Sur un déploiement neuf (réseaux jamais créés),
+  # placer sauvegarde avant échouerait à « network ... declared as external, but could not be
+  # found » (reproduit et documenté pendant la correction de la revue finale). L'ordre inverse
+  # n'est pas gênant pour l'archivage WAL : Postgres retente son archive_command indéfiniment
+  # sans planter tant que le segment n'est pas confirmé expédié.
   # Santé vide : MinIO a son propre healthcheck interne mais pas de route /sante
   # compatible avec le motif du reste du parc (revue finale whole-branch I4).
   "sauvegarde|$RACINE/outils/sauvegarde|"
-  "gateway|$RACINE/briques/gateway|http://localhost:4001/health"
-  "memoire|$RACINE/briques/memoire|http://localhost:5600/sante"
   "forge|$RACINE/briques/forge|http://localhost:5700/sante"
   "ingestion|$RACINE/briques/ingestion|http://localhost:5200/sante"
   "donnees|$RACINE/briques/donnees|http://localhost:5500/sante"
