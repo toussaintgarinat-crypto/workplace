@@ -6,14 +6,36 @@ sans dépendre d'un vrai compte cloud. Voir le plan complet :
 
 ## Démarrer
 
-    cd outils/sauvegarde && docker compose up -d
+    cd outils/sauvegarde && docker compose --env-file ../../.env up -d
+
+Le `--env-file ../../.env` est **obligatoire** : ce `docker-compose.yml` interpole
+`${SAUVEGARDE_S3_ACCESS_KEY}` / `${SAUVEGARDE_S3_SECRET_KEY}` / `${SAUVEGARDE_S3_BUCKET}`
+directement (pas seulement `env_file:` dans un service). Or `docker compose` ne charge
+automatiquement un `.env` que depuis le répertoire du projet (ici `outils/sauvegarde/`),
+jamais depuis la racine du dépôt où vit le vrai `.env`. Sans `--env-file ../../.env`,
+`docker compose config` résout ces variables en chaîne vide **silencieusement** (pas
+d'erreur), MinIO démarre avec un utilisateur/mot de passe root vides, et `minio-init`
+échoue à créer le bucket.
 
 Console web MinIO : http://localhost:9001 (identifiants = SAUVEGARDE_S3_ACCESS_KEY /
 SAUVEGARDE_S3_SECRET_KEY du `.env` racine).
 
+Vérifier que MinIO répond, **sur cette machine de développement** :
+
+    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9002/minio/health/live
+
+⚠️ Le port hôte est **9002**, pas 9000 : `docker-compose.yml` remappe l'API MinIO sur
+`9002:9000` côté hôte parce que le port hôte 9000 est déjà pris par le conteneur
+`workplace_peertube` sur cette machine (le port CONTENEUR reste 9000, donc
+`http://minio:9000` depuis `proxy_net` — l'interface utilisée par Litestream/WAL-G — est
+inchangé). **Piège vérifié** : `curl http://localhost:9000/minio/health/live` répond
+quand même `200` sur cette machine — pas une erreur de connexion, mais la réponse HTML de
+`workplace_peertube` (faux positif silencieux, ça n'est PAS MinIO). Toujours vérifier sur
+9002 ici ; sur une machine sans ce conflit de port, adapter le mapping et cette commande.
+
 ## Arrêter
 
-    cd outils/sauvegarde && docker compose down
+    cd outils/sauvegarde && docker compose --env-file ../../.env down
 
 ## Production (HP)
 
