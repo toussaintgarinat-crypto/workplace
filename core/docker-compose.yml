@@ -13,6 +13,7 @@ services:
     environment:
       - BRIQUES_DIR=/briques
       - LIVRAISONS_DB=/data/livraisons.db
+      - SESSION_REGISTRE_DB=/data/session_registre.db
       # Hôte par lequel le Cœur joint les autres briques (cf. manifests).
       - BRIQUE_HOST=host.docker.internal
       # Self-call interne : l'horloge (S29) déclenche le briefing quotidien (S30)
