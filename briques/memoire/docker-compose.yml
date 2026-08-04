@@ -3,16 +3,38 @@ services:
   # Base Postgres + pgvector dédiée à la mémoire (l'extension vector est activée
   # par init-pgvector.sql avant que le backend ne crée ses tables Vector(384)).
   memoire-db:
-    image: pgvector/pgvector:0.8.2-pg16
+    build:
+      context: .
+      dockerfile: Dockerfile.walg
+    image: workplace/memoire-db-walg:0.1.0   # tag épinglé (pas de :latest flottant, cf. convention du parc)
     environment:
       POSTGRES_USER: memory
       # Défaut = valeur historique (volume memoire_pgdata déjà initialisé avec).
       # Pour durcir : définir MEMOIRE_DB_PASSWORD dans le .env racine ET recréer le volume.
       POSTGRES_PASSWORD: ${MEMOIRE_DB_PASSWORD:-memory}
       POSTGRES_DB: memory
+      # WAL-G — expédition continue des WAL vers S3 (cf. plan sauvegarde continue).
+      WALG_S3_PREFIX: s3://${SAUVEGARDE_S3_BUCKET}/memoire-wal
+      AWS_ACCESS_KEY_ID: ${SAUVEGARDE_S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${SAUVEGARDE_S3_SECRET_KEY}
+      AWS_ENDPOINT: ${SAUVEGARDE_S3_ENDPOINT}
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_REGION: ${SAUVEGARDE_S3_REGION}
+      WALG_COMPRESSION_METHOD: lz4
+    command:
+      - "postgres"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_command=wal-g wal-push %p"
+      - "-c"
+      - "wal_level=replica"
     volumes:
       - memoire_pgdata:/var/lib/postgresql/data
       - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - default
+      - proxy_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U memory -d memory"]
       interval: 5s
@@ -76,3 +98,9 @@ services:
 
 volumes:
   memoire_pgdata:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net

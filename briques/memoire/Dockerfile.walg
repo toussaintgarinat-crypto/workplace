@@ -1,0 +1,16 @@
+# Image memoire-db + binaire WAL-G (archivage WAL continu, cf. plan
+# docs/superpowers/plans/2026-08-04-sauvegarde-continue-rpo.md). Base Debian bookworm
+# (confirmé) — compatible avec le binaire glibc officiel de WAL-G.
+FROM pgvector/pgvector:0.8.2-pg16
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL -o /tmp/wal-g.tar.gz \
+       https://github.com/wal-g/wal-g/releases/download/v3.0.8/wal-g-pg-22.04-amd64.tar.gz \
+    && tar -xzf /tmp/wal-g.tar.gz -C /tmp \
+    && mv /tmp/wal-g-pg-22.04-amd64 /usr/local/bin/wal-g \
+    && chmod +x /usr/local/bin/wal-g \
+    && rm /tmp/wal-g.tar.gz \
+    && apt-get purge -y curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
