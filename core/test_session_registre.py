@@ -5,9 +5,33 @@ $ cd core && python3 -m pytest test_session_registre.py -v
 import os
 import tempfile
 
+import pytest
+
 os.environ["SESSION_REGISTRE_DB"] = os.path.join(tempfile.mkdtemp(), "session_registre.db")
 
 import session_registre  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _db_isolee():
+    """Repointe `session_registre.DB` vers un fichier neuf à CHAQUE test.
+
+    La ligne `os.environ[...]` ci-dessus ne suffit pas seule en suite combinée :
+    `session_registre.DB` est lu depuis l'environnement une seule fois, à l'IMPORT du
+    module. Si un autre fichier de test importé plus tôt dans la même collecte pytest
+    (p. ex. `test_auth_routes.py`, qui déclenche `session_registre.nouvelle_session` via
+    `/auth/callback`, ou désormais `test_auth.py`, Task 4) a importé `session_registre`
+    avant ce fichier, ce module est déjà en cache (`sys.modules`) et la ligne ci-dessus
+    n'a plus aucun effet — les tests d'ici hériteraient silencieusement de générations déjà
+    avancées ailleurs (p. ex. `marina`, sub partagé avec `test_auth_routes.py`). Réaffecter
+    l'attribut du module (relu à chaque appel par `_conn()`, jamais figé dans une closure)
+    donne une base neuve par test, quel que soit l'ordre de collecte pytest."""
+    ancien = session_registre.DB
+    session_registre.DB = os.path.join(tempfile.mkdtemp(), "session_registre.db")
+    try:
+        yield
+    finally:
+        session_registre.DB = ancien
 
 
 def test_premiere_session_ne_renvoie_aucune_ancienne_session():
