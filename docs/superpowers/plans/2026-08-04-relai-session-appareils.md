@@ -703,10 +703,22 @@ git commit -m "chore(core): variable SESSION_REGISTRE_DB pour le registre de ses
 ## Limites connues de ce plan (documentées, pas résolues ici)
 
 - **Pas de notification instantanée (push)** : la session évincée n'apprend la nouvelle
-  qu'à sa PROCHAINE requête protégée, pas à l'instant exact de l'éviction. En pratique,
-  très rapide (le dashboard fait des appels API en continu), mais ce n'est pas un vrai
-  WebSocket temps réel. Construire un canal live persistant serait un chantier à part,
-  plus lourd, non justifié par le besoin exprimé (bascule séquentielle d'appareils, pas
+  qu'à sa PROCHAINE requête protégée, pas à l'instant exact de l'éviction — ce n'est pas un
+  vrai WebSocket temps réel, et il n'y en aura jamais un dans ce plan. La phrase initiale de
+  ce document ("le dashboard fait des appels API en continu donc la notification arrive
+  vite") était fausse : vérifié à la revue finale whole-branch, aucun des endpoints
+  réellement pollés par `dashboard.html` ne passait par `exiger_session` — le bandeau visuel
+  n'apparaissait donc qu'au rechargement complet de `/dashboard`, jamais sur un onglet resté
+  ouvert. Correctif Critical 1 (revue finale) : `sub_session_optionnel` (donc
+  `lire_contexte_tenant`, donc `assistant.router`/`agenda.router`/`profil.router`) vérifie
+  désormais la génération lui aussi, en plus de `exiger_session` — la protection s'étend donc
+  maintenant à l'identité utilisée par le chat et l'agenda, silencieusement dès la PROCHAINE
+  requête envoyée par l'appareil évincé (pas seulement au rechargement de page). Mais le
+  bandeau visuel, lui, reste inchangé : il n'apparaît toujours qu'au rechargement de
+  `/dashboard`, pas sur un onglet resté ouvert ni sur une simple requête de chat/agenda (ces
+  routers n'ont pas de mécanisme de redirection/bandeau, seulement un repli silencieux vers
+  `X-User-Id`/"perso"). Construire un canal live persistant serait un chantier à part, plus
+  lourd, non justifié par le besoin exprimé (bascule séquentielle d'appareils, pas
   simultanéité réelle).
 - **`checkpoint_session.declencher_checkpoint` reste un stub journalisant** tant que le
   plan de sauvegarde continue (`2026-08-04-sauvegarde-continue-rpo.md`) n'est pas livré.

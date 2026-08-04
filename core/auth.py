@@ -205,6 +205,26 @@ def sub_session_optionnel(request: Request) -> str | None:
     Volontairement léger : pas de vérification de fraîcheur du token (pas un point de
     sécurité — sert seulement à attribuer « pour qui » dans le chat de l'assistant ; le
     vrai contrôle d'accès reste `require_calendar_access` côté agenda, inchangé).
-    Cookie absent ou corrompu ⇒ `None`, jamais d'exception ni de blocage (S173)."""
+    Cookie absent ou corrompu ⇒ `None`, jamais d'exception ni de blocage (S173).
+
+    Depuis le chantier de relai de session (Critical 1, revue finale whole-branch) : si le
+    cookie porte une génération périmée (session évincée par une reconnexion ailleurs sur ce
+    même compte), renvoie `None` plutôt que le `sub` — l'appelant retombe alors sur son repli
+    non bloquant existant (`X-User-Id` / "perso"), sans jamais lever d'exception ici. Avant ce
+    correctif, `exiger_session` était le SEUL chemin d'identité à vérifier la génération ;
+    `assistant.router`/`agenda.router`/`profil.router` (montés avec `lire_contexte_tenant`,
+    qui appelle cette fonction) ne la vérifiaient jamais — un appareil évincé continuait donc
+    d'écrire dans le chat et l'agenda sans aucun signal."""
     session = dechiffrer_cookie(request.cookies.get(COOKIE_SESSION))
-    return session.get("sub") if session else None
+    if session is None:
+        return None
+    sub = session.get("sub")
+    if not sub:
+        return None
+    try:
+        generation_registre = session_registre.generation_actuelle(sub)
+    except Exception:
+        return sub  # dégradation : le registre est best-effort ici, jamais bloquant (Important 7)
+    if generation_registre is not None and session.get("generation") != generation_registre:
+        return None
+    return sub
