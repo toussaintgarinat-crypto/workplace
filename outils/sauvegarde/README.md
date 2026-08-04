@@ -9,7 +9,7 @@ sans dépendre d'un vrai compte cloud. Voir le plan complet :
     cd outils/sauvegarde && docker compose --env-file ../../.env up -d
 
 Le `--env-file ../../.env` est **obligatoire** : ce `docker-compose.yml` interpole
-`${SAUVEGARDE_S3_ACCESS_KEY}` / `${SAUVEGARDE_S3_SECRET_KEY}` / `${SAUVEGARDE_S3_BUCKET}`
+`${AWS_ACCESS_KEY_ID}` / `${AWS_SECRET_ACCESS_KEY}` / `${SAUVEGARDE_S3_BUCKET}`
 directement (pas seulement `env_file:` dans un service). Or `docker compose` ne charge
 automatiquement un `.env` que depuis le répertoire du projet (ici `outils/sauvegarde/`),
 jamais depuis la racine du dépôt où vit le vrai `.env`. Sans `--env-file ../../.env`,
@@ -17,8 +17,8 @@ jamais depuis la racine du dépôt où vit le vrai `.env`. Sans `--env-file ../.
 d'erreur), MinIO démarre avec un utilisateur/mot de passe root vides, et `minio-init`
 échoue à créer le bucket.
 
-Console web MinIO : http://localhost:9001 (identifiants = SAUVEGARDE_S3_ACCESS_KEY /
-SAUVEGARDE_S3_SECRET_KEY du `.env` racine).
+Console web MinIO : http://localhost:9001 (identifiants = AWS_ACCESS_KEY_ID /
+AWS_SECRET_ACCESS_KEY du `.env` racine).
 
 Vérifier que MinIO répond, **sur cette machine de développement** :
 
@@ -39,6 +39,10 @@ quand même `200` sur cette machine — pas une erreur de connexion, mais la ré
 
 ## Production (HP)
 
-Remplacer les 5 variables `SAUVEGARDE_S3_*` du `.env` racine par celles d'un vrai stockage
-S3/B2 et ne PAS démarrer ce `docker-compose.yml` sur le HP — aucun autre changement requis
-côté Litestream/WAL-G.
+Une SEULE source de vérité pour les identifiants S3 (re-revue finale whole-branch, split-
+brain `SAUVEGARDE_S3_*`/`AWS_*` éliminé, `.superpowers/sdd/progress.md`) : remplacer, dans
+le `.env` racine, les 5 variables `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+`AWS_ENDPOINT` / `AWS_REGION` / `SAUVEGARDE_S3_BUCKET` par celles d'un vrai stockage S3/B2,
+et ne PAS démarrer ce `docker-compose.yml` sur le HP. Ces mêmes 5 variables sont lues telles
+quelles par Litestream (`donnees`/`agenda`) et WAL-G (`memoire-db`, `gateway/db`) via
+`env_file:` — aucun autre changement requis, il n'y a plus qu'un seul jeu de noms à éditer.

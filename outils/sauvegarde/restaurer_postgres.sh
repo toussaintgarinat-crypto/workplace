@@ -12,11 +12,11 @@ docker volume create "$VOLUME_CIBLE" >/dev/null
 docker run --rm \
   --network proxy_net \
   -e WALG_S3_PREFIX="s3://${SAUVEGARDE_S3_BUCKET}/${PREFIXE}" \
-  -e AWS_ACCESS_KEY_ID="${SAUVEGARDE_S3_ACCESS_KEY}" \
-  -e AWS_SECRET_ACCESS_KEY="${SAUVEGARDE_S3_SECRET_KEY}" \
-  -e AWS_ENDPOINT="${SAUVEGARDE_S3_ENDPOINT}" \
+  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+  -e AWS_ENDPOINT="${AWS_ENDPOINT}" \
   -e AWS_S3_FORCE_PATH_STYLE=true \
-  -e AWS_REGION="${SAUVEGARDE_S3_REGION}" \
+  -e AWS_REGION="${AWS_REGION}" \
   -v "$VOLUME_CIBLE:/var/lib/postgresql/data" \
   --entrypoint wal-g \
   "$IMAGE_WALG" \

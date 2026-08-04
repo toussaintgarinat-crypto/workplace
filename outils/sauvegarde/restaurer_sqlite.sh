@@ -26,11 +26,11 @@ docker volume create "$VOLUME_CIBLE" >/dev/null
 # `endpoint`, `force-path-style` et `region` restent, eux, lus depuis la query string.
 docker run --rm \
   --network proxy_net \
-  -e AWS_ACCESS_KEY_ID="${SAUVEGARDE_S3_ACCESS_KEY}" \
-  -e AWS_SECRET_ACCESS_KEY="${SAUVEGARDE_S3_SECRET_KEY}" \
+  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
   -v "$VOLUME_CIBLE:/data" \
   litestream/litestream:0.5.15 \
   restore -o "$CHEMIN_DB" \
-  "s3://${SAUVEGARDE_S3_BUCKET}/${BRIQUE}?endpoint=${SAUVEGARDE_S3_ENDPOINT}&force-path-style=true&region=${SAUVEGARDE_S3_REGION}"
+  "s3://${SAUVEGARDE_S3_BUCKET}/${BRIQUE}?endpoint=${AWS_ENDPOINT}&force-path-style=true&region=${AWS_REGION}"
 
 echo "Restauré dans le volume $VOLUME_CIBLE : $CHEMIN_DB"
