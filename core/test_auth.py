@@ -240,3 +240,84 @@ def test_sub_session_optionnel_pas_de_cookie():
 def test_sub_session_optionnel_cookie_corrompu():
     r = auth.sub_session_optionnel(_fake_request({auth.COOKIE_SESSION: "pas-un-cookie-valide"}))
     assert r is None
+
+
+import session_registre  # noqa: E402
+
+
+def test_exiger_session_generation_perimee_redirige_avec_motif():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina-perimee", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        # Le registre est déjà à la génération 2 (un autre appareil s'est reconnecté),
+        # mais le cookie testé ici porte encore la génération 1.
+        session_registre.nouvelle_session("marina-perimee", "iPhone")
+        session_registre.nouvelle_session("marina-perimee", "MacBook")
+        cookie = auth.chiffrer_cookie({
+            "sub": "marina-perimee", "refresh_token": "rt-123", "generation": 1,
+        })
+        try:
+            _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+            assert False, "devait lever HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 303
+            assert exc.headers["Location"] == "/auth/login?next=%2Fdashboard%3Fmotif%3Dreprise_ailleurs"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
+
+
+def test_exiger_session_generation_a_jour_ne_redirige_pas():
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina-a-jour", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        generation, _ = session_registre.nouvelle_session("marina-a-jour", "iPhone")
+        cookie = auth.chiffrer_cookie({
+            "sub": "marina-a-jour", "refresh_token": "rt-123", "generation": generation,
+        })
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r["sub"] == "marina-a-jour"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
+
+
+def test_exiger_session_cookie_sans_registre_reste_valide():
+    """Cookie émis avant ce chantier (pas de champ `generation`, pas d'entrée au
+    registre) : comportement historique préservé, pas de redirection surprise."""
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "jamais-au-registre", "nom": "X", "avatarEmoji": None}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        cookie = auth.chiffrer_cookie({"sub": "jamais-au-registre", "refresh_token": "rt-1"})
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r["sub"] == "jamais-au-registre"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
