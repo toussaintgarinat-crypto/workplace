@@ -32,6 +32,10 @@ services:
       - "archive_command=wal-g wal-push %p"
       - "-c"
       - "wal_level=replica"
+      # Sans ça, un segment n'est expédié qu'à ses 16 Mo pleins — cadence réelle observée
+      # : HEURES (revue finale whole-branch C3). 60s = RPO borné même en faible écriture.
+      - "-c"
+      - "archive_timeout=60"
     volumes:
       - memoire_pgdata:/var/lib/postgresql/data
       - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
