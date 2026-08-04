@@ -2,11 +2,11 @@ dbs:
   - path: /data/donnees.db
     replicas:
       - type: s3
-        endpoint: ${SAUVEGARDE_S3_ENDPOINT}
+        endpoint: ${AWS_ENDPOINT}
         bucket: ${SAUVEGARDE_S3_BUCKET}
         path: donnees
-        region: ${SAUVEGARDE_S3_REGION}
-        access-key-id: ${SAUVEGARDE_S3_ACCESS_KEY}
-        secret-access-key: ${SAUVEGARDE_S3_SECRET_KEY}
+        region: ${AWS_REGION}
+        access-key-id: ${AWS_ACCESS_KEY_ID}
+        secret-access-key: ${AWS_SECRET_ACCESS_KEY}
         force-path-style: true
         sync-interval: 1s
