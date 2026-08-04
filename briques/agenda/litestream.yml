@@ -1,0 +1,12 @@
+dbs:
+  - path: /data/calendar.db
+    replicas:
+      - type: s3
+        endpoint: ${SAUVEGARDE_S3_ENDPOINT}
+        bucket: ${SAUVEGARDE_S3_BUCKET}
+        path: agenda
+        region: ${SAUVEGARDE_S3_REGION}
+        access-key-id: ${SAUVEGARDE_S3_ACCESS_KEY}
+        secret-access-key: ${SAUVEGARDE_S3_SECRET_KEY}
+        force-path-style: true
+        sync-interval: 1s
