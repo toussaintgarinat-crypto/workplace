@@ -101,3 +101,56 @@ def test_lambert93_vers_wgs84_hors_de_france_leve():
     # Using NaN which produces NaN lat/lon that fail bounds validation.
     with pytest.raises(ValueError):
         domaine.lambert93_vers_wgs84(float('nan'), float('nan'))
+
+
+# ── Normalisation d'un logement DPE ──────────────────────────────
+PAYLOAD_DPE = {
+    "numero_dpe": "2611E0067705R",
+    "etiquette_dpe": "F",
+    "adresse_ban": "8 Rue Petite Cote de la Cite 11000 Carcassonne",
+    "nom_commune_ban": "Carcassonne",
+    "code_postal_ban": "11000",
+    "coordonnee_cartographique_x_ban": 648048.69,
+    "coordonnee_cartographique_y_ban": 6234349.45,
+    "date_etablissement_dpe": "2025-03-14",
+    "periode_construction": "avant 1948",
+    "surface_habitable_logement": 88.7,
+    "type_batiment": "maison",
+}
+
+
+def test_normaliser_logement_payload_reel():
+    objet = domaine.normaliser_logement(PAYLOAD_DPE)
+    assert objet["type"] == "logement"
+    # Conversion Lambert93 (648048.69, 6234349.45) with pyproj 3.7.2
+    assert objet["latitude"] == pytest.approx(43.20647, abs=1e-4)
+    assert objet["longitude"] == pytest.approx(2.36117, abs=1e-4)
+    assert objet["ref_externe"] == "2611E0067705R"
+    assert objet["source"] == "dpe-ademe"
+    assert objet["date_reference"] == "2025-03-14"
+    assert objet["metadata"] == {
+        "adresse": "8 Rue Petite Cote de la Cite 11000 Carcassonne",
+        "commune": "Carcassonne", "code_postal": "11000", "grade_dpe": "F",
+        "surface_m2": 88.7, "periode_construction": "avant 1948",
+    }
+
+
+def test_normaliser_logement_sans_numero_dpe_rend_none():
+    sans_id = {**PAYLOAD_DPE, "numero_dpe": None}
+    assert domaine.normaliser_logement(sans_id) is None
+
+
+def test_normaliser_logement_sans_coordonnees_rend_none():
+    sans_coords = {**PAYLOAD_DPE, "coordonnee_cartographique_x_ban": None}
+    assert domaine.normaliser_logement(sans_coords) is None
+
+
+def test_normaliser_logement_champs_optionnels_absents():
+    minimal = {"numero_dpe": "X1", "etiquette_dpe": "G",
+              "coordonnee_cartographique_x_ban": 648048.69,
+              "coordonnee_cartographique_y_ban": 6234349.45}
+    objet = domaine.normaliser_logement(minimal)
+    assert objet["metadata"] == {"adresse": "", "commune": "", "code_postal": "",
+                                 "grade_dpe": "G", "surface_m2": None,
+                                 "periode_construction": None}
+    assert objet["date_reference"] is None
