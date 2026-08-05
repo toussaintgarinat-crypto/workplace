@@ -39,9 +39,11 @@ PAGE_2_ADEME_DERNIERE = {"total": 422, "results": [{
 
 class _FauxClientAdeme:
     """Simule httpx.Client : 1er GET → PAGE_1 (a un `next`), 2e GET (sur l'URL `next`
-    reçue) → PAGE_2 (sans `next`, la boucle s'arrête)."""
+    reçue) → PAGE_2 (sans `next`, la boucle s'arrête). Vérifie que la pagination utilise
+    le bon URL (celui dans PAGE_1["next"])."""
     def __init__(self, *a, **k):
         self.appels = 0
+        self.appels_enregistres = []  # Liste de tuples (url, params) pour chaque appel
 
     def __enter__(self):
         return self
@@ -51,8 +53,19 @@ class _FauxClientAdeme:
 
     def get(self, url, params=None):
         self.appels += 1
-        corps = PAGE_1_ADEME if self.appels == 1 else PAGE_2_ADEME_DERNIERE
-        return httpx.Response(200, json=corps, request=httpx.Request("GET", url))
+        self.appels_enregistres.append((url, params))  # Enregistre l'URL et params
+        # 1er appel : retourne PAGE_1 (qui contient un "next" URL)
+        if self.appels == 1:
+            return httpx.Response(200, json=PAGE_1_ADEME, request=httpx.Request("GET", url))
+        # 2e+ appels : vérifie que c'est le bon URL (le "next" de PAGE_1)
+        # Si on reçoit l'URL original une 2e fois, c'est une pagination cassée - retour PAGE_1 encore
+        if url == PAGE_1_ADEME["next"]:
+            # Pagination correcte : retourne la dernière page
+            return httpx.Response(200, json=PAGE_2_ADEME_DERNIERE, request=httpx.Request("GET", url))
+        else:
+            # Pagination cassée : l'appel ne respecte pas le "next" URL, on retourne PAGE_1 à nouveau
+            # (simulant un appel à l'URL original)
+            return httpx.Response(200, json=PAGE_1_ADEME, request=httpx.Request("GET", url))
 
 
 def test_mock_est_deterministe_et_couvre_les_grades_demandes():
@@ -82,9 +95,8 @@ def test_mock_traite_toute_zone():
 
 
 def test_dpe_ademe_pagine_par_curseur_jusqua_next_absent(monkeypatch):
-    # Capture le client mocké pour vérifier qu'il a reçu 2 appels GET
+    # Capture le client mocké pour vérifier qu'il a reçu 2 appels GET avec les bons params
     client_instance = None
-    original_client = _FauxClientAdeme
 
     class _FauxClientAdemeCapture(_FauxClientAdeme):
         def __init__(self, *a, **k):
@@ -99,6 +111,13 @@ def test_dpe_ademe_pagine_par_curseur_jusqua_next_absent(monkeypatch):
     assert all(o["type"] == "logement" for o in objets)
     # Vérifie que le client a effectué DEUX appels (première page + seconde page)
     assert client_instance.appels == 2
+    # Vérifie que le DEUXIÈME appel utilise l'URL `next` de la première page avec params=None
+    # (la page `next` embarque déjà tous les paramètres de requête)
+    second_url, second_params = client_instance.appels_enregistres[1]
+    assert second_url == PAGE_1_ADEME["next"], \
+        f"Deuxième appel doit utiliser l'URL 'next' : attendu {PAGE_1_ADEME['next']}, got {second_url}"
+    assert second_params is None, \
+        f"Deuxième appel doit avoir params=None (next embarque les params) : got {second_params}"
 
 
 def test_dpe_ademe_peut_traiter_exige_des_communes():
