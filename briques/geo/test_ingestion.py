@@ -1,11 +1,37 @@
 """Parcours veille : zones (CRUD + isolation), ingestion idempotente, nouveautés, push."""
 from fastapi.testclient import TestClient
 
+import geographie
 import main
 
 client = TestClient(main.app)
 
 CLE = {"X-API-Key": "veilleur-tarn"}
+
+
+# ── Géographie mock ──────────────────────────────────────────────
+class _FauxGeoAPI:
+    """Simule geo.api.gouv.fr : CP « 11000 » → Carcassonne."""
+    def __call__(self, *a, **k):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url, params=None):
+        import types
+        if params.get("codePostal") == "11000":
+            corps = [{"code": "11069", "nom": "Carcassonne",
+                      "contour": {"type": "Polygon",
+                                  "coordinates": [[[2.35, 43.20], [2.36, 43.20],
+                                                   [2.36, 43.21], [2.35, 43.21], [2.35, 43.20]]]}}]
+        else:
+            corps = []
+        return types.SimpleNamespace(status_code=200, json=lambda: corps,
+                                     raise_for_status=lambda: None)
 
 
 def _creer_zone(nom="Castres", **extra):
@@ -116,3 +142,20 @@ def test_nouveautes_expose_les_decouvertes():
     res = client.get("/nouveautes", params={"jours": 1}, headers=cle).json()
     assert len(res["nouveautes"]) >= 5
     assert all(o["source"] == "simule" for o in res["nouveautes"])
+
+
+# ── Parametres ───────────────────────────────────────────────────
+def test_zone_porte_ses_parametres(monkeypatch):
+    monkeypatch.setattr(geographie.httpx, "Client", _FauxGeoAPI())
+    r = client.post("/zones", json={"nom": "Passoires Carcassonne", "type": "logement",
+                                    "communes": ["11000"],
+                                    "parametres": {"grades_dpe": ["E", "F", "G"]}},
+                    headers=CLE)
+    assert r.status_code == 201
+    assert r.json()["parametres"] == {"grades_dpe": ["E", "F", "G"]}
+
+
+def test_zone_sans_parametres_rend_dict_vide():
+    r = client.post("/zones", json={"nom": "Sans param", "lat": 43.6, "lon": 2.2,
+                                    "rayon_km": 10}, headers=CLE)
+    assert r.json()["parametres"] == {}

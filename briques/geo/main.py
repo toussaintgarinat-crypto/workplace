@@ -86,6 +86,7 @@ class ZoneEntree(BaseModel):
     lat: Optional[float] = None            # …ou centre + rayon (converti en bbox)
     lon: Optional[float] = None
     rayon_km: Optional[float] = None
+    parametres: Optional[dict] = None      # dictionnaire JSON des paramètres type-spécifiques
 
 
 # ── Santé & config ───────────────────────────────────────────────
@@ -320,7 +321,8 @@ def creer_zone(corps: ZoneEntree, tenant: str = Depends(tenant_actuel)):
         raise HTTPException(400, str(e))
     return stockage.creer_zone(
         tenant, corps.nom, boite, type_=corps.type, naf=corps.naf,
-        communes=[{"code": c["code"], "nom": c["nom"]} for c in communes])
+        communes=[{"code": c["code"], "nom": c["nom"]} for c in communes],
+        parametres=corps.parametres)
 
 
 @app.delete("/zones/{zone_id}")
