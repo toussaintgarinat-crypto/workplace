@@ -392,6 +392,52 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "mail_demarchage_postal_preparer",
+      "description": "DÉMARCHAGE POSTAL : prépare EN LOT des courriers personnalisés (JAMAIS de nom de personne — seulement adresse/commune, un logement n'a pas de propriétaire identifiable) à partir d'une liste de prospects — typiquement issue de forge_crm_lister (statut « à contacter ») ou de geo_prospecter_lot type logement. Le gabarit accepte {adresse}/{commune}. Chaque courrier reçoit un token de réponse unique (le destinataire scanne un QR pour manifester son intérêt — c'est CETTE réponse, pas le courrier envoyé, qui devient un lead vendable). Un REGISTRE de cadence/opt-out séparé de l'email est respecté. Rien n'est déposé : voir mail_demarchage_postal_envoyer. ACTION : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/demarchage-postal/preparer",
+      "params": {
+        "prospects": {
+          "type": "array",
+          "description": "Liste [{adresse (requis), commune?, grade_dpe?, lead_id?}]. Passe directement les prospects logement du CRM (forge_crm_lister) ou de geo_prospecter_lot.",
+          "requis": true
+        },
+        "gabarit": {
+          "type": "string",
+          "description": "Corps du courrier (gabarit : {adresse}/{commune} uniquement — jamais {nom}).",
+          "requis": true
+        },
+        "expediteur": {
+          "type": "string",
+          "description": "Identité de l'expéditeur affichée en bas du courrier — OBLIGATOIRE.",
+          "requis": true
+        },
+        "cooldown_jours": {
+          "type": "integer",
+          "description": "Délai minimum en jours entre deux contacts d'une même adresse (défaut 90)."
+        },
+        "max_contacts": {
+          "type": "integer",
+          "description": "Nombre maximum de contacts par adresse (défaut 2)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "mail_demarchage_postal_envoyer",
+      "description": "Dépose RÉELLEMENT un courrier postal préparé (id obtenu via mail_demarchage_postal_preparer) — ou, tant qu'aucun prestataire postal réel n'est branché, SIMULE honnêtement (rien n'est physiquement envoyé). ACTION à EFFET DE BORD RÉEL une fois un vrai prestataire branché : confirme=true requis, seulement après accord explicite.",
+      "methode": "POST",
+      "chemin": "/demarchage-postal/envoyer/{courrier_id}",
+      "params": {
+        "courrier_id": {
+          "type": "string",
+          "description": "Identifiant du courrier à déposer (obtenu via mail_demarchage_postal_preparer).",
+          "requis": true
+        }
+      },
+      "action": true
     }
   ]
 }
