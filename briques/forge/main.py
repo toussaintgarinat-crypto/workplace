@@ -655,8 +655,6 @@ def _prospect_vers_lead(p: dict, statut: str) -> dict:
         if p.get("ref_externe"):
             notes.append(f"DPE : {p['ref_externe']}")
         notes.append("Importé depuis la veille geo (logement)")
-        if (p.get("notes") or "").strip():
-            notes.append(p["notes"].strip())
         return {"nom": f"Occupant — {adresse}", "statut": statut,
                 "notes": " · ".join(notes)}
     ent = (p.get("entreprise") or p.get("nom") or "").strip()

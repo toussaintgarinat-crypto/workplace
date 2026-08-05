@@ -124,3 +124,30 @@ def test_import_lot_dedoublonne_logements_par_adresse(monkeypatch):
         {"adresse": "4 Impasse du Moulin, Castres", "grade_dpe": "G"},
     ]}).json()
     assert d["crees"] == 2 and d["doublons"] == 1
+
+
+def test_prospect_vers_lead_logement_jamais_de_notes_personnelles():
+    """Contrainte légale : aucun nom de personne ne doit jamais paraître dans un lead logement,
+    y compris via la passthrough du champ 'notes' du prospect. Les notes de lead logement doivent
+    rester strictement techniques (adresse, DPE, surface...) et code-authored."""
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres",
+        "commune": "Castres",
+        "code_postal": "81100",
+        "grade_dpe": "F",
+        "surface_m2": 90.0,
+        "periode_construction": "avant 1948",
+        "ref_externe": "2611E0067705R",
+        "notes": "Propriétaire : Jean Dupont, tél 06 12 34 56 78",  # Tentative d'injection de nom
+    }, statut="à contacter")
+
+    # Le nom de personne NE doit JAMAIS apparaître dans les notes du lead
+    assert "Jean Dupont" not in lead["notes"]
+    assert "06 12 34 56 78" not in lead["notes"]
+    assert "Propriétaire" not in lead["notes"]
+
+    # Les notes techniques code-authored doivent rester présentes
+    assert "Grade DPE : F" in lead["notes"]
+    assert "Surface : 90.0 m²" in lead["notes"]
+    assert "Importé depuis la veille geo (logement)" in lead["notes"]
