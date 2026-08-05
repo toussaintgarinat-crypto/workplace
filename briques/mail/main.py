@@ -29,6 +29,7 @@ from pydantic import BaseModel
 import domaine
 import envoi
 import fournisseurs
+import fournisseurs_postaux
 import resume
 import stockage
 
@@ -727,6 +728,22 @@ def demarchage_postal_preparer(corps: DemarchagePostalEntree,
             "message": f"{len(prepares)} courrier(s) de démarchage préparé(s) (NON "
                        "déposés). Relis-les, puis dépose ceux que tu valides "
                        "(demarchage_postal_envoyer)."}
+
+
+@app.post("/demarchage-postal/envoyer/{courrier_id}")
+def demarchage_postal_envoyer(courrier_id: str, tenant: str = Depends(tenant_actuel)):
+    """Le gate : dépose (ou, tant qu'aucun prestataire réel n'est branché, simule
+    honnêtement) via le routeur postal configuré. Jamais appelé automatiquement par
+    l'orchestration horaire de veille-prospection — un humain ou l'assistant, après
+    relecture, déclenche cet appel explicitement."""
+    courrier = stockage.lire_courrier(tenant, courrier_id)
+    if not courrier:
+        raise HTTPException(404, "Courrier introuvable.")
+    if courrier["statut"] != "brouillon":
+        raise HTTPException(409, f"Courrier déjà « {courrier['statut']} », pas ré-envoyable.")
+    resultat = fournisseurs_postaux.routeur_postal().deposer(courrier)
+    stockage.marquer_courrier_envoye(tenant, courrier_id)
+    return {"courrier_id": courrier_id, **resultat}
 
 
 # ── Front-end : un vrai client mail (liste + lecture + réponse + gestion comptes) ─

@@ -118,3 +118,43 @@ def test_desinscrit_jamais_recontacte():
         "prospects": [{"adresse": "5 Rue Opt-Out"}], "gabarit": "G", "expediteur": "Moi",
         "cooldown_jours": 0}).json()
     assert r["prepares"] == 0 and r["ignores"]["desinscrit"] == 1
+
+
+def test_envoyer_depose_simule_et_change_le_statut():
+    h = {"X-API-Key": "postal-envoyer"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "6 Rue Envoi"}], "gabarit": "G", "expediteur": "Moi"
+    }).json()
+    courrier_id = prep["courriers"][0]["courrier_id"]
+    r = client.post(f"/demarchage-postal/envoyer/{courrier_id}", headers=h)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True and d["reel"] is False   # simulé, honnête
+
+
+def test_envoyer_courrier_introuvable_404():
+    h = {"X-API-Key": "postal-404"}
+    r = client.post("/demarchage-postal/envoyer/inexistant", headers=h)
+    assert r.status_code == 404
+
+
+def test_envoyer_deux_fois_refuse():
+    h = {"X-API-Key": "postal-double"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "8 Rue Double"}], "gabarit": "G", "expediteur": "Moi"
+    }).json()
+    courrier_id = prep["courriers"][0]["courrier_id"]
+    client.post(f"/demarchage-postal/envoyer/{courrier_id}", headers=h)
+    r2 = client.post(f"/demarchage-postal/envoyer/{courrier_id}", headers=h)
+    assert r2.status_code == 409
+
+
+def test_envoyer_cloisonne_par_tenant():
+    h = {"X-API-Key": "postal-proprio"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "10 Rue Prive"}], "gabarit": "G", "expediteur": "Moi"
+    }).json()
+    courrier_id = prep["courriers"][0]["courrier_id"]
+    r = client.post(f"/demarchage-postal/envoyer/{courrier_id}",
+                    headers={"X-API-Key": "postal-voisin"})
+    assert r.status_code == 404
