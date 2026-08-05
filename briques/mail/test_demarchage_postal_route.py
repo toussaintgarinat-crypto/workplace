@@ -25,21 +25,59 @@ def test_prepare_courriers_personnalises_sans_nom():
 
 
 def test_contenu_du_courrier_ne_contient_jamais_nom():
-    h = {"X-API-Key": "postal-contenu"}
+    """Vérifie que le contenu du courrier généré ne contient JAMAIS de nom de personne.
+
+    Le pipeline démarchage-postal ne substitue JAMAIS {nom} (aucune identité de propriétaire
+    n'est accessible structurellement dans ce domaine légal). Ce test :
+    1. Prépare un courrier avec un gabarit contenant {nom} en tant que PLACEHOLDER TEST,
+    2. Récupère le contenu stocké via la brique storage,
+    3. Vérifie que {nom} est resté INCHANGÉ dans le contenu (non remplacé),
+    4. Vérifie aussi qu'aucun nom arbitraire (ex: "Jean Dupont") n'apparaît.
+    """
+    import hashlib
+    import stockage
+
+    api_key = "postal-contenu"
+    h = {"X-API-Key": api_key}
+
+    # Le tenant est dérivé via sha256 tronqué (même mécanisme que main.tenant_actuel)
+    tenant = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+
+    # Préparer un courrier avec un gabarit contenant le placeholder {nom} comme TEST
     r = client.post("/demarchage-postal/preparer", headers=h, json={
-        "prospects": [{"adresse": "4 Impasse du Moulin, Castres", "commune": "Castres"}],
-        "gabarit": "Votre logement au {adresse}.",
+        "prospects": [{
+            "adresse": "4 Impasse du Moulin, Castres",
+            "commune": "Castres"
+        }],
+        "gabarit": "Votre logement au {adresse} ({commune}) pourrait bénéficier d'aide. "
+                   "Veuillez contacter {nom}.",
         "expediteur": "Studio X",
     }).json()
+
+    assert r["prepares"] == 1, "Doit préparer exactement 1 courrier"
     courrier_id = r["courriers"][0]["courrier_id"]
-    # Lecture directe stockage (pas de route de lecture unitaire nécessaire pour ce test).
-    import stockage
-    contenu = stockage.lire_courrier("postal-contenu"
-                                     if False else h["X-API-Key"], courrier_id)
-    # Le tenant réel est dérivé (empreinte sha256) de la clé — relire via le même
-    # mécanisme que main.tenant_actuel n'est pas exposé ; on vérifie donc via la
-    # réponse HTTP du gabarit substitué, déjà couverte par le test précédent.
-    assert "4 Impasse du Moulin, Castres" in r["courriers"][0]["adresse"]
+
+    # Récupérer le contenu réel stocké (pas juste la réponse HTTP)
+    courrier = stockage.lire_courrier(tenant, courrier_id)
+    assert courrier is not None, f"Courrier {courrier_id} doit exister dans le stockage"
+
+    contenu = courrier["contenu"]
+
+    # Vérification 1 : {adresse} et {commune} ont été substitués
+    assert "{adresse}" not in contenu, "Le placeholder {adresse} doit être substitué"
+    assert "{commune}" not in contenu, "Le placeholder {commune} doit être substitué"
+    assert "4 Impasse du Moulin, Castres" in contenu, "L'adresse doit apparaître substituée"
+    assert "Castres" in contenu, "La commune doit apparaître substituée"
+
+    # Vérification 2 : {nom} N'EST PAS substitué (reste tel quel)
+    # Cela prouve structurellement qu'il n'existe aucun .replace("{nom}", ...) dans le pipeline
+    assert "{nom}" in contenu, "Le placeholder {nom} doit rester INCHANGÉ (jamais substitué)"
+
+    # Vérification 3 : aucun nom arbitraire n'apparaît (on n'aurait pas pu l'injecter)
+    assert "Jean Dupont" not in contenu, "Aucun nom aléatoire ne doit apparaître"
+
+    # Vérification bonus : le pied d'expéditeur (footer) doit être présent
+    assert "Studio X" in contenu, "L'identité de l'expéditeur doit figurer en pied"
 
 
 def test_refuse_sans_identite_expediteur():
