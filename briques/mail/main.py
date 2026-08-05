@@ -16,6 +16,7 @@ Le Cœur découvre ces capacités via le `manifest.json` et les appelle en s'aut
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -762,8 +763,9 @@ def _qualifier_lead_best_effort(lead_id: str) -> None:
     cle = os.getenv("FORGE_KEY", "")
     entetes = {"X-API-Key": cle} if cle else {}
     try:
-        httpx.post(f"{base}/crm/{lead_id}", json={"statut": "lead qualifié"},
-                  headers=entetes, timeout=10)
+        resp = httpx.post(f"{base}/crm/{lead_id}", json={"statut": "lead qualifié"},
+                         headers=entetes, timeout=10)
+        resp.raise_for_status()
     except Exception as e:  # noqa: BLE001 — jamais bloquant
         logger.warning("Mail : qualification lead forge (lead_id=%s) : %s", lead_id, e)
 
@@ -781,7 +783,7 @@ def page_reponse(token: str):
     return HTMLResponse(
         "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
         "<title>Votre réponse</title></head><body>"
-        f"<h1>Courrier concernant : {courrier['adresse']}</h1>"
+        f"<h1>Courrier concernant : {html.escape(courrier['adresse'])}</h1>"
         f"<form method=\"post\" action=\"/repondre/{token}\">"
         "<button type=\"submit\" name=\"interesse\" value=\"true\">Je suis "
         "intéressé(e)</button> "
