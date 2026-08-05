@@ -168,16 +168,23 @@ def _session_perimee(session: dict, sub: str) -> bool:
     ne doit jamais faire planter l'appelant — `exiger_session` a une discipline explicite de
     ce fichier de ne jamais laisser fuiter un 500 nu sur ce chemin. Un échec du registre est
     donc traité comme « pas périmée » (dégradation côté disponibilité, pas de faux positif
-    d'éviction pour une panne qui n'en est pas une)."""
+    d'éviction pour une panne qui n'en est pas une).
+
+    Symétrie côté cookie (trouvé à la re-vérification du correctif 500 nu) : si LE REGISTRE
+    a une entrée pour `sub` mais que CE cookie n'a pas de `generation` (son propre login a eu
+    lieu pendant un hoquet du registre, cf. `auth_callback`), le traiter aussi comme « pas
+    périmée » — sinon la connexion réussit sans 500 au login, puis la toute prochaine requête
+    protégée rejette l'appareil comme évincé alors qu'aucune éviction n'a réellement eu lieu."""
     try:
         generation_registre = session_registre.generation_actuelle(sub)
         registre_id_actuel = session_registre.identifiant_registre()
     except Exception:
         return False
-    if generation_registre is None:
+    if generation_registre is None or session.get("generation") is None:
         # Pas encore d'entrée pour ce compte dans CE registre (cookie antérieur à ce
-        # chantier, ou compte pas encore reconnecté depuis une perte de volume) : on laisse
-        # passer, comportement historique préservé.
+        # chantier, ou compte pas encore reconnecté depuis une perte de volume), OU ce
+        # cookie lui-même n'a jamais reçu de génération (son login a coïncidé avec un hoquet
+        # du registre) : on laisse passer dans les deux cas, comportement historique préservé.
         return False
     return (
         session.get("generation") != generation_registre
