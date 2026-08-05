@@ -703,7 +703,7 @@ async def crm_importer_lot(corps: dict = Body(...)):
             if not isinstance(p, dict):
                 ignores += 1
                 continue
-            if not (p.get("nom") or p.get("entreprise")):
+            if not (p.get("nom") or p.get("entreprise") or (p.get("adresse") or "").strip()):
                 ignores += 1                       # rien pour nommer le prospect
                 continue
             sigs = _signatures(p)
