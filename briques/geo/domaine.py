@@ -9,6 +9,10 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
+from pyproj import Transformer
+
+_LAMBERT93_VERS_WGS84 = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+
 PASTILLE_DEFAUT = "bleu"
 PASTILLES = ("rouge", "orange", "bleu")
 
@@ -135,6 +139,17 @@ def bbox_union(boites: list[tuple[float, float, float, float]]) \
         raise ValueError("Aucune bbox à unir.")
     return (min(b[0] for b in boites), min(b[1] for b in boites),
             max(b[2] for b in boites), max(b[3] for b in boites))
+
+
+def lambert93_vers_wgs84(x: float, y: float) -> tuple[float, float]:
+    """Convertit des coordonnées Lambert93 (EPSG:2154, mètres — le système utilisé par
+    l'API ADEME/DPE) en latitude/longitude WGS84 (degrés décimaux). `always_xy=True` sur
+    le Transformer : `transform` prend/rend (x=lon, y=lat) dans cet ordre, d'où l'inversion
+    du renvoi. Lève ValueError (via valider_point) si le résultat sort des bornes
+    terrestres — un signe que les coordonnées d'entrée n'étaient pas du Lambert93 valide."""
+    longitude, latitude = _LAMBERT93_VERS_WGS84.transform(x, y)
+    valider_point(latitude, longitude)
+    return latitude, longitude
 
 
 def _dirigeant_dict(d: dict) -> dict:
