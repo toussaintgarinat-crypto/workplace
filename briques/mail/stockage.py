@@ -83,6 +83,23 @@ CREATE TABLE IF NOT EXISTS demarchage (
     nb_contacts INTEGER NOT NULL DEFAULT 0, dernier_contact TEXT,
     opt_out INTEGER NOT NULL DEFAULT 0, cree_le TEXT NOT NULL, maj_le TEXT NOT NULL,
     PRIMARY KEY (tenant, email));
+
+-- Registre de démarchage POSTAL (parallèle à `demarchage`, email) : cadence + opt-out
+-- par ADRESSE au lieu d'email — un logement n'a pas d'email.
+CREATE TABLE IF NOT EXISTS demarchage_postal (
+    tenant TEXT NOT NULL, adresse TEXT NOT NULL,
+    nb_contacts INTEGER NOT NULL DEFAULT 0, dernier_contact TEXT,
+    opt_out INTEGER NOT NULL DEFAULT 0, cree_le TEXT NOT NULL, maj_le TEXT NOT NULL,
+    PRIMARY KEY (tenant, adresse));
+
+-- Courriers postaux préparés : contenu imprimable + token de réponse (QR/URL sur le
+-- courrier). `lead_id` référence un lead `forge` (optionnel) à qualifier si réponse.
+CREATE TABLE IF NOT EXISTS courriers (
+    id TEXT PRIMARY KEY, tenant TEXT NOT NULL, adresse TEXT NOT NULL,
+    commune TEXT, lead_id TEXT, token TEXT NOT NULL UNIQUE, contenu TEXT NOT NULL,
+    statut TEXT NOT NULL DEFAULT 'brouillon',
+    reponse_le TEXT, cree_le TEXT NOT NULL, envoye_le TEXT);
+CREATE INDEX IF NOT EXISTS idx_courriers_tenant ON courriers(tenant);
 """
 
 
@@ -483,3 +500,107 @@ def demarchage_lister(tenant: str, limite: int = 500) -> list[dict]:
         lignes = c.execute("SELECT * FROM demarchage WHERE tenant=? ORDER BY maj_le DESC LIMIT ?",
                            (tenant, limite)).fetchall()
     return [_demarchage_dict(r) for r in lignes]
+
+
+# ── Registre de démarchage POSTAL : cadence + opt-out par ADRESSE ────────────
+def _demarchage_postal_dict(r: sqlite3.Row) -> dict:
+    return {"adresse": r["adresse"], "nb_contacts": r["nb_contacts"],
+            "dernier_contact": r["dernier_contact"], "opt_out": bool(r["opt_out"]),
+            "cree_le": r["cree_le"], "maj_le": r["maj_le"]}
+
+
+def demarchage_postal_lire(tenant: str, adresse: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM demarchage_postal WHERE tenant=? AND adresse=?",
+                      (tenant, (adresse or "").strip())).fetchone()
+    return _demarchage_postal_dict(r) if r else None
+
+
+def demarchage_postal_enregistrer_contact(tenant: str, adresse: str) -> dict:
+    adresse = (adresse or "").strip()
+    now = _maintenant()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO demarchage_postal (tenant, adresse, nb_contacts, dernier_contact,"
+            " cree_le, maj_le) VALUES (?,?,1,?,?,?)"
+            " ON CONFLICT(tenant, adresse) DO UPDATE SET"
+            " nb_contacts = nb_contacts + 1, dernier_contact = excluded.dernier_contact,"
+            " maj_le = excluded.maj_le",
+            (tenant, adresse, now, now, now))
+        r = c.execute("SELECT * FROM demarchage_postal WHERE tenant=? AND adresse=?",
+                      (tenant, adresse)).fetchone()
+    return _demarchage_postal_dict(r)
+
+
+def demarchage_postal_desinscrire(tenant: str, adresse: str) -> dict:
+    adresse = (adresse or "").strip()
+    now = _maintenant()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO demarchage_postal (tenant, adresse, nb_contacts, opt_out, cree_le,"
+            " maj_le) VALUES (?,?,0,1,?,?)"
+            " ON CONFLICT(tenant, adresse) DO UPDATE SET opt_out = 1, maj_le = excluded.maj_le",
+            (tenant, adresse, now, now))
+        r = c.execute("SELECT * FROM demarchage_postal WHERE tenant=? AND adresse=?",
+                      (tenant, adresse)).fetchone()
+    return _demarchage_postal_dict(r)
+
+
+def demarchage_postal_lister(tenant: str, limite: int = 500) -> list[dict]:
+    with _conn() as c:
+        lignes = c.execute(
+            "SELECT * FROM demarchage_postal WHERE tenant=? ORDER BY maj_le DESC LIMIT ?",
+            (tenant, limite)).fetchall()
+    return [_demarchage_postal_dict(r) for r in lignes]
+
+
+# ── Courriers postaux : contenu + token de réponse ────────────────────────────
+def _courrier_dict(r: sqlite3.Row) -> dict:
+    return {"id": r["id"], "tenant": r["tenant"], "adresse": r["adresse"],
+            "commune": r["commune"] or "", "lead_id": r["lead_id"], "token": r["token"],
+            "contenu": r["contenu"], "statut": r["statut"], "reponse_le": r["reponse_le"],
+            "cree_le": r["cree_le"], "envoye_le": r["envoye_le"]}
+
+
+def creer_courrier(tenant: str, *, adresse: str, commune: str = "",
+                   lead_id: str | None = None, contenu: str) -> dict:
+    cid, token = _id(), _id()
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO courriers (id, tenant, adresse, commune, lead_id, token, contenu,"
+            " statut, cree_le) VALUES (?,?,?,?,?,?,?,'brouillon',?)",
+            (cid, tenant, adresse, commune, lead_id, token, contenu, _maintenant()))
+        r = c.execute("SELECT * FROM courriers WHERE id=?", (cid,)).fetchone()
+    return _courrier_dict(r)
+
+
+def lire_courrier(tenant: str, courrier_id: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM courriers WHERE id=? AND tenant=?",
+                      (courrier_id, tenant)).fetchone()
+    return _courrier_dict(r) if r else None
+
+
+def lire_courrier_par_token(token: str) -> dict | None:
+    """PAS cloisonné par tenant : la page publique /repondre/{token} n'a aucune
+    identité de tenant à présenter (un particulier scanne un QR, pas un client
+    Workplace authentifié). Le token lui-même EST le secret d'accès — global,
+    imprévisible (généré par `_id()`, uuid4)."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM courriers WHERE token=?", (token,)).fetchone()
+    return _courrier_dict(r) if r else None
+
+
+def marquer_courrier_envoye(tenant: str, courrier_id: str) -> dict | None:
+    with _conn() as c:
+        c.execute("UPDATE courriers SET statut='envoye', envoye_le=? WHERE id=? AND tenant=?",
+                  (_maintenant(), courrier_id, tenant))
+    return lire_courrier(tenant, courrier_id)
+
+
+def marquer_courrier_repondu(token: str) -> dict | None:
+    with _conn() as c:
+        c.execute("UPDATE courriers SET statut='repondu', reponse_le=? WHERE token=?",
+                  (_maintenant(), token))
+        r = c.execute("SELECT * FROM courriers WHERE token=?", (token,)).fetchone()
+    return _courrier_dict(r) if r else None
