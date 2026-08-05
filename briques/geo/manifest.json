@@ -102,7 +102,7 @@
         },
         "type": {
           "type": "string",
-          "description": "« entreprise » (défaut) ou « association » (sert « surveille les associations de X » ; associations = mode communes uniquement)."
+          "description": "« entreprise » (défaut), « association », ou « logement » (prospection B2C — voir geo_logements_criteres_disponibles pour les critères)."
         },
         "lat": {
           "type": "number",
@@ -123,6 +123,10 @@
         "naf": {
           "type": "string",
           "description": "Filtre d'activité NAF (ex. « 56.10A » restaurants) — requis en fournisseur réel pour les zones à rayon/bbox ; FACULTATIF pour les zones à communes."
+        },
+        "parametres": {
+          "type": "object",
+          "description": "Réglages du type de zone. Pour « logement » : {\"grades_dpe\": [\"E\",\"F\",\"G\"]} (voir geo_logements_criteres_disponibles). Facultatif."
         }
       },
       "action": true,
@@ -247,6 +251,16 @@
       },
       "action": true,
       "niveau": 1
+    },
+    {
+      "nom": "geo_logements_criteres_disponibles",
+      "description": "Liste les critères de détection disponibles pour cibler des LOGEMENTS (ex. grade DPE) — sert à composer une campagne de prospection B2C en conversation (« trouve-moi des leads pour du photovoltaïque » → propose DPE E/F/G) sans table figée métier→critères. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/logements/criteres-disponibles",
+      "params": {},
+      "action": false,
+      "niveau": 0,
+      "socle": false
     }
   ],
   "taches": [

@@ -233,3 +233,12 @@ def test_prospecter_lot_logement_via_zone_id():
     r = client.post("/prospection/enrichir-lot", headers=cle,
                     json={"zone_id": zone["id"], "limite": 10})
     assert r.status_code == 200 and r.json()["compte"]["ok"] == 1
+
+
+def test_logements_criteres_disponibles_expose_le_dpe():
+    r = client.get("/logements/criteres-disponibles", headers={"X-API-Key": "x"})
+    assert r.status_code == 200
+    criteres = r.json()["criteres"]
+    dpe = next(c for c in criteres if c["id"] == "dpe")
+    assert set(dpe["valeurs_possibles"]) == {"A", "B", "C", "D", "E", "F", "G"}
+    assert dpe["description"]

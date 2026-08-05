@@ -103,6 +103,23 @@ def config(_tenant: str = Depends(tenant_actuel)):
     return fournisseurs.etat_config()
 
 
+@app.get("/logements/criteres-disponibles")
+def logements_criteres_disponibles(_tenant: str = Depends(tenant_actuel)):
+    """Catalogue des critères de détection disponibles pour les logements — sert à
+    l'assistant pour composer une combinaison pertinente selon l'activité demandée
+    (ex. « photovoltaïque » → DPE mauvais), en CONVERSATION avec l'utilisateur,
+    plutôt qu'une table figée métier→critères en dur dans le code. Lecture seule,
+    aucun gate (pas une action)."""
+    return {"criteres": [
+        {"id": "dpe", "label": "Diagnostic de performance énergétique",
+         "valeurs_possibles": ["A", "B", "C", "D", "E", "F", "G"],
+         "description": "Grade énergétique du logement (source ADEME, ouverte et "
+                        "gratuite). E/F/G = « passoires thermiques » — pertinent "
+                        "pour l'isolation, le chauffage, le photovoltaïque "
+                        "(compenser une consommation élevée)."},
+    ]}
+
+
 # ── Objets géolocalisés ──────────────────────────────────────────
 @app.get("/objets")
 def lister_objets(bbox: str,
