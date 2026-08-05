@@ -144,11 +144,17 @@ def test_ingestion_traite_zone_logement_avec_son_propre_fournisseur(monkeypatch)
 
 
 def test_ingestion_zone_logement_sans_communes_avertit(monkeypatch):
+    """En réel, une zone sans communes n'est PAS énumérable (cap API) : ignorée avec un
+    avertissement honnête, sans aucun appel réseau."""
+    monkeypatch.setenv("GEO_FOURNISSEUR_LOGEMENTS", "reel")
+    monkeypatch.setattr(
+        main.fournisseurs_logements.DpeAdeme, "logements_recents",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("appel réseau interdit")))
     cle = {"X-API-Key": "ingestion-logements-sans-communes"}
     client.post("/zones", json={"nom": "Rayon logement", "type": "logement",
                                 "lat": 43.6, "lon": 2.2, "rayon_km": 10}, headers=cle)
     res = client.post("/ingestion/executer", headers=cle).json()
-    assert res["nouveaux"] == 0
+    assert res["nouveaux"] == 0 and res["fournisseur_logements"] == "dpe-ademe"
     assert len(res["avertissements"]) == 1 and "commune" in res["avertissements"][0].lower()
 
 
