@@ -424,3 +424,36 @@ def test_exiger_session_cookie_sans_registre_reste_valide():
         auth.AUTH_ENABLED = ancien
         auth.verify_token = ancien_verify
         auth._cache_access_token.clear()
+
+
+def test_exiger_session_cookie_sans_generation_mais_registre_connu_reste_valide():
+    """Gap trouvé à la re-vérification du correctif 500 nu (auth_callback) : si CE cookie
+    n'a pas reçu de `generation` (son propre login a coïncidé avec un hoquet du registre),
+    mais que le registre CONNAÎT déjà ce compte (généré par un login antérieur réussi), il ne
+    faut pas traiter ça comme une éviction — sinon la connexion réussit sans 500 nu au login
+    puis la toute prochaine requête protégée rejette l'appareil comme évincé alors qu'aucune
+    éviction n'a réellement eu lieu (asymétrie avec le cas `generation_registre is None`,
+    déjà traité comme non périmé juste au-dessus)."""
+    ancien = auth.AUTH_ENABLED
+    auth.AUTH_ENABLED = True
+    auth.httpx.AsyncClient = _FakeClient
+    auth._cache_access_token.clear()
+
+    async def _verify_fake(token, kc):
+        return {"sub": "marina-login-degrade", "nom": "Marina", "avatarEmoji": "🌙"}
+
+    ancien_verify = auth.verify_token
+    auth.verify_token = _verify_fake
+    try:
+        # Le registre connaît déjà ce compte (un login antérieur, normal, a réussi).
+        session_registre.nouvelle_session("marina-login-degrade", "iPhone")
+        # Ce cookie-ci n'a PAS de "generation" : simule un login qui a coïncidé avec un
+        # hoquet du registre (cf. test_callback_registre_en_panne_ne_bloque_pas_la_connexion
+        # dans test_auth_routes.py, qui prouve le même scénario côté auth_callback).
+        cookie = auth.chiffrer_cookie({"sub": "marina-login-degrade", "refresh_token": "rt-1"})
+        r = _run(auth.exiger_session(_fake_request({auth.COOKIE_SESSION: cookie})))
+        assert r["sub"] == "marina-login-degrade"
+    finally:
+        auth.AUTH_ENABLED = ancien
+        auth.verify_token = ancien_verify
+        auth._cache_access_token.clear()
