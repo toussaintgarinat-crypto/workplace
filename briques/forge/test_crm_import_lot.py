@@ -151,3 +151,36 @@ def test_prospect_vers_lead_logement_jamais_de_notes_personnelles():
     assert "Grade DPE : F" in lead["notes"]
     assert "Surface : 90.0 m²" in lead["notes"]
     assert "Importé depuis la veille geo (logement)" in lead["notes"]
+
+
+def test_import_lot_accepte_prospects_logement_sans_nom(monkeypatch):
+    store = _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"adresse": "12 Rue des Lilas, Castres", "commune": "Castres",
+         "grade_dpe": "F", "surface_m2": 90.0, "ref_externe": "2611E0067705R"},
+        {"adresse": "4 Impasse du Moulin, Castres", "grade_dpe": "G"},
+    ]}).json()
+    assert d["crees"] == 2 and d["ignores"] == 0
+    assert all(l["nom"].startswith("Occupant — ") for l in store)
+    assert all(l.get("entreprise") in (None, "") for l in store)
+
+
+def test_import_lot_prospects_lead_id_present_dans_la_reponse(monkeypatch):
+    """Contrat requis par le futur moteur postal (mail) : chaque prospect créé doit
+    porter son `id` de lead CRM dans la réponse, pour pouvoir qualifier le bon lead à
+    la réception d'une réponse. Déjà vrai via `_resume_lead` — ce test le fige en
+    non-régression explicite plutôt que de compter sur un effet de bord non testé."""
+    _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"adresse": "9 Rue Haute, Castres", "grade_dpe": "E"},
+    ]}).json()
+    assert d["prospects"][0]["id"]
+
+
+def test_import_lot_toujours_ignore_prospect_totalement_vide(monkeypatch):
+    _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"email": "anonyme@x.fr"},   # ni nom, ni entreprise, ni adresse
+        {"adresse": "  "},           # adresse vide après trim
+    ]}).json()
+    assert d["crees"] == 0 and d["ignores"] == 2
