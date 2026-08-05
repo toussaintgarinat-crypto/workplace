@@ -16,12 +16,14 @@ Le Cœur découvre ces capacités via le `manifest.json` et les appelle en s'aut
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+import httpx
+from fastapi import Depends, FastAPI, Form, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -34,6 +36,8 @@ import resume
 import stockage
 
 app = FastAPI(title="Mail — boîtes de réception multi-tenant + réponse sur validation", version="0.5.0")
+
+logger = logging.getLogger("mail")
 
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
@@ -744,6 +748,63 @@ def demarchage_postal_envoyer(courrier_id: str, tenant: str = Depends(tenant_act
     resultat = fournisseurs_postaux.routeur_postal().deposer(courrier)
     stockage.marquer_courrier_envoye(tenant, courrier_id)
     return {"courrier_id": courrier_id, **resultat}
+
+
+# ── Capture de réponse publique (/repondre/{token}) : page SANS authentification ───
+def _qualifier_lead_best_effort(lead_id: str) -> None:
+    """Fait passer un lead `forge` en statut « lead qualifié » suite à une réponse
+    positive au courrier. Best-effort STRICT (motif
+    veille-prospection/orchestration.py::_pousser_memoire) : un échec ici ne doit
+    JAMAIS empêcher l'enregistrement de la réponse elle-même — celle-ci reste tracée
+    (`courriers.statut='repondu'`) même si `forge` est injoignable, ré-essayable
+    manuellement plus tard via l'API forge directement."""
+    base = os.getenv("FORGE_URL", "http://host.docker.internal:5700").rstrip("/")
+    cle = os.getenv("FORGE_KEY", "")
+    entetes = {"X-API-Key": cle} if cle else {}
+    try:
+        httpx.post(f"{base}/crm/{lead_id}", json={"statut": "lead qualifié"},
+                  headers=entetes, timeout=10)
+    except Exception as e:  # noqa: BLE001 — jamais bloquant
+        logger.warning("Mail : qualification lead forge (lead_id=%s) : %s", lead_id, e)
+
+
+@app.get("/repondre/{token}", response_class=HTMLResponse, include_in_schema=False)
+def page_reponse(token: str):
+    """Page PUBLIQUE (aucune authentification, aucun tenant) : un particulier scanne
+    le QR imprimé sur le courrier reçu. Message neutre si le token est inconnu ou
+    déjà répondu — jamais un statut qui distinguerait les deux cas à un tiers non
+    authentifié."""
+    courrier = stockage.lire_courrier_par_token(token)
+    if not courrier or courrier["statut"] == "repondu":
+        return HTMLResponse("<!doctype html><html lang=\"fr\"><body>"
+                            "<p>Ce lien n'est plus disponible.</p></body></html>")
+    return HTMLResponse(
+        "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
+        "<title>Votre réponse</title></head><body>"
+        f"<h1>Courrier concernant : {courrier['adresse']}</h1>"
+        f"<form method=\"post\" action=\"/repondre/{token}\">"
+        "<button type=\"submit\" name=\"interesse\" value=\"true\">Je suis "
+        "intéressé(e)</button> "
+        "<button type=\"submit\" name=\"interesse\" value=\"false\">Pas "
+        "intéressé(e)</button></form></body></html>")
+
+
+@app.post("/repondre/{token}", response_class=HTMLResponse, include_in_schema=False)
+def enregistrer_reponse(token: str, interesse: str = Form("false")):
+    """Enregistre la réponse (PUBLIC, aucune authentification). `interesse=true` avec
+    un `lead_id` connu qualifie ce lead dans `forge` (best-effort) — c'est CETTE
+    réponse, pas le simple envoi du courrier, qui constitue le lead vendable
+    (cf. Contexte de la spec : jamais un profil identifié sans consentement)."""
+    courrier = stockage.lire_courrier_par_token(token)
+    if not courrier or courrier["statut"] == "repondu":
+        return HTMLResponse("<!doctype html><html lang=\"fr\"><body>"
+                            "<p>Ce lien n'est plus disponible.</p></body></html>")
+    stockage.marquer_courrier_repondu(token)
+    if interesse == "true" and courrier.get("lead_id"):
+        _qualifier_lead_best_effort(courrier["lead_id"])
+    return HTMLResponse("<!doctype html><html lang=\"fr\"><body>"
+                        "<p>Merci, votre réponse a bien été enregistrée.</p>"
+                        "</body></html>")
 
 
 # ── Front-end : un vrai client mail (liste + lecture + réponse + gestion comptes) ─
