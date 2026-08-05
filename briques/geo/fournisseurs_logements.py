@@ -35,10 +35,6 @@ class MockLogements:
     nom = "mock-logements"
 
     def peut_traiter(self, zone: dict) -> str | None:
-        if not zone.get("communes"):
-            return (f"zone « {zone['nom']} » ignorée : le fournisseur {self.nom} "
-                    "nécessite des communes (code INSEE) — pas de recherche par rayon "
-                    "sur les données de test.")
         return None
 
     def logements_recents(self, zone: dict, depuis: str | None = None) -> list[dict]:

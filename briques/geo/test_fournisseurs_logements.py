@@ -89,10 +89,9 @@ def test_mock_couvre_les_trois_pastilles():
     assert pastilles == {"rouge", "orange", "bleu"}
 
 
-def test_mock_traite_zones_avec_communes():
+def test_mock_traite_toute_zone():
     assert fl.MockLogements().peut_traiter(ZONE) is None
-    # zones without communes are rejected (like DpeAdeme, for consistency)
-    assert "commune" in fl.MockLogements().peut_traiter({**ZONE, "communes": []}).lower()
+    assert fl.MockLogements().peut_traiter({**ZONE, "communes": []}) is None
 
 
 def test_dpe_ademe_pagine_par_curseur_jusqua_next_absent(monkeypatch):
