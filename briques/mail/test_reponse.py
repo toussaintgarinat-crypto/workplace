@@ -75,3 +75,40 @@ def test_reponse_forge_injoignable_najamais_bloquant(monkeypatch):
     r = client.post(f"/repondre/{c['token']}", data={"interesse": "true"})
     assert r.status_code == 200   # la capture de réponse réussit MALGRÉ la panne forge
     assert stockage.lire_courrier_par_token(c["token"])["statut"] == "repondu"
+
+
+def test_reponse_forge_erreur_http_loggee_pas_bloquante(monkeypatch, caplog):
+    """Finding 1: forge reachable but returns error status (404/500).
+    Should log the error AND still record the reply (best-effort)."""
+    def _faux_post_erreur(url, json=None, headers=None, timeout=None):
+        class _Rep:
+            status_code = 404
+            def raise_for_status(self):
+                raise main.httpx.HTTPStatusError(
+                    message="404 Not Found",
+                    request=None,
+                    response=self
+                )
+        return _Rep()
+    monkeypatch.setattr(main.httpx, "post", _faux_post_erreur)
+    c = _courrier(lead_id="lead-not-found")
+    r = client.post(f"/repondre/{c['token']}", data={"interesse": "true"})
+    assert r.status_code == 200
+    assert stockage.lire_courrier_par_token(c["token"])["statut"] == "repondu"
+    # Verify the error was logged
+    assert "qualification lead forge" in caplog.text and "lead-not-found" in caplog.text
+
+
+def test_page_reponse_adresse_xss_echappee(monkeypatch):
+    """Finding 2: adresse with malicious HTML/JS is escaped, not rendered.
+    Prevents XSS on the public /repondre/{token} page."""
+    # Override stockage.creer_courrier to set an XSS payload in the adresse field
+    malicious_adresse = "<script>alert('xss')</script>"
+    c = stockage.creer_courrier("t-xss", adresse=malicious_adresse, commune="Test",
+                                lead_id=None, contenu="Test content")
+    r = client.get(f"/repondre/{c['token']}")
+    assert r.status_code == 200
+    # The raw script tag should NOT appear in the response body
+    assert "<script>" not in r.text
+    # The escaped version SHOULD appear
+    assert "&lt;script&gt;" in r.text
