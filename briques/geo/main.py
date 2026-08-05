@@ -26,6 +26,7 @@ from pydantic import BaseModel
 import domaine
 import enrichissement
 import fournisseurs
+import fournisseurs_logements
 import geographie
 import stockage
 
@@ -351,21 +352,27 @@ def _pousser_connexion(texte: str) -> None:
 
 @app.post("/ingestion/executer")
 def executer_ingestion(tenant: str = Depends(tenant_actuel)):
-    """Passe la veille sur toutes les zones ACTIVES du tenant : fournisseur (mock ou
-    Sirene public) → upsert par référence externe (SIREN) → décompte honnête
-    nouveaux/mis-à-jour. Appelée par l'horloge du Cœur (tâche quotidienne, Bearer
-    GEO_KEY → même tenant que les outils LLM) ou à la main. Push 🗺️ si découvertes."""
-    prov = fournisseurs.fournisseur()
+    """Passe la veille sur toutes les zones ACTIVES du tenant : fournisseur dédié au TYPE
+    de la zone (Sirene pour entreprise/association, DPE ADEME pour logement — mock ou
+    réel selon la bascule env de chacun) → upsert par référence externe → décompte
+    honnête nouveaux/mis-à-jour. Appelée par l'horloge du Cœur ou à la main. Push 🗺️ si
+    découvertes."""
     zones = stockage.lister_zones(tenant, seulement_actives=True)
     nouveaux, maj = 0, 0
     avertissements: list[str] = []
     for zone in zones:
+        if zone.get("type") == "logement":
+            prov = fournisseurs_logements.fournisseur_logements()
+            recuperer = prov.logements_recents
+        else:
+            prov = fournisseurs.fournisseur()
+            recuperer = prov.entreprises_recentes
         message = prov.peut_traiter(zone)
         if message:
             avertissements.append(message)
             continue
         try:
-            trouves = prov.entreprises_recentes(zone, depuis=zone["derniere_ingestion"])
+            trouves = recuperer(zone, depuis=zone["derniere_ingestion"])
         except Exception as ex:  # noqa: BLE001 — une zone en échec ne bloque pas les autres
             logger.warning("Geo ingestion zone « %s » : %s", zone["nom"], ex)
             continue
@@ -379,10 +386,12 @@ def executer_ingestion(tenant: str = Depends(tenant_actuel)):
             maj += not est_nouveau
         stockage.maj_derniere_ingestion(zone["id"])
     if nouveaux:
-        _pousser_connexion(f"🗺️ Veille geo : {nouveaux} nouvelle(s) entreprise(s) "
-                           f"détectée(s) sur {len(zones)} zone(s).")
+        _pousser_connexion(f"🗺️ Veille geo : {nouveaux} nouvelle(s) entreprise(s)/"
+                           f"logement(s) détecté(s) sur {len(zones)} zone(s).")
     return {"zones": len(zones), "nouveaux": nouveaux, "maj": maj,
-            "fournisseur": prov.nom, "avertissements": avertissements}
+            "fournisseur": fournisseurs.etat_config()["fournisseur"],
+            "fournisseur_logements": fournisseurs_logements.etat_config_logements()["fournisseur"],
+            "avertissements": avertissements}
 
 
 @app.get("/nouveautes")
