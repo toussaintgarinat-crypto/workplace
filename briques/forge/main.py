@@ -634,8 +634,31 @@ def _signatures(lead: dict) -> set[str]:
 
 
 def _prospect_vers_lead(p: dict, statut: str) -> dict:
-    """Traduit un prospect enrichi par geo (geo_prospecter_lot) en lead CRM. Les infos de
-    veille (site, NAF, commune, SIREN) enrichissent les `notes` — utiles pour démarcher."""
+    """Traduit un prospect enrichi (geo_prospecter_lot) en lead CRM. Deux formes : un
+    prospect ENTREPRISE (nom/entreprise, infos site/NAF/SIREN dans les notes) ou un
+    prospect LOGEMENT (adresse, jamais de nom de personne — contrainte légale, fichiers
+    fonciers inaccessibles à une entreprise commerciale). Le nom d'un lead logement est
+    TOUJOURS « Occupant — {adresse} », jamais un nom trouvé ailleurs."""
+    adresse = (p.get("adresse") or "").strip()
+    if adresse and not (p.get("entreprise") or p.get("nom")):
+        notes = [f"Adresse : {adresse}"]
+        if p.get("commune"):
+            notes.append(f"Commune : {p['commune']}")
+        if p.get("code_postal"):
+            notes.append(f"Code postal : {p['code_postal']}")
+        if p.get("grade_dpe"):
+            notes.append(f"Grade DPE : {p['grade_dpe']}")
+        if p.get("surface_m2") is not None:
+            notes.append(f"Surface : {p['surface_m2']} m²")
+        if p.get("periode_construction"):
+            notes.append(f"Période de construction : {p['periode_construction']}")
+        if p.get("ref_externe"):
+            notes.append(f"DPE : {p['ref_externe']}")
+        notes.append("Importé depuis la veille geo (logement)")
+        if (p.get("notes") or "").strip():
+            notes.append(p["notes"].strip())
+        return {"nom": f"Occupant — {adresse}", "statut": statut,
+                "notes": " · ".join(notes)}
     ent = (p.get("entreprise") or p.get("nom") or "").strip()
     notes = []
     if p.get("site"):

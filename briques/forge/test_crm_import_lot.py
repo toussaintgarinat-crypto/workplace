@@ -99,6 +99,23 @@ def test_import_lot_refuse_liste_vide(monkeypatch):
     assert client.post("/crm/import-lot", json={}).status_code == 422
 
 
+def test_prospect_vers_lead_logement_jamais_de_nom_de_personne():
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres", "commune": "Castres",
+        "code_postal": "81100", "grade_dpe": "F", "surface_m2": 90.0,
+        "periode_construction": "avant 1948", "ref_externe": "2611E0067705R",
+    }, statut="à contacter")
+    assert lead["nom"] == "Occupant — 12 Rue des Lilas, Castres"
+    assert lead.get("entreprise") is None
+    assert lead.get("email") is None and lead.get("telephone") is None
+    assert "Grade DPE : F" in lead["notes"]
+    assert "Surface : 90.0 m²" in lead["notes"]
+    assert "Période de construction : avant 1948" in lead["notes"]
+    assert "DPE : 2611E0067705R" in lead["notes"]
+    assert lead["statut"] == "à contacter"
+
+
 def test_import_lot_dedoublonne_logements_par_adresse(monkeypatch):
     _install_faux_core(monkeypatch, [])
     d = client.post("/crm/import-lot", json={"prospects": [
