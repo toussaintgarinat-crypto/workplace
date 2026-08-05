@@ -75,3 +75,19 @@ def test_maj_derniere_execution():
     stockage.maj_derniere_execution(c["id"])
     maj = stockage.lister_campagnes("frank")[0]
     assert maj["derniere_execution"] is not None
+
+
+def test_creer_campagne_type_par_defaut_b2b():
+    c = stockage.creer_campagne("user-type-defaut", "zone-x")
+    assert c["type"] == "b2b"
+
+
+def test_creer_campagne_type_b2c():
+    c = stockage.creer_campagne("user-type-b2c", "zone-logements", type_="b2c")
+    assert c["type"] == "b2c"
+
+
+def test_lister_campagnes_expose_le_type():
+    stockage.creer_campagne("user-liste-type", "zone-y", type_="b2c")
+    campagnes = stockage.lister_campagnes("user-liste-type")
+    assert campagnes[0]["type"] == "b2c"
