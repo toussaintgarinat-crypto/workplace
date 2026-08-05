@@ -61,6 +61,7 @@ def sante():
 
 class CreerCampagne(BaseModel):
     zone_id: str = Field(min_length=1)
+    type: str = "b2b"
 
 
 @app.get("/campagnes", tags=["campagnes"])
@@ -70,7 +71,14 @@ def lister_campagnes_route(tenant: str = Depends(tenant_actuel)):
 
 @app.post("/campagnes", tags=["campagnes"], status_code=201)
 def creer_campagne_route(body: CreerCampagne, tenant: str = Depends(tenant_actuel)):
-    return stockage.creer_campagne(tenant, body.zone_id)
+    type_ = body.type.strip().lower()
+    if type_ not in ("b2b", "b2c"):
+        raise HTTPException(422, "« type » doit être « b2b » ou « b2c ».")
+    campagne = stockage.creer_campagne(tenant, body.zone_id, type_=type_)
+    avertissement = orchestration.avertissement_type_zone(body.zone_id, type_)
+    if avertissement:
+        campagne["avertissement"] = avertissement
+    return campagne
 
 
 @app.delete("/campagnes/{campagne_id}", tags=["campagnes"])
