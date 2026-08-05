@@ -8,6 +8,17 @@ import orchestration
 import stockage
 
 
+class _FauxReponseZones:
+    def __init__(self, zones):
+        self._zones = zones
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"zones": self._zones}
+
+
 class _Rep:
     def __init__(self, status_code, corps):
         self.status_code, self._corps = status_code, corps
@@ -225,3 +236,43 @@ def test_panne_inattendue_campagne1_isolation_campagne2(monkeypatch):
     executions_c2 = stockage.lister_executions(c2["id"])
     assert executions_c2[0]["trouves"] == 1
     assert executions_c2[0]["erreur"] is None
+
+
+def test_lire_zone_geo_trouve_par_id(monkeypatch):
+    monkeypatch.setattr(orchestration.httpx, "get", lambda *a, **k: _FauxReponseZones(
+        [{"id": "z1", "nom": "Zone 1", "type": "logement"},
+         {"id": "z2", "nom": "Zone 2", "type": "entreprise"}]))
+    zone = orchestration.lire_zone_geo("z2")
+    assert zone == {"id": "z2", "nom": "Zone 2", "type": "entreprise"}
+
+
+def test_lire_zone_geo_absente_rend_none(monkeypatch):
+    monkeypatch.setattr(orchestration.httpx, "get",
+                        lambda *a, **k: _FauxReponseZones([]))
+    assert orchestration.lire_zone_geo("introuvable") is None
+
+
+def test_avertissement_type_zone_signale_incoherence_b2c(monkeypatch):
+    monkeypatch.setattr(orchestration.httpx, "get", lambda *a, **k: _FauxReponseZones(
+        [{"id": "z1", "nom": "Entreprises Castres", "type": "entreprise"}]))
+    a = orchestration.avertissement_type_zone("z1", "b2c")
+    assert a and "logement" in a
+
+
+def test_avertissement_type_zone_silencieux_si_coherent(monkeypatch):
+    monkeypatch.setattr(orchestration.httpx, "get", lambda *a, **k: _FauxReponseZones(
+        [{"id": "z1", "nom": "Passoires", "type": "logement"}]))
+    assert orchestration.avertissement_type_zone("z1", "b2c") is None
+
+
+def test_avertissement_type_zone_silencieux_si_geo_injoignable(monkeypatch):
+    def _casse(*a, **k):
+        raise httpx.ConnectError("refus de connexion")
+    monkeypatch.setattr(orchestration.httpx, "get", _casse)
+    assert orchestration.avertissement_type_zone("z1", "b2c") is None
+
+
+def test_avertissement_type_zone_silencieux_si_zone_introuvable(monkeypatch):
+    monkeypatch.setattr(orchestration.httpx, "get",
+                        lambda *a, **k: _FauxReponseZones([]))
+    assert orchestration.avertissement_type_zone("introuvable", "b2c") is None

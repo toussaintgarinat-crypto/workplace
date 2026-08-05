@@ -49,6 +49,43 @@ def _appeler_forge(prospects: list[dict]) -> dict:
     return r.json()
 
 
+def lire_zone_geo(zone_id: str) -> dict | None:
+    """Lit une zone `geo` par id (liste + filtre — `geo` n'expose pas de GET
+    /zones/{id} unitaire). Lève httpx.HTTPError si `geo` est injoignable — c'est
+    `avertissement_type_zone` qui absorbe cette erreur en best-effort, pas cette
+    fonction (elle reste honnête pour un futur appelant qui voudrait, lui,
+    propager l'échec)."""
+    base = _url("GEO_URL", "http://host.docker.internal:6110")
+    r = httpx.get(f"{base}/zones", headers=_entetes("GEO_KEY"), timeout=5)
+    r.raise_for_status()
+    for zone in r.json().get("zones", []):
+        if zone["id"] == zone_id:
+            return zone
+    return None
+
+
+def avertissement_type_zone(zone_id: str, type_campagne: str) -> str | None:
+    """Best-effort : prévient si la zone référencée ne correspond visiblement pas au
+    type de campagne déclaré (b2c attend une zone `logement`, b2b attend le contraire).
+    Ne bloque JAMAIS la création d'une campagne — `geo` injoignable ou zone inconnue
+    d'ici = silence, pas une erreur (l'échec réel, s'il y en a un, apparaîtra de
+    toute façon à la première exécution horaire, déjà gérée en best-effort là-bas)."""
+    try:
+        zone = lire_zone_geo(zone_id)
+    except Exception:  # noqa: BLE001 — best-effort strict, jamais bloquant
+        return None
+    if zone is None:
+        return None
+    est_logement = zone.get("type") == "logement"
+    if type_campagne == "b2c" and not est_logement:
+        return (f"La zone « {zone['nom']} » est de type « {zone.get('type')} », pas "
+                "« logement » — cette campagne b2c risque de ne rien trouver.")
+    if type_campagne == "b2b" and est_logement:
+        return (f"La zone « {zone['nom']} » est de type « logement » — cette "
+                "campagne b2b risque de ne rien trouver.")
+    return None
+
+
 def _pousser_memoire(user_id: str, contenu: str) -> None:
     """Best-effort strict : un échec ici ne remonte JAMAIS à l'appelant.
 
