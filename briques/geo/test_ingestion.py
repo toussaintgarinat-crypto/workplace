@@ -124,7 +124,32 @@ def test_ingestion_sans_zone_ne_fait_rien(monkeypatch):
     res = client.post("/ingestion/executer",
                       headers={"X-API-Key": "personne"}).json()
     assert res == {"zones": 0, "nouveaux": 0, "maj": 0, "fournisseur": "mock",
-                   "avertissements": []}
+                   "fournisseur_logements": "mock-logements", "avertissements": []}
+
+
+def test_ingestion_traite_zone_logement_avec_son_propre_fournisseur(monkeypatch):
+    monkeypatch.setattr(geographie.httpx, "Client", _FauxGeoAPI())
+    cle = {"X-API-Key": "ingestion-logements"}
+    client.post("/zones", json={"nom": "Passoires", "type": "logement",
+                                "communes": ["11000"],
+                                "parametres": {"grades_dpe": ["E", "F", "G"]}},
+                headers=cle)
+    res = client.post("/ingestion/executer", headers=cle).json()
+    assert res["fournisseur"] == "mock"                  # entreprises : inchangé
+    assert res["fournisseur_logements"] == "mock-logements"
+    assert res["nouveaux"] >= 5
+    objets = client.get("/objets", params={"bbox": "43.0,2.0,43.5,2.5"},
+                        headers=cle).json()
+    assert any(o["type"] == "logement" for o in objets["objets"])
+
+
+def test_ingestion_zone_logement_sans_communes_avertit(monkeypatch):
+    cle = {"X-API-Key": "ingestion-logements-sans-communes"}
+    client.post("/zones", json={"nom": "Rayon logement", "type": "logement",
+                                "lat": 43.6, "lon": 2.2, "rayon_km": 10}, headers=cle)
+    res = client.post("/ingestion/executer", headers=cle).json()
+    assert res["nouveaux"] == 0
+    assert len(res["avertissements"]) == 1 and "commune" in res["avertissements"][0].lower()
 
 
 def test_push_connexion_absente_reste_silencieux(monkeypatch):
