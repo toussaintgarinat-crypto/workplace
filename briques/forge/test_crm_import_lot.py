@@ -97,3 +97,13 @@ def test_import_lot_refuse_liste_vide(monkeypatch):
     _install_faux_core(monkeypatch, [])
     assert client.post("/crm/import-lot", json={"prospects": []}).status_code == 422
     assert client.post("/crm/import-lot", json={}).status_code == 422
+
+
+def test_import_lot_dedoublonne_logements_par_adresse(monkeypatch):
+    _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F"},
+        {"adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F"},  # même adresse
+        {"adresse": "4 Impasse du Moulin, Castres", "grade_dpe": "G"},
+    ]}).json()
+    assert d["crees"] == 2 and d["doublons"] == 1

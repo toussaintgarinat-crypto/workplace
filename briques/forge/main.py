@@ -618,8 +618,9 @@ def _norm(s: str | None) -> str:
 
 
 def _signatures(lead: dict) -> set[str]:
-    """Empreintes de dé-doublonnage d'un prospect : l'email (fort) et le nom d'entreprise
-    (repli). Deux prospects qui partagent l'un ou l'autre sont considérés identiques —
+    """Empreintes de dé-doublonnage d'un prospect : l'email (fort), le nom d'entreprise
+    (repli B2B), ou l'adresse (repli B2C — un logement n'a ni email ni entreprise).
+    Deux prospects qui partagent l'une de ces empreintes sont considérés identiques —
     l'import est ainsi ré-exécutable sans empiler des doublons."""
     sigs: set[str] = set()
     if lead.get("email"):
@@ -627,6 +628,8 @@ def _signatures(lead: dict) -> set[str]:
     ent = lead.get("entreprise") or lead.get("nom")
     if ent:
         sigs.add("ent:" + _norm(ent))
+    if lead.get("adresse"):
+        sigs.add("adr:" + _norm(lead["adresse"]))
     return sigs
 
 
