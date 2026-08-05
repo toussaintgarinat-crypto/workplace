@@ -276,3 +276,13 @@ def test_avertissement_type_zone_silencieux_si_zone_introuvable(monkeypatch):
     monkeypatch.setattr(orchestration.httpx, "get",
                         lambda *a, **k: _FauxReponseZones([]))
     assert orchestration.avertissement_type_zone("introuvable", "b2c") is None
+
+
+def test_avertissement_type_zone_robuste_si_zone_malformee(monkeypatch):
+    """Mutation test : vérifie que avertissement_type_zone ne crash pas si la zone
+    retournée par geo est malformée (missing 'nom' key). C'est un best-effort strict :
+    la fonction DOIT retourner None, jamais lever KeyError."""
+    monkeypatch.setattr(orchestration.httpx, "get", lambda *a, **k: _FauxReponseZones(
+        [{"id": "z1", "type": "entreprise"}]))  # note : pas de clé "nom"
+    a = orchestration.avertissement_type_zone("z1", "b2c")
+    assert a is None  # best-effort : aucune exception levée, juste silence
