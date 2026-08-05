@@ -155,10 +155,27 @@ dédiée par migration douce (même motif que `naf`/`communes` existants) :
 ALTER TABLE geo_zones ADD COLUMN parametres TEXT   -- JSON, ex. {"grades_dpe":[...]}
 ```
 
-`enrichir_lot` (route `/prospection/enrichir-lot`) route vers
-`fournisseur_logements()` quand `zone["type"] == "logement"`, sinon le chemin
-entreprise actuel — un seul point de branchement, le reste de la route (upsert,
-journalisation, comptage) reste identique aux deux types.
+**Correction par rapport à une lecture rapide du code** (le pipeline a deux étages
+distincts, pas un seul) :
+- `/ingestion/executer` appelle `fournisseurs.fournisseur()` et **upsert** les objets
+  dans `geo_objects` — c'est LÀ que `fournisseur_logements()` doit être branché
+  (`if zone["type"] == "logement"` → fournisseur DPE au lieu du fournisseur
+  entreprise), symétrique à l'existant.
+- `/prospection/enrichir-lot` relit les objets déjà ingérés (`chercher_bbox`) et
+  lance en plus une recherche web du **site officiel** de chaque entreprise
+  (`enrichissement.enrichir`, module `enrichissement.py`) — un réflexe qui n'a
+  **aucun sens pour un logement** (pas de site officiel à chercher). Pour
+  `type_ == "logement"`, cette route doit sauter entièrement l'appel à
+  `_enrichir_et_enregistrer` : un logement ingéré (adresse + grade DPE connus) est
+  déjà un « prospect » complet, pas besoin d'enrichissement web.
+- Nouvelle fonction `_prospect_crm_logement(objet)` (variante de `_prospect_crm`,
+  sans `email`/`telephone`/`site`/`dirigeants` qui n'existent pas pour un
+  logement) : `{"objet_id", "adresse": m["adresse"], "commune": m["commune"],
+  "grade_dpe": m["grade_dpe"], "ref_externe": objet["ref_externe"], "source":
+  objet["source"]}`. `enrichir_lot` appelle `_prospect_crm_logement` au lieu de
+  `_prospect_crm` quand `type_ == "logement"`, et le critère « devient prospect »
+  n'est plus « email/téléphone/site trouvé » mais simplement « a une adresse »
+  (toujours vrai pour un objet `logement` bien formé).
 
 ## Backend — `veille-prospection`
 
