@@ -264,7 +264,7 @@
       "params": {
         "prospects": {
           "type": "array",
-          "description": "Liste d'objets prospect : [{nom|entreprise, email?, telephone?, site?, naf?, commune?, ref_externe?, notes?}]. Passe directement le champ « prospects » renvoyé par geo_prospecter_lot.",
+          "description": "Liste d'objets prospect. Deux formes : ENTREPRISE {nom|entreprise, email?, telephone?, site?, naf?, commune?, ref_externe?, notes?} (résultat de geo_prospecter_lot type entreprise), ou LOGEMENT {adresse, commune?, code_postal?, grade_dpe?, surface_m2?, periode_construction?, ref_externe?} (résultat de geo_prospecter_lot type logement — JAMAIS de nom de personne, un logement n'a pas de propriétaire identifiable). Passe directement le champ « prospects » renvoyé par geo_prospecter_lot.",
           "requis": true
         },
         "statut": {
