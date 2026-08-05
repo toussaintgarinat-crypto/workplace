@@ -652,6 +652,83 @@ def demarchage_registre(tenant: str = Depends(tenant_actuel)):
     return {"registre": stockage.demarchage_lister(tenant)}
 
 
+# ── Démarchage POSTAL : courriers en lot, jamais de nom, capture de réponse ───
+# Second moteur, PARALLÈLE à l'email ci-dessus (jamais une modification de celui-ci) :
+# le courrier postal n'a pas de destinataire nommé — un logement n'a pas d'email, et
+# son propriétaire n'est légalement pas identifiable par nous (fichiers fonciers
+# inaccessibles à une entreprise commerciale). Personnalisation par ADRESSE
+# uniquement. Registre de cadence/opt-out séparé (`demarchage_postal`, clé=adresse).
+class DemarchagePostalEntree(BaseModel):
+    prospects: list[dict]          # [{adresse, commune?, grade_dpe?, lead_id?}]
+    gabarit: str                   # corps (gabarit : {adresse}/{commune} — jamais {nom})
+    expediteur: str                # identité de l'expéditeur — OBLIGATOIRE
+    cooldown_jours: int = 90       # plus long que l'email : un courrier physique coûte cher
+    max_contacts: int = 2
+
+
+def _personnaliser_postal(gabarit: str, p: dict) -> str:
+    """Remplit UNIQUEMENT {adresse}/{commune} — jamais {nom} : un courrier logement n'a
+    structurellement rien à mettre dans un {nom} (aucune identité de propriétaire
+    n'entre jamais dans ce pipeline)."""
+    adresse = str(p.get("adresse") or "")
+    commune = str(p.get("commune") or "")
+    return str(gabarit).replace("{adresse}", adresse).replace("{commune}", commune)
+
+
+def _pied_postal(expediteur: str) -> str:
+    """Mention d'identité en bas de courrier — équivalent postal de `_pied_lcen`, sans
+    mécanisme d'opt-out automatisé par cette mention (l'opt-out automatisé passe par
+    /repondre, cf. Task 5 ; un opt-out par retour postal reste un processus manuel,
+    hors périmètre de cette itération)."""
+    return "\n\n—\n" + expediteur.strip()
+
+
+@app.post("/demarchage-postal/preparer", status_code=201)
+def demarchage_postal_preparer(corps: DemarchagePostalEntree,
+                               tenant: str = Depends(tenant_actuel)):
+    """PRÉPARE en lot des courriers personnalisés par ADRESSE (jamais par nom).
+    Registre de cadence/opt-out séparé de l'email. Chaque courrier reçoit un TOKEN de
+    réponse unique. Ne dépose RIEN réellement : voir
+    /demarchage-postal/envoyer/{courrier_id} (le gate)."""
+    exp = corps.expediteur.strip()
+    if not exp:
+        raise HTTPException(422, "Identité de l'expéditeur requise (même exigence que "
+                                 "le démarchage email : dire qui envoie le courrier).")
+    if not corps.prospects:
+        raise HTTPException(422, "Aucun prospect à démarcher.")
+    maintenant = datetime.now(timezone.utc)
+    prepares: list[dict] = []
+    ignores = {"sans_adresse": 0, "desinscrit": 0, "cadence_atteinte": 0, "trop_recent": 0}
+    for p in corps.prospects:
+        adresse = (p.get("adresse") or "").strip()
+        if not adresse:
+            ignores["sans_adresse"] += 1
+            continue
+        etat = stockage.demarchage_postal_lire(tenant, adresse)
+        if etat and etat["opt_out"]:
+            ignores["desinscrit"] += 1
+            continue
+        if etat and etat["nb_contacts"] >= corps.max_contacts:
+            ignores["cadence_atteinte"] += 1
+            continue
+        if etat and _trop_recent(etat["dernier_contact"], maintenant, corps.cooldown_jours):
+            ignores["trop_recent"] += 1
+            continue
+        contenu = _personnaliser_postal(corps.gabarit, p) + _pied_postal(exp)
+        courrier = stockage.creer_courrier(tenant, adresse=adresse,
+                                           commune=p.get("commune") or "",
+                                           lead_id=p.get("lead_id"), contenu=contenu)
+        maj = stockage.demarchage_postal_enregistrer_contact(tenant, adresse)
+        prepares.append({"courrier_id": courrier["id"], "adresse": adresse,
+                         "token": courrier["token"], "numero_contact": maj["nb_contacts"],
+                         "relance": maj["nb_contacts"] > 1})
+    return {"ok": True, "envoye": False, "prepares": len(prepares), "courriers": prepares,
+            "ignores": ignores,
+            "message": f"{len(prepares)} courrier(s) de démarchage préparé(s) (NON "
+                       "déposés). Relis-les, puis dépose ceux que tu valides "
+                       "(demarchage_postal_envoyer)."}
+
+
 # ── Front-end : un vrai client mail (liste + lecture + réponse + gestion comptes) ─
 @app.get("/", response_class=HTMLResponse)
 def front_end():
