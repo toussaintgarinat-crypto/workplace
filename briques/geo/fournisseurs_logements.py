@@ -10,9 +10,18 @@ JAMAIS de nom de personne dans les metadata — seulement adresse et caractéris
 du bien, cohérent avec la contrainte légale (fichiers fonciers inaccessibles)."""
 from __future__ import annotations
 
+import httpx
 import os
 import random
 from datetime import datetime, timedelta, timezone
+
+import domaine
+
+_DPE_API_URL = os.getenv("GEO_DPE_URL",
+                         "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant")
+_CHAMPS_DPE = ("numero_dpe,etiquette_dpe,adresse_ban,nom_commune_ban,code_postal_ban,"
+              "coordonnee_cartographique_x_ban,coordonnee_cartographique_y_ban,"
+              "date_etablissement_dpe,periode_construction,surface_habitable_logement")
 
 _ADRESSES_SIMULEES = ["12 Rue des Lilas", "4 Impasse du Moulin", "7 Chemin de la Combe",
                       "21 Rue Basse", "3 Place du Marché", "9 Rue Haute",
@@ -50,3 +59,60 @@ class MockLogements:
                              "surface_m2": 70.0 + i * 5, "periode_construction": "avant 1948"},
             })
         return objets
+
+
+class DpeAdeme:
+    """API ouverte ADEME (Observatoire DPE, dataset `dpe03existant`), SANS clé, bascule
+    explicite `GEO_FOURNISSEUR_LOGEMENTS=reel`. Filtre par communes (code INSEE) × grade
+    DPE — nécessite des communes (pas de recherche par rayon sur cette API, contrairement
+    à Sirene `/near_point`). Ne cible que les MAISONS (`type_batiment_eq=maison`) : le
+    cas d'usage (convaincre un propriétaire individuel) ne s'applique pas à un logement
+    en copropriété. Pagination par CURSEUR (le champ `next` de la réponse est l'URL
+    complète de la page suivante), pas par numéro de page."""
+    nom = "dpe-ademe"
+
+    def peut_traiter(self, zone: dict) -> str | None:
+        if not zone.get("communes"):
+            return (f"zone « {zone['nom']} » ignorée : le fournisseur {self.nom} "
+                    "nécessite des communes (code INSEE) — pas de recherche par rayon "
+                    "sur l'API ADEME.")
+        return None
+
+    def logements_recents(self, zone: dict, depuis: str | None = None) -> list[dict]:
+        codes = ",".join(c["code"] for c in zone["communes"])
+        grades = (zone.get("parametres") or {}).get("grades_dpe") or ["E", "F", "G"]
+        params = {"code_insee_ban_in": codes, "etiquette_dpe_in": ",".join(grades),
+                  "type_batiment_eq": "maison", "size": 100, "select": _CHAMPS_DPE}
+        pages_max = int(os.getenv("GEO_PAGES_MAX_LOGEMENTS", "10"))
+        objets: list[dict] = []
+        url, params_actuels = f"{_DPE_API_URL}/lines", params
+        with httpx.Client(timeout=30) as client:
+            for _ in range(pages_max):
+                r = client.get(url, params=params_actuels)
+                r.raise_for_status()
+                d = r.json()
+                for brute in d.get("results", []):
+                    objet = domaine.normaliser_logement(brute)
+                    if objet:
+                        objets.append(objet)
+                url = d.get("next")
+                if not url:
+                    break
+                params_actuels = None   # `next` embarque déjà tous les paramètres
+        return objets
+
+
+def etat_config_logements() -> dict:
+    if os.getenv("GEO_FOURNISSEUR_LOGEMENTS", "").strip().lower() == "reel":
+        return {"configure": True, "fournisseur": DpeAdeme.nom,
+                "message": "Données RÉELLES : ADEME Observatoire DPE (data.ademe.fr). "
+                           "Veille par zone à communes × grade DPE (maisons individuelles)."}
+    return {"configure": False, "fournisseur": MockLogements.nom,
+            "message": "Données SIMULÉES (mock honnête) : posez "
+                       "GEO_FOURNISSEUR_LOGEMENTS=reel pour brancher l'API ADEME."}
+
+
+def fournisseur_logements() -> "MockLogements | DpeAdeme":
+    if etat_config_logements()["configure"]:
+        return DpeAdeme()
+    return MockLogements()
