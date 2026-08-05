@@ -72,18 +72,18 @@ def avertissement_type_zone(zone_id: str, type_campagne: str) -> str | None:
     toute façon à la première exécution horaire, déjà gérée en best-effort là-bas)."""
     try:
         zone = lire_zone_geo(zone_id)
+        if zone is None:
+            return None
+        est_logement = zone.get("type") == "logement"
+        if type_campagne == "b2c" and not est_logement:
+            return (f"La zone « {zone['nom']} » est de type « {zone.get('type')} », pas "
+                    "« logement » — cette campagne b2c risque de ne rien trouver.")
+        if type_campagne == "b2b" and est_logement:
+            return (f"La zone « {zone['nom']} » est de type « logement » — cette "
+                    "campagne b2b risque de ne rien trouver.")
+        return None
     except Exception:  # noqa: BLE001 — best-effort strict, jamais bloquant
         return None
-    if zone is None:
-        return None
-    est_logement = zone.get("type") == "logement"
-    if type_campagne == "b2c" and not est_logement:
-        return (f"La zone « {zone['nom']} » est de type « {zone.get('type')} », pas "
-                "« logement » — cette campagne b2c risque de ne rien trouver.")
-    if type_campagne == "b2b" and est_logement:
-        return (f"La zone « {zone['nom']} » est de type « logement » — cette "
-                "campagne b2b risque de ne rien trouver.")
-    return None
 
 
 def _pousser_memoire(user_id: str, contenu: str) -> None:
