@@ -51,6 +51,11 @@ def init() -> None:
     os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
     with _conn() as c:
         c.executescript(_SCHEMA)
+        for alter in ("ALTER TABLE campagnes ADD COLUMN type TEXT NOT NULL DEFAULT 'b2b'",):
+            try:
+                c.execute(alter)
+            except sqlite3.OperationalError:
+                pass  # colonne déjà présente
 
 
 init()  # schéma prêt dès l'import (robuste même sous TestClient)
@@ -58,15 +63,16 @@ init()  # schéma prêt dès l'import (robuste même sous TestClient)
 
 def _campagne_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "user_id": r["user_id"], "zone_id": r["zone_id"],
-            "actif": bool(r["actif"]), "derniere_execution": r["derniere_execution"],
-            "created_at": r["created_at"]}
+            "type": r["type"], "actif": bool(r["actif"]),
+            "derniere_execution": r["derniere_execution"], "created_at": r["created_at"]}
 
 
-def creer_campagne(user_id: str, zone_id: str) -> dict:
+def creer_campagne(user_id: str, zone_id: str, type_: str = "b2b") -> dict:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO campagnes (user_id, zone_id, actif, created_at) VALUES (?,?,1,?)",
-            (user_id, zone_id, _maintenant()))
+            "INSERT INTO campagnes (user_id, zone_id, type, actif, created_at) "
+            "VALUES (?,?,?,1,?)",
+            (user_id, zone_id, type_, _maintenant()))
         row = c.execute("SELECT * FROM campagnes WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _campagne_dict(row)
 
