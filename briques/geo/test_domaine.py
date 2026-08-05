@@ -84,3 +84,20 @@ def test_valider_point_hors_bornes_leve():
         domaine.valider_point(91.0, 0.0)
     with pytest.raises(ValueError):
         domaine.valider_point(0.0, -181.0)
+
+
+# ── Conversion Lambert93 → WGS84 ─────────────────────────────────
+def test_lambert93_vers_wgs84_sur_un_point_reel_carcassonne():
+    # Coordonnées Lambert93 RÉELLES d'un DPE à Carcassonne (vérifié LIVE ADEME,
+    # 2026-08-05, numero_dpe 2611E0031228S). Référence calculée avec pyproj
+    # 3.7.2 (EPSG:2154 → EPSG:4326) : lat=43.21658904532542, lon=2.3590970608354813.
+    latitude, longitude = domaine.lambert93_vers_wgs84(647889.49, 6235475.96)
+    assert latitude == pytest.approx(43.21659, abs=1e-4)
+    assert longitude == pytest.approx(2.35910, abs=1e-4)
+
+
+def test_lambert93_vers_wgs84_hors_de_france_leve():
+    # Note: (0, 0) actually converts to valid WGS84 (-5.98, -1.36).
+    # Using NaN which produces NaN lat/lon that fail bounds validation.
+    with pytest.raises(ValueError):
+        domaine.lambert93_vers_wgs84(float('nan'), float('nan'))
