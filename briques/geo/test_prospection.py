@@ -195,3 +195,41 @@ def test_prospect_crm_expose_dirigeants_et_effectifs(monkeypatch):
     p = r["prospects"][0]
     assert p["dirigeants"] == [{"nom": "Dupont", "prenom": "Alice", "qualite": "Gérante"}]
     assert p["effectifs"] == "10 à 19 salariés"
+
+
+def _objet_logement(cle, adresse, grade="F"):
+    r = client.post("/objets", headers=cle,
+                    json={"type": "logement", "latitude": 43.606, "longitude": 2.24,
+                          "metadata": {"adresse": adresse, "commune": "CASTRES",
+                                      "code_postal": "81100", "grade_dpe": grade,
+                                      "surface_m2": 90.0, "periode_construction": "avant 1948"}})
+    return r.json()["id"]
+
+
+def test_prospecter_lot_logement_saute_la_recherche_web():
+    """Aucun mock `enrichissement.httpx` posé : si le code appelait la recherche web
+    pour un logement, ce test échouerait par une vraie tentative réseau (timeout/erreur)
+    plutôt que par une assertion — la garantie est structurelle, pas un mock qui espionne."""
+    cle = {"X-API-Key": "lot-logement"}
+    _objet_logement(cle, "12 Rue des Lilas 81100 Castres")
+    _objet_logement(cle, "4 Impasse du Moulin 81100 Castres", grade="G")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"bbox": BBOX, "type": "logement", "limite": 10})
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["compte"]["ok"] == 2
+    assert len(corps["prospects"]) == 2
+    p = corps["prospects"][0]
+    assert p["adresse"] and p["grade_dpe"] in {"F", "G"}
+    assert "email" not in p and "entreprise" not in p and "nom" not in p
+
+
+def test_prospecter_lot_logement_via_zone_id():
+    cle = {"X-API-Key": "lot-logement-zone"}
+    zone = client.post("/zones", headers=cle,
+                       json={"nom": "Castres logements", "type": "logement",
+                             "bbox": BBOX}).json()
+    _objet_logement(cle, "7 Chemin de la Combe 81100 Castres")
+    r = client.post("/prospection/enrichir-lot", headers=cle,
+                    json={"zone_id": zone["id"], "limite": 10})
+    assert r.status_code == 200 and r.json()["compte"]["ok"] == 1

@@ -202,6 +202,18 @@ def _prospect_crm(objet: dict) -> dict:
             "reseaux_sociaux": m.get("reseaux_sociaux")}
 
 
+def _prospect_crm_logement(objet: dict) -> dict:
+    """Vue « prête pour le CRM » d'un logement : pas d'email/téléphone/site (n'existent
+    pas pour un bien), JAMAIS de nom de personne (contrainte légale — fichiers fonciers
+    inaccessibles à une entreprise commerciale) — seulement l'adresse et les
+    caractéristiques du bien."""
+    m = objet.get("metadata") or {}
+    return {"objet_id": objet["id"], "adresse": m.get("adresse"), "commune": m.get("commune"),
+            "code_postal": m.get("code_postal"), "grade_dpe": m.get("grade_dpe"),
+            "surface_m2": m.get("surface_m2"), "periode_construction": m.get("periode_construction"),
+            "ref_externe": objet.get("ref_externe"), "source": objet.get("source")}
+
+
 @app.post("/objets/{objet_id}/enrichir")
 def enrichir_objet(objet_id: str, force: bool = False,
                    tenant: str = Depends(tenant_actuel)):
@@ -264,6 +276,10 @@ def enrichir_lot(corps: ProspecterLotEntree, tenant: str = Depends(tenant_actuel
     compte = {"ok": 0, "deja_enrichi": 0, "introuvable": 0, "impossible": 0, "erreur": 0}
     prospects: list[dict] = []
     for objet in objets:
+        if type_ == "logement":
+            prospects.append(_prospect_crm_logement(objet))
+            compte["ok"] += 1
+            continue
         meta = objet["metadata"]
         if not corps.force and (meta.get("email") or meta.get("site")):
             compte["deja_enrichi"] += 1
