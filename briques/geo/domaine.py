@@ -21,6 +21,7 @@ PASTILLES = ("rouge", "orange", "bleu")
 # migration (ex. "immobilier": [(2, "rouge"), (14, "orange")]).
 REGLES_FRAICHEUR: dict[str, list[tuple[int, str]]] = {
     "entreprise": [(30, "rouge"), (90, "orange")],
+    "logement": [(30, "rouge"), (90, "orange")],
     "_defaut": [(30, "rouge"), (90, "orange")],
 }
 
@@ -150,6 +151,41 @@ def lambert93_vers_wgs84(x: float, y: float) -> tuple[float, float]:
     longitude, latitude = _LAMBERT93_VERS_WGS84.transform(x, y)
     valider_point(latitude, longitude)
     return latitude, longitude
+
+
+def normaliser_logement(brute: dict) -> dict | None:
+    """Payload brut de l'API ADEME (Observatoire DPE, dataset `dpe03existant`) → objet
+    `geo_objects` type="logement", ou None si inexploitable (pas de numéro DPE, pas de
+    coordonnées). `ref_externe` = numéro DPE (identifiant stable ADEME, sert l'upsert).
+    `metadata` NE CONTIENT JAMAIS de nom de personne — uniquement l'adresse et les
+    caractéristiques du bien (adresse, commune, grade, surface, période de
+    construction). `periode_construction` est une PÉRIODE (ex. "avant 1948"), l'API ne
+    fournit pas d'année exacte de construction."""
+    numero_dpe = brute.get("numero_dpe")
+    if not numero_dpe:
+        return None
+    try:
+        x = float(brute.get("coordonnee_cartographique_x_ban"))
+        y = float(brute.get("coordonnee_cartographique_y_ban"))
+        latitude, longitude = lambert93_vers_wgs84(x, y)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "type": "logement",
+        "latitude": latitude,
+        "longitude": longitude,
+        "date_reference": brute.get("date_etablissement_dpe"),
+        "ref_externe": numero_dpe,
+        "source": "dpe-ademe",
+        "metadata": {
+            "adresse": brute.get("adresse_ban") or "",
+            "commune": brute.get("nom_commune_ban") or "",
+            "code_postal": brute.get("code_postal_ban") or "",
+            "grade_dpe": brute.get("etiquette_dpe") or "",
+            "surface_m2": brute.get("surface_habitable_logement"),
+            "periode_construction": brute.get("periode_construction"),
+        },
+    }
 
 
 def _dirigeant_dict(d: dict) -> dict:
