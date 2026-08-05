@@ -43,7 +43,11 @@
       "methode": "POST",
       "chemin": "/campagnes",
       "params": {
-        "zone_id": {"type": "string", "description": "Identifiant de la zone geo à prospecter (voir la liste des zones geo).", "requis": true}
+        "zone_id": {"type": "string", "description": "Identifiant de la zone geo à prospecter (voir la liste des zones geo).", "requis": true},
+        "type": {
+          "type": "string",
+          "description": "« b2b » (défaut, entreprises) ou « b2c » (particuliers/logements — la zone référencée doit être de type « logement », voir geo_zone_ajouter et geo_logements_criteres_disponibles)."
+        }
       },
       "action": true,
       "niveau": 1,
