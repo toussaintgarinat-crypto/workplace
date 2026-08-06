@@ -230,3 +230,40 @@ def test_courriers_liste_statut_et_reponse():
     client.post(f"/repondre/{token}", data={"interesse": "true"})
     liste2 = client.get("/demarchage-postal/courriers", headers=h).json()["courriers"]
     assert liste2[0]["statut"] == "repondu" and liste2[0]["reponse_le"]
+
+
+def test_envoyer_depot_postal_echoue_sans_marquer_envoye(monkeypatch):
+    """Fix 3 : si le dépôt postal échoue, le courrier reste en brouillon (non marqué comme
+    envoyé) pour être retryable. La route retourne 502 avec un message clair."""
+    import hashlib
+
+    import fournisseurs_postaux
+    import stockage
+
+    h = {"X-API-Key": "postal-depot-fail"}
+    tenant = hashlib.sha256(h["X-API-Key"].encode()).hexdigest()[:16]
+
+    # Préparer un courrier normal
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "9 Rue Depot Fail"}], "gabarit": "G", "expediteur": "Moi"
+    }).json()
+    courrier_id = prep["courriers"][0]["courrier_id"]
+
+    # Vérifier qu'il est en brouillon
+    courrier_avant = stockage.lire_courrier(tenant, courrier_id)
+    assert courrier_avant["statut"] == "brouillon"
+
+    # Monkeypatch : faire échouer le dépôt
+    def mock_deposer_fail(courrier):
+        raise RuntimeError("Fournisseur postal injoignable")
+
+    monkeypatch.setattr(fournisseurs_postaux.MockRouteurPostal, "deposer", mock_deposer_fail)
+
+    # Appeler envoyer : doit retourner 502
+    r = client.post(f"/demarchage-postal/envoyer/{courrier_id}", headers=h)
+    assert r.status_code == 502
+    assert "dépôt postal a échoué" in r.json()["detail"].lower()
+
+    # Vérifier que le courrier est TOUJOURS en brouillon (jamais marqué envoyé)
+    courrier_apres = stockage.lire_courrier(tenant, courrier_id)
+    assert courrier_apres["statut"] == "brouillon", "Le courrier doit rester en brouillon après l'échec"
