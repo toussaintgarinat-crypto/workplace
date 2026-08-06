@@ -116,6 +116,21 @@ def test_prospect_vers_lead_logement_jamais_de_nom_de_personne():
     assert lead["statut"] == "à contacter"
 
 
+def test_prospect_vers_lead_logement_ignore_un_nom_meme_present():
+    """La sélection de la branche logement doit être structurelle (adresse + pas
+    d'entreprise), pas conditionnée par l'absence d'un 'nom' dans le payload — sinon un
+    prospect logement portant AUSSI un nom échappe à la branche sûre et le nom finit
+    verbatim dans le lead (+ passthrough notes réactivée)."""
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres", "nom": "Jean Dupont",
+        "commune": "Castres", "grade_dpe": "F",
+    }, statut="à contacter")
+    assert lead["nom"] == "Occupant — 12 Rue des Lilas, Castres"
+    assert "Jean Dupont" not in lead["nom"]
+    assert "Jean Dupont" not in lead.get("notes", "")
+
+
 def test_import_lot_dedoublonne_logements_par_adresse(monkeypatch):
     _install_faux_core(monkeypatch, [])
     d = client.post("/crm/import-lot", json={"prospects": [
@@ -184,3 +199,22 @@ def test_import_lot_toujours_ignore_prospect_totalement_vide(monkeypatch):
         {"adresse": "  "},           # adresse vide après trim
     ]}).json()
     assert d["crees"] == 0 and d["ignores"] == 2
+
+
+def test_resume_lead_expose_adresse_pour_un_logement(monkeypatch):
+    """Contrat cross-brique : `forge_crm_lister` doit exposer l'adresse d'un lead
+    logement, pour que la brique mail puisse préparer un courrier postal à partir d'un
+    prospect renvoyé par GET /crm — sinon l'adresse (encodée dans `nom`) est perdue."""
+    _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"adresse": "9 Rue Haute, Castres", "grade_dpe": "E"},
+    ]}).json()
+    assert d["prospects"][0]["adresse"] == "9 Rue Haute, Castres"
+
+
+def test_resume_lead_pas_dadresse_pour_une_entreprise(monkeypatch):
+    _install_faux_core(monkeypatch, [])
+    d = client.post("/crm/import-lot", json={"prospects": [
+        {"nom": "Boulangerie A", "entreprise": "Boulangerie A"},
+    ]}).json()
+    assert d["prospects"][0].get("adresse") is None

@@ -548,17 +548,30 @@ async def _resoudre_pole_crm(client: httpx.AsyncClient) -> str:
 _CHAMPS_LEAD = ("nom", "email", "telephone", "entreprise", "statut", "valeur", "notes")
 
 
+_PREFIXE_NOM_LOGEMENT = "Occupant — "
+
+
 def _resume_lead(d: dict) -> dict:
-    """Réduit un lead core (camelCase) à un résumé français."""
+    """Réduit un lead core (camelCase) à un résumé français.
+
+    `adresse` n'existe pas en colonne dédiée côté core (schéma du monolithe `forge/`,
+    hors périmètre) : un lead logement encode toujours son adresse dans `nom`, au format
+    fixe `_PREFIXE_NOM_LOGEMENT + adresse` (voir `_prospect_vers_lead`) — on la récupère
+    ici en retirant ce préfixe exact, pour que `forge_crm_lister` puisse alimenter le
+    démarchage postal (route `mail` `preparer`, qui a besoin de l'adresse).
+    """
+    nom = d.get("nom")
+    adresse = nom[len(_PREFIXE_NOM_LOGEMENT):] if nom and nom.startswith(_PREFIXE_NOM_LOGEMENT) else None
     return {
         "id": d.get("id"),
-        "nom": d.get("nom"),
+        "nom": nom,
         "entreprise": d.get("entreprise") or None,
         "email": d.get("email") or None,
         "telephone": d.get("telephone") or None,
         "statut": d.get("statut"),
         "valeur": d.get("valeur"),
         "notes": d.get("notes") or None,
+        "adresse": adresse,
     }
 
 
@@ -640,7 +653,7 @@ def _prospect_vers_lead(p: dict, statut: str) -> dict:
     fonciers inaccessibles à une entreprise commerciale). Le nom d'un lead logement est
     TOUJOURS « Occupant — {adresse} », jamais un nom trouvé ailleurs."""
     adresse = (p.get("adresse") or "").strip()
-    if adresse and not (p.get("entreprise") or p.get("nom")):
+    if adresse and not p.get("entreprise"):
         notes = [f"Adresse : {adresse}"]
         if p.get("commune"):
             notes.append(f"Commune : {p['commune']}")
