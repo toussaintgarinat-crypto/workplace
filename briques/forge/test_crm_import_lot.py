@@ -141,6 +141,34 @@ def test_import_lot_dedoublonne_logements_par_adresse(monkeypatch):
     assert d["crees"] == 2 and d["doublons"] == 1
 
 
+def test_reimport_logement_ne_recree_pas_les_leads_deja_en_base(monkeypatch):
+    """Le dé-doublonnage logement doit tenir sur un SECOND passage, pas seulement à
+    l'intérieur d'un lot. Le piège : un lead déjà en base n'a pas de champ `adresse`
+    (le core n'a pas cette colonne), seulement `nom = "Occupant — {adresse}"`. Sans
+    ré-extraction, les empreintes ne se croisent jamais et l'orchestration horaire de
+    veille-prospection recrée tout le lot à chaque passage."""
+    store = _install_faux_core(monkeypatch, [])
+    lot = {"prospects": [
+        {"adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F"},
+        {"adresse": "4 Impasse du Moulin, Castres", "grade_dpe": "G"},
+    ]}
+    d1 = client.post("/crm/import-lot", json=lot).json()
+    assert d1["crees"] == 2
+    d2 = client.post("/crm/import-lot", json=lot).json()
+    assert d2["crees"] == 0 and d2["doublons"] == 2
+    assert len(store) == 2                      # rien n'a été empilé
+
+
+def test_signatures_croisent_prospect_entrant_et_lead_en_base():
+    """Le contrat qui rend le test ci-dessus vrai, isolé : les deux FORMES d'un même
+    logement (prospect entrant vs lead déjà stocké) doivent partager une empreinte."""
+    from main import _signatures
+    entrant = {"adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F"}
+    en_base = {"id": "x", "nom": "Occupant — 12 Rue des Lilas, Castres",
+               "statut": "à contacter"}
+    assert _signatures(entrant) & _signatures(en_base)
+
+
 def test_prospect_vers_lead_logement_jamais_de_notes_personnelles():
     """Contrainte légale : aucun nom de personne ne doit jamais paraître dans un lead logement,
     y compris via la passthrough du champ 'notes' du prospect. Les notes de lead logement doivent
