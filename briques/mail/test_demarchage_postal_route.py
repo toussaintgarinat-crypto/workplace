@@ -205,3 +205,28 @@ def test_envoyer_cloisonne_par_tenant():
     r = client.post(f"/demarchage-postal/envoyer/{courrier_id}",
                     headers={"X-API-Key": "postal-voisin"})
     assert r.status_code == 404
+
+
+def test_registre_postal_transparence_et_isolation():
+    h = {"X-API-Key": "postal-registre"}
+    client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "1 Rue Registre, Castres"}], "gabarit": "G",
+        "expediteur": "Moi"})
+    reg = client.get("/demarchage-postal/registre", headers=h).json()["registre"]
+    assert len(reg) == 1 and reg[0]["adresse"] == "1 Rue Registre, Castres"
+    autre = client.get("/demarchage-postal/registre",
+                       headers={"X-API-Key": "postal-registre-voisin"}).json()
+    assert autre["registre"] == []
+
+
+def test_courriers_liste_statut_et_reponse():
+    h = {"X-API-Key": "postal-courriers"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "2 Rue Courrier, Castres"}], "gabarit": "G",
+        "expediteur": "Moi"}).json()
+    token = prep["courriers"][0]["token"]
+    liste = client.get("/demarchage-postal/courriers", headers=h).json()["courriers"]
+    assert liste[0]["statut"] == "brouillon" and liste[0]["reponse_le"] is None
+    client.post(f"/repondre/{token}", data={"interesse": "true"})
+    liste2 = client.get("/demarchage-postal/courriers", headers=h).json()["courriers"]
+    assert liste2[0]["statut"] == "repondu" and liste2[0]["reponse_le"]

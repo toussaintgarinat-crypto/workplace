@@ -401,7 +401,7 @@
       "params": {
         "prospects": {
           "type": "array",
-          "description": "Liste [{adresse (requis), commune?, grade_dpe?, lead_id?}]. Passe directement les prospects logement du CRM (forge_crm_lister) ou de geo_prospecter_lot.",
+          "description": "Liste [{adresse (requis), commune?, grade_dpe?, lead_id?}]. Passe directement les prospects logement du CRM (forge_crm_lister) ou de geo_prospecter_lot — pour un prospect venu de forge_crm_lister, son champ `lead_id` ici est le `id` renvoyé par forge_crm_lister (et son `adresse` est déjà exposée directement par forge_crm_lister pour un lead logement).",
           "requis": true
         },
         "gabarit": {
@@ -438,6 +438,22 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "mail_demarchage_postal_registre",
+      "description": "Le REGISTRE de démarchage POSTAL (transparence) : qui a été contacté par courrier, combien de fois, quand, et qui s'est désinscrit. Sert « qui ai-je déjà démarché par courrier ». Lecture seule.",
+      "methode": "GET",
+      "chemin": "/demarchage-postal/registre",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "mail_demarchage_postal_courriers",
+      "description": "Liste les courriers postaux du tenant avec leur statut (brouillon/envoyé/répondu) et leur date de réponse — sert « qui a répondu à ma campagne », le vrai indicateur des leads qualifiés (le lead n'est qualifié dans le CRM que lorsque ce statut passe à « répondu », voir mail_demarchage_postal_preparer). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/demarchage-postal/courriers",
+      "params": {},
+      "action": false
     }
   ]
 }

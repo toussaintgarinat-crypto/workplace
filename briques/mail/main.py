@@ -769,6 +769,21 @@ def demarchage_postal_envoyer(courrier_id: str, tenant: str = Depends(tenant_act
     return {"courrier_id": courrier_id, **resultat}
 
 
+@app.get("/demarchage-postal/registre")
+def demarchage_postal_registre(tenant: str = Depends(tenant_actuel)):
+    """Le registre de démarchage POSTAL (transparence) : qui a été contacté par courrier,
+    combien de fois, quand, et qui s'est désinscrit. Lecture seule."""
+    return {"registre": stockage.demarchage_postal_lister(tenant)}
+
+
+@app.get("/demarchage-postal/courriers")
+def demarchage_postal_courriers(tenant: str = Depends(tenant_actuel)):
+    """Les courriers du tenant — statut (brouillon/envoyé/répondu) et date de réponse.
+    Sert « qui a répondu à ma campagne », le vrai indicateur de leads qualifiés.
+    Lecture seule."""
+    return {"courriers": stockage.lister_courriers(tenant)}
+
+
 # ── Capture de réponse publique (/repondre/{token}) : page SANS authentification ───
 def _qualifier_lead_best_effort(lead_id: str) -> None:
     """Fait passer un lead `forge` en statut « lead qualifié » suite à une réponse
