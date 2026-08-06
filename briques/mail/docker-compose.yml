@@ -9,6 +9,15 @@ services:
         required: false
     ports:
       - "6030:6030"
+    extra_hosts:
+      # Joindre les services hôtes sous LINUX (le HP) : `host.docker.internal` n'y existe
+      # PAS d'office, contrairement à Docker Desktop. `mail` en a besoin depuis qu'il
+      # appelle une autre brique — `forge` (FORGE_URL, qualification d'un lead quand un
+      # destinataire répond au courrier postal) et la Gateway (GATEWAY_URL, résumés).
+      # Sans cette ligne, ces appels échouent en résolution DNS ; celui vers forge est
+      # best-effort (avalé en warning) : la panne serait SILENCIEUSE, le lead ne
+      # passerait jamais « lead qualifié ».
+      - "host.docker.internal:host-gateway"
     environment:
       - PORT=6030
       - MAIL_DB=/data/mail.db
