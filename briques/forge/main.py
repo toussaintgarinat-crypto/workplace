@@ -551,17 +551,26 @@ _CHAMPS_LEAD = ("nom", "email", "telephone", "entreprise", "statut", "valeur", "
 _PREFIXE_NOM_LOGEMENT = "Occupant — "
 
 
-def _resume_lead(d: dict) -> dict:
-    """Réduit un lead core (camelCase) à un résumé français.
+def _adresse_depuis_nom(nom: str | None) -> str | None:
+    """L'adresse encodée dans le `nom` d'un lead logement, ou None si ce n'en est pas un.
 
     `adresse` n'existe pas en colonne dédiée côté core (schéma du monolithe `forge/`,
     hors périmètre) : un lead logement encode toujours son adresse dans `nom`, au format
-    fixe `_PREFIXE_NOM_LOGEMENT + adresse` (voir `_prospect_vers_lead`) — on la récupère
-    ici en retirant ce préfixe exact, pour que `forge_crm_lister` puisse alimenter le
-    démarchage postal (route `mail` `preparer`, qui a besoin de l'adresse).
+    fixe `_PREFIXE_NOM_LOGEMENT + adresse` (voir `_prospect_vers_lead`). C'est donc la
+    SEULE façon de relire l'adresse d'un lead déjà en base — d'où les deux appelants :
+    `_resume_lead` (l'exposer à `forge_crm_lister`) et `_signatures` (dé-doublonner).
     """
+    if nom and nom.startswith(_PREFIXE_NOM_LOGEMENT):
+        return nom[len(_PREFIXE_NOM_LOGEMENT):]
+    return None
+
+
+def _resume_lead(d: dict) -> dict:
+    """Réduit un lead core (camelCase) à un résumé français. `adresse` est ré-extraite du
+    `nom` pour un lead logement (cf. `_adresse_depuis_nom`), pour que `forge_crm_lister`
+    puisse alimenter le démarchage postal (route `mail` `preparer`, qui en a besoin)."""
     nom = d.get("nom")
-    adresse = nom[len(_PREFIXE_NOM_LOGEMENT):] if nom and nom.startswith(_PREFIXE_NOM_LOGEMENT) else None
+    adresse = _adresse_depuis_nom(nom)
     return {
         "id": d.get("id"),
         "nom": nom,
@@ -634,15 +643,23 @@ def _signatures(lead: dict) -> set[str]:
     """Empreintes de dé-doublonnage d'un prospect : l'email (fort), le nom d'entreprise
     (repli B2B), ou l'adresse (repli B2C — un logement n'a ni email ni entreprise).
     Deux prospects qui partagent l'une de ces empreintes sont considérés identiques —
-    l'import est ainsi ré-exécutable sans empiler des doublons."""
+    l'import est ainsi ré-exécutable sans empiler des doublons.
+
+    Appelée sur les DEUX formes : le prospect entrant (qui porte `adresse` en clair) ET
+    le lead DÉJÀ en base (qui ne l'a que dans son `nom`, faute de colonne dédiée côté
+    core). Sans le repli `_adresse_depuis_nom`, ces deux formes n'ont aucune empreinte
+    commune (`adr:…` d'un côté, `ent:occupant — …` de l'autre) : un lot ré-importé ne
+    croiserait jamais les leads logement déjà créés, et l'orchestration horaire de
+    `veille-prospection` recréerait tout le lot à chaque passage."""
     sigs: set[str] = set()
     if lead.get("email"):
         sigs.add("email:" + _norm(lead["email"]))
     ent = lead.get("entreprise") or lead.get("nom")
     if ent:
         sigs.add("ent:" + _norm(ent))
-    if lead.get("adresse"):
-        sigs.add("adr:" + _norm(lead["adresse"]))
+    adresse = lead.get("adresse") or _adresse_depuis_nom(lead.get("nom"))
+    if adresse:
+        sigs.add("adr:" + _norm(adresse))
     return sigs
 
 
@@ -668,7 +685,10 @@ def _prospect_vers_lead(p: dict, statut: str) -> dict:
         if p.get("ref_externe"):
             notes.append(f"DPE : {p['ref_externe']}")
         notes.append("Importé depuis la veille geo (logement)")
-        return {"nom": f"Occupant — {adresse}", "statut": statut,
+        # La constante, pas le littéral : `_adresse_depuis_nom` la relit pour ré-extraire
+        # l'adresse — un préfixe écrit en dur ici casserait silencieusement les DEUX
+        # lecteurs (exposition à `forge_crm_lister` et dé-doublonnage au ré-import).
+        return {"nom": f"{_PREFIXE_NOM_LOGEMENT}{adresse}", "statut": statut,
                 "notes": " · ".join(notes)}
     ent = (p.get("entreprise") or p.get("nom") or "").strip()
     notes = []
