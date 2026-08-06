@@ -23,6 +23,27 @@ def test_demarchage_postal_desinscrire_fige_opt_out():
     assert e["opt_out"] is True
 
 
+def test_demarchage_postal_opt_out_insensible_a_la_casse():
+    """L'opt-out est le garde-fou conformité : une variante de casse ne doit pas le
+    contourner. `forge` tient déjà « 12 Rue X » et « 12 rue x » pour un SEUL lead
+    (`_norm`) — le registre postal doit s'accorder, sinon la même adresse est
+    re-démarchée sous une autre casse."""
+    stockage.demarchage_postal_desinscrire("t3b", "12 Rue des Lilas, Castres")
+    for variante in ("12 Rue des Lilas, Castres", "12 rue des lilas, castres",
+                     "  12 RUE DES LILAS, CASTRES  "):
+        etat = stockage.demarchage_postal_lire("t3b", variante)
+        assert etat and etat["opt_out"] is True, f"opt-out contourné par « {variante} »"
+
+
+def test_demarchage_postal_cadence_insensible_a_la_casse():
+    """Le plafond max_contacts fuit par la même faille que l'opt-out s'il compte deux
+    lignes distinctes pour la même adresse."""
+    stockage.demarchage_postal_enregistrer_contact("t3c", "4 Impasse du Moulin")
+    etat = stockage.demarchage_postal_enregistrer_contact("t3c", "4 impasse du moulin")
+    assert etat["nb_contacts"] == 2
+    assert len(stockage.demarchage_postal_lister("t3c")) == 1
+
+
 def test_demarchage_postal_lister_isole_par_tenant():
     stockage.demarchage_postal_enregistrer_contact("t4-moi", "7 Rue Z")
     assert stockage.demarchage_postal_lister("t4-voisin") == []

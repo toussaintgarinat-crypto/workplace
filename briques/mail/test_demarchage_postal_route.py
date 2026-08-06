@@ -208,12 +208,18 @@ def test_envoyer_cloisonne_par_tenant():
 
 
 def test_registre_postal_transparence_et_isolation():
+    """Le registre indexe par adresse NORMALISÉE (minuscules — cf.
+    `stockage._norm_adresse`, sans quoi une variante de casse contourne l'opt-out).
+    L'adresse d'origine, elle, n'est pas perdue : c'est celle du courrier, la seule
+    qui soit imprimée — vérifiée ci-dessous."""
     h = {"X-API-Key": "postal-registre"}
     client.post("/demarchage-postal/preparer", headers=h, json={
         "prospects": [{"adresse": "1 Rue Registre, Castres"}], "gabarit": "G",
         "expediteur": "Moi"})
     reg = client.get("/demarchage-postal/registre", headers=h).json()["registre"]
-    assert len(reg) == 1 and reg[0]["adresse"] == "1 Rue Registre, Castres"
+    assert len(reg) == 1 and reg[0]["adresse"] == "1 rue registre, castres"
+    courriers = client.get("/demarchage-postal/courriers", headers=h).json()["courriers"]
+    assert courriers[0]["adresse"] == "1 Rue Registre, Castres"   # casse d'origine intacte
     autre = client.get("/demarchage-postal/registre",
                        headers={"X-API-Key": "postal-registre-voisin"}).json()
     assert autre["registre"] == []
