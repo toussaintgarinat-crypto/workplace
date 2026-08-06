@@ -574,6 +574,17 @@ def creer_courrier(tenant: str, *, adresse: str, commune: str = "",
     return _courrier_dict(r)
 
 
+def lister_courriers(tenant: str, limite: int = 200) -> list[dict]:
+    """Les courriers du tenant (transparence) : contenu, statut (brouillon/envoye/repondu),
+    date de réponse — le pendant du registre pour savoir QUI a répondu, pas seulement
+    combien de fois chaque adresse a été contactée."""
+    with _conn() as c:
+        lignes = c.execute(
+            "SELECT * FROM courriers WHERE tenant=? ORDER BY cree_le DESC LIMIT ?",
+            (tenant, limite)).fetchall()
+    return [_courrier_dict(r) for r in lignes]
+
+
 def lire_courrier(tenant: str, courrier_id: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM courriers WHERE id=? AND tenant=?",
