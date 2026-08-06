@@ -591,6 +591,17 @@ def lire_courrier_par_token(token: str) -> dict | None:
     return _courrier_dict(r) if r else None
 
 
+def maj_contenu_courrier(tenant: str, courrier_id: str, contenu: str) -> dict | None:
+    """Met à jour le contenu d'un courrier APRÈS création — nécessaire car le lien de
+    réponse (qui utilise le token, généré par `creer_courrier`) ne peut être construit
+    qu'une fois le courrier créé. Motif `maj_metadata` (geo) / `maj_brouillon` (mail,
+    email) : mise à jour après coup, pas une réécriture du modèle de création."""
+    with _conn() as c:
+        c.execute("UPDATE courriers SET contenu = ? WHERE id = ? AND tenant = ?",
+                  (contenu, courrier_id, tenant))
+    return lire_courrier(tenant, courrier_id)
+
+
 def marquer_courrier_envoye(tenant: str, courrier_id: str) -> dict | None:
     with _conn() as c:
         c.execute("UPDATE courriers SET statut='envoye', envoye_le=? WHERE id=? AND tenant=?",
