@@ -96,7 +96,7 @@ def test_lambert93_vers_wgs84_sur_un_point_reel_carcassonne():
     assert longitude == pytest.approx(2.35910, abs=1e-4)
 
 
-def test_lambert93_vers_wgs84_hors_de_france_leve():
+def test_lambert93_vers_wgs84_entree_invalide_leve():
     # Note: (0, 0) actually converts to valid WGS84 (-5.98, -1.36).
     # Using NaN which produces NaN lat/lon that fail bounds validation.
     with pytest.raises(ValueError):
