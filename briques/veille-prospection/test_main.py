@@ -90,6 +90,8 @@ def test_campagnes_executer_gate_si_cle_configuree(monkeypatch):
 
 def test_creer_campagne_type_b2c(monkeypatch):
     monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration.httpx, "get",
+                       lambda *a, **k: (_ for _ in ()).throw(Exception("réseau interdit dans ce test")))
     r = client.post("/campagnes", headers=_entetes("main-eve"),
                     json={"zone_id": "zone-logements-eve", "type": "b2c"})
     assert r.status_code == 201 and r.json()["type"] == "b2c"
@@ -97,6 +99,8 @@ def test_creer_campagne_type_b2c(monkeypatch):
 
 def test_creer_campagne_type_par_defaut_reste_b2b(monkeypatch):
     monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration.httpx, "get",
+                       lambda *a, **k: (_ for _ in ()).throw(Exception("réseau interdit dans ce test")))
     r = client.post("/campagnes", headers=_entetes("main-frank"),
                     json={"zone_id": "zone-frank"})
     assert r.status_code == 201 and r.json()["type"] == "b2b"
@@ -104,6 +108,8 @@ def test_creer_campagne_type_par_defaut_reste_b2b(monkeypatch):
 
 def test_creer_campagne_type_invalide_422(monkeypatch):
     monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration.httpx, "get",
+                       lambda *a, **k: (_ for _ in ()).throw(Exception("réseau interdit dans ce test")))
     r = client.post("/campagnes", headers=_entetes("main-gina"),
                     json={"zone_id": "zone-gina", "type": "b2x"})
     assert r.status_code == 422
