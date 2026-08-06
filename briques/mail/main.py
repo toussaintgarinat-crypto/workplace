@@ -764,7 +764,12 @@ def demarchage_postal_envoyer(courrier_id: str, tenant: str = Depends(tenant_act
         raise HTTPException(404, "Courrier introuvable.")
     if courrier["statut"] != "brouillon":
         raise HTTPException(409, f"Courrier déjà « {courrier['statut']} », pas ré-envoyable.")
-    resultat = fournisseurs_postaux.routeur_postal().deposer(courrier)
+    try:
+        resultat = fournisseurs_postaux.routeur_postal().deposer(courrier)
+    except Exception as e:
+        logger.warning("Mail : dépôt postal échoué (courrier_id=%s) : %s", courrier_id, e)
+        raise HTTPException(502, "Le dépôt postal a échoué — le courrier reste en brouillon, "
+                                 "réessayable.") from e
     stockage.marquer_courrier_envoye(tenant, courrier_id)
     return {"courrier_id": courrier_id, **resultat}
 
