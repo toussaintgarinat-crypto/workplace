@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import Depends, FastAPI, Form, Header, HTTPException
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -689,8 +689,19 @@ def _pied_postal(expediteur: str) -> str:
     return "\n\n—\n" + expediteur.strip()
 
 
+def _url_publique_mail(request: Request) -> str:
+    """Base d'URL vue par le DESTINATAIRE du courrier (pour le lien de réponse imprimé).
+
+    Priorité à MAIL_PUBLIC_URL (ex. l'URL d'un tunnel temporaire, motif
+    RESTAURANT_PUBLIC_URL/briques/restaurant/main.py) ; sinon on déduit de la requête.
+    Sur localhost, le lien ne sera pas joignable depuis le téléphone du destinataire :
+    attendu en dev — définir MAIL_PUBLIC_URL une fois la brique exposée."""
+    base = os.getenv("MAIL_PUBLIC_URL", "").strip().rstrip("/")
+    return base or str(request.base_url).rstrip("/")
+
+
 @app.post("/demarchage-postal/preparer", status_code=201)
-def demarchage_postal_preparer(corps: DemarchagePostalEntree,
+def demarchage_postal_preparer(corps: DemarchagePostalEntree, request: Request,
                                tenant: str = Depends(tenant_actuel)):
     """PRÉPARE en lot des courriers personnalisés par ADRESSE (jamais par nom).
     Registre de cadence/opt-out séparé de l'email. Chaque courrier reçoit un TOKEN de
@@ -724,9 +735,16 @@ def demarchage_postal_preparer(corps: DemarchagePostalEntree,
         courrier = stockage.creer_courrier(tenant, adresse=adresse,
                                            commune=p.get("commune") or "",
                                            lead_id=p.get("lead_id"), contenu=contenu)
+        # Le lien de réponse a besoin du token, connu seulement une fois le courrier créé
+        # (cf. finding critique de revue : sans ce lien imprimé, un destinataire n'a
+        # AUCUN moyen d'atteindre /repondre/{token} — le contenu stocké doit le contenir).
+        lien = f"{_url_publique_mail(request)}/repondre/{courrier['token']}"
+        contenu_final = contenu + f"\n\nPour signaler votre intérêt, rendez-vous sur : {lien}"
+        stockage.maj_contenu_courrier(tenant, courrier["id"], contenu_final)
         maj = stockage.demarchage_postal_enregistrer_contact(tenant, adresse)
         prepares.append({"courrier_id": courrier["id"], "adresse": adresse,
-                         "token": courrier["token"], "numero_contact": maj["nb_contacts"],
+                         "token": courrier["token"], "lien": lien,
+                         "numero_contact": maj["nb_contacts"],
                          "relance": maj["nb_contacts"] > 1})
     return {"ok": True, "envoye": False, "prepares": len(prepares), "courriers": prepares,
             "ignores": ignores,

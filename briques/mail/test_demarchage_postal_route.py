@@ -149,6 +149,53 @@ def test_envoyer_deux_fois_refuse():
     assert r2.status_code == 409
 
 
+def test_courrier_contient_le_lien_de_reponse():
+    """Finding critique de la revue finale : le token de réponse était généré/stocké
+    mais JAMAIS écrit dans le contenu du courrier — un destinataire imprimé n'avait
+    aucun moyen d'atteindre /repondre/{token}. Ce test prouve que le contenu STOCKÉ
+    (pas seulement la réponse HTTP) contient bien le lien."""
+    import hashlib
+
+    import stockage
+
+    h = {"X-API-Key": "postal-lien"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "20 Rue du Lien, Castres"}],
+        "gabarit": "Votre logement au {adresse}.", "expediteur": "Studio X",
+    }).json()
+    c = prep["courriers"][0]
+    token = c["token"]
+    assert f"/repondre/{token}" in c["lien"]
+
+    tenant = hashlib.sha256(h["X-API-Key"].encode()).hexdigest()[:16]
+    courrier = stockage.lire_courrier(tenant, c["courrier_id"])
+    assert courrier is not None
+    assert f"/repondre/{token}" in courrier["contenu"]
+
+
+def test_lien_de_reponse_utilise_mail_public_url(monkeypatch):
+    """MAIL_PUBLIC_URL (motif RESTAURANT_PUBLIC_URL), quand défini, prime sur l'URL
+    dérivée de la requête — indispensable une fois la brique exposée derrière un
+    tunnel/domaine, car un destinataire de courrier physique n'atteindra jamais
+    `localhost`."""
+    import hashlib
+
+    import stockage
+
+    monkeypatch.setenv("MAIL_PUBLIC_URL", "https://exemple-tunnel.trycloudflare.com")
+    h = {"X-API-Key": "postal-public-url"}
+    prep = client.post("/demarchage-postal/preparer", headers=h, json={
+        "prospects": [{"adresse": "21 Rue Publique, Castres"}],
+        "gabarit": "Votre logement au {adresse}.", "expediteur": "Studio X",
+    }).json()
+    c = prep["courriers"][0]
+    assert c["lien"].startswith("https://exemple-tunnel.trycloudflare.com/repondre/")
+
+    tenant = hashlib.sha256(h["X-API-Key"].encode()).hexdigest()[:16]
+    courrier = stockage.lire_courrier(tenant, c["courrier_id"])
+    assert "https://exemple-tunnel.trycloudflare.com/repondre/" in courrier["contenu"]
+
+
 def test_envoyer_cloisonne_par_tenant():
     h = {"X-API-Key": "postal-proprio"}
     prep = client.post("/demarchage-postal/preparer", headers=h, json={
