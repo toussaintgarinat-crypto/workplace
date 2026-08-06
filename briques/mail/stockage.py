@@ -503,6 +503,20 @@ def demarchage_lister(tenant: str, limite: int = 500) -> list[dict]:
 
 
 # ── Registre de démarchage POSTAL : cadence + opt-out par ADRESSE ────────────
+def _norm_adresse(adresse: str) -> str:
+    """Clé de registre d'une adresse : `strip` + minuscules, exactement comme le registre
+    email normalise son adresse mail — et comme `forge/main.py::_norm` normalise la même
+    adresse pour dé-doublonner le lead CRM.
+
+    Sans les minuscules, « 12 Rue des Lilas » et « 12 rue des lilas » sont DEUX lignes :
+    l'opt-out posé sur l'une ne bloque pas l'autre et le plafond `max_contacts` fuit par
+    la même faille — alors que `forge`, lui, les tient déjà pour un seul et même lead.
+    Conséquence assumée (même que pour l'email) : le registre affiche l'adresse
+    normalisée ; l'adresse d'origine, celle qui est IMPRIMÉE, reste intacte dans
+    `courriers.adresse`."""
+    return (adresse or "").strip().lower()
+
+
 def _demarchage_postal_dict(r: sqlite3.Row) -> dict:
     return {"adresse": r["adresse"], "nb_contacts": r["nb_contacts"],
             "dernier_contact": r["dernier_contact"], "opt_out": bool(r["opt_out"]),
@@ -512,12 +526,12 @@ def _demarchage_postal_dict(r: sqlite3.Row) -> dict:
 def demarchage_postal_lire(tenant: str, adresse: str) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM demarchage_postal WHERE tenant=? AND adresse=?",
-                      (tenant, (adresse or "").strip())).fetchone()
+                      (tenant, _norm_adresse(adresse))).fetchone()
     return _demarchage_postal_dict(r) if r else None
 
 
 def demarchage_postal_enregistrer_contact(tenant: str, adresse: str) -> dict:
-    adresse = (adresse or "").strip()
+    adresse = _norm_adresse(adresse)
     now = _maintenant()
     with _conn() as c:
         c.execute(
@@ -533,7 +547,7 @@ def demarchage_postal_enregistrer_contact(tenant: str, adresse: str) -> dict:
 
 
 def demarchage_postal_desinscrire(tenant: str, adresse: str) -> dict:
-    adresse = (adresse or "").strip()
+    adresse = _norm_adresse(adresse)
     now = _maintenant()
     with _conn() as c:
         c.execute(

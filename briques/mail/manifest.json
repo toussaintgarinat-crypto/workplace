@@ -441,7 +441,7 @@
     },
     {
       "nom": "mail_demarchage_postal_registre",
-      "description": "Le REGISTRE de démarchage POSTAL (transparence) : qui a été contacté par courrier, combien de fois, quand, et qui s'est désinscrit. Sert « qui ai-je déjà démarché par courrier ». Lecture seule.",
+      "description": "Le REGISTRE de démarchage POSTAL (transparence) : qui a été contacté par courrier, combien de fois et quand. Sert « qui ai-je déjà démarché par courrier ». Le champ « opt_out » existe et bloque bien un futur envoi, mais AUCUNE route ne permet encore de le poser (pas de désinscription postale automatisée à ce jour) : il vaut toujours false. Lecture seule.",
       "methode": "GET",
       "chemin": "/demarchage-postal/registre",
       "params": {},

@@ -682,10 +682,16 @@ def _personnaliser_postal(gabarit: str, p: dict) -> str:
 
 
 def _pied_postal(expediteur: str) -> str:
-    """Mention d'identité en bas de courrier — équivalent postal de `_pied_lcen`, sans
-    mécanisme d'opt-out automatisé par cette mention (l'opt-out automatisé passe par
-    /repondre, cf. Task 5 ; un opt-out par retour postal reste un processus manuel,
-    hors périmètre de cette itération)."""
+    """Mention d'identité en bas de courrier — équivalent postal de `_pied_lcen`.
+
+    ⚠ ÉCART CONNU, à trancher : contrairement à `_pied_lcen` (email, qui imprime
+    « répondez STOP »), ce pied ne porte AUCUNE mention d'opposition, et AUCUN chemin
+    du code ne pose l'opt-out postal — `stockage.demarchage_postal_desinscrire` est
+    seulement *lue* par `preparer`, jamais appelée : il n'y a pas de route
+    `/demarchage-postal/desinscrire`, et « Pas intéressé(e) » sur `/repondre` marque le
+    courrier « repondu » sans désinscrire l'adresse. La colonne `opt_out` du registre
+    reste donc toujours à 0. C'est la condition d'opposition que la spec posait pour
+    tenir l'intérêt légitime (RGPD art. 6.1.f) — à combler avant tout envoi RÉEL."""
     return "\n\n—\n" + expediteur.strip()
 
 
