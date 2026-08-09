@@ -8,6 +8,7 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from etat import registre
+import accord_action
 import agenda
 import assistant
 import auth
@@ -160,11 +161,17 @@ async def assistant_chat(corps: dict, request: Request):
         journal_conversations.enregistrer(surface, interlocuteur, "user", dernier_user,
                                           utilisateur=utilisateur)
 
+    # S222 — le tour de parole humain. C'est le SEUL endroit où une demande de confirmation
+    # en attente devient un accord : sans passage par ici, aucun `confirme=true` du LLM
+    # n'est recevable. Un refus explicite (« non », « annule ») révoque au lieu d'accorder.
+    accord_action.REGISTRE.tour_utilisateur(fil, dernier_user or "")
+
     async def flux():
         final = ""
         try:
             async for evt in assistant.converser(messages, registre,
-                                                  instructions_projet=instructions_projet):
+                                                  instructions_projet=instructions_projet,
+                                                  fil=fil):
                 t = evt.get("type")
                 if t == "texte_delta":
                     final += evt.get("contenu") or ""
