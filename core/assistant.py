@@ -36,6 +36,7 @@ import amelioration
 import moa
 import suggestions
 import validation_args
+import accord_action
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,10 @@ PROMPT_SYSTEME = (
     "- Si, dans son DERNIER message, l'utilisateur a clairement accepté une action que "
     "tu venais de proposer (« oui », « vas-y », « ok », « confirme »), alors appelle "
     "directement l'outil avec `confirme=true` — ne redemande pas une seconde fois.\n"
+    "- Ce n'est pas qu'une consigne : le Cœur REFUSE d'exécuter une action dont l'accord "
+    "n'a pas été demandé puis obtenu d'un vrai message de l'utilisateur, et l'accord porte "
+    "sur les arguments EXACTS qui lui ont été présentés. Changer un destinataire ou une "
+    "cible après son accord invalide l'accord — il faut redemander.\n"
     "- « décrocher » retire vraiment l'entreprise des bases centrales (vers un "
     "dossier portable) : préviens-en l'utilisateur avant de confirmer.\n"
     "- Si un outil échoue, explique-le simplement et continue.\n\n"
@@ -121,7 +126,8 @@ PROMPT_SYSTEME = (
 
 
 async def converser(messages: list[dict], registre,
-                    instructions_projet: str | None = None) -> AsyncIterator[dict]:
+                    instructions_projet: str | None = None,
+                    fil: str | None = None) -> AsyncIterator[dict]:
     """Déroule un tour de conversation et émet des événements jusqu'à la réponse finale.
 
     `messages` : historique au format OpenAI ({role, content}). Émet des dicts
@@ -130,7 +136,13 @@ async def converser(messages: list[dict], registre,
     `instructions_projet` : contexte propre au projet de la conversation (façon Claude
     Projects), injecté dans la zone VOLATILE de l'amorce — après le préfixe stable mis en
     cache (S90), pour ne pas le casser quand on passe d'un projet à l'autre.
+
+    `fil` (S222) : identifiant du fil de conversation, sous lequel le Cœur tient les accords
+    humains sur les actions. **Absent = aucun accord ne peut exister** : les actions
+    `confirme=true` sont refusées. C'est le sens sûr — un appelant qui n'a pas de tour de
+    parole humain n'a pas à pouvoir déclencher d'action confirmée.
     """
+    fil_accord = fil or f"sans-fil:{id(messages)}"
     # Date/heure courante (Europe/Paris) injectée pour interpréter « demain », « lundi »…
     try:
         maintenant = datetime.now(ZoneInfo("Europe/Paris"))
@@ -330,10 +342,28 @@ async def converser(messages: list[dict], registre,
                 g_action, g_msg = guardrail.before_call(nom, args)
                 g_note = g_msg if g_action == "warn" else None
 
+                # S222 — gate structurel. Une action confirmée n'est recevable que si le
+                # Cœur a enregistré un accord pour CES arguments exacts ; un accord ne
+                # naît que d'un vrai tour de parole humain (cf. accord_action).
+                est_une_action = outils.est_action(nom, registre)
+                refus_accord = None
+                if est_une_action:
+                    if args.get("confirme"):
+                        _ok, refus_accord = accord_action.REGISTRE.consommer(
+                            fil_accord, nom, args)
+                    else:
+                        # Appel sans `confirme` : c'est la DEMANDE. Sans cet enregistrement,
+                        # aucun `confirme=true` ultérieur ne sera jamais recevable.
+                        accord_action.REGISTRE.demander(fil_accord, nom, args)
+                else:
+                    note_lot = accord_action.REGISTRE.noter_lecture(fil_accord, nom)
+                    if note_lot:
+                        g_note = (g_note + " | " + note_lot) if g_note else note_lot
+
                 # S165 — fil d'activité : la brique d'origine accompagne l'appel, le
                 # front peut afficher « brique › outil » dans la task trace.
                 yield {"type": "outil", "nom": nom, "args": args,
-                       "action": outils.est_action(nom, registre),
+                       "action": est_une_action,
                        "brique": outils.brique_de(nom, registre)}
 
                 if g_action in ("block", "halt"):
@@ -343,6 +373,15 @@ async def converser(messages: list[dict], registre,
                     # sur les mêmes arguments invalides reboucle jusqu'à MAX_ITERATIONS
                     # sans que les compteurs d'échec identique ne le coupent jamais.
                     guardrail.after_call(nom, args, resultat, erreur=True)
+                elif refus_accord:
+                    # `confirmation_requise` est conservé : le drapeau SSE et les boutons
+                    # d'action (S76) continuent de s'afficher exactement comme avant.
+                    # ⚠ On ne nourrit PAS les compteurs d'échec du guardrail ici : l'accord
+                    # va arriver au tour suivant, et un outil déjà marqué « en échec 4× »
+                    # resterait bloqué APRÈS le oui de l'utilisateur.
+                    resultat = json.dumps(
+                        {"erreur": f"[GATE] {refus_accord}", "confirmation_requise": True},
+                        ensure_ascii=False)
                 else:
                     resultat = await outils.executer(nom, args, registre)
                     # S143 — mise à jour de l'état + idempotence.
