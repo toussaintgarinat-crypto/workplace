@@ -40,6 +40,33 @@ C'est exactement le `capacites` du `GUIDE-ajouter-une-brique.md`. Le Cœur lit l
 - Limite : seuls les contrats **JSON** sont déclarables (`_appel_dynamique` ne sait que le JSON).
   Un flux binaire (audio, multipart, image) reste appelé en direct par son client.
 
+### Contraintes de paramètre (S221) — elles sont VÉRIFIÉES, pas décoratives
+
+Depuis S221, ce que tu déclares dans `params` sert deux fois : le schéma est présenté au LLM
+**et** `core/validation_args.py` refuse l'appel avant tout aller-retour réseau s'il ne le
+respecte pas. Le vocabulaire reconnu :
+
+| Clé | Effet | Écart si violé |
+|---|---|---|
+| `type` | `string`, `integer`, `number`, `boolean`, `array`, `object` | **bloquant** |
+| `requis: true` | paramètre obligatoire (absent ou `null` = manquant) | **bloquant** |
+| `enum: [...]` | liste fermée de valeurs admises | **bloquant** |
+| `minimum` / `maximum` | bornes numériques | **bloquant** |
+| `pattern` | expression régulière (recherche partielle, comme JSON Schema) | **bloquant** |
+| `items: {"type": …}` | type des éléments d'un `array` (contrôle superficiel) | signalé, non bloquant |
+
+Un paramètre envoyé mais non déclaré est signalé **sans** bloquer (le LLM improvise parfois un
+argument que la brique ignore — ça ne justifie pas de perdre le tour).
+
+Deux tolérances assumées, à connaître avant de croire à un bug : une chaîne numérique (`"10"`)
+vaut un nombre, et `"true"`/`"false"`/`"1"`/`"0"` valent un booléen. Les arguments partent en
+query string (GET) ou vers un modèle Pydantic en mode souple, qui coercent déjà les deux —
+bloquer là-dessus serait un faux positif qui coûte exactement le tour de LLM qu'on économise.
+
+Plus tu déclares, plus le LLM est corrigé tôt et avec un message utile
+(« paramètre `statut` = 'réglée' hors des valeurs admises : brouillon, envoyée, payée »)
+plutôt qu'avec un opaque « Brique « forge » a refusé (422) ».
+
 Preuve : `curl /capacites` liste `ma_brique_faire`, puis l'assistant l'utilise. **Aucun fichier du
 Cœur édité.**
 

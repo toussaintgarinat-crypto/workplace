@@ -113,6 +113,19 @@ def lister_capacites():
     }
 
 
+@router.get("/validation/ecarts", tags=["briques"])
+def validation_ecarts():
+    """Écarts d'arguments observés depuis le démarrage du Cœur (S221).
+
+    Sert à trancher S226 sur des chiffres et non sur une intuition : des écarts
+    massivement `param_requis`/`type` disent que le LLM se trompe d'ARGUMENTS (la
+    validation unitaire suffit) ; peu d'écarts malgré des tours d'outils nombreux disent
+    que le problème est ailleurs (l'ENCHAÎNEMENT — un plan explicite)."""
+    import validation_args
+
+    return validation_args.compteurs()
+
+
 @router.get("/briques/{nom}/sante", tags=["briques"])
 async def sante_brique(nom: str):
     """Ping le endpoint de santé d'une brique (si url_sante définie)."""

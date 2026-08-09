@@ -300,7 +300,8 @@ OUTILS_ACTION = {
 }
 
 
-_NOMS_STATIQUES = {o["function"]["name"] for o in OUTILS}
+_SPECS_STATIQUES = {o["function"]["name"]: o for o in OUTILS}
+_NOMS_STATIQUES = set(_SPECS_STATIQUES)
 CAPACITES_DYNAMIQUES = os.getenv("CAPACITES_DYNAMIQUES", "1").lower() not in ("0", "false", "no")
 
 
@@ -403,6 +404,21 @@ def outils_pour(registre, *, chargees=None, porte: bool = False) -> list[dict]:
             specs = [s for s in specs if s["function"]["name"] not in differees]
             specs = specs + [_spec_charger(differees)]
     return sorted(specs, key=lambda s: s["function"]["name"])
+
+
+def schema_arguments(nom: str, registre) -> dict | None:
+    """Schéma des arguments d'un outil (`{type, properties, required}`), ou None si inconnu.
+
+    Sert la validation d'arguments (S221) : c'est la MÊME source que celle présentée au LLM,
+    donc valider contre elle ne peut pas diverger du contrat annoncé. Couvre les trois
+    origines : outils câblés en dur, méta-outil de la porte (S90), capacités de manifest."""
+    spec = _SPECS_STATIQUES.get(nom)
+    if spec is not None:
+        return spec["function"]["parameters"]
+    if nom == META_CHARGER:
+        return _spec_charger({})["function"]["parameters"]
+    cap = _capacites_dynamiques(registre).get(nom)
+    return _spec_depuis_capacite(cap)["function"]["parameters"] if cap else None
 
 
 def est_action(nom: str, registre) -> bool:

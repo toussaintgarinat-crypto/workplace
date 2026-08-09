@@ -35,6 +35,7 @@ import proprioception
 import amelioration
 import moa
 import suggestions
+import validation_args
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +247,10 @@ async def converser(messages: list[dict], registre,
             client=client, toujours=outils.noms_socle(registre))
 
         # S143 : guardrail instancié par conversation (jamais en global).
-        guardrail = guardrails_outils.Guardrail()
+        # S221 : il porte le validateur d'arguments — le registre est capturé ici, le
+        # guardrail reste ignorant des manifests.
+        guardrail = guardrails_outils.Guardrail(
+            valideur=lambda n, a: validation_args.valider(n, a, registre))
 
         # S144 MOA : conseil de modèles en parallèle sur les requêtes complexes (opt-in MOA_MODELES).
         # Guidance éphémère — injectée pour ce seul appel, jamais persistée dans le journal.
@@ -335,6 +339,10 @@ async def converser(messages: list[dict], registre,
                 if g_action in ("block", "halt"):
                     resultat = json.dumps(
                         {"erreur": f"[GUARDRAIL] {g_msg}"}, ensure_ascii=False)
+                    # S221 : un appel bloqué EST un échec — sans ça, un LLM qui s'obstine
+                    # sur les mêmes arguments invalides reboucle jusqu'à MAX_ITERATIONS
+                    # sans que les compteurs d'échec identique ne le coupent jamais.
+                    guardrail.after_call(nom, args, resultat, erreur=True)
                 else:
                     resultat = await outils.executer(nom, args, registre)
                     # S143 — mise à jour de l'état + idempotence.
