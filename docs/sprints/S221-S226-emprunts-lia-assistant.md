@@ -1,5 +1,18 @@
 # S221 → S226 — Emprunts à LIA-Assistant (2026-08-09)
 
+> **État au 2026-08-09 — S221 à S225 CODÉS, TESTÉS, COMMITÉS** sur la branche
+> `s221-s225-emprunts-lia`. Reste le LIVE HP (régime de preuve différé). S226 reste
+> conditionnel et non scopé, par construction : c'est S221 qui doit fournir les chiffres.
+>
+> | Sprint | État | ADR |
+> |---|---|---|
+> | S221 | ✅ `683615f` | `docs/decisions/2026-08-09-validation-arguments-avant-appel.md` |
+> | S222 | ✅ `d5c1631` | `docs/decisions/2026-08-09-gate-action-structurel.md` |
+> | S223 | ✅ `fd8f965` | `docs/decisions/2026-08-09-404-indistinguable.md` |
+> | S224 | ✅ `cbdbfe6` | `docs/decisions/2026-08-09-memoire-episteme.md` |
+> | S225 | ✅ `c6a5d3d` | `docs/decisions/2026-08-09-observabilite-metriques-metier.md` |
+> | S226 | ⏸ conditionnel — lire `/validation/ecarts` après quelques semaines d'usage | — |
+
 Backlog **écrit, rien codé**. Issu de la lecture du dépôt public
 [jgouviergmail/LIA-Assistant](https://github.com/jgouviergmail/LIA-Assistant) (README + `docs/technical/PLANNER.md`
 + `docs/technical/JOURNALS.md` — **pas** le code) confronté à l'état réel de `core/` et `briques/`.

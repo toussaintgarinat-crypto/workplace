@@ -164,14 +164,21 @@ async def assistant_chat(corps: dict, request: Request):
     # S222 — le tour de parole humain. C'est le SEUL endroit où une demande de confirmation
     # en attente devient un accord : sans passage par ici, aucun `confirme=true` du LLM
     # n'est recevable. Un refus explicite (« non », « annule ») révoque au lieu d'accorder.
-    accord_action.REGISTRE.tour_utilisateur(fil, dernier_user or "")
+    #
+    # ⚠ La clé n'est PAS `fil` seul. Sur le web, `journal_conversations.fil()` vaut
+    # « web:dashboard » pour TOUT LE MONDE (l'interlocuteur est la surface, pas la
+    # personne) : depuis l'identité multi-utilisateur du Cœur (S182/S217), deux personnes
+    # connectées partageraient alors le même registre d'accords, et le « oui » de l'une
+    # validerait l'action en attente de l'autre.
+    fil_accord = accord_action.cle(fil, utilisateur)
+    accord_action.REGISTRE.tour_utilisateur(fil_accord, dernier_user or "")
 
     async def flux():
         final = ""
         try:
             async for evt in assistant.converser(messages, registre,
                                                   instructions_projet=instructions_projet,
-                                                  fil=fil):
+                                                  fil=fil_accord):
                 t = evt.get("type")
                 if t == "texte_delta":
                     final += evt.get("contenu") or ""
