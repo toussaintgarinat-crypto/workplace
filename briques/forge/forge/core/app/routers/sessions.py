@@ -178,7 +178,10 @@ async def rename_session(sid: str, body: PatchSession, user: UserContext = Depen
             or (sess.scope == "venture" and sess.venture_id and await _check_venture_membership(s, sess.venture_id, user.sub))
         )
         if not has_access:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            # S223 — 404 et NON 403 : la ligne au-dessus renvoie déjà 404 quand la session
+            # n'existe pas ; un 403 ici distinguerait « session d'autrui » de « session
+            # inexistante » et permettrait d'énumérer les sessions par balayage d'id.
+            raise HTTPException(status_code=404, detail="Not found")
         await s.execute(
             update(Sessions).where(Sessions.id == suid).values(name=body.name, updated_at=datetime.datetime.utcnow())
         )
@@ -200,7 +203,10 @@ async def list_messages(sid: str, user: UserContext = Depends(get_current_user))
             or (sess.scope == "venture" and sess.venture_id and await _check_venture_membership(s, sess.venture_id, user.sub))
         )
         if not has_access:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            # S223 — 404 et NON 403 : la ligne au-dessus renvoie déjà 404 quand la session
+            # n'existe pas ; un 403 ici distinguerait « session d'autrui » de « session
+            # inexistante » et permettrait d'énumérer les sessions par balayage d'id.
+            raise HTTPException(status_code=404, detail="Not found")
         rows = (await s.execute(
             select(Messages).where(Messages.session_id == suid).order_by(asc(Messages.created_at))
         )).scalars().all()

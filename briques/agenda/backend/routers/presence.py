@@ -50,8 +50,10 @@ async def partager(body: PresenceEntree, db: AsyncSession = Depends(get_db),
             EventParticipant.event_id == body.event_id,
             EventParticipant.user_id == uid))).scalar_one_or_none()
         if part is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Non participant de cet événement")
+            # S223 — 404 et NON 403 : un 403 confirmerait à un non-participant que cet
+            # événement existe (et donc, par balayage d'identifiants, qui a un agenda).
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="Événement introuvable")
         expires_at, scope, event_id = evt.end_at, "event", body.event_id
     else:
         ttl = body.ttl_minutes or TTL_DEFAUT_MIN

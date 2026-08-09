@@ -45,10 +45,15 @@ async def test_partage_event_exige_participation(db, monkeypatch):
     db.add(evt)
     await db.commit()
 
-    with pytest.raises(HTTPException) as exc:  # non-participant → 403
+    # S223 — non-participant → 404, PAS 403. Avec `test_partage_event_inconnu_404` juste
+    # en dessous, ce couple de tests encodait exactement la fuite : un intrus distinguait
+    # « événement existant auquel je ne participe pas » (403) d'« événement inexistant »
+    # (404), et pouvait donc énumérer les agendas des autres par balayage d'identifiants.
+    with pytest.raises(HTTPException) as exc:
         await R.partager(PresenceEntree(lat=1.0, lon=2.0, scope="event", event_id=evt.id),
                          db=db, user={"sub": "intrus"})
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Événement introuvable"  # même corps que l'inexistant
 
 
 @pytest.mark.asyncio

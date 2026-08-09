@@ -62,7 +62,8 @@ async def update_comment(
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     if c.user_id != user["sub"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your comment")
+        # S223 — 404 et NON 403 : un 403 confirmerait l'existence du commentaire d'autrui.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     c.content = body.content
     await db.commit()
     await db.refresh(c)
@@ -79,6 +80,7 @@ async def delete_comment(
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     if c.user_id != user["sub"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your comment")
+        # S223 — 404 et NON 403 : un 403 confirmerait l'existence du commentaire d'autrui.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     await db.delete(c)
     await db.commit()

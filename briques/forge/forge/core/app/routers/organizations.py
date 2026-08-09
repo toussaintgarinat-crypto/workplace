@@ -128,7 +128,9 @@ async def update_org(org_id: str, body: UpdateOrg, user: UserContext = Depends(g
                     Organizations.id == oid, Organizations.owner_id == user.sub))
             )).scalar_one_or_none()
         if org is None:
-            raise HTTPException(status_code=403, detail="Not found or not owner")
+            # S223 — 404 : « organisation d'autrui » et « organisation inexistante »
+            # doivent porter le même code, pas seulement le même libellé.
+            raise HTTPException(status_code=404, detail="Not found")
     return organization(org)
 
 
@@ -169,17 +171,22 @@ async def add_member(org_id: str, body: AddMember, user: UserContext = Depends(g
 async def remove_member(org_id: str, user_id: str, user: UserContext = Depends(get_current_user)):
     oid = _uuid(org_id)
     async with SessionLocal() as s:
-        org = (await s.execute(select(Organizations).where(Organizations.id == oid))).scalar_one_or_none() if oid else None
-        if org is not None and org.owner_id == user_id:
-            raise HTTPException(status_code=400, detail="Cannot remove owner")
+        # S223 — l'appartenance est vérifiée AVANT toute règle métier. Dans l'ordre
+        # inverse (règle métier d'abord), un non-membre qui balayait les identifiants
+        # recevait 400 « Cannot remove owner » quand il tombait juste, et 403 sinon :
+        # le code de retour révélait à la fois l'existence de l'organisation ET
+        # l'identité de son propriétaire.
         my = (await s.execute(
             select(OrganizationMembers).where(and_(
                 OrganizationMembers.org_id == oid, OrganizationMembers.user_id == user.sub))
         )).scalar_one_or_none() if oid else None
         if my is None:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            raise HTTPException(status_code=404, detail="Not found")
         if my.role == "member" and user_id != user.sub:
             raise HTTPException(status_code=403, detail="Forbidden")
+        org = (await s.execute(select(Organizations).where(Organizations.id == oid))).scalar_one_or_none() if oid else None
+        if org is not None and org.owner_id == user_id:
+            raise HTTPException(status_code=400, detail="Cannot remove owner")
         await s.execute(sa_delete(OrganizationMembers).where(and_(
             OrganizationMembers.org_id == oid, OrganizationMembers.user_id == user_id)))
         await s.commit()
@@ -192,7 +199,9 @@ async def delete_org(org_id: str, user: UserContext = Depends(get_current_user))
     async with SessionLocal() as s:
         org = (await s.execute(select(Organizations).where(Organizations.id == oid))).scalar_one_or_none() if oid else None
         if org is None or org.owner_id != user.sub:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            # S223 — 404 : inexistante et « pas la vôtre » sont déjà confondues ici ;
+            # on aligne le code sur le reste de la brique.
+            raise HTTPException(status_code=404, detail="Not found")
         if org.plan == "personal":
             raise HTTPException(status_code=400, detail="Cannot delete personal org")
         await s.execute(sa_delete(Organizations).where(Organizations.id == oid))

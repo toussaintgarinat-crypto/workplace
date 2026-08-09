@@ -61,7 +61,10 @@ async def check_space_access(
     )
     membership = result.scalar_one_or_none()
     if not membership:
-        raise HTTPException(status_code=403, detail="Access denied to this space")
+        # S223 — 404 et NON 403 : un 403 confirmerait à un non-membre que cet espace
+        # existe. « Espace d'autrui » et « espace inexistant » doivent être
+        # indistinguables de l'extérieur (même code, même corps).
+        raise HTTPException(status_code=404, detail="Space not found")
     return membership
 
 
@@ -83,7 +86,8 @@ def require_space_role(*roles: UserRole):
         )
         membership = result.scalar_one_or_none()
         if not membership:
-            raise HTTPException(status_code=403, detail="Access denied to this space")
+            # S223 — 404 et NON 403, même raison que `require_space_access` ci-dessus.
+            raise HTTPException(status_code=404, detail="Space not found")
         if roles and UserRole(membership.role) not in roles:
             raise HTTPException(status_code=403, detail=f"Requires one of: {[r.value for r in roles]}")
         return membership
