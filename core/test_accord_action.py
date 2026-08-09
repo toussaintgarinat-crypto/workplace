@@ -86,6 +86,25 @@ def test_accord_cloisonne_par_fil(reg):
     assert reg.consommer("fil-2", "mail_envoyer", {**ARGS, "confirme": True})[0] is False
 
 
+def test_deux_personnes_du_meme_fil_web_ne_partagent_pas_leurs_accords(reg):
+    """`journal_conversations.fil()` vaut « web:dashboard » pour TOUTE la surface web :
+    sans la personne dans la clé, le « oui » d'Alice validerait l'action de Bob."""
+    alice = accord_action.cle("web:dashboard", "alice")
+    bob = accord_action.cle("web:dashboard", "bob")
+    assert alice != bob
+
+    reg.demander(bob, "mail_envoyer", ARGS)          # Bob déclenche une action
+    reg.tour_utilisateur(alice, "oui")               # Alice répond « oui » à autre chose
+    assert reg.consommer(bob, "mail_envoyer", {**ARGS, "confirme": True})[0] is False
+
+    reg.tour_utilisateur(bob, "oui")
+    assert reg.consommer(bob, "mail_envoyer", {**ARGS, "confirme": True})[0] is True
+
+
+def test_une_session_anonyme_ne_se_fond_pas_dans_les_sessions_identifiees():
+    assert accord_action.cle("web:dashboard", None) != accord_action.cle("web:dashboard", "alice")
+
+
 def test_empreinte_ignore_confirme_et_les_valeurs_nulles():
     """`_appel_dynamique` filtre déjà les `None` : deux appels qui partiront identiques
     doivent avoir la même empreinte, sinon l'accord ne matcherait jamais."""

@@ -50,7 +50,19 @@ conversation :
    Absent → l'action n'est pas exécutée, `outils.executer` n'est jamais atteint.
 
 L'accord est à **usage unique**, expire (`ACCORD_TTL_SECONDES`, 600 s par défaut), et est
-cloisonné par fil.
+cloisonné par (fil, personne).
+
+### Pourquoi (fil, personne) et pas le fil seul
+
+Piège trouvé à la relecture, et qui aurait annulé une partie de la protection :
+`journal_conversations.fil()` vaut **« web:dashboard » pour toute la surface web** —
+l'interlocuteur y est la surface, pas la personne. Depuis l'identité multi-utilisateur du
+Cœur (S182/S217), deux personnes connectées auraient partagé le même registre d'accords, et
+le « oui » de l'une aurait validé l'action en attente de l'autre. La clé porte donc aussi
+l'identité résolue (`accord_action.cle`), et une session anonyme reste cloisonnée sous son
+propre seau plutôt que fondue avec les sessions identifiées. Le pont messageries
+(`briques/connexion/pont.py`) n'était pas concerné : il passe l'identifiant externe en
+`interlocuteur`, donc un fil distinct par personne.
 
 ### L'empreinte, et pourquoi elle remplace un « seuil de masse »
 

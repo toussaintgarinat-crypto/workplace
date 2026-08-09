@@ -70,6 +70,18 @@ def est_refus(message: str) -> bool:
     return bool(_REFUS.search(_sans_accents(message)))
 
 
+def cle(fil: str | None, utilisateur: str | None) -> str:
+    """Clé du registre d'accords : le fil de conversation ET la personne.
+
+    Le fil seul ne suffit PAS. `journal_conversations.fil()` vaut « web:dashboard » pour
+    toute la surface web — l'interlocuteur y est la surface, pas la personne. Depuis
+    l'identité multi-utilisateur du Cœur (S182/S217), deux personnes connectées
+    partageraient donc le même registre : le « oui » de l'une validerait l'action en
+    attente de l'autre. La personne inconnue (`None`) reste cloisonnée sous son propre
+    seau, jamais fondue avec les sessions identifiées."""
+    return f"{fil or 'sans-fil'}\x00{utilisateur or '-'}"
+
+
 def empreinte(nom: str, args: dict) -> str:
     """Identité stable d'une action : sa capacité + ses arguments effectifs.
 
