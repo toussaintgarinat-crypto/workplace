@@ -1,0 +1,138 @@
+{
+  "uid": "workplace-parc",
+  "title": "Workplace — parc",
+  "tags": ["workplace"],
+  "timezone": "Europe/Paris",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Tâches planifiées — retard par rapport à leur cadence",
+      "description": "Ratio âge / cadence. > 1 = la tâche a manqué son échéance ; > 3 déclenche l'alerte. C'est le panneau qui aurait montré les 51 jours de modèles gratuits figés.",
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "expr": "workplace_tache_age_secondes / clamp_min(workplace_tache_cadence_secondes, 1)",
+          "legendFormat": "{{brique}} / {{tache}}"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "job": true, "instance": true, "parc": true } } },
+        { "id": "sortBy", "options": { "sort": [{ "field": "Value", "desc": true }] } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "custom": { "align": "left" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }] }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tâches jamais exécutées",
+      "description": "Déclarées dans un manifeste, jamais lancées. Le motif exact des capacités mortes trouvées par S210.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "sum(workplace_tache_jamais_executee)" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Capacités jamais appelées",
+      "description": "Depuis le dernier démarrage du Cœur (compteur en mémoire). À lire avec workplace_demarrage_timestamp_secondes.",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 11 },
+      "targets": [
+        { "refId": "A", "expr": "workplace_capacites_jamais_appelees" },
+        { "refId": "B", "expr": "workplace_capacites_declarees" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Coût LLM (USD)",
+      "description": "Dépense cumulée sur la période courante. Le jour retombe à 0 à minuit UTC.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 11 },
+      "targets": [
+        { "refId": "A", "expr": "workplace_llm_cout_usd", "legendFormat": "{{periode}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "fillOpacity": 8 } } }
+    },
+    {
+      "id": 5,
+      "type": "gauge",
+      "title": "Budget LLM consommé",
+      "description": "À 0,95 le Cœur bloque les appels payants et retombe sur les modèles gratuits.",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 17 },
+      "targets": [
+        { "refId": "A", "expr": "workplace_llm_budget_ratio", "legendFormat": "{{periode}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.8 },
+              { "color": "red", "value": 0.95 }
+            ] }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Taux d'échec par capacité (1 h)",
+      "description": "Une capacité qui échoue systématiquement coûte un tour de LLM à chaque tentative sans jamais remonter à personne.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 17 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(workplace_outil_echecs_total[1h]) / clamp_min(rate(workplace_outil_appels_total[1h]), 0.0001)",
+          "legendFormat": "{{outil}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Écarts d'arguments par catégorie (S221)",
+      "description": "Massivement param_requis/type = le LLM se trompe d'ARGUMENTS (la validation unitaire suffit). Peu d'écarts malgré des tours d'outils nombreux = le problème est dans l'ENCHAÎNEMENT, et S226 se justifie.",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 17 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (categorie) (rate(workplace_validation_ecarts_total[6h]))",
+          "legendFormat": "{{categorie}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 12, "stacking": { "mode": "normal" } } } }
+    }
+  ]
+}

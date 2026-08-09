@@ -1,0 +1,70 @@
+# Observabilité du parc (S225) — Prometheus + Grafana.
+#
+# Volontairement MINIMALE : elle scrute un seul endpoint, le `/metrics` du Cœur, qui agrège
+# une dizaine de métriques MÉTIER (fraîcheur des tâches planifiées, coût LLM, usage réel des
+# capacités, écarts de validation). On n'instrumente PAS les 39 briques une par une : le
+# Cœur connaît déjà leur registre, leur horloge et leur catalogue, et une seule cible à
+# scruter est une seule cible à maintenir.
+#
+# Pas de Loki ni de Tempo : on prend les métriques d'abord, on jugera après. LIA en aligne
+# quatre (Prometheus, Grafana, Loki, Tempo) pour 464 métriques et 26 tableaux de bord — un
+# tableau de bord que personne ne lit ne vaut pas mieux que pas de tableau de bord.
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: workplace_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 90 jours : de quoi voir une dérive lente (les modèles gratuits étaient figés
+      # depuis 51 jours quand on s'en est aperçu — une rétention de 30 jours n'aurait
+      # même pas montré le début de la panne).
+      - --storage.tsdb.retention.time=90d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alertes.yml:/etc/prometheus/alertes.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      # Le Cœur est joint par l'hôte, comme le reste du parc (cf. fix extra_hosts S186).
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: workplace_grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      # Pas de défaut « admin » : un mot de passe faible sur une UI exposée au mesh est
+      # une porte ouverte. Sans la variable, Grafana refuse de démarrer — c'est voulu.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD requis dans le .env racine}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/tableaux:/var/lib/grafana/tableaux:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"   # 3000 est déjà pris ailleurs dans le parc
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  prometheus_data:
+  grafana_data:

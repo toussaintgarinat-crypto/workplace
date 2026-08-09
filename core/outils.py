@@ -452,6 +452,42 @@ _DISPATCHERS = (
 )
 
 
+# ── Comptage des appels d'outils (S225) ─────────────────────────────────────
+# En mémoire vive, remis à zéro au redémarrage — c'est la convention des compteurs
+# Prometheus, `rate()` sait le gérer. Sert deux métriques que rien ne donnait avant :
+# le taux d'échec PAR capacité, et les capacités jamais appelées (dont on ne saura
+# jamais si elles servent tant qu'on ne les compte pas — cf. les 4 capacités MORTES
+# découvertes par S210 et les 51 jours de modèles gratuits figés).
+_APPELS: dict[str, int] = {}
+_ECHECS: dict[str, int] = {}
+
+
+def compteurs_appels() -> tuple[dict, dict]:
+    """(appels, échecs) par nom d'outil depuis le démarrage du processus."""
+    return dict(_APPELS), dict(_ECHECS)
+
+
+# Préfixes d'erreur produits par `executer` ci-dessous. Ils vivent ICI, avec le code qui
+# les émet, et non chez l'appelant : `assistant._est_erreur_outil` les importait en double,
+# et deux listes qui doivent rester synchrones finissent toujours par diverger.
+PREFIXES_ERREUR = (
+    "Impossible :", "Échec (", "Indisponible (", "Brique injoignable (",
+    "Erreur (", "Outil inconnu :",
+)
+
+
+def est_erreur(resultat: str) -> bool:
+    """Vrai si `executer` a renvoyé un message d'erreur (chaîne préfixée) ou un JSON
+    portant un champ `erreur` (blocages guardrail S221 / gate S222)."""
+    resultat = resultat or ""
+    if resultat.startswith(PREFIXES_ERREUR):
+        return True
+    try:
+        return bool(json.loads(resultat).get("erreur"))
+    except Exception:  # noqa: BLE001 — résultat non JSON : ce n'est pas une erreur
+        return False
+
+
 async def executer(nom: str, args: dict, registre) -> str:
     """Exécute un outil et renvoie une chaîne (résultat ou message) pour le LLM.
 
@@ -459,6 +495,14 @@ async def executer(nom: str, args: dict, registre) -> str:
     dans l'ordre ; le premier qui reconnaît `nom` renvoie une chaîne. À défaut, on
     tente une capacité dynamique (découverte par manifest, S64). Le filet d'erreurs
     (try/except) reste ici, centralisé, inchangé."""
+    resultat = await _executer(nom, args, registre)
+    _APPELS[nom] = _APPELS.get(nom, 0) + 1
+    if est_erreur(resultat):
+        _ECHECS[nom] = _ECHECS.get(nom, 0) + 1
+    return resultat
+
+
+async def _executer(nom: str, args: dict, registre) -> str:
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             for dispatch in _DISPATCHERS:

@@ -1,0 +1,26 @@
+global:
+  # 60 s : ces métriques bougent à l'échelle de l'heure (fraîcheur d'une tâche, coût du
+  # jour). Scruter plus vite ne révélerait rien de plus et grossirait la base pour rien.
+  scrape_interval: 60s
+  evaluation_interval: 60s
+  external_labels:
+    parc: workplace
+
+rule_files:
+  - /etc/prometheus/alertes.yml
+
+scrape_configs:
+  # Cible unique : le Cœur agrège les métriques du parc (registre, horloge, catalogue,
+  # journal d'usage). Ajouter une brique ici n'a de sens que si elle expose un `/metrics`
+  # qui dit quelque chose que le Cœur ignore.
+  - job_name: coeur
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:5100"]
+    # Le Cœur lit du SQLite et un JSONL pendant le scrape : c'est rapide, mais un disque
+    # occupé ne doit pas faire passer la cible pour morte.
+    scrape_timeout: 30s
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
