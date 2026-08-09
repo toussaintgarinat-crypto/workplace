@@ -338,6 +338,65 @@ def _type_valide(t: str | None) -> str:
     return t if t in TYPES_VALIDES else "input"
 
 
+# ── Métadonnées épistémiques (S224) ──────────────────────────────────────────
+# Un souvenir n'était qu'un texte avec un score de PERTINENCE de recherche : rien ne
+# distinguait « hypothèse jamais vérifiée » de « règle confirmée dix fois ». Conséquence
+# déjà visible : `core/graphe_apprentissage.py` pondérait tous les souvenirs à égalité,
+# donc une note fausse écrite une fois pesait autant qu'un fait établi.
+#
+# Le principe repris de LIA (leur ADR-079) tient en une phrase : **l'appelant ne peut
+# JAMAIS écrire les compteurs**. Il n'émet qu'un signal (`preuve` | `contradiction`) ; le
+# service incrémente, et la confiance est une fonction DÉTERMINISTE des compteurs — donc
+# infalsifiable par un LLM qui voudrait s'auto-attribuer de la certitude.
+#
+# Stockés dans le `frontmatter` du nœud Memory (méta libre déjà en place) : migration
+# additive, aucun changement de schéma, les souvenirs existants restent lisibles et
+# retombent sur le défaut neutre.
+SIGNAUX = ("preuve", "contradiction")
+CONFIANCE_DEFAUT = "moyenne"
+
+
+def _confiance(preuves: int, contradictions: int) -> str:
+    """Confiance DÉRIVÉE des compteurs — jamais fournie par l'appelant.
+
+    Un souvenir neuf est une hypothèse : « moyenne », ni confirmée ni réfutée. Dès qu'il
+    est contredit au moins autant qu'appuyé, il retombe à « faible » — c'est le sens qui
+    protège : on préfère sous-pondérer un fait vrai que sur-pondérer un fait faux."""
+    if contradictions and contradictions >= preuves:
+        return "faible"
+    net = preuves - contradictions
+    if net >= 2:
+        return "haute"
+    return CONFIANCE_DEFAUT
+
+
+def _episteme(frontmatter: dict | None) -> dict:
+    """Lit les métadonnées épistémiques d'un nœud, tolérante à tout ce qui traîne
+    (souvenir d'avant S224, valeur corrompue à la main) : défaut neutre, jamais d'erreur."""
+    fm = frontmatter or {}
+
+    def _entier(cle: str) -> int:
+        try:
+            return max(0, int(fm.get(cle) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    preuves, contradictions = _entier("preuves"), _entier("contradictions")
+    return {"preuves": preuves, "contradictions": contradictions,
+            "confiance": _confiance(preuves, contradictions)}
+
+
+# Un verrou par souvenir : le cycle lecture → incrément → écriture n'est pas atomique côté
+# base (le backend Memory n'expose pas d'incrément). Ce verrou sérialise les signaux DANS
+# ce processus, ce qui couvre le cas réel (une brique = un processus). Documenté comme tel :
+# ce n'est pas une garantie transactionnelle.
+_verrous_signal: dict[str, asyncio.Lock] = {}
+
+
+class Signal(BaseModel):
+    signal: str = Field(..., description="« preuve » ou « contradiction ».")
+
+
 class Souvenir(BaseModel):
     contenu: str
     titre: str | None = None
@@ -479,6 +538,8 @@ async def souvenirs(limite: int = 20, type: str | None = None,
             "room": loc.get("room") or fm.get("room"),
             "metadata": fm,
             "stage": n.get("ipcra_stage"), "tier": n.get("storage_tier"),
+            # S224 : confiance dérivée des compteurs, pas une valeur stockée telle quelle.
+            **_episteme(fm),
         }
 
     return {"total": len(noeuds), "souvenirs": [_vue(n) for n in noeuds]}
@@ -504,6 +565,59 @@ async def taxonomy(espace: str | None = None,
         "par_type": stats.get("by_type", {}),
         "par_stage": stats.get("by_stage", {}),
     }
+
+
+@app.post("/souvenir/{souvenir_id}/signal", summary="Signaler qu'un souvenir a été appuyé "
+                                                   "ou contredit par les faits")
+async def signaler(souvenir_id: str, s: Signal, espace: str | None = None,
+                   utilisateur: str = Depends(_identite_service)):
+    """Enregistre UN signal sur un souvenir : « preuve » ou « contradiction ».
+
+    L'appelant ne peut pas écrire de compteur ni de niveau de confiance — c'est tout
+    l'intérêt (S224). Il dit seulement ce qui s'est passé ; le service compte, et la
+    confiance se recalcule mécaniquement. Un LLM ne peut donc pas s'auto-attribuer de la
+    certitude sur un souvenir qu'il vient d'inventer.
+
+    Souvenir inconnu (ou appartenant à un autre espace) → 404, indistinctement (S223)."""
+    if s.signal not in SIGNAUX:
+        raise HTTPException(422, f"signal doit valoir {' ou '.join(SIGNAUX)}")
+
+    verrou = _verrous_signal.setdefault(souvenir_id, asyncio.Lock())
+    async with verrou:
+        async with await _client() as client:
+            async def _lire(espace_id: str, jeton: str):
+                return await client.get(
+                    f"{MEMORY_API}/api/v1/spaces/{espace_id}/nodes/{souvenir_id}",
+                    headers={"Authorization": f"Bearer {jeton}"},
+                )
+            espace_id, r = await _appel_avec_retry(client, utilisateur, espace, _lire)
+            if r.status_code == 404:
+                raise HTTPException(404, "Souvenir introuvable.")
+            if r.status_code >= 400:
+                raise HTTPException(502, f"Memory: {r.text}")
+            noeud = r.json()
+
+            fm = dict(noeud.get("frontmatter") or {})
+            avant = _episteme(fm)
+            cle = "preuves" if s.signal == "preuve" else "contradictions"
+            fm[cle] = avant[cle] + 1
+            # `confiance` est écrite pour être LISIBLE par qui regarde le frontmatter à la
+            # main, mais elle n'est jamais relue : `_episteme` la recalcule toujours depuis
+            # les compteurs. Une valeur trafiquée dans le frontmatter n'a donc aucun effet.
+            apres = _episteme(fm)
+            fm["confiance"] = apres["confiance"]
+
+            async def _ecrire(espace_id_: str, jeton: str):
+                return await client.put(
+                    f"{MEMORY_API}/api/v1/spaces/{espace_id_}/nodes/{souvenir_id}",
+                    json={"frontmatter": fm},
+                    headers={"Authorization": f"Bearer {jeton}"},
+                )
+            _, r = await _appel_avec_retry(client, utilisateur, espace, _ecrire)
+            if r.status_code >= 400:
+                raise HTTPException(502, f"Memory: {r.text}")
+
+    return {"id": souvenir_id, "signal": s.signal, "avant": avant["confiance"], **apres}
 
 
 @app.delete("/souvenir/{souvenir_id}", summary="Supprimer un souvenir")
