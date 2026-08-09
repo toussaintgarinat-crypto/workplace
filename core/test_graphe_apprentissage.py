@@ -179,6 +179,45 @@ def test_12_noter_usage_capacite_inconnue_silencieux():
     g.noter_usage("capacite_inexistante")  # ne doit pas lever
 
 
+# ── S224 : pondération par la confiance du souvenir ──────────────────────────
+
+def test_13_une_chaine_nue_garde_le_poids_neutre():
+    """Motif d'avant S224 : les appelants qui passent des textes bruts sont intacts."""
+    assert ga._texte_et_poids("un souvenir") == ("un souvenir", 1.0)
+    assert ga._texte_et_poids({"texte": "x"}) == ("x", 1.0)  # confiance absente = neutre
+    assert ga._texte_et_poids({"texte": "x", "confiance": "inventée"})[1] == 1.0
+
+
+def test_14_un_souvenir_contredit_pese_moins_qu_un_souvenir_confirme():
+    """Le critère de sortie de S224 : un souvenir « faible » ne fait plus jeu égal avec un
+    fait confirmé dans le routage d'outils."""
+    specs = [_spec("agenda_lister", "lister les rendez-vous de l'agenda")]
+
+    faible = _graphe_neuf()
+    faible.construire([{"texte": "agenda rendez-vous", "confiance": "faible"}], specs)
+
+    haute = _graphe_neuf()
+    haute.construire([{"texte": "agenda rendez-vous", "confiance": "haute"}], specs)
+
+    # La normalisation ramène le max à 1 : on compare donc AVANT-normalisation, sur le
+    # poids relatif de deux souvenirs concurrents dans un même graphe.
+    melange = _graphe_neuf()
+    melange.construire([
+        {"texte": "agenda rendez-vous", "confiance": "haute"},
+        {"texte": "restaurant commande", "confiance": "faible"},
+    ], [_spec("agenda_lister", "lister les rendez-vous de l'agenda"),
+        _spec("commande_envoyer", "envoyer la commande au restaurant")])
+    assert melange._boost["agenda_lister"] > melange._boost["commande_envoyer"]
+
+
+def test_15_un_souvenir_faible_reste_pris_en_compte():
+    """Sous-pondéré, pas ignoré : il a pu être contredit à tort."""
+    specs = [_spec("agenda_lister", "lister les rendez-vous de l'agenda")]
+    g = _graphe_neuf()
+    g.construire([{"texte": "agenda rendez-vous", "confiance": "faible"}], specs)
+    assert g.boost("agenda", specs).get("agenda_lister", 0) > 0
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):

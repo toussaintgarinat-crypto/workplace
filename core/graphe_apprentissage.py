@@ -30,6 +30,21 @@ def _termes(texte: str) -> set[str]:
     return {m for m in mots if len(m) >= LONGUEUR_MIN_TERME and m not in STOPWORDS}
 
 
+# Poids d'un souvenir dans le graphe selon sa confiance (S224). Un souvenir « faible »
+# n'est pas ignoré — il a pu être contredit à tort — mais il ne fait plus jeu égal avec
+# un fait confirmé.
+POIDS_CONFIANCE = {"faible": 0.3, "moyenne": 1.0, "haute": 1.8}
+
+
+def _texte_et_poids(souvenir) -> tuple[str, float]:
+    """Accepte une chaîne nue (motif d'avant S224 → poids neutre) ou un dict portant
+    sa confiance. Une confiance inconnue retombe sur le neutre : jamais d'exception."""
+    if isinstance(souvenir, dict):
+        texte = souvenir.get("texte") or ""
+        return texte, POIDS_CONFIANCE.get(souvenir.get("confiance"), 1.0)
+    return souvenir or "", 1.0
+
+
 def _nom_spec(spec: dict) -> str:
     """Nom d'une capacité — supporte le format plat {name} et le format function-calling."""
     return spec.get("name") or (spec.get("function") or {}).get("name", "")
@@ -47,10 +62,12 @@ class GrapheApprentissage:
     _termes_lies: dict[str, set] = field(default_factory=dict)
     _construit: bool = False
 
-    def construire(self, souvenirs: list[str], specs_capacites: list[dict]) -> None:
+    def construire(self, souvenirs: list, specs_capacites: list[dict]) -> None:
         """Construit le graphe lexical depuis une liste de souvenirs et de specs d'outils.
 
-        souvenirs : textes bruts issus de la brique mémoire
+        souvenirs : textes bruts issus de la brique mémoire, OU dicts
+            ``{"texte": …, "confiance": "faible"|"moyenne"|"haute"}`` (S224). Une chaîne
+            nue vaut « moyenne » — les appelants d'avant S224 restent valides.
         specs_capacites : dicts avec {"name", "description"} OU format function-calling
         """
         self._boost.clear()
@@ -66,14 +83,16 @@ class GrapheApprentissage:
             for t in _termes(desc):
                 index_capacites.setdefault(t, set()).add(nom)
 
-        # Pour chaque souvenir, accumule le poids des capacités co-citées
+        # Pour chaque souvenir, accumule le poids des capacités co-citées, PONDÉRÉ par la
+        # confiance du souvenir (S224) : sans ça, une note fausse écrite une fois pesait
+        # autant qu'un fait confirmé dix fois.
         for souvenir in souvenirs:
-            termes_sou = _termes(souvenir)
-            for terme in termes_sou:
+            texte, poids = _texte_et_poids(souvenir)
+            for terme in _termes(texte):
                 for cap in index_capacites.get(terme, set()):
                     # Bonus × 2 si le terme est dans le NOM de la capacité (signal fort)
                     bonus = 2.0 if terme in _termes(cap) else 1.0
-                    self._boost[cap] = self._boost.get(cap, 0.0) + bonus
+                    self._boost[cap] = self._boost.get(cap, 0.0) + bonus * poids
                     self._termes_lies.setdefault(cap, set()).add(terme)
 
         # Normalisation entre 0 et 1
@@ -136,8 +155,11 @@ async def charger_graphe(specs_capacites: list[dict]) -> None:
                 params={"limite": 200},
             )
             r.raise_for_status()
+            # S224 : la brique expose désormais `confiance` (dérivée des compteurs de
+            # preuves/contradictions). Absente sur une brique d'avant S224 → poids neutre.
             souvenirs = [
-                (e.get("contenu") or e.get("titre") or "")
+                {"texte": (e.get("contenu") or e.get("titre") or ""),
+                 "confiance": e.get("confiance")}
                 for e in r.json().get("souvenirs", [])
             ]
     except Exception:  # noqa: BLE001 — brique absente = graphe vide, pas de crash

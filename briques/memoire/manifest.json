@@ -124,6 +124,37 @@
       "action": true
     },
     {
+      "nom": "memoire_signaler",
+      "description": "Signale qu'un souvenir a été APPUYÉ par les faits (« preuve ») ou CONTREDIT par eux (« contradiction »). Sert quand ce qui s'est réellement passé confirme ou dément un souvenir : « c'était juste », « en fait non, c'est faux ». Récupère l'id via memoire_lister_souvenirs ou memoire_rappeler. Tu ne peux PAS fixer toi-même la confiance d'un souvenir ni ses compteurs : tu dis seulement ce qui s'est passé, la confiance se recalcule toute seule. Lecture-écriture mais NON destructif : pas de confirmation requise.",
+      "methode": "POST",
+      "chemin": "/souvenir/{souvenir_id}/signal",
+      "params": {
+        "souvenir_id": {
+          "type": "string",
+          "description": "Identifiant du souvenir concerné (voir memoire_lister_souvenirs / memoire_rappeler).",
+          "requis": true
+        },
+        "signal": {
+          "type": "string",
+          "enum": [
+            "preuve",
+            "contradiction"
+          ],
+          "description": "« preuve » si les faits ont confirmé le souvenir, « contradiction » s'ils l'ont démenti.",
+          "requis": true
+        },
+        "espace": {
+          "type": "string",
+          "enum": [
+            "solution",
+            "perso",
+            "veille"
+          ],
+          "description": "Espace mémoire où se trouve le souvenir (défaut 'solution')."
+        }
+      }
+    },
+    {
       "nom": "memoire_oublier",
       "description": "Supprime DÉFINITIVEMENT un souvenir par son identifiant. Sert « oublie ce souvenir », « efface cette note de ta mémoire ». Récupère l'id via memoire_lister_souvenirs ou memoire_rappeler. 'espace' = 'solution', 'perso', ou 'veille' (résumés de la famille de briques veille, isolé par personne). ACTION IRRÉVERSIBLE : confirmer avant de supprimer.",
       "methode": "DELETE",
