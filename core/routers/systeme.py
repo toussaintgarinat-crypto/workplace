@@ -113,6 +113,18 @@ def lister_capacites():
     }
 
 
+@router.get("/metrics", tags=["système"], include_in_schema=False)
+def metrics():
+    """Exposition Prometheus (S225) — une dizaine de métriques MÉTIER.
+
+    Aucun appel réseau pendant le scrape : tout vient du SQLite de l'horloge, du journal
+    JSONL d'usage et de la mémoire du processus. Un `/metrics` qui sonderait les 39 briques
+    deviendrait lent, puis timeout, puis serait la cause de la panne qu'il doit signaler."""
+    import metriques
+
+    return Response(metriques.rendu(registre), media_type=metriques.Registre.TYPE_MIME)
+
+
 @router.get("/validation/ecarts", tags=["briques"])
 def validation_ecarts():
     """Écarts d'arguments observés depuis le démarrage du Cœur (S221).

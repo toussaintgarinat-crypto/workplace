@@ -1,0 +1,96 @@
+# Alertes du parc (S225).
+#
+# Chacune répond à une panne RÉELLEMENT vécue, pas à une métrique disponible. C'est le
+# critère d'admission : si on ne peut pas citer la fois où on a découvert le problème trop
+# tard, l'alerte n'entre pas.
+
+groups:
+
+  - name: fraicheur
+    rules:
+
+      # ⟵ L'alerte qui justifie tout le sprint. Vécu deux fois : les modèles gratuits de la
+      # Gateway figés 51 jours, et une thématique de veille morte à 100 % (5 sources sur 5)
+      # — dans les deux cas découvert par hasard, des semaines après.
+      - alert: TachePlanifieeEnRetard
+        expr: >
+          workplace_tache_age_secondes
+            > (workplace_tache_cadence_secondes * 3)
+        for: 30m
+        labels:
+          severite: warning
+        annotations:
+          resume: "{{ $labels.brique }} / {{ $labels.tache }} n'a pas tourné depuis 3 cadences"
+          detail: >
+            Dernière exécution il y a {{ $value | humanizeDuration }}, pour une cadence
+            déclarée dans le manifeste. La brique est peut-être injoignable, sa tâche en
+            échec silencieux, ou l'horloge du Cœur arrêtée.
+
+      - alert: TachePlanifieeJamaisExecutee
+        expr: workplace_tache_jamais_executee == 1
+        for: 6h
+        labels:
+          severite: warning
+        annotations:
+          resume: "{{ $labels.brique }} / {{ $labels.tache }} déclarée mais jamais exécutée"
+          detail: >
+            Une tâche déclarée dans un manifeste qui n'a jamais tourné six heures après le
+            démarrage est probablement mal câblée (chemin faux, en-tête de jeton manquant)
+            — le motif exact des capacités MORTES trouvées par S210.
+
+      - alert: TachePlanifieeEnEchec
+        expr: workplace_tache_dernier_succes == 0
+        for: 2h
+        labels:
+          severite: warning
+        annotations:
+          resume: "{{ $labels.brique }} / {{ $labels.tache }} échoue"
+          detail: >
+            La tâche tourne (donc pas de retard de fraîcheur) mais son dernier passage a
+            échoué. Sans cette alerte, une tâche qui échoue à chaque exécution reste
+            invisible : son âge, lui, est toujours frais.
+
+  - name: cout
+    rules:
+
+      - alert: BudgetLLMPresqueEpuise
+        expr: workplace_llm_budget_ratio >= 0.8
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Budget LLM {{ $labels.periode }} à {{ $value | humanizePercentage }}"
+          detail: >
+            À 0,95 le Cœur BLOQUE les appels payants (journal_usage.peut_appeler_payant) et
+            retombe sur les modèles gratuits. Cette alerte laisse le temps de décider avant
+            que la bascule se fasse toute seule au milieu d'une conversation.
+
+  - name: outils
+    rules:
+
+      - alert: CapaciteEnEchecSystematique
+        expr: >
+          (rate(workplace_outil_echecs_total[1h]) / rate(workplace_outil_appels_total[1h]))
+            > 0.5
+        for: 1h
+        labels:
+          severite: warning
+        annotations:
+          resume: "{{ $labels.outil }} ({{ $labels.brique }}) échoue plus d'une fois sur deux"
+          detail: >
+            Une capacité qui échoue systématiquement coûte un tour de LLM à chaque tentative
+            et dégrade les réponses sans jamais remonter à personne.
+
+      # Un pic d'écarts d'arguments veut dire que le catalogue et ce que le LLM comprend
+      # ont divergé — typiquement après un changement de manifeste.
+      - alert: ArgumentsRefusesEnHausse
+        expr: sum(rate(workplace_validation_ecarts_total[30m])) > 0.05
+        for: 30m
+        labels:
+          severite: info
+        annotations:
+          resume: "Beaucoup d'arguments d'outil refusés (S221)"
+          detail: >
+            Regarder /validation/ecarts pour la ventilation par catégorie. Un pic sur
+            `param_requis` ou `type` suit souvent une modification de manifeste ; un pic sur
+            `outil_inconnu` trahit un catalogue désynchronisé du prompt.

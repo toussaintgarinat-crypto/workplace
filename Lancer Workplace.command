@@ -100,6 +100,10 @@ BRIQUES=(
   "core|$RACINE/core|http://localhost:5100/health"
   # Pont messageries : APRÈS le Cœur (il appelle :5100) + transcription/voix (vocal).
   "connexion|$RACINE/briques/connexion|http://localhost:5870/sante"
+  # Observabilité (S225) : APRÈS le Cœur, dont elle scrute le /metrics. Démarrée en
+  # dernier — si elle échoue (GRAFANA_PASSWORD absent du .env), le parc reste debout,
+  # on perd les graphes et pas le service.
+  "observabilite|$RACINE/outils/observabilite|http://localhost:9090/-/healthy"
 )
 
 # Attend qu'une URL réponde (HTTP < 500). Renvoie 0 si OK avant le timeout.

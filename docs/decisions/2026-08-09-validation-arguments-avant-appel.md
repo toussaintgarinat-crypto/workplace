@@ -6,7 +6,7 @@
   déclarées par les 34 manifestes qui en portent
 - **Fichiers liés** : `core/validation_args.py`, `core/guardrails_outils.py`,
   `core/outils.py` (`schema_arguments`), `core/routers/systeme.py`
-  (`/systeme/validation/ecarts`), `GUIDE-ajouter-un-outil.md`
+  (`/validation/ecarts`), `GUIDE-ajouter-un-outil.md`
 - **Origine** : veille sur [LIA-Assistant](https://github.com/jgouviergmail/LIA-Assistant)
   (AGPL-3.0 — **idée reprise, aucun code**), `docs/technical/PLANNER.md`, leur `PlanValidator`
   et ses 14 catégories d'écart. Backlog : `docs/sprints/S221-S226-emprunts-lia-assistant.md`
@@ -79,7 +79,7 @@ En Python `True` est un `int` ; sans ce cas particulier, une vraie erreur du LLM
 
 ## Ce que ça mesure (et pourquoi ça compte pour S226)
 
-`/systeme/validation/ecarts` expose le comptage par catégorie et par outil depuis le
+`/validation/ecarts` expose le comptage par catégorie et par outil depuis le
 démarrage. C'est délibérément le **critère de décision de S226** (plan explicite validé) :
 
 - écarts massivement `param_requis` / `type` / `enum` → le LLM se trompe d'**arguments**, la

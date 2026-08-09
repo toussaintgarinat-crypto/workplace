@@ -42,20 +42,14 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 20
 
-_PREFIXES_ERREUR_OUTIL = (
-    "Impossible :", "Échec (", "Indisponible (", "Brique injoignable (",
-    "Erreur (", "Outil inconnu :",
-)
+# S225 : l'heuristique vit désormais dans `outils`, avec le code qui produit ces messages.
+# Alias conservés — d'autres modules et tests les importent depuis ici.
+_PREFIXES_ERREUR_OUTIL = outils.PREFIXES_ERREUR
 
 
 def _est_erreur_outil(resultat: str) -> bool:
     """Détecte si `outils.executer` a renvoyé un message d'erreur."""
-    if any(resultat.startswith(p) for p in _PREFIXES_ERREUR_OUTIL):
-        return True
-    try:
-        return bool(json.loads(resultat).get("erreur"))
-    except Exception:  # noqa: BLE001
-        return False
+    return outils.est_erreur(resultat)
 
 # Streaming token-par-token (S60) : l'assistant émet le texte au fil de l'eau (feel
 # ChatGPT, utile en mobilité). Kill-switch d'env : STREAM_ACTIF=0 rétablit la réponse

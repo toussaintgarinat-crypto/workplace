@@ -101,6 +101,18 @@ Minimal pour prouver S114→S121 (Niveau A) : `gateway`, `donnees`, `agenda`, `f
 `ingestion`, `audit`, `generateur`, puis `core`. (Sur macOS : `./Lancer\ Workplace.command`
 monte tout le stack ; sur Linux/Proxmox, faire les `docker compose up -d --build` à la main.)
 
+**Observabilité (S225)** — après `core`, puisqu'elle scrute son `/metrics` :
+```bash
+( cd outils/observabilite && docker compose up -d )
+```
+> ⚠️ Exige `GRAFANA_PASSWORD` dans le `.env` racine : sans lui Grafana **refuse de
+> démarrer**, volontairement (pas de défaut « admin/admin » sur une UI joignable depuis le
+> mesh). Prometheus sur `:9090`, Grafana sur `:3001` (3000 est déjà pris dans le parc).
+> Le tableau « Workplace — parc » et les alertes sont provisionnés depuis le dépôt.
+>
+> Vérification : `curl -s localhost:5100/metrics | head` doit sortir des lignes
+> `workplace_*`, et `localhost:9090/targets` doit montrer la cible `coeur` en `UP`.
+
 ---
 
 # 6. Preuves LIVE — Niveau A (sans Keycloak, `AUTH_ENABLED` off)
