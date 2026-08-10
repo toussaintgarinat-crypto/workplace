@@ -173,6 +173,15 @@ def creer_objet(corps: ObjetEntree, tenant: str = Depends(tenant_actuel)):
                                 source="manuel", metadata=corps.metadata)
 
 
+@app.get("/objets/{objet_id}")
+def lire_objet(objet_id: str, tenant: str = Depends(tenant_actuel)):
+    """Lit un objet géo par id (S227 — consommé par le dossier agrégé de Forge)."""
+    objet = stockage.lire_objet(tenant, objet_id)
+    if objet is None:
+        raise HTTPException(404, "Objet introuvable")
+    return objet
+
+
 # ── Enrichissement opt-in (S161, RGPD-prudent) ───────────────────
 # Plafond du lot (S169) : la prospection B2B enrichit PLUSIEURS objets d'un coup —
 # assouplissement ASSUMÉ du « une à la fois » — mais borné pour rester honnête (pas
