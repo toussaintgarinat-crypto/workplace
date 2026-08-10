@@ -371,6 +371,10 @@ def venture(r) -> dict:
         "statut": r.statut,
         "createdAt": iso(r.created_at),
         "updatedAt": iso(r.updated_at),
+        # S227 — socle Entité Entreprise unifiée.
+        "geoObjectId": r.geo_object_id,
+        "auditId": r.audit_id,
+        "profilEntreprise": r.profil_entreprise,
     }
 
 

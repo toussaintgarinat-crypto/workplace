@@ -134,6 +134,11 @@ class UpdateVenture(BaseModel):
     emoji: str | None = None
     couleur: str | None = None
     statut: str | None = None  # 'actif' | 'archive' | 'livre'
+    geo_object_id: str | None = Field(None, alias="geoObjectId")
+    audit_id: str | None = Field(None, alias="auditId")
+    profil_entreprise: dict | None = Field(None, alias="profilEntreprise")
+
+    model_config = {"populate_by_name": True}
 
 
 @router.patch("/ventures/{vid}", dependencies=[Depends(get_current_user)])
