@@ -34,6 +34,7 @@ import logging
 
 from sqlalchemy import text
 
+from app.db import engine
 from app.models import Base
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -51,8 +52,6 @@ MIGRATIONS_S227: tuple[str, ...] = (
 
 
 async def main() -> None:
-    from app.db import engine
-
     log.info("→ init_db : création du schéma Forge (%d tables) si absent…", len(Base.metadata.tables))
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # checkfirst=True par défaut
