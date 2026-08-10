@@ -17,10 +17,12 @@ def _ns(**kw):
 def test_venture_keys():
     r = _ns(id="11111111-1111-1111-1111-111111111111", owner_id="u1", org_id=None,
             nom="Acme", description="d", emoji="🚀", couleur="#fff", type="own", statut="actif",
-            created_at=datetime.datetime(2026, 1, 1), updated_at=datetime.datetime(2026, 1, 2))
+            created_at=datetime.datetime(2026, 1, 1), updated_at=datetime.datetime(2026, 1, 2),
+            geo_object_id=None, audit_id=None, profil_entreprise=None)
     out = serde.venture(r)
     assert set(out) == {"id", "ownerId", "orgId", "nom", "description", "emoji",
-                        "couleur", "type", "statut", "createdAt", "updatedAt"}
+                        "couleur", "type", "statut", "createdAt", "updatedAt",
+                        "geoObjectId", "auditId", "profilEntreprise"}
     assert out["ownerId"] == "u1" and out["createdAt"].endswith("Z")
 
 
