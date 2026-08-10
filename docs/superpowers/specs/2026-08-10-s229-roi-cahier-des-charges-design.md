@@ -1,4 +1,4 @@
-# Design — ROI chiffré + cahier des charges exportable (sprint 3/4 de la capacité « Audit d'entreprise → conception de solutions »)
+# Design — S229 : ROI chiffré + cahier des charges exportable (3/4 de la capacité « Audit d'entreprise → conception de solutions »)
 
 **Date** : 2026-08-10
 **Statut** : validé, prêt pour plan d'implémentation
@@ -6,8 +6,8 @@
 ## Contexte
 
 Troisième des 4 sprints (ordre validé : entité → entretien → **ROI/CDC** → connecteurs).
-Indépendant des sprints 1/2 en termes de code (pas de dépendance dure), mais plus utile une
-fois l'entretien guidé (sprint 2) alimenté — plus de matière dans `profil_entreprise` et le
+Indépendant de S227/S228 en termes de code (pas de dépendance dure), mais plus utile une
+fois l'entretien guidé (S228) alimenté — plus de matière dans `profil_entreprise` et le
 transcript processus, plus le chiffrage est pertinent.
 
 Une revue de code a établi que `briques/audit` (5300) produit déjà des % (Pareto :
@@ -138,7 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_cdc_audit ON cahiers_des_charges(audit_id);
 
 ## Hors périmètre (explicitement)
 
-- **Saisie du coût horaire dans l'entretien guidé** (sprint 2) — non re-ouvert dans ce sprint ;
+- **Saisie du coût horaire dans l'entretien guidé** (S228) — non re-ouvert dans ce sprint ;
   le paramètre `cout_horaire` de `/chiffrer` reste un appel manuel/API pour l'instant, le lien
   avec le squelette qualitatif de l'entretien est une amélioration future si besoin.
 - **Mesure du ROI réel après déploiement** (comparaison avec la mesure d'usage déjà existante

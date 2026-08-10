@@ -1,4 +1,4 @@
-# Design — Entretien guidé IA (sprint 2/4 de la capacité « Audit d'entreprise → conception de solutions »)
+# Design — S228 : Entretien guidé IA (2/4 de la capacité « Audit d'entreprise → conception de solutions »)
 
 **Date** : 2026-08-10
 **Statut** : validé, prêt pour plan d'implémentation
@@ -7,7 +7,7 @@
 
 Deuxième des 4 sprints qui comblent les manques du pipeline « Audit d'entreprise →
 conception de solutions » (ordre validé : entité → **entretien** → ROI/CDC → connecteurs).
-Dépend du sprint 1 (voir `2026-08-10-entite-entreprise-unifiee-design.md`) : la Venture
+Dépend du sprint S227 (voir `2026-08-10-s227-entite-entreprise-unifiee-design.md`) : la Venture
 (type=audit) de Forge porte désormais `geo_object_id`, `audit_id` et `profil_entreprise`
 (JSON, 9 catégories qualitatives), et un endpoint `GET /ventures/{id}/dossier` les agrège.
 
@@ -17,7 +17,7 @@ comme le décrit la vision (« comment arrive une demande client » → « qui r
 de temps » → …).
 
 Clarifications actées avec l'utilisateur pendant le brainstorming :
-- **Greffé sur Forge**, à côté de `Ventures` — cohérent avec le sprint 1, pas de nouvelle
+- **Greffé sur Forge**, à côté de `Ventures` — cohérent avec le S227, pas de nouvelle
   brique ni de logique métier ajoutée au Cœur (qui reste un orchestrateur générique).
 - `briques/audit` n'a **aucune API d'écriture incrémentale** (vérifié dans le code :
   `POST /auditer` = analyse LLM en un seul bloc à partir de `doc_ids`, `POST /audits/import` =
@@ -26,7 +26,7 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
   `doc_ids` de la venture (transcript + documents déjà uploadés) — réutilise l'analyse
   existante telle quelle.
 - Deux types de sections dans le squelette d'entretien, traitées différemment : les 9
-  catégories qualitatives du `profil_entreprise` (sprint 1) sont extraites et patchées
+  catégories qualitatives du `profil_entreprise` (S227) sont extraites et patchées
   directement après chaque réponse ; les 4 zones de processus de la vision (Commercial/
   Production/Administratif/Communication) sont accumulées en transcript brut, analysées plus
   tard par `briques/audit`.
@@ -48,7 +48,7 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
   construite `f"{fil or 'sans-fil'}\x00{utilisateur or '-'}"` (leçon S222, deux personnes sur
   le même fil web ne doivent jamais partager un état). Motif à réutiliser pour savoir quel
   entretien est « actif » sur quel tour de conversation.
-- Sprint 1 (ce même cadrage) : `GET /ventures/{id}/dossier`, `Ventures.profil_entreprise`
+- S227 (ce même cadrage) : `GET /ventures/{id}/dossier`, `Ventures.profil_entreprise`
   (JSON, fusion attendue, jamais d'écrasement), pont déjà prouvé `venture → ingestion` (upload
   avec `venture_id`).
 
@@ -71,7 +71,7 @@ Deux familles, jamais mélangées dans le traitement d'une réponse :
   (planning/intervention/compte rendu/suivi), Administratif (facturation/documents/
   comptabilité), Communication (email/téléphone/SMS/réseaux sociaux).
 - **Qualitatif** (extraction structurée, patch direct de `profil_entreprise`) : les 9
-  catégories du sprint 1 (organisation, activités, clients, fournisseurs, outils_utilises,
+  catégories du S227 (organisation, activités, clients, fournisseurs, outils_utilises,
   personnel, contraintes, objectifs, problemes_connus).
 
 Dans chaque section, le LLM décide de la relance (motif exact de la vision : une réponse
@@ -89,7 +89,7 @@ chose »).
   `Ventures.profil_entreprise` ; si section « processus », ajout au `transcript`. Retourne la
   question suivante (LLM) ou le passage à la section suivante du squelette.
 - `POST /ventures/{id}/entretien/terminer` — clôture (`statut=termine`), pousse `transcript`
-  vers `ingestion` comme document lié (`venture_id`, voir sprint 1), puis rappelle
+  vers `ingestion` comme document lié (`venture_id`, voir S227), puis rappelle
   `POST {AUDIT_URL}/auditer` avec tous les `doc_ids` de la venture.
 - `GET /ventures/{id}/entretien/etat` — pour un affichage éventuel de progression (pas d'UI
   dans ce sprint, juste l'API).

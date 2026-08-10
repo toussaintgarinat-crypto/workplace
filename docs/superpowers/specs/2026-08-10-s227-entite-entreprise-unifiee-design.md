@@ -1,4 +1,4 @@
-# Design — Entité Entreprise unifiée (sprint 1/4 de la capacité « Audit d'entreprise → conception de solutions »)
+# Design — S227 : Entité Entreprise unifiée (1/4 de la capacité « Audit d'entreprise → conception de solutions »)
 
 **Date** : 2026-08-10
 **Statut** : validé, prêt pour plan d'implémentation
@@ -19,7 +19,7 @@ exportable → 4. Connecteurs métier réels (CRM/ERP/Google Workspace/365)**.
 Ce premier sprint pose le socle de données : aujourd'hui, l'identité d'une entreprise
 (`briques/geo`), ses processus/problèmes (`briques/audit`) et ses documents
 (`briques/ingestion`) ne sont reliés par aucun identifiant commun fiable. Sans ce socle, un
-entretien guidé (sprint 2) n'aurait nulle part où écrire ses réponses.
+entretien guidé (S228) n'aurait nulle part où écrire ses réponses.
 
 Clarifications actées avec l'utilisateur pendant le brainstorming :
 - La nouvelle entité est **greffée sur Forge**, en donnant enfin une vraie substance au champ
@@ -30,7 +30,7 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
   qualitatifs qui n'existent nulle part aujourd'hui : Organisation, Activités, Clients,
   Fournisseurs, Outils utilisés, Personnel, Contraintes, Objectifs, Problèmes connus (déclarés
   par le dirigeant — distincts des problèmes *détectés* par les couches Ishikawa/Pareto de
-  `briques/audit`). Le sprint 2 (entretien guidé) remplira ces champs progressivement ; rien
+  `briques/audit`). Le S228 (entretien guidé) remplira ces champs progressivement ; rien
   n'oblige à les remplir dès ce sprint.
 - **Deux systèmes d'audit coexistent** et sont référencés séparément, avec leurs rôles
   clarifiés plutôt qu'unifiés de force : les `AuditMissions` internes de Forge (rapport LLM
@@ -104,7 +104,7 @@ Un seul appel qui rassemble :
 - liste des documents liés (`GET {INGESTION_URL}/documents?venture_id=...`, voir point 3),
 - `profil_entreprise` tel quel.
 
-C'est ce endpoint que consommeront le sprint 2 (entretien guidé, pour savoir ce qui manque
+C'est ce endpoint que consommeront le S228 (entretien guidé, pour savoir ce qui manque
 encore) et `briques/generateur` à terme (au lieu d'appeler `audit` seul).
 
 ### 3. Fix `briques/ingestion` — `venture_id` indexé
@@ -179,9 +179,9 @@ testé, mock des dépendances réseau, jamais simulé silencieusement.
 
 ## Hors périmètre (explicitement)
 
-- **Entretien guidé** pour remplir `profil_entreprise` — sprint 2, séparé.
-- **Calcul de ROI** et **cahier des charges exportable** — sprint 3, séparé.
-- **Vrais connecteurs CRM/ERP/Google Workspace/365** — sprint 4, séparé ; `briques/connecteurs`
+- **Entretien guidé** pour remplir `profil_entreprise` — S228, séparé.
+- **Calcul de ROI** et **cahier des charges exportable** — S229, séparé.
+- **Vrais connecteurs CRM/ERP/Google Workspace/365** — S230, séparé ; `briques/connecteurs`
   reste hors périmètre (aujourd'hui : un seul connecteur testé, `source-faker`, aucun pont vers
   `geo`/Forge).
 - **Retrait ou fusion des `AuditMissions` internes de Forge** — laissées telles quelles,
