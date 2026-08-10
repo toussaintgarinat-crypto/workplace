@@ -13,6 +13,11 @@ les tables depuis les modèles reflétés est ici la voie de migration honnête 
 
 Idempotent : ``create_all`` ne crée que les tables absentes (``checkfirst=True``),
 donc rejouable à chaque démarrage et sur volume neuf (`forge_pgdata` recréé).
+``create_all`` n'altère en revanche JAMAIS une table déjà présente : les colonnes
+ajoutées à des tables existantes après le premier déploiement (ex. S227) sont donc
+posées séparément via des ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS`` idempotents
+(même motif que ``briques/memoire/memory/backend/app/main.py`` — pas d'Alembic
+dans ce projet).
 
 Périmètre : 77 / 87 tables. Les 10 manquantes (mcp_servers, skills, hitl_requests…)
 sont des features hors-scope agents+RAG (frontière dure S17) ; aucune n'est cible
@@ -27,17 +32,32 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.db import engine
+from sqlalchemy import text
+
 from app.models import Base
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("forge.init_db")
 
+# S227 — socle Entité Entreprise unifiée. Chaque statement est idempotent
+# (Postgres supporte IF NOT EXISTS sur ADD COLUMN, pas besoin de PRAGMA/try-except
+# comme les briques SQLite du repo).
+MIGRATIONS_S227: tuple[str, ...] = (
+    "ALTER TABLE ventures ADD COLUMN IF NOT EXISTS geo_object_id TEXT",
+    "ALTER TABLE ventures ADD COLUMN IF NOT EXISTS audit_id TEXT",
+    "ALTER TABLE ventures ADD COLUMN IF NOT EXISTS profil_entreprise JSONB",
+    "ALTER TABLE organization_members ADD COLUMN IF NOT EXISTS venture_scope TEXT",
+)
+
 
 async def main() -> None:
+    from app.db import engine
+
     log.info("→ init_db : création du schéma Forge (%d tables) si absent…", len(Base.metadata.tables))
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # checkfirst=True par défaut
+        for statement in MIGRATIONS_S227:
+            await conn.execute(text(statement))
     await engine.dispose()
     log.info("✓ init_db : schéma présent (%d tables mappées).", len(Base.metadata.tables))
 
