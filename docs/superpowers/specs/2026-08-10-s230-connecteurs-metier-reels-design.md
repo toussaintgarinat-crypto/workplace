@@ -1,4 +1,4 @@
-# Design — Connecteurs métier réels (sprint 4/4 de la capacité « Audit d'entreprise → conception de solutions »)
+# Design — S230 : Connecteurs métier réels (4/4 de la capacité « Audit d'entreprise → conception de solutions »)
 
 **Date** : 2026-08-10
 **Statut** : validé, prêt pour plan d'implémentation
@@ -6,7 +6,7 @@
 ## Contexte
 
 Dernier des 4 sprints (ordre validé : entité → entretien → ROI/CDC → **connecteurs**).
-Dépend du sprint 1 (`Ventures`/dossier) et se branche directement sur le sprint 3 (ROI) : un
+Dépend du S227 (`Ventures`/dossier) et se branche directement sur le S229 (ROI) : un
 connecteur compta réel peut faire basculer une estimation ROI de « hypothèse LLM » à
 « fourni client ».
 
@@ -22,7 +22,7 @@ CRM externe déjà en place chez le client, ou un outil de comptabilité/ERP.
 Clarifications actées avec l'utilisateur pendant le brainstorming :
 - Le sprint couvre **à la fois** l'infrastructure générique du pont (source ↔ venture) **et**
   la preuve concrète avec deux connecteurs : un **CRM tiers** (contacts/deals déjà en place
-  chez le client) et un **compta/ERP** (alimente le ROI du sprint 3 avec de vrais chiffres).
+  chez le client) et un **compta/ERP** (alimente le ROI du S229 avec de vrais chiffres).
 - Le principe de sécurité déjà en place est **conservé sans modification** : créer/configurer
   une source n'est pas une capacité de l'assistant (`briques/connecteurs/main.py:137-140` —
   les identifiants tiers ne doivent jamais transiter par une conversation LLM, donc par le
@@ -54,8 +54,8 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
 - Pont déjà prouvé du même type de motif à réutiliser : `veille-prospection/orchestration.py:
   44-49` → `POST {FORGE_URL}/crm/import-lot` (`briques/forge/main.py:712`), dé-doublonné,
   testé des deux côtés.
-- Sprint 1 (ce même cadrage) : `Ventures.profil_entreprise` (JSON, fusion non destructive),
-  `GET /ventures/{id}/dossier`. Sprint 3 : `POST {AUDIT_URL}/audits/{id}/chiffrer
+- S227 (ce même cadrage) : `Ventures.profil_entreprise` (JSON, fusion non destructive),
+  `GET /ventures/{id}/dossier`. S229 : `POST {AUDIT_URL}/audits/{id}/chiffrer
   {cout_horaire}` — bascule le ROI de `hypothese_llm` à `fourni_client` si un coût horaire
   réel est fourni.
 
@@ -86,9 +86,9 @@ Après un sync réussi d'une source de type compta/ERP :
 - lecture des tables de temps passé / masse salariale (à confirmer en plan selon le
   connecteur),
 - agrégation d'un coût horaire réel par pôle (commercial/production/administratif, même
-  découpage que le sprint 3),
+  découpage que le S229),
 - `POST {AUDIT_URL}/audits/{audit_id}/chiffrer {cout_horaire: {...}}` où `audit_id` est celui
-  référencé par la venture liée à la source (`Ventures.audit_id`, sprint 1) — fait basculer les
+  référencé par la venture liée à la source (`Ventures.audit_id`, S227) — fait basculer les
   entrées ROI concernées de `hypothese_llm` à `fourni_client`.
 
 ### 4. Déclenchement
@@ -125,7 +125,7 @@ déjà en place (`forge`, `audit`) — pas de persistance supplémentaire côté
   `profil_entreprise.clients`.
 - Mappeur compta : sync mocké → vérifie l'appel `POST /audits/{id}/chiffrer` avec un
   `cout_horaire` cohérent avec les données de test, et le changement de statut `fourni_client`
-  côté audit (test d'intégration avec le sprint 3, mocké).
+  côté audit (test d'intégration avec le S229, mocké).
 - Pannes : mappeur CRM/compta en échec chacun séparément → sync reste `reussi`,
   `mapping_echoue` journalisé, aucune exception non gérée.
 - Non-régression : le principe « création de source jamais via l'assistant » reste vérifié
