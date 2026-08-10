@@ -4,7 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
@@ -96,7 +96,11 @@ def sante():
 
 
 @app.post("/ingerer", summary="Uploader et ingérer un fichier")
-async def ingerer_fichier(fichier: UploadFile = File(...), _cle: str = Depends(cle_api)):
+async def ingerer_fichier(
+    fichier: UploadFile = File(...),
+    venture_id: str | None = Form(None),
+    _cle: str = Depends(cle_api),
+):
     contenu = await fichier.read()
     taille = len(contenu)
     if taille == 0:
@@ -118,6 +122,7 @@ async def ingerer_fichier(fichier: UploadFile = File(...), _cle: str = Depends(c
         type_mime=fichier.content_type,
         taille=taille,
         texte=texte,
+        venture_id=venture_id,
     )
 
     logger.info("Document sauvegardé : %s (%d caractères extraits)", doc_id, len(texte))
@@ -181,11 +186,13 @@ def lister_documents(
     categorie: str | None = None,
     projet: str | None = None,
     entreprise_id: str | None = None,
+    venture_id: str | None = None,
     _cle: str = Depends(cle_api),
 ):
     docs = stockage.lister(
         limite=limite, offset=offset,
         categorie=categorie, projet=projet, entreprise_id=entreprise_id,
+        venture_id=venture_id,
     )
     return {"total": stockage.compter(), "offset": offset, "documents": docs}
 

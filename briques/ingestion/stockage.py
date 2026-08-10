@@ -42,6 +42,17 @@ def reprendre_base_heritee() -> bool:
     return True
 
 
+def _migrer_colonne_venture_id(con: sqlite3.Connection) -> None:
+    """S227 : ajoute `venture_id` (+ index) si absente — bases créées avant ce
+    sprint. La clé JSON `metadonnees.classement.entreprise_id` n'est PAS retirée :
+    les deux coexistent, la colonne indexée devient la source de vérité pour les
+    nouveaux documents seulement."""
+    colonnes = {row["name"] for row in con.execute("PRAGMA table_info(documents)").fetchall()}
+    if "venture_id" not in colonnes:
+        con.execute("ALTER TABLE documents ADD COLUMN venture_id TEXT")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_documents_venture ON documents(venture_id)")
+
+
 def initialiser():
     reprendre_base_heritee()
     with _conn() as con:
@@ -54,9 +65,11 @@ def initialiser():
                 taille        INTEGER,
                 texte_extrait TEXT,
                 metadonnees   TEXT DEFAULT '{}',
-                date_ingestion TEXT NOT NULL
+                date_ingestion TEXT NOT NULL,
+                venture_id    TEXT
             )
         """)
+        _migrer_colonne_venture_id(con)
 
 
 def sauvegarder(
@@ -66,13 +79,14 @@ def sauvegarder(
     taille: int,
     texte: str,
     metadonnees: dict | None = None,
+    venture_id: str | None = None,
 ) -> str:
     doc_id = str(uuid.uuid4())
     with _conn() as con:
         con.execute(
             """INSERT INTO documents
-               (id, nom, source, type_mime, taille, texte_extrait, metadonnees, date_ingestion)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, nom, source, type_mime, taille, texte_extrait, metadonnees, date_ingestion, venture_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 doc_id,
                 nom,
@@ -82,6 +96,7 @@ def sauvegarder(
                 texte,
                 json.dumps(metadonnees or {}, ensure_ascii=False),
                 datetime.utcnow().isoformat(),
+                venture_id,
             ),
         )
     return doc_id
@@ -119,19 +134,28 @@ def lister(
     categorie: str | None = None,
     projet: str | None = None,
     entreprise_id: str | None = None,
+    venture_id: str | None = None,
 ) -> list[dict]:
     """Liste les documents (du plus récent au plus ancien), avec leur `classement`.
 
-    Le classement vit dans `metadonnees.classement` (posé par le Cœur). On le
-    remonte tel quel dans chaque ligne et on filtre éventuellement dessus —
-    filtrage en Python car SQLite ne sait pas indexer ce JSON ici (volumes faibles).
+    `venture_id` filtre sur la colonne indexée (S227) — distinct de `entreprise_id`
+    qui filtre sur l'ancienne clé JSON `metadonnees.classement.entreprise_id`
+    (rétrocompatibilité, non retirée).
     """
     with _conn() as con:
-        rows = con.execute(
-            "SELECT id, nom, source, type_mime, taille, date_ingestion, metadonnees, "
-            "LENGTH(texte_extrait) as nb_caracteres "
-            "FROM documents ORDER BY date_ingestion DESC",
-        ).fetchall()
+        if venture_id:
+            rows = con.execute(
+                "SELECT id, nom, source, type_mime, taille, date_ingestion, metadonnees, venture_id, "
+                "LENGTH(texte_extrait) as nb_caracteres "
+                "FROM documents WHERE venture_id = ? ORDER BY date_ingestion DESC",
+                (venture_id,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT id, nom, source, type_mime, taille, date_ingestion, metadonnees, venture_id, "
+                "LENGTH(texte_extrait) as nb_caracteres "
+                "FROM documents ORDER BY date_ingestion DESC",
+            ).fetchall()
 
     docs: list[dict] = []
     for r in rows:
