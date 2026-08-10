@@ -71,6 +71,42 @@ class _FakeSession:
         obj.created_at = obj.updated_at = None
 
 
+class _FakeSessionPatch:
+    """Session pour PATCH venture : DEUX execute() consécutifs (update puis select) —
+    `update_venture` (app/routers/ventures.py) exécute d'abord l'UPDATE (résultat
+    jeté), puis un SELECT dont le résultat devient le corps de la réponse. Une
+    file `rows_by_call` à pop() inconditionnel se ferait consommer par l'UPDATE
+    et laisserait le SELECT vide → réponse `None`, un faux vert qui n'aurait
+    jamais prouvé la liaison geo/audit. Même pattern que
+    `tests/test_ventures_s227.py::_FakeSessionPatch`."""
+
+    def __init__(self, rows=None):
+        self._rows = rows or []
+        self._execute_count = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, *a, **k):
+        # 1er execute (UPDATE) : résultat ignoré côté handler → vide.
+        # 2e execute (SELECT) : renvoie la venture, devient venture(v) dans la réponse.
+        result_rows = [] if self._execute_count == 0 else self._rows
+        self._execute_count += 1
+        return _FakeResult(result_rows)
+
+    def add(self, obj):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def refresh(self, obj):
+        pass
+
+
 async def test_venture_creee_puis_dossier_agrege_bout_en_bout(client, monkeypatch):
     monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://geo.test")
     monkeypatch.setattr(ventures_mod.settings, "AUDIT_URL", "http://audit.test")
@@ -89,10 +125,15 @@ async def test_venture_creee_puis_dossier_agrege_bout_en_bout(client, monkeypatc
         created_at=None, updated_at=None,
         geo_object_id=None, audit_id=None, profil_entreprise=None,
     )
-    monkeypatch.setattr(ventures_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[v]]))
+    # `v` porte déjà geo-1/audit-1 : elle représente la ligne APRÈS l'UPDATE — le
+    # SELECT du 2e execute() la relit telle quelle, comme le ferait Postgres.
+    v.geo_object_id, v.audit_id = "geo-1", "audit-1"
+    monkeypatch.setattr(ventures_mod, "SessionLocal", lambda: _FakeSessionPatch(rows=[v]))
     liaison = await client.patch(f"/api/ventures/{vid}", json={"geoObjectId": "geo-1", "auditId": "audit-1"})
     assert liaison.status_code == 200
-    v.geo_object_id, v.audit_id = "geo-1", "audit-1"
+    liaison_body = liaison.json()
+    assert liaison_body["geoObjectId"] == "geo-1"
+    assert liaison_body["auditId"] == "audit-1"
 
     # 3. Document ingéré avec venture_id (simulé côté ingestion via le mock réseau
     #    du dossier — l'upload réel est couvert par Task 3 côté ingestion).
