@@ -13,7 +13,10 @@
   "vue_dashboard": "forge",
   "depends_on": [
     "gateway",
-    "memoire"
+    "memoire",
+    "geo",
+    "audit",
+    "ingestion"
   ],
   "offre": [
     "agents_ia",
