@@ -1,5 +1,6 @@
 .venv/
 venv/
+.venv_s227/
 __pycache__/
 *.pyc
 .pytest_cache/
