@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     MEMOIRE_URL: str = ""  # ex. http://host.docker.internal:5600
     MEMOIRE_ESPACE: str = ""  # vide = espace solution « Workplace » côté brique
 
+    # S227 — socle Entité Entreprise unifiée : ponts vers geo/audit/ingestion
+    # pour GET /ventures/{id}/dossier. Vide = section correspondante marquée
+    # "indisponible" dans la réponse agrégée (repli honnête, jamais de 500).
+    GEO_URL: str = ""  # ex. http://host.docker.internal:5100
+    GEO_KEY: str = ""  # doit figurer dans API_KEYS de la brique geo
+    AUDIT_URL: str = ""  # ex. http://host.docker.internal:5300
+    INGESTION_URL: str = ""  # ex. http://host.docker.internal:5200
+    INGESTION_KEY: str = ""  # doit figurer dans INGESTION_API_KEYS/API_KEYS de ingestion
+
     # ── SMTP (S130 ; étendu S22 — emails transactionnels & relances) ────
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
