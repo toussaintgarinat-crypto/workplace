@@ -12,19 +12,21 @@ import random
 import uuid as uuidlib
 from datetime import datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, select, update
 from sqlalchemy import delete as sa_delete
 
 from app.auth import UserContext, get_current_user
+from app.config import settings
 from app.db import SessionLocal
 from app.email import send_venture_deletion_code
 from app.models import (
-    LlmPresets, OrganizationMembers, PoleMembers, Poles, Users,
+    AuditMissions, LlmPresets, OrganizationMembers, PoleMembers, Poles, Users,
     VentureDeleteTokens, VentureMembers, Ventures,
 )
-from app.serde import pole, venture, venture_member
+from app.serde import audit_mission, pole, venture, venture_member
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -250,3 +252,80 @@ async def create_venture_pole(vid: str, body: CreatePoleInVenture, response: Res
         await s.refresh(po)
     response.status_code = 201
     return pole(po)
+
+
+async def _lire_identite(geo_object_id: str | None) -> dict:
+    if not geo_object_id:
+        return {"statut": "absent"}
+    if not settings.GEO_URL:
+        return {"statut": "indisponible", "geoObjectId": geo_object_id}
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            headers = {"X-API-Key": settings.GEO_KEY} if settings.GEO_KEY else {}
+            r = await c.get(f"{settings.GEO_URL.rstrip('/')}/objets/{geo_object_id}", headers=headers)
+        if r.status_code != 200:
+            return {"statut": "indisponible", "geoObjectId": geo_object_id}
+        return r.json()
+    except httpx.HTTPError:
+        return {"statut": "indisponible", "geoObjectId": geo_object_id}
+
+
+async def _lire_audit_business(audit_id: str | None) -> dict:
+    if not audit_id:
+        return {"statut": "absent"}
+    if not settings.AUDIT_URL:
+        return {"statut": "indisponible", "auditId": audit_id}
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{settings.AUDIT_URL.rstrip('/')}/audits/{audit_id}")
+        if r.status_code != 200:
+            return {"statut": "indisponible", "auditId": audit_id}
+        return r.json()
+    except httpx.HTTPError:
+        return {"statut": "indisponible", "auditId": audit_id}
+
+
+async def _lister_documents(vid: str) -> list[dict]:
+    if not settings.INGESTION_URL:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            headers = {"X-API-Key": settings.INGESTION_KEY} if settings.INGESTION_KEY else {}
+            r = await c.get(f"{settings.INGESTION_URL.rstrip('/')}/documents",
+                            params={"venture_id": vid}, headers=headers)
+        if r.status_code != 200:
+            return []
+        return r.json().get("documents", [])
+    except httpx.HTTPError:
+        return []
+
+
+@router.get("/ventures/{vid}/dossier", dependencies=[Depends(get_current_user)])
+async def get_venture_dossier(vid: str, user: UserContext = Depends(get_current_user)):
+    u = _uuid(vid)
+    async with SessionLocal() as s:
+        v = (await s.execute(
+            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+        )).scalar_one_or_none() if u else None
+        if v is None:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        poles_rows = (await s.execute(select(Poles).where(Poles.venture_id == vid))).scalars().all()
+        pole_ids = [p.id for p in poles_rows]
+        missions_rows = []
+        if pole_ids:
+            missions_rows = (await s.execute(
+                select(AuditMissions).where(AuditMissions.pole_id.in_(pole_ids))
+            )).scalars().all()
+
+    identite = await _lire_identite(v.geo_object_id)
+    audit_business = await _lire_audit_business(v.audit_id)
+    documents = await _lister_documents(vid)
+
+    return {
+        "identite": identite,
+        "audit": audit_business,
+        "auditMissions": [audit_mission(m) for m in missions_rows],
+        "documents": documents,
+        "profilEntreprise": v.profil_entreprise,
+    }
