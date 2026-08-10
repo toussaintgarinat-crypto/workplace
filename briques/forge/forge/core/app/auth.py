@@ -48,6 +48,7 @@ class UserContext:
     nom: str
     avatar_emoji: str
     org_id: str | None
+    venture_scopes: frozenset[str] = frozenset()  # S227 — role client_lecture
 
 
 async def _provision_user(session, payload: dict) -> Users:
@@ -179,6 +180,20 @@ async def provision_ws_user(token: str | None) -> str | None:
         return str(user.id)
 
 
+async def _resolve_venture_scopes(session, user_id: str) -> frozenset[str]:
+    """S227 — ventures accessibles en lecture seule via le rôle client_lecture."""
+    rows = (
+        await session.execute(
+            select(OrganizationMembers.venture_scope).where(
+                OrganizationMembers.user_id == user_id,
+                OrganizationMembers.role == "client_lecture",
+                OrganizationMembers.venture_scope.is_not(None),
+            )
+        )
+    ).scalars().all()
+    return frozenset(rows)
+
+
 async def get_current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -195,12 +210,14 @@ async def get_current_user(
         user = await _provision_user(session, payload)
         await _ensure_personal_org(session, user)
         org_id = await _resolve_org(session, user, request.headers.get("X-Org-ID"))
+        venture_scopes = await _resolve_venture_scopes(session, str(user.id))
         await session.commit()
         return UserContext(
             sub=str(user.id),
             nom=user.nom,
             avatar_emoji=user.avatar_emoji or "👤",
             org_id=org_id,
+            venture_scopes=venture_scopes,
         )
 
 

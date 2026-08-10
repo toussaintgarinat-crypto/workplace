@@ -310,11 +310,11 @@ async def _lister_documents(vid: str) -> list[dict]:
 async def get_venture_dossier(vid: str, user: UserContext = Depends(get_current_user)):
     u = _uuid(vid)
     async with SessionLocal() as s:
-        v = (await s.execute(
-            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
-        )).scalar_one_or_none() if u else None
+        v = (await s.execute(select(Ventures).where(Ventures.id == u))).scalar_one_or_none() if u else None
         if v is None:
             raise HTTPException(status_code=404, detail="Not found")
+        if v.owner_id != user.sub and vid not in user.venture_scopes:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         poles_rows = (await s.execute(select(Poles).where(Poles.venture_id == vid))).scalars().all()
         pole_ids = [p.id for p in poles_rows]
