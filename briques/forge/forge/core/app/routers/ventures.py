@@ -266,7 +266,9 @@ async def _lire_identite(geo_object_id: str | None) -> dict:
         if r.status_code != 200:
             return {"statut": "indisponible", "geoObjectId": geo_object_id}
         return r.json()
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
+        # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON) —
+        # repli honnête dans les deux cas, jamais de 500 pour une panne partielle.
         return {"statut": "indisponible", "geoObjectId": geo_object_id}
 
 
@@ -281,7 +283,8 @@ async def _lire_audit_business(audit_id: str | None) -> dict:
         if r.status_code != 200:
             return {"statut": "indisponible", "auditId": audit_id}
         return r.json()
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
+        # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON).
         return {"statut": "indisponible", "auditId": audit_id}
 
 
@@ -295,8 +298,11 @@ async def _lister_documents(vid: str) -> list[dict]:
                             params={"venture_id": vid}, headers=headers)
         if r.status_code != 200:
             return []
-        return r.json().get("documents", [])
-    except httpx.HTTPError:
+        data = r.json()
+        # Corps 200 mais pas un objet (ex. liste brute) : repli honnête plutôt
+        # que planter sur .get() — même logique que le JSONDecodeError ci-dessous.
+        return data.get("documents", []) if isinstance(data, dict) else []
+    except (httpx.HTTPError, ValueError):
         return []
 
 

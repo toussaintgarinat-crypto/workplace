@@ -112,3 +112,72 @@ async def test_dossier_agrege(client, app, monkeypatch, scenario):
     else:
         assert body["identite"]["id"] == "geo-1"
         assert body["audit"]["id"] == "audit-1"
+
+
+async def test_dossier_identite_corps_malforme_degrade_sans_500(client, app, monkeypatch):
+    """200 mais corps non-JSON sur geo : repli honnête, pas de 500 (revue post-implémentation)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(ventures_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [], []]))
+    monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://geo.test")
+    monkeypatch.setattr(ventures_mod.settings, "AUDIT_URL", "http://audit.test")
+    monkeypatch.setattr(ventures_mod.settings, "INGESTION_URL", "http://ingestion.test")
+
+    _orig_get = httpx.AsyncClient.get
+
+    async def _fake_get(self, url, **kw):
+        url = str(url)
+        if "geo.test" in url:
+            # 200 mais corps non-JSON : r.json() lève json.JSONDecodeError (sous-classe ValueError).
+            return httpx.Response(200, content=b"<html>pas du json</html>",
+                                  headers={"content-type": "text/html"})
+        if "audit.test" in url:
+            return httpx.Response(200, json={"id": "audit-1", "statut": "termine"})
+        if "ingestion.test" in url:
+            return httpx.Response(200, json={"total": 0, "offset": 0, "documents": []})
+        return await _orig_get(self, url, **kw)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+
+    r = await client.get(f"/api/ventures/{v.id}/dossier")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["identite"]["statut"] == "indisponible"
+    assert body["identite"]["geoObjectId"] == "geo-1"
+    assert body["audit"]["id"] == "audit-1"  # les autres sections restent intactes
+
+
+async def test_dossier_documents_corps_inattendu_degrade_sans_500(client, app, monkeypatch):
+    """200 mais corps JSON qui n'est pas un objet (liste brute) sur ingestion : repli à []."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(ventures_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [], []]))
+    monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://geo.test")
+    monkeypatch.setattr(ventures_mod.settings, "AUDIT_URL", "http://audit.test")
+    monkeypatch.setattr(ventures_mod.settings, "INGESTION_URL", "http://ingestion.test")
+
+    _orig_get = httpx.AsyncClient.get
+
+    async def _fake_get(self, url, **kw):
+        url = str(url)
+        if "geo.test" in url:
+            return httpx.Response(200, json={"id": "geo-1", "metadata": {"nom": "Acme"}})
+        if "audit.test" in url:
+            return httpx.Response(200, json={"id": "audit-1", "statut": "termine"})
+        if "ingestion.test" in url:
+            # 200, JSON valide, mais pas un dict : .get("documents", []) planterait
+            # sans le isinstance() guard.
+            return httpx.Response(200, json=["oups", "pas-un-objet"])
+        return await _orig_get(self, url, **kw)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+
+    r = await client.get(f"/api/ventures/{v.id}/dossier")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["documents"] == []
+    assert body["identite"]["id"] == "geo-1"  # les autres sections restent intactes
