@@ -20,6 +20,7 @@ import datetime
 import uuid
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKeyConstraint, Index, Integer, PrimaryKeyConstraint, REAL, Text, UniqueConstraint, Uuid, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -500,6 +501,8 @@ class OrganizationMembers(Base):
     user_id: Mapped[str] = mapped_column(Text, nullable=False)
     joined_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text('now()'))
     role: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'member'::text"))
+    # S227 — rôle client_lecture : accès en lecture seule scopé à UNE venture.
+    venture_scope: Mapped[Optional[str]] = mapped_column(Text)
 
     org: Mapped['Organizations'] = relationship('Organizations', back_populates='organization_members')
 
@@ -744,6 +747,11 @@ class Ventures(Base):
     couleur: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'#6366f1'::text"))
     type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'own'::text"))
     statut: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'actif'::text"))
+    # S227 — socle Entité Entreprise unifiée : références souples (pas de FK
+    # physique inter-service) vers geo et briques/audit, + profil qualitatif.
+    geo_object_id: Mapped[Optional[str]] = mapped_column(Text)
+    audit_id: Mapped[Optional[str]] = mapped_column(Text)
+    profil_entreprise: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     org: Mapped[Optional['Organizations']] = relationship('Organizations', back_populates='ventures')
     governor_usage: Mapped[list['GovernorUsage']] = relationship('GovernorUsage', back_populates='venture')
