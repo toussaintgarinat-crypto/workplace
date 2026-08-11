@@ -388,6 +388,20 @@ def venture_member(r) -> dict:
     }
 
 
+def entretien(r) -> dict:
+    return {
+        "id": _sid(r.id),
+        "ventureId": _sid(r.venture_id),
+        "sectionCourante": r.section_courante,
+        "sectionsCouvertes": r.sections_couvertes,
+        "transcript": r.transcript,
+        "statut": r.statut,
+        "syncErreur": r.sync_erreur,
+        "derniereActivite": iso(r.derniere_activite),
+        "createdAt": iso(r.created_at),
+    }
+
+
 def pole(r) -> dict:
     return {
         "id": _sid(r.id),
