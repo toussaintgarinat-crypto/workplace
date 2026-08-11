@@ -578,10 +578,65 @@ async def test_terminer_cloture_explicitement_avant_squelette_complet(client, ap
 
 
 async def test_terminer_404_si_aucun_entretien(client, app, monkeypatch):
+    """Venture possédée mais aucune ligne Entretiens (squelette jamais démarré, ou
+    table vide) : doit 404 sur la branche `row is None`, pas sur la branche
+    ownership. rows_by_call a deux entrées distinctes (venture réelle possédée,
+    puis Entretiens réellement vide) — pas un unique `[[]]` qui, via le repli
+    `pop(0) if self._rows_by_call else []` de `_FakeSession.execute`, renverrait
+    aussi [] pour n'importe quel appel ultérieur et masquerait un retrait du
+    guard d'ownership (cf. test_terminer_404_si_venture_pas_a_soi ci-dessous,
+    qui couvre spécifiquement cette autre branche)."""
     app.dependency_overrides[get_current_user] = _fake_user
-    monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
+    v = _mk_venture()
+    sess_holder = []
+
+    def _make_session():
+        sess = _FakeSession(rows_by_call=[[v], []])
+        sess_holder.append(sess)
+        return sess
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make_session)
     r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
     assert r.status_code == 404
+    # Les deux requêtes en file ont bien été consommées (venture puis entretien) :
+    # preuve que le 404 vient de « aucun entretien », pas d'un court-circuit ownership.
+    assert sess_holder[0].execute_count == 2
+
+
+async def test_terminer_404_si_venture_pas_a_soi(client, app, monkeypatch):
+    """Sécurité : sans le filtre owner_id (et sans le garde `v is not None` qui
+    court-circuite la lecture d'Entretiens), n'importe quel utilisateur authentifié
+    pourrait lire/clôturer l'entretien de n'importe quelle venture en devinant son
+    id. rows_by_call met en file un VRAI entretien en 2e position : si le garde
+    d'ownership disparaissait, cette ligne serait consommée et ses données
+    fuiteraient dans la réponse — ce test irait au rouge. Avec le garde intact,
+    la requête Entretiens n'est jamais exécutée (execute_count == 1) et la ligne
+    en file reste non consommée."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    entretien_qui_fuirait = SimpleNamespace(
+        id="99999999-9999-9999-9999-999999999999", venture_id=VID,
+        section_courante="qualitatif.problemes_connus", sections_couvertes=["qualitatif.organisation"],
+        transcript="## secret\nDonnée confidentielle d'une autre venture.", statut="en_cours",
+        sync_erreur=None, derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    sess_holder = []
+
+    def _make_session():
+        sess = _FakeSession(rows_by_call=[[], [entretien_qui_fuirait]])
+        sess_holder.append(sess)
+        return sess
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make_session)
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 404
+    body_text = r.text
+    assert "qualitatif.problemes_connus" not in body_text
+    assert "99999999-9999-9999-9999-999999999999" not in body_text
+    assert "Donnée confidentielle" not in body_text
+    # Une seule requête exécutée (Ventures) — Entretiens jamais interrogé, donc la
+    # ligne en file (qui aurait fait fuiter des données d'une autre venture) n'a
+    # jamais été consommée.
+    assert sess_holder[0].execute_count == 1
 
 
 async def test_etat_renvoie_l_entretien_courant(client, app, monkeypatch):
@@ -611,10 +666,42 @@ async def test_etat_404_si_aucun_entretien(client, app, monkeypatch):
 
 
 async def test_etat_404_si_venture_pas_a_soi(client, app, monkeypatch):
-    """Sécurité : sans le filtre owner_id, n'importe quel utilisateur authentifié pourrait
-    lire l'état d'entretien de n'importe quelle venture en devinant son id (même classe de
-    bug que les fixes Critical S227 sur les scopes client_lecture)."""
+    """Sécurité : sans le filtre owner_id (et sans le garde `v is not None` qui
+    court-circuite la lecture d'Entretiens), n'importe quel utilisateur authentifié
+    pourrait lire l'état d'entretien de n'importe quelle venture en devinant son id
+    (même classe de bug que les fixes Critical S227 sur les scopes client_lecture).
+
+    rows_by_call=[[], [row]] met en file un VRAI entretien en 2e position. Avec un
+    unique `[[]]` (ancienne version), `_FakeSession.execute` retombe sur `[]` pour
+    TOUT appel au-delà de la file (`pop(0) if self._rows_by_call else []`) — donc
+    même une régression qui supprimerait le garde `v is not None` et interrogerait
+    Entretiens sans condition obtiendrait quand même [] et 404-erait, mais pour la
+    MAUVAISE raison (repli de la fausse session, pas le garde d'ownership). En
+    mettant un vrai `row` en 2e position, si le garde disparaît, cette ligne serait
+    consommée et ses données fuiteraient dans le corps de la réponse — ce test irait
+    au rouge dans ce cas, ce que l'ancienne version ne pouvait pas détecter."""
     app.dependency_overrides[get_current_user] = _fake_user
-    monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
+    entretien_qui_fuirait = SimpleNamespace(
+        id="88888888-8888-8888-8888-888888888888", venture_id=VID,
+        section_courante="qualitatif.contraintes", sections_couvertes=["qualitatif.organisation"],
+        transcript="## secret\nDonnée confidentielle d'une autre venture.", statut="en_cours",
+        sync_erreur=None, derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    sess_holder = []
+
+    def _make_session():
+        sess = _FakeSession(rows_by_call=[[], [entretien_qui_fuirait]])
+        sess_holder.append(sess)
+        return sess
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make_session)
     r = await client.get(f"/api/ventures/{VID}/entretien/etat")
     assert r.status_code == 404
+    body_text = r.text
+    assert "qualitatif.contraintes" not in body_text
+    assert "88888888-8888-8888-8888-888888888888" not in body_text
+    assert "Donnée confidentielle" not in body_text
+    # Une seule requête exécutée (Ventures) — Entretiens jamais interrogé, donc la
+    # ligne en file (qui aurait fait fuiter des données d'une autre venture) n'a
+    # jamais été consommée.
+    assert sess_holder[0].execute_count == 1
