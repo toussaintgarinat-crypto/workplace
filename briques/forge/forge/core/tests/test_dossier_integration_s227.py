@@ -170,4 +170,6 @@ async def test_venture_creee_puis_dossier_agrege_bout_en_bout(client, monkeypatc
     body = dossier.json()
     assert body["identite"]["id"] == "geo-1"
     assert body["audit"]["id"] == "audit-1"
-    assert body["documents"] == [{"id": "doc-1", "nom": "contrat.pdf"}]
+    # Fix 3 (revue post-fusion) : "documents" est une enveloppe {statut, documents}.
+    assert body["documents"] == {"statut": "ok",
+                                 "documents": [{"id": "doc-1", "nom": "contrat.pdf"}]}

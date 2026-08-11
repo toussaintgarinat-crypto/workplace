@@ -179,5 +179,78 @@ async def test_dossier_documents_corps_inattendu_degrade_sans_500(client, app, m
     app.dependency_overrides.clear()
     assert r.status_code == 200
     body = r.json()
-    assert body["documents"] == []
+    # Fix 3 (revue post-fusion) : "documents" est désormais une enveloppe
+    # {statut, documents}, plus un [] bare — indiscernable sinon de « le client
+    # n'a vraiment aucun document ».
+    assert body["documents"] == {"statut": "indisponible", "documents": []}
     assert body["identite"]["id"] == "geo-1"  # les autres sections restent intactes
+
+
+async def test_dossier_documents_indisponible_ingestion_injoignable(client, app, monkeypatch):
+    """S227 fix (revue post-fusion, Fix 3) : INGESTION_URL configuré mais brique
+    injoignable → repli honnête {"statut": "indisponible", ...}, pas un [] bare
+    indiscernable d'un client sans aucun document."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(ventures_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [], []]))
+    monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://geo.test")
+    monkeypatch.setattr(ventures_mod.settings, "AUDIT_URL", "http://audit.test")
+    monkeypatch.setattr(ventures_mod.settings, "INGESTION_URL", "http://ingestion.test")
+
+    _orig_get = httpx.AsyncClient.get
+
+    async def _fake_get(self, url, **kw):
+        url = str(url)
+        if "geo.test" in url:
+            return httpx.Response(200, json={"id": "geo-1", "metadata": {"nom": "Acme"}})
+        if "audit.test" in url:
+            return httpx.Response(200, json={"id": "audit-1", "statut": "termine"})
+        if "ingestion.test" in url:
+            raise httpx.ConnectError("ingestion down")
+        return await _orig_get(self, url, **kw)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+
+    r = await client.get(f"/api/ventures/{v.id}/dossier")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["documents"] == {"statut": "indisponible", "documents": []}
+    assert body["identite"]["id"] == "geo-1"  # les autres sections restent intactes
+    assert body["audit"]["id"] == "audit-1"
+
+
+async def test_dossier_identite_introuvable_sur_404_geo(client, app, monkeypatch):
+    """S227 fix (revue post-fusion, Fix 5) : un 404 de geo (objet supprimé,
+    mauvais tenant, ...) est distinct d'une panne de transport — "introuvable",
+    pas "indisponible"."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(ventures_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [], []]))
+    monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://geo.test")
+    monkeypatch.setattr(ventures_mod.settings, "AUDIT_URL", "http://audit.test")
+    monkeypatch.setattr(ventures_mod.settings, "INGESTION_URL", "http://ingestion.test")
+
+    _orig_get = httpx.AsyncClient.get
+
+    async def _fake_get(self, url, **kw):
+        url = str(url)
+        if "geo.test" in url:
+            return httpx.Response(404, json={"detail": "Not found"})
+        if "audit.test" in url:
+            return httpx.Response(200, json={"id": "audit-1", "statut": "termine"})
+        if "ingestion.test" in url:
+            return httpx.Response(200, json={"total": 0, "offset": 0, "documents": []})
+        return await _orig_get(self, url, **kw)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fake_get)
+
+    r = await client.get(f"/api/ventures/{v.id}/dossier")
+    app.dependency_overrides.clear()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["identite"]["statut"] == "introuvable"
+    assert body["identite"]["geoObjectId"] == "geo-1"
+    assert body["audit"]["id"] == "audit-1"  # les autres sections restent intactes

@@ -149,7 +149,7 @@ async def add_member(org_id: str, body: AddMember, user: UserContext = Depends(g
             select(OrganizationMembers).where(and_(
                 OrganizationMembers.org_id == oid, OrganizationMembers.user_id == user.sub))
         )).scalar_one_or_none() if oid else None
-        if my is None or my.role == "member":
+        if my is None or my.role not in ("owner", "admin"):
             raise HTTPException(status_code=403, detail="Forbidden")
         target = (await s.execute(
             select(Users).where(Users.email == body.email)
@@ -182,7 +182,7 @@ async def remove_member(org_id: str, user_id: str, user: UserContext = Depends(g
         )).scalar_one_or_none() if oid else None
         if my is None:
             raise HTTPException(status_code=404, detail="Not found")
-        if my.role == "member" and user_id != user.sub:
+        if my.role not in ("owner", "admin") and user_id != user.sub:
             raise HTTPException(status_code=403, detail="Forbidden")
         org = (await s.execute(select(Organizations).where(Organizations.id == oid))).scalar_one_or_none() if oid else None
         if org is not None and org.owner_id == user_id:
