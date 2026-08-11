@@ -454,8 +454,8 @@ async def test_derniere_section_couverte_declenche_la_cloture(client, app, monke
     async def _fake_generate(prompt, system=None, **kw):
         return '{"couverte": true, "question": null}'
 
-    async def _fake_cloturer(s, v, row, transcript):
-        return "termine", None
+    async def _fake_cloturer(v, transcript):
+        return "termine", None, None
 
     monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
     monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
@@ -501,14 +501,13 @@ async def test_cloturer_pousse_le_transcript_puis_rappelle_auditer(monkeypatch):
     monkeypatch.setattr(entretiens_mod.settings, "AUDIT_URL", "http://audit.test")
     monkeypatch.setattr(entretiens_mod.settings, "INGESTION_KEY", "k")
 
-    class _FakeSessionCloture:
-        async def execute(self, *a, **k):
-            return None
-
-    statut, sync_erreur = await entretiens_mod._cloturer(
-        _FakeSessionCloture(), v, row, transcript="## commercial\nOn répond au tel.")
+    statut, sync_erreur, audit_id = await entretiens_mod._cloturer(
+        v, transcript="## commercial\nOn répond au tel.")
     assert statut == "termine"
     assert sync_erreur is None
+    # `audit_id` est RENDU (revue finale S228, Finding I2) : `_cloturer` ne touche plus
+    # aucune session, c'est l'appelant qui persiste dans une transaction courte.
+    assert audit_id == "audit-new"
     assert v.audit_id == "audit-new"
     urls = [c[0] for c in calls]
     assert any(u.endswith("/ingerer") for u in urls)
@@ -541,14 +540,10 @@ async def test_cloturer_best_effort_si_ingestion_injoignable(monkeypatch):
     monkeypatch.setattr(entretiens_mod.settings, "INGESTION_URL", "http://ingestion.test")
     monkeypatch.setattr(entretiens_mod.settings, "AUDIT_URL", "http://audit.test")
 
-    class _FakeSessionCloture:
-        async def execute(self, *a, **k):
-            return None
-
-    statut, sync_erreur = await entretiens_mod._cloturer(
-        _FakeSessionCloture(), v, row, transcript="texte")
+    statut, sync_erreur, audit_id = await entretiens_mod._cloturer(v, transcript="texte")
     assert statut == "termine"  # ne bloque JAMAIS la clôture
     assert sync_erreur is not None
+    assert audit_id is None
     assert v.audit_id is None  # pas de rappel /auditer possible sans doc_ids
 
 
@@ -567,8 +562,8 @@ async def test_terminer_cloture_explicitement_avant_squelette_complet(client, ap
     monkeypatch.setattr(entretiens_mod, "SessionLocal",
                         lambda: _FakeSession(rows_by_call=[[v], [row]]))
 
-    async def _fake_cloturer(s, v, row, transcript):
-        return "termine", None
+    async def _fake_cloturer(v, transcript):
+        return "termine", None, None
 
     monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
 
@@ -705,3 +700,295 @@ async def test_etat_404_si_venture_pas_a_soi(client, app, monkeypatch):
     # ligne en file (qui aurait fait fuiter des données d'une autre venture) n'a
     # jamais été consommée.
     assert sess_holder[0].execute_count == 1
+
+
+# ── Revue finale S228 : C2 (datetimes naïfs), I2 (sessions), I3 (idempotence),
+#    I4 (syncErreur exposé), I5 (order_by manquant) ────────────────────────────────
+
+class _SessionEspionne(_FakeSession):
+    """`_FakeSession` + traçabilité : garde les statements exécutés et le nombre de
+    sessions ouvertes à un instant donné (partagé entre toutes les instances via
+    `compteur`), pour prouver qu'aucun appel réseau ne tourne session ouverte."""
+
+    def __init__(self, rows_by_call, journal, compteur):
+        super().__init__(rows_by_call)
+        self.journal = journal
+        self._compteur = compteur
+
+    async def __aenter__(self):
+        self._compteur["ouvertes"] += 1
+        self._compteur["max"] = max(self._compteur["max"], self._compteur["ouvertes"])
+        return self
+
+    async def __aexit__(self, *a):
+        self._compteur["ouvertes"] -= 1
+        return False
+
+    async def execute(self, stmt=None, *a, **k):
+        self.journal.append(stmt)
+        return await super().execute(stmt, *a, **k)
+
+
+def _espion(monkeypatch, rows_by_call):
+    """Installe un `SessionLocal` espionné. Rend (journal_des_statements, compteur)."""
+    journal, compteur = [], {"ouvertes": 0, "max": 0}
+    monkeypatch.setattr(
+        entretiens_mod, "SessionLocal",
+        lambda: _SessionEspionne(list(rows_by_call), journal, compteur))
+    return journal, compteur
+
+
+def _datetimes_ecrits(journal):
+    """Tous les datetimes présents dans les paramètres liés des statements exécutés."""
+    vus = []
+    for stmt in journal:
+        try:
+            params = stmt.compile().params
+        except Exception:  # SELECT sans param datetime, ou statement non compilable
+            continue
+        vus.extend(v for v in params.values() if isinstance(v, datetime))
+    return vus
+
+
+def _row_en_cours(**kw):
+    from types import SimpleNamespace
+    base = dict(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+async def test_demarrer_persiste_des_datetimes_naifs(client, app, monkeypatch):
+    """Finding C2 : `Entretiens.derniere_activite`/`created_at` sont des colonnes
+    `timestamp without time zone`. asyncpg refuse d'y encoder un datetime AWARE
+    (« can't subtract offset-naive and offset-aware datetimes », remonté en DataError) —
+    la toute première utilisation réelle aurait planté. Aucun test ne pouvait le voir :
+    le filet Forge n'a pas de vraie DB, d'où cette assertion structurelle."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    sessions = []
+
+    def _make():
+        sess = _FakeSession(rows_by_call=[[_mk_venture()], []])
+        sessions.append(sess)
+        return sess
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make)
+    r = await client.post(f"/api/ventures/{VID}/entretien/demarrer")
+    assert r.status_code == 200
+    ajoute = sessions[0].added[0]
+    assert ajoute.derniere_activite.tzinfo is None, "datetime aware → DataError asyncpg"
+    assert ajoute.created_at.tzinfo is None, "datetime aware → DataError asyncpg"
+
+
+async def test_repondre_persiste_des_datetimes_naifs(client, app, monkeypatch):
+    """Même garde C2 sur les `update(...)` de `repondre_entretien` (Entretiens ET
+    Ventures.updated_at, toutes deux naïves)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    journal, _ = _espion(monkeypatch, [[_mk_venture(profil_entreprise=None)], [_row_en_cours()]])
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '{"valeurs": ["SARL"]}'
+        return '{"couverte": false, "question": "Et encore ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "SARL"})
+    assert r.status_code == 200
+    ecrits = _datetimes_ecrits(journal)
+    assert ecrits, "aucun datetime persisté — le test ne prouve plus rien"
+    assert all(d.tzinfo is None for d in ecrits), ecrits
+
+
+async def test_terminer_persiste_des_datetimes_naifs(client, app, monkeypatch):
+    """Même garde C2 sur `terminer_entretien`."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    journal, _ = _espion(monkeypatch, [[_mk_venture()], [_row_en_cours()]])
+
+    async def _fake_cloturer(v, transcript):
+        return "termine", None, "audit-1"
+
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 200
+    ecrits = _datetimes_ecrits(journal)
+    assert ecrits, "aucun datetime persisté — le test ne prouve plus rien"
+    assert all(d.tzinfo is None for d in ecrits), ecrits
+
+
+async def test_repondre_ne_tient_aucune_session_pendant_la_cloture(client, app, monkeypatch):
+    """Finding I2 : `_cloturer` enchaîne 3 appels HTTP à 30 s de timeout (~90 s au pire).
+    Les exécuter dans le `async with SessionLocal()` de lecture immobilisait une
+    connexion et une transaction ouvertes tout ce temps. Motif tranché en S227
+    (`ventures.get_venture_dossier` ferme sa session AVANT son fan-out HTTP)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    derniere = entretiens_mod.SECTIONS[-1]["id"]
+    row = _row_en_cours(section_courante=derniere,
+                        sections_couvertes=[s["id"] for s in entretiens_mod.SECTIONS[:-1]],
+                        transcript="## communication\n")
+    _, compteur = _espion(monkeypatch, [[_mk_venture()], [row]])
+    vu = {}
+
+    async def _fake_generate(prompt, system=None, **kw):
+        return '{"couverte": true, "question": null}'
+
+    async def _fake_cloturer(v, transcript):
+        vu["sessions_ouvertes"] = compteur["ouvertes"]
+        return "termine", None, "audit-1"
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "Par email."})
+    assert r.status_code == 200
+    assert r.json()["statut"] == "termine"
+    assert vu["sessions_ouvertes"] == 0, "connexion DB immobilisée pendant ~90 s d'appels HTTP"
+    assert compteur["max"] == 1, "sessions imbriquées — deux connexions pour un seul tour"
+
+
+async def test_terminer_ne_tient_aucune_session_pendant_la_cloture(client, app, monkeypatch):
+    """Même garde I2 côté `terminer_entretien`."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    _, compteur = _espion(monkeypatch, [[_mk_venture()], [_row_en_cours()]])
+    vu = {}
+
+    async def _fake_cloturer(v, transcript):
+        vu["sessions_ouvertes"] = compteur["ouvertes"]
+        return "termine", None, None
+
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 200
+    assert vu["sessions_ouvertes"] == 0, "connexion DB immobilisée pendant ~90 s d'appels HTTP"
+    assert compteur["max"] == 1
+
+
+async def test_terminer_deux_fois_ne_rejoue_pas_la_cloture(client, app, monkeypatch):
+    """Finding I3 : sans court-circuit, rappeler /terminer sur un entretien déjà clôturé
+    proprement rejouait `_cloturer` EN ENTIER — un 2e transcript poussé vers l'ingestion
+    (doublon dans le RAG) et un NOUVEL audit qui écrasait `Ventures.audit_id`. Le retry
+    n'a de sens que si la clôture précédente avait échoué (`sync_erreur` non nul)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    deja = _row_en_cours(statut="termine", sync_erreur=None,
+                         sections_couvertes=["qualitatif.organisation"],
+                         transcript="## commercial\nDéjà poussé.")
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[_mk_venture()], [deja]]))
+    appels = []
+
+    async def _fake_cloturer(v, transcript):
+        appels.append(transcript)
+        return "termine", None, "audit-2"
+
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 200
+    assert appels == [], "clôture rejouée : 2e push ingestion + audit_id écrasé"
+    body = r.json()
+    assert body["statut"] == "termine"
+    assert body["syncErreur"] is None
+
+
+async def test_terminer_rejoue_la_cloture_si_la_synchro_avait_echoue(client, app, monkeypatch):
+    """Contrepartie du court-circuit I3 : le retry documenté doit rester possible.
+    `sync_erreur` non nul = clôture incomplète = `_cloturer` rejoué."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    ratee = _row_en_cours(statut="termine", sync_erreur="push ingestion échoué (502)",
+                          transcript="## commercial\nÀ repousser.")
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[_mk_venture()], [ratee]]))
+    appels = []
+
+    async def _fake_cloturer(v, transcript):
+        appels.append(transcript)
+        return "termine", None, "audit-2"
+
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 200
+    assert appels == ["## commercial\nÀ repousser."]
+    assert r.json()["syncErreur"] is None
+
+
+async def test_repondre_expose_sync_erreur(client, app, monkeypatch):
+    """Finding I4 : la clôture est best-effort — `statut` vaut "termine" même si le push
+    d'ingestion ou le rappel /auditer a échoué. Sans `syncErreur` dans le corps, le Cœur
+    annonçait « l'analyse est relancée » y compris dans ce cas."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    derniere = entretiens_mod.SECTIONS[-1]["id"]
+    row = _row_en_cours(section_courante=derniere,
+                        sections_couvertes=[s["id"] for s in entretiens_mod.SECTIONS[:-1]],
+                        transcript="## communication\n")
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[_mk_venture()], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        return '{"couverte": true, "question": null}'
+
+    async def _fake_cloturer(v, transcript):
+        return "termine", "push ingestion échoué (502)", None
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "Par email."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["statut"] == "termine"
+    assert body["syncErreur"] == "push ingestion échoué (502)"
+
+
+async def test_repondre_expose_sync_erreur_nulle_en_marche_normale(client, app, monkeypatch):
+    """Non-régression du chemin nominal : `syncErreur` doit être présent ET nul quand
+    tout va bien (sinon le Cœur alarmerait à chaque tour)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[_mk_venture()], [_row_en_cours()]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '{"valeurs": ["SARL"]}'
+        return '{"couverte": false, "question": "Et encore ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "SARL"})
+    assert r.json()["syncErreur"] is None
+
+
+async def test_repondre_selectionne_l_entretien_le_plus_recent(client, app, monkeypatch):
+    """Finding I5 : ce SELECT était le seul des 4 de ce fichier sans
+    `.order_by(desc(derniere_activite))`. Si deux lignes `en_cours` coexistent pour une
+    venture, Postgres en choisit une arbitrairement — `demarrer` pourrait reprendre
+    l'une et `repondre` écrire dans l'autre. Même classe de bug que le fix 7ed26b8,
+    appliqué au 4e site oublié."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    journal, _ = _espion(monkeypatch, [[_mk_venture()], [_row_en_cours()]])
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '{"valeurs": ["SARL"]}'
+        return '{"couverte": false, "question": "Et encore ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "SARL"})
+    assert r.status_code == 200
+    selects = [str(st) for st in journal if str(st).lstrip().upper().startswith("SELECT")]
+    entretien_select = [s for s in selects if "entretiens" in s]
+    assert entretien_select, selects
+    assert "ORDER BY entretiens.derniere_activite DESC" in entretien_select[0], entretien_select[0]
+
+
+def test_les_quatre_selects_d_entretien_sont_ordonnes():
+    """Garde-fou statique contre la réapparition du 5e site oublié : toute lecture
+    `select(Entretiens)` de ce router doit être suivie d'un `order_by`."""
+    import inspect
+    import re as _re
+
+    src = inspect.getsource(entretiens_mod)
+    selects = _re.findall(r"select\(Entretiens\)(.{0,1500}?)\.limit\(", src, _re.S)
+    assert len(selects) == 4, f"{len(selects)} select(Entretiens) trouvés, 4 attendus"
+    for i, suite in enumerate(selects):
+        assert "order_by" in suite, f"select(Entretiens) #{i + 1} sans order_by"

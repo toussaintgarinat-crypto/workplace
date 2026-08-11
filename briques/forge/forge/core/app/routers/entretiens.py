@@ -122,7 +122,13 @@ async def demarrer_entretien(vid: str, user: UserContext = Depends(get_current_u
             }
 
         premiere = SECTIONS[0]
-        now = datetime.now(timezone.utc)
+        # `.replace(tzinfo=None)` OBLIGATOIRE (revue finale S228, Finding C2) :
+        # `Entretiens.derniere_activite`/`created_at` sont des colonnes `DateTime` NAÏVES
+        # (`timestamp without time zone`). asyncpg refuse d'y encoder un datetime aware
+        # (« can't subtract offset-naive and offset-aware datetimes », remonté en
+        # DataError) — invisible pour le filet de tests, qui n'a pas de vraie DB.
+        # Convention du dépôt : cf. `agent_autonomy.py:148`.
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         row = Entretiens(
             venture_id=u, section_courante=premiere["id"], sections_couvertes=[],
             transcript="", statut="en_cours", derniere_activite=now, created_at=now,
@@ -185,101 +191,128 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
             raise HTTPException(status_code=404, detail="Not found")
 
         row = (await s.execute(
-            select(Entretiens).where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours")).limit(1)
+            select(Entretiens).where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours"))
+            # `order_by` indispensable (revue finale S228, Finding I5) : c'était le seul
+            # des 4 SELECT d'entretien de ce fichier à en manquer. Sans lui, si deux
+            # lignes `en_cours` coexistent pour une venture, Postgres en choisit une
+            # arbitrairement — `demarrer` pourrait reprendre l'une et `repondre` écrire
+            # dans l'autre. Même classe de bug que le fix 7ed26b8, sur le 4e site oublié.
+            .order_by(desc(Entretiens.derniere_activite))
+            .limit(1)
         )).scalar_one_or_none()
         if row is None:
             raise HTTPException(status_code=404, detail="Not found")
+        profil_courant = v.profil_entreprise
 
-        section = _section(row.section_courante) or SECTIONS[0]
-        now = datetime.now(timezone.utc)
-        extraction_echouee = False
+    # ── Fin de la session de LECTURE (revue finale S228, Finding I2) ─────────────
+    # Tout ce qui suit fait des appels RÉSEAU longs : 2 appels LLM, puis jusqu'à 3 appels
+    # HTTP dans `_cloturer` (30 s de timeout chacun, ~90 s au pire). Les tenir à
+    # l'intérieur d'un `async with SessionLocal()` immobilisait une connexion et une
+    # transaction ouvertes pendant toute cette durée. Motif déjà tranché en S227 :
+    # `ventures.get_venture_dossier` ferme sa session AVANT de faire son fan-out HTTP.
+    # Les écritures repartent plus bas dans une transaction courte et unique.
+    section = _section(row.section_courante) or SECTIONS[0]
+    # Naïf : colonnes `timestamp without time zone` (cf. Finding C2 dans demarrer_entretien).
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    extraction_echouee = False
+    nouveau_profil = None
 
-        if section["famille"] == "qualitatif":
-            categorie = section["categorie"]
-            connu = (v.profil_entreprise or {}).get(categorie) or []
+    if section["famille"] == "qualitatif":
+        categorie = section["categorie"]
+        connu = (profil_courant or {}).get(categorie) or []
+        try:
             try:
-                try:
-                    brut = await generate_text(
-                        _PROMPT_EXTRACTION.format(categorie=categorie, message=body.message))
-                except Exception as exc:  # réseau/timeout/quota/fournisseur — jamais un 500 ici
-                    logger.warning(
-                        "[entretien:generate_text_echoue] venture=%s categorie=%s: %s",
-                        vid, categorie, exc)
-                    brut = ""
-                data = json.loads(brut)
-                if not isinstance(data, dict):
-                    # JSON syntaxiquement valide mais pas un objet (ex. ["Lyon"], null,
-                    # 42) — même repli honnête qu'un JSONDecodeError, pas un .get() qui
-                    # planterait en AttributeError (revue post-Task 4).
-                    raise ValueError("réponse LLM n'est pas un objet JSON")
-                valeurs = data.get("valeurs") or []
-                if not isinstance(valeurs, list):
-                    raise ValueError("valeurs doit être une liste")
-            except (json.JSONDecodeError, ValueError, TypeError):
-                extraction_echouee = True
-                valeurs = []
+                brut = await generate_text(
+                    _PROMPT_EXTRACTION.format(categorie=categorie, message=body.message))
+            except Exception as exc:  # réseau/timeout/quota/fournisseur — jamais un 500 ici
                 logger.warning(
-                    "[entretien:extraction_echouee] venture=%s categorie=%s — tour conservé, "
-                    "fusion sautée pour ce tour", vid, categorie)
+                    "[entretien:generate_text_echoue] venture=%s categorie=%s: %s",
+                    vid, categorie, exc)
+                brut = ""
+            data = json.loads(brut)
+            if not isinstance(data, dict):
+                # JSON syntaxiquement valide mais pas un objet (ex. ["Lyon"], null,
+                # 42) — même repli honnête qu'un JSONDecodeError, pas un .get() qui
+                # planterait en AttributeError (revue post-Task 4).
+                raise ValueError("réponse LLM n'est pas un objet JSON")
+            valeurs = data.get("valeurs") or []
+            if not isinstance(valeurs, list):
+                raise ValueError("valeurs doit être une liste")
+        except (json.JSONDecodeError, ValueError, TypeError):
+            extraction_echouee = True
+            valeurs = []
+            logger.warning(
+                "[entretien:extraction_echouee] venture=%s categorie=%s — tour conservé, "
+                "fusion sautée pour ce tour", vid, categorie)
 
-            if valeurs:
-                nouveau_profil = _fusionner_qualitatif(v.profil_entreprise, categorie, valeurs)
-                await s.execute(update(Ventures).where(Ventures.id == u)
-                                .values(profil_entreprise=nouveau_profil, updated_at=now))
-                connu = nouveau_profil[categorie]
-
-            try:
-                decision_brut = await generate_text(
-                    _PROMPT_DECISION_QUALITATIF.format(categorie=categorie, message=body.message, connu=connu))
-            except Exception as exc:
-                logger.warning(
-                    "[entretien:generate_text_echoue] venture=%s section=%s: %s",
-                    vid, section["id"], exc)
-                decision_brut = ""
-        else:
-            zone = section["zone"]
-            row.transcript = (row.transcript or "") + f"\n\n## {zone}\n{body.message}"
-            try:
-                decision_brut = await generate_text(
-                    _PROMPT_DECISION_PROCESSUS.format(zone=zone, message=body.message))
-            except Exception as exc:
-                logger.warning(
-                    "[entretien:generate_text_echoue] venture=%s section=%s: %s",
-                    vid, section["id"], exc)
-                decision_brut = ""
+        if valeurs:
+            # Calculé ici, PERSISTÉ plus bas dans la transaction d'écriture unique.
+            nouveau_profil = _fusionner_qualitatif(profil_courant, categorie, valeurs)
+            connu = nouveau_profil[categorie]
 
         try:
-            decision = json.loads(decision_brut)
-            if not isinstance(decision, dict):
-                raise ValueError("réponse LLM n'est pas un objet JSON")
-            couverte = bool(decision.get("couverte"))
-            question_suivante = decision.get("question")
-        except (json.JSONDecodeError, ValueError, TypeError):
-            couverte = False
-            question_suivante = "Peux-tu préciser ?"
+            decision_brut = await generate_text(
+                _PROMPT_DECISION_QUALITATIF.format(categorie=categorie, message=body.message, connu=connu))
+        except Exception as exc:
             logger.warning(
-                "[entretien:decision_echouee] venture=%s section=%s — repli question générique",
-                vid, section["id"])
+                "[entretien:generate_text_echoue] venture=%s section=%s: %s",
+                vid, section["id"], exc)
+            decision_brut = ""
+    else:
+        zone = section["zone"]
+        row.transcript = (row.transcript or "") + f"\n\n## {zone}\n{body.message}"
+        try:
+            decision_brut = await generate_text(
+                _PROMPT_DECISION_PROCESSUS.format(zone=zone, message=body.message))
+        except Exception as exc:
+            logger.warning(
+                "[entretien:generate_text_echoue] venture=%s section=%s: %s",
+                vid, section["id"], exc)
+            decision_brut = ""
 
-        statut = "en_cours"
-        if couverte:
-            couvertes = list(row.sections_couvertes or []) + [row.section_courante]
-            suivante = _prochaine_section(couvertes)
-            if suivante is None:
-                statut, _sync_erreur = await _cloturer(s, v, row, transcript=row.transcript)
-                row.sections_couvertes = couvertes
-                row.statut = statut
-                row.sync_erreur = _sync_erreur
-                question_suivante = None
-            else:
-                row.section_courante = suivante["id"]
-                row.sections_couvertes = couvertes
-                question_suivante = suivante["premiere_question"]
+    try:
+        decision = json.loads(decision_brut)
+        if not isinstance(decision, dict):
+            raise ValueError("réponse LLM n'est pas un objet JSON")
+        couverte = bool(decision.get("couverte"))
+        question_suivante = decision.get("question")
+    except (json.JSONDecodeError, ValueError, TypeError):
+        couverte = False
+        question_suivante = "Peux-tu préciser ?"
+        logger.warning(
+            "[entretien:decision_echouee] venture=%s section=%s — repli question générique",
+            vid, section["id"])
 
-        row.derniere_activite = now
+    audit_id = None
+    if couverte:
+        couvertes = list(row.sections_couvertes or []) + [row.section_courante]
+        suivante = _prochaine_section(couvertes)
+        if suivante is None:
+            # `_cloturer` fait ses 3 appels HTTP ICI, hors de toute session ouverte.
+            statut, sync_erreur, audit_id = await _cloturer(v, transcript=row.transcript)
+            row.sections_couvertes = couvertes
+            row.statut = statut
+            row.sync_erreur = sync_erreur
+            question_suivante = None
+        else:
+            row.section_courante = suivante["id"]
+            row.sections_couvertes = couvertes
+            question_suivante = suivante["premiere_question"]
+
+    row.derniere_activite = now
+    sync_erreur_finale = getattr(row, "sync_erreur", None)
+
+    # ── Transaction d'ÉCRITURE, courte : plus aucun appel réseau au-delà d'ici ───
+    async with SessionLocal() as s:
+        if nouveau_profil is not None:
+            await s.execute(update(Ventures).where(Ventures.id == u)
+                            .values(profil_entreprise=nouveau_profil, updated_at=now))
+        if audit_id:
+            await s.execute(update(Ventures).where(Ventures.id == u)
+                            .values(audit_id=audit_id, updated_at=now))
         await s.execute(update(Entretiens).where(Entretiens.id == row.id).values(
             section_courante=row.section_courante, sections_couvertes=row.sections_couvertes,
-            transcript=row.transcript, statut=row.statut, sync_erreur=getattr(row, "sync_erreur", None),
+            transcript=row.transcript, statut=row.statut, sync_erreur=sync_erreur_finale,
             derniere_activite=now,
         ))
         await s.commit()
@@ -290,6 +323,10 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
         "question": question_suivante,
         "statut": row.statut,
         "extractionEchouee": extraction_echouee,
+        # Exposé (revue finale S228, Finding I4) : la clôture est best-effort — `statut`
+        # vaut "termine" même si le push d'ingestion ou le rappel /auditer a échoué.
+        # Sans ce champ, le Cœur annonçait « l'analyse est relancée » dans tous les cas.
+        "syncErreur": sync_erreur_finale,
     }
 
 
@@ -304,14 +341,21 @@ _PROMPT_DECISION_PROCESSUS = (
 )
 
 
-async def _cloturer(s, v, row, transcript: str) -> tuple[str, str | None]:
+async def _cloturer(v, transcript: str) -> tuple[str, str | None, str | None]:
     """Pousse le transcript vers ingestion (POST /ingerer, JAMAIS /documents/import qui ne
     propage pas venture_id) puis rappelle POST {AUDIT_URL}/auditer avec tous les doc_ids de
     la venture. Best-effort : une panne à N'IMPORTE QUELLE étape ne bloque JAMAIS la clôture
     (`statut` devient toujours "termine"), seul `sync_erreur` signale un défaut de synchro,
-    rejouable en rappelant /entretien/terminer."""
+    rejouable en rappelant /entretien/terminer.
+
+    Rend ``(statut, sync_erreur, audit_id)`` et NE TOUCHE AUCUNE SESSION (revue finale
+    S228, Finding I2). Les 3 appels HTTP ci-dessous durent jusqu'à 30 s chacun : les
+    exécuter dans une session ouverte immobilisait une connexion/transaction ~90 s.
+    L'appelant fait tourner cette fonction hors session, puis persiste `audit_id` dans
+    une transaction courte — même découpage que `ventures.get_venture_dossier` (S227).
+    """
     if not settings.INGESTION_URL or not settings.AUDIT_URL:
-        return "termine", "ingestion/audit non configurés"
+        return "termine", "ingestion/audit non configurés", None
 
     ingestion_headers = {"X-API-Key": settings.INGESTION_KEY} if settings.INGESTION_KEY else {}
     try:
@@ -324,44 +368,45 @@ async def _cloturer(s, v, row, transcript: str) -> tuple[str, str | None]:
                 headers=ingestion_headers,
             )
             if r_push.status_code >= 400:
-                return "termine", f"push ingestion échoué ({r_push.status_code})"
+                return "termine", f"push ingestion échoué ({r_push.status_code})", None
 
             r_docs = await c.get(
                 f"{settings.INGESTION_URL.rstrip('/')}/documents",
                 params={"venture_id": str(v.id)}, headers=ingestion_headers,
             )
             if r_docs.status_code >= 400:
-                return "termine", f"lecture documents échouée ({r_docs.status_code})"
+                return "termine", f"lecture documents échouée ({r_docs.status_code})", None
             docs_data = r_docs.json()
             # Corps 200 mais pas un objet (ex. liste brute) : repli honnête plutôt que
             # planter sur .get()/d["id"] — même garde que _lister_documents/
             # _lire_audit_business dans ventures.py (revue post-fusion, Fix 3/5).
             if not isinstance(docs_data, dict):
-                return "termine", "lecture documents : réponse invalide"
+                return "termine", "lecture documents : réponse invalide", None
             doc_ids = [d["id"] for d in docs_data.get("documents", []) if isinstance(d, dict) and "id" in d]
             if not doc_ids:
-                return "termine", "aucun doc_id disponible après push"
+                return "termine", "aucun doc_id disponible après push", None
 
             r_audit = await c.post(f"{settings.AUDIT_URL.rstrip('/')}/auditer",
                                    json={"doc_ids": doc_ids})
             if r_audit.status_code >= 400:
-                return "termine", f"rappel /auditer échoué ({r_audit.status_code})"
+                return "termine", f"rappel /auditer échoué ({r_audit.status_code})", None
             audit_data = r_audit.json()
             if not isinstance(audit_data, dict):
-                return "termine", "rappel /auditer : réponse invalide"
+                return "termine", "rappel /auditer : réponse invalide", None
             audit_id = audit_data.get("id")
             if not audit_id:
-                return "termine", "rappel /auditer : id manquant dans la réponse"
+                return "termine", "rappel /auditer : id manquant dans la réponse", None
     except (httpx.HTTPError, httpx.InvalidURL, ValueError, TypeError, KeyError) as e:
         # httpx.InvalidURL n'hérite pas de httpx.HTTPError (vérifié httpx 0.28) — même
         # garde que _lister_documents/_lire_audit_business dans ventures.py. ValueError
         # couvre json.JSONDecodeError (corps non-JSON) ; TypeError/KeyError couvrent un
         # accès malformé résiduel sur un corps de réponse inattendu.
-        return "termine", f"panne réseau : {e}"
+        return "termine", f"panne réseau : {e}", None
 
+    # Reflet en mémoire uniquement (l'objet est détaché : sa session est fermée). La
+    # persistance de `audit_id` est faite par l'appelant, dans sa transaction courte.
     v.audit_id = audit_id
-    await s.execute(update(Ventures).where(Ventures.id == v.id).values(audit_id=audit_id))
-    return "termine", None
+    return "termine", None, audit_id
 
 
 @router.post("/ventures/{vid}/entretien/terminer", dependencies=[Depends(get_current_user)])
@@ -383,12 +428,28 @@ async def terminer_entretien(vid: str, user: UserContext = Depends(get_current_u
         if row is None or v is None:
             raise HTTPException(status_code=404, detail="Aucun entretien pour cette venture")
 
-        statut, sync_erreur = await _cloturer(s, v, row, transcript=row.transcript)
-        now = datetime.now(timezone.utc)
+        # Idempotence (revue finale S228, Finding I3) : sans ce court-circuit, rappeler
+        # /terminer sur un entretien déjà clôturé PROPREMENT rejouait `_cloturer` en
+        # entier — un 2e transcript poussé vers l'ingestion et un NOUVEL audit qui
+        # écrasait `Ventures.audit_id`. La docstring annonçait « retry d'une clôture qui
+        # avait échoué » mais rien ne l'imposait ; c'est `sync_erreur is not None` qui
+        # définit une clôture rejouable.
+        if row.statut == "termine" and row.sync_erreur is None:
+            return entretien(row)
+
+    # `_cloturer` hors session (Finding I2), puis transaction d'écriture courte.
+    statut, sync_erreur, audit_id = await _cloturer(v, transcript=row.transcript)
+    # Naïf : colonnes `timestamp without time zone` (cf. Finding C2).
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with SessionLocal() as s:
         await s.execute(update(Entretiens).where(Entretiens.id == row.id).values(
             statut=statut, sync_erreur=sync_erreur, derniere_activite=now))
+        if audit_id:
+            await s.execute(update(Ventures).where(Ventures.id == u)
+                            .values(audit_id=audit_id, updated_at=now))
         await s.commit()
-        row.statut, row.sync_erreur = statut, sync_erreur
+    row.statut, row.sync_erreur = statut, sync_erreur
+    row.derniere_activite = now
 
     return entretien(row)
 
