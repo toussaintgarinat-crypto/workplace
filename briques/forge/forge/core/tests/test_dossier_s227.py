@@ -114,8 +114,12 @@ async def test_dossier_agrege(client, app, monkeypatch, scenario):
         assert body["audit"]["id"] == "audit-1"
 
 
-async def test_dossier_identite_corps_malforme_degrade_sans_500(client, app, monkeypatch):
-    """200 mais corps non-JSON sur geo : repli honnête, pas de 500 (revue post-implémentation)."""
+@pytest.mark.parametrize("helper", ["identite", "audit"])
+async def test_dossier_corps_malforme_degrade_sans_500(client, app, monkeypatch, helper):
+    """200 mais corps non-JSON sur geo OU sur audit : repli honnête, pas de 500
+    (revue post-implémentation ; puis revue post-fusion wave 2 — les deux
+    helpers avaient dérivé l'un de l'autre une fois déjà, `_lire_audit_business`
+    n'était couvert que par ricochet via `_lire_identite`)."""
     app.dependency_overrides[get_current_user] = _fake_user
     v = _mk_venture()
     monkeypatch.setattr(ventures_mod, "SessionLocal",
@@ -128,11 +132,17 @@ async def test_dossier_identite_corps_malforme_degrade_sans_500(client, app, mon
 
     async def _fake_get(self, url, **kw):
         url = str(url)
+        # r.json() lève json.JSONDecodeError (sous-classe ValueError) sur le
+        # helper ciblé par ce cas de paramétrage ; l'autre reste nominal.
         if "geo.test" in url:
-            # 200 mais corps non-JSON : r.json() lève json.JSONDecodeError (sous-classe ValueError).
-            return httpx.Response(200, content=b"<html>pas du json</html>",
-                                  headers={"content-type": "text/html"})
+            if helper == "identite":
+                return httpx.Response(200, content=b"<html>pas du json</html>",
+                                      headers={"content-type": "text/html"})
+            return httpx.Response(200, json={"id": "geo-1", "metadata": {"nom": "Acme"}})
         if "audit.test" in url:
+            if helper == "audit":
+                return httpx.Response(200, content=b"<html>pas du json</html>",
+                                      headers={"content-type": "text/html"})
             return httpx.Response(200, json={"id": "audit-1", "statut": "termine"})
         if "ingestion.test" in url:
             return httpx.Response(200, json={"total": 0, "offset": 0, "documents": []})
@@ -144,9 +154,14 @@ async def test_dossier_identite_corps_malforme_degrade_sans_500(client, app, mon
     app.dependency_overrides.clear()
     assert r.status_code == 200
     body = r.json()
-    assert body["identite"]["statut"] == "indisponible"
-    assert body["identite"]["geoObjectId"] == "geo-1"
-    assert body["audit"]["id"] == "audit-1"  # les autres sections restent intactes
+    if helper == "identite":
+        assert body["identite"]["statut"] == "indisponible"
+        assert body["identite"]["geoObjectId"] == "geo-1"
+        assert body["audit"]["id"] == "audit-1"  # les autres sections restent intactes
+    else:
+        assert body["audit"]["statut"] == "indisponible"
+        assert body["audit"]["auditId"] == "audit-1"
+        assert body["identite"]["id"] == "geo-1"  # les autres sections restent intactes
 
 
 async def test_dossier_documents_corps_inattendu_degrade_sans_500(client, app, monkeypatch):
@@ -254,3 +269,27 @@ async def test_dossier_identite_introuvable_sur_404_geo(client, app, monkeypatch
     assert body["identite"]["statut"] == "introuvable"
     assert body["identite"]["geoObjectId"] == "geo-1"
     assert body["audit"]["id"] == "audit-1"  # les autres sections restent intactes
+
+
+async def test_lire_identite_url_invalide_degrade_sans_500(monkeypatch):
+    """S227 (revue post-fusion, wave 2, Fix E) : `httpx.InvalidURL` (levée sur
+    une URL malformée, ex. opérateur ayant mal renseigné GEO_URL) ne sous-classe
+    PAS `httpx.HTTPError` — sans l'élargir dans le `except`, une URL cassée
+    aurait fait 500 tout le dossier au lieu du repli honnête habituel."""
+    monkeypatch.setattr(ventures_mod.settings, "GEO_URL", "http://[::1")
+    resultat = await ventures_mod._lire_identite("geo-1")
+    assert resultat == {"statut": "indisponible", "geoObjectId": "geo-1"}
+
+
+async def test_dossier_404_venture_inexistante(client, app, monkeypatch):
+    """S227 (revue post-fusion, wave 2, Fix cheap) : la branche "venture
+    n'existe pas du tout" du 404 (distincte de "venture d'autrui", déjà
+    couverte par test_client_lecture_404_sur_autre_venture) n'avait aucun test
+    dédié. Session fake dont le SELECT venture ne renvoie aucune ligne."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    vid = "99999999-9999-9999-9999-999999999999"
+    monkeypatch.setattr(ventures_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[]]))
+    r = await client.get(f"/api/ventures/{vid}/dossier")
+    app.dependency_overrides.clear()
+    assert r.status_code == 404
