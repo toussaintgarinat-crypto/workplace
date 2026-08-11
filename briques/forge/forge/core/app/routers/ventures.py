@@ -7,6 +7,7 @@ code email (token TTL 15 min). `resolveOrgId` ignore un X-Org-ID périmé/fantô
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import uuid as uuidlib
@@ -263,9 +264,19 @@ async def _lire_identite(geo_object_id: str | None) -> dict:
         async with httpx.AsyncClient(timeout=10) as c:
             headers = {"X-API-Key": settings.GEO_KEY} if settings.GEO_KEY else {}
             r = await c.get(f"{settings.GEO_URL.rstrip('/')}/objets/{geo_object_id}", headers=headers)
+        # 404 = objet géo introuvable (supprimé, mauvais tenant, ...) : distinct
+        # d'une panne de transport (revue post-fusion, Fix 5). "indisponible"
+        # doit rester réservé à "on ne sait pas", pas à "on sait que ça n'existe pas".
+        if r.status_code == 404:
+            return {"statut": "introuvable", "geoObjectId": geo_object_id}
         if r.status_code != 200:
             return {"statut": "indisponible", "geoObjectId": geo_object_id}
-        return r.json()
+        data = r.json()
+        # Corps 200 mais pas un objet (ex. liste/scalaire brut) : repli honnête
+        # plutôt que planter au premier accès `.get(...)` en aval.
+        if not isinstance(data, dict):
+            return {"statut": "indisponible", "geoObjectId": geo_object_id}
+        return data
     except (httpx.HTTPError, ValueError):
         # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON) —
         # repli honnête dans les deux cas, jamais de 500 pour une panne partielle.
@@ -280,30 +291,42 @@ async def _lire_audit_business(audit_id: str | None) -> dict:
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(f"{settings.AUDIT_URL.rstrip('/')}/audits/{audit_id}")
+        # 404 = audit introuvable (supprimé, mauvais tenant, ...) : distinct d'une
+        # panne de transport (revue post-fusion, Fix 5).
+        if r.status_code == 404:
+            return {"statut": "introuvable", "auditId": audit_id}
         if r.status_code != 200:
             return {"statut": "indisponible", "auditId": audit_id}
-        return r.json()
+        data = r.json()
+        if not isinstance(data, dict):
+            return {"statut": "indisponible", "auditId": audit_id}
+        return data
     except (httpx.HTTPError, ValueError):
         # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON).
         return {"statut": "indisponible", "auditId": audit_id}
 
 
-async def _lister_documents(vid: str) -> list[dict]:
+async def _lister_documents(vid: str) -> dict:
+    """Enveloppe {statut, documents} — même contrat de repli honnête que les
+    deux helpers ci-dessus (revue post-fusion, Fix 3) : un [] bare était
+    indiscernable de « ce client n'a vraiment aucun document »."""
     if not settings.INGESTION_URL:
-        return []
+        return {"statut": "indisponible", "documents": []}
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             headers = {"X-API-Key": settings.INGESTION_KEY} if settings.INGESTION_KEY else {}
             r = await c.get(f"{settings.INGESTION_URL.rstrip('/')}/documents",
                             params={"venture_id": vid}, headers=headers)
         if r.status_code != 200:
-            return []
+            return {"statut": "indisponible", "documents": []}
         data = r.json()
         # Corps 200 mais pas un objet (ex. liste brute) : repli honnête plutôt
         # que planter sur .get() — même logique que le JSONDecodeError ci-dessous.
-        return data.get("documents", []) if isinstance(data, dict) else []
+        if not isinstance(data, dict):
+            return {"statut": "indisponible", "documents": []}
+        return {"statut": "ok", "documents": data.get("documents", [])}
     except (httpx.HTTPError, ValueError):
-        return []
+        return {"statut": "indisponible", "documents": []}
 
 
 @router.get("/ventures/{vid}/dossier", dependencies=[Depends(get_current_user)])
@@ -311,10 +334,13 @@ async def get_venture_dossier(vid: str, user: UserContext = Depends(get_current_
     u = _uuid(vid)
     async with SessionLocal() as s:
         v = (await s.execute(select(Ventures).where(Ventures.id == u))).scalar_one_or_none() if u else None
-        if v is None:
+        # 404 (pas 403) dans les deux cas — venture inexistante ET venture d'autrui
+        # doivent porter le même code, alignement avec la convention repo-wide
+        # (cf. S223 dans organizations.py, et get_venture/delete_request plus
+        # haut dans ce même fichier) : ne jamais révéler l'existence d'une
+        # ressource via un code de retour différent (décision utilisateur, Fix 6).
+        if v is None or (v.owner_id != user.sub and vid not in user.venture_scopes):
             raise HTTPException(status_code=404, detail="Not found")
-        if v.owner_id != user.sub and vid not in user.venture_scopes:
-            raise HTTPException(status_code=403, detail="Forbidden")
 
         poles_rows = (await s.execute(select(Poles).where(Poles.venture_id == vid))).scalars().all()
         pole_ids = [p.id for p in poles_rows]
@@ -324,9 +350,14 @@ async def get_venture_dossier(vid: str, user: UserContext = Depends(get_current_
                 select(AuditMissions).where(AuditMissions.pole_id.in_(pole_ids))
             )).scalars().all()
 
-    identite = await _lire_identite(v.geo_object_id)
-    audit_business = await _lire_audit_business(v.audit_id)
-    documents = await _lister_documents(vid)
+    # Fan-out en parallèle logique (revue post-fusion, Fix 7) : chaque helper
+    # capture déjà toutes ses propres exceptions et ne lève jamais — pas besoin
+    # de return_exceptions=True sur le gather.
+    identite, audit_business, documents = await asyncio.gather(
+        _lire_identite(v.geo_object_id),
+        _lire_audit_business(v.audit_id),
+        _lister_documents(vid),
+    )
 
     return {
         "identite": identite,

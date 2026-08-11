@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # S227 — socle Entité Entreprise unifiée : ponts vers geo/audit/ingestion
     # pour GET /ventures/{id}/dossier. Vide = section correspondante marquée
     # "indisponible" dans la réponse agrégée (repli honnête, jamais de 500).
-    GEO_URL: str = ""  # ex. http://host.docker.internal:5100
+    GEO_URL: str = ""  # ex. http://host.docker.internal:6110
     GEO_KEY: str = ""  # doit figurer dans API_KEYS de la brique geo
     AUDIT_URL: str = ""  # ex. http://host.docker.internal:5300
     INGESTION_URL: str = ""  # ex. http://host.docker.internal:5200

@@ -130,11 +130,18 @@ async def _resolve_org(session, user: Users, requested_org_id: str | None) -> st
         except ValueError:
             req_uuid = None
         if req_uuid is not None:
+            # S227 — une appartenance client_lecture (accès en lecture, scopé à
+            # une venture précise) ne doit JAMAIS résoudre en org active : sinon
+            # X-Org-ID rouvrirait tous les routers org-scopés (automation,
+            # dev_team, sessions, rapport, ...) pour cette org, pas seulement le
+            # dossier de la venture concernée. Repli honnête et sans erreur sur
+            # l'org personnelle (cf. docstring _resolve_org ci-dessus).
             membership = (
                 await session.execute(
                     select(OrganizationMembers).where(
                         OrganizationMembers.org_id == req_uuid,
                         OrganizationMembers.user_id == str(user.id),
+                        OrganizationMembers.role != "client_lecture",
                     )
                 )
             ).scalar_one_or_none()

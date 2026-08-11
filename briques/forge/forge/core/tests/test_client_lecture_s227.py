@@ -71,10 +71,13 @@ async def test_client_lecture_accede_a_sa_venture(client, monkeypatch):
     assert r.status_code == 200
 
 
-async def test_client_lecture_403_sur_autre_venture(client, monkeypatch):
+async def test_client_lecture_404_sur_autre_venture(client, monkeypatch):
+    """S227 fix (revue post-fusion, Fix 6) : 404 et non 403, alignement sur la
+    convention repo-wide — une venture d'autrui et une venture inexistante ne
+    doivent jamais se distinguer par le code de retour (décision utilisateur)."""
     autre_vid = "22222222-2222-2222-2222-222222222222"
     v = _mk_venture(autre_vid)
     monkeypatch.setattr(ventures_mod, "SessionLocal",
                         lambda: _FakeSession(rows_by_call=[[v], [], []]))
     r = await client.get(f"/api/ventures/{autre_vid}/dossier")
-    assert r.status_code == 403
+    assert r.status_code == 404
