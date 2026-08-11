@@ -81,6 +81,7 @@ class _FakeSession:
     def __init__(self, rows_by_call):
         self._rows_by_call = list(rows_by_call)
         self.added = []
+        self.execute_count = 0
 
     async def __aenter__(self):
         return self
@@ -89,6 +90,7 @@ class _FakeSession:
         return False
 
     async def execute(self, *a, **k):
+        self.execute_count += 1
         rows = self._rows_by_call.pop(0) if self._rows_by_call else []
         return _FakeResult(rows)
 
@@ -185,7 +187,7 @@ async def test_repondre_section_qualitative_fusionne_et_relance(client, app, mon
         derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
     )
     monkeypatch.setattr(entretiens_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
 
     appels = []
 
@@ -217,7 +219,7 @@ async def test_repondre_section_qualitative_couverte_avance_au_squelette(client,
         derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
     )
     monkeypatch.setattr(entretiens_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
 
     async def _fake_generate(prompt, system=None, **kw):
         if "valeurs" in prompt:
@@ -243,7 +245,7 @@ async def test_repondre_extraction_llm_incoherente_ne_bloque_pas(client, app, mo
         derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
     )
     monkeypatch.setattr(entretiens_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
 
     async def _fake_generate(prompt, system=None, **kw):
         if "valeurs" in prompt:
@@ -257,3 +259,149 @@ async def test_repondre_extraction_llm_incoherente_ne_bloque_pas(client, app, mo
     body = r.json()
     assert body["extractionEchouee"] is True
     assert body["question"] == "Peux-tu préciser ?"
+
+
+async def test_repondre_extraction_json_valide_mais_pas_un_objet_ne_bloque_pas(client, app, monkeypatch):
+    """Revue post-Task 4, Finding 1 : le LLM peut renvoyer un JSON syntaxiquement
+    valide mais qui n'est pas un objet (liste, null, nombre). `.get("valeurs")`
+    planterait en AttributeError si non gardé — doit dégrader comme un
+    JSONDecodeError, jamais un 500."""
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '["Lyon"]'  # JSON valide, mais pas un objet
+        return '{"couverte": false, "question": "Peux-tu préciser ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "..."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["extractionEchouee"] is True
+    assert body["question"] == "Peux-tu préciser ?"
+
+
+async def test_repondre_extraction_json_null_ne_bloque_pas(client, app, monkeypatch):
+    """Même garde, variante `null` (autre forme de JSON valide non-objet)."""
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return "null"
+        return '{"couverte": false, "question": "Peux-tu préciser ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "..."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["extractionEchouee"] is True
+
+
+async def test_repondre_decision_json_valide_mais_pas_un_objet_ne_bloque_pas(client, app, monkeypatch):
+    """Même garde côté bloc décision : `[true]` est un JSON valide non-objet."""
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '{"valeurs": ["Basée à Lyon"]}'
+        return '[true]'  # JSON valide, mais pas un objet
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "..."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["statut"] == "en_cours"
+    assert body["question"] == "Peux-tu préciser ?"
+
+
+async def test_repondre_generate_text_leve_exception_ne_bloque_pas(client, app, monkeypatch):
+    """Revue post-Task 4, Finding 1 : generate_text() peut lever (réseau/timeout/
+    quota/fournisseur) — ça ne doit jamais 500 le tour, doit dégrader comme un
+    échec d'extraction."""
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        raise TimeoutError("gateway indisponible")
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "..."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["extractionEchouee"] is True
+    assert body["question"] == "Peux-tu préciser ?"
+
+
+async def test_repondre_404_ownership_verifiee_avant_lecture_entretien(client, app, monkeypatch):
+    """Revue post-Task 4, Finding 2 : ownership doit être vérifiée AVANT toute
+    lecture d'Entretiens (table sans owner_id) — une venture non possédée doit
+    renvoyer 404 « Not found » sans même interroger Entretiens, quel que soit
+    l'état d'entretien réel de cette venture (fuite cross-tenant sinon)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    sessions = []
+
+    def _make_session():
+        sess = _FakeSession(rows_by_call=[[]])  # SELECT Ventures ne renvoie rien (pas à soi)
+        sessions.append(sess)
+        return sess
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make_session)
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "x"})
+    assert r.status_code == 404
+    assert r.json()["error"] == "Not found"
+    # Une seule requête exécutée (Ventures) — Entretiens jamais touché : preuve que
+    # l'ordre est bien ownership-first (sinon Entretiens serait interrogé avant).
+    assert sessions[0].execute_count == 1
+
+
+async def test_repondre_404_aucun_entretien_en_cours_meme_detail_generique(client, app, monkeypatch):
+    """Venture possédée, mais aucun entretien en_cours : même detail générique
+    « Not found » que le cas ownership (pas de message distinctif qui révélerait
+    l'état d'entretien à qui n'y a pas droit — et ici l'appelant a bien le droit,
+    mais le contrat de message reste uniforme)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], []]))
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "x"})
+    assert r.status_code == 404
+    assert r.json()["error"] == "Not found"
