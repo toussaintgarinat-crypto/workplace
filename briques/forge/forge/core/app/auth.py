@@ -51,6 +51,32 @@ class UserContext:
     venture_scopes: frozenset[str] = frozenset()  # S227 — role client_lecture
 
 
+def _membre_actif(query):
+    """S227 (revue post-fusion whole-branch, wave 2) — exclut les memberships
+    ``client_lecture`` de toute requête qui teste "l'utilisateur est-il membre
+    actif de cette org ?" pour en déduire un droit (org active résolue,
+    visibilité d'une org, liste des orgs...).
+
+    Ce rôle est un accès en lecture seule scopé à UNE venture précise (cf.
+    ``_resolve_venture_scopes`` ci-dessous, qui fait l'inverse : il sélectionne
+    *seulement* les memberships ``client_lecture`` pour construire les scopes).
+    Une appartenance ``client_lecture`` ne doit JAMAIS compter comme
+    appartenance active à l'organisation elle-même.
+
+    Centralisé ici après que la revue a trouvé ce même bug (rôle non vérifié
+    dans une requête ``OrganizationMembers``) à plusieurs sites indépendants :
+    ``_resolve_org`` (celui-ci), ``ventures._resolve_org_id``,
+    ``organizations.get_org``, ``organizations.list_orgs``. Toute nouvelle
+    requête qui résout/autorise via appartenance à une org doit passer par ici
+    plutôt que réinventer le filtre.
+
+    Prend un ``select(...)`` (éventuellement déjà ``.join()``é) et renvoie la
+    même query avec le filtre ajouté — chainable comme n'importe quel
+    ``.where()`` supplémentaire.
+    """
+    return query.where(OrganizationMembers.role != "client_lecture")
+
+
 async def _provision_user(session, payload: dict) -> Users:
     keycloak_sub = payload["sub"]
 
@@ -138,10 +164,11 @@ async def _resolve_org(session, user: Users, requested_org_id: str | None) -> st
             # l'org personnelle (cf. docstring _resolve_org ci-dessus).
             membership = (
                 await session.execute(
-                    select(OrganizationMembers).where(
-                        OrganizationMembers.org_id == req_uuid,
-                        OrganizationMembers.user_id == str(user.id),
-                        OrganizationMembers.role != "client_lecture",
+                    _membre_actif(
+                        select(OrganizationMembers).where(
+                            OrganizationMembers.org_id == req_uuid,
+                            OrganizationMembers.user_id == str(user.id),
+                        )
                     )
                 )
             ).scalar_one_or_none()

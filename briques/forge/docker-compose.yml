@@ -97,11 +97,17 @@ services:
       # définis à la racine (.env, cf. .env.example) — mêmes clés que présente
       # la brique audit à geo/ingestion. AUDIT_URL n'a pas besoin de clé (GET
       # /audits/{id} n'a pas d'auth côté audit).
+      # GEO_KEY/INGESTION_KEY NE SONT PAS re-déclarées ici (revue post-fusion,
+      # wave 2) : `${GEO_KEY:-}` serait résolu au PARSE par compose depuis
+      # briques/forge/.env (absent → chaîne vide), et `environment:` prime sur
+      # `env_file:` pour la même variable → ça écraserait silencieusement la
+      # vraie valeur qui arrive par `env_file: ../../.env` juste au-dessus.
+      # Même piège déjà documenté pour GATEWAY_API_KEY et FORGE_SERVICE_SECRET
+      # dans ce fichier — ne jamais re-déclarer un secret racine avec `${VAR}`
+      # dans `environment:`.
       - GEO_URL=http://host.docker.internal:6110
-      - GEO_KEY=${GEO_KEY:-}
       - AUDIT_URL=http://host.docker.internal:5300
       - INGESTION_URL=http://host.docker.internal:5200
-      - INGESTION_KEY=${INGESTION_KEY:-}
       # Auth (S17) — le core vérifie les JWT contre le realm `oria` du Keycloak
       # d'Oria (infra déjà debout, :8081).
       - KEYCLOAK_URL=http://host.docker.internal:8081
