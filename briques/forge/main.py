@@ -893,6 +893,45 @@ async def relances_journal():
     return _json_ou_erreur(r)
 
 
+# ── Entretien guidé d'audit d'entreprise (S228) ─────────────────────────────────
+#
+# Les capacités `forge_entretien_demarrer` / `forge_entretien_repondre` du manifeste
+# sont routées par le dispatch DYNAMIQUE du Cœur, qui appelle
+# `{base_brique_forge}{chemin}` — c'est-à-dire CET adaptateur (port 5700), pas le core.
+# Sans ces deux routes, les deux capacités sont mortes (404 systématique) : c'est
+# exactement ce que la revue finale S228 a constaté (Finding C1a), et ce que le filet
+# repo-wide `tests/test_contrat_capacites.py` interdit depuis S210.
+#
+# Proxys volontairement fins : le core expose déjà le même contrat de champs que le
+# manifeste déclare (`id` en chemin, `message` dans le corps) — aucun reshaping
+# français n'est nécessaire ici, contrairement à /facturation ou /crm.
+#
+# L'identité réelle du dirigeant traverse via `_appel_protege` (en-tête
+# `X-Forge-User-Token` capté par le middleware) : indispensable, car le core scope
+# l'entretien sur `Ventures.owner_id == user.sub`.
+
+@app.post("/ventures/{vid}/entretien/demarrer",
+          summary="Démarre ou reprend l'entretien guidé d'audit d'une venture (action)")
+async def entretien_demarrer(vid: str):
+    """Proxy authentifié → `POST /api/ventures/{id}/entretien/demarrer`. ACTION."""
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "POST", f"/api/ventures/{vid}/entretien/demarrer")
+    return _json_ou_erreur(r)
+
+
+@app.post("/ventures/{vid}/entretien/repondre",
+          summary="Fait avancer l'entretien guidé d'une venture d'un tour (action)")
+async def entretien_repondre(vid: str, corps: dict = Body(...)):
+    """Proxy authentifié → `POST /api/ventures/{id}/entretien/repondre`. ACTION.
+
+    Entrée : ``{message}`` — la réponse du dirigeant à traiter, transmise telle quelle.
+    """
+    async with await _client(timeout=30) as client:
+        r = await _appel_protege(client, "POST", f"/api/ventures/{vid}/entretien/repondre",
+                                 json=corps)
+    return _json_ou_erreur(r)
+
+
 @app.post("/facturation/{did}/envoyer", summary="Envoyer une facture au client par email (action)")
 async def facturation_envoyer(did: str):
     """Proxy authentifié → `POST /api/facturation/{id}/envoyer`. ACTION (email + statut envoyée)."""
