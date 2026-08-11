@@ -37,6 +37,7 @@ import moa
 import suggestions
 import validation_args
 import accord_action
+import entretien_routage
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +382,17 @@ async def converser(messages: list[dict], registre,
                     # S143 — mise à jour de l'état + idempotence.
                     guardrail.after_call(nom, args, resultat,
                                          erreur=_est_erreur_outil(resultat))
+                    # S228 — un démarrage d'entretien réussi active le routage structurel :
+                    # les tours SUIVANTS de ce fil iront directement à /entretien/repondre
+                    # sans repasser par le LLM (cf. entretien_routage + routers/assistant.py).
+                    if nom == "forge_entretien_demarrer" and not _est_erreur_outil(resultat):
+                        try:
+                            _data_entretien = json.loads(resultat)
+                            _venture_id = _data_entretien.get("ventureId") or args.get("id")
+                            if _venture_id:
+                                entretien_routage.REGISTRE.activer(fil_accord, _venture_id)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
                     if not _est_erreur_outil(resultat):
                         import graphe_apprentissage as _ga  # import local — évite cycle potentiel
                         try:
