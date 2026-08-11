@@ -155,3 +155,105 @@ async def test_demarrer_404_si_venture_pas_a_soi(client, app, monkeypatch):
     monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
     r = await client.post(f"/api/ventures/{VID}/entretien/demarrer")
     assert r.status_code == 404
+
+
+def test_fusionner_qualitatif_est_non_destructif():
+    existant = {"organisation": ["SARL, 5 salariés"]}
+    fusion = entretiens_mod._fusionner_qualitatif(existant, "organisation", ["Basée à Lyon"])
+    assert fusion == {"organisation": ["SARL, 5 salariés", "Basée à Lyon"]}
+
+
+def test_fusionner_qualitatif_dedoublonne():
+    existant = {"activites": ["conseil"]}
+    fusion = entretiens_mod._fusionner_qualitatif(existant, "activites", ["conseil", "formation"])
+    assert fusion == {"activites": ["conseil", "formation"]}
+
+
+def test_fusionner_qualitatif_categorie_absente():
+    fusion = entretiens_mod._fusionner_qualitatif(None, "clients", ["PME locales"])
+    assert fusion == {"clients": ["PME locales"]}
+
+
+async def test_repondre_section_qualitative_fusionne_et_relance(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+
+    appels = []
+
+    async def _fake_generate(prompt, system=None, **kw):
+        appels.append(prompt)
+        if len(appels) == 1:
+            return '{"valeurs": ["Basée à Lyon"]}'
+        return '{"couverte": false, "question": "Combien de salariés au total ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "On est à Lyon"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["statut"] == "en_cours"
+    assert body["sectionCourante"] == "qualitatif.organisation"
+    assert body["question"] == "Combien de salariés au total ?"
+    assert body["extractionEchouee"] is False
+
+
+async def test_repondre_section_qualitative_couverte_avance_au_squelette(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture(profil_entreprise=None)
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return '{"valeurs": ["SARL, 5 salariés"]}'
+        return '{"couverte": true, "question": null}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "SARL, 5 salariés"})
+    body = r.json()
+    assert body["sectionCourante"] == "qualitatif.activites"
+    assert body["sectionsCouvertes"] == ["qualitatif.organisation"]
+
+
+async def test_repondre_extraction_llm_incoherente_ne_bloque_pas(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.organisation", sections_couvertes=[],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[row], [v]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return "réponse non-JSON du LLM"
+        return '{"couverte": false, "question": "Peux-tu préciser ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "..."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["extractionEchouee"] is True
+    assert body["question"] == "Peux-tu préciser ?"
