@@ -1,6 +1,7 @@
 """S228 : entretien guidé IA."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import app.routers.entretiens as entretiens_mod
@@ -992,3 +993,114 @@ def test_les_quatre_selects_d_entretien_sont_ordonnes():
     assert len(selects) == 4, f"{len(selects)} select(Entretiens) trouvés, 4 attendus"
     for i, suite in enumerate(selects):
         assert "order_by" in suite, f"select(Entretiens) #{i + 1} sans order_by"
+
+
+# ── Revue finale S228, Finding N1 : fusion du profil contre une lecture FRAÎCHE ──────
+
+def _sessions_en_file(monkeypatch, files):
+    """`SessionLocal` qui rend une session DIFFÉRENTE par appel (une par élément de
+    `files`), toutes tracées dans le même journal. Indispensable ici : la session de
+    LECTURE et la transaction d'ÉCRITURE doivent voir des états de la base différents,
+    c'est justement la fenêtre de concurrence qu'on teste."""
+    journal, compteur = [], {"ouvertes": 0, "max": 0}
+    file_restante = list(files)
+
+    def _make():
+        rows = file_restante.pop(0) if file_restante else []
+        return _SessionEspionne(list(rows), journal, compteur)
+
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", _make)
+    return journal
+
+
+def _profils_ecrits(journal):
+    """Valeurs de `profil_entreprise` réellement passées à un UPDATE."""
+    vus = []
+    for stmt in journal:
+        try:
+            params = stmt.compile().params
+        except Exception:  # noqa: BLE001
+            continue
+        if "profil_entreprise" in params and str(stmt).lstrip().upper().startswith("UPDATE"):
+            vus.append(params["profil_entreprise"])
+    return vus
+
+
+async def _repondre_avec_extraction(client, monkeypatch, valeurs_extraites):
+    async def _fake_generate(prompt, system=None, **kw):
+        if "valeurs" in prompt:
+            return json.dumps({"valeurs": valeurs_extraites})
+        return '{"couverte": false, "question": "Et encore ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    return await client.post(f"/api/ventures/{VID}/entretien/repondre",
+                             json={"message": "On est à Lyon"})
+
+
+async def test_repondre_ne_perd_pas_une_ecriture_concurrente_du_profil(client, app, monkeypatch):
+    """Finding N1 : depuis le fix I2 (sessions courtes), le profil est lu au début de la
+    requête puis écrit APRÈS deux allers-retours LLM. Fusionner contre la valeur périmée
+    écrasait en silence toute écriture concurrente de cette fenêtre — typiquement un
+    `PATCH /ventures/{id}`, qui remplace `profil_entreprise` EN BLOC (S227). La contrainte
+    globale du sprint est explicite : « JAMAIS d'écrasement ».
+
+    Ici, un tiers ajoute la catégorie `clients` pendant les appels LLM. Le profil écrit
+    doit contenir LES DEUX : la catégorie concurrente ET l'extraction de ce tour."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    initial = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    # État de la base au moment de l'ÉCRITURE : quelqu'un a écrit entre-temps.
+    concurrent = _mk_venture(profil_entreprise={"organisation": ["SARL"],
+                                                "clients": ["PME locales"]})
+    journal = _sessions_en_file(monkeypatch, [
+        [[initial], [_row_en_cours()]],   # session de lecture
+        [[concurrent]],                   # transaction d'écriture : relecture fraîche
+    ])
+
+    r = await _repondre_avec_extraction(client, monkeypatch, ["Basée à Lyon"])
+    assert r.status_code == 200
+    ecrits = _profils_ecrits(journal)
+    assert ecrits, "aucun profil écrit — le test ne prouve plus rien"
+    assert ecrits[-1] == {"organisation": ["SARL", "Basée à Lyon"],
+                          "clients": ["PME locales"]}, ecrits[-1]
+
+
+async def test_repondre_relit_le_profil_avec_un_verrou_de_ligne(client, app, monkeypatch):
+    """La relecture doit VERROUILLER la ligne (`SELECT … FOR UPDATE`), sinon deux tours
+    concurrents relisent la même valeur fraîche et le dernier écrase quand même l'autre.
+    SQLite ignore la clause ; Postgres (la vraie cible) sérialise."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    journal = _sessions_en_file(monkeypatch, [
+        [[_mk_venture(profil_entreprise=None)], [_row_en_cours()]],
+        [[_mk_venture(profil_entreprise=None)]],
+    ])
+    r = await _repondre_avec_extraction(client, monkeypatch, ["SARL"])
+    assert r.status_code == 200
+    selects_ventures = [str(st) for st in journal
+                        if str(st).lstrip().upper().startswith("SELECT") and "ventures" in str(st)]
+    assert len(selects_ventures) == 2, selects_ventures  # ownership + relecture fraîche
+    assert "FOR UPDATE" in selects_ventures[-1], selects_ventures[-1]
+
+
+async def test_repondre_sans_concurrence_fusionne_comme_avant(client, app, monkeypatch):
+    """Non-régression : sans écriture concurrente, le profil écrit est exactement celui
+    d'avant le fix (la relecture ne doit pas perdre l'état initial)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture(profil_entreprise={"organisation": ["SARL"]})
+    journal = _sessions_en_file(monkeypatch, [[[v], [_row_en_cours()]], [[v]]])
+    r = await _repondre_avec_extraction(client, monkeypatch, ["Basée à Lyon"])
+    assert r.status_code == 200
+    assert _profils_ecrits(journal)[-1] == {"organisation": ["SARL", "Basée à Lyon"]}
+
+
+async def test_repondre_ne_reecrit_pas_le_profil_sans_extraction(client, app, monkeypatch):
+    """Extraction vide : aucune écriture de `profil_entreprise` (donc aucune relecture,
+    aucun verrou pris pour rien) — un UPDATE à vide écraserait une écriture concurrente
+    par un profil identique à une lecture périmée."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    journal = _sessions_en_file(monkeypatch, [
+        [[_mk_venture(profil_entreprise={"organisation": ["SARL"]})], [_row_en_cours()]],
+        [[]],
+    ])
+    r = await _repondre_avec_extraction(client, monkeypatch, [])
+    assert r.status_code == 200
+    assert _profils_ecrits(journal) == []
