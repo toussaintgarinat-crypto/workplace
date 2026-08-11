@@ -57,9 +57,22 @@ async def repondre(registre, fil_accord: str, venture_id: str, message: str, cli
                    base_forge: str) -> dict:
     """Appelle Forge `/entretien/repondre` et désactive le registre si l'entretien se
     termine (clôture naturelle du squelette). `registre` (catalogue Cœur) n'est pas utilisé
-    ici mais gardé dans la signature pour cohérence avec le reste du fichier appelant."""
+    ici mais gardé dans la signature pour cohérence avec le reste du fichier appelant.
+
+    Auto-guérison sur erreur HTTP (revue finale S228, Finding I1) : sans lire
+    `status_code`, un 4xx/5xx laissait `data.get("statut")` à None, donc PAS "termine",
+    donc le registre restait actif — et comme le routage structurel court-circuite le LLM
+    tant qu'il est actif, le fil était confisqué pour de bon (« D'accord, continuons. » à
+    chaque tour, sans autre issue qu'un mot-clé de pause explicite). Ça arrive pour de
+    vrai : entretien clôturé hors bande, Forge redémarré, venture supprimée.
+    On désactive donc le registre et on rend une charge que `_flux_entretien` sait
+    afficher honnêtement — mieux vaut rendre la main au LLM que boucler.
+    """
     r = await client.post(f"{base_forge}/ventures/{venture_id}/entretien/repondre",
                           json={"message": message})
+    if r.status_code >= 400:
+        REGISTRE.desactiver(fil_accord)
+        return {"statut": "interrompu", "erreurHttp": r.status_code, "question": None}
     data = r.json()
     if data.get("statut") == "termine":
         REGISTRE.desactiver(fil_accord)

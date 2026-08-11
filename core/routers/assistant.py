@@ -108,8 +108,26 @@ async def _flux_entretien(venture_id: str, fil_accord: str, message: str, client
         yield {"type": "fin"}
         return
     question = data.get("question")
-    if data.get("statut") == "termine":
-        texte = question or "Entretien terminé, merci ! L'analyse est relancée avec tout ce qu'on a recueilli."
+    statut = data.get("statut")
+    if statut == "interrompu":
+        # Forge a répondu en erreur : `entretien_routage.repondre` a déjà désactivé le
+        # registre (auto-guérison, Finding I1) — on le dit honnêtement plutôt que de
+        # relancer « D'accord, continuons. » sur un entretien qui n'avance plus.
+        code = data.get("erreurHttp")
+        texte = (f"Je n'ai pas pu enregistrer ta réponse dans l'entretien "
+                 f"(Forge a répondu HTTP {code}). L'entretien guidé est mis en pause : "
+                 "on peut le relancer quand tu veux.")
+    elif statut == "termine":
+        # Honnêteté sur la synchro (Finding I4) : la clôture est best-effort côté Forge
+        # — statut « termine » même si le push d'ingestion ou le rappel /auditer a
+        # échoué. Annoncer « l'analyse est relancée » dans ce cas est un mensonge.
+        sync_erreur = data.get("syncErreur")
+        if sync_erreur:
+            texte = ("Entretien terminé, merci ! En revanche la synchronisation avec "
+                     f"l'analyse n'a pas abouti ({sync_erreur}) — les réponses sont bien "
+                     "conservées, mais l'audit n'a pas été relancé.")
+        else:
+            texte = question or "Entretien terminé, merci ! L'analyse est relancée avec tout ce qu'on a recueilli."
     else:
         texte = question or "D'accord, continuons."
     yield {"type": "texte", "contenu": texte}

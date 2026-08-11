@@ -145,6 +145,24 @@ def test_l_heuristique_d_erreur_a_une_seule_source():
     assert not outils.est_erreur("")
 
 
+def test_l_heuristique_d_erreur_reconnait_ok_false():
+    """Revue finale S228, Finding C3 : `outils_communs._appel_dynamique` (dispatch des
+    capacités de manifeste) et `_forge_appel` signalent leurs pannes par
+    `{"ok": false, ...}`, SANS champ `erreur` — cette forme passait donc pour un succès.
+    Conséquences réelles : un `forge_entretien_demarrer` en échec activait le routage
+    structurel d'entretien, et les compteurs d'échec du guardrail ne comptaient aucune
+    panne HTTP de capacité dynamique."""
+    assert outils.est_erreur(
+        '{"ok": false, "brique": "forge", "message": "Brique « forge » a refusé (503)."}')
+    assert outils.est_erreur('{"ok": false, "message": "La brique Forge est injoignable."}')
+    # `ok` absent n'est jamais une erreur : une réponse métier normale ne porte pas ce champ.
+    assert not outils.est_erreur('{"statut": "en_cours", "question": "Et ensuite ?"}')
+    assert not outils.est_erreur('{"ok": true}')
+    # JSON valide mais non-objet : `.get` n'existe pas → rattrapé, jamais une erreur.
+    assert not outils.est_erreur("null")
+    assert not outils.est_erreur("[1, 2]")
+
+
 def test_les_capacites_jamais_appelees_sont_comptees():
     import metriques
 

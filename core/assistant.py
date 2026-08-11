@@ -385,13 +385,23 @@ async def converser(messages: list[dict], registre,
                     # S228 — un démarrage d'entretien réussi active le routage structurel :
                     # les tours SUIVANTS de ce fil iront directement à /entretien/repondre
                     # sans repasser par le LLM (cf. entretien_routage + routers/assistant.py).
+                    #
+                    # Activation VOLONTAIREMENT stricte (revue finale S228, Finding C3) :
+                    # un faux positif ici confisque le fil pour de bon — le routage
+                    # structurel enverrait chaque tour suivant vers un entretien qui
+                    # n'existe pas, sans jamais atteindre `statut == "termine"` pour se
+                    # désactiver. On exige donc la SIGNATURE d'un vrai succès :
+                    # - pas de `"ok": false` (la forme d'échec réelle du dispatch
+                    #   dynamique, qui ne porte aucun champ `erreur`) ;
+                    # - un `ventureId` bien présent dans la réponse — plus de repli sur
+                    #   `args.get("id")`, qui fournissait un id même sur un échec.
                     if nom == "forge_entretien_demarrer" and not _est_erreur_outil(resultat):
                         try:
                             _data_entretien = json.loads(resultat)
                             if not isinstance(_data_entretien, dict):
                                 raise ValueError("résultat forge_entretien_demarrer n'est pas un objet JSON")
-                            _venture_id = _data_entretien.get("ventureId") or args.get("id")
-                            if _venture_id:
+                            _venture_id = _data_entretien.get("ventureId")
+                            if _venture_id and _data_entretien.get("ok") is not False:
                                 entretien_routage.REGISTRE.activer(fil_accord, _venture_id)
                         except (json.JSONDecodeError, ValueError):
                             pass

@@ -477,13 +477,28 @@ PREFIXES_ERREUR = (
 
 
 def est_erreur(resultat: str) -> bool:
-    """Vrai si `executer` a renvoyé un message d'erreur (chaîne préfixée) ou un JSON
-    portant un champ `erreur` (blocages guardrail S221 / gate S222)."""
+    """Vrai si `executer` a renvoyé un message d'erreur.
+
+    Trois formes, toutes réellement émises quelque part dans le Cœur :
+    - une chaîne préfixée (cf. `PREFIXES_ERREUR`) ;
+    - un JSON portant un champ `erreur` truthy (blocages guardrail S221 / gate S222) ;
+    - un JSON portant ``"ok": false`` — la forme que produit le dispatch DYNAMIQUE des
+      capacités de manifeste (`outils_communs._appel_dynamique` : brique qui refuse,
+      202 sans job_id, poll en erreur, délai dépassé) ainsi que `_forge_appel`. Cette
+      forme n'a AUCUN champ `erreur`, donc elle passait pour un succès (revue finale
+      S228, Finding C3) : un `forge_entretien_demarrer` en échec activait le routage
+      structurel d'entretien et confisquait le fil ; côté guardrail, les pannes HTTP
+      des capacités dynamiques n'incrémentaient aucun compteur d'échec.
+
+    ``"ok": false`` seulement — ``ok`` absent n'est jamais une erreur (une réponse
+    métier normale n'a pas à porter ce champ).
+    """
     resultat = resultat or ""
     if resultat.startswith(PREFIXES_ERREUR):
         return True
     try:
-        return bool(json.loads(resultat).get("erreur"))
+        data = json.loads(resultat)
+        return bool(data.get("erreur")) or data.get("ok") is False
     except Exception:  # noqa: BLE001 — résultat non JSON : ce n'est pas une erreur
         return False
 
