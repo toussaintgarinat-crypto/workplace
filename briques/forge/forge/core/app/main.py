@@ -82,6 +82,7 @@ from app.routers.relances import router as relances_router
 from app.routers.team import router as team_router
 from app.routers.veille import router as veille_router
 from app.routers.ventures import router as ventures_router
+from app.routers.entretiens import router as entretiens_router
 # S132 — devops & déploiement
 from app.routers.deploy import router as deploy_router
 from app.routers.dev_team import router as dev_team_router
@@ -206,6 +207,8 @@ mount_both(search_router, "/api")
 mount_both(rag_router, "/api")  # Workplace S17 — récupération RAG en lecture seule
 # S130 — ventures & audit (cœur produit)
 mount_both(ventures_router, "/api")
+# S228 — entretien guidé IA (greffé sur Forge, à côté de ventures)
+mount_both(entretiens_router, "/api")
 mount_both(poles_router, "/api/poles")
 mount_both(audit_router, "/api")
 mount_both(pole_dev_bridge_router, "/api")

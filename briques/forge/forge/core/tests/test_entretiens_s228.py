@@ -49,3 +49,109 @@ def test_serde_entretien_camel_case():
     assert d["ventureId"] == "22222222-2222-2222-2222-222222222222"
     assert d["statut"] == "en_cours"
     assert d["syncErreur"] is None
+
+
+import uuid as uuidlib
+from datetime import datetime, timezone
+
+from app.auth import UserContext, get_current_user
+import app.routers.entretiens as entretiens_mod
+
+
+def _fake_user():
+    return UserContext(sub="user-1", nom="Bob", avatar_emoji="🦊", org_id=None)
+
+
+class _FakeResult:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+    def scalar_one_or_none(self):
+        return self._rows[0] if self._rows else None
+
+
+class _FakeSession:
+    """Fake session générique : une liste de résultats, un par appel .execute() consécutif."""
+    def __init__(self, rows_by_call):
+        self._rows_by_call = list(rows_by_call)
+        self.added = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, *a, **k):
+        rows = self._rows_by_call.pop(0) if self._rows_by_call else []
+        return _FakeResult(rows)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def refresh(self, obj):
+        pass
+
+
+VID = "11111111-1111-1111-1111-111111111111"
+
+
+def _mk_venture(**kw):
+    from types import SimpleNamespace
+    base = dict(id=VID, owner_id="user-1", audit_id=None, profil_entreprise=None)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+async def test_demarrer_cree_un_entretien_si_aucun_en_cours(client, app, monkeypatch):
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    # 1er execute: SELECT venture ; 2e execute: SELECT entretien en_cours (vide)
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], []]))
+    r = await client.post(f"/api/ventures/{VID}/entretien/demarrer")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sectionCourante"] == "qualitatif.organisation"
+    assert body["statut"] == "en_cours"
+    assert body["rappel"] is None
+    assert "organisée" in body["question"]
+
+
+async def test_demarrer_reprend_un_entretien_existant(client, app, monkeypatch):
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    from types import SimpleNamespace
+    existant = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="processus.commercial", sections_couvertes=["qualitatif.organisation"],
+        transcript="## commercial\nOn répond au téléphone.", statut="en_cours",
+        sync_erreur=None, derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [existant]]))
+    r = await client.post(f"/api/ventures/{VID}/entretien/demarrer")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sectionCourante"] == "processus.commercial"
+    assert body["sectionsCouvertes"] == ["qualitatif.organisation"]
+    assert "téléphone" in body["rappel"]
+
+
+async def test_demarrer_404_si_venture_pas_a_soi(client, app, monkeypatch):
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
+    r = await client.post(f"/api/ventures/{VID}/entretien/demarrer")
+    assert r.status_code == 404

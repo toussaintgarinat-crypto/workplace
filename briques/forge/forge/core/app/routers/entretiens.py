@@ -15,6 +15,17 @@ couverte. Pause/reprise obligatoire : l'état est persisté à chaque tour.
 
 from __future__ import annotations
 
+import uuid as uuidlib
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, desc, select
+
+from app.auth import UserContext, get_current_user
+from app.db import SessionLocal
+from app.models import Entretiens, Ventures
+from app.serde import entretien
+
 SECTIONS: list[dict] = [
     {"id": "qualitatif.organisation", "famille": "qualitatif", "categorie": "organisation",
      "premiere_question": "Comment votre entreprise est-elle organisée (statut juridique, effectif, structure) ?"},
@@ -58,3 +69,57 @@ def _prochaine_section(couvertes: list[str]) -> dict | None:
         if s["id"] not in deja:
             return s
     return None
+
+
+router = APIRouter()
+
+
+def _uuid(v: str | None):
+    try:
+        return uuidlib.UUID(v)
+    except (ValueError, TypeError):
+        return None
+
+
+def _rappel(row) -> str | None:
+    """Les 50 derniers caractères pertinents du transcript, ou None — jamais inventé."""
+    if row.transcript:
+        return row.transcript[-50:]
+    return None
+
+
+@router.post("/ventures/{vid}/entretien/demarrer", dependencies=[Depends(get_current_user)])
+async def demarrer_entretien(vid: str, user: UserContext = Depends(get_current_user)):
+    u = _uuid(vid)
+    async with SessionLocal() as s:
+        v = (await s.execute(
+            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+        )).scalar_one_or_none() if u else None
+        if v is None:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        existant = (await s.execute(
+            select(Entretiens)
+            .where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours"))
+            .order_by(desc(Entretiens.derniere_activite))
+        )).scalar_one_or_none()
+
+        if existant:
+            section = _section(existant.section_courante) or SECTIONS[0]
+            return {
+                **entretien(existant),
+                "question": f"On reprend où on s'était arrêté : {section['premiere_question']}",
+                "rappel": _rappel(existant),
+            }
+
+        premiere = SECTIONS[0]
+        now = datetime.now(timezone.utc)
+        row = Entretiens(
+            venture_id=u, section_courante=premiere["id"], sections_couvertes=[],
+            transcript="", statut="en_cours", derniere_activite=now, created_at=now,
+        )
+        s.add(row)
+        await s.flush()
+        await s.commit()
+        await s.refresh(row)
+        return {**entretien(row), "question": premiere["premiere_question"], "rappel": None}
