@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, select, update
 from sqlalchemy import delete as sa_delete
 
-from app.auth import UserContext, get_current_user
+from app.auth import UserContext, _membre_actif, get_current_user
 from app.config import settings
 from app.db import SessionLocal
 from app.email import send_venture_deletion_code
@@ -51,15 +51,23 @@ def _uuid(v: str | None):
 
 
 async def _resolve_org_id(s, org_id: str | None, user_id: str) -> str | None:
-    """Renvoie org_id seulement si l'utilisateur en est membre, sinon None."""
+    """Renvoie org_id seulement si l'utilisateur en est membre ACTIF, sinon None.
+
+    S227 (revue post-fusion whole-branch, wave 2) — une appartenance
+    client_lecture ne compte pas comme membership actif : sans le filtre
+    ``_membre_actif``, un client_lecture présentant ``X-Org-ID: <org du
+    consultant>`` faisait créer une venture/pole stampée avec l'org_id du
+    consultant (écriture dans le scope d'un autre tenant), alors que ce rôle
+    n'a droit à aucune écriture (cf. auth.py::_membre_actif).
+    """
     if not org_id:
         return None
     ou = _uuid(org_id)
     if ou is None:
         return None
     m = (await s.execute(
-        select(OrganizationMembers).where(and_(
-            OrganizationMembers.org_id == ou, OrganizationMembers.user_id == user_id))
+        _membre_actif(select(OrganizationMembers).where(and_(
+            OrganizationMembers.org_id == ou, OrganizationMembers.user_id == user_id)))
     )).scalar_one_or_none()
     return org_id if m else None
 
@@ -277,7 +285,7 @@ async def _lire_identite(geo_object_id: str | None) -> dict:
         if not isinstance(data, dict):
             return {"statut": "indisponible", "geoObjectId": geo_object_id}
         return data
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
         # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON) —
         # repli honnête dans les deux cas, jamais de 500 pour une panne partielle.
         return {"statut": "indisponible", "geoObjectId": geo_object_id}
@@ -301,7 +309,7 @@ async def _lire_audit_business(audit_id: str | None) -> dict:
         if not isinstance(data, dict):
             return {"statut": "indisponible", "auditId": audit_id}
         return data
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
         # ValueError couvre json.JSONDecodeError (200 mais corps non-JSON).
         return {"statut": "indisponible", "auditId": audit_id}
 
@@ -325,7 +333,7 @@ async def _lister_documents(vid: str) -> dict:
         if not isinstance(data, dict):
             return {"statut": "indisponible", "documents": []}
         return {"statut": "ok", "documents": data.get("documents", [])}
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
         return {"statut": "indisponible", "documents": []}
 
 

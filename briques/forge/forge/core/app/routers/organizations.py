@@ -16,7 +16,7 @@ from sqlalchemy import Text, and_, cast, select, update
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.auth import UserContext, get_current_user
+from app.auth import UserContext, _membre_actif, get_current_user
 from app.db import SessionLocal
 from app.models import OrganizationMembers, Organizations, Users
 from app.serde import iso, organization
@@ -33,11 +33,18 @@ def _uuid(v: str | None):
 
 @router.get("", dependencies=[Depends(get_current_user)])
 async def list_orgs(user: UserContext = Depends(get_current_user)):
+    """S227 (revue post-fusion whole-branch, wave 2) — passe par
+    ``_membre_actif`` : sans le filtre, une appartenance client_lecture faisait
+    apparaître l'org du consultant audité dans la liste des orgs de l'appelant
+    (nom/emoji/slug), alors que ce rôle doit rester scopé à une seule venture,
+    jamais à la visibilité générale de l'org."""
     async with SessionLocal() as s:
         rows = (await s.execute(
-            select(Organizations, OrganizationMembers.role)
-            .join(OrganizationMembers, OrganizationMembers.org_id == Organizations.id)
-            .where(OrganizationMembers.user_id == user.sub)
+            _membre_actif(
+                select(Organizations, OrganizationMembers.role)
+                .join(OrganizationMembers, OrganizationMembers.org_id == Organizations.id)
+                .where(OrganizationMembers.user_id == user.sub)
+            )
         )).all()
     return [
         {**organization(org), "role": role, "active": str(org.id) == user.org_id}
@@ -67,11 +74,16 @@ async def create_org(body: CreateOrg, response: Response, user: UserContext = De
 
 @router.get("/{org_id}", dependencies=[Depends(get_current_user)])
 async def get_org(org_id: str, user: UserContext = Depends(get_current_user)):
+    """S227 (revue post-fusion whole-branch, wave 2) — passe par
+    ``_membre_actif`` : sans le filtre, un client_lecture pouvait GET
+    /api/orgs/{org_du_consultant} et recevoir le roster complet des membres
+    (email, nom, avatarEmoji, role de chacun) — fuite de l'annuaire du cabinet
+    de conseil vers le client audité."""
     oid = _uuid(org_id)
     async with SessionLocal() as s:
         membership = (await s.execute(
-            select(OrganizationMembers).where(and_(
-                OrganizationMembers.org_id == oid, OrganizationMembers.user_id == user.sub))
+            _membre_actif(select(OrganizationMembers).where(and_(
+                OrganizationMembers.org_id == oid, OrganizationMembers.user_id == user.sub)))
         )).scalar_one_or_none() if oid else None
         if membership is None:
             raise HTTPException(status_code=404, detail="Not found")
