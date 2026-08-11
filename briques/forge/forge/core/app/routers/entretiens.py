@@ -215,7 +215,9 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
     # Naïf : colonnes `timestamp without time zone` (cf. Finding C2 dans demarrer_entretien).
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     extraction_echouee = False
-    nouveau_profil = None
+    # Ce que ce tour a EXTRAIT (pas le profil fusionné) : la fusion définitive est refaite
+    # plus bas contre une lecture FRAÎCHE, cf. Finding N1.
+    fusion_a_ecrire: tuple[str, list[str]] | None = None
 
     if section["famille"] == "qualitatif":
         categorie = section["categorie"]
@@ -246,9 +248,11 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
                 "fusion sautée pour ce tour", vid, categorie)
 
         if valeurs:
-            # Calculé ici, PERSISTÉ plus bas dans la transaction d'écriture unique.
-            nouveau_profil = _fusionner_qualitatif(profil_courant, categorie, valeurs)
-            connu = nouveau_profil[categorie]
+            # Aperçu LOCAL, uniquement pour nourrir le prompt de décision ci-dessous. La
+            # fusion qui sera PERSISTÉE est recalculée dans la transaction d'écriture,
+            # contre une relecture fraîche du profil (Finding N1).
+            fusion_a_ecrire = (categorie, list(valeurs))
+            connu = _fusionner_qualitatif(profil_courant, categorie, valeurs)[categorie]
 
         try:
             decision_brut = await generate_text(
@@ -304,9 +308,27 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
 
     # ── Transaction d'ÉCRITURE, courte : plus aucun appel réseau au-delà d'ici ───
     async with SessionLocal() as s:
-        if nouveau_profil is not None:
-            await s.execute(update(Ventures).where(Ventures.id == u)
-                            .values(profil_entreprise=nouveau_profil, updated_at=now))
+        if fusion_a_ecrire is not None:
+            # Relecture FRAÎCHE + verrou de ligne (revue finale S228, Finding N1). Le profil
+            # lu en début de requête a plusieurs dizaines de secondes : deux appels LLM se
+            # sont intercalés. Fusionner contre cette valeur périmée écrasait en silence
+            # toute écriture concurrente survenue entre-temps — typiquement un
+            # `PATCH /ventures/{id}`, qui remplace `profil_entreprise` EN BLOC (S227).
+            # La contrainte globale du sprint est explicite : « JAMAIS d'écrasement ».
+            # `_fusionner_qualitatif` est pure, on la rejoue simplement sur la base fraîche.
+            # `with_for_update` sérialise le lire-modifier-écrire : un PATCH concurrent
+            # attend notre commit (et gagne ensuite, ce qui est SA sémantique), ou passe
+            # avant et se retrouve dans notre lecture fraîche. Ignoré par SQLite.
+            categorie_ecrite, valeurs_ecrites = fusion_a_ecrire
+            frais = (await s.execute(
+                select(Ventures).where(Ventures.id == u).with_for_update()
+            )).scalar_one_or_none()
+            profil_frais = getattr(frais, "profil_entreprise", None) if frais is not None \
+                else profil_courant
+            await s.execute(update(Ventures).where(Ventures.id == u).values(
+                profil_entreprise=_fusionner_qualitatif(profil_frais, categorie_ecrite,
+                                                        valeurs_ecrites),
+                updated_at=now))
         if audit_id:
             await s.execute(update(Ventures).where(Ventures.id == u)
                             .values(audit_id=audit_id, updated_at=now))
