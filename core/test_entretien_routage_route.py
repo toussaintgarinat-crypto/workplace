@@ -10,6 +10,7 @@ os.environ.setdefault("GATEWAY_KEY", "test")
 os.environ.setdefault("AUTH_SESSION_SECRET", "test-session-secret-0123456789")
 sys.path.insert(0, os.path.dirname(__file__))
 
+import accord_action  # noqa: E402
 import entretien_routage  # noqa: E402
 from routers.assistant import _flux_entretien  # noqa: E402
 
@@ -100,3 +101,41 @@ def test_flux_entretien_forge_reponse_malformee_ne_leve_pas():
     evts = asyncio.run(_run())
     assert [e["type"] for e in evts] == ["erreur", "fin"]
     assert "not json" in evts[0]["contenu"]
+
+
+def test_deux_personnes_meme_fil_entretiens_isoles():
+    """web:dashboard est le fil pour TOUT LE MONDE côté web — seule la clé
+    (fil, personne) (accord_action.cle) distingue Alice de Bob."""
+    fil = "web:dashboard"
+    fil_alice = accord_action.cle(fil, "alice")
+    fil_bob = accord_action.cle(fil, "bob")
+
+    entretien_routage.REGISTRE.activer(fil_alice, "venture-alice")
+    entretien_routage.REGISTRE.activer(fil_bob, "venture-bob")
+
+    assert entretien_routage.REGISTRE.actif(fil_alice) == "venture-alice"
+    assert entretien_routage.REGISTRE.actif(fil_bob) == "venture-bob"
+
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"question": "Question pour Bob", "statut": "en_cours"}
+
+    calls = []
+
+    class _FakeClient:
+        async def post(self, url, **kw):
+            calls.append(url)
+            return _FakeResp()
+
+    async def _run():
+        return [evt async for evt in _flux_entretien(
+            venture_id=entretien_routage.REGISTRE.actif(fil_bob), fil_accord=fil_bob,
+            message="Réponse de Bob", client=_FakeClient(), base_forge="http://forge.test/api")]
+
+    asyncio.run(_run())
+    # Le tour de Bob n'a appelé QUE la venture de Bob — jamais celle d'Alice.
+    assert calls == ["http://forge.test/api/ventures/venture-bob/entretien/repondre"]
+    # L'entretien d'Alice reste totalement inchangé.
+    assert entretien_routage.REGISTRE.actif(fil_alice) == "venture-alice"
