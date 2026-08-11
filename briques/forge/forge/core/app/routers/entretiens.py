@@ -170,16 +170,22 @@ class RepondreBody(BaseModel):
 async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = Depends(get_current_user)):
     u = _uuid(vid)
     async with SessionLocal() as s:
-        row = (await s.execute(
-            select(Entretiens).where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours")).limit(1)
-        )).scalar_one_or_none() if u else None
-        if row is None:
-            raise HTTPException(status_code=404, detail="Aucun entretien en cours pour cette venture")
-
+        # Ownership vérifiée AVANT toute lecture d'Entretiens (Entretiens n'a pas de
+        # owner_id) — même ordre que demarrer_entretien ci-dessus. Une venture
+        # inexistante, une venture d'autrui, et une venture à soi sans entretien en
+        # cours doivent tous porter le même detail générique : ne jamais laisser le
+        # contenu de la réponse révéler à un appelant non autorisé si une venture
+        # qu'il ne possède pas a une activité d'entretien en cours (revue post-Task 4).
         v = (await s.execute(
             select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
-        )).scalar_one_or_none()
+        )).scalar_one_or_none() if u else None
         if v is None:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        row = (await s.execute(
+            select(Entretiens).where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours")).limit(1)
+        )).scalar_one_or_none()
+        if row is None:
             raise HTTPException(status_code=404, detail="Not found")
 
         section = _section(row.section_courante) or SECTIONS[0]
@@ -190,9 +196,20 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
             categorie = section["categorie"]
             connu = (v.profil_entreprise or {}).get(categorie) or []
             try:
-                brut = await generate_text(
-                    _PROMPT_EXTRACTION.format(categorie=categorie, message=body.message))
+                try:
+                    brut = await generate_text(
+                        _PROMPT_EXTRACTION.format(categorie=categorie, message=body.message))
+                except Exception as exc:  # réseau/timeout/quota/fournisseur — jamais un 500 ici
+                    logger.warning(
+                        "[entretien:generate_text_echoue] venture=%s categorie=%s: %s",
+                        vid, categorie, exc)
+                    brut = ""
                 data = json.loads(brut)
+                if not isinstance(data, dict):
+                    # JSON syntaxiquement valide mais pas un objet (ex. ["Lyon"], null,
+                    # 42) — même repli honnête qu'un JSONDecodeError, pas un .get() qui
+                    # planterait en AttributeError (revue post-Task 4).
+                    raise ValueError("réponse LLM n'est pas un objet JSON")
                 valeurs = data.get("valeurs") or []
                 if not isinstance(valeurs, list):
                     raise ValueError("valeurs doit être une liste")
@@ -209,21 +226,38 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
                                 .values(profil_entreprise=nouveau_profil, updated_at=now))
                 connu = nouveau_profil[categorie]
 
-            decision_brut = await generate_text(
-                _PROMPT_DECISION_QUALITATIF.format(categorie=categorie, message=body.message, connu=connu))
+            try:
+                decision_brut = await generate_text(
+                    _PROMPT_DECISION_QUALITATIF.format(categorie=categorie, message=body.message, connu=connu))
+            except Exception as exc:
+                logger.warning(
+                    "[entretien:generate_text_echoue] venture=%s section=%s: %s",
+                    vid, section["id"], exc)
+                decision_brut = ""
         else:
             zone = section["zone"]
             row.transcript = (row.transcript or "") + f"\n\n## {zone}\n{body.message}"
-            decision_brut = await generate_text(
-                _PROMPT_DECISION_PROCESSUS.format(zone=zone, message=body.message))
+            try:
+                decision_brut = await generate_text(
+                    _PROMPT_DECISION_PROCESSUS.format(zone=zone, message=body.message))
+            except Exception as exc:
+                logger.warning(
+                    "[entretien:generate_text_echoue] venture=%s section=%s: %s",
+                    vid, section["id"], exc)
+                decision_brut = ""
 
         try:
             decision = json.loads(decision_brut)
+            if not isinstance(decision, dict):
+                raise ValueError("réponse LLM n'est pas un objet JSON")
             couverte = bool(decision.get("couverte"))
             question_suivante = decision.get("question")
         except (json.JSONDecodeError, ValueError, TypeError):
             couverte = False
             question_suivante = "Peux-tu préciser ?"
+            logger.warning(
+                "[entretien:decision_echouee] venture=%s section=%s — repli question générique",
+                vid, section["id"])
 
         statut = "en_cours"
         if couverte:
