@@ -95,8 +95,10 @@ async def _flux_entretien(venture_id: str, fil_accord: str, message: str, client
     `entretien_routage.repondre()` (Task 8) appelle `r.json()` sans filet : si Forge est
     injoignable, time out, ou répond avec un corps non-JSON/inattendu, ça lève. On ne
     laisse JAMAIS cette exception remonter dans le générateur SSE — elle dégrade en un
-    événement `erreur` générique + `fin`, comme le fait déjà `flux()` plus bas pour le LLM
-    dans son propre `except Exception`."""
+    événement `erreur` générique suivi d'un `fin` explicite (contrairement à `flux()`
+    plus bas, dont le propre `except Exception` émet SEULEMENT `erreur` sans `fin` — pas
+    un miroir de ce chemin-là, un choix délibérément plus strict ici : un `fin` explicite
+    donne au front un signal de fin de flux propre)."""
     try:
         data = await entretien_routage.repondre(
             registre=None, fil_accord=fil_accord, venture_id=venture_id, message=message,
