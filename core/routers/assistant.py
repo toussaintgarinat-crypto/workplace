@@ -18,6 +18,7 @@ import ciblage
 import classer
 import config_assistant
 import contexte_tenant
+import entretien_routage
 import horloge
 import journal_conversations
 import journal_usage
@@ -84,6 +85,33 @@ def _resoudre_utilisateur(corps: dict, request: Request) -> str | None:
     `None` (défaut `"perso"` inchangé côté agenda). Jamais bloquant : une session
     absente/corrompue ne fait pas échouer le chat, elle retombe simplement au défaut."""
     return corps.get("utilisateur") or auth.sub_session_optionnel(request)
+
+
+async def _flux_entretien(venture_id: str, fil_accord: str, message: str, client, base_forge: str):
+    """Tour de conversation routé structurellement vers l'entretien Forge actif (S228),
+    au lieu du LLM habituel. Émet les mêmes types d'événements que `assistant.converser`
+    (`texte` puis `fin`) pour que le front n'ait rien à changer.
+
+    `entretien_routage.repondre()` (Task 8) appelle `r.json()` sans filet : si Forge est
+    injoignable, time out, ou répond avec un corps non-JSON/inattendu, ça lève. On ne
+    laisse JAMAIS cette exception remonter dans le générateur SSE — elle dégrade en un
+    événement `erreur` générique + `fin`, comme le fait déjà `flux()` plus bas pour le LLM
+    dans son propre `except Exception`."""
+    try:
+        data = await entretien_routage.repondre(
+            registre=None, fil_accord=fil_accord, venture_id=venture_id, message=message,
+            client=client, base_forge=base_forge)
+    except Exception as e:  # noqa: BLE001
+        yield {"type": "erreur", "contenu": str(e)}
+        yield {"type": "fin"}
+        return
+    question = data.get("question")
+    if data.get("statut") == "termine":
+        texte = question or "Entretien terminé, merci ! L'analyse est relancée avec tout ce qu'on a recueilli."
+    else:
+        texte = question or "D'accord, continuons."
+    yield {"type": "texte", "contenu": texte}
+    yield {"type": "fin"}
 
 
 @router.post("/assistant/chat", tags=["assistant"])
@@ -172,6 +200,27 @@ async def assistant_chat(corps: dict, request: Request):
     # validerait l'action en attente de l'autre.
     fil_accord = accord_action.cle(fil, utilisateur)
     accord_action.REGISTRE.tour_utilisateur(fil_accord, dernier_user or "")
+
+    # S228 — routage structurel : tant qu'un entretien Forge est actif pour CE fil ET cette
+    # personne, et que le dernier message n'est pas une pause explicite, on route directement
+    # vers Forge au lieu du chat libre habituel (cf. entretien_routage).
+    venture_active = entretien_routage.REGISTRE.actif(fil_accord)
+    if venture_active and not entretien_routage.est_pause(dernier_user or ""):
+        base_forge = catalogue.base_brique(registre, "forge")
+        if base_forge:
+            async def flux_entretien():
+                final = ""
+                async with httpx.AsyncClient(timeout=30) as forge_client:
+                    async for evt in _flux_entretien(venture_active, fil_accord, dernier_user or "",
+                                                      forge_client, base_forge):
+                        if evt.get("type") == "texte":
+                            final = evt.get("contenu") or ""
+                        yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+                if final.strip():
+                    journal_conversations.enregistrer(surface, interlocuteur, "assistant", final,
+                                                      utilisateur=utilisateur)
+
+            return StreamingResponse(flux_entretien(), media_type="text/event-stream")
 
     async def flux():
         final = ""
