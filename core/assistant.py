@@ -388,6 +388,8 @@ async def converser(messages: list[dict], registre,
                     if nom == "forge_entretien_demarrer" and not _est_erreur_outil(resultat):
                         try:
                             _data_entretien = json.loads(resultat)
+                            if not isinstance(_data_entretien, dict):
+                                raise ValueError("résultat forge_entretien_demarrer n'est pas un objet JSON")
                             _venture_id = _data_entretien.get("ventureId") or args.get("id")
                             if _venture_id:
                                 entretien_routage.REGISTRE.activer(fil_accord, _venture_id)
