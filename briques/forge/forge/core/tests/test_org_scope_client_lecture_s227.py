@@ -56,6 +56,7 @@ class _FakeSession:
 
     def __init__(self, rows_by_call):
         self._rows_by_call = list(rows_by_call)
+        self.queries: list[str] = []
 
     async def __aenter__(self):
         return self
@@ -64,6 +65,8 @@ class _FakeSession:
         return False
 
     async def execute(self, *a, **k):
+        if a:
+            self.queries.append(str(a[0]))
         rows = self._rows_by_call.pop(0) if self._rows_by_call else []
         return _FakeResult(rows)
 
@@ -106,13 +109,17 @@ async def test_resolve_org_id_bloque_client_lecture_via_x_org_id(client, app, mo
     filtrée par `_membre_actif` ne trouve aucune ligne pour un membership
     client_lecture-only → repli sur org_id=None (comme un X-Org-ID périmé)."""
     app.dependency_overrides[get_current_user] = _user("client-1")
-    monkeypatch.setattr(ventures_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[]]))
+    fake = _FakeSession(rows_by_call=[[]])
+    monkeypatch.setattr(ventures_mod, "SessionLocal", lambda: fake)
     r = await client.post("/api/ventures", json={"nom": "Client Acme"},
                           headers={"X-Org-ID": ORG_ID})
     app.dependency_overrides.clear()
     assert r.status_code == 201
     assert r.json()["orgId"] is None
+    assert any("role !=" in q for q in fake.queries), (
+        "la query de résolution d'org doit passer par _membre_actif — sinon ce "
+        "test ne prouve rien (il passerait même avec le fix retiré)"
+    )
 
 
 async def test_resolve_org_id_honore_membre_actif_via_x_org_id(client, app, monkeypatch):
@@ -137,11 +144,15 @@ async def test_get_org_bloque_client_lecture(client, app, monkeypatch):
     l'org ni le roster de ses membres (fuite email/nom/role — cf. revue). Le
     fake simule le résultat filtré : la query membership ne trouve rien."""
     app.dependency_overrides[get_current_user] = _user("client-1")
-    monkeypatch.setattr(orgs_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[]]))
+    fake = _FakeSession(rows_by_call=[[]])
+    monkeypatch.setattr(orgs_mod, "SessionLocal", lambda: fake)
     r = await client.get(f"/api/orgs/{ORG_ID}")
     app.dependency_overrides.clear()
     assert r.status_code == 404
+    assert any("role !=" in q for q in fake.queries), (
+        "la query membership doit passer par _membre_actif — sinon ce test ne "
+        "prouve rien (il passerait même avec le fix retiré)"
+    )
 
 
 async def test_get_org_honore_membre_actif(client, app, monkeypatch):
@@ -168,12 +179,16 @@ async def test_list_orgs_exclut_client_lecture(client, app, monkeypatch):
     venture, jamais à la visibilité d'org. Le fake simule la query filtrée
     (aucune ligne)."""
     app.dependency_overrides[get_current_user] = _user("client-1")
-    monkeypatch.setattr(orgs_mod, "SessionLocal",
-                        lambda: _FakeSession(rows_by_call=[[]]))
+    fake = _FakeSession(rows_by_call=[[]])
+    monkeypatch.setattr(orgs_mod, "SessionLocal", lambda: fake)
     r = await client.get("/api/orgs")
     app.dependency_overrides.clear()
     assert r.status_code == 200
     assert r.json() == []
+    assert any("role !=" in q for q in fake.queries), (
+        "la query list_orgs doit passer par _membre_actif — sinon ce test ne "
+        "prouve rien (il passerait même avec le fix retiré)"
+    )
 
 
 async def test_list_orgs_inclut_membre_actif(client, app, monkeypatch):
