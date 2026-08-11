@@ -24,6 +24,7 @@ import journal_conversations
 import journal_usage
 import langue as langue_mod
 import orchestrateur
+import outils_communs
 import personas
 import pouls
 import proactif
@@ -228,9 +229,20 @@ async def assistant_chat(corps: dict, request: Request):
     if venture_active and not entretien_routage.est_pause(dernier_user or ""):
         base_forge = catalogue.base_brique(registre, "forge")
         if base_forge:
+            # Identité réelle sur le chemin STRUCTUREL (revue finale S228, Finding C1b) :
+            # `forge_entretien_demarrer` passe par le dispatch dynamique (corrigé), mais
+            # AUCUNE réponse d'entretien ne repasse par le LLM — elles arrivent toutes ici.
+            # Sans ces en-têtes, l'adaptateur retombait sur son compte de SERVICE, donc
+            # `Ventures.owner_id == user.sub` ne matchait plus : 404 → 502 → entretien mis
+            # en pause dès la première réponse. Résolus MAINTENANT, dans le corps de la
+            # route, et capturés par fermeture : le générateur SSE ci-dessous s'exécute
+            # après le retour de la route, dans un contexte copié — on ne veut pas dépendre
+            # de la survie des ContextVars jusque-là.
+            entetes_forge = outils_communs.entetes_forge_sortants() or None
+
             async def flux_entretien():
                 final = ""
-                async with httpx.AsyncClient(timeout=30) as forge_client:
+                async with httpx.AsyncClient(timeout=30, headers=entetes_forge) as forge_client:
                     async for evt in _flux_entretien(venture_active, fil_accord, dernier_user or "",
                                                       forge_client, base_forge):
                         if evt.get("type") == "texte":
