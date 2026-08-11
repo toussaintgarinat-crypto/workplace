@@ -102,6 +102,7 @@ async def demarrer_entretien(vid: str, user: UserContext = Depends(get_current_u
             select(Entretiens)
             .where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours"))
             .order_by(desc(Entretiens.derniere_activite))
+            .limit(1)
         )).scalar_one_or_none()
 
         if existant:
