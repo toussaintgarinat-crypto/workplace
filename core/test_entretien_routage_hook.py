@@ -77,3 +77,13 @@ def test_demarrer_en_echec_n_active_rien():
            '{"id": "venture-1", "confirme": true}',
            '{"erreur": "Brique injoignable"}', fil="fil-echec")
     assert entretien_routage.REGISTRE.actif("fil-echec") is None
+
+
+def test_demarrer_resultat_json_valide_mais_pas_un_objet_ne_plante_pas():
+    """`json.loads` réussit sur "null" (JSON valide) mais le résultat n'est pas un objet :
+    un `.get(...)` non gardé lèverait AttributeError, non rattrapé par
+    (JSONDecodeError, ValueError) — planterait le tour entier."""
+    _jouer("forge_entretien_demarrer",
+           '{"id": "venture-1", "confirme": true}',
+           "null", fil="fil-non-dict")
+    assert entretien_routage.REGISTRE.actif("fil-non-dict") is None
