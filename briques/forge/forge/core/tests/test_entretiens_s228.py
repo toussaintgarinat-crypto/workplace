@@ -550,3 +550,71 @@ async def test_cloturer_best_effort_si_ingestion_injoignable(monkeypatch):
     assert statut == "termine"  # ne bloque JAMAIS la clôture
     assert sync_erreur is not None
     assert v.audit_id is None  # pas de rappel /auditer possible sans doc_ids
+
+
+async def test_terminer_cloture_explicitement_avant_squelette_complet(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.clients", sections_couvertes=["qualitatif.organisation"],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    # Ownership d'abord (v), puis lecture de l'entretien (row) — même ordre que
+    # demarrer_entretien/repondre_entretien/etat_entretien, pour cohérence.
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_cloturer(s, v, row, transcript):
+        return "termine", None
+
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 200
+    assert r.json()["statut"] == "termine"
+
+
+async def test_terminer_404_si_aucun_entretien(client, app, monkeypatch):
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
+    r = await client.post(f"/api/ventures/{VID}/entretien/terminer")
+    assert r.status_code == 404
+
+
+async def test_etat_renvoie_l_entretien_courant(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="qualitatif.clients", sections_couvertes=["qualitatif.organisation"],
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+    r = await client.get(f"/api/ventures/{VID}/entretien/etat")
+    assert r.status_code == 200
+    assert r.json()["sectionCourante"] == "qualitatif.clients"
+
+
+async def test_etat_404_si_aucun_entretien(client, app, monkeypatch):
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], []]))
+    r = await client.get(f"/api/ventures/{VID}/entretien/etat")
+    assert r.status_code == 404
+
+
+async def test_etat_404_si_venture_pas_a_soi(client, app, monkeypatch):
+    """Sécurité : sans le filtre owner_id, n'importe quel utilisateur authentifié pourrait
+    lire l'état d'entretien de n'importe quelle venture en devinant son id (même classe de
+    bug que les fixes Critical S227 sur les scopes client_lecture)."""
+    app.dependency_overrides[get_current_user] = _fake_user
+    monkeypatch.setattr(entretiens_mod, "SessionLocal", lambda: _FakeSession(rows_by_call=[[]]))
+    r = await client.get(f"/api/ventures/{VID}/entretien/etat")
+    assert r.status_code == 404

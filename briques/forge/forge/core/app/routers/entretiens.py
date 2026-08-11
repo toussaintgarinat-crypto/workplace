@@ -362,3 +362,51 @@ async def _cloturer(s, v, row, transcript: str) -> tuple[str, str | None]:
     v.audit_id = audit_id
     await s.execute(update(Ventures).where(Ventures.id == v.id).values(audit_id=audit_id))
     return "termine", None
+
+
+@router.post("/ventures/{vid}/entretien/terminer", dependencies=[Depends(get_current_user)])
+async def terminer_entretien(vid: str, user: UserContext = Depends(get_current_user)):
+    """Clôture explicite (avant squelette complet) ou retry d'une clôture qui avait
+    échoué (sync_erreur non nul) : rappelle le même `_cloturer` que la clôture
+    automatique de fin de squelette (Task 5), jamais une réimplémentation."""
+    u = _uuid(vid)
+    async with SessionLocal() as s:
+        # Ownership d'abord — même ordre que demarrer_entretien/repondre_entretien/
+        # etat_entretien ci-dessous, pour cohérence (Entretiens n'a pas d'owner_id).
+        v = (await s.execute(
+            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+        )).scalar_one_or_none() if u else None
+        row = (await s.execute(
+            select(Entretiens).where(Entretiens.venture_id == u)
+            .order_by(desc(Entretiens.derniere_activite)).limit(1)
+        )).scalar_one_or_none() if u and v is not None else None
+        if row is None or v is None:
+            raise HTTPException(status_code=404, detail="Aucun entretien pour cette venture")
+
+        statut, sync_erreur = await _cloturer(s, v, row, transcript=row.transcript)
+        now = datetime.now(timezone.utc)
+        await s.execute(update(Entretiens).where(Entretiens.id == row.id).values(
+            statut=statut, sync_erreur=sync_erreur, derniere_activite=now))
+        await s.commit()
+        row.statut, row.sync_erreur = statut, sync_erreur
+
+    return entretien(row)
+
+
+@router.get("/ventures/{vid}/entretien/etat", dependencies=[Depends(get_current_user)])
+async def etat_entretien(vid: str, user: UserContext = Depends(get_current_user)):
+    u = _uuid(vid)
+    async with SessionLocal() as s:
+        # Ownership d'abord : sans ce filtre, n'importe quel utilisateur authentifié pourrait
+        # lire l'état d'entretien de n'importe quelle venture en devinant son id — même
+        # classe de bug que les fixes Critical S227 sur les scopes client_lecture.
+        v = (await s.execute(
+            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+        )).scalar_one_or_none() if u else None
+        row = (await s.execute(
+            select(Entretiens).where(Entretiens.venture_id == u)
+            .order_by(desc(Entretiens.derniere_activite)).limit(1)
+        )).scalar_one_or_none() if u and v is not None else None
+        if v is None or row is None:
+            raise HTTPException(status_code=404, detail="Aucun entretien pour cette venture")
+    return entretien(row)
