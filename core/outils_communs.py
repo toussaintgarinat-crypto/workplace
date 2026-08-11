@@ -74,6 +74,21 @@ def _entetes_brique(brique: str) -> dict:
     return entetes
 
 
+def entetes_forge_sortants() -> dict:
+    """En-têtes de TOUT appel sortant du Cœur vers l'adaptateur Forge : service
+    (``X-Compte-Id`` / ``X-API-Key``) **+** identité réelle (``X-Forge-User-Token``).
+
+    Source unique (revue finale S228, Finding C1b) : le Cœur atteint l'adaptateur Forge par
+    DEUX chemins — le dispatch dynamique des capacités (:func:`_appel_dynamique`, tour de
+    LLM) et le routage STRUCTUREL de l'entretien guidé (``routers/assistant.py`` →
+    ``entretien_routage.repondre``, qui court-circuite le LLM à chaque réponse). Corriger un
+    seul chemin donnait un entretien qui démarre sous la bonne identité puis meurt en 404 au
+    premier tour suivant. On résout donc les en-têtes ICI pour que les deux chemins
+    envoient rigoureusement le même jeu.
+    """
+    return {**(_entetes_brique("forge") or {}), **contexte_tenant.entetes_forge()}
+
+
 TIMEOUT_PROXY_COURT = 60.0
 
 
@@ -170,9 +185,8 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     # matcher la venture du dirigeant (404 systématique sur l'entretien guidé S228).
     # Cas spécial assumé, comme `BRIQUES_PAR_PERSONNE` plus haut : cet en-tête est
     # propre à l'adaptateur Forge, jamais diffusé aux autres briques.
-    entetes = _entetes_brique(cap["brique"]) or {}
-    if cap["brique"] == "forge":
-        entetes = {**entetes, **contexte_tenant.entetes_forge()}
+    entetes = (entetes_forge_sortants() if cap["brique"] == "forge"
+               else _entetes_brique(cap["brique"]) or {})
     entetes = entetes or None
     if cap["methode"] == "GET":
         r = await client.request("GET", url, params=charge, headers=entetes)
