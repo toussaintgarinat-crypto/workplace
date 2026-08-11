@@ -75,8 +75,8 @@ def test_flux_entretien_forge_indisponible_ne_leve_pas():
             client=_FakeClientEnPanne(), base_forge="http://forge.test/api")]
 
     evts = asyncio.run(_run())
-    assert evts[-1]["type"] in ("fin", "erreur")
-    assert any(e["type"] in ("texte", "erreur") for e in evts)
+    assert [e["type"] for e in evts] == ["erreur", "fin"]
+    assert "connexion refusée" in evts[0]["contenu"]
 
 
 def test_flux_entretien_forge_reponse_malformee_ne_leve_pas():
@@ -98,5 +98,5 @@ def test_flux_entretien_forge_reponse_malformee_ne_leve_pas():
             client=_FakeClient(), base_forge="http://forge.test/api")]
 
     evts = asyncio.run(_run())
-    assert evts[-1]["type"] in ("fin", "erreur")
-    assert any(e["type"] in ("texte", "erreur") for e in evts)
+    assert [e["type"] for e in evts] == ["erreur", "fin"]
+    assert "not json" in evts[0]["contenu"]
