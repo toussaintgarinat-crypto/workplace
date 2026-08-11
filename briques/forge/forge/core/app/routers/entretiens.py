@@ -15,16 +15,22 @@ couverte. Pause/reprise obligatoire : l'état est persisté à chaque tour.
 
 from __future__ import annotations
 
+import json
+import logging
 import uuid as uuidlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, desc, select
+from pydantic import BaseModel
+from sqlalchemy import and_, desc, select, update
 
 from app.auth import UserContext, get_current_user
 from app.db import SessionLocal
+from app.llm import generate_text
 from app.models import Entretiens, Ventures
 from app.serde import entretien
+
+logger = logging.getLogger(__name__)
 
 SECTIONS: list[dict] = [
     {"id": "qualitatif.organisation", "famille": "qualitatif", "categorie": "organisation",
@@ -124,3 +130,138 @@ async def demarrer_entretien(vid: str, user: UserContext = Depends(get_current_u
         await s.commit()
         await s.refresh(row)
         return {**entretien(row), "question": premiere["premiere_question"], "rappel": None}
+
+
+def _fusionner_qualitatif(existant: dict | None, categorie: str, valeurs: list[str]) -> dict:
+    """Fusion non destructive : ajoute les nouvelles valeurs à la liste existante de la
+    catégorie, dé-doublonne, ne touche à AUCUNE autre catégorie."""
+    base = dict(existant or {})
+    deja = list(base.get(categorie) or [])
+    for val in valeurs:
+        if val and val not in deja:
+            deja.append(val)
+    base[categorie] = deja
+    return base
+
+
+_PROMPT_EXTRACTION = (
+    "Tu extrais des informations d'entreprise depuis une réponse d'entretien.\n"
+    "Catégorie : {categorie}\n"
+    "Réponse de l'utilisateur : \"{message}\"\n\n"
+    "Réponds UNIQUEMENT en JSON strict : {{\"valeurs\": [\"...\"]}} — une liste de faits "
+    "courts et autonomes extraits de cette réponse. Liste vide si rien d'exploitable."
+)
+
+_PROMPT_DECISION_QUALITATIF = (
+    "Tu mènes un entretien d'audit d'entreprise, catégorie « {categorie} ».\n"
+    "Dernière réponse de l'utilisateur : \"{message}\"\n"
+    "Ce qu'on sait déjà sur cette catégorie : {connu}\n\n"
+    "Décide si cette catégorie est maintenant suffisamment couverte, ou s'il faut relancer "
+    "avec une question de suivi CIBLÉE (une réponse courte appelle une relance précise).\n"
+    "Réponds UNIQUEMENT en JSON strict : {{\"couverte\": true|false, \"question\": \"...\"|null}}."
+)
+
+
+class RepondreBody(BaseModel):
+    message: str
+
+
+@router.post("/ventures/{vid}/entretien/repondre", dependencies=[Depends(get_current_user)])
+async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = Depends(get_current_user)):
+    u = _uuid(vid)
+    async with SessionLocal() as s:
+        row = (await s.execute(
+            select(Entretiens).where(and_(Entretiens.venture_id == u, Entretiens.statut == "en_cours")).limit(1)
+        )).scalar_one_or_none() if u else None
+        if row is None:
+            raise HTTPException(status_code=404, detail="Aucun entretien en cours pour cette venture")
+
+        v = (await s.execute(
+            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+        )).scalar_one_or_none()
+        if v is None:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        section = _section(row.section_courante) or SECTIONS[0]
+        now = datetime.now(timezone.utc)
+        extraction_echouee = False
+
+        if section["famille"] == "qualitatif":
+            categorie = section["categorie"]
+            connu = (v.profil_entreprise or {}).get(categorie) or []
+            try:
+                brut = await generate_text(
+                    _PROMPT_EXTRACTION.format(categorie=categorie, message=body.message))
+                data = json.loads(brut)
+                valeurs = data.get("valeurs") or []
+                if not isinstance(valeurs, list):
+                    raise ValueError("valeurs doit être une liste")
+            except (json.JSONDecodeError, ValueError, TypeError):
+                extraction_echouee = True
+                valeurs = []
+                logger.warning(
+                    "[entretien:extraction_echouee] venture=%s categorie=%s — tour conservé, "
+                    "fusion sautée pour ce tour", vid, categorie)
+
+            if valeurs:
+                nouveau_profil = _fusionner_qualitatif(v.profil_entreprise, categorie, valeurs)
+                await s.execute(update(Ventures).where(Ventures.id == u)
+                                .values(profil_entreprise=nouveau_profil, updated_at=now))
+                connu = nouveau_profil[categorie]
+
+            decision_brut = await generate_text(
+                _PROMPT_DECISION_QUALITATIF.format(categorie=categorie, message=body.message, connu=connu))
+        else:
+            zone = section["zone"]
+            row.transcript = (row.transcript or "") + f"\n\n## {zone}\n{body.message}"
+            decision_brut = await generate_text(
+                _PROMPT_DECISION_PROCESSUS.format(zone=zone, message=body.message))
+
+        try:
+            decision = json.loads(decision_brut)
+            couverte = bool(decision.get("couverte"))
+            question_suivante = decision.get("question")
+        except (json.JSONDecodeError, ValueError, TypeError):
+            couverte = False
+            question_suivante = "Peux-tu préciser ?"
+
+        statut = "en_cours"
+        if couverte:
+            couvertes = list(row.sections_couvertes or []) + [row.section_courante]
+            suivante = _prochaine_section(couvertes)
+            if suivante is None:
+                statut, _sync_erreur = await _cloturer(s, v, row, transcript=row.transcript)
+                row.sections_couvertes = couvertes
+                row.statut = statut
+                row.sync_erreur = _sync_erreur
+                question_suivante = None
+            else:
+                row.section_courante = suivante["id"]
+                row.sections_couvertes = couvertes
+                question_suivante = suivante["premiere_question"]
+
+        row.derniere_activite = now
+        await s.execute(update(Entretiens).where(Entretiens.id == row.id).values(
+            section_courante=row.section_courante, sections_couvertes=row.sections_couvertes,
+            transcript=row.transcript, statut=row.statut, sync_erreur=getattr(row, "sync_erreur", None),
+            derniere_activite=now,
+        ))
+        await s.commit()
+
+    return {
+        "sectionCourante": row.section_courante,
+        "sectionsCouvertes": row.sections_couvertes,
+        "question": question_suivante,
+        "statut": row.statut,
+        "extractionEchouee": extraction_echouee,
+    }
+
+
+_PROMPT_DECISION_PROCESSUS = (
+    "STUB — remplacé en Task 5"
+)
+
+
+async def _cloturer(s, v, row, transcript: str):
+    """STUB — remplacé en Task 5 (push ingestion + rappel /auditer)."""
+    return "termine", None
