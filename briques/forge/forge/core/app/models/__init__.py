@@ -88,6 +88,7 @@ from app.models.generated import (  # noqa: F401
 from app.models.manual import (  # noqa: F401
     AuditMissionPoles,
     DecisionsN0,
+    Entretiens,
     HitlRequests,
     McpServers,
     PoleDevRequests,
@@ -179,6 +180,7 @@ __all__ = [
     # ── écrits à la main (tables absentes du codegen) ──
     "AuditMissionPoles",
     "DecisionsN0",
+    "Entretiens",
     "HitlRequests",
     "McpServers",
     "PoleDevRequests",

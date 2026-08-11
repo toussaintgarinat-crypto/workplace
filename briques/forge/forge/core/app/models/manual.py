@@ -18,6 +18,7 @@ import datetime
 import uuid
 
 from sqlalchemy import Boolean, DateTime, Integer, Text, Uuid, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.generated import Base
@@ -177,3 +178,29 @@ class Skills(Base):
     is_global: Mapped[bool | None] = mapped_column("global", Boolean, server_default=text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text("now()"))
+
+
+# ── S228 — Entretien guidé IA : table hors codegen ───────────────────────
+# entretiens ne figure pas dans l'instance ayant servi au codegen. Mappée à la
+# main, fidèle à schema.ts. Table neuve : aucune entrée dans MIGRATIONS_S227/S228
+# nécessaire, `create_all` (scripts/init_db.py) la crée seule.
+
+
+class Entretiens(Base):
+    """S228 — état de l'entretien guidé IA (une ligne par entretien en cours/terminé).
+
+    Table neuve : aucune entrée dans MIGRATIONS_S227/S228 nécessaire, `create_all`
+    (scripts/init_db.py) la crée seule (même motif que VentureDeleteTokens ci-dessus).
+    """
+    __tablename__ = "entretiens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, server_default=text("gen_random_uuid()"))
+    venture_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    section_courante: Mapped[str] = mapped_column(Text, nullable=False)
+    sections_couvertes: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    transcript: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    statut: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'en_cours'"))
+    # Renseigné best-effort si ingestion/audit injoignables à la clôture (jamais bloquant).
+    sync_erreur: Mapped[str | None] = mapped_column(Text)
+    derniere_activite: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text("now()"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text("now()"))
