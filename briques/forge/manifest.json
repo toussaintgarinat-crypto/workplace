@@ -352,6 +352,29 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "forge_entretien_demarrer",
+      "description": "Démarre (ou reprend) l'entretien guidé d'audit d'entreprise pour une venture — creuse organisation/activités/clients/... puis les processus (commercial/production/administratif/communication). Renvoie la première question ou reprend là où on s'était arrêté. ACTION.",
+      "methode": "POST",
+      "chemin": "/ventures/{id}/entretien/demarrer",
+      "params": {
+        "id": {"type": "string", "description": "Id de la venture (via forge_venture ou le dossier).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "forge_entretien_repondre",
+      "description": "Fait avancer l'entretien guidé d'audit d'entreprise d'une venture d'un tour : extrait/fusionne le profil qualitatif ou accumule le processus décrit, puis renvoie la relance ou la question suivante. Normalement appelé automatiquement par le Cœur tant qu'un entretien est actif sur ce fil — à n'utiliser explicitement qu'en cas de besoin. ACTION.",
+      "methode": "POST",
+      "chemin": "/ventures/{id}/entretien/repondre",
+      "params": {
+        "id": {"type": "string", "description": "Id de la venture.", "requis": true},
+        "message": {"type": "string", "description": "La réponse de l'utilisateur à traiter.", "requis": true}
+      },
+      "action": true,
+      "niveau": 1
     }
   ]
 }
