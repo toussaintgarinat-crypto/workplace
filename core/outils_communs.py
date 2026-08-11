@@ -162,7 +162,18 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     url = _url_dynamique(cap, args)
     charge = {k: v for k, v in args.items()
               if v is not None and ("{" + k + "}") not in cap["chemin"]}
-    entetes = _entetes_brique(cap["brique"]) or None
+    # Identité réelle vers l'adaptateur Forge (revue finale S228, Finding C1b) : les
+    # capacités DYNAMIQUES (déclarées en manifeste) n'envoyaient que `_entetes_brique`,
+    # jamais `X-Forge-User-Token` — contrairement aux outils CÂBLÉS (`_forge_appel`).
+    # Résultat : toute capacité `forge_*` du manifeste s'exécutait sous le compte de
+    # SERVICE de l'adaptateur, donc `Ventures.owner_id == user.sub` ne pouvait jamais
+    # matcher la venture du dirigeant (404 systématique sur l'entretien guidé S228).
+    # Cas spécial assumé, comme `BRIQUES_PAR_PERSONNE` plus haut : cet en-tête est
+    # propre à l'adaptateur Forge, jamais diffusé aux autres briques.
+    entetes = _entetes_brique(cap["brique"]) or {}
+    if cap["brique"] == "forge":
+        entetes = {**entetes, **contexte_tenant.entetes_forge()}
+    entetes = entetes or None
     if cap["methode"] == "GET":
         r = await client.request("GET", url, params=charge, headers=entetes)
     else:

@@ -103,6 +103,107 @@ def test_flux_entretien_forge_reponse_malformee_ne_leve_pas():
     assert "not json" in evts[0]["contenu"]
 
 
+def test_flux_entretien_erreur_http_desactive_le_registre():
+    """Revue finale S228, Finding I1 : `repondre()` ne lisait jamais `status_code`. Sur un
+    4xx/5xx de Forge, `statut` restait None (donc pas "termine"), le registre restait
+    ACTIF, et le routage structurel court-circuitait le LLM à chaque tour suivant — fil
+    confisqué sans autre issue qu'un mot-clé de pause. Ça arrive pour de vrai : entretien
+    clôturé hors bande, venture supprimée, Forge redémarré."""
+    class _FakeResp404:
+        status_code = 404
+
+        def json(self):
+            raise AssertionError("le corps ne doit même pas être lu sur une erreur HTTP")
+
+    class _FakeClient:
+        async def post(self, url, **kw):
+            return _FakeResp404()
+
+    entretien_routage.REGISTRE.activer("fil-404", "venture-1")
+
+    async def _run():
+        return [evt async for evt in _flux_entretien(
+            venture_id="venture-1", fil_accord="fil-404", message="On a 5 clients.",
+            client=_FakeClient(), base_forge="http://forge.test/api")]
+
+    evts = asyncio.run(_run())
+    assert entretien_routage.REGISTRE.actif("fil-404") is None, "fil resté confisqué"
+    assert [e["type"] for e in evts] == ["texte", "fin"]
+    contenu = evts[0]["contenu"]
+    assert "404" in contenu
+    assert "continuons" not in contenu.lower(), "message trompeur d'entretien qui avance"
+
+
+def test_repondre_erreur_http_rend_un_statut_interrompu():
+    """Contrat de la charge rendue au flux : ni "termine" (le front annoncerait une
+    clôture réussie), ni un dict vide (le flux relancerait « D'accord, continuons. »)."""
+    class _FakeResp500:
+        status_code = 503
+
+        def json(self):
+            raise AssertionError("corps non lu sur erreur HTTP")
+
+    class _FakeClient:
+        async def post(self, url, **kw):
+            return _FakeResp500()
+
+    entretien_routage.REGISTRE.activer("fil-503", "venture-1")
+    data = asyncio.run(entretien_routage.repondre(
+        registre=None, fil_accord="fil-503", venture_id="venture-1", message="x",
+        client=_FakeClient(), base_forge="http://forge.test/api"))
+    assert data["statut"] == "interrompu"
+    assert data["erreurHttp"] == 503
+    assert entretien_routage.REGISTRE.actif("fil-503") is None
+
+
+def test_flux_entretien_cloture_avec_sync_erreur_est_honnete():
+    """Revue finale S228, Finding I4 : la clôture Forge est best-effort — `statut` vaut
+    "termine" même si le push d'ingestion ou le rappel /auditer a échoué. Annoncer
+    « L'analyse est relancée » dans ce cas est un mensonge."""
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"question": None, "statut": "termine",
+                    "syncErreur": "push ingestion échoué (502)"}
+
+    class _FakeClient:
+        async def post(self, url, **kw):
+            return _FakeResp()
+
+    async def _run():
+        return [evt async for evt in _flux_entretien(
+            venture_id="venture-1", fil_accord="fil-sync", message="Terminé.",
+            client=_FakeClient(), base_forge="http://forge.test/api")]
+
+    evts = asyncio.run(_run())
+    contenu = evts[0]["contenu"]
+    assert "push ingestion échoué (502)" in contenu
+    assert "L'analyse est relancée" not in contenu, "annonce mensongère de succès"
+
+
+def test_flux_entretien_cloture_propre_annonce_toujours_le_succes():
+    """Non-régression du chemin nominal : sans `syncErreur`, le message de succès reste
+    celui d'origine (le fix I4 ne doit pas rendre tous les messages alarmistes)."""
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"question": None, "statut": "termine", "syncErreur": None}
+
+    class _FakeClient:
+        async def post(self, url, **kw):
+            return _FakeResp()
+
+    async def _run():
+        return [evt async for evt in _flux_entretien(
+            venture_id="venture-1", fil_accord="fil-ok", message="Terminé.",
+            client=_FakeClient(), base_forge="http://forge.test/api")]
+
+    evts = asyncio.run(_run())
+    assert "L'analyse est relancée" in evts[0]["contenu"]
+
+
 def test_deux_personnes_meme_fil_entretiens_isoles():
     """web:dashboard est le fil pour TOUT LE MONDE côté web — seule la clé
     (fil, personne) (accord_action.cle) distingue Alice de Bob."""

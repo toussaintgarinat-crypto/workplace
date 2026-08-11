@@ -73,10 +73,39 @@ def test_demarrer_reussi_active_le_registre():
 
 
 def test_demarrer_en_echec_n_active_rien():
+    """Forme d'échec RÉELLE du dispatch dynamique (revue finale S228, Finding C3).
+
+    `forge_entretien_demarrer` est une capacité de MANIFESTE : ses échecs sortent de
+    `outils_communs._appel_dynamique` sous la forme `{"ok": false, "brique", "message"}`
+    — sans aucun champ `erreur`. L'ancienne version de ce test nourrissait
+    `{"erreur": ...}`, une forme que cet outil ne produit jamais : il passait au vert
+    pendant que le vrai chemin d'échec activait le registre et confisquait le fil.
+    """
     _jouer("forge_entretien_demarrer",
            '{"id": "venture-1", "confirme": true}',
-           '{"erreur": "Brique injoignable"}', fil="fil-echec")
+           '{"ok": false, "brique": "forge", "message": "Brique « forge » a refusé (503)."}',
+           fil="fil-echec")
     assert entretien_routage.REGISTRE.actif("fil-echec") is None
+
+
+def test_demarrer_en_echec_forme_erreur_n_active_rien():
+    """Variante `{"erreur": ...}` conservée : la forme que produisent le gate d'action
+    (S222) et les blocages guardrail (S221)."""
+    _jouer("forge_entretien_demarrer",
+           '{"id": "venture-1", "confirme": true}',
+           '{"erreur": "Brique injoignable"}', fil="fil-echec-erreur")
+    assert entretien_routage.REGISTRE.actif("fil-echec-erreur") is None
+
+
+def test_demarrer_sans_venture_id_n_active_rien():
+    """Plus de repli sur `args.get("id")` : une réponse 200 mais sans `ventureId` n'est
+    pas la signature d'un démarrage réussi (le core en renvoie TOUJOURS un). Le repli
+    fabriquait un id de venture à partir des arguments d'appel, y compris sur un
+    résultat qui n'attestait rien."""
+    _jouer("forge_entretien_demarrer",
+           '{"id": "venture-1", "confirme": true}',
+           '{"message": "rien à signaler"}', fil="fil-sans-venture")
+    assert entretien_routage.REGISTRE.actif("fil-sans-venture") is None
 
 
 def test_demarrer_resultat_json_valide_mais_pas_un_objet_ne_plante_pas():
