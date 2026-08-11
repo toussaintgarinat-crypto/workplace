@@ -20,11 +20,13 @@ import logging
 import uuid as uuidlib
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, desc, select, update
 
 from app.auth import UserContext, get_current_user
+from app.config import settings
 from app.db import SessionLocal
 from app.llm import generate_text
 from app.models import Entretiens, Ventures
@@ -292,10 +294,71 @@ async def repondre_entretien(vid: str, body: RepondreBody, user: UserContext = D
 
 
 _PROMPT_DECISION_PROCESSUS = (
-    "STUB — remplacé en Task 5"
+    "Tu mènes un entretien d'audit d'entreprise sur le processus « {zone} ».\n"
+    "Dernière réponse de l'utilisateur : \"{message}\"\n\n"
+    "Décide si ce processus est maintenant suffisamment décrit (de bout en bout), ou s'il "
+    "faut relancer avec une question de suivi CIBLÉE (une réponse courte appelle une "
+    "relance précise, motif : « comment arrive une demande » → « qui répond » → « combien "
+    "de temps » → ...).\n"
+    "Réponds UNIQUEMENT en JSON strict : {{\"couverte\": true|false, \"question\": \"...\"|null}}."
 )
 
 
-async def _cloturer(s, v, row, transcript: str):
-    """STUB — remplacé en Task 5 (push ingestion + rappel /auditer)."""
+async def _cloturer(s, v, row, transcript: str) -> tuple[str, str | None]:
+    """Pousse le transcript vers ingestion (POST /ingerer, JAMAIS /documents/import qui ne
+    propage pas venture_id) puis rappelle POST {AUDIT_URL}/auditer avec tous les doc_ids de
+    la venture. Best-effort : une panne à N'IMPORTE QUELLE étape ne bloque JAMAIS la clôture
+    (`statut` devient toujours "termine"), seul `sync_erreur` signale un défaut de synchro,
+    rejouable en rappelant /entretien/terminer."""
+    if not settings.INGESTION_URL or not settings.AUDIT_URL:
+        return "termine", "ingestion/audit non configurés"
+
+    ingestion_headers = {"X-API-Key": settings.INGESTION_KEY} if settings.INGESTION_KEY else {}
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            fichier = transcript.encode("utf-8")
+            r_push = await c.post(
+                f"{settings.INGESTION_URL.rstrip('/')}/ingerer",
+                files={"fichier": (f"entretien-{v.id}.txt", fichier, "text/plain")},
+                data={"venture_id": str(v.id)},
+                headers=ingestion_headers,
+            )
+            if r_push.status_code >= 400:
+                return "termine", f"push ingestion échoué ({r_push.status_code})"
+
+            r_docs = await c.get(
+                f"{settings.INGESTION_URL.rstrip('/')}/documents",
+                params={"venture_id": str(v.id)}, headers=ingestion_headers,
+            )
+            if r_docs.status_code >= 400:
+                return "termine", f"lecture documents échouée ({r_docs.status_code})"
+            docs_data = r_docs.json()
+            # Corps 200 mais pas un objet (ex. liste brute) : repli honnête plutôt que
+            # planter sur .get()/d["id"] — même garde que _lister_documents/
+            # _lire_audit_business dans ventures.py (revue post-fusion, Fix 3/5).
+            if not isinstance(docs_data, dict):
+                return "termine", "lecture documents : réponse invalide"
+            doc_ids = [d["id"] for d in docs_data.get("documents", []) if isinstance(d, dict) and "id" in d]
+            if not doc_ids:
+                return "termine", "aucun doc_id disponible après push"
+
+            r_audit = await c.post(f"{settings.AUDIT_URL.rstrip('/')}/auditer",
+                                   json={"doc_ids": doc_ids})
+            if r_audit.status_code >= 400:
+                return "termine", f"rappel /auditer échoué ({r_audit.status_code})"
+            audit_data = r_audit.json()
+            if not isinstance(audit_data, dict):
+                return "termine", "rappel /auditer : réponse invalide"
+            audit_id = audit_data.get("id")
+            if not audit_id:
+                return "termine", "rappel /auditer : id manquant dans la réponse"
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError, TypeError, KeyError) as e:
+        # httpx.InvalidURL n'hérite pas de httpx.HTTPError (vérifié httpx 0.28) — même
+        # garde que _lister_documents/_lire_audit_business dans ventures.py. ValueError
+        # couvre json.JSONDecodeError (corps non-JSON) ; TypeError/KeyError couvrent un
+        # accès malformé résiduel sur un corps de réponse inattendu.
+        return "termine", f"panne réseau : {e}"
+
+    v.audit_id = audit_id
+    await s.execute(update(Ventures).where(Ventures.id == v.id).values(audit_id=audit_id))
     return "termine", None

@@ -405,3 +405,148 @@ async def test_repondre_404_aucun_entretien_en_cours_meme_detail_generique(clien
     r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "x"})
     assert r.status_code == 404
     assert r.json()["error"] == "Not found"
+
+
+async def test_repondre_section_processus_accumule_le_transcript(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante="processus.commercial", sections_couvertes=list(
+            s["id"] for s in entretiens_mod.SECTIONS if s["famille"] == "qualitatif"),
+        transcript="", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    # Ordre venture PUIS entretien (ownership vérifiée avant toute lecture
+    # d'Entretiens, cf. revue post-Task 4) — pas l'ordre inverse du brief d'origine.
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        return '{"couverte": false, "question": "Et après le devis, comment ça se passe ?"}'
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre",
+                          json={"message": "Un client appelle, on qualifie, on envoie un devis."})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["question"] == "Et après le devis, comment ça se passe ?"
+    assert "qualifie" in row.transcript
+
+
+async def test_derniere_section_couverte_declenche_la_cloture(client, app, monkeypatch):
+    from types import SimpleNamespace
+    app.dependency_overrides[get_current_user] = _fake_user
+    v = _mk_venture()
+    toutes_sauf_derniere = [s["id"] for s in entretiens_mod.SECTIONS[:-1]]
+    row = SimpleNamespace(
+        id="33333333-3333-3333-3333-333333333333", venture_id=VID,
+        section_courante=entretiens_mod.SECTIONS[-1]["id"], sections_couvertes=toutes_sauf_derniere,
+        transcript="## communication\n", statut="en_cours", sync_erreur=None,
+        derniere_activite=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    # Même correction d'ordre que ci-dessus (venture PUIS entretien).
+    monkeypatch.setattr(entretiens_mod, "SessionLocal",
+                        lambda: _FakeSession(rows_by_call=[[v], [row]]))
+
+    async def _fake_generate(prompt, system=None, **kw):
+        return '{"couverte": true, "question": null}'
+
+    async def _fake_cloturer(s, v, row, transcript):
+        return "termine", None
+
+    monkeypatch.setattr(entretiens_mod, "generate_text", _fake_generate)
+    monkeypatch.setattr(entretiens_mod, "_cloturer", _fake_cloturer)
+
+    r = await client.post(f"/api/ventures/{VID}/entretien/repondre", json={"message": "Par email surtout."})
+    body = r.json()
+    assert body["statut"] == "termine"
+    assert body["question"] is None
+
+
+async def test_cloturer_pousse_le_transcript_puis_rappelle_auditer(monkeypatch):
+    from types import SimpleNamespace
+    v = SimpleNamespace(id=VID, audit_id=None)
+    row = SimpleNamespace(id="e1")
+
+    calls = []
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            calls.append((url, kw))
+            if url.endswith("/ingerer"):
+                return SimpleNamespace(status_code=200, json=lambda: {"id": "doc-transcript"})
+            if url.endswith("/auditer"):
+                return SimpleNamespace(status_code=202, json=lambda: {"id": "audit-new", "statut": "en_cours"})
+            raise AssertionError(f"unexpected POST {url}")
+
+        async def get(self, url, **kw):
+            calls.append((url, kw))
+            return SimpleNamespace(status_code=200, json=lambda: {"documents": [{"id": "doc-transcript"}]})
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(entretiens_mod.settings, "INGESTION_URL", "http://ingestion.test")
+    monkeypatch.setattr(entretiens_mod.settings, "AUDIT_URL", "http://audit.test")
+    monkeypatch.setattr(entretiens_mod.settings, "INGESTION_KEY", "k")
+
+    class _FakeSessionCloture:
+        async def execute(self, *a, **k):
+            return None
+
+    statut, sync_erreur = await entretiens_mod._cloturer(
+        _FakeSessionCloture(), v, row, transcript="## commercial\nOn répond au tel.")
+    assert statut == "termine"
+    assert sync_erreur is None
+    assert v.audit_id == "audit-new"
+    urls = [c[0] for c in calls]
+    assert any(u.endswith("/ingerer") for u in urls)
+    assert any(u.endswith("/auditer") for u in urls)
+
+
+async def test_cloturer_best_effort_si_ingestion_injoignable(monkeypatch):
+    from types import SimpleNamespace
+    import httpx
+    v = SimpleNamespace(id=VID, audit_id=None)
+    row = SimpleNamespace(id="e1")
+
+    class _FakeAsyncClientEnPanne:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            raise httpx.ConnectError("down")
+
+        async def get(self, url, **kw):
+            raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClientEnPanne)
+    monkeypatch.setattr(entretiens_mod.settings, "INGESTION_URL", "http://ingestion.test")
+    monkeypatch.setattr(entretiens_mod.settings, "AUDIT_URL", "http://audit.test")
+
+    class _FakeSessionCloture:
+        async def execute(self, *a, **k):
+            return None
+
+    statut, sync_erreur = await entretiens_mod._cloturer(
+        _FakeSessionCloture(), v, row, transcript="texte")
+    assert statut == "termine"  # ne bloque JAMAIS la clôture
+    assert sync_erreur is not None
+    assert v.audit_id is None  # pas de rappel /auditer possible sans doc_ids
