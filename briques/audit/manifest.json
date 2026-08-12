@@ -1,8 +1,8 @@
 {
   "nom": "audit",
   "famille": "ingestion",
-  "version": "0.1.0",
-  "description": "Audit d'entreprise IA — 4 couches : Territoire (DDD/Canvas/Stakeholders), Flux (VSM/SIPOC/EventStorming), Problèmes (Ishikawa/Pareto/TOC/5Pourquoi), Priorités (CPM/PERT/SWOT/OKRs/MoSCoW)",
+  "version": "0.2.0",
+  "description": "Audit d'entreprise IA — 5 couches : Territoire (DDD/Canvas/Stakeholders), Flux (VSM/SIPOC/EventStorming), Problèmes (Ishikawa/Pareto/TOC/5Pourquoi), Priorités (CPM/PERT/SWOT/OKRs/MoSCoW), ROI (chiffrage euros/heures des problèmes, à la demande)",
   "role": "audit",
   "couche": "backend",
   "statut": "actif",
@@ -18,7 +18,8 @@
     "fiche_territoire",
     "fiche_flux",
     "fiche_problemes",
-    "fiche_priorites"
+    "fiche_priorites",
+    "chiffrage_roi"
   ],
   "besoin": [
     "ingestion_fichier",
@@ -70,6 +71,25 @@
       "methode": "POST",
       "chemin": "/auditer/tout",
       "params": {},
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "audit_chiffrer",
+      "description": "Chiffre en euros/heures les problèmes identifiés par le Pareto de l'audit (5e couche ROI) : combine fréquence, part de temps de travail et coût horaire (fourni par le client par pôle, ou hypothèse LLM sinon — toujours marqué comme tel avec un avertissement de non-garantie). ACTION (appel LLM) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/audits/{audit_id}/chiffrer",
+      "params": {
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit à chiffrer (voir audits_lister). L'audit doit être 'termine'.",
+          "requis": true
+        },
+        "cout_horaire": {
+          "type": "object",
+          "description": "Coût horaire connu du client par pôle, ex: {\"commercial\": 45, \"production\": 38}. Optionnel — les pôles absents reçoivent une fourchette hypothèse LLM, jamais bloquant."
+        }
+      },
       "action": true,
       "niveau": 1
     }
