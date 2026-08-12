@@ -24,16 +24,18 @@ _PLAN_FALLBACK = {
 
 
 async def generer_app_complete(audit: dict, app_id: str = "", api_base: str = "",
-                               oria: dict | None = None, langue: str = "fr") -> tuple[dict, str]:
+                               oria: dict | None = None, langue: str = "fr",
+                               cahier_des_charges: str | None = None) -> tuple[dict, str]:
     """Retourne (plan, html) à partir d'un audit complet.
 
     Si `app_id` + `api_base` sont fournis → app en mode hébergé (persistance serveur) ;
     sinon → mode autonome (localStorage). `oria` (optionnel) = config de la messagerie
     interne (espace + salons) à embarquer dans l'app. `langue` = langue de l'app livrée
-    (contenu LLM + châssis) ; défaut/repli `fr`."""
+    (contenu LLM + châssis) ; défaut/repli `fr`. `cahier_des_charges` (S229, optionnel) =
+    markdown du CDC déjà généré pour cet audit — remplace l'assemblage informel si présent."""
     langue = normaliser_langue(langue)
     try:
-        prompt = prompt_plan_app(audit, langue)
+        prompt = prompt_plan_app(audit, langue, cahier_des_charges)
         plan = await appeler_llm(prompt, langue)
     except Exception:
         # Repli heuristique : le LLM est indisponible. Le plan reste en français

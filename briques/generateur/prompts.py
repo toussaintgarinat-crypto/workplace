@@ -58,49 +58,8 @@ l'intérieur, il est ajouté automatiquement), 2 à 6 paragraphes ou listes selo
 Ne mentionne PAS de chiffrage ROI — cette section est ajoutée séparément.{consigne_langue(langue)}"""
 
 
-def prompt_plan_app(audit: dict, langue: str = "fr") -> str:
-    nom = audit.get("nom_entreprise", "Entreprise inconnue")
-    territoire = audit.get("territoire") or {}
-    flux = audit.get("flux") or {}
-    problemes = audit.get("problemes") or {}
-    priorites = audit.get("priorites") or {}
-
-    canvas = territoire.get("business_model_canvas") or {}
-    ddd = territoire.get("ddd") or {}
-    glossaire = territoire.get("glossaire_metier") or []
-    swot = priorites.get("swot") or {}
-    moscow = priorites.get("moscow") or {}
-    vsm = flux.get("value_stream_map") or {}
-    toc = problemes.get("theory_of_constraints") or {}
-    okrs = priorites.get("okrs_proposes") or []
-
-    contexte = json.dumps({
-        "nom_entreprise": nom,
-        "proposition_valeur": canvas.get("proposition_valeur"),
-        "segments_clients": canvas.get("segments_clients"),
-        "forces": swot.get("forces"),
-        "faiblesses": swot.get("faiblesses"),
-        "opportunites": swot.get("opportunites"),
-        "menaces": swot.get("menaces"),
-        "goulot_principal": toc.get("goulot_principal"),
-        "efficacite_flux_pct": vsm.get("efficacite_flux_pct"),
-        "must_have": moscow.get("must"),
-        "objectifs_okr": [o.get("objectif") for o in okrs[:3]],
-        # ── Vocabulaire métier (langage ubiquitaire) ──
-        "bounded_contexts": ddd.get("bounded_contexts"),
-        "agregats": ddd.get("agregats"),
-        "glossaire_metier": glossaire,
-    }, ensure_ascii=False, indent=2)
-
-    return f"""Voici l'analyse stratégique de l'entreprise "{nom}" :
-{contexte}
-
-RÈGLE DE VOCABULAIRE — la plus importante : cette application doit parler la langue de l'entreprise.
-Utilise SYSTÉMATIQUEMENT les "terme_entreprise" du glossaire_metier et les noms des "agregats"/"bounded_contexts"
-ci-dessus dans TOUS les libellés que tu génères (navigation, entités, KPIs, actions, titres). N'invente pas de
-termes génériques ("Items", "Produits", "Module 1") si l'entreprise a son propre mot.
-
-Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord applicatif :
+def _schema_json_plan_app() -> str:
+    return """Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord applicatif :
 
 - "nom_app" : nom court et percutant pour l'application (ex: "AlphaOps", "VentesPilot")
 - "sous_titre" : slogan ou description en une ligne (max 80 caractères)
@@ -122,8 +81,8 @@ Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord a
         - "label" : le libellé affiché, dans le vocabulaire de l'entreprise (ex: "Nom du client", "Montant TTC")
         - "type" : un parmi "texte" | "nombre" | "montant" | "date" | "statut"
         - "options" : UNIQUEMENT si type = "statut", liste de 2 à 5 valeurs possibles (ex: ["Brouillon","Envoyé","Accepté","Refusé"])
-    - "exemples" : 2 à 3 enregistrements d'exemple réalistes et cohérents avec l'entreprise, chacun un objet {{cle: valeur}} reprenant les "cle" des champs ci-dessus
-- "glossaire" : reprends le glossaire_metier ci-dessus (liste de {{"terme_generique","terme_entreprise","definition"}}), corrigé/complété si besoin. Sert à expliquer le vocabulaire de l'app.
+    - "exemples" : 2 à 3 enregistrements d'exemple réalistes et cohérents avec l'entreprise, chacun un objet {cle: valeur} reprenant les "cle" des champs ci-dessus
+- "glossaire" : reprends le glossaire_metier ci-dessus (liste de {"terme_generique","terme_entreprise","definition"}), corrigé/complété si besoin. Sert à expliquer le vocabulaire de l'app.
 - "kpis" : liste de 4 à 6 indicateurs clés détectés dans l'audit, libellés avec le vocabulaire de l'entreprise, chacun avec :
     - "nom" : libellé court
     - "valeur" : valeur estimée ou constatée (string)
@@ -135,7 +94,77 @@ Génère un JSON avec EXACTEMENT ces clés pour configurer son tableau de bord a
     - "description" : explication en 1 phrase
     - "priorite" : "critique" | "haute" | "normale"
     - "icone" : nom d'icône Bootstrap Icons
-- "message_introduction" : phrase d'accueil personnalisée affichée en haut du dashboard (max 120 caractères)
+- "message_introduction" : phrase d'accueil personnalisée affichée en haut du dashboard (max 120 caractères)"""
+
+
+def prompt_plan_app(audit: dict, langue: str = "fr", cahier_des_charges: str | None = None) -> str:
+    nom = audit.get("nom_entreprise", "Entreprise inconnue")
+    territoire = audit.get("territoire") or {}
+    ddd = territoire.get("ddd") or {}
+    glossaire = territoire.get("glossaire_metier") or []
+
+    regle_vocabulaire = """RÈGLE DE VOCABULAIRE — la plus importante : cette application doit parler la langue de l'entreprise.
+Utilise SYSTÉMATIQUEMENT les "terme_entreprise" du glossaire_metier et les noms des "agregats"/"bounded_contexts"
+ci-dessus dans TOUS les libellés que tu génères (navigation, entités, KPIs, actions, titres). N'invente pas de
+termes génériques ("Items", "Produits", "Module 1") si l'entreprise a son propre mot."""
+
+    if cahier_des_charges:
+        # S229 : le cahier des charges (déjà validé, synthèse structurée des 4 couches de
+        # l'audit) remplace l'assemblage informel SWOT/TOC/OKRs/MoSCoW ci-dessous — traçable
+        # à un document réel et relisable. Le vocabulaire (glossaire/agrégats) reste puisé
+        # directement dans `territoire` : structurellement fiable, il conditionne TOUTES les
+        # sorties, pas seulement une section du CDC.
+        vocabulaire = json.dumps({
+            "nom_entreprise": nom,
+            "bounded_contexts": ddd.get("bounded_contexts"),
+            "agregats": ddd.get("agregats"),
+            "glossaire_metier": glossaire,
+        }, ensure_ascii=False, indent=2)
+        return f"""Voici le CAHIER DES CHARGES validé de "{nom}" — base-toi dessus en priorité pour l'analyse (il est plus complet et plus fiable qu'un audit brut) :
+{cahier_des_charges}
+
+Vocabulaire de l'entreprise (à respecter dans TOUS les libellés) :
+{vocabulaire}
+
+{regle_vocabulaire}
+
+{_schema_json_plan_app()}
+{consigne_langue(langue)}"""
+
+    # Repli : aucun cahier des charges généré pour cet audit — comportement inchangé.
+    canvas = territoire.get("business_model_canvas") or {}
+    flux = audit.get("flux") or {}
+    problemes = audit.get("problemes") or {}
+    priorites = audit.get("priorites") or {}
+    swot = priorites.get("swot") or {}
+    moscow = priorites.get("moscow") or {}
+    vsm = flux.get("value_stream_map") or {}
+    toc = problemes.get("theory_of_constraints") or {}
+    okrs = priorites.get("okrs_proposes") or []
+
+    contexte = json.dumps({
+        "nom_entreprise": nom,
+        "proposition_valeur": canvas.get("proposition_valeur"),
+        "segments_clients": canvas.get("segments_clients"),
+        "forces": swot.get("forces"),
+        "faiblesses": swot.get("faiblesses"),
+        "opportunites": swot.get("opportunites"),
+        "menaces": swot.get("menaces"),
+        "goulot_principal": toc.get("goulot_principal"),
+        "efficacite_flux_pct": vsm.get("efficacite_flux_pct"),
+        "must_have": moscow.get("must"),
+        "objectifs_okr": [o.get("objectif") for o in okrs[:3]],
+        "bounded_contexts": ddd.get("bounded_contexts"),
+        "agregats": ddd.get("agregats"),
+        "glossaire_metier": glossaire,
+    }, ensure_ascii=False, indent=2)
+
+    return f"""Voici l'analyse stratégique de l'entreprise "{nom}" :
+{contexte}
+
+{regle_vocabulaire}
+
+{_schema_json_plan_app()}
 {consigne_langue(langue)}"""
 
 
