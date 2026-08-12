@@ -230,6 +230,37 @@ def test_chiffrer_echec_llm_roi_indisponible_audit_reste_termine(client, monkeyp
     assert resp3.json()["statut"] == "termine"  # jamais remis en cause
 
 
+def test_chiffrer_echec_llm_ne_detruit_pas_un_roi_valide_deja_persiste(client, monkeypatch):
+    """I1 (revue finale S230) : le mappeur compta appelle désormais cette route chaque
+    nuit, sans humain pour remarquer une régression. Un ROI valide déjà calculé ne doit
+    jamais être écrasé par `NULL` juste parce qu'un appel ULTÉRIEUR subit une panne LLM
+    transitoire — la route doit répondre `roi_indisponible` sans toucher à la colonne."""
+    resp = client.post("/audits/import", json={"nom_entreprise": "Precieux SA", "statut": "termine"})
+    audit_id = resp.json()["id"]
+
+    async def faux_llm_ok(prompt):
+        return {"problemes": [{"probleme": "Relances manuelles", "pole": "commercial",
+                                "cout_actuel_estime": {"bas": 500, "haut": 700},
+                                "gain_potentiel_estime": {"bas": 300, "haut": 400}}],
+                "synthese": "Gain notable."}
+    monkeypatch.setattr(chiffrage, "appeler_llm", faux_llm_ok)
+    resp_ok = client.post(f"/audits/{audit_id}/chiffrer")
+    assert resp_ok.json()["statut_roi"] == "termine"
+    roi_valide = resp_ok.json()["roi"]
+
+    async def llm_ko(prompt):
+        raise RuntimeError("Gateway indisponible (panne transitoire)")
+    monkeypatch.setattr(chiffrage, "appeler_llm", llm_ko)
+    resp_ko = client.post(f"/audits/{audit_id}/chiffrer")
+    assert resp_ko.status_code == 200
+    assert resp_ko.json()["statut_roi"] == "roi_indisponible"
+    assert resp_ko.json()["roi"] is None  # cet appel-ci n'a rien produit de neuf
+
+    # Mais la colonne en base n'a PAS été écrasée : le ROI précédent est toujours là.
+    resp3 = client.get(f"/audits/{audit_id}")
+    assert resp3.json()["roi"] == roi_valide
+
+
 def test_avertissement_est_le_litteral_exact_de_la_vision():
     """Garde-fou permanent : une régression qui changerait ce texte (ou le ferait générer
     par le LLM) doit casser CE test explicitement, pas être découverte en prod."""

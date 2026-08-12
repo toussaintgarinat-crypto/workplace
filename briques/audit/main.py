@@ -255,12 +255,18 @@ async def chiffrer_audit(audit_id: str, req: RequeteChiffrer = RequeteChiffrer()
     priorites = json.loads(row["priorites"]) if row["priorites"] else {}
 
     resultat = await chiffrer(territoire, problemes, priorites, req.cout_horaire)
-    with _connexion() as conn:
-        conn.execute(
-            "UPDATE audits SET roi=? WHERE id=?",
-            (json.dumps(resultat, ensure_ascii=False) if resultat else None, audit_id),
-        )
-        conn.commit()
+    if resultat is not None:
+        # N'écrire QUE sur un résultat neuf : un échec LLM transitoire (`chiffrer`
+        # retourne `None`, cf. chiffrage.py) ne doit jamais écraser un ROI valide déjà
+        # persisté par un appel précédent — devenu réaliste depuis que le mappeur
+        # compta (S230) appelle cette route automatiquement chaque nuit, sans humain
+        # pour remarquer la régression (cf. revue finale S230 I1).
+        with _connexion() as conn:
+            conn.execute(
+                "UPDATE audits SET roi=? WHERE id=?",
+                (json.dumps(resultat, ensure_ascii=False), audit_id),
+            )
+            conn.commit()
     return {"id": audit_id, "roi": resultat,
             "statut_roi": "termine" if resultat else "roi_indisponible"}
 
