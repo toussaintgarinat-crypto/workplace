@@ -32,3 +32,21 @@ def test_champs_additionnels_preserves():
 def test_id_obligatoire():
     with pytest.raises(ValidationError):
         Audit.model_validate({"statut": "termine"})
+
+
+def test_audit_declare_le_champ_roi():
+    """Le champ roi doit être explicitement déclaré sur le modèle."""
+    assert "roi" in Audit.model_fields
+
+
+def test_audit_roi_optionnel_et_type_dict():
+    a = Audit.model_validate({
+        "id": "x1", "statut": "termine",
+        "roi": {"problemes": [{"probleme": "x", "statut": "hypothese_llm"}]},
+    })
+    assert a.roi == {"problemes": [{"probleme": "x", "statut": "hypothese_llm"}]}
+
+
+def test_audit_sans_roi_vaut_none():
+    a = Audit(id="x2")
+    assert a.roi is None
