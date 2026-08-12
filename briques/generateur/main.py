@@ -495,6 +495,35 @@ async def cdc_pdf(audit_id: str):
     return {"id": row["id"], "audit_id": audit_id, "pdf_url": pdf_url}
 
 
+@app.post("/audits/{audit_id}/cahier-des-charges/pptx")
+async def cdc_pptx(audit_id: str):
+    row = _dernier_cdc(audit_id)
+    if not row:
+        raise HTTPException(404, "Aucun cahier des charges — lance d'abord POST /cahier-des-charges")
+    if row.get("pptx_chemin"):
+        return {"id": row["id"], "audit_id": audit_id, "pptx_url": row["pptx_chemin"]}
+
+    audit = await _charger_audit(audit_id)
+    nom = audit.get("nom_entreprise") or "Entreprise"
+    diapositives = cdc.construire_diapositives(audit)
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(f"{EXPORT_URL}/pptx", headers=EXPORT_ENTETES, json={
+                "titre": f"Cahier des charges — {nom}",
+                "diapositives": diapositives,
+                "theme": "sobre",
+            })
+            r.raise_for_status()
+            pptx_url = r.json()["url"]
+    except Exception as e:
+        raise HTTPException(502, f"Brique export inaccessible ou en échec : {e}")
+
+    with _connexion() as conn:
+        conn.execute("UPDATE cahiers_des_charges SET pptx_chemin=? WHERE id=?", (pptx_url, row["id"]))
+        conn.commit()
+    return {"id": row["id"], "audit_id": audit_id, "pptx_url": pptx_url}
+
+
 class DemandeRevue(BaseModel):
     # Textes de nouveaux documents observés depuis la livraison (optionnel) — nourrissent
     # le re-audit en plus des données d'usage.
