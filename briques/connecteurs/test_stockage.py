@@ -206,3 +206,42 @@ def test_modifier_source_peut_relier_a_une_venture():
     src = _source()
     stockage.modifier_source("alice", src["id"], venture_id="vt-nouveau")
     assert stockage.source_get("alice", src["id"])["venture_id"] == "vt-nouveau"
+
+
+# ── Statut de mapping (S230) ─────────────────────────────────────────────────
+
+def test_une_sync_neuve_n_a_pas_de_mapping():
+    src = _source()
+    sid = stockage.ouvrir_sync("alice", src["id"])
+    stockage.cloturer_sync(sid, "ok")
+    assert stockage.sync_get("alice", sid)["mapping"] is None
+
+
+def test_enregistrer_un_mapping_reussi():
+    src = _source()
+    sid = stockage.ouvrir_sync("alice", src["id"])
+    stockage.cloturer_sync(sid, "ok")
+    stockage.enregistrer_mapping(sid, "ok")
+    s = stockage.sync_get("alice", sid)
+    assert s["mapping"] == "ok" and s["mapping_erreur"] is None
+
+
+def test_enregistrer_un_mapping_echoue_avec_message():
+    src = _source()
+    sid = stockage.ouvrir_sync("alice", src["id"])
+    stockage.cloturer_sync(sid, "ok")
+    stockage.enregistrer_mapping(sid, "echec", erreur="table contacts absente du cache")
+    s = stockage.sync_get("alice", sid)
+    assert s["mapping"] == "echec"
+    assert "contacts" in s["mapping_erreur"]
+
+
+def test_un_mapping_echoue_ne_change_pas_le_statut_de_la_sync():
+    """Le cœur du principe best-effort : le mapping est une info SÉPARÉE, jamais un
+    override du statut de sync (qui reste `ok` — les données brutes ont bien atterri)."""
+    src = _source()
+    sid = stockage.ouvrir_sync("alice", src["id"])
+    stockage.cloturer_sync(sid, "ok", nb_enregistrements=42)
+    stockage.enregistrer_mapping(sid, "echec", erreur="boom")
+    s = stockage.sync_get("alice", sid)
+    assert s["statut"] == "ok" and s["nb_enregistrements"] == 42
