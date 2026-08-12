@@ -54,7 +54,16 @@ def _mock_forge_get_venture(monkeypatch, profil: dict):
     monkeypatch.setattr(httpx.AsyncClient, "get", _faux_get)
 
 
+def _mock_config_de_crm(monkeypatch, flux: list[str]):
+    """Source CRM (HubSpot) configurée avec CE flux exactement — permet de tester le
+    filtre I2 (n'extraire que ce que la source synchronise réellement)."""
+    def _faux_config_de(tenant, source_id):
+        return "source-hubspot", {}, flux
+    monkeypatch.setattr(mappeurs.stockage, "config_de", _faux_config_de)
+
+
 async def test_mapper_crm_transforme_contacts_et_deals_en_prospects(monkeypatch):
+    _mock_config_de_crm(monkeypatch, ["contacts", "deals"])
     _mock_pont_extraire(monkeypatch, {
         "contacts": [{"id": "1", "properties": {"firstname": "Alice", "lastname": "Durand",
                                                 "email": "alice@x.fr", "phone": "0600000000",
@@ -63,7 +72,7 @@ async def test_mapper_crm_transforme_contacts_et_deals_en_prospects(monkeypatch)
     })
     captures = []
     _mock_forge_post(monkeypatch, captures)
-    _mock_forge_get_venture(monkeypatch, {"clients": {"nb": 0}})
+    _mock_forge_get_venture(monkeypatch, {"connecteurs_crm": {"nb": 0}})
 
     patchs = []
     async def _faux_patch(self, url, **kw):
@@ -83,15 +92,20 @@ async def test_mapper_crm_transforme_contacts_et_deals_en_prospects(monkeypatch)
     deal = next(p for p in corps["prospects"] if p is not contact)
     assert "Contrat annuel" in deal["notes"]
 
-    # profil_entreprise.clients fusionné, pas écrasé (les autres clés survivent).
-    assert patchs[0][1]["profilEntreprise"]["clients"]["nb"] == 2
+    # profil_entreprise.connecteurs_crm fusionné, pas écrasé (les autres clés survivent) —
+    # sous une clé DÉDIÉE, jamais `clients` (catégorie qualitative S228, `list[str]`,
+    # cf. revue finale S230 C1).
+    assert patchs[0][1]["profilEntreprise"]["connecteurs_crm"]["nb"] == 2
 
 
 async def test_mapper_crm_incremente_le_compteur_existant_et_conserve_les_autres_categories(monkeypatch):
     """Fusion non destructive (motif S227/S228, `_fusionner_qualitatif`) + comptage
-    CUMULATIF : une sync incrémentale HubSpot ne rapporte qu'un DELTA de contacts, pas
-    le total connu chez le tiers — écraser `clients.nb` avec ce delta ferait régresser
-    le profil à chaque sync calme."""
+    CUMULATIF via `crees` (pas `len(prospects)`) : `action_extraire` relit le cache en
+    entier à chaque sync (cumulatif, pas un delta) — seul le nombre de leads RÉELLEMENT
+    créés par `crm/import-lot` (dédoublonné) doit s'ajouter au compteur déjà persisté,
+    sous peine de le gonfler de la totalité du cache à chaque sync (cf. revue finale
+    S230 C2)."""
+    _mock_config_de_crm(monkeypatch, ["contacts", "deals"])
     _mock_pont_extraire(monkeypatch, {
         "contacts": [{"id": "1", "properties": {"firstname": "Bob", "lastname": "X",
                                                 "email": "bob@x.fr"}}],
@@ -99,7 +113,7 @@ async def test_mapper_crm_incremente_le_compteur_existant_et_conserve_les_autres
     })
     captures = []
     _mock_forge_post(monkeypatch, captures)
-    _mock_forge_get_venture(monkeypatch, {"organisation": ["SARL"], "clients": {"nb": 5}})
+    _mock_forge_get_venture(monkeypatch, {"organisation": ["SARL"], "connecteurs_crm": {"nb": 5}})
 
     patchs = []
     async def _faux_patch(self, url, **kw):
@@ -109,13 +123,14 @@ async def test_mapper_crm_incremente_le_compteur_existant_et_conserve_les_autres
 
     await mappeurs._mapper_crm("alice", 1, "vt-a", "schema1")
     assert patchs[0]["profilEntreprise"]["organisation"] == ["SARL"]
-    assert patchs[0]["profilEntreprise"]["clients"]["nb"] == 6  # 5 existants + 1 nouveau
+    assert patchs[0]["profilEntreprise"]["connecteurs_crm"]["nb"] == 6  # 5 existants + 1 crees
 
 
 async def test_mapper_crm_sans_nouveau_prospect_ne_touche_pas_a_forge(monkeypatch):
     """Aucun contact/deal neuf ce tour (sync incrémentale calme) : ni lead factice créé
     dans le CRM pour satisfaire la validation « liste non vide » de crm/import-lot, ni
-    écrasement du compteur `clients.nb` avec un delta de zéro."""
+    écrasement du compteur `connecteurs_crm.nb` avec un delta de zéro."""
+    _mock_config_de_crm(monkeypatch, ["contacts", "deals"])
     _mock_pont_extraire(monkeypatch, {"contacts": [], "deals": []})
     appels = []
 
@@ -130,12 +145,67 @@ async def test_mapper_crm_sans_nouveau_prospect_ne_touche_pas_a_forge(monkeypatc
     assert appels == []
 
 
+async def test_mapper_crm_zero_crees_ne_lit_ni_n_ecrit_pas_dans_forge(monkeypatch):
+    """`crm/import-lot` a répondu (des prospects lui ont bien été envoyés) mais TOUS
+    étaient des doublons déjà connus (`crees: 0`) : rien de neuf à compter — le
+    GET/PATCH venture est sauté entièrement (cf. revue finale S230 C1, point 4)."""
+    _mock_config_de_crm(monkeypatch, ["contacts", "deals"])
+    _mock_pont_extraire(monkeypatch, {
+        "contacts": [{"id": "1", "properties": {"firstname": "Bob", "lastname": "X",
+                                                "email": "bob@x.fr"}}],
+        "deals": [],
+    })
+
+    async def _faux_post(self, url, **kw):
+        return _ReponseHttpx(200, {"ok": True, "crees": 0, "doublons": 1, "ignores": 0})
+    monkeypatch.setattr(httpx.AsyncClient, "post", _faux_post)
+
+    appels_get_patch = []
+    async def _traqueur(self, url, **kw):
+        appels_get_patch.append(url)
+        return _ReponseHttpx(200, {})
+    monkeypatch.setattr(httpx.AsyncClient, "get", _traqueur)
+    monkeypatch.setattr(httpx.AsyncClient, "patch", _traqueur)
+
+    await mappeurs._mapper_crm("alice", 1, "vt-a", "schema1")
+    assert appels_get_patch == []
+
+
 async def test_mapper_crm_flux_absent_du_cache_leve(monkeypatch):
     """Le dispatcher (Task 10) attrape ceci et journalise `mapping_echoue` — le mappeur
-    lui-même reste honnête et lève plutôt que d'avaler l'erreur."""
+    lui-même reste honnête et lève plutôt que d'avaler l'erreur. Cas : le flux EST
+    configuré sur la source mais absent du cache (état corrompu/sync partielle), pas
+    simplement un flux non-configuré (cf. test I2 ci-dessous, qui lui ne lève pas)."""
+    _mock_config_de_crm(monkeypatch, ["contacts", "deals"])
     _mock_pont_extraire(monkeypatch, {})  # ni contacts ni deals synchronisés
     with pytest.raises(mappeurs.MappingEchoue, match="contacts"):
         await mappeurs._mapper_crm("alice", 1, "vt-a", "schema1")
+
+
+async def test_mapper_crm_flux_deals_non_configure_importe_seulement_les_contacts(monkeypatch):
+    """I2 (revue finale S230) : une source HubSpot configurée avec `flux: ["contacts"]`
+    seulement (cf. test_main.py:769, hors périmètre S230) est un scénario légitime —
+    elle ne doit JAMAIS tenter d'extraire « deals » (absent du cache par construction,
+    pas par panne) ni lever `MappingEchoue` pour ça."""
+    _mock_config_de_crm(monkeypatch, ["contacts"])  # deals délibérément absent
+    _mock_pont_extraire(monkeypatch, {
+        "contacts": [{"id": "1", "properties": {"firstname": "Alice", "lastname": "Durand",
+                                                "email": "alice@x.fr"}}],
+        # pas de clé "deals" : si le mappeur l'extrayait quand même, `_mock_pont_extraire`
+        # répondrait `{"ok": False, ...}` et une `MappingEchoue` serait levée ici.
+    })
+    captures = []
+    _mock_forge_post(monkeypatch, captures)
+    _mock_forge_get_venture(monkeypatch, {"connecteurs_crm": {"nb": 0}})
+    async def _faux_patch(self, url, **kw):
+        return _ReponseHttpx(200, {})
+    monkeypatch.setattr(httpx.AsyncClient, "patch", _faux_patch)
+
+    await mappeurs._mapper_crm("alice", 1, "vt-a", "schema1")
+
+    corps = captures[0][1]
+    assert len(corps["prospects"]) == 1
+    assert corps["prospects"][0]["email"] == "alice@x.fr"
 
 
 def _mock_config_de(monkeypatch, config: dict):
@@ -181,7 +251,11 @@ async def test_mapper_compta_calcule_un_cout_horaire_par_pole(monkeypatch):
     assert "production" not in corps["cout_horaire"]  # aucune entrée mappée à ce pôle
 
 
-async def test_mapper_compta_ignore_les_entrees_sans_mapping_de_pole(monkeypatch):
+async def test_mapper_compta_ignore_les_entrees_sans_mapping_de_pole_et_ne_chiffre_pas(monkeypatch):
+    """I1 (revue finale S230) : aucune entrée mappable ⇒ `cout_horaire` vide ⇒ rien de
+    neuf à chiffrer. Le POST /chiffrer est sauté entièrement (pas de recalcul LLM
+    nocturne pour zéro information nouvelle) — comportement changé par la revue finale,
+    avant on postait quand même un dict vide."""
     _mock_pont_extraire(monkeypatch, {
         "time_entries": [{"id": 1, "hours": 3.0, "billable_rate": 50.0,
                           "project": {"name": "Projet inconnu"}, "task": {"name": "?"}}]})
@@ -194,7 +268,7 @@ async def test_mapper_compta_ignore_les_entrees_sans_mapping_de_pole(monkeypatch
     monkeypatch.setattr(httpx.AsyncClient, "post", _faux_post)
 
     await mappeurs._mapper_compta("alice", 2, "vt-a", "schema2")
-    assert captures[0]["cout_horaire"] == {}  # rien de mappable ⇒ dict vide, jamais bloquant
+    assert captures == []  # rien de mappable ⇒ cout_horaire vide ⇒ pas d'appel /chiffrer
 
 
 async def test_mapper_compta_sans_audit_id_leve(monkeypatch):

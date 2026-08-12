@@ -80,15 +80,23 @@ def _deal_vers_prospect(deal: dict) -> dict:
 
 async def _mapper_crm(tenant: str, source_id: int, venture_id: str, schema: str) -> None:
     connecteur = "source-hubspot"  # seul connecteur CRM du périmètre S230
-    contacts = await _extraire(connecteur, source_id, schema, "contacts")
-    deals = await _extraire(connecteur, source_id, schema, "deals")
+    _, _config, flux_configures = stockage.config_de(tenant, source_id)
+
+    # Ne pas extraire un flux que la source ne synchronise pas : une source HubSpot
+    # configurée avec `flux: ["contacts"]` (cf. test_main.py:769, hors périmètre S230)
+    # n'a jamais de table « deals » dans le cache — l'extraire lèverait `MappingEchoue`
+    # pour une raison qui n'a rien à voir avec un vrai échec (cf. revue finale S230 I2).
+    contacts = await _extraire(connecteur, source_id, schema, "contacts") \
+        if "contacts" in flux_configures else []
+    deals = await _extraire(connecteur, source_id, schema, "deals") \
+        if "deals" in flux_configures else []
     prospects = [_contact_vers_prospect(c) for c in contacts] + \
                 [_deal_vers_prospect(d) for d in deals]
     if not prospects:
         # Rien de neuf ce tour (sync incrémentale calme — HubSpot ne renvoie que le
-        # delta). Ne RIEN appeler : ni lead factice dans le CRM pour satisfaire la
-        # validation « liste non vide » de crm/import-lot, ni écrasement du compteur
-        # `clients.nb` avec un delta de zéro (cf. commentaire plus bas sur le cumul).
+        # delta, ou flux non configuré). Ne RIEN appeler : ni lead factice dans le CRM
+        # pour satisfaire la validation « liste non vide » de crm/import-lot, ni
+        # écrasement du compteur `connecteurs_crm.nb` avec un delta de zéro.
         return
 
     async with httpx.AsyncClient(timeout=60) as client:
@@ -96,19 +104,31 @@ async def _mapper_crm(tenant: str, source_id: int, venture_id: str, schema: str)
                               json={"prospects": prospects, "venture_id": venture_id},
                               headers=_entetes())
         r.raise_for_status()
+        # `crees` (pas `len(prospects)`) : `action_extraire` (Task 7, `pont/executer.py`)
+        # relit le cache DuckDB en ENTIER à chaque appel — CUMULATIF, jamais un delta
+        # (cf. test_integration_pyairbyte.py:49-52) — donc `len(prospects)` est proche
+        # du total connu chez le tiers, pas d'un delta. `crm/import-lot` dé-doublonne
+        # déjà ; son propre compte de leads RÉELLEMENT créés (`crees`) est le seul
+        # nombre qui ne gonfle pas le compteur à chaque sync (cf. revue finale S230 C2).
+        crees = (r.json() or {}).get("crees") or 0
+        if not crees:
+            # Tout était déjà connu (dédoublonné par `crm/import-lot`) : rien de
+            # nouveau à compter — pas d'écriture inutile dans le profil.
+            return
 
         # Fusion non destructive de profil_entreprise (motif _fusionner_qualitatif,
-        # S227/S228) + comptage CUMULATIF : une sync incrémentale ne rapporte qu'un
-        # DELTA de contacts/deals, jamais le total connu chez le tiers — écraser
-        # `clients.nb` avec ce delta ferait régresser le profil à chaque sync calme.
-        # On ajoute donc au compteur déjà persisté plutôt que de le remplacer. Fenêtre
-        # de course acceptée (best-effort, cadence horloge au pire quotidienne).
+        # S227/S228) sous une clé DÉDIÉE `connecteurs_crm` — jamais `clients`, qui est
+        # une des 9 catégories qualitatives de l'entretien S228 (`entretiens.py`),
+        # stockée en `list[str]` : réutiliser ce nom aurait fait planter `.get("nb", 0)`
+        # sur toute venture déjà passée par l'entretien, et inversement corrompu la
+        # liste qualitative au tour d'entretien suivant (cf. revue finale S230 C1).
         rv = await client.get(f"{FORGE_URL}/ventures/{venture_id}", headers=_entetes())
         rv.raise_for_status()
         profil = (rv.json() or {}).get("profilEntreprise") or {}
-        nb_existant = (profil.get("clients") or {}).get("nb", 0)
-        profil = {**profil, "clients": {"nb": nb_existant + len(prospects),
-                                        "exemples": [p["nom"] for p in prospects[:5]]}}
+        courant = profil.get("connecteurs_crm")
+        nb_existant = courant.get("nb", 0) if isinstance(courant, dict) else 0
+        profil = {**profil, "connecteurs_crm": {"nb": nb_existant + crees,
+                                                 "exemples": [p["nom"] for p in prospects[:5]]}}
         rp = await client.patch(f"{FORGE_URL}/ventures/{venture_id}",
                                 json={"profilEntreprise": profil}, headers=_entetes())
         rp.raise_for_status()
@@ -152,6 +172,13 @@ async def _mapper_compta(tenant: str, source_id: int, venture_id: str, schema: s
         if not audit_id:
             raise MappingEchoue(f"venture {venture_id} sans audit_id — pas de dossier "
                                 f"audit à chiffrer")
+
+        if not cout_horaire:
+            # Aucun pôle n'a de temps mappable/facturable ce tour : rien de neuf à
+            # chiffrer. Appeler quand même déclencherait un recalcul LLM complet chaque
+            # nuit pour zéro information nouvelle (cf. revue finale S230 I1, symétrique
+            # au skip déjà fait par `_mapper_crm` quand `prospects` est vide).
+            return
 
         r = await client.post(f"{AUDIT_URL}/audits/{audit_id}/chiffrer",
                               json={"cout_horaire": cout_horaire})
