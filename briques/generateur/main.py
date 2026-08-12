@@ -106,6 +106,22 @@ def _init_db():
         if "langue" not in cols:
             # Langue de l'app livrée (S37), fixée à la livraison. Défaut/repli 'fr'.
             conn.execute("ALTER TABLE apps ADD COLUMN langue TEXT DEFAULT 'fr'")
+
+        # S229 : cahiers des charges (table neuve, pas de migration de colonnes nécessaire).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cahiers_des_charges (
+                id          TEXT PRIMARY KEY,
+                audit_id    TEXT NOT NULL,
+                markdown    TEXT NOT NULL,
+                pdf_chemin  TEXT,
+                pptx_chemin TEXT,
+                statut      TEXT NOT NULL DEFAULT 'genere',
+                created_at  TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cdc_audit ON cahiers_des_charges(audit_id)"
+        )
         conn.commit()
 
 
@@ -393,6 +409,16 @@ async def _charger_audit(audit_id: str) -> dict:
     except Exception as e:
         print(f"[generateur] audit {audit_id} injoignable pour la revue : {e}")
         return {}
+
+
+def _dernier_cdc(audit_id: str) -> dict | None:
+    with _connexion() as conn:
+        row = conn.execute(
+            "SELECT id, audit_id, markdown, pdf_chemin, pptx_chemin, statut, created_at "
+            "FROM cahiers_des_charges WHERE audit_id=? ORDER BY created_at DESC LIMIT 1",
+            (audit_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 class DemandeRevue(BaseModel):
