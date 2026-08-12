@@ -15,6 +15,7 @@ from shared.schemas.audit import Audit
 from generateur import generer_app_complete
 from gabarit import entites_du_plan, generer_html
 from langues import normaliser_langue
+import cdc
 import oria_provisioning
 import client_provisioning
 import pont_crm
@@ -419,6 +420,43 @@ def _dernier_cdc(audit_id: str) -> dict | None:
             (audit_id,),
         ).fetchone()
     return dict(row) if row else None
+
+
+class DemandeCdc(BaseModel):
+    langue: str = "fr"
+
+
+@app.post("/audits/{audit_id}/cahier-des-charges")
+async def generer_cdc_endpoint(audit_id: str, corps: DemandeCdc | None = None):
+    corps = corps or DemandeCdc()
+    audit = await _charger_audit(audit_id)
+    if not audit:
+        raise HTTPException(404, f"Audit introuvable ou brique Audit inaccessible : {audit_id}")
+    if audit.get("statut") != "termine":
+        raise HTTPException(400, f"L'audit n'est pas terminé (statut : {audit.get('statut')})")
+
+    langue = normaliser_langue(corps.langue)
+    markdown = await cdc.generer_cahier_des_charges(audit, langue)
+
+    cdc_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with _connexion() as conn:
+        conn.execute(
+            "INSERT INTO cahiers_des_charges (id, audit_id, markdown, statut, created_at) "
+            "VALUES (?,?,?,?,?)",
+            (cdc_id, audit_id, markdown, "genere", now),
+        )
+        conn.commit()
+    return {"id": cdc_id, "audit_id": audit_id, "markdown": markdown,
+            "pdf_chemin": None, "pptx_chemin": None, "statut": "genere"}
+
+
+@app.get("/audits/{audit_id}/cahier-des-charges")
+def lire_cdc(audit_id: str):
+    row = _dernier_cdc(audit_id)
+    if not row:
+        raise HTTPException(404, "Aucun cahier des charges — lance d'abord POST /cahier-des-charges")
+    return row
 
 
 class DemandeRevue(BaseModel):
