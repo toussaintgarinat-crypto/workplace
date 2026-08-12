@@ -136,3 +136,70 @@ async def test_mapper_crm_flux_absent_du_cache_leve(monkeypatch):
     _mock_pont_extraire(monkeypatch, {})  # ni contacts ni deals synchronisés
     with pytest.raises(mappeurs.MappingEchoue, match="contacts"):
         await mappeurs._mapper_crm("alice", 1, "vt-a", "schema1")
+
+
+def _mock_config_de(monkeypatch, config: dict):
+    def _faux_config_de(tenant, source_id):
+        return "source-harvest", config, ["time_entries"]
+    monkeypatch.setattr(mappeurs.stockage, "config_de", _faux_config_de)
+
+
+def _mock_forge_get_venture_audit(monkeypatch, audit_id: str):
+    async def _faux_get(self, url, **kw):
+        return _ReponseHttpx(200, {"id": "vt-a", "auditId": audit_id, "profilEntreprise": {}})
+    monkeypatch.setattr(httpx.AsyncClient, "get", _faux_get)
+
+
+async def test_mapper_compta_calcule_un_cout_horaire_par_pole(monkeypatch):
+    _mock_pont_extraire(monkeypatch, {
+        "time_entries": [
+            {"id": 1, "hours": 4.0, "billable_rate": 40.0,
+             "project": {"name": "Vente terrain"}, "task": {"name": "Prospection"}},
+            {"id": 2, "hours": 2.0, "billable_rate": 60.0,
+             "project": {"name": "Vente terrain"}, "task": {"name": "Prospection"}},
+            {"id": 3, "hours": 8.0, "billable_rate": 25.0,
+             "project": {"name": "Compta interne"}, "task": {"name": "Facturation"}},
+        ],
+    })
+    _mock_config_de(monkeypatch, {
+        "mapping_poles": {"Vente terrain": "commercial", "Compta interne": "administratif"}})
+    _mock_forge_get_venture_audit(monkeypatch, "audit-1")
+
+    captures = []
+    async def _faux_post(self, url, **kw):
+        captures.append((url, kw.get("json")))
+        return _ReponseHttpx(200, {"id": "audit-1", "statut_roi": "termine"})
+    monkeypatch.setattr(httpx.AsyncClient, "post", _faux_post)
+
+    await mappeurs._mapper_compta("alice", 2, "vt-a", "schema2")
+
+    url, corps = captures[0]
+    assert url.endswith("/audits/audit-1/chiffrer")
+    # commercial : (4*40 + 2*60) / 6 = 46.666...
+    assert corps["cout_horaire"]["commercial"] == pytest.approx(46.666, rel=1e-3)
+    assert corps["cout_horaire"]["administratif"] == 25.0
+    assert "production" not in corps["cout_horaire"]  # aucune entrée mappée à ce pôle
+
+
+async def test_mapper_compta_ignore_les_entrees_sans_mapping_de_pole(monkeypatch):
+    _mock_pont_extraire(monkeypatch, {
+        "time_entries": [{"id": 1, "hours": 3.0, "billable_rate": 50.0,
+                          "project": {"name": "Projet inconnu"}, "task": {"name": "?"}}]})
+    _mock_config_de(monkeypatch, {"mapping_poles": {"Vente terrain": "commercial"}})
+    _mock_forge_get_venture_audit(monkeypatch, "audit-1")
+    captures = []
+    async def _faux_post(self, url, **kw):
+        captures.append(kw.get("json"))
+        return _ReponseHttpx(200, {})
+    monkeypatch.setattr(httpx.AsyncClient, "post", _faux_post)
+
+    await mappeurs._mapper_compta("alice", 2, "vt-a", "schema2")
+    assert captures[0]["cout_horaire"] == {}  # rien de mappable ⇒ dict vide, jamais bloquant
+
+
+async def test_mapper_compta_sans_audit_id_leve(monkeypatch):
+    _mock_pont_extraire(monkeypatch, {"time_entries": []})
+    _mock_config_de(monkeypatch, {"mapping_poles": {}})
+    _mock_forge_get_venture_audit(monkeypatch, None)
+    with pytest.raises(mappeurs.MappingEchoue, match="audit_id"):
+        await mappeurs._mapper_compta("alice", 2, "vt-a", "schema2")
