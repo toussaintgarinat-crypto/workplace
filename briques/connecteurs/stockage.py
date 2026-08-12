@@ -86,6 +86,13 @@ def initialiser() -> None:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
         if "venture_id" not in cols:
             con.execute("ALTER TABLE sources ADD COLUMN venture_id TEXT")
+        # Migration S230 : statut du mappeur best-effort (CRM/compta), séparé du statut
+        # de sync — un échec de mapping ne doit jamais faire mentir `syncs.statut`.
+        cols_syncs = {r["name"] for r in con.execute("PRAGMA table_info(syncs)").fetchall()}
+        if "mapping" not in cols_syncs:
+            con.execute("ALTER TABLE syncs ADD COLUMN mapping TEXT")
+        if "mapping_erreur" not in cols_syncs:
+            con.execute("ALTER TABLE syncs ADD COLUMN mapping_erreur TEXT")
 
 
 # ── Sources ──────────────────────────────────────────────────────────────────
@@ -211,6 +218,15 @@ def cloturer_sync(sync_id: int, statut: str, *, nb_enregistrements: int = 0,
             (statut, _maintenant(), nb_enregistrements, erreur, sync_id))
 
 
+def enregistrer_mapping(sync_id: int, statut: str, *, erreur: str | None = None) -> None:
+    """Statut du mappeur best-effort (CRM/compta) — SÉPARÉ de `syncs.statut` : un
+    échec de mapping ne fait jamais mentir la sync elle-même (les données brutes ont
+    bien atterri dans le cache, rejouables)."""
+    with _conn() as con:
+        con.execute("UPDATE syncs SET mapping = ?, mapping_erreur = ? WHERE id = ?",
+                    (statut, erreur, sync_id))
+
+
 def avancer_sync(sync_id: int, nb_enregistrements: int) -> None:
     """Met à jour le volume d'une sync EN COURS — sans quoi une sync interrompue
     rapporterait 0 enregistrement alors qu'elle en a bien transféré (et l'opérateur
@@ -225,6 +241,7 @@ def _vue_sync(r: sqlite3.Row) -> dict:
         "id": r["id"], "source_id": r["source_id"], "statut": r["statut"],
         "debut": r["debut"], "fin": r["fin"],
         "nb_enregistrements": r["nb_enregistrements"], "erreur": r["erreur"],
+        "mapping": r["mapping"], "mapping_erreur": r["mapping_erreur"],
     }
 
 
