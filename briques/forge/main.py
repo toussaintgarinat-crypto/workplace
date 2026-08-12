@@ -932,6 +932,34 @@ async def entretien_repondre(vid: str, corps: dict = Body(...)):
     return _json_ou_erreur(r)
 
 
+# ── Lecture/écriture directe d'une venture (S230) ────────────────────────────────
+#
+# Internes : appelées par le mappeur best-effort de la brique `connecteurs` après une
+# sync réussie (résoudre l'audit_id d'un dossier client, patcher profil_entreprise.clients
+# avec les prospects importés). PAS de capacité manifeste — comme `POST /sources` côté
+# connecteurs, lire/écrire une venture arbitraire par id n'est pas une action assistant.
+#
+# Aucune identité utilisateur à propager ici (le mappeur tourne en tâche de fond, sans
+# session Cœur) : `_appel_protege` retombe sur le jeton de service, que le core reconnaît
+# désormais pour ces deux routes (S230, cf. forge/core/app/routers/ventures.py).
+
+@app.get("/ventures/{vid}", summary="Lire une venture par id (interne, hors assistant)")
+async def venture_lire(vid: str):
+    """Proxy service → `GET /api/ventures/{id}`."""
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "GET", f"/api/ventures/{vid}")
+    return _json_ou_erreur(r)
+
+
+@app.patch("/ventures/{vid}", summary="Patcher une venture par id (interne, hors assistant)")
+async def venture_patcher(vid: str, corps: dict = Body(...)):
+    """Proxy service → `PATCH /api/ventures/{id}`. Corps transmis tel quel (mêmes noms
+    de champs que le core, cf. `UpdateVenture`)."""
+    async with await _client(timeout=15) as client:
+        r = await _appel_protege(client, "PATCH", f"/api/ventures/{vid}", json=corps)
+    return _json_ou_erreur(r)
+
+
 @app.post("/facturation/{did}/envoyer", summary="Envoyer une facture au client par email (action)")
 async def facturation_envoyer(did: str):
     """Proxy authentifié → `POST /api/facturation/{id}/envoyer`. ACTION (email + statut envoyée)."""
