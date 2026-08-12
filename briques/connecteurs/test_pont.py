@@ -157,3 +157,32 @@ def test_le_schema_est_un_identifiant_sql_licite():
     """Un tenant est une empreinte ou un `perso:<id>` — le « : » n'est pas licite en SQL."""
     schema = pont.schema_de("perso:marina-durand", 3)
     assert schema.replace("_", "").isalnum() and not schema[0].isdigit()
+
+
+# ── Extraction post-sync (S230) ──────────────────────────────────────────────
+
+def test_extraire_rend_les_lignes_du_flux(faux_executeur):
+    faux_executeur(
+        "import sys, json\n"
+        "recu = json.loads(sys.stdin.read())\n"
+        "assert recu['action'] == 'extraire'\n"
+        "assert recu['flux_extrait'] == 'contacts'\n"
+        "print(json.dumps({'ok': True, 'flux': 'contacts',\n"
+        "                  'lignes': [{'id': 1, 'properties': {'email': 'a@b.fr'}}]}))\n"
+    )
+    r = _executer({"action": "extraire", "connecteur": "source-hubspot",
+                   "flux_extrait": "contacts", "schema": "s1"})
+    assert r["ok"] is True
+    assert r["lignes"] == [{"id": 1, "properties": {"email": "a@b.fr"}}]
+
+
+def test_extraire_un_flux_jamais_synchronise_echoue_proprement(faux_executeur):
+    faux_executeur(
+        "import sys, json\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'ok': False, 'erreur': \"flux « deals » absent du cache"
+        " (jamais synchronisé ?)\"}))\n"
+    )
+    r = _executer({"action": "extraire", "connecteur": "source-hubspot",
+                   "flux_extrait": "deals", "schema": "s1"})
+    assert r["ok"] is False and "jamais synchronisé" in r["erreur"]

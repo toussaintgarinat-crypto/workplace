@@ -104,11 +104,28 @@ def action_etats(job: dict, racine: Path) -> dict:
     return {"ok": True, "etats": _etats_du_cache(_cache(job, racine), job["connecteur"])}
 
 
+def action_extraire(job: dict, racine: Path) -> dict:
+    """Relit les enregistrements d'un flux DÉJÀ synchronisé, sans repasser par une sync.
+
+    C'est ce qui permet au mappeur best-effort (CRM/compta, cf. `mappeurs.py` côté API)
+    de transformer des données sans jamais réimporter `airbyte` de son côté — le contrat
+    reste le même « JSON pauvre » que le reste de ce fichier (cf. docstring de tête).
+    """
+    cache = _cache(job, racine)
+    flux = job["flux_extrait"]
+    if flux not in cache.streams:
+        return {"ok": False,
+                "erreur": f"flux « {flux} » absent du cache (jamais synchronisé ?)"}
+    lignes = [dict(enregistrement) for enregistrement in cache[flux]]
+    return {"ok": True, "flux": flux, "lignes": lignes}
+
+
 ACTIONS = {
     "verifier": action_verifier,
     "flux": action_flux,
     "sync": action_sync,
     "etats": action_etats,
+    "extraire": action_extraire,
 }
 
 
