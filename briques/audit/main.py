@@ -47,6 +47,10 @@ def _init_db():
                 statut         TEXT DEFAULT 'en_cours'
             )
         """)
+        # Migration S229 : colonne roi (5e couche, calculée à la demande via /chiffrer).
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(audits)").fetchall()}
+        if "roi" not in cols:
+            conn.execute("ALTER TABLE audits ADD COLUMN roi TEXT")
         conn.commit()
 
 
@@ -63,7 +67,7 @@ app = FastAPI(title="Audit", version="0.1.0", lifespan=lifespan)
 
 def _audit_vers_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
-    for champ in ("docs_sources", "territoire", "flux", "problemes", "priorites"):
+    for champ in ("docs_sources", "territoire", "flux", "problemes", "priorites", "roi"):
         if d.get(champ):
             try:
                 d[champ] = json.loads(d[champ])
@@ -192,8 +196,8 @@ def importer_audit(audit: dict):
         conn.execute(
             """INSERT OR REPLACE INTO audits
                (id, date_audit, nom_entreprise, docs_sources, territoire, flux,
-                problemes, priorites, statut)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                problemes, priorites, roi, statut)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 audit_id,
                 audit.get("date_audit") or datetime.now(timezone.utc).isoformat(),
@@ -203,6 +207,7 @@ def importer_audit(audit: dict):
                 _ser(audit.get("flux")),
                 _ser(audit.get("problemes")),
                 _ser(audit.get("priorites")),
+                _ser(audit.get("roi")),
                 audit.get("statut") or "termine",
             ),
         )
