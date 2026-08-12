@@ -51,7 +51,7 @@ def test_import_lot_avec_venture_id_resout_le_pole_de_cette_venture(monkeypatch)
 
 
 def test_import_lot_deux_ventures_differentes_ne_se_melangent_pas(monkeypatch):
-    store, _ = _install_faux_core(monkeypatch, {
+    store, appels = _install_faux_core(monkeypatch, {
         "vt-a": [{"id": "pole-a", "type": "sales"}],
         "vt-b": [{"id": "pole-b", "type": "sales"}],
     })
@@ -59,7 +59,10 @@ def test_import_lot_deux_ventures_differentes_ne_se_melangent_pas(monkeypatch):
     client.post("/crm/import-lot", json={"prospects": [{"nom": "Y"}], "venture_id": "vt-b"})
     # Le magasin est partagé dans ce faux core (comme le vrai `/api/poles/{id}/crm`
     # scope par pole_id) — la preuve porte sur le POLE appelé, pas sur un store séparé.
-    # cf. assertion ci-dessus : deux poles distincts ont bien été ciblés.
+    # Assertion réelle (S230 revue finale M1) : les deux appels ont bien résolu deux
+    # URLs de lookup de pôle DIFFÉRENTES (une par venture), pas un fallback partagé.
+    assert ("GET", "/api/ventures/vt-a/poles") in appels
+    assert ("GET", "/api/ventures/vt-b/poles") in appels
 
 
 def test_import_lot_venture_id_absent_le_id_absent_utilise_le_cache_global_existant(monkeypatch):
