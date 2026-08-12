@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+import chiffrage
 
 
 @pytest.fixture
@@ -123,3 +124,52 @@ def test_audit_sans_roi_retourne_champ_absent_ou_null(client):
     audit_id = resp.json()["id"]
     resp2 = client.get(f"/audits/{audit_id}")
     assert resp2.json().get("roi") is None
+
+
+def test_chiffrer_cout_horaire_fourni_marque_fourni_client_et_efface_la_fourchette(monkeypatch):
+    async def faux_llm(prompt):
+        return {"problemes": [{
+            "probleme": "Relances manuelles", "pole": "commercial",
+            "temps_mensuel_heures": 20,
+            "cout_horaire_estime": {"bas": 30, "moyen": 40, "haut": 50},
+            "cout_actuel_estime": {"bas": 500, "haut": 700},
+            "gain_potentiel_estime": {"bas": 300, "haut": 400},
+        }], "synthese": "Gain notable sur les relances."}
+    monkeypatch.setattr(chiffrage, "appeler_llm", faux_llm)
+
+    import asyncio
+    resultat = asyncio.run(chiffrage.chiffrer({}, {}, {}, {"commercial": 45}))
+
+    entree = resultat["problemes"][0]
+    assert entree["statut"] == "fourni_client"
+    assert entree["avertissement"] == chiffrage.AVERTISSEMENT
+    assert entree["cout_horaire_estime"] is None  # le client a fourni son coût, pas besoin d'hypothèse
+
+
+def test_chiffrer_sans_cout_horaire_marque_hypothese_llm(monkeypatch):
+    async def faux_llm(prompt):
+        return {"problemes": [{
+            "probleme": "Saisie manuelle", "pole": "administratif",
+            "temps_mensuel_heures": 10,
+            "cout_horaire_estime": {"bas": 25, "moyen": 30, "haut": 35},
+            "cout_actuel_estime": {"bas": 250, "haut": 350},
+            "gain_potentiel_estime": {"bas": 150, "haut": 200},
+        }]}
+    monkeypatch.setattr(chiffrage, "appeler_llm", faux_llm)
+
+    import asyncio
+    resultat = asyncio.run(chiffrage.chiffrer({}, {}, {}, None))
+
+    entree = resultat["problemes"][0]
+    assert entree["statut"] == "hypothese_llm"
+    assert entree["avertissement"] == chiffrage.AVERTISSEMENT
+    assert entree["cout_horaire_estime"] == {"bas": 25, "moyen": 30, "haut": 35}
+
+
+def test_chiffrer_llm_echoue_retourne_none(monkeypatch):
+    async def llm_ko(prompt):
+        raise RuntimeError("Gateway indisponible")
+    monkeypatch.setattr(chiffrage, "appeler_llm", llm_ko)
+
+    import asyncio
+    assert asyncio.run(chiffrage.chiffrer({}, {}, {}, None)) is None
