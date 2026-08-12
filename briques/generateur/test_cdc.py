@@ -85,3 +85,93 @@ def test_construire_diapositives_5_a_8_slides_avec_avertissement_dans_roi():
     assert 5 <= len(diapos) <= 8
     roi_slide = next(d for d in diapos if d["titre"] == "ROI estimé")
     assert roi_slide["notes"] == cdc.AVERTISSEMENT
+
+
+def test_generer_cdc_audit_inexistant_retourne_404(client, monkeypatch):
+    import main as gen_main
+
+    async def audit_ko(audit_id):
+        return {}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_ko)
+
+    resp = client.post("/audits/audit-inexistant/cahier-des-charges")
+    assert resp.status_code == 404
+
+
+def test_generer_cdc_audit_non_termine_retourne_400(client, monkeypatch):
+    import main as gen_main
+
+    async def audit_en_cours(audit_id):
+        return {"statut": "en_cours"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_en_cours)
+
+    resp = client.post("/audits/audit-en-cours/cahier-des-charges")
+    assert resp.status_code == 400
+
+
+def test_generer_cdc_bout_en_bout_puis_le_lire(client, monkeypatch):
+    import main as gen_main
+    import cdc
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "CDC SA"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    async def faux_llm(prompt, langue="fr"):
+        return {cle: f"Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
+
+    resp = client.post("/audits/cdc-audit-1/cahier-des-charges")
+    assert resp.status_code == 200
+    assert "## Objectifs" in resp.json()["markdown"]
+    assert resp.json()["pdf_chemin"] is None
+
+    resp2 = client.get("/audits/cdc-audit-1/cahier-des-charges")
+    assert resp2.status_code == 200
+    assert resp2.json()["markdown"] == resp.json()["markdown"]
+
+
+def test_lire_cdc_sans_generation_prealable_retourne_404(client):
+    resp = client.get("/audits/jamais-genere/cahier-des-charges")
+    assert resp.status_code == 404
+
+
+def test_generer_cdc_deux_fois_lit_le_plus_recent(client, monkeypatch):
+    """Extra test for DESC ordering: verify that when multiple CDC rows exist for the same
+    audit_id, the newest (most recent created_at) is returned."""
+    import main as gen_main
+    import cdc
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "CDC SA"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    call_count = [0]
+
+    async def faux_llm_variable(prompt, langue="fr"):
+        """Return different content based on call count to verify we get the latest."""
+        call_count[0] += 1
+        marker = f"MARKER_{call_count[0]}"
+        return {cle: f"{marker} Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm_variable)
+
+    # Generate CDC the first time
+    resp1 = client.post("/audits/cdc-audit-multi/cahier-des-charges")
+    assert resp1.status_code == 200
+    first_markdown = resp1.json()["markdown"]
+    assert "MARKER_1" in first_markdown
+
+    # Generate CDC the second time
+    resp2 = client.post("/audits/cdc-audit-multi/cahier-des-charges")
+    assert resp2.status_code == 200
+    second_markdown = resp2.json()["markdown"]
+    assert "MARKER_2" in second_markdown
+
+    # Read should return the SECOND (newest) one
+    resp3 = client.get("/audits/cdc-audit-multi/cahier-des-charges")
+    assert resp3.status_code == 200
+    read_markdown = resp3.json()["markdown"]
+    assert read_markdown == second_markdown
+    assert "MARKER_2" in read_markdown
+    assert "MARKER_1" not in read_markdown
