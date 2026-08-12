@@ -47,6 +47,9 @@ apps_exportees/
 # Worktrees jetables (superpowers:using-git-worktrees).
 .worktrees/
 
+# Ledger scratch de subagent-driven-development (progrès inter-tâches, jamais versionné).
+.superpowers/
+
 # S197 — livekit-sip est un fork Go+GStreamer buildé en local depuis
 # suitenumerique/livekit-sip@sip-video ; code non modifié par Workplace, jamais commité
 # (même motif que node_modules) — voir sip-stack/README.md pour la commande de clonage.
