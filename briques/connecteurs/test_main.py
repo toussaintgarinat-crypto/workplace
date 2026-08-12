@@ -325,3 +325,54 @@ def test_venture_id_absent_des_capacites_du_manifeste():
                 if c.get("action")}
     assert ("POST", "/sources") not in ecritures
     assert ("PATCH", "/sources/{source_id}") not in ecritures
+
+
+def test_une_sync_reussie_declenche_le_mappeur_si_connecteur_mappable(client, executeur, monkeypatch):
+    appele = []
+    async def _faux_mapper(tenant, source_id, connecteur, sync_id, schema):
+        appele.append((tenant, source_id, connecteur, sync_id, schema))
+    monkeypatch.setattr(main.mappeurs, "mapper_apres_sync", _faux_mapper)
+
+    executeur(SYNC_OK)
+    r = client.post("/sources", json={
+        "nom": "hubspot-a", "connecteur": "source-hubspot",
+        "config": {"credentials": {"access_token": "x"}}, "flux": ["contacts", "deals"],
+        "venture_id": "vt-a"})
+    sid = r.json()["id"]
+    sync = client.post(f"/sources/{sid}/sync").json()
+    time.sleep(0.2)  # laisse `_syncer` (tâche de fond) se terminer
+    assert len(appele) == 1
+    assert appele[0][2] == "source-hubspot"
+
+
+def test_une_sync_reussie_ne_declenche_rien_pour_un_connecteur_non_mappable(client, executeur, monkeypatch):
+    # `_syncer` appelle `mapper_apres_sync` sans condition (Step 7) : c'est le
+    # dispatcher lui-même (Step 3) qui filtre CRM/compta vs le reste. On laisse donc
+    # le vrai `mapper_apres_sync` tourner et on vérifie qu'il ne descend jamais
+    # jusqu'aux mappeurs concrets pour un connecteur hors périmètre (source-github) —
+    # même test de fond que `test_mapper_apres_sync_connecteur_non_mappable_ne_fait_rien`
+    # dans test_mappeurs.py, mais vérifié ici bout-en-bout via la vraie route HTTP.
+    appele = []
+    monkeypatch.setattr(main.mappeurs, "_mapper_crm", lambda *a: appele.append("crm"))
+    monkeypatch.setattr(main.mappeurs, "_mapper_compta", lambda *a: appele.append("compta"))
+    executeur(SYNC_OK)
+    r = _creer(client)  # source-github, motif existant
+    sid = r["id"]
+    client.post(f"/sources/{sid}/sync")
+    time.sleep(0.2)
+    assert appele == []
+
+
+def test_un_mappeur_qui_leve_ne_fait_pas_echouer_la_sync(client, executeur, monkeypatch):
+    async def _casse(*a):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(main.mappeurs, "mapper_apres_sync", _casse)
+    executeur(SYNC_OK)
+    r = client.post("/sources", json={
+        "nom": "hubspot-b", "connecteur": "source-hubspot",
+        "config": {}, "flux": ["contacts"], "venture_id": "vt-b"})
+    sid = r.json()["id"]
+    sync = client.post(f"/sources/{sid}/sync").json()
+    time.sleep(0.2)
+    fini = client.get(f"/syncs/{sync['id']}").json()
+    assert fini["statut"] == "ok"  # la sync elle-même n'a jamais vu passer l'exception

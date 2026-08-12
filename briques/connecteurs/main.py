@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import coffre
+import mappeurs
 import pont
 import stockage
 
@@ -221,8 +222,9 @@ async def _syncer(tenant: str, source_id: int, sync_id: int, complet: bool) -> N
         stockage.cloturer_sync(sync_id, "echec", erreur="source supprimée pendant la sync")
         return
     connecteur, config, flux = details
+    schema = pont.schema_de(tenant, source_id)
     job = {"action": "sync", "connecteur": connecteur, "config": config, "flux": flux,
-           "complet": complet, "schema": pont.schema_de(tenant, source_id),
+           "complet": complet, "schema": schema,
            "racine": os.getenv("CONNECTEURS_TRAVAIL", "/travail")}
     try:
         reponse = await pont.executer(job)
@@ -241,6 +243,10 @@ async def _syncer(tenant: str, source_id: int, sync_id: int, complet: bool) -> N
         stockage.enregistrer_etat(source_id, nom_flux, curseur)
     stockage.cloturer_sync(sync_id, "ok",
                            nb_enregistrements=int(reponse.get("nb_enregistrements") or 0))
+
+    # S230 : mappage best-effort, APRÈS que la sync soit close avec son propre statut —
+    # un échec de mapping ne doit jamais pouvoir faire mentir `syncs.statut`.
+    await mappeurs.mapper_apres_sync(tenant, source_id, connecteur, sync_id, schema)
 
 
 def _lancer_sync(tenant: str, source_id: int, complet: bool = False) -> dict:

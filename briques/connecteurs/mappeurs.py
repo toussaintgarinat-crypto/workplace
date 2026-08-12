@@ -156,3 +156,35 @@ async def _mapper_compta(tenant: str, source_id: int, venture_id: str, schema: s
         r = await client.post(f"{AUDIT_URL}/audits/{audit_id}/chiffrer",
                               json={"cout_horaire": cout_horaire})
         r.raise_for_status()
+
+
+# ── Dispatcher (S230 — point d'entrée unique appelé par `main.py::_syncer`) ──────────
+
+async def mapper_apres_sync(tenant: str, source_id: int, connecteur: str, sync_id: int,
+                            schema: str) -> None:
+    """Point d'entrée UNIQUE appelé par `main.py::_syncer` après une sync réussie.
+
+    Ne lève JAMAIS : c'est le principe best-effort du sprint (cf. docstring de tête).
+    Journalise `syncs.mapping` — `None` si le connecteur n'est ni CRM ni compta (pas
+    même une tentative), `ok`/`echec` sinon.
+    """
+    if connecteur in CONNECTEURS_CRM:
+        mapper = _mapper_crm
+    elif connecteur in CONNECTEURS_COMPTA:
+        mapper = _mapper_compta
+    else:
+        return  # connecteur hors périmètre S230 : rien à mapper, rien à journaliser
+
+    venture_id = stockage.venture_id_de(source_id)
+    if not venture_id:
+        stockage.enregistrer_mapping(
+            sync_id, "echec",
+            erreur="source sans venture_id — impossible de savoir quel dossier client alimenter")
+        return
+
+    try:
+        await mapper(tenant, source_id, venture_id, schema)
+    except Exception as e:  # noqa: BLE001 — best-effort strict, cf. docstring de tête
+        stockage.enregistrer_mapping(sync_id, "echec", erreur=str(e))
+        return
+    stockage.enregistrer_mapping(sync_id, "ok")
