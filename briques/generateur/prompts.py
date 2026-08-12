@@ -3,6 +3,61 @@ import json
 from langues import consigne_langue
 
 
+_SECTIONS_CDC = [
+    ("objectifs", "Objectifs"),
+    ("utilisateurs", "Utilisateurs"),
+    ("fonctionnalites", "Fonctionnalités"),
+    ("regles_metier", "Règles métier"),
+    ("architecture", "Architecture"),
+    ("api", "API"),
+    ("base_de_donnees", "Base de données"),
+    ("interfaces", "Interfaces"),
+    ("integrations", "Intégrations"),
+    ("securite", "Sécurité"),
+    ("tests", "Tests"),
+    ("criteres_acceptation", "Critères d'acceptation"),
+]
+
+
+def prompt_cahier_des_charges(audit: dict, langue: str = "fr") -> str:
+    nom = audit.get("nom_entreprise", "Entreprise inconnue")
+    territoire = audit.get("territoire") or {}
+    flux = audit.get("flux") or {}
+    problemes = audit.get("problemes") or {}
+    priorites = audit.get("priorites") or {}
+
+    contexte = json.dumps({
+        "nom_entreprise": nom,
+        "business_model_canvas": territoire.get("business_model_canvas"),
+        "ddd": territoire.get("ddd"),
+        "glossaire_metier": territoire.get("glossaire_metier"),
+        "value_stream_map": flux.get("value_stream_map"),
+        "processus_cles": flux.get("processus_cles"),
+        "ishikawa": problemes.get("ishikawa"),
+        "theory_of_constraints": problemes.get("theory_of_constraints"),
+        "moscow": priorites.get("moscow"),
+        "chemin_critique": priorites.get("chemin_critique"),
+        "swot": priorites.get("swot"),
+        "okrs_proposes": priorites.get("okrs_proposes"),
+    }, ensure_ascii=False, indent=2)
+
+    cles = "\n".join(f'- "{cle}" : section "{titre}"' for cle, titre in _SECTIONS_CDC)
+
+    return f"""Voici l'audit complet de l'entreprise "{nom}" :
+{contexte}
+
+Rédige un cahier des charges formel pour l'application sur-mesure à livrer à cette
+entreprise. Utilise le vocabulaire de l'entreprise (glossaire_metier, ddd) partout où
+c'est pertinent. Base les fonctionnalités sur le moscow (Must/Should/Could/Won't).
+
+Retourne un JSON avec exactement ces clés, chacune un TEXTE markdown (pas un objet) :
+{cles}
+
+Chaque section doit être un texte markdown autonome et lisible (pas de titre ## à
+l'intérieur, il est ajouté automatiquement), 2 à 6 paragraphes ou listes selon la section.
+Ne mentionne PAS de chiffrage ROI — cette section est ajoutée séparément.{consigne_langue(langue)}"""
+
+
 def prompt_plan_app(audit: dict, langue: str = "fr") -> str:
     nom = audit.get("nom_entreprise", "Entreprise inconnue")
     territoire = audit.get("territoire") or {}
