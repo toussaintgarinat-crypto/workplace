@@ -194,3 +194,19 @@ def test_une_config_invalide_echoue_proprement(racine):
                    "config": {"count": "pas un nombre"}, "flux": FLUX,
                    "schema": "x", "racine": racine})
     assert r["ok"] is False
+
+
+def test_extraire_relit_les_lignes_deja_synchronisees(racine):
+    """Preuve réelle de action_extraire : source-faker/users (déjà synchronisé par
+    `test_une_sync_transfere_et_rend_un_curseur_non_vide` ci-dessus, racine partagée)."""
+    r = _executer(_job("extraire", racine, flux_extrait="users"))
+    assert r["ok"] is True, r
+    assert r["flux"] == "users"
+    assert len(r["lignes"]) == 300
+    assert "id" in r["lignes"][0]
+
+
+def test_extraire_un_flux_jamais_synchronise_echoue_proprement(racine_neuve):
+    r = _executer(_job("extraire", racine_neuve, flux_extrait="users"))
+    assert r["ok"] is False
+    assert "jamais synchronisé" in r["erreur"]
