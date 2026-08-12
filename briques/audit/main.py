@@ -239,8 +239,7 @@ def lire_audit(audit_id: str):
 
 
 @app.post("/audits/{audit_id}/chiffrer")
-async def chiffrer_audit(audit_id: str, req: RequeteChiffrer | None = None):
-    req = req or RequeteChiffrer()
+async def chiffrer_audit(audit_id: str, req: RequeteChiffrer = RequeteChiffrer()):
     with _connexion() as conn:
         row = conn.execute(
             "SELECT territoire, flux, problemes, priorites, statut FROM audits WHERE id=?",
