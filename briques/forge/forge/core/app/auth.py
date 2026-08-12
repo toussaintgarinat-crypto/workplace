@@ -49,6 +49,11 @@ class UserContext:
     avatar_emoji: str
     org_id: str | None
     venture_scopes: frozenset[str] = frozenset()  # S227 — role client_lecture
+    # S230 — jeton client_credentials émis directement au client `forge-service`
+    # (distinct d'un jeton utilisateur qui transite PAR ce client). Permet aux routes
+    # scopées par owner_id de reconnaître un appelant de service de confiance sans
+    # élargir `client_lecture` (qui reste lecture-seule, inchangé).
+    est_service: bool = False
 
 
 def _membre_actif(query):
@@ -228,6 +233,14 @@ async def _resolve_venture_scopes(session, user_id: str) -> frozenset[str]:
     return frozenset(rows)
 
 
+def _est_compte_service(payload: dict) -> bool:
+    """`azp` (authorized party) porte le client_id qui a demandé le jeton — stable pour
+    un jeton client_credentials émis directement au client `forge-service` (contrairement
+    à `sub`, qui varie par utilisateur provisionné). Un jeton utilisateur normal, même
+    émis pour un AUTRE client public (ex. `coeur-web`), a un `azp` différent."""
+    return payload.get("azp") == settings.FORGE_SERVICE_CLIENT_ID
+
+
 async def get_current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -252,6 +265,7 @@ async def get_current_user(
             avatar_emoji=user.avatar_emoji or "👤",
             org_id=org_id,
             venture_scopes=venture_scopes,
+            est_service=_est_compte_service(payload),
         )
 
 

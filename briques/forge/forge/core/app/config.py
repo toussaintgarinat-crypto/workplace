@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     KEYCLOAK_REALM: str = "forge"
     KEYCLOAK_AUDIENCE: str = ""  # vide = verify_aud désactivé (multi-tenant)
 
+    # S230 — identité du compte de service côté core : permet à `get_venture`/
+    # `update_venture` de reconnaître un appel de service (ex. le mappeur best-effort
+    # de la brique `connecteurs`, qui tourne sans JWT utilisateur à propager) plutôt que
+    # de le traiter comme un utilisateur normal soumis à `owner_id`. Même valeur par
+    # défaut que `FORGE_SERVICE_CLIENT_ID` côté adaptateur (briques/forge/main.py) —
+    # à aligner explicitement si les deux services ont des .env séparés.
+    FORGE_SERVICE_CLIENT_ID: str = "forge-service"
+
     # ── LLM (S128) — tout passe par la LiteLLM Gateway (OpenAI-compatible) ─
     DEFAULT_LLM_PROVIDER: str = "opencode"
     DEFAULT_LLM_MODEL: str = "go/deepseek-v4-flash"

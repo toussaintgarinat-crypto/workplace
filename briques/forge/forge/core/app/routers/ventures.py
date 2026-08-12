@@ -128,9 +128,19 @@ async def create_venture(body: CreateVenture, response: Response, request: Reque
 async def get_venture(vid: str, user: UserContext = Depends(get_current_user)):
     u = _uuid(vid)
     async with SessionLocal() as s:
-        v = (await s.execute(
-            select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
-        )).scalar_one_or_none() if u else None
+        if u is None:
+            v = None
+        elif user.est_service:
+            # S230 — le mappeur best-effort de `connecteurs` appelle avec le jeton de
+            # service, sans JWT utilisateur à propager : il n'y a pas de owner_id à
+            # matcher. Le compte de service est déjà digne de confiance pour CRÉER une
+            # venture sans restriction (POST /ventures ci-dessus) ; ceci aligne juste la
+            # lecture par id sur la même confiance.
+            v = (await s.execute(select(Ventures).where(Ventures.id == u))).scalar_one_or_none()
+        else:
+            v = (await s.execute(
+                select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+            )).scalar_one_or_none()
         if v is None:
             raise HTTPException(status_code=404, detail="Not found")
         members = (await s.execute(
@@ -159,14 +169,17 @@ async def update_venture(vid: str, body: UpdateVenture, user: UserContext = Depe
     async with SessionLocal() as s:
         v = None
         if u:
+            # S230 : même bascule que get_venture — le compte de service peut écrire
+            # une venture par id sans en être le owner_id historique.
+            condition = (Ventures.id == u) if user.est_service else \
+                and_(Ventures.id == u, Ventures.owner_id == user.sub)
             await s.execute(
-                update(Ventures)
-                .where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+                update(Ventures).where(condition)
                 .values(updated_at=datetime.utcnow(), **cols)
             )
             await s.commit()
             v = (await s.execute(
-                select(Ventures).where(and_(Ventures.id == u, Ventures.owner_id == user.sub))
+                select(Ventures).where(condition)
             )).scalar_one_or_none()
     return venture(v) if v else None
 
