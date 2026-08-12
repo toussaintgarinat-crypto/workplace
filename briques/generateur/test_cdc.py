@@ -175,3 +175,79 @@ def test_generer_cdc_deux_fois_lit_le_plus_recent(client, monkeypatch):
     assert read_markdown == second_markdown
     assert "MARKER_2" in read_markdown
     assert "MARKER_1" not in read_markdown
+
+
+def test_pdf_sans_cdc_retourne_404(client):
+    resp = client.get("/audits/jamais-genere/cahier-des-charges/pdf")
+    assert resp.status_code == 404
+
+
+def test_pdf_genere_via_export_puis_reutilise_le_lien_stocke(client, monkeypatch):
+    import main as gen_main
+    import cdc
+    import httpx
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "PDF SA"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    async def faux_llm(prompt, langue="fr"):
+        return {cle: f"Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
+
+    client.post("/audits/pdf-audit-1/cahier-des-charges")
+
+    appels = {"n": 0}
+    _VRAI_CLIENT = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        appels["n"] += 1
+        return httpx.Response(200, json={"url": "/fichiers/export-abc123.pdf", "fichier": "export-abc123.pdf"})
+
+    def faux_async_client(*a, **k):
+        k.pop("timeout", None)
+        return _VRAI_CLIENT(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(gen_main.httpx, "AsyncClient", faux_async_client)
+
+    resp = client.get("/audits/pdf-audit-1/cahier-des-charges/pdf")
+    assert resp.status_code == 200
+    assert resp.json()["pdf_url"] == "/fichiers/export-abc123.pdf"
+    assert appels["n"] == 1
+
+    resp2 = client.get("/audits/pdf-audit-1/cahier-des-charges/pdf")
+    assert resp2.json()["pdf_url"] == "/fichiers/export-abc123.pdf"
+    assert appels["n"] == 1  # pas de second appel réseau : déjà stocké
+
+
+def test_pdf_export_injoignable_retourne_502(client, monkeypatch):
+    import main as gen_main
+    import cdc
+    import httpx
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "PDF KO SA"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    async def faux_llm(prompt, langue="fr"):
+        return {cle: f"Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
+
+    client.post("/audits/pdf-audit-ko/cahier-des-charges")
+
+    _VRAI_CLIENT = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("export down")
+
+    def faux_async_client(*a, **k):
+        k.pop("timeout", None)
+        return _VRAI_CLIENT(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(gen_main.httpx, "AsyncClient", faux_async_client)
+
+    resp = client.get("/audits/pdf-audit-ko/cahier-des-charges/pdf")
+    assert resp.status_code == 502
+
+    # Le markdown reste consultable malgré l'échec d'export.
+    resp2 = client.get("/audits/pdf-audit-ko/cahier-des-charges")
+    assert resp2.status_code == 200
+    assert resp2.json()["pdf_chemin"] is None

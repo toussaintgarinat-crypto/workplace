@@ -31,6 +31,9 @@ services:
       - DONNEES_URL_INTERNE=http://host.docker.internal:5500
       - DONNEES_URL_PUBLIQUE=http://localhost:5500
       - DONNEES_SRC=/briques_src/donnees
+      # Export PDF/PPTX du cahier des charges (S229). EXPORT_KEY (si la brique export est
+      # fermée par API_KEYS) vient du .env racine via env_file — jamais redéclarée ici.
+      - EXPORT_URL=http://host.docker.internal:6150
       # Bundles (S95) : racine des sources de briques montées (cf. volumes).
       - BRIQUES_SRC=/briques_src/briques
       # Pont consenti app→CRM (S24) : la brique forge (adaptateur) écrit dans le CRM

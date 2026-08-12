@@ -28,6 +28,14 @@ AUDIT_URL = os.getenv("AUDIT_URL", "http://host.docker.internal:5300")
 DB_PATH = os.getenv("DB_PATH", "/data/apps.db")
 EXPORT_DIR = os.getenv("EXPORT_DIR", "/export")
 
+# Brique « export » (S229) : rendu PDF/PPTX déterministe (aucune IA, aucun coût).
+# Peut être fermée par API_KEYS (S211, même motif que INGESTION_KEY côté audit) — présenter
+# la clé si elle existe. NE JAMAIS déclarer `EXPORT_KEY=${EXPORT_KEY:-}` dans docker-compose
+# (piège « env shadow » : chaîne vide qui écraserait la vraie valeur du .env racine).
+EXPORT_URL = os.getenv("EXPORT_URL", "http://host.docker.internal:6150")
+_EXPORT_CLE = os.getenv("EXPORT_KEY")
+EXPORT_ENTETES = {"X-API-Key": _EXPORT_CLE} if _EXPORT_CLE else {}
+
 # Bundles (S95→S97) : racine des sources de briques + du Cœur montées en lecture seule
 # (cf. docker-compose). Sert à lister les briques cochables et à composer une solution
 # par client. En dev hors-Docker, repli sur l'arborescence du dépôt.
@@ -457,6 +465,34 @@ def lire_cdc(audit_id: str):
     if not row:
         raise HTTPException(404, "Aucun cahier des charges — lance d'abord POST /cahier-des-charges")
     return row
+
+
+@app.get("/audits/{audit_id}/cahier-des-charges/pdf")
+async def cdc_pdf(audit_id: str):
+    row = _dernier_cdc(audit_id)
+    if not row:
+        raise HTTPException(404, "Aucun cahier des charges — lance d'abord POST /cahier-des-charges")
+    if row.get("pdf_chemin"):
+        return {"id": row["id"], "audit_id": audit_id, "pdf_url": row["pdf_chemin"]}
+
+    audit = await _charger_audit(audit_id)
+    nom = audit.get("nom_entreprise") or "Entreprise"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(f"{EXPORT_URL}/pdf", headers=EXPORT_ENTETES, json={
+                "titre": f"Cahier des charges — {nom}",
+                "markdown": row["markdown"],
+                "theme": "rapport",
+            })
+            r.raise_for_status()
+            pdf_url = r.json()["url"]
+    except Exception as e:
+        raise HTTPException(502, f"Brique export inaccessible ou en échec : {e}")
+
+    with _connexion() as conn:
+        conn.execute("UPDATE cahiers_des_charges SET pdf_chemin=? WHERE id=?", (pdf_url, row["id"]))
+        conn.commit()
+    return {"id": row["id"], "audit_id": audit_id, "pdf_url": pdf_url}
 
 
 class DemandeRevue(BaseModel):
