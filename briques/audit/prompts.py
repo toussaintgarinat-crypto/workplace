@@ -69,3 +69,32 @@ Retourne un JSON avec :
 - "swot" : forces/faiblesses internes, opportunités/menaces externes — 3-5 points chacun
 - "okrs_proposes" : propose 2-3 OKRs (Objectif + 2-3 Key Results mesurables avec valeur cible) en réponse aux problèmes identifiés
 - "moscow" : classe les fonctionnalités à générer pour l'app sur-mesure : Must (indispensable), Should (important), Could (utile si le temps le permet), Won't (hors scope v1)"""
+
+
+def prompt_roi(territoire_json: str, problemes_json: str, priorites_json: str,
+               cout_horaire_json: str) -> str:
+    return f"""Territoire (dont repartition_ca[].temps_pct) : {territoire_json}
+Problèmes (dont pareto : impact %, fréquence %) : {problemes_json}
+Priorités (dont moscow, chemin_critique) : {priorites_json}
+
+Coût horaire connu du client par pôle (peut être vide) : {cout_horaire_json}
+
+Pour CHAQUE problème listé dans pareto, chiffre son coût actuel et son gain potentiel après
+automatisation. Combine sa fréquence (pareto) avec le temps_pct de l'activité concernée
+(repartition_ca) pour estimer un temps mensuel en heures. Le coût après automatisation
+s'appuie sur la complexité de la solution proposée dans moscow/chemin_critique.
+
+Retourne un JSON avec exactement ces clés :
+- "problemes" : liste d'objets, un par problème du pareto, chacun avec :
+    - "probleme" : le libellé du problème (repris du pareto)
+    - "pole" : "commercial" | "production" | "administratif" — le pôle métier concerné
+    - "temps_mensuel_heures" : NOMBRE d'heures/mois estimées consommées par ce problème
+    - "cout_horaire_estime" : SI le pôle n'est PAS dans le coût horaire connu du client,
+      une fourchette {{"bas":NOMBRE,"moyen":NOMBRE,"haut":NOMBRE}} en euros/heure plausible
+      pour ce type de poste ; sinon null (le coût horaire du client sera utilisé tel quel)
+    - "cout_actuel_estime" : {{"bas":NOMBRE,"haut":NOMBRE}} en euros/mois (fourchette basse/haute)
+    - "gain_potentiel_estime" : {{"bas":NOMBRE,"haut":NOMBRE}} en euros/mois après automatisation
+- "synthese" : 1-2 phrases résumant le chiffrage global (ordre de grandeur, pas de total garanti)
+
+N'invente jamais un coût horaire fourni par le client — utilise UNIQUEMENT ceux listés
+ci-dessus ; pour les autres pôles, propose une fourchette réaliste et dis-le."""
