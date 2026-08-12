@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from analyse import auditer
+from chiffrage import chiffrer
 from shared.schemas.audit import Audit
 
 INGESTION_URL = os.getenv("INGESTION_URL", "http://host.docker.internal:5200")
@@ -147,6 +148,10 @@ class RequeteAudit(BaseModel):
     doc_ids: list[str]
 
 
+class RequeteChiffrer(BaseModel):
+    cout_horaire: dict[str, float] | None = None
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.post("/auditer", status_code=202)
@@ -231,6 +236,34 @@ def lire_audit(audit_id: str):
     if not row:
         raise HTTPException(404, "Audit introuvable")
     return _audit_vers_dict(row)
+
+
+@app.post("/audits/{audit_id}/chiffrer")
+async def chiffrer_audit(audit_id: str, req: RequeteChiffrer | None = None):
+    req = req or RequeteChiffrer()
+    with _connexion() as conn:
+        row = conn.execute(
+            "SELECT territoire, flux, problemes, priorites, statut FROM audits WHERE id=?",
+            (audit_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Audit introuvable")
+    if row["statut"] != "termine":
+        raise HTTPException(400, f"L'audit n'est pas terminé (statut : {row['statut']})")
+
+    territoire = json.loads(row["territoire"]) if row["territoire"] else {}
+    problemes = json.loads(row["problemes"]) if row["problemes"] else {}
+    priorites = json.loads(row["priorites"]) if row["priorites"] else {}
+
+    resultat = await chiffrer(territoire, problemes, priorites, req.cout_horaire)
+    with _connexion() as conn:
+        conn.execute(
+            "UPDATE audits SET roi=? WHERE id=?",
+            (json.dumps(resultat, ensure_ascii=False) if resultat else None, audit_id),
+        )
+        conn.commit()
+    return {"id": audit_id, "roi": resultat,
+            "statut_roi": "termine" if resultat else "roi_indisponible"}
 
 
 @app.delete("/audits/{audit_id}", status_code=204)
