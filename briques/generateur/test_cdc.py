@@ -36,7 +36,7 @@ import cdc
 
 def test_section_roi_absente_dit_chiffrage_non_disponible():
     markdown = cdc._section_roi_markdown(None)
-    assert "relancer" in markdown.lower()
+    assert "non encore réalisé" in markdown.lower()
 
 
 def test_section_roi_presente_contient_avertissement_mot_pour_mot():
@@ -57,12 +57,13 @@ def test_generer_cahier_des_charges_assemble_12_sections_llm_plus_roi(monkeypatc
     monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
 
     audit = {"nom_entreprise": "Test SA", "roi": None}
-    markdown = asyncio.run(cdc.generer_cahier_des_charges(audit, "fr"))
+    markdown, reussi = asyncio.run(cdc.generer_cahier_des_charges(audit, "fr"))
 
     for _, titre in cdc._SECTIONS_CDC:
         assert f"## {titre}" in markdown
     assert "## ROI" in markdown
-    assert "relancer" in markdown.lower()
+    assert "non encore réalisé" in markdown.lower()
+    assert reussi is True
 
 
 def test_generer_cahier_des_charges_repli_si_llm_echoue(monkeypatch):
@@ -70,8 +71,9 @@ def test_generer_cahier_des_charges_repli_si_llm_echoue(monkeypatch):
         raise RuntimeError("Gateway indisponible")
     monkeypatch.setattr(cdc, "appeler_llm", llm_ko)
 
-    markdown = asyncio.run(cdc.generer_cahier_des_charges({"nom_entreprise": "KO SA"}, "fr"))
+    markdown, reussi = asyncio.run(cdc.generer_cahier_des_charges({"nom_entreprise": "KO SA"}, "fr"))
     assert "Non disponible" in markdown  # aucune section n'a de contenu, mais le doc existe
+    assert reussi is False
 
 
 def test_construire_diapositives_5_a_8_slides_avec_avertissement_dans_roi():
@@ -175,6 +177,41 @@ def test_generer_cdc_deux_fois_lit_le_plus_recent(client, monkeypatch):
     assert read_markdown == second_markdown
     assert "MARKER_2" in read_markdown
     assert "MARKER_1" not in read_markdown
+
+
+def test_cdc_degrade_stocke_statut_degrade_et_exclu_de_dernier_cdc_utilisable(client, monkeypatch):
+    """Preuve du fix C2 : un CDC dégradé (LLM injoignable aux 2 tentatives) est persisté avec
+    statut='degrade' — _dernier_cdc (utilisé par GET/pdf/pptx) continue de le voir (un humain
+    doit pouvoir consulter/exporter même un CDC dégradé), mais _dernier_cdc_utilisable (utilisé
+    UNIQUEMENT par /generer) ne doit JAMAIS le reprendre silencieusement."""
+    import main as gen_main
+    import cdc
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "Degrade SA"}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    async def llm_ko(prompt, langue="fr"):
+        raise RuntimeError("Gateway indisponible")
+    monkeypatch.setattr(cdc, "appeler_llm", llm_ko)
+
+    resp = client.post("/audits/degrade-audit-1/cahier-des-charges")
+    assert resp.status_code == 200
+    assert resp.json()["statut"] == "degrade"
+
+    # Lecture directe : le CDC dégradé existe bien en base avec le bon statut.
+    row = gen_main._dernier_cdc("degrade-audit-1")
+    assert row is not None
+    assert row["statut"] == "degrade"
+
+    # GET /cahier-des-charges (Task 8) : doit toujours pouvoir le consulter — pas de régression.
+    resp_get = client.get("/audits/degrade-audit-1/cahier-des-charges")
+    assert resp_get.status_code == 200
+    assert resp_get.json()["statut"] == "degrade"
+
+    # /generer (via _dernier_cdc_utilisable) ne doit JAMAIS le reprendre silencieusement : c'est
+    # le coeur du bug C2 (contexte métier vide injecté sans que personne ne s'en aperçoive).
+    assert gen_main._dernier_cdc_utilisable("degrade-audit-1") is None
 
 
 def test_pdf_sans_cdc_retourne_404(client):
@@ -308,8 +345,9 @@ def test_markdown_cdc_avec_roi_contient_l_avertissement_mot_pour_mot(monkeypatch
                        "gain_potentiel_estime": {"bas": 1, "haut": 2},
                        "statut": "hypothese_llm", "avertissement": cdc.AVERTISSEMENT}],
     }}
-    markdown = asyncio.run(cdc.generer_cahier_des_charges(audit, "fr"))
+    markdown, reussi = asyncio.run(cdc.generer_cahier_des_charges(audit, "fr"))
     assert cdc.AVERTISSEMENT in markdown
+    assert reussi is True
 
 
 def test_diapositive_roi_contient_l_avertissement_mot_pour_mot():

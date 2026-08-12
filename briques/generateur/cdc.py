@@ -15,7 +15,7 @@ AVERTISSEMENT = "Estimation à valider avec le client — non contractuelle."
 
 def _section_roi_markdown(roi: dict | None) -> str:
     if not roi or not isinstance(roi.get("problemes"), list) or not roi["problemes"]:
-        return "_Chiffrage non disponible — relancer `POST /audits/{id}/chiffrer`._"
+        return "_Chiffrage financier non encore réalisé._"
     lignes = [roi.get("synthese", "")]
     for p in roi["problemes"]:
         cout = p.get("cout_actuel_estime") or {}
@@ -29,8 +29,9 @@ def _section_roi_markdown(roi: dict | None) -> str:
     return "\n\n".join(lignes)
 
 
-async def generer_cahier_des_charges(audit: dict, langue: str = "fr") -> str:
-    """Retourne le markdown complet (12 sections LLM + section ROI déterministe)."""
+async def generer_cahier_des_charges(audit: dict, langue: str = "fr") -> tuple[str, bool]:
+    """Retourne (markdown, reussi) — reussi=False si le LLM a échoué après 2 tentatives
+    (le markdown est quand même retourné, dégradé — toujours lisible/exportable, jamais bloquant)."""
     prompt = prompt_cahier_des_charges(audit, langue)
     sections: dict = {}
     for tentative in range(2):
@@ -45,7 +46,7 @@ async def generer_cahier_des_charges(audit: dict, langue: str = "fr") -> str:
         for cle, titre in _SECTIONS_CDC
     )
     roi_md = f"## ROI\n\n{_section_roi_markdown(audit.get('roi'))}"
-    return f"{corps}\n\n{roi_md}"
+    return f"{corps}\n\n{roi_md}", bool(sections)
 
 
 def construire_diapositives(audit: dict) -> list[dict]:
@@ -65,7 +66,7 @@ def construire_diapositives(audit: dict) -> list[dict]:
          "points": [p.get("probleme", "—") for p in pareto] or ["Aucun problème majeur identifié."]},
         {"titre": "ROI estimé",
          "points": [roi.get("synthese")] if roi.get("synthese")
-                   else ["Chiffrage non disponible — relancer POST /audits/{id}/chiffrer."],
+                   else ["Chiffrage financier non encore réalisé."],
          "notes": AVERTISSEMENT},
         {"titre": "Solution proposée", "points": must or ["À définir."]},
         {"titre": "Priorités",

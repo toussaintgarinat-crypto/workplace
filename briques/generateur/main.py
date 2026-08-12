@@ -295,7 +295,7 @@ async def generer(demande: DemandeGeneration, background_tasks: BackgroundTasks)
         )
         conn.commit()
 
-    cdc_existant = _dernier_cdc(demande.audit_id)
+    cdc_existant = _dernier_cdc_utilisable(demande.audit_id)
     cahier_des_charges = cdc_existant["markdown"] if cdc_existant else None
     background_tasks.add_task(_generer_en_background, app_id, audit, mode,
                               demande.messagerie, demande.email_client,
@@ -433,13 +433,27 @@ def _dernier_cdc(audit_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def _dernier_cdc_utilisable(audit_id: str) -> dict | None:
+    """Comme _dernier_cdc, mais exclut les CDC dégradés (LLM injoignable à la génération) —
+    UNIQUEMENT pour /generer, qui ne doit jamais consommer silencieusement un CDC vide de
+    contenu métier. Les endpoints de lecture/export (GET, /pdf, /pptx) gardent _dernier_cdc
+    tel quel : un humain doit pouvoir consulter/exporter même un CDC dégradé."""
+    with _connexion() as conn:
+        row = conn.execute(
+            "SELECT id, audit_id, markdown, pdf_chemin, pptx_chemin, statut, created_at "
+            "FROM cahiers_des_charges WHERE audit_id=? AND statut='genere' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (audit_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 class DemandeCdc(BaseModel):
     langue: str = "fr"
 
 
 @app.post("/audits/{audit_id}/cahier-des-charges")
-async def generer_cdc_endpoint(audit_id: str, corps: DemandeCdc | None = None):
-    corps = corps or DemandeCdc()
+async def generer_cdc_endpoint(audit_id: str, corps: DemandeCdc = DemandeCdc()):
     audit = await _charger_audit(audit_id)
     if not audit:
         raise HTTPException(404, f"Audit introuvable ou brique Audit inaccessible : {audit_id}")
@@ -447,7 +461,8 @@ async def generer_cdc_endpoint(audit_id: str, corps: DemandeCdc | None = None):
         raise HTTPException(400, f"L'audit n'est pas terminé (statut : {audit.get('statut')})")
 
     langue = normaliser_langue(corps.langue)
-    markdown = await cdc.generer_cahier_des_charges(audit, langue)
+    markdown, reussi = await cdc.generer_cahier_des_charges(audit, langue)
+    statut = "genere" if reussi else "degrade"
 
     cdc_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -455,11 +470,11 @@ async def generer_cdc_endpoint(audit_id: str, corps: DemandeCdc | None = None):
         conn.execute(
             "INSERT INTO cahiers_des_charges (id, audit_id, markdown, statut, created_at) "
             "VALUES (?,?,?,?,?)",
-            (cdc_id, audit_id, markdown, "genere", now),
+            (cdc_id, audit_id, markdown, statut, now),
         )
         conn.commit()
     return {"id": cdc_id, "audit_id": audit_id, "markdown": markdown,
-            "pdf_chemin": None, "pptx_chemin": None, "statut": "genere"}
+            "pdf_chemin": None, "pptx_chemin": None, "statut": statut}
 
 
 @app.get("/audits/{audit_id}/cahier-des-charges")
