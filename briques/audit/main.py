@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Audit", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Audit", version="0.2.0", lifespan=lifespan)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -274,4 +274,4 @@ def supprimer_audit(audit_id: str):
 
 @app.get("/sante")
 def sante():
-    return {"statut": "ok", "service": "audit", "version": "0.1.0"}
+    return {"statut": "ok", "service": "audit", "version": "0.2.0"}
