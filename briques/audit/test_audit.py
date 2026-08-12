@@ -101,3 +101,25 @@ def test_auditer_tout_sans_ingestion_retourne_502(client, monkeypatch):
     monkeypatch.setattr(audit_main, "_recuperer_tous_ids", _raise)
     resp = client.post("/auditer/tout")
     assert resp.status_code == 502
+
+
+def test_audit_roi_serialise_puis_relu_en_json(client):
+    resp = client.post("/audits/import", json={
+        "nom_entreprise": "ROI SA",
+        "statut": "termine",
+        "roi": {"problemes": [{"probleme": "Relances manuelles", "statut": "hypothese_llm"}]},
+    })
+    assert resp.status_code == 200
+    audit_id = resp.json()["id"]
+
+    resp2 = client.get(f"/audits/{audit_id}")
+    assert resp2.json()["roi"] == {
+        "problemes": [{"probleme": "Relances manuelles", "statut": "hypothese_llm"}]
+    }
+
+
+def test_audit_sans_roi_retourne_champ_absent_ou_null(client):
+    resp = client.post("/audits/import", json={"nom_entreprise": "SansROI SA", "statut": "termine"})
+    audit_id = resp.json()["id"]
+    resp2 = client.get(f"/audits/{audit_id}")
+    assert resp2.json().get("roi") is None
