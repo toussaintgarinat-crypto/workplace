@@ -515,16 +515,26 @@ async def facturation_transformer(did: str):
 _pole_crm_cache: str | None = None
 
 
-async def _resoudre_pole_crm(client: httpx.AsyncClient) -> str:
-    """Renvoie l'id d'un pôle commercial, en l'amorçant si la base est vierge.
+async def _resoudre_pole_crm(client: httpx.AsyncClient, venture_id: str | None = None) -> str:
+    """Renvoie l'id d'un pôle commercial.
 
-    On passe par la **venture** (et non `GET /api/poles`, qui filtre par `org_id`
-    alors que les pôles amorcés ont `org_id` nul ⇒ liste vide en boucle) :
-    lister les ventures (scopées par `owner_id`, fiables) → en créer une « Workplace »
-    si aucune (le core crée 6 pôles par défaut, dont *Sales*) → lister ses pôles
-    (`/ventures/{id}/poles`, scopé par venture) → préférer *Sales*, sinon le 1er.
-    Résultat mémorisé pour la durée de vie du process.
+    Deux modes (S230) :
+    - `venture_id` fourni : résout le pôle de CETTE venture précisément
+      (`/api/ventures/{id}/poles`, préfère *sales* sinon le 1er). JAMAIS mis en cache
+      globalement — deux ventures ne doivent pas se partager une réponse mémoïsée.
+    - `venture_id` absent : comportement S169 inchangé — mono-entreprise, un seul pôle
+      commercial par défaut, amorcé si besoin, mémorisé pour la durée de vie du process.
     """
+    if venture_id:
+        poles = _json_ou_erreur(
+            await _appel_protege(client, "GET", f"/api/ventures/{venture_id}/poles"))
+        pole = next((p for p in (poles or []) if p.get("type") == "sales"), None) \
+            or ((poles or [])[0] if poles else None)
+        if not pole or not pole.get("id"):
+            raise HTTPException(502, f"Impossible de résoudre un pôle commercial pour "
+                                     f"la venture {venture_id}.")
+        return pole["id"]
+
     global _pole_crm_cache
     if _pole_crm_cache:
         return _pole_crm_cache
@@ -724,8 +734,9 @@ async def crm_importer_lot(corps: dict = Body(...)):
     if not isinstance(prospects, list) or not prospects:
         raise HTTPException(422, "Champ requis : 'prospects' (liste non vide).")
     statut = (corps.get("statut") or "à contacter").strip() or "à contacter"
+    venture_id = corps.get("venture_id")
     async with await _client(timeout=60) as client:
-        pole_id = await _resoudre_pole_crm(client)
+        pole_id = await _resoudre_pole_crm(client, venture_id)
         existants = _json_ou_erreur(
             await _appel_protege(client, "GET", f"/api/poles/{pole_id}/crm")) or []
         vus: set[str] = set()
