@@ -251,3 +251,39 @@ def test_pdf_export_injoignable_retourne_502(client, monkeypatch):
     resp2 = client.get("/audits/pdf-audit-ko/cahier-des-charges")
     assert resp2.status_code == 200
     assert resp2.json()["pdf_chemin"] is None
+
+
+def test_pptx_sans_cdc_retourne_404(client):
+    resp = client.post("/audits/jamais-genere/cahier-des-charges/pptx")
+    assert resp.status_code == 404
+
+
+def test_pptx_genere_via_export(client, monkeypatch):
+    import main as gen_main
+    import cdc
+    import httpx
+
+    async def audit_termine(audit_id):
+        return {"statut": "termine", "nom_entreprise": "PPTX SA",
+                "problemes": {"pareto": []}, "priorites": {"moscow": {"must": []}}, "roi": None}
+    monkeypatch.setattr(gen_main, "_charger_audit", audit_termine)
+
+    async def faux_llm(prompt, langue="fr"):
+        return {cle: f"Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
+
+    client.post("/audits/pptx-audit-1/cahier-des-charges")
+
+    _VRAI_CLIENT = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"url": "/fichiers/export-xyz789.pptx", "fichier": "export-xyz789.pptx"})
+
+    def faux_async_client(*a, **k):
+        k.pop("timeout", None)
+        return _VRAI_CLIENT(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(gen_main.httpx, "AsyncClient", faux_async_client)
+
+    resp = client.post("/audits/pptx-audit-1/cahier-des-charges/pptx")
+    assert resp.status_code == 200
+    assert resp.json()["pptx_url"] == "/fichiers/export-xyz789.pptx"
