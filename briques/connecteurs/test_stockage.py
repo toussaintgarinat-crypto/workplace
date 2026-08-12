@@ -176,3 +176,33 @@ def test_lister_les_syncs_filtre_par_source_et_rend_la_plus_recente_d_abord():
     dernier = stockage.ouvrir_sync("alice", b["id"])
     assert stockage.lister_syncs("alice")[0]["id"] == dernier
     assert [s["source_id"] for s in stockage.lister_syncs("alice", a["id"])] == [a["id"]]
+
+
+# ── venture_id (S230) ────────────────────────────────────────────────────────
+
+def test_creer_source_avec_venture_id():
+    src = stockage.creer_source("alice", "hubspot", "source-hubspot",
+                                {"credentials": {"access_token": "x"}}, ["contacts", "deals"],
+                                venture_id="vt-client-a")
+    assert src["venture_id"] == "vt-client-a"
+
+
+def test_creer_source_sans_venture_id_reste_valide():
+    """Non-régression : une source « ancien format » (sans venture_id) reste valide,
+    comme toute évolution de schéma dans ce parc (cf. modifier_source déjà tolérant)."""
+    src = _source()
+    assert src["venture_id"] is None
+
+
+def test_venture_id_de_rend_le_lien_ou_none():
+    src = stockage.creer_source("alice", "hubspot2", "source-hubspot", {}, [],
+                                venture_id="vt-x")
+    assert stockage.venture_id_de(src["id"]) == "vt-x"
+    autre = _source("alice", "sans-venture")
+    assert stockage.venture_id_de(autre["id"]) is None
+
+
+def test_modifier_source_peut_relier_a_une_venture():
+    src = _source()
+    stockage.modifier_source("alice", src["id"], venture_id="vt-nouveau")
+    assert stockage.source_get("alice", src["id"])["venture_id"] == "vt-nouveau"

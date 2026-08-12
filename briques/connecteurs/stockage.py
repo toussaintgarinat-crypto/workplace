@@ -80,6 +80,12 @@ def initialiser() -> None:
             CREATE INDEX IF NOT EXISTS idx_syncs_source ON syncs(source_id, id DESC);
             """
         )
+        # Migration S230 : lien source ↔ dossier client (venture Forge), pour que le
+        # mappeur best-effort sache où pousser CRM/ROI. NULL = source « ancien format »
+        # ou non liée à un dossier — reste valide (motif « ancien format » établi).
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
+        if "venture_id" not in cols:
+            con.execute("ALTER TABLE sources ADD COLUMN venture_id TEXT")
 
 
 # ── Sources ──────────────────────────────────────────────────────────────────
@@ -93,18 +99,19 @@ def _vue_source(r: sqlite3.Row) -> dict:
         "flux": json.loads(r["flux"]),
         "active": bool(r["active"]),
         "cree_le": r["cree_le"],
+        "venture_id": r["venture_id"],
         "config": coffre.masquer(coffre.dechiffrer(r["config_chiffree"])),
     }
 
 
 def creer_source(tenant: str, nom: str, connecteur: str, config: dict,
-                 flux: list[str] | None = None) -> dict:
+                 flux: list[str] | None = None, venture_id: str | None = None) -> dict:
     with _conn() as con:
         cur = con.execute(
-            "INSERT INTO sources (tenant, nom, connecteur, config_chiffree, flux, cree_le)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sources (tenant, nom, connecteur, config_chiffree, flux,"
+            " venture_id, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (tenant, nom, connecteur, coffre.chiffrer(config),
-             json.dumps(flux or []), _maintenant()),
+             json.dumps(flux or []), venture_id, _maintenant()),
         )
         r = con.execute("SELECT * FROM sources WHERE id = ?", (cur.lastrowid,)).fetchone()
         return _vue_source(r)
@@ -134,8 +141,17 @@ def config_de(tenant: str, source_id: int) -> tuple[str, dict, list[str]] | None
         return r["connecteur"], coffre.dechiffrer(r["config_chiffree"]), json.loads(r["flux"])
 
 
+def venture_id_de(source_id: int) -> str | None:
+    """Réservé au mappeur best-effort — appelé APRÈS que `_syncer` a déjà validé
+    `(tenant, source_id)` via `config_de`."""
+    with _conn() as con:
+        r = con.execute("SELECT venture_id FROM sources WHERE id = ?", (source_id,)).fetchone()
+        return r["venture_id"] if r else None
+
+
 def modifier_source(tenant: str, source_id: int, *, config: dict | None = None,
-                    flux: list[str] | None = None, active: bool | None = None) -> bool:
+                    flux: list[str] | None = None, active: bool | None = None,
+                    venture_id: str | None = None) -> bool:
     champs, valeurs = [], []
     if config is not None:
         champs.append("config_chiffree = ?")
@@ -146,6 +162,9 @@ def modifier_source(tenant: str, source_id: int, *, config: dict | None = None,
     if active is not None:
         champs.append("active = ?")
         valeurs.append(int(active))
+    if venture_id is not None:
+        champs.append("venture_id = ?")
+        valeurs.append(venture_id)
     if not champs:
         return source_get(tenant, source_id) is not None
     with _conn() as con:
