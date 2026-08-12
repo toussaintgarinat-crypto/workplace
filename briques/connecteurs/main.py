@@ -109,11 +109,15 @@ class CreerSource(BaseModel):
     connecteur: str = Field(min_length=1, description="Nom PyPI du connecteur, ex. source-github")
     config: dict = Field(default_factory=dict)
     flux: list[str] = Field(default_factory=list)
+    # S230 : lien vers le dossier client (venture Forge) que ce connecteur alimente.
+    # Optionnel — une source non liée n'est simplement jamais mappée (cf. mappeurs.py).
+    venture_id: str | None = None
 
 
 class ModifierSource(BaseModel):
     config: dict | None = None
     flux: list[str] | None = None
+    venture_id: str | None = None
 
 
 class BasculerActive(BaseModel):
@@ -139,7 +143,8 @@ def creer_source_route(corps: CreerSource, tenant: str = Depends(tenant_actuel))
     (donc par le journal, le cache sémantique et le fournisseur du modèle). On les saisit
     par l'API ou par l'atelier ; l'assistant, lui, déclenche et consulte."""
     try:
-        return stockage.creer_source(tenant, corps.nom, corps.connecteur, corps.config, corps.flux)
+        return stockage.creer_source(tenant, corps.nom, corps.connecteur, corps.config,
+                                     corps.flux, venture_id=corps.venture_id)
     except coffre.SecretIndisponible as e:
         raise HTTPException(503, str(e))
     except Exception as e:  # sqlite3.IntegrityError : (tenant, nom) déjà pris
@@ -159,7 +164,8 @@ def lire_source_route(source_id: int, tenant: str = Depends(tenant_actuel)):
 def modifier_source_route(source_id: int, corps: ModifierSource,
                           tenant: str = Depends(tenant_actuel)):
     _source_ou_404(tenant, source_id)
-    stockage.modifier_source(tenant, source_id, config=corps.config, flux=corps.flux)
+    stockage.modifier_source(tenant, source_id, config=corps.config, flux=corps.flux,
+                             venture_id=corps.venture_id)
     return stockage.source_get(tenant, source_id)
 
 
