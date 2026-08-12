@@ -203,3 +203,86 @@ async def test_mapper_compta_sans_audit_id_leve(monkeypatch):
     _mock_forge_get_venture_audit(monkeypatch, None)
     with pytest.raises(mappeurs.MappingEchoue, match="audit_id"):
         await mappeurs._mapper_compta("alice", 2, "vt-a", "schema2")
+
+
+async def test_mapper_apres_sync_dispatch_vers_crm(monkeypatch):
+    appele = []
+    async def _faux_crm(tenant, source_id, venture_id, schema):
+        appele.append(("crm", tenant, source_id, venture_id, schema))
+    monkeypatch.setattr(mappeurs, "_mapper_crm", _faux_crm)
+    monkeypatch.setattr(mappeurs.stockage, "venture_id_de", lambda sid: "vt-a")
+    enregistres = []
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping",
+                        lambda sid, statut, erreur=None: enregistres.append((sid, statut, erreur)))
+
+    await mappeurs.mapper_apres_sync("alice", 1, "source-hubspot", 99, "schema1")
+    assert appele == [("crm", "alice", 1, "vt-a", "schema1")]
+    assert enregistres == [(99, "ok", None)]
+
+
+async def test_mapper_apres_sync_dispatch_vers_compta(monkeypatch):
+    appele = []
+    async def _faux_compta(tenant, source_id, venture_id, schema):
+        appele.append("compta")
+    monkeypatch.setattr(mappeurs, "_mapper_compta", _faux_compta)
+    monkeypatch.setattr(mappeurs.stockage, "venture_id_de", lambda sid: "vt-a")
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping", lambda *a, **k: None)
+
+    await mappeurs.mapper_apres_sync("alice", 2, "source-harvest", 100, "schema2")
+    assert appele == ["compta"]
+
+
+async def test_mapper_apres_sync_connecteur_non_mappable_ne_fait_rien(monkeypatch):
+    """source-faker, source-github... : hors des deux listes blanches, jamais mappé."""
+    appele = []
+    monkeypatch.setattr(mappeurs, "_mapper_crm", lambda *a: appele.append("crm"))
+    monkeypatch.setattr(mappeurs, "_mapper_compta", lambda *a: appele.append("compta"))
+    enregistres = []
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping",
+                        lambda *a, **k: enregistres.append(a))
+
+    await mappeurs.mapper_apres_sync("alice", 3, "source-faker", 101, "schema3")
+    assert appele == []
+    assert enregistres == []  # rien à journaliser : ce n'est même pas une tentative
+
+
+async def test_mapper_apres_sync_sans_venture_id_journalise_echec(monkeypatch):
+    monkeypatch.setattr(mappeurs.stockage, "venture_id_de", lambda sid: None)
+    enregistres = []
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping",
+                        lambda sid, statut, erreur=None: enregistres.append((sid, statut, erreur)))
+
+    await mappeurs.mapper_apres_sync("alice", 1, "source-hubspot", 99, "schema1")
+    assert enregistres[0][1] == "echec"
+    assert "venture_id" in enregistres[0][2]
+
+
+async def test_mapper_apres_sync_capture_une_exception_du_mappeur(monkeypatch):
+    """Le principe best-effort central du sprint : le mappeur explose, la sync ne le
+    sait jamais (déjà `ok` avant cet appel, cf. Task 10 Step 4 côté main.py)."""
+    async def _casse(*a):
+        raise mappeurs.MappingEchoue("table contacts absente")
+    monkeypatch.setattr(mappeurs, "_mapper_crm", _casse)
+    monkeypatch.setattr(mappeurs.stockage, "venture_id_de", lambda sid: "vt-a")
+    enregistres = []
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping",
+                        lambda sid, statut, erreur=None: enregistres.append((sid, statut, erreur)))
+
+    await mappeurs.mapper_apres_sync("alice", 1, "source-hubspot", 99, "schema1")
+    assert enregistres == [(99, "echec", "table contacts absente")]
+
+
+async def test_mapper_apres_sync_capture_une_exception_totalement_inattendue(monkeypatch):
+    """Pas seulement MappingEchoue : n'importe quelle exception (bug, panne réseau
+    imprévue) doit rester best-effort, jamais remonter à `_syncer`."""
+    async def _casse(*a):
+        raise ValueError("boom inattendu")
+    monkeypatch.setattr(mappeurs, "_mapper_crm", _casse)
+    monkeypatch.setattr(mappeurs.stockage, "venture_id_de", lambda sid: "vt-a")
+    enregistres = []
+    monkeypatch.setattr(mappeurs.stockage, "enregistrer_mapping",
+                        lambda sid, statut, erreur=None: enregistres.append((sid, statut, erreur)))
+
+    await mappeurs.mapper_apres_sync("alice", 1, "source-hubspot", 99, "schema1")
+    assert enregistres[0][1] == "echec"
+    assert "boom inattendu" in enregistres[0][2]
