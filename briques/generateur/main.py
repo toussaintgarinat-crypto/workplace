@@ -192,7 +192,8 @@ def _provisionner_messagerie(audit: dict) -> dict | None:
 async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie: bool,
                                  email_client: str | None = None,
                                  contact_client: str | None = None,
-                                 langue: str = "fr"):
+                                 langue: str = "fr",
+                                 cahier_des_charges: str | None = None):
     try:
         hebergee = mode == "hebergee"
         api_base = DONNEES_URL_PUBLIQUE if hebergee else ""
@@ -205,7 +206,7 @@ async def _generer_en_background(app_id: str, audit: dict, mode: str, messagerie
 
         plan, html = await generer_app_complete(
             audit, app_id=(app_id if hebergee else ""), api_base=api_base, oria=oria_cfg,
-            langue=langue,
+            langue=langue, cahier_des_charges=cahier_des_charges,
         )
         if hebergee:
             await _semer_donnees(app_id, plan)
@@ -294,9 +295,11 @@ async def generer(demande: DemandeGeneration, background_tasks: BackgroundTasks)
         )
         conn.commit()
 
+    cdc_existant = _dernier_cdc(demande.audit_id)
+    cahier_des_charges = cdc_existant["markdown"] if cdc_existant else None
     background_tasks.add_task(_generer_en_background, app_id, audit, mode,
                               demande.messagerie, demande.email_client,
-                              demande.contact_client, langue)
+                              demande.contact_client, langue, cahier_des_charges)
     return {"id": app_id, "statut": "en_cours", "nom_entreprise": nom, "mode": mode,
             "langue": langue,
             "messagerie": bool(mode == "hebergee" and demande.messagerie),
