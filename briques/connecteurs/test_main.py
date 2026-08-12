@@ -288,3 +288,40 @@ def test_au_demarrage_les_syncs_orphelines_sont_declarees_interrompues():
     with TestClient(main.app):
         pass
     assert stockage.sync_get("public", sid)["statut"] == "interrompue"
+
+
+# ── venture_id (S230) ────────────────────────────────────────────────────────
+
+def test_creer_source_avec_venture_id(client, executeur):
+    r = client.post("/sources", json={
+        "nom": "hubspot-client-a", "connecteur": "source-hubspot",
+        "config": {"credentials": {"access_token": "x"}},
+        "flux": ["contacts", "deals"], "venture_id": "vt-a"})
+    assert r.status_code == 201
+    assert r.json()["venture_id"] == "vt-a"
+
+
+def test_creer_source_sans_venture_id_reste_optionnel(client, executeur):
+    r = client.post("/sources", json={"nom": "sans-lien", "connecteur": "source-faker"})
+    assert r.status_code == 201
+    assert r.json()["venture_id"] is None
+
+
+def test_patch_source_relie_a_une_venture(client, executeur):
+    r = _creer(client)
+    sid = r["id"]
+    p = client.patch(f"/sources/{sid}", json={"venture_id": "vt-b"})
+    assert p.status_code == 200
+    assert p.json()["venture_id"] == "vt-b"
+
+
+def test_venture_id_absent_des_capacites_du_manifeste():
+    """`POST /sources`/`PATCH /sources/{id}` restent hors assistant — S230 ne change
+    pas ce principe en ajoutant venture_id."""
+    import json
+    from pathlib import Path
+    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+    ecritures = {(c["methode"], c["chemin"]) for c in manifest.get("capacites", [])
+                if c.get("action")}
+    assert ("POST", "/sources") not in ecritures
+    assert ("PATCH", "/sources/{source_id}") not in ecritures
