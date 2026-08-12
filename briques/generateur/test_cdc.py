@@ -287,3 +287,33 @@ def test_pptx_genere_via_export(client, monkeypatch):
     resp = client.post("/audits/pptx-audit-1/cahier-des-charges/pptx")
     assert resp.status_code == 200
     assert resp.json()["pptx_url"] == "/fichiers/export-xyz789.pptx"
+
+
+def test_cdc_avertissement_est_le_meme_litteral_que_l_audit():
+    """Duplication intentionnelle entre briques (cf. Global Constraints) — mais le TEXTE
+    doit rester identique, sinon le client voit deux formulations différentes du même
+    avertissement selon qu'il lit le JSON de l'audit ou le markdown du CDC."""
+    assert cdc.AVERTISSEMENT == "Estimation à valider avec le client — non contractuelle."
+
+
+def test_markdown_cdc_avec_roi_contient_l_avertissement_mot_pour_mot(monkeypatch):
+    async def faux_llm(prompt, langue="fr"):
+        return {cle: f"Contenu {cle}" for cle, _ in cdc._SECTIONS_CDC}
+    monkeypatch.setattr(cdc, "appeler_llm", faux_llm)
+
+    audit = {"nom_entreprise": "Garde SA", "roi": {
+        "synthese": "Gain notable.",
+        "problemes": [{"probleme": "X", "pole": "commercial",
+                       "cout_actuel_estime": {"bas": 1, "haut": 2},
+                       "gain_potentiel_estime": {"bas": 1, "haut": 2},
+                       "statut": "hypothese_llm", "avertissement": cdc.AVERTISSEMENT}],
+    }}
+    markdown = asyncio.run(cdc.generer_cahier_des_charges(audit, "fr"))
+    assert cdc.AVERTISSEMENT in markdown
+
+
+def test_diapositive_roi_contient_l_avertissement_mot_pour_mot():
+    audit = {"nom_entreprise": "Garde SA", "roi": {"synthese": "Gain notable."}}
+    diapos = cdc.construire_diapositives(audit)
+    roi_slide = next(d for d in diapos if d["titre"] == "ROI estimé")
+    assert roi_slide["notes"] == cdc.AVERTISSEMENT

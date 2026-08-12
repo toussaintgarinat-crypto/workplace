@@ -228,3 +228,23 @@ def test_chiffrer_echec_llm_roi_indisponible_audit_reste_termine(client, monkeyp
 
     resp3 = client.get(f"/audits/{audit_id}")
     assert resp3.json()["statut"] == "termine"  # jamais remis en cause
+
+
+def test_avertissement_est_le_litteral_exact_de_la_vision():
+    """Garde-fou permanent : une régression qui changerait ce texte (ou le ferait générer
+    par le LLM) doit casser CE test explicitement, pas être découverte en prod."""
+    assert chiffrage.AVERTISSEMENT == "Estimation à valider avec le client — non contractuelle."
+
+
+def test_toute_sortie_chiffrer_avec_hypothese_contient_l_avertissement_mot_pour_mot(client, monkeypatch):
+    resp = client.post("/audits/import", json={"nom_entreprise": "Garde SA", "statut": "termine"})
+    audit_id = resp.json()["id"]
+
+    async def faux_llm(prompt):
+        return {"problemes": [{"probleme": "X", "pole": "commercial",
+                                "cout_actuel_estime": {"bas": 1, "haut": 2},
+                                "gain_potentiel_estime": {"bas": 1, "haut": 2}}]}
+    monkeypatch.setattr(chiffrage, "appeler_llm", faux_llm)
+
+    resp2 = client.post(f"/audits/{audit_id}/chiffrer")
+    assert chiffrage.AVERTISSEMENT in str(resp2.json())
