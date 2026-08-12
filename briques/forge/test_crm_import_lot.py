@@ -21,7 +21,7 @@ def _install_faux_core(monkeypatch, existants):
     """Installe un core Forge simulé ; renvoie le magasin de leads (mutable) pour assertions."""
     store = list(existants)
 
-    async def faux_resoudre(_cl):
+    async def faux_resoudre(_cl, venture_id=None):
         return "pole1"
 
     async def faux_appel(_cl, methode, chemin, **kw):
