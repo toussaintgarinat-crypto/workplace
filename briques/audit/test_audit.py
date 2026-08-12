@@ -173,3 +173,58 @@ def test_chiffrer_llm_echoue_retourne_none(monkeypatch):
 
     import asyncio
     assert asyncio.run(chiffrage.chiffrer({}, {}, {}, None)) is None
+
+
+def test_chiffrer_audit_inexistant_retourne_404(client):
+    resp = client.post("/audits/audit-inexistant-xyz/chiffrer")
+    assert resp.status_code == 404
+
+
+def test_chiffrer_audit_non_termine_retourne_400(client):
+    resp = client.post("/audits/import", json={"nom_entreprise": "EnCours SA", "statut": "en_cours"})
+    audit_id = resp.json()["id"]
+    resp2 = client.post(f"/audits/{audit_id}/chiffrer")
+    assert resp2.status_code == 400
+
+
+def test_chiffrer_endpoint_bout_en_bout_persiste_le_roi(client, monkeypatch):
+    resp = client.post("/audits/import", json={
+        "nom_entreprise": "Chiffrage SA", "statut": "termine",
+        "territoire": {"repartition_ca": [{"libelle": "SAV", "temps_pct": 40}]},
+        "problemes": {"pareto": [{"probleme": "Relances manuelles"}]},
+        "priorites": {"moscow": {"must": ["Automatiser les relances"]}},
+    })
+    audit_id = resp.json()["id"]
+
+    async def faux_llm(prompt):
+        return {"problemes": [{"probleme": "Relances manuelles", "pole": "commercial",
+                                "cout_actuel_estime": {"bas": 500, "haut": 700},
+                                "gain_potentiel_estime": {"bas": 300, "haut": 400}}],
+                "synthese": "Gain notable."}
+    monkeypatch.setattr(chiffrage, "appeler_llm", faux_llm)
+
+    resp2 = client.post(f"/audits/{audit_id}/chiffrer", json={"cout_horaire": {"commercial": 45}})
+    assert resp2.status_code == 200
+    data = resp2.json()
+    assert data["statut_roi"] == "termine"
+    assert data["roi"]["problemes"][0]["statut"] == "fourni_client"
+
+    resp3 = client.get(f"/audits/{audit_id}")
+    assert resp3.json()["roi"]["problemes"][0]["statut"] == "fourni_client"
+
+
+def test_chiffrer_echec_llm_roi_indisponible_audit_reste_termine(client, monkeypatch):
+    resp = client.post("/audits/import", json={"nom_entreprise": "KO SA", "statut": "termine"})
+    audit_id = resp.json()["id"]
+
+    async def llm_ko(prompt):
+        raise RuntimeError("Gateway indisponible")
+    monkeypatch.setattr(chiffrage, "appeler_llm", llm_ko)
+
+    resp2 = client.post(f"/audits/{audit_id}/chiffrer")
+    assert resp2.status_code == 200
+    assert resp2.json()["statut_roi"] == "roi_indisponible"
+    assert resp2.json()["roi"] is None
+
+    resp3 = client.get(f"/audits/{audit_id}")
+    assert resp3.json()["statut"] == "termine"  # jamais remis en cause
