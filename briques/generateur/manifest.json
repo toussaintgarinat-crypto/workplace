@@ -12,18 +12,21 @@
   "depends_on": [
     "audit",
     "gateway",
-    "donnees"
+    "donnees",
+    "export"
   ],
   "offre": [
     "generation_app",
     "export_html",
     "dashboard_entreprise",
-    "packaging_deploiement"
+    "packaging_deploiement",
+    "cahier_des_charges"
   ],
   "besoin": [
     "audit_entreprise",
     "llm_chat",
-    "persistance_crud"
+    "persistance_crud",
+    "rendu_pdf"
   ],
   "taches": [
     {
@@ -98,6 +101,70 @@
         }
       },
       "action": false
+    },
+    {
+      "nom": "generateur_cahier_des_charges_generer",
+      "description": "Génère (ou régénère) le cahier des charges formel d'un audit terminé : 12 sections structurées (objectifs, utilisateurs, fonctionnalités MoSCoW, règles métier, architecture, API, base de données, interfaces, intégrations, sécurité, tests, critères d'acceptation) + une section ROI reprenant le chiffrage de l'audit (voir audit_chiffrer) avec son avertissement de non-garantie. ACTION (appel LLM) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/audits/{audit_id}/cahier-des-charges",
+      "params": {
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit source, terminé (voir audit_lire).",
+          "requis": true
+        },
+        "langue": {
+          "type": "string",
+          "description": "Langue du document généré (défaut 'fr')."
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "generateur_cahier_des_charges_lire",
+      "description": "Lit le dernier cahier des charges généré pour un audit (markdown + statut + lien PDF/PPTX si déjà exportés). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/audits/{audit_id}/cahier-des-charges",
+      "params": {
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit source.",
+          "requis": true
+        }
+      },
+      "action": false,
+      "niveau": 0
+    },
+    {
+      "nom": "generateur_cahier_des_charges_pdf",
+      "description": "Exporte le dernier cahier des charges en PDF (thème 'rapport', via la brique export) et renvoie son URL de téléchargement. Réutilise le PDF déjà produit si disponible (pas de re-génération LLM). ACTION (écrit un fichier) : confirme=true requis.",
+      "methode": "GET",
+      "chemin": "/audits/{audit_id}/cahier-des-charges/pdf",
+      "params": {
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit source.",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 1
+    },
+    {
+      "nom": "generateur_cahier_des_charges_pptx",
+      "description": "Exporte une version 'points clés' (5-8 diapositives : problèmes majeurs, ROI, solution proposée, priorités) du cahier des charges en PPTX via la brique export. Réutilise le PPTX déjà produit si disponible. ACTION (écrit un fichier) : confirme=true requis.",
+      "methode": "POST",
+      "chemin": "/audits/{audit_id}/cahier-des-charges/pptx",
+      "params": {
+        "audit_id": {
+          "type": "string",
+          "description": "Identifiant de l'audit source.",
+          "requis": true
+        }
+      },
+      "action": true,
+      "niveau": 1
     }
   ]
 }
