@@ -384,6 +384,36 @@ async def _traduire(textes: list, vers_nom: str) -> tuple:
         return textes, False
 
 
+async def _adapter_cible(texte: str, cible: str) -> tuple:
+    """Adapte le REGISTRE (vocabulaire, longueur, intensité) d'un texte à une tranche d'âge —
+    JAMAIS l'intrigue. Calquée sur `_traduire` : repli HONNÊTE (texte d'origine, `ok=False`)
+    si la Gateway échoue, répond vide, ou si la longueur part trop loin de l'original (garde-
+    fou anti-troncature/anti-délire — pas de liste de répliques à recompter ici, juste un
+    texte continu, d'où un contrôle par ratio plutôt que par nombre d'entrées)."""
+    if not texte or cible not in CIBLE_GUIDE:
+        return texte, True
+    label = CIBLES.get(cible, cible)
+    guide = CIBLE_GUIDE[cible]
+    try:
+        adapte = await _gateway_answer(
+            GW_URL, GW_MODEL,
+            "Tu adaptes un script audio à un public précis, SANS jamais changer l'histoire, "
+            "les personnages, ni les événements. Tu ajustes SEULEMENT le vocabulaire, la "
+            "longueur des phrases et l'intensité émotionnelle. Tu préserves EXACTEMENT les "
+            "balises [SFX]/[AMBIANCE]/[MUSIQUE] et les didascalies entre parenthèses.",
+            f"PUBLIC CIBLE : {label}. {guide}\n\nAdapte ce texte à ce public, en conservant "
+            f"scrupuleusement la MÊME histoire :\n\n{texte}")
+    except Exception:  # noqa: BLE001
+        return texte, False
+    adapte = (adapte or "").strip()
+    if not adapte:
+        return texte, False
+    ratio = len(adapte) / max(1, len(texte))
+    if ratio < 0.3 or ratio > 3:
+        return texte, False
+    return adapte, True
+
+
 # ── Distribution (personnages structurés, S47) ───────────────────
 
 def _cle_perso(nom: str) -> str:
