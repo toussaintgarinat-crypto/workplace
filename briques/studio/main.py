@@ -93,6 +93,18 @@ def charger(serie_id: str, identite: str) -> dict:
     return serie
 
 
+def _profil_de(profil_id: str, identite: str) -> dict:
+    """Charge un profil lecteur (404 si absent OU d'une autre identité) — même motif que
+    `charger()` pour les séries (S187) : ne révèle jamais l'existence d'un profil étranger."""
+    try:
+        profil = S._load_profil(profil_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "Profil introuvable")
+    if profil.get("cree_par") != identite:
+        raise HTTPException(404, "Profil introuvable")
+    return profil
+
+
 def _agent(mot: str):
     """Agent interne par mot-clé (l'équipe est toujours présente)."""
     try:
@@ -219,6 +231,16 @@ class DefinirCible(BaseModel):
 
 class DefinirLangue(BaseModel):
     langue: str
+
+
+class CreerProfil(BaseModel):
+    nom: str
+    cible: str
+
+
+class MajProfil(BaseModel):
+    nom:   Optional[str] = None
+    cible: Optional[str] = None
 
 
 class CreerPerso(BaseModel):
@@ -428,6 +450,65 @@ def definir_langue(serie_id: str, body: DefinirLangue, cle: str = Depends(cle_ap
     serie["langue"] = body.langue
     S._save(serie)
     return {"langue": serie["langue"]}
+
+
+# ── Profils lecteurs (par âge, S231) ──────────────────────────────
+@app.get("/profils", tags=["profils"])
+def lister_profils(cle: str = Depends(cle_api)):
+    out = []
+    for fn in os.listdir(S.PROFILS_DIR):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(S.PROFILS_DIR, fn), encoding="utf-8") as f:
+                p = json.load(f)
+        except Exception:
+            continue
+        if p.get("cree_par") != cle:
+            continue
+        out.append(p)
+    out.sort(key=lambda x: x.get("cree_le") or "")
+    return out
+
+
+@app.post("/profils", tags=["profils"])
+def creer_profil(body: CreerProfil, cle: str = Depends(cle_api)):
+    if body.cible not in S.CIBLES:
+        raise HTTPException(400, f"Cible inconnue : {body.cible}")
+    nom = body.nom.strip()
+    if not nom:
+        raise HTTPException(422, "Le nom du profil ne peut pas être vide.")
+    profil = {
+        "id": uuid.uuid4().hex, "nom": nom, "cible": body.cible,
+        "cree_par": cle, "cree_le": datetime.now(timezone.utc).isoformat(),
+    }
+    S._save_profil(profil)
+    return profil
+
+
+@app.patch("/profils/{profil_id}", tags=["profils"])
+def modifier_profil(profil_id: str, body: MajProfil, cle: str = Depends(cle_api)):
+    profil = _profil_de(profil_id, cle)
+    if body.nom is not None:
+        nom = body.nom.strip()
+        if not nom:
+            raise HTTPException(422, "Le nom du profil ne peut pas être vide.")
+        profil["nom"] = nom
+    if body.cible is not None:
+        if body.cible not in S.CIBLES:
+            raise HTTPException(400, f"Cible inconnue : {body.cible}")
+        profil["cible"] = body.cible
+    S._save_profil(profil)
+    return profil
+
+
+@app.delete("/profils/{profil_id}", status_code=204, tags=["profils"])
+def supprimer_profil(profil_id: str, cle: str = Depends(cle_api)):
+    _profil_de(profil_id, cle)  # 404 si absent ou pas à `cle` — jamais de suppression à l'aveugle
+    p = S._profil_path(profil_id)
+    if os.path.exists(p):
+        os.remove(p)
+    return None
 
 
 # ── Distribution (personnages structurés) ────────────────────────
