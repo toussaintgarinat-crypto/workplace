@@ -31,8 +31,8 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
 - Sélection « pour qui » via des **profils lecteurs nommés** (« Fils », « Fille »), pas un simple
   sélecteur de tranche d'âge brut à chaque fois — chaque profil porte sa propre cible, modifiable
   dans le temps (c'est le geste central : faire vieillir un profil au fil des années).
-- Les profils sont **globaux à l'atelier**, pas propres à une série — créés une fois, réutilisés
-  sur toutes les séries.
+- Les profils sont **globaux à l'atelier, pas propres à une série** — créés une fois, réutilisés
+  sur toutes les séries **d'une même identité** (voir isolation multi-tenant ci-dessous).
 - Le front mémorise le dernier profil sélectionné (`localStorage`) et le réapplique par défaut à
   la prochaine ouverture d'un chapitre.
 - Repli honnête si l'adaptation échoue (Gateway injoignable, JSON illisible) : texte de référence
@@ -63,16 +63,27 @@ Clarifications actées avec l'utilisateur pendant le brainstorming :
 
 ### 1. Profils lecteurs (nouveau)
 
-Stockage global à l'atelier, séparé des séries : `profils.json` dans `ATELIERS_DIR`
-(`os.path.join(ATELIERS_DIR, "profils.json")`), une liste de
-`{id, nom, cible, cree_le}`. `id` en `uuid.uuid4().hex` (même convention que les séries). `cible`
-contrainte aux clés de `S.CIBLES` existantes.
+« Global à l'atelier » = partagé entre toutes les séries d'un même tenant, **pas** entre
+tenants : cette brique est multi-tenant (`cle_api`/`charger()`, `main.py:44-93` — chaque série
+est scopée à une identité `cree_par`, BYO clé ou personne du cercle privé via `X-User-Id`, S187).
+Les profils suivent exactement le même principe d'isolation que les séries, pour ne jamais fuiter
+un profil « Fils »/« Fille » entre deux identités différentes.
 
-Routes nouvelles (`main.py`) :
-- `GET /profils` — liste des profils
-- `POST /profils {nom, cible}` — créer
-- `PATCH /profils/{id} {nom?, cible?}` — modifier (notamment faire vieillir un profil)
-- `DELETE /profils/{id}` — supprimer
+Stockage : un fichier par profil (même motif que les séries), dans un sous-dossier dédié pour ne
+jamais collisionner avec un fichier de série — `os.path.join(ATELIERS_DIR, "profils",
+f"{profil_id}.json")`. Contenu : `{id, nom, cible, cree_par, cree_le}`. `id` en
+`uuid.uuid4().hex` (même convention que les séries). `cible` contrainte aux clés de `S.CIBLES`
+existantes. `cree_par` = l'identité résolue par `cle_api`, jamais modifiable après création
+(même motif que `serie["cree_par"]`).
+
+Routes nouvelles (`main.py`), toutes scopées par `cle: str = Depends(cle_api)` et filtrant sur
+`cree_par == cle` (404 — jamais 403 — sur un profil d'une autre identité, même motif que
+`charger()`) :
+- `GET /profils` — liste des profils de l'identité appelante
+- `POST /profils {nom, cible}` — créer, `cree_par` = identité appelante
+- `PATCH /profils/{id} {nom?, cible?}` — modifier (notamment faire vieillir un profil) ; 404 si
+  le profil n'appartient pas à l'appelant
+- `DELETE /profils/{id}` — supprimer ; même règle 404
 
 La série ne référence jamais un profil par id stocké : le lien profil ↔ contenu se fait
 uniquement au moment de la requête (`profil_id` en paramètre), jamais en persistance côté série.
@@ -91,9 +102,10 @@ bornes ratio ~0.3×–3× — garde-fou anti-réponse tronquée ou anti-délire 
 recompter, juste un texte continu).
 
 Nouvelle route `GET /series/{serie_id}/episodes/{n}/adapte?profil_id=X` → 
-`{texte, adapte: bool, cible, profil_id}`. Résout le profil, prend `script_balise` (ou
-`script_brut` en repli) de l'épisode `n`, appelle `_adapter_cible`. Rien n'est stocké : chaque
-appel recalcule.
+`{texte, adapte: bool, cible, profil_id}`. Résout le profil scopé à l'identité appelante (404 —
+même règle que `charger()` — si le profil n'existe pas ou appartient à une autre identité ; ne
+révèle jamais l'existence d'un profil étranger), prend `script_balise` (ou `script_brut` en
+repli) de l'épisode `n`, appelle `_adapter_cible`. Rien n'est stocké : chaque appel recalcule.
 
 Le front n'appelle cette route que si un profil est sélectionné dans le sélecteur « Lire
 pour… » ; sans sélection, comportement strictement inchangé (texte de référence affiché
@@ -102,9 +114,11 @@ directement depuis l'objet série déjà chargé).
 ### 3. Adaptation de l'audio (extension de l'existant)
 
 `FaireEpisode` (`main.py:206-209`, déjà réutilisé par `/audio`) gagne un champ
-`profil_id: Optional[str] = None`. Dans `produire_audio` (`main.py:978`), avant la découpe en
-répliques (avant `main.py:989`), le `script` passe par `_adapter_cible(script, cible)` si
-`profil_id` est fourni (cible résolue depuis le profil). La découpe en répliques, la traduction
+`profil_id: Optional[str] = None`. Dans `produire_audio` (`main.py:978`), si `profil_id` est
+fourni, le profil est résolu scopé à l'identité appelante (même règle 404 qu'au point 2 —
+`cle_api` protège déjà `charger(serie_id, cle)` dans cette route, la résolution du profil doit
+suivre la même identité). Avant la découpe en répliques (avant `main.py:989`), le `script` passe
+alors par `_adapter_cible(script, cible)` (cible résolue depuis le profil). La découpe en répliques, la traduction
 de langue existante (ligne 1013) et le casting/TTS continuent inchangés en aval — cible et langue
 se combinent donc sans code dupliqué (ex. profil « Fille », langue de sortie espagnol).
 
@@ -126,15 +140,16 @@ cohérent avec le partage déjà lâche de ce modèle entre les deux routes aujo
 
 ## Modèle de données
 
-Nouveau fichier `profils.json` (liste, pas de schéma SQL — même politique de persistance JSON
-que les séries) :
+Un fichier JSON par profil (pas de schéma SQL, pas de liste unique — même politique de
+persistance qu'une série) dans `profils/` sous `ATELIERS_DIR` :
 
 ```json
-[
-  {"id": "…hex32…", "nom": "Fils", "cible": "7-9", "cree_le": "2026-08-17T…Z"},
-  {"id": "…hex32…", "nom": "Fille", "cible": "0-3", "cree_le": "2026-08-17T…Z"}
-]
+// profils/<id>.json
+{"id": "…hex32…", "nom": "Fils", "cible": "7-9", "cree_par": "perso", "cree_le": "2026-08-17T…Z"}
 ```
+
+`GET /profils` liste ce sous-dossier et filtre sur `cree_par == cle`, même motif que
+`lister_series` (`main.py:317-349`) qui liste `ATELIERS_DIR` et filtre sur `_identite_effective`.
 
 Aucune modification du schéma des séries existantes.
 
@@ -143,16 +158,19 @@ Aucune modification du schéma des séries existantes.
 - Adaptation texte ou audio échoue (Gateway injoignable, JSON illisible, longueur incohérente) :
   contenu de référence renvoyé tel quel, `adapte: false` — jamais de blocage. Le front affiche un
   indicateur discret (« adaptation indisponible, texte de référence affiché »).
-- `profil_id` référence un profil supprimé entre-temps : la route renvoie 404 explicite (pas de
-  repli silencieux sur un profil différent) ; le front retombe sur « texte de référence » et
-  invalide son `localStorage`.
+- `profil_id` référence un profil supprimé entre-temps, ou appartenant à une autre identité : la
+  route renvoie 404 explicite dans les deux cas (pas de repli silencieux sur un profil différent,
+  jamais de fuite d'existence d'un profil étranger) ; le front retombe sur « texte de référence »
+  et invalide son `localStorage`.
 - Aucun profil créé : le sélecteur « Lire pour… » n'affiche que « texte de référence » — pas de
   régression pour un usage sans profil.
 
 ## Tests
 
 - `test_profils.py` (nouveau) : CRUD complet (créer, lister, modifier la cible d'un profil,
-  supprimer), validation de `cible` contre `S.CIBLES`, non-collision avec un fichier de série.
+  supprimer), validation de `cible` contre `S.CIBLES`, **isolation entre identités** (une clé A
+  ne voit jamais, ne peut ni modifier ni supprimer un profil créé par une clé B — 404, même motif
+  que les séries).
 - `test_cible_lecture.py` (nouveau) : `_adapter_cible` — succès (registre modifié, structure/
   balises préservées), repli honnête sur échec Gateway, repli sur incohérence de longueur.
 - Extension `test_audio.py`/équivalent existant : `POST /audio` avec `profil_id` seul, avec
