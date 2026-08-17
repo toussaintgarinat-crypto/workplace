@@ -219,6 +219,7 @@ class FaireEpisode(BaseModel):
     branche:       Optional[str] = None
     n:             Optional[int] = None
     langue_sortie: Optional[str] = None
+    profil_id:     Optional[str] = None
 
 
 class CibleEpisode(BaseModel):
@@ -1081,6 +1082,10 @@ async def produire_audio(serie_id: str, body: FaireEpisode, cle: str = Depends(c
         raise HTTPException(404, f"Épisode {body.n} introuvable.")
     script = ep.get("script_balise") or ep.get("script_brut") or ""
 
+    if body.profil_id:
+        profil = _profil_de(body.profil_id, cle)
+        script, _ = await S._adapter_cible(script, profil["cible"])
+
     brut = await agents._gateway_answer(
         agents.GATEWAY_URL, agents.GATEWAY_MODEL,
         "Tu structures des scripts audio en JSON, sans rien inventer.",
@@ -1131,7 +1136,8 @@ async def produire_audio(serie_id: str, body: FaireEpisode, cle: str = Depends(c
     return {"url": res.get("url"), "duree": res.get("duree"),
             "casting": casting, "casting_source": casting_source,
             "repliques": len(segments),
-            "langue_sortie": vers, "traduit": traduit}
+            "langue_sortie": vers, "traduit": traduit,
+            "profil_id": body.profil_id}
 
 
 async def _casting_stable(serie: dict, langue: str, audibles: list, pool: list) -> tuple:
