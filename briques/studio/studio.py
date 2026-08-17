@@ -37,6 +37,11 @@ GW_MODEL = GATEWAY_MODEL
 ATELIERS_DIR = os.getenv("STUDIO_DIR", "/data/ateliers")
 os.makedirs(ATELIERS_DIR, exist_ok=True)
 
+# Profils lecteurs (S231) : un fichier par profil, sous-dossier dédié pour ne jamais
+# collisionner avec un fichier de série (même motif de nommage : uuid4 hex).
+PROFILS_DIR = os.path.join(ATELIERS_DIR, "profils")
+os.makedirs(PROFILS_DIR, exist_ok=True)
+
 # Service « voix » sur l'hôte macOS (say + ffmpeg) — le conteneur le joint ainsi.
 VOIX_URL = os.getenv("VOIX_URL", "http://host.docker.internal:5810")
 VOIX_FALLBACK = ["Thomas", "Jacques", "Flo", "Eddy", "Grandpa", "Grandma"]
@@ -80,6 +85,23 @@ def _load(serie_id: str) -> dict:
 def _save(serie: dict) -> None:
     with open(_path(serie["id"]), "w", encoding="utf-8") as f:
         json.dump(serie, f, ensure_ascii=False, indent=2)
+
+
+def _profil_path(profil_id: str) -> str:
+    return os.path.join(PROFILS_DIR, f"{profil_id}.json")
+
+
+def _load_profil(profil_id: str) -> dict:
+    p = _profil_path(profil_id)
+    if not os.path.exists(p):
+        raise FileNotFoundError(profil_id)
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_profil(profil: dict) -> None:
+    with open(_profil_path(profil["id"]), "w", encoding="utf-8") as f:
+        json.dump(profil, f, ensure_ascii=False, indent=2)
 
 
 # ── Hiérarchie : Série → Cycles → Tomes → Chapitres (= episodes) ──
