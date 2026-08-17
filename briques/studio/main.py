@@ -511,6 +511,20 @@ def supprimer_profil(profil_id: str, cle: str = Depends(cle_api)):
     return None
 
 
+@app.get("/series/{serie_id}/episodes/{n}/adapte", tags=["profils"])
+async def episode_adapte(serie_id: str, n: int, profil_id: str, cle: str = Depends(cle_api)):
+    """Texte d'un chapitre adapté au registre du profil (jamais stocké, recalculé à chaque
+    appel — même politique que la traduction au rendu)."""
+    serie = charger(serie_id, cle)
+    profil = _profil_de(profil_id, cle)
+    ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
+    if not ep:
+        raise HTTPException(404, f"Épisode {n} introuvable.")
+    texte = ep.get("script_balise") or ep.get("script_brut") or ""
+    adapte, ok = await S._adapter_cible(texte, profil["cible"])
+    return {"texte": adapte, "adapte": ok, "cible": profil["cible"], "profil_id": profil_id}
+
+
 # ── Distribution (personnages structurés) ────────────────────────
 @app.get("/voix", tags=["distribution"])
 async def voix_disponibles(langue: str = "fr", _cle: str = Depends(cle_api)):
