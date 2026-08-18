@@ -234,6 +234,10 @@ class DefinirLangue(BaseModel):
     langue: str
 
 
+class MajValeur(BaseModel):
+    valeur: Optional[str] = None
+
+
 class CreerProfil(BaseModel):
     nom: str
     cible: str
@@ -434,6 +438,19 @@ def lister_cibles(_cle: str = Depends(cle_api)):
 @app.get("/valeurs", tags=["réglages"])
 def lister_valeurs(_cle: str = Depends(cle_api)):
     return [{"cle": k, "label": v} for k, v in S.VALEURS.items()]
+
+
+@app.patch("/series/{serie_id}/episodes/{n}/valeur", tags=["réglages"])
+def modifier_valeur_episode(serie_id: str, n: int, body: MajValeur, cle: str = Depends(cle_api)):
+    serie = charger(serie_id, cle)
+    ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
+    if not ep:
+        raise HTTPException(404, f"Chapitre {n} introuvable.")
+    if body.valeur is not None and body.valeur not in S.VALEURS:
+        raise HTTPException(400, f"Valeur inconnue : {body.valeur}")
+    ep["valeur"] = body.valeur
+    S._save(serie)
+    return {"valeur": ep["valeur"], "valeur_suggeree": ep.get("valeur_suggeree")}
 
 
 @app.post("/series/{serie_id}/cible", tags=["réglages"])
