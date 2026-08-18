@@ -1314,6 +1314,34 @@ async def lire_noeud(serie_id: str, noeud_id: str, profil_id: str, cle: str = De
     }
 
 
+class Choisir(BaseModel):
+    profil_id: str
+    choix: str
+
+
+@app.post("/series/{serie_id}/arbre/{noeud_id}/choisir", tags=["arbre"])
+def choisir_branche(serie_id: str, noeud_id: str, body: Choisir, cle: str = Depends(cle_api)):
+    """Fait progresser un profil dans l'arbre : refuse (404) une branche pas encore
+    écrite par le parent — jamais de génération à la volée pendant que l'enfant écoute."""
+    serie = charger(serie_id, cle)
+    _profil_de(body.profil_id, cle)
+    arbre = serie.get("arbre")
+    if not arbre:
+        raise HTTPException(404, "Aucun arbre pour cette série.")
+    noeud, _chemin = S._trouver_noeud(arbre, noeud_id)
+    if not noeud:
+        raise HTTPException(404, "Nœud introuvable.")
+    enfant = next((e for e in noeud.get("enfants", []) if e["choix"] == body.choix), None)
+    if not enfant or not enfant["noeud"].get("script"):
+        raise HTTPException(404, "Cette suite n'est pas encore écrite.")
+    S._ajouter_evenement(body.profil_id, {
+        "type": "arbre_choix", "serie_id": serie_id, "serie_titre": serie.get("titre"),
+        "episode_n": enfant["noeud"].get("episode_n"), "noeud_id": enfant["noeud"]["id"],
+        "choix": body.choix,
+    })
+    return {"noeud_id": enfant["noeud"]["id"]}
+
+
 @app.post("/series/{serie_id}/arbre", tags=["arbre"])
 async def cartographier(serie_id: str, body: Arbre, cle: str = Depends(cle_api)):
     serie = charger(serie_id, cle)
