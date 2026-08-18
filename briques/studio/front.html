@@ -164,7 +164,7 @@
 <script src="/manipulation_directe.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const md = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<em>$1</em>');
 
 // Clé API facultative (vente brique seule). Vide = mode ouvert. Lue ?api_key= ou localStorage.
@@ -181,6 +181,30 @@ async function api(path, method='GET', body=null){
 }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', 2600); }
+
+// Écouteur délégué unique (posé une fois au chargement, jamais ré-attaché lors des
+// re-rendus) : lit les attributs data-* des boutons plutôt que du JS ré-embarqué dans un
+// onclick inline, pour fermer le motif XSS JSON.stringify-dans-onclick (S231 + revue I6).
+document.addEventListener('click', e => {
+  const t = e.target;
+  const etendreBtn = t.closest('[data-etendre-nid]');
+  if (etendreBtn) { etendre(etendreBtn.dataset.etendreNid, etendreBtn.dataset.etendreChoix); return; }
+  const deciderBtn = t.closest('[data-decider-cle]');
+  if (deciderBtn) { decider(deciderBtn.dataset.deciderCle, deciderBtn.dataset.deciderChoix); return; }
+  const importerBtn = t.closest('[data-importer-fid]');
+  if (importerBtn) { importerFiche(importerBtn.dataset.importerFid); return; }
+  const renommerBtn = t.closest('[data-renommer-pid]');
+  if (renommerBtn) { renommerPerso(renommerBtn.dataset.renommerPid, renommerBtn.dataset.renommerNom); return; }
+  const retenirBtn = t.closest('[data-retenir-nom]');
+  if (retenirBtn) {
+    retenirPerso({
+      nom: retenirBtn.dataset.retenirNom,
+      role: retenirBtn.dataset.retenirRole || null,
+      description: retenirBtn.dataset.retenirDescription || null,
+    });
+    return;
+  }
+});
 
 // confirmer / ouvrirMenu / fermerMenu / attacherMenu / attacherAppuiLong / sortable
 // proviennent du socle partagé /manipulation_directe.js (chargé juste au-dessus).
@@ -437,7 +461,7 @@ async function proposer(cle){
     $('opts-'+cle).innerHTML = `<div class="hint">${esc(r.avatar||'')} ${esc(r.agent)} propose :</div>` +
       r.options.map((o,i)=>`
         <div class="opt"><h4>${esc(o.titre)}</h4><p>${md(o.description)}</p>
-          <button class="sm" style="margin-top:8px" onclick='decider(${JSON.stringify(cle)}, ${JSON.stringify(o.titre+" — "+o.description)})'>Choisir</button>
+          <button class="sm" style="margin-top:8px" data-decider-cle="${esc(cle)}" data-decider-choix="${esc(o.titre+' — '+o.description)}">Choisir</button>
         </div>`).join('');
   }catch(e){ $('bible-err').textContent='⚠ '+e.message; }
   finally{ b.disabled=false; b.textContent='💡 Proposer'; }
@@ -485,7 +509,7 @@ async function chargerMesPersonnages(){
       <div class="row" style="align-items:center;gap:8px;margin:6px 0">
         <div style="flex:2"><b>${esc(f.nom)}</b>${f.archetype?` <span class="muted">— ${esc(f.archetype)}</span>`:''}</div>
         <input id="sc-${esc(f.id)}" placeholder="Nom de scène (facultatif)" style="flex:3" value="">
-        <button class="sm" onclick='importerFiche(${JSON.stringify(f.id)})'>+ Ajouter</button>
+        <button class="sm" data-importer-fid="${esc(f.id)}">+ Ajouter</button>
       </div>`).join('');
   }catch(e){ box.innerHTML='⚠ '+esc(e.message); }
 }
@@ -501,7 +525,7 @@ function renderPersos(){
   $('d-liste').innerHTML = persos.length ? persos.map(p=>`
     <div class="card">
       <div class="ep-head"><h3>${esc(p.nom)}${(p.nom_naissance && p.nom_naissance!==p.nom)?` <span class="muted" style="font-weight:400">(né·e ${esc(p.nom_naissance)})</span>`:''} ${p.source?`<span class="flag studio">${esc(p.source)}</span>`:''}</h3>
-        <div><button class="sm ghost" onclick="renommerPerso('${p.id}', ${JSON.stringify(p.nom)})" title="Renommer pour cette série (garde le nom d'origine)">✎</button>
+        <div><button class="sm ghost" data-renommer-pid="${esc(p.id)}" data-renommer-nom="${esc(p.nom)}" title="Renommer pour cette série (garde le nom d'origine)">✎</button>
         <button class="sm ghost" onclick="portrait('${p.id}')">🖼️ Portrait</button>
         <button class="sm ghost" onclick="animer('${p.id}')">🎬 Animer</button>
         <button class="sm ghost" onclick="supprimerPerso('${p.id}')">✕</button></div></div>
@@ -535,7 +559,7 @@ async function proposerDistribution(){
     $('d-props').innerHTML = `<div class="hint">${esc(r.avatar||'🎭')} ${esc(r.agent)} (${esc(r.source)}) propose :</div>` +
       r.personnages.map((p,i)=>`<div class="opt"><h4>${esc(p.nom)}</h4>
         <div class="muted">${esc(p.role||'')}</div><p>${esc(p.description||'')}</p>
-        <button class="sm" style="margin-top:8px" onclick='retenirPerso(${JSON.stringify(p)})'>+ Retenir</button></div>`).join('');
+        <button class="sm" style="margin-top:8px" data-retenir-nom="${esc(p.nom)}" data-retenir-role="${esc(p.role||'')}" data-retenir-description="${esc(p.description||'')}">+ Retenir</button></div>`).join('');
   }catch(e){ $('d-err').textContent='⚠ '+e.message; }
   finally{ b.disabled=false; b.textContent='🎭 Proposer une distribution'; }
 }
@@ -745,7 +769,7 @@ function vueArbre(){
 function renderNoeud(n){
   return `<div class="card"><div class="muted">niveau ${n.niveau}</div>
     <p style="font-size:.85rem">${esc(n.synopsis||'')}</p>
-    <div>${(n.choix||[]).map(c=>`<button class="sm ghost" onclick='etendre("${n.id}", ${JSON.stringify(c)})'>↳ ${esc(c)}</button> `).join('')}</div>
+    <div>${(n.choix||[]).map(c=>`<button class="sm ghost" data-etendre-nid="${esc(n.id)}" data-etendre-choix="${esc(c)}">↳ ${esc(c)}</button> `).join('')}</div>
     <button class="sm" style="margin-top:8px" onclick="jouer('${n.id}')">🎬 Jouer ce nœud</button>
     ${n.script?`<div class="recit">${md(n.script)}</div>`:''}
     ${(n.enfants||[]).length?`<div class="arbre">${n.enfants.map(e=>renderNoeud(e.noeud)).join('')}</div>`:''}
