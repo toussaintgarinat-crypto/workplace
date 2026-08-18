@@ -136,6 +136,10 @@
       </div>
       <div class="panel">
         <h2>Profils lecteurs</h2>
+        <div class="row" style="margin-bottom:10px">
+          <input id="famille-nom" placeholder="Nom de la famille (optionnel)" style="flex:1">
+          <button class="sm ghost" onclick="enregistrerFamille()">💾</button>
+        </div>
         <p class="hint">Un profil par lecteur (ex. « Fils », « Fille »). Sa tranche d'âge peut évoluer au fil du temps : change-la ici quand il grandit — ça s'applique aussitôt aux prochaines lectures et productions audio.</p>
         <div id="liste-profils"><p class="muted">Chargement…</p></div>
         <div class="row" style="margin-top:10px">
@@ -207,6 +211,7 @@ async function init(){
     $('n-langue').innerHTML = LANGUES.map(l=>`<option value="${esc(l.code)}"${l.code==='fr'?' selected':''}>${esc(l.label)}</option>`).join('');
   }catch(e){ $('n-err').textContent='⚠ '+e.message; }
   await chargerProfils();
+  await chargerFamille();
   chargerListe();
 }
 
@@ -245,6 +250,15 @@ function brancherDndSeries(){
 async function chargerProfils(){
   try{ PROFILS = await api('/profils'); }catch(e){ PROFILS = []; }
   renderProfils();
+}
+
+async function chargerFamille(){
+  try{ const f = await api('/famille'); $('famille-nom').value = f.nom_famille || ''; }
+  catch(e){}
+}
+async function enregistrerFamille(){
+  try{ await api('/famille','PATCH',{nom_famille: $('famille-nom').value.trim() || null}); toast('Nom de famille enregistré'); }
+  catch(e){ toast('⚠ '+e.message); }
 }
 
 function renderProfils(){
