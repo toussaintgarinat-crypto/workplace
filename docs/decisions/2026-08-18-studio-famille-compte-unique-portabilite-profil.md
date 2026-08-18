@@ -87,6 +87,42 @@ stockage existant.
 - Cette décision ne code rien : elle fixe la règle de stockage que **la prochaine
   fonctionnalité de mémoire/parcours** devra respecter dès sa première ligne.
 
+**Ajouté 2026-08-18 (revue finale de branche, V1 saga familiale — journal/lecture
+interactive/valeurs)** — deux limites concrètes trouvées en construisant la première
+fonctionnalité qui s'appuie réellement sur cette décision :
+
+1. **L'audio produit par profil n'est PAS encore portable.** `ep["audios"][profil_id]`
+   (introduit en S231, avant cette décision) vit dans le JSON PARTAGÉ de la série, pas
+   dans un fichier indexé par `profil_id` comme l'exige la règle 2 de cette décision. Ce
+   n'est pas une régression de ce plan — c'est un motif pré-existant — mais la nouvelle
+   lecture d'un nœud d'arbre (V1 saga familiale) s'appuie désormais dessus, ce qui
+   *renforce* la dépendance à ce motif plutôt que de la résorber. Conséquence concrète :
+   texte, choix et journal d'un enfant sont bien portables ; ses rendus audio, non — ils
+   resteraient coincés dans la série du parent si un transfert de compte avait lieu
+   aujourd'hui. Déclencheur de bascule : dès qu'un vrai transfert de compte enfant→propre
+   compte est demandé, extraire `ep.audios[profil_id]` vers un stockage par profil AVANT
+   de coder le transfert lui-même — sans quoi la promesse de portabilité de cette
+   décision serait fausse pour l'audio. Chantier non trivial : touche la production audio
+   (S231), la nouvelle lecture d'arbre, et le panneau de revue audio du parent
+   (`renderAudios`, qui regroupe aujourd'hui tous les profils d'un chapitre en une seule
+   requête sur `ep.audios` — à restructurer en interrogeant plusieurs fichiers par
+   profil). Traité comme un plan séparé, pas empilé sur celui-ci.
+
+2. **La page de lecture enfant (`lecture.html`) utilise le même système de clé API que
+   le panneau parent.** Un lien `/lecture?...&api_key=...` partagé donnerait les pleins
+   droits d'auteur (créer/supprimer des séries) à quiconque l'ouvre, et le premier appel
+   (`GET /series/{id}`) renvoie toute la série au navigateur (bible, embranchements non
+   écrits inclus) même si la page n'affiche que le nœud courant — visible via les outils
+   de développeur. Accepté pour cette V1 car c'est le même modèle de confiance que le
+   reste de la brique (le compte = la famille, cf. décision ci-dessus) et que l'appareil
+   de l'enfant reste sous contrôle du foyer — mais c'est la première surface de ce Studio
+   *pensée* pour être donnée à quelqu'un d'autre que le titulaire du compte. Déclencheur
+   de bascule : dès qu'un lien `/lecture` doit pouvoir être partagé hors du foyer (ex. un
+   enfant chez un grand-parent avec son propre appareil), construire un jeton de lecture
+   restreint par profil (émis/révocable par le parent) plus une route de projection qui
+   ne renvoie que ce que la page affiche réellement — pas la série entière. Traité comme
+   un plan séparé, pas empilé sur celui-ci.
+
 ## Références
 
 - Rapport stratégique « Studio de séries audio IA qui accompagne l'enfant » (conversation
