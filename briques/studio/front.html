@@ -181,7 +181,7 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='blo
 // confirmer / ouvrirMenu / fermerMenu / attacherMenu / attacherAppuiLong / sortable
 // proviennent du socle partagé /manipulation_directe.js (chargé juste au-dessus).
 
-let CIBLES=[], LANGUES=[], PROFILS=[], serieCourante=null;
+let CIBLES=[], LANGUES=[], PROFILS=[], VALEURS=[], serieCourante=null;
 const DIMENSIONS=[
   {cle:'genre',    titre:'Genre',    emoji:'🎭', hint:'Le registre de la série.'},
   {cle:'univers',  titre:'Univers',  emoji:'🗺️', hint:'Le monde, le décor.'},
@@ -199,6 +199,7 @@ async function init(){
   try{
     CIBLES = await api('/cibles');
     LANGUES = await api('/langues');
+    VALEURS = await api('/valeurs');
     $('n-cible').innerHTML = '<option value="">— public libre —</option>' +
       CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
     $('pr-cible').innerHTML = '<option value="">— tranche d\'âge —</option>' +
@@ -548,9 +549,15 @@ function renderEpisode(ep){
   const langs = LANGUES.map(l=>`<option value="${l.code}">${esc(l.label)}</option>`).join('');
   const profilsOpts = '<option value="">— texte de référence —</option>' +
     PROFILS.map(p=>`<option value="${esc(p.id)}">${esc(p.nom)}</option>`).join('');
+  const valeurOpts = '<option value="">— aucune valeur —</option>' +
+    VALEURS.map(v=>`<option value="${esc(v.cle)}"${ep.valeur===v.cle?' selected':''}>${esc(v.label)}</option>`).join('');
+  const suggeree = ep.valeur_suggeree && ep.valeur!==ep.valeur_suggeree
+    ? `<span class="hint">suggérée : ${esc((VALEURS.find(v=>v.cle===ep.valeur_suggeree)||{}).label||ep.valeur_suggeree)}</span>` : '';
   return `<div class="card" id="ep-${ep.n}">
     <div class="ep-head"><h3>Chapitre ${ep.n} ${ep.fin_episode?'<span class="flag">fin d\'épisode</span>':''}</h3>
       <span class="muted">${esc(ep.consigne||'')}</span></div>
+    <label>Valeur illustrée</label>
+    <select onchange="changerValeurEpisode(${ep.n}, this.value)">${valeurOpts}</select> ${suggeree}
     <label>Lire pour…</label>
     <select id="lire-${ep.n}" onchange="lirePour(${ep.n}, this.value)">${profilsOpts}</select>
     <div class="recit" id="recit-${ep.n}">${md(ep.script_balise||ep.script_brut||'')}</div>
@@ -565,6 +572,10 @@ function renderEpisode(ep){
     ${ep.cover_url?`<img src="${esc(ep.cover_url)}" style="max-width:200px;border-radius:10px;margin-top:8px;display:block">`:''}
     ${mediaVideo(ep.teaser_url)}
   </div>`;
+}
+async function changerValeurEpisode(n, valeur){
+  try{ await api(`/series/${S().id}/episodes/${n}/valeur`,'PATCH',{valeur: valeur||null}); await refresh(); vue('Chapitres'); }
+  catch(e){ toast('⚠ '+e.message); }
 }
 function renderAudios(ep){
   // Un rendu par profil, tous conservés (S231 revue finale, C1) — `ep.audios` est la source
