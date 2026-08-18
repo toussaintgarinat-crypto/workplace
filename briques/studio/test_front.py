@@ -90,3 +90,9 @@ def test_front_expose_le_selecteur_lire_pour():
     assert "Lire pour" in html
     assert "lirePour" in html
     assert "/adapte" in html and "profil_id" in html
+
+
+def test_front_expose_le_selecteur_profil_sur_audio():
+    html = client.get("/").text
+    assert "aud-profil-" in html
+    assert "profil_id" in html and "produireAudio" in html
