@@ -508,6 +508,8 @@ def definir_langue(serie_id: str, body: DefinirLangue, cle: str = Depends(cle_ap
 def lister_profils(cle: str = Depends(cle_api)):
     out = []
     for fn in os.listdir(S.PROFILS_DIR):
+        if fn.endswith("-journal.json"):
+            continue
         if not fn.endswith(".json"):
             continue
         try:
@@ -559,6 +561,9 @@ def supprimer_profil(profil_id: str, cle: str = Depends(cle_api)):
     p = S._profil_path(profil_id)
     if os.path.exists(p):
         os.remove(p)
+    j = S._journal_path(profil_id)
+    if os.path.exists(j):
+        os.remove(j)
     return None
 
 
@@ -1404,7 +1409,9 @@ async def jouer_noeud(serie_id: str, noeud_id: str, cle: str = Depends(cle_api))
             f"qui se termine en amenant naturellement les 2 choix proposés : {noeud['choix']}.")
 
     episode_n = S._materialiser_chapitre(serie, noeud, chemin)
-    ep = next(e for e in serie["episodes"] if e["n"] == episode_n)
+    ep = next((e for e in serie["episodes"] if e["n"] == episode_n), None)
+    if ep is None:
+        raise HTTPException(500, "Chapitre matérialisé introuvable — incohérence interne.")
     if "valeur_suggeree" not in ep:
         ep["valeur_suggeree"] = await S._suggerer_valeur(ep.get("script_brut", ""))
         ep["valeur"] = ep["valeur_suggeree"]

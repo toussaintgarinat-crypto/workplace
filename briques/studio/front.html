@@ -203,12 +203,12 @@ async function init(){
   try{
     CIBLES = await api('/cibles');
     LANGUES = await api('/langues');
-    VALEURS = await api('/valeurs');
     $('n-cible').innerHTML = '<option value="">— public libre —</option>' +
       CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
     $('pr-cible').innerHTML = '<option value="">— tranche d\'âge —</option>' +
       CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
     $('n-langue').innerHTML = LANGUES.map(l=>`<option value="${esc(l.code)}"${l.code==='fr'?' selected':''}>${esc(l.label)}</option>`).join('');
+    VALEURS = await api('/valeurs');
   }catch(e){ $('n-err').textContent='⚠ '+e.message; }
   await chargerProfils();
   await chargerFamille();
@@ -288,7 +288,7 @@ async function basculerJournal(id){
     const {evenements} = await api('/profils/'+id+'/journal');
     zone.innerHTML = evenements.length ? evenements.slice().reverse().map(ev=>`
       <div class="hint" style="padding:4px 0;border-top:1px solid var(--line)">
-        ${esc(ev.serie_titre||'')} — chapitre ${ev.episode_n}
+        ${esc(ev.serie_titre||'')}${ev.episode_n != null ? ' — chapitre '+ev.episode_n : ''}
         ${ev.type==='arbre_choix' ? ' · a choisi « '+esc(ev.choix)+' »' : ' · écouté'}
         · ${new Date(ev.quand).toLocaleDateString('fr-FR')}
       </div>`).join('') : '<p class="muted">Rien écouté pour l\'instant.</p>';
