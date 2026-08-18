@@ -431,6 +431,11 @@ def lister_cibles(_cle: str = Depends(cle_api)):
     return [{"cle": k, "label": v} for k, v in S.CIBLES.items()]
 
 
+@app.get("/valeurs", tags=["réglages"])
+def lister_valeurs(_cle: str = Depends(cle_api)):
+    return [{"cle": k, "label": v} for k, v in S.VALEURS.items()]
+
+
 @app.post("/series/{serie_id}/cible", tags=["réglages"])
 def definir_cible(serie_id: str, body: DefinirCible, cle: str = Depends(cle_api)):
     serie = charger(serie_id, cle)
@@ -1044,6 +1049,8 @@ async def faire_episode(serie_id: str, body: FaireEpisode, cle: str = Depends(cl
         "anglicismes": S._anglicismes(balise, serie),
         "le": datetime.now(timezone.utc).isoformat(),
     }
+    episode["valeur_suggeree"] = await S._suggerer_valeur(script)
+    episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
     S._save(serie)
@@ -1239,6 +1246,8 @@ async def episode_express(serie_id: str, body: Express, cle: str = Depends(cle_a
         "anglicismes": S._anglicismes(balise, serie),
         "le": datetime.now(timezone.utc).isoformat(),
     }
+    episode["valeur_suggeree"] = await S._suggerer_valeur(script)
+    episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
     S._save(serie)
@@ -1300,6 +1309,10 @@ async def jouer_noeud(serie_id: str, noeud_id: str, cle: str = Depends(cle_api))
             f"qui se termine en amenant naturellement les 2 choix proposés : {noeud['choix']}.")
 
     episode_n = S._materialiser_chapitre(serie, noeud, chemin)
+    ep = next(e for e in serie["episodes"] if e["n"] == episode_n)
+    if "valeur_suggeree" not in ep:
+        ep["valeur_suggeree"] = await S._suggerer_valeur(ep.get("script_brut", ""))
+        ep["valeur"] = ep["valeur_suggeree"]
     S._save(serie)
     return {"script": noeud["script"], "synopsis": noeud["synopsis"],
             "choix": noeud["choix"], "deja": deja, "episode_n": episode_n}
