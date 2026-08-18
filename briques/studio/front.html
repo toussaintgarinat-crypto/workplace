@@ -134,6 +134,17 @@
         <button id="btn-creer" onclick="creerSerie()" style="width:100%;margin-top:14px">✨ Créer la série</button>
         <div class="err" id="n-err"></div>
       </div>
+      <div class="panel">
+        <h2>Profils lecteurs</h2>
+        <p class="hint">Un profil par lecteur (ex. « Fils », « Fille »). Sa tranche d'âge peut évoluer au fil du temps : change-la ici quand il grandit — ça s'applique aussitôt aux prochaines lectures et productions audio.</p>
+        <div id="liste-profils"><p class="muted">Chargement…</p></div>
+        <div class="row" style="margin-top:10px">
+          <input id="pr-nom" placeholder="Prénom" style="flex:2">
+          <select id="pr-cible" style="flex:2"></select>
+        </div>
+        <button class="ghost" style="width:100%;margin-top:8px" onclick="creerProfil()">+ Ajouter un profil</button>
+        <div class="err" id="pr-err"></div>
+      </div>
     </div>
 
     <!-- ── Colonne droite : la série ouverte ─────────────────── -->
@@ -170,7 +181,7 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='blo
 // confirmer / ouvrirMenu / fermerMenu / attacherMenu / attacherAppuiLong / sortable
 // proviennent du socle partagé /manipulation_directe.js (chargé juste au-dessus).
 
-let CIBLES=[], LANGUES=[], serieCourante=null;
+let CIBLES=[], LANGUES=[], PROFILS=[], serieCourante=null;
 const DIMENSIONS=[
   {cle:'genre',    titre:'Genre',    emoji:'🎭', hint:'Le registre de la série.'},
   {cle:'univers',  titre:'Univers',  emoji:'🗺️', hint:'Le monde, le décor.'},
@@ -190,8 +201,11 @@ async function init(){
     LANGUES = await api('/langues');
     $('n-cible').innerHTML = '<option value="">— public libre —</option>' +
       CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
+    $('pr-cible').innerHTML = '<option value="">— tranche d\'âge —</option>' +
+      CIBLES.map(c=>`<option value="${esc(c.cle)}">${esc(c.label)}</option>`).join('');
     $('n-langue').innerHTML = LANGUES.map(l=>`<option value="${esc(l.code)}"${l.code==='fr'?' selected':''}>${esc(l.label)}</option>`).join('');
   }catch(e){ $('n-err').textContent='⚠ '+e.message; }
+  await chargerProfils();
   chargerListe();
 }
 
@@ -224,6 +238,63 @@ function brancherDndSeries(){
     itemSelector:'.serie-item[data-id]',
     onReorder: async (ids)=>{ try{ await api('/series/reordonner','POST',{ids}); }catch(e){} },
   });
+}
+
+// ── Profils lecteurs (S231) : globaux à l'atelier, un par lecteur ─
+async function chargerProfils(){
+  try{ PROFILS = await api('/profils'); }catch(e){ PROFILS = []; }
+  renderProfils();
+}
+
+function renderProfils(){
+  $('liste-profils').innerHTML = PROFILS.length ? PROFILS.map(p => `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b>${esc(p.nom)}</b>
+      <select style="flex:1;min-width:150px" onchange="changerCibleProfil('${p.id}', this.value)">
+        ${CIBLES.map(c=>`<option value="${esc(c.cle)}"${p.cible===c.cle?' selected':''}>${esc(c.label)}</option>`).join('')}
+      </select>
+      <div>
+        <button class="sm ghost" onclick="renommerProfil('${p.id}', ${JSON.stringify(p.nom)})">✎</button>
+        <button class="sm ghost" onclick="supprimerProfil('${p.id}')">✕</button>
+      </div>
+    </div>`).join('') : '<p class="muted">Aucun profil pour l\'instant.</p>';
+}
+
+async function creerProfil(){
+  const nom = $('pr-nom').value.trim();
+  const cible = $('pr-cible').value;
+  $('pr-err').textContent='';
+  if(!nom){ $('pr-err').textContent='⚠ Donne un prénom au profil.'; return; }
+  if(!cible){ $('pr-err').textContent='⚠ Choisis une tranche d\'âge.'; return; }
+  try{
+    await api('/profils','POST',{nom, cible});
+    $('pr-nom').value='';
+    await chargerProfils(); toast('Profil « '+nom+' » créé 🎈');
+  }catch(e){ $('pr-err').textContent='⚠ '+e.message; }
+}
+
+async function changerCibleProfil(id, cible){
+  try{ await api('/profils/'+id,'PATCH',{cible}); await chargerProfils(); toast('Âge mis à jour 🎂'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+async function renommerProfil(id, nomActuel){
+  const nom = prompt('Nouveau prénom du profil :', nomActuel||'');
+  if(nom===null) return;
+  if(!nom.trim()){ toast('Le prénom ne peut pas être vide.'); return; }
+  try{ await api('/profils/'+id,'PATCH',{nom}); await chargerProfils(); toast('Profil renommé'); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+async function supprimerProfil(id){
+  const profil = PROFILS.find(p=>p.id===id);
+  const ok = await confirmer({
+    titre:'Supprimer le profil',
+    message:`Le profil « ${profil?profil.nom:''} » sera supprimé. Les chapitres déjà écrits ne sont pas affectés.`,
+    action:'Supprimer'});
+  if(!ok) return;
+  try{ await api('/profils/'+id,'DELETE'); await chargerProfils(); toast('Profil supprimé'); }
+  catch(e){ toast('⚠ '+e.message); }
 }
 
 // Supprimer une série (définitif) : geste = appui long, garde-fou = confirmation nommée.

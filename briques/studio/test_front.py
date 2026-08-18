@@ -76,3 +76,10 @@ def test_reordonner_series_persiste_l_ordre():
     assert r.status_code == 200 and r.json()["ordonnees"] == 3
     listed = [s["id"] for s in client.get("/series").json() if s["id"] in ids]
     assert listed == nouvel_ordre
+
+
+def test_front_expose_le_panneau_profils_lecteurs():
+    html = client.get("/").text
+    assert "Profils lecteurs" in html
+    assert "creerProfil" in html and "chargerProfils" in html
+    assert "/profils" in html
