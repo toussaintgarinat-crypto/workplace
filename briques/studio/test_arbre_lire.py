@@ -38,7 +38,13 @@ def _mock_adapter(monkeypatch):
 
 
 def test_lire_noeud_indique_quelles_branches_sont_ecrites(monkeypatch):
-    _mock_adapter(monkeypatch)
+    appels = []
+
+    async def fake_adapter(texte, cible, langue="fr"):
+        appels.append((texte, cible))
+        return texte, True
+    monkeypatch.setattr(main.S, "_adapter_cible", fake_adapter)
+
     sid = _serie_avec_arbre()
     pid = client.post("/profils", json={"nom": "Fils", "cible": "7-9"}).json()["id"]
     r = client.get(f"/series/{sid}/arbre/n1/lire", params={"profil_id": pid})
@@ -48,6 +54,7 @@ def test_lire_noeud_indique_quelles_branches_sont_ecrites(monkeypatch):
     assert body["episode_n"] == 1
     choix = {c["texte"]: c["ecrit"] for c in body["choix"]}
     assert choix == {"Grotte": True, "Village": False}
+    assert appels == [("Le début de l'aventure.", "7-9")]
 
 
 def test_lire_noeud_non_ecrit_404(monkeypatch):
