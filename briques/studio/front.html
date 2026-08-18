@@ -254,7 +254,7 @@ function renderProfils(){
         ${CIBLES.map(c=>`<option value="${esc(c.cle)}"${p.cible===c.cle?' selected':''}>${esc(c.label)}</option>`).join('')}
       </select>
       <div>
-        <button class="sm ghost" onclick="renommerProfil('${p.id}', ${JSON.stringify(p.nom)})">✎</button>
+        <button class="sm ghost" onclick="renommerProfil('${p.id}')">✎</button>
         <button class="sm ghost" onclick="supprimerProfil('${p.id}')">✕</button>
       </div>
     </div>`).join('') : '<p class="muted">Aucun profil pour l\'instant.</p>';
@@ -278,8 +278,9 @@ async function changerCibleProfil(id, cible){
   catch(e){ toast('⚠ '+e.message); }
 }
 
-async function renommerProfil(id, nomActuel){
-  const nom = prompt('Nouveau prénom du profil :', nomActuel||'');
+async function renommerProfil(id){
+  const profil = PROFILS.find(p=>p.id===id);
+  const nom = prompt('Nouveau prénom du profil :', profil ? profil.nom : '');
   if(nom===null) return;
   if(!nom.trim()){ toast('Le prénom ne peut pas être vide.'); return; }
   try{ await api('/profils/'+id,'PATCH',{nom}); await chargerProfils(); toast('Profil renommé'); }
