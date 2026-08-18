@@ -238,6 +238,10 @@ class MajValeur(BaseModel):
     valeur: Optional[str] = None
 
 
+class MajFamille(BaseModel):
+    nom_famille: Optional[str] = None
+
+
 class CreerProfil(BaseModel):
     nom: str
     cible: str
@@ -451,6 +455,18 @@ def modifier_valeur_episode(serie_id: str, n: int, body: MajValeur, cle: str = D
     ep["valeur"] = body.valeur
     S._save(serie)
     return {"valeur": ep["valeur"], "valeur_suggeree": ep.get("valeur_suggeree")}
+
+
+@app.get("/famille", tags=["famille"])
+def lire_famille(cle: str = Depends(cle_api)):
+    return S._load_compte(cle)
+
+
+@app.patch("/famille", tags=["famille"])
+def modifier_famille(body: MajFamille, cle: str = Depends(cle_api)):
+    nom = body.nom_famille.strip() if body.nom_famille else None
+    S._save_compte(cle, {"nom_famille": nom or None})
+    return S._load_compte(cle)
 
 
 @app.post("/series/{serie_id}/cible", tags=["réglages"])

@@ -14,6 +14,7 @@ import os
 import re
 import json
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -134,6 +135,33 @@ def _ajouter_evenement(profil_id: str, evenement: dict) -> dict:
         json.dump({"profil_id": profil_id, "evenements": evenements}, f,
                    ensure_ascii=False, indent=2)
     return complet
+
+
+# ── Nom de famille cosmétique (V1 saga familiale) ─────────────────
+# PAS l'entité `Famille` écartée par l'ADR 2026-08-18 : aucune donnée d'enfant ici,
+# uniquement une étiquette d'affichage au niveau du compte (`cree_par`).
+COMPTES_DIR = os.path.join(ATELIERS_DIR, "comptes")
+os.makedirs(COMPTES_DIR, exist_ok=True)
+
+
+def _compte_path(identite: str) -> str:
+    """Fichier haché : `identite` peut être une clé API, jamais exposée en clair dans un
+    nom de fichier listable."""
+    h = hashlib.sha256(identite.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(COMPTES_DIR, f"{h}.json")
+
+
+def _load_compte(identite: str) -> dict:
+    p = _compte_path(identite)
+    if not os.path.exists(p):
+        return {"nom_famille": None}
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_compte(identite: str, compte: dict) -> None:
+    with open(_compte_path(identite), "w", encoding="utf-8") as f:
+        json.dump(compte, f, ensure_ascii=False, indent=2)
 
 
 # ── Hiérarchie : Série → Cycles → Tomes → Chapitres (= episodes) ──
