@@ -1,4 +1,5 @@
 """Tests — CRUD des profils lecteurs (S231), scopés par identité comme les séries (S187)."""
+import json
 import os
 
 from fastapi.testclient import TestClient
@@ -88,12 +89,25 @@ def test_supprimer_profil_supprime_aussi_son_journal():
 
 
 def test_lister_profils_exclut_les_fichiers_journal():
-    """Fix revue finale : garde le fichier journal hors de GET /profils, sans dépendre de
-    l'accident cree_par==None (le journal n'a pas cette clé)."""
+    """Fix revue finale : garde le fichier journal hors de GET /profils par son NOM de
+    fichier (`-journal.json`), pas par accident de valeur.
+
+    Sans ce durcissement, ce test passait déjà AVANT le fix filename-based, par accident :
+    le journal n'a pas de clé `cree_par`, donc l'ancien filtre `p.get("cree_par") != cle`
+    l'excluait tout seul (None != "public"). On neutralise cet accident en donnant au
+    journal un `cree_par` qui MATCHE l'identité appelante ("public" en mode ouvert sans
+    en-têtes, cf. conftest.py API_KEYS="" et main.cle_api) : seul le filtre par nom de
+    fichier peut alors encore sauver ce test."""
     pid = client.post("/profils", json={"nom": "Solo", "cible": "0-3"}).json()["id"]
     S._ajouter_evenement(pid, {"type": "chapitre_lu", "serie_id": "s1", "episode_n": 1})
     assert os.path.exists(S._journal_path(pid))
+    with open(S._journal_path(pid), encoding="utf-8") as f:
+        journal = json.load(f)
+    journal["cree_par"] = "public"
+    with open(S._journal_path(pid), "w", encoding="utf-8") as f:
+        json.dump(journal, f, ensure_ascii=False, indent=2)
     profils = client.get("/profils").json()
     ids = [p["id"] for p in profils]
     assert ids.count(pid) == 1
     assert all(not p["id"].endswith("-journal") for p in profils)
+    assert all("evenements" not in p for p in profils)
