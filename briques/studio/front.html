@@ -542,13 +542,18 @@ async function vueChapitres(){
       ${eps.slice().reverse().map(ep=>renderEpisode(ep)).join('') || '<p class="muted">Aucun chapitre. Lance le premier !</p>'}
     </div>
   </div>`;
+  appliquerDernierProfilLecture();
 }
 function renderEpisode(ep){
   const langs = LANGUES.map(l=>`<option value="${l.code}">${esc(l.label)}</option>`).join('');
+  const profilsOpts = '<option value="">— texte de référence —</option>' +
+    PROFILS.map(p=>`<option value="${esc(p.id)}">${esc(p.nom)}</option>`).join('');
   return `<div class="card" id="ep-${ep.n}">
     <div class="ep-head"><h3>Chapitre ${ep.n} ${ep.fin_episode?'<span class="flag">fin d\'épisode</span>':''}</h3>
       <span class="muted">${esc(ep.consigne||'')}</span></div>
-    <div class="recit">${md(ep.script_balise||ep.script_brut||'')}</div>
+    <label>Lire pour…</label>
+    <select id="lire-${ep.n}" onchange="lirePour(${ep.n}, this.value)">${profilsOpts}</select>
+    <div class="recit" id="recit-${ep.n}">${md(ep.script_balise||ep.script_brut||'')}</div>
     <div class="row" style="margin-top:10px;align-items:end">
       <div style="flex:2"><label>Langue de l'audio</label><select id="lang-${ep.n}">${langs}</select></div>
       <button class="sm" onclick="produireAudio(${ep.n})">🔊 Produire l'audio</button>
@@ -560,6 +565,40 @@ function renderEpisode(ep){
     ${ep.cover_url?`<img src="${esc(ep.cover_url)}" style="max-width:200px;border-radius:10px;margin-top:8px;display:block">`:''}
     ${mediaVideo(ep.teaser_url)}
   </div>`;
+}
+
+const LS_PROFIL_LECTURE = 'studio_dernier_profil_lecture';
+
+async function lirePour(n, profilId){
+  const recit = $('recit-'+n);
+  if(!profilId){
+    const ep = (S().episodes||[]).find(e=>e.n===n);
+    recit.innerHTML = md(ep ? (ep.script_balise||ep.script_brut||'') : '');
+    localStorage.removeItem(LS_PROFIL_LECTURE);
+    return;
+  }
+  localStorage.setItem(LS_PROFIL_LECTURE, profilId);
+  recit.innerHTML = '<span class="muted">Adaptation…</span>';
+  const ep = (S().episodes||[]).find(e=>e.n===n);
+  const reference = ep ? (ep.script_balise||ep.script_brut||'') : '';
+  try{
+    const r = await api(`/series/${S().id}/episodes/${n}/adapte?profil_id=${encodeURIComponent(profilId)}`);
+    recit.innerHTML = md(r.texte) + (r.adapte ? '' :
+      '<div class="hint">⚠ adaptation indisponible, texte de référence affiché.</div>');
+  }catch(e){
+    recit.innerHTML = md(reference) + '<div class="hint">⚠ '+esc(e.message)+' — texte de référence affiché.</div>';
+  }
+}
+
+function appliquerDernierProfilLecture(){
+  const dernier = localStorage.getItem(LS_PROFIL_LECTURE);
+  if(!dernier) return;
+  if(!PROFILS.some(p=>p.id===dernier)){ localStorage.removeItem(LS_PROFIL_LECTURE); return; }
+  document.querySelectorAll('select[id^="lire-"]').forEach(sel=>{
+    sel.value = dernier;
+    const n = parseInt(sel.id.split('-')[1], 10);
+    lirePour(n, dernier);
+  });
 }
 async function ecrireChapitre(){
   const b=$('btn-ep'); b.disabled=true; b.textContent='✍️ Le Scénariste écrit…'; $('ch-err').textContent='';

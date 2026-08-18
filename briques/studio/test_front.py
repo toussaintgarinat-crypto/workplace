@@ -83,3 +83,10 @@ def test_front_expose_le_panneau_profils_lecteurs():
     assert "Profils lecteurs" in html
     assert "creerProfil" in html and "chargerProfils" in html
     assert "/profils" in html
+
+
+def test_front_expose_le_selecteur_lire_pour():
+    html = client.get("/").text
+    assert "Lire pour" in html
+    assert "lirePour" in html
+    assert "/adapte" in html and "profil_id" in html
