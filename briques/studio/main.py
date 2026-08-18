@@ -313,6 +313,10 @@ class Etendre(BaseModel):
     choix: str
 
 
+class MarquerLu(BaseModel):
+    profil_id: str
+
+
 # ── Séries (CRUD) ────────────────────────────────────────────────
 @app.post("/series", tags=["séries"])
 def creer_serie(body: CreerSerie, cle: str = Depends(cle_api)):
@@ -531,6 +535,22 @@ async def episode_adapte(serie_id: str, n: int, profil_id: str, cle: str = Depen
 def journal_profil(profil_id: str, cle: str = Depends(cle_api)):
     _profil_de(profil_id, cle)  # 404 si absent ou pas à `cle` (même garde que /profils)
     return {"evenements": S._load_journal(profil_id)}
+
+
+@app.post("/series/{serie_id}/episodes/{n}/marquer-lu", tags=["journal"])
+def marquer_lu(serie_id: str, n: int, body: MarquerLu, cle: str = Depends(cle_api)):
+    """Journalise qu'un profil a écouté/lu ce chapitre. Endpoint DÉDIÉ (pas d'effet de
+    bord sur `episode_adapte`, qui sert aussi à la prévisualisation du parent — cf.
+    spec 2.2, auto-revue)."""
+    serie = charger(serie_id, cle)
+    _profil_de(body.profil_id, cle)
+    ep = next((e for e in serie.get("episodes", []) if e.get("n") == n), None)
+    if not ep:
+        raise HTTPException(404, f"Chapitre {n} introuvable.")
+    return S._ajouter_evenement(body.profil_id, {
+        "type": "chapitre_lu", "serie_id": serie_id, "serie_titre": serie.get("titre"),
+        "episode_n": n, "noeud_id": None, "choix": None,
+    })
 
 
 # ── Distribution (personnages structurés) ────────────────────────
