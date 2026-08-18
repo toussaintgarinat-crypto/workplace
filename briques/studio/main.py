@@ -522,7 +522,7 @@ async def episode_adapte(serie_id: str, n: int, profil_id: str, cle: str = Depen
     if not ep:
         raise HTTPException(404, f"Épisode {n} introuvable.")
     texte = ep.get("script_balise") or ep.get("script_brut") or ""
-    adapte, ok = await S._adapter_cible(texte, profil["cible"])
+    adapte, ok = await S._adapter_cible(texte, profil["cible"], serie.get("langue"))
     return {"texte": adapte, "adapte": ok, "cible": profil["cible"], "profil_id": profil_id}
 
 
@@ -1082,9 +1082,10 @@ async def produire_audio(serie_id: str, body: FaireEpisode, cle: str = Depends(c
         raise HTTPException(404, f"Épisode {body.n} introuvable.")
     script = ep.get("script_balise") or ep.get("script_brut") or ""
 
+    adapte_ok = None  # non applicable : pas de profil demandé, pas de succès/échec à rapporter
     if body.profil_id:
         profil = _profil_de(body.profil_id, cle)
-        script, _ = await S._adapter_cible(script, profil["cible"])
+        script, adapte_ok = await S._adapter_cible(script, profil["cible"], serie.get("langue"))
 
     brut = await agents._gateway_answer(
         agents.GATEWAY_URL, agents.GATEWAY_MODEL,
@@ -1117,27 +1118,45 @@ async def produire_audio(serie_id: str, body: FaireEpisode, cle: str = Depends(c
     casting, casting_source = await _casting_stable(serie, vers, audibles, pool)
     segments = [{"voix": casting[perso], "texte": texte} for perso, texte in audibles]
 
+    # Rendu scopé au profil : sans ça, produire l'audio du profil « Fille » puis « Fils » sur le
+    # MÊME chapitre écrase le même fichier .mp3 côté brique voix (episode_id identique). On NE
+    # scope PAS aussi par `vers` (langue de sortie) — même classe de bug côté langue, mais
+    # pré-existante et hors périmètre de cette revue (S231 revue finale, C1).
+    suffixe_profil = f"-p{body.profil_id}" if body.profil_id else ""
+    episode_id_render = f"{serie_id}-ep{ep['n']}{suffixe_profil}"
+
     try:
         async with S.httpx.AsyncClient(timeout=180) as c:
             r = await c.post(f"{S.VOIX_URL}/rendre",
-                             json={"episode_id": f"{serie_id}-ep{ep['n']}",
+                             json={"episode_id": episode_id_render,
                                    "segments": segments, "langue": vers})
             r.raise_for_status()
             res = r.json()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Service voix injoignable ({S.VOIX_URL}) : {str(e)[:150]}")
 
-    ep["audio_url"] = res.get("url")
-    ep["duree"] = res.get("duree")
-    ep["casting"] = casting
-    ep["casting_source"] = casting_source
-    ep["langue_audio"] = vers
+    cle_stockage = body.profil_id or "reference"
+    audios = ep.setdefault("audios", {})
+    audios[cle_stockage] = {
+        "url": res.get("url"), "duree": res.get("duree"),
+        "casting": casting, "casting_source": casting_source,
+        "langue_audio": vers, "profil_id": body.profil_id,
+    }
+    # Rétrocompat : les champs plats de l'épisode restent le rendu de RÉFÉRENCE uniquement —
+    # jamais écrasés par un rendu profil-spécifique (S231 revue finale, C1).
+    if not body.profil_id:
+        ep["audio_url"] = res.get("url")
+        ep["duree"] = res.get("duree")
+        ep["casting"] = casting
+        ep["casting_source"] = casting_source
+        ep["langue_audio"] = vers
     S._save(serie)
     return {"url": res.get("url"), "duree": res.get("duree"),
             "casting": casting, "casting_source": casting_source,
             "repliques": len(segments),
             "langue_sortie": vers, "traduit": traduit,
-            "profil_id": body.profil_id}
+            "profil_id": body.profil_id,
+            "adapte": adapte_ok if body.profil_id else None}
 
 
 async def _casting_stable(serie: dict, langue: str, audibles: list, pool: list) -> tuple:

@@ -24,7 +24,7 @@ def _serie_avec_episode_direct():
 def test_texte_adapte_appelle_adapter_cible_avec_la_cible_du_profil(monkeypatch):
     appels = []
 
-    async def fake_adapter(texte, cible):
+    async def fake_adapter(texte, cible, langue="fr"):
         appels.append((texte, cible))
         return "Texte adapté.", True
     monkeypatch.setattr(main.S, "_adapter_cible", fake_adapter)
@@ -39,7 +39,7 @@ def test_texte_adapte_appelle_adapter_cible_avec_la_cible_du_profil(monkeypatch)
 
 
 def test_episode_inexistant_404(monkeypatch):
-    async def fake_adapter(texte, cible):
+    async def fake_adapter(texte, cible, langue="fr"):
         return texte, True
     monkeypatch.setattr(main.S, "_adapter_cible", fake_adapter)
     sid = _serie_avec_episode_direct()
