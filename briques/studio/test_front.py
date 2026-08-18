@@ -96,3 +96,29 @@ def test_front_expose_le_selecteur_profil_sur_audio():
     html = client.get("/").text
     assert "aud-profil-" in html
     assert "profil_id" in html and "produireAudio" in html
+
+
+def test_front_rend_un_lecteur_audio_par_profil():
+    # S231 revue finale C1 : un rendu par profil, tous conservés — le front doit boucler sur
+    # `ep.audios` (plusieurs lecteurs), pas se limiter à un unique `ep.audio_url`.
+    html = client.get("/").text
+    assert "renderAudios" in html
+    assert "ep.audios" in html
+
+
+def test_front_pas_de_stored_xss_via_json_stringify_nom_profil():
+    # S231 revue finale, garde-fou anti-régression : le motif XSS stocké retiré par le
+    # correctif Task 6 (nom de profil libre injecté sans échappement via JSON.stringify dans
+    # un attribut HTML inline) ne doit jamais revenir DANS LE PANNEAU PROFILS LECTEURS.
+    #
+    # NB : "JSON.stringify(p.nom)" existe ailleurs dans ce fichier (`renommerPerso`, panneau
+    # Distribution/personnages) — motif PRÉ-EXISTANT, hors périmètre de cette feature (revue
+    # finale l'a noté comme suivi séparé, volontairement non touché ici). Un grep global sur
+    # toute la page donnerait donc un FAUX POSITIF ; on scope le garde-fou à la fonction
+    # `renderProfils` (le panneau introduit par CETTE feature) pour rester précis.
+    html = client.get("/").text
+    debut = html.index("function renderProfils(")
+    fin = html.index("async function creerProfil(")
+    assert debut < fin
+    panneau_profils = html[debut:fin]
+    assert "JSON.stringify(p.nom)" not in panneau_profils

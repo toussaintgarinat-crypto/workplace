@@ -561,16 +561,33 @@ function renderEpisode(ep){
       <button class="sm ghost" onclick="couverture(${ep.n})">🖼️ Couverture</button>
       <button class="sm ghost" onclick="teaser(${ep.n})">🎬 Bande-annonce</button>
     </div>
-    ${ep.audio_url?`<audio controls src="${esc(ep.audio_url)}"></audio>
-      <div class="hint">Casting : ${esc(JSON.stringify(ep.casting||{}))} <span class="flag ${ep.casting_source==='studio'?'studio':''}">${esc(ep.casting_source||'')}</span></div>`:''}
+    ${renderAudios(ep)}
     ${ep.cover_url?`<img src="${esc(ep.cover_url)}" style="max-width:200px;border-radius:10px;margin-top:8px;display:block">`:''}
     ${mediaVideo(ep.teaser_url)}
   </div>`;
 }
+function renderAudios(ep){
+  // Un rendu par profil, tous conservés (S231 revue finale, C1) — `ep.audios` est la source
+  // depuis ce correctif ; `ep.audio_url` seul reste lisible pour une série écrite AVANT lui.
+  const audios = ep.audios || (ep.audio_url ? {reference: {url: ep.audio_url, duree: ep.duree,
+    casting: ep.casting, casting_source: ep.casting_source, langue_audio: ep.langue_audio,
+    profil_id: null}} : {});
+  return Object.values(audios).map(a=>{
+    const profil = a.profil_id ? PROFILS.find(p=>p.id===a.profil_id) : null;
+    const label = a.profil_id ? (profil ? esc(profil.nom) : 'Profil supprimé') : 'Référence';
+    return `<div style="margin-top:8px">
+      <div class="hint">Audio — ${label}${a.langue_audio?` (${esc(a.langue_audio.toUpperCase())})`:''}</div>
+      <audio controls src="${esc(a.url)}"></audio>
+      <div class="hint">Casting : ${esc(JSON.stringify(a.casting||{}))} <span class="flag ${a.casting_source==='studio'?'studio':''}">${esc(a.casting_source||'')}</span></div>
+    </div>`;
+  }).join('');
+}
 
 const LS_PROFIL_LECTURE = 'studio_dernier_profil_lecture';
+const _lireGen = {};  // compteur de génération par épisode — écarte une réponse en vol dépassée
 
 async function lirePour(n, profilId){
+  const monGen = (_lireGen[n] = (_lireGen[n]||0) + 1);
   const recit = $('recit-'+n);
   if(!profilId){
     const ep = (S().episodes||[]).find(e=>e.n===n);
@@ -584,9 +601,11 @@ async function lirePour(n, profilId){
   const reference = ep ? (ep.script_balise||ep.script_brut||'') : '';
   try{
     const r = await api(`/series/${S().id}/episodes/${n}/adapte?profil_id=${encodeURIComponent(profilId)}`);
+    if(_lireGen[n] !== monGen) return; // une sélection plus récente a déjà pris le dessus
     recit.innerHTML = md(r.texte) + (r.adapte ? '' :
       '<div class="hint">⚠ adaptation indisponible, texte de référence affiché.</div>');
   }catch(e){
+    if(_lireGen[n] !== monGen) return;
     recit.innerHTML = md(reference) + '<div class="hint">⚠ '+esc(e.message)+' — texte de référence affiché.</div>';
   }
 }
@@ -611,7 +630,12 @@ async function produireAudio(n){
   const sortie=$('lang-'+n).value;
   const profilId=$('aud-profil-'+n).value;
   toast('🔊 Sonorisation…');
-  try{ await api(`/series/${S().id}/audio`,'POST',{n, langue_sortie:sortie, profil_id: profilId||null}); await refresh(); vue('Chapitres'); toast('Audio prêt 🔊'); }
+  try{
+    const r = await api(`/series/${S().id}/audio`,'POST',{n, langue_sortie:sortie, profil_id: profilId||null});
+    await refresh(); vue('Chapitres');
+    if(r.profil_id && r.adapte === false){ toast('⚠ adaptation indisponible, audio produit avec le texte de référence.'); }
+    else{ toast('Audio prêt 🔊'); }
+  }
   catch(e){ toast('⚠ '+e.message); }
 }
 async function couverture(n){

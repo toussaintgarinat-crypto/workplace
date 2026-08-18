@@ -296,6 +296,23 @@ CIBLE_GUIDE = {
     "adulte": "Public adulte : liberté de ton et de thèmes, intrigue exigeante.",
 }
 
+# Registre SEUL (vocabulaire, longueur de phrase, intensité émotionnelle) — à la différence de
+# `CIBLE_GUIDE` ci-dessus (destiné à l'ÉCRITURE d'un chapitre neuf), cette table ne contient
+# AUCUNE consigne de raccourcissement, de morale ou de censure de contenu : elle sert à
+# `_adapter_cible` qui adapte un texte DÉJÀ ÉCRIT à la lecture, sans jamais toucher à
+# l'intrigue (S231 revue finale, C2 — injecter `CIBLE_GUIDE` ici contredisait « jamais
+# l'histoire » du prompt système).
+CIBLE_REGISTRE = {
+    "0-3":    "Phrases très courtes et simples, vocabulaire de base concret, rythme lent, "
+              "intensité émotionnelle très atténuée.",
+    "4-6":    "Phrases courtes et claires, vocabulaire simple, intensité émotionnelle douce.",
+    "7-9":    "Vocabulaire accessible mais varié, phrases de longueur modérée, intensité "
+              "légère à modérée.",
+    "10-12":  "Vocabulaire et longueur de phrase intermédiaires, intensité modérée.",
+    "13-17":  "Vocabulaire et syntaxe plus riches, intensité plus soutenue.",
+    "adulte": "Registre libre, aucune contrainte de simplification.",
+}
+
 
 def _consigne_cible(serie: dict) -> str:
     """Bloc de consigne à injecter en tête des prompts selon la cible (vide si non définie)."""
@@ -384,16 +401,21 @@ async def _traduire(textes: list, vers_nom: str) -> tuple:
         return textes, False
 
 
-async def _adapter_cible(texte: str, cible: str) -> tuple:
+async def _adapter_cible(texte: str, cible: str, langue: str = "fr") -> tuple:
     """Adapte le REGISTRE (vocabulaire, longueur, intensité) d'un texte à une tranche d'âge —
     JAMAIS l'intrigue. Calquée sur `_traduire` : repli HONNÊTE (texte d'origine, `ok=False`)
     si la Gateway échoue, répond vide, ou si la longueur part trop loin de l'original (garde-
     fou anti-troncature/anti-délire — pas de liste de répliques à recompter ici, juste un
-    texte continu, d'où un contrôle par ratio plutôt que par nombre d'entrées)."""
-    if not texte or cible not in CIBLE_GUIDE:
+    texte continu, d'où un contrôle par ratio plutôt que par nombre d'entrées).
+
+    `langue` (code ISO, résolu par l'appelant via `serie.get("langue")`) pin la langue de
+    SORTIE : sans consigne explicite, le LLM peut répondre en français par défaut même sur un
+    texte source dans une autre langue (S231 revue finale, I1)."""
+    if not texte or cible not in CIBLE_REGISTRE:
         return texte, True
     label = CIBLES.get(cible, cible)
-    guide = CIBLE_GUIDE[cible]
+    registre = CIBLE_REGISTRE[cible]
+    nom_langue = LANGUES[_norm_langue(langue)][0]
     try:
         adapte = await _gateway_answer(
             GW_URL, GW_MODEL,
@@ -401,8 +423,11 @@ async def _adapter_cible(texte: str, cible: str) -> tuple:
             "les personnages, ni les événements. Tu ajustes SEULEMENT le vocabulaire, la "
             "longueur des phrases et l'intensité émotionnelle. Tu préserves EXACTEMENT les "
             "balises [SFX]/[AMBIANCE]/[MUSIQUE] et les didascalies entre parenthèses.",
-            f"PUBLIC CIBLE : {label}. {guide}\n\nAdapte ce texte à ce public, en conservant "
-            f"scrupuleusement la MÊME histoire :\n\n{texte}")
+            f"PUBLIC CIBLE : {label}. {registre}\n\nAdapte ce texte à ce public, en conservant "
+            f"scrupuleusement la MÊME histoire, la MÊME longueur d'événements racontés et TOUS "
+            f"les événements — n'ajoute, ne coupe et ne moralise RIEN, ajuste UNIQUEMENT le "
+            f"vocabulaire, la longueur des phrases et l'intensité émotionnelle. Réponds "
+            f"STRICTEMENT dans la même langue que le texte fourni : {nom_langue}.\n\n{texte}")
     except Exception:  # noqa: BLE001
         return texte, False
     adapte = (adapte or "").strip()

@@ -53,3 +53,29 @@ def test_adaptation_gateway_injoignable_repli(monkeypatch):
     monkeypatch.setattr(A, "_gateway_answer", fake_gw)
     out, ok = _run(A._adapter_cible("Texte original.", "7-9"))
     assert ok is False and out == "Texte original."
+
+
+def test_langue_par_defaut_pin_le_francais_dans_le_prompt(monkeypatch):
+    # Sans 3e argument (compat rétro), le prompt pin quand même une langue de sortie : "fr".
+    captures = []
+
+    async def fake_gw(url, model, systeme, tache):
+        captures.append(tache)
+        return "Version adaptée."
+    monkeypatch.setattr(A, "_gateway_answer", fake_gw)
+    _run(A._adapter_cible("Texte original assez long pour passer le garde-fou de ratio.", "7-9"))
+    assert "français" in captures[0]
+
+
+def test_langue_non_fr_change_la_consigne_de_prompt(monkeypatch):
+    # S231 revue finale I1 : le 3e argument `langue` doit se refléter dans le prompt envoyé
+    # à la Gateway — sinon un texte non-fr peut revenir adapté... en français.
+    captures = []
+
+    async def fake_gw(url, model, systeme, tache):
+        captures.append(tache)
+        return "Adapted version."
+    monkeypatch.setattr(A, "_gateway_answer", fake_gw)
+    _run(A._adapter_cible("Original text long enough to pass the length ratio guard.", "7-9", "en"))
+    assert "anglais" in captures[0]
+    assert "français" not in captures[0]
