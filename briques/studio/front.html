@@ -249,16 +249,36 @@ async function chargerProfils(){
 
 function renderProfils(){
   $('liste-profils').innerHTML = PROFILS.length ? PROFILS.map(p => `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b>${esc(p.nom)}</b>
-      <select style="flex:1;min-width:150px" onchange="changerCibleProfil('${p.id}', this.value)">
-        ${CIBLES.map(c=>`<option value="${esc(c.cle)}"${p.cible===c.cle?' selected':''}>${esc(c.label)}</option>`).join('')}
-      </select>
-      <div>
-        <button class="sm ghost" onclick="renommerProfil('${p.id}')">✎</button>
-        <button class="sm ghost" onclick="supprimerProfil('${p.id}')">✕</button>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <b>${esc(p.nom)}</b>
+        <select style="flex:1;min-width:150px" onchange="changerCibleProfil('${p.id}', this.value)">
+          ${CIBLES.map(c=>`<option value="${esc(c.cle)}"${p.cible===c.cle?' selected':''}>${esc(c.label)}</option>`).join('')}
+        </select>
+        <div>
+          <button class="sm ghost" onclick="basculerJournal('${p.id}')">📔</button>
+          <button class="sm ghost" onclick="renommerProfil('${p.id}')">✎</button>
+          <button class="sm ghost" onclick="supprimerProfil('${p.id}')">✕</button>
+        </div>
       </div>
+      <div id="journal-${p.id}" style="display:none"></div>
     </div>`).join('') : '<p class="muted">Aucun profil pour l\'instant.</p>';
+}
+
+async function basculerJournal(id){
+  const zone = $('journal-'+id);
+  if(zone.style.display==='block'){ zone.style.display='none'; return; }
+  zone.style.display='block';
+  zone.innerHTML = '<p class="muted">Chargement…</p>';
+  try{
+    const {evenements} = await api('/profils/'+id+'/journal');
+    zone.innerHTML = evenements.length ? evenements.slice().reverse().map(ev=>`
+      <div class="hint" style="padding:4px 0;border-top:1px solid var(--line)">
+        ${esc(ev.serie_titre||'')} — chapitre ${ev.episode_n}
+        ${ev.type==='arbre_choix' ? ' · a choisi « '+esc(ev.choix)+' »' : ' · écouté'}
+        · ${new Date(ev.quand).toLocaleDateString('fr-FR')}
+      </div>`).join('') : '<p class="muted">Rien écouté pour l\'instant.</p>';
+  }catch(e){ zone.innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; }
 }
 
 async function creerProfil(){
