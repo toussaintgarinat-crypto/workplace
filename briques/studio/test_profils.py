@@ -1,7 +1,10 @@
 """Tests — CRUD des profils lecteurs (S231), scopés par identité comme les séries (S187)."""
+import os
+
 from fastapi.testclient import TestClient
 
 import main
+import studio as S
 
 client = TestClient(main.app)
 
@@ -73,3 +76,24 @@ def test_profil_dautrui_404_en_lecture_modification_suppression(monkeypatch):
     assert pid not in ids_marina
     ids_claire = [p["id"] for p in client.get("/profils", headers=_entetes("claire")).json()]
     assert pid in ids_claire
+
+
+def test_supprimer_profil_supprime_aussi_son_journal():
+    """Fix revue finale : supprimer un profil orphelinait son journal pour toujours."""
+    pid = client.post("/profils", json={"nom": "AvecJournal", "cible": "0-3"}).json()["id"]
+    S._ajouter_evenement(pid, {"type": "chapitre_lu", "serie_id": "s1", "episode_n": 1})
+    assert os.path.exists(S._journal_path(pid))
+    assert client.delete(f"/profils/{pid}").status_code == 204
+    assert os.path.exists(S._journal_path(pid)) is False
+
+
+def test_lister_profils_exclut_les_fichiers_journal():
+    """Fix revue finale : garde le fichier journal hors de GET /profils, sans dépendre de
+    l'accident cree_par==None (le journal n'a pas cette clé)."""
+    pid = client.post("/profils", json={"nom": "Solo", "cible": "0-3"}).json()["id"]
+    S._ajouter_evenement(pid, {"type": "chapitre_lu", "serie_id": "s1", "episode_n": 1})
+    assert os.path.exists(S._journal_path(pid))
+    profils = client.get("/profils").json()
+    ids = [p["id"] for p in profils]
+    assert ids.count(pid) == 1
+    assert all(not p["id"].endswith("-journal") for p in profils)
