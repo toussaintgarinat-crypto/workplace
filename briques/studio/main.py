@@ -141,6 +141,7 @@ def _empreinte_texte(empreinte: list) -> list:
 
 # ── Front (servi PAR la brique : démo autonome + iframe Hub Oria) ─
 _FRONT = Path(__file__).parent / "front.html"
+_LECTURE = Path(__file__).parent / "lecture.html"
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -151,6 +152,13 @@ def front():
     Sert deux rôles : démo de la brique vendue seule ET contenu de l'iframe que le Hub
     Créations d'Oria embarque (comme Personnages 5900 / Images 5950)."""
     return _FRONT.read_text(encoding="utf-8")
+
+
+@app.get("/lecture", response_class=HTMLResponse, include_in_schema=False)
+def lecture():
+    """Mode enfant : lecture interactive d'une série (?serie=&profil=), séparée de
+    l'atelier de co-création."""
+    return _LECTURE.read_text(encoding="utf-8")
 
 
 # Socle partagé « manipulation directe » (S101) : menu contextuel + modale + cliquer-déposer.

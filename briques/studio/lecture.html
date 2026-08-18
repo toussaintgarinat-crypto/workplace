@@ -1,0 +1,115 @@
+<!-- briques/studio/lecture.html -->
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture</title>
+<link rel="stylesheet" href="/workplace.css">
+<style>
+  body{max-width:640px;margin:0 auto;padding:16px}
+  .recit{white-space:pre-wrap}
+  .choix-btn{display:block;width:100%;margin-top:10px;padding:16px;font-size:1.05rem}
+  .choix-btn[disabled]{opacity:.4;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h2 id="titre">…</h2>
+  <div id="corps"><p class="muted">Chargement…</p></div>
+  <div class="err" id="err"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const API_KEY = new URLSearchParams(location.search).get('api_key') || localStorage.getItem('studio_api_key') || '';
+const HDR = {'Content-Type':'application/json', ...(API_KEY ? {'X-API-Key': API_KEY} : {})};
+const API_BASE = window.STUDIO_API_BASE || '';
+async function api(path, method='GET', body=null){
+  const r = await fetch(API_BASE + path, {method, headers:HDR, body: body!=null?JSON.stringify(body):null});
+  if(!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || ('HTTP '+r.status)); }
+  return r.status===204 ? null : r.json();
+}
+
+const params = new URLSearchParams(location.search);
+const SERIE_ID = params.get('serie');
+const PROFIL_ID = params.get('profil');
+let SERIE = null;
+
+async function init(){
+  if(!SERIE_ID || !PROFIL_ID){ $('err').textContent = '⚠ Lien de lecture incomplet (série ou profil manquant).'; return; }
+  try{
+    SERIE = await api(`/series/${SERIE_ID}`);
+    $('titre').textContent = SERIE.titre;
+    if(SERIE.arbre) await lireArbre();
+    else await lireLineaire();
+  }catch(e){ $('err').textContent = '⚠ '+e.message; }
+}
+
+// ── Séries avec arbre des choix ───────────────────────────────────
+async function lireArbre(){
+  const journal = (await api(`/profils/${PROFIL_ID}/journal`)).evenements;
+  const dernierChoix = journal.slice().reverse().find(ev => ev.type==='arbre_choix' && ev.serie_id===SERIE_ID);
+  const noeudId = dernierChoix ? dernierChoix.noeud_id : SERIE.arbre.id;
+  await afficherNoeud(noeudId);
+}
+
+async function afficherNoeud(noeudId){
+  $('corps').innerHTML = '<p class="muted">Chargement…</p>';
+  let n;
+  try{ n = await api(`/series/${SERIE_ID}/arbre/${noeudId}/lire?profil_id=${encodeURIComponent(PROFIL_ID)}`); }
+  catch(e){ $('corps').innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; return; }
+
+  const audio = n.audio_url ? `<audio controls style="width:100%;margin-top:10px" src="${esc(n.audio_url)}"></audio>` : '';
+  // Les libellés de choix sont du texte libre écrit par le parent : jamais interpolés
+  // dans un attribut inline (onclick=...) — on les récupère par un index numérique et on
+  // attache les écouteurs en JS (addEventListener) après coup. Voir revue XSS.
+  const boutons = n.choix.map((c, i) => `
+    <button class="choix-btn" data-i="${i}" ${c.ecrit ? '' : 'disabled'}>
+      ${esc(c.texte)}${c.ecrit ? '' : ' · (pas encore prêt)'}
+    </button>`).join('');
+  $('corps').innerHTML = `<div class="recit">${esc(n.texte)}</div>${audio}${boutons}`;
+  $('corps').querySelectorAll('.choix-btn:not([disabled])').forEach(btn => {
+    const choixTexte = n.choix[Number(btn.dataset.i)].texte;
+    btn.addEventListener('click', () => choisir(noeudId, choixTexte));
+  });
+
+  if(n.episode_n) await api(`/series/${SERIE_ID}/episodes/${n.episode_n}/marquer-lu`, 'POST', {profil_id: PROFIL_ID});
+}
+
+async function choisir(noeudId, choix){
+  $('corps').innerHTML = '<p class="muted">…</p>';
+  try{
+    const res = await api(`/series/${SERIE_ID}/arbre/${noeudId}/choisir`, 'POST', {profil_id: PROFIL_ID, choix});
+    await afficherNoeud(res.noeud_id);
+  }catch(e){ $('corps').innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; }
+}
+
+// ── Séries linéaires (sans arbre) ──────────────────────────────────
+async function lireLineaire(){
+  const journal = (await api(`/profils/${PROFIL_ID}/journal`)).evenements;
+  const dernier = journal.slice().reverse().find(ev => ev.type==='chapitre_lu' && ev.serie_id===SERIE_ID);
+  const n = dernier ? dernier.episode_n : 1;
+  await afficherChapitre(n);
+}
+
+async function afficherChapitre(n){
+  const ep = (SERIE.episodes||[]).find(e => e.n===n);
+  if(!ep){ $('corps').innerHTML = '<p class="muted">Rien à écouter pour l\'instant — reviens plus tard !</p>'; return; }
+  $('corps').innerHTML = '<p class="muted">Chargement…</p>';
+  let texte;
+  try{ texte = (await api(`/series/${SERIE_ID}/episodes/${n}/adapte?profil_id=${encodeURIComponent(PROFIL_ID)}`)).texte; }
+  catch(e){ $('corps').innerHTML = '<p class="err">⚠ '+esc(e.message)+'</p>'; return; }
+
+  const audioUrl = (ep.audios||{})[PROFIL_ID] ? (ep.audios||{})[PROFIL_ID].url : null;
+  const audio = audioUrl ? `<audio controls style="width:100%;margin-top:10px" src="${esc(audioUrl)}"></audio>` : '';
+  const suite = (SERIE.episodes||[]).some(e => e.n===n+1)
+    ? `<button class="choix-btn" onclick="afficherChapitre(${n+1})">Chapitre suivant</button>` : '';
+  $('corps').innerHTML = `<div class="recit">${esc(texte)}</div>${audio}${suite}`;
+  await api(`/series/${SERIE_ID}/episodes/${n}/marquer-lu`, 'POST', {profil_id: PROFIL_ID});
+}
+
+init();
+</script>
+</body>
+</html>
