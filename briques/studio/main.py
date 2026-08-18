@@ -526,6 +526,13 @@ async def episode_adapte(serie_id: str, n: int, profil_id: str, cle: str = Depen
     return {"texte": adapte, "adapte": ok, "cible": profil["cible"], "profil_id": profil_id}
 
 
+# ── Journal d'écoute/choix (V1 saga familiale) ────────────────────
+@app.get("/profils/{profil_id}/journal", tags=["journal"])
+def journal_profil(profil_id: str, cle: str = Depends(cle_api)):
+    _profil_de(profil_id, cle)  # 404 si absent ou pas à `cle` (même garde que /profils)
+    return {"evenements": S._load_journal(profil_id)}
+
+
 # ── Distribution (personnages structurés) ────────────────────────
 @app.get("/voix", tags=["distribution"])
 async def voix_disponibles(langue: str = "fr", _cle: str = Depends(cle_api)):
