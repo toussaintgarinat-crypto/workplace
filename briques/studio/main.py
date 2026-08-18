@@ -1288,6 +1288,32 @@ async def episode_express(serie_id: str, body: Express, cle: str = Depends(cle_a
 
 
 # ── Arbre des choix ──────────────────────────────────────────────
+@app.get("/series/{serie_id}/arbre/{noeud_id}/lire", tags=["arbre"])
+async def lire_noeud(serie_id: str, noeud_id: str, profil_id: str, cle: str = Depends(cle_api)):
+    """Lecture SEULE d'un nœud pour un profil (mode enfant) : texte adapté au registre,
+    audio si déjà produit pour ce profil, et pour chaque choix s'il mène déjà à une
+    branche écrite (le front désactive les autres). N'écrit rien, ne journalise rien."""
+    serie = charger(serie_id, cle)
+    profil = _profil_de(profil_id, cle)
+    arbre = serie.get("arbre")
+    if not arbre:
+        raise HTTPException(404, "Aucun arbre pour cette série.")
+    noeud, _chemin = S._trouver_noeud(arbre, noeud_id)
+    if not noeud or not noeud.get("script"):
+        raise HTTPException(404, "Ce chapitre n'est pas encore écrit.")
+    ep = next((e for e in serie.get("episodes", []) if e.get("n") == noeud.get("episode_n")), None)
+    texte = (ep.get("script_brut") if ep else noeud["script"]) or ""
+    adapte, ok = await S._adapter_cible(texte, profil["cible"], serie.get("langue"))
+    audio = (ep.get("audios") or {}).get(profil_id) if ep else None
+    choix_ecrits = {e["choix"]: bool(e["noeud"].get("script")) for e in noeud.get("enfants", [])}
+    choix = [{"texte": c, "ecrit": choix_ecrits.get(c, False)} for c in noeud.get("choix", [])]
+    return {
+        "noeud_id": noeud_id, "synopsis": noeud.get("synopsis"), "texte": adapte,
+        "adapte": ok, "audio_url": audio.get("url") if audio else None,
+        "choix": choix, "episode_n": noeud.get("episode_n"),
+    }
+
+
 @app.post("/series/{serie_id}/arbre", tags=["arbre"])
 async def cartographier(serie_id: str, body: Arbre, cle: str = Depends(cle_api)):
     serie = charger(serie_id, cle)
