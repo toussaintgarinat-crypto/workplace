@@ -556,6 +556,7 @@ function renderEpisode(ep){
     <div class="recit" id="recit-${ep.n}">${md(ep.script_balise||ep.script_brut||'')}</div>
     <div class="row" style="margin-top:10px;align-items:end">
       <div style="flex:2"><label>Langue de l'audio</label><select id="lang-${ep.n}">${langs}</select></div>
+      <div style="flex:2"><label>Pour qui</label><select id="aud-profil-${ep.n}">${profilsOpts}</select></div>
       <button class="sm" onclick="produireAudio(${ep.n})">🔊 Produire l'audio</button>
       <button class="sm ghost" onclick="couverture(${ep.n})">🖼️ Couverture</button>
       <button class="sm ghost" onclick="teaser(${ep.n})">🎬 Bande-annonce</button>
@@ -607,8 +608,10 @@ async function ecrireChapitre(){
   finally{ b.disabled=false; }
 }
 async function produireAudio(n){
-  const sortie=$('lang-'+n).value; toast('🔊 Sonorisation…');
-  try{ await api(`/series/${S().id}/audio`,'POST',{n, langue_sortie:sortie}); await refresh(); vue('Chapitres'); toast('Audio prêt 🔊'); }
+  const sortie=$('lang-'+n).value;
+  const profilId=$('aud-profil-'+n).value;
+  toast('🔊 Sonorisation…');
+  try{ await api(`/series/${S().id}/audio`,'POST',{n, langue_sortie:sortie, profil_id: profilId||null}); await refresh(); vue('Chapitres'); toast('Audio prêt 🔊'); }
   catch(e){ toast('⚠ '+e.message); }
 }
 async function couverture(n){
