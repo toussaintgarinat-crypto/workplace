@@ -685,6 +685,149 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "studio_profil_journal_lire",
+      "description": "Liste ce qu'un profil lecteur a écouté/choisi (journal, V1 saga familiale) : chapitres écoutés, branches d'arbre choisies. Récupère profil_id via studio_profils_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/profils/{profil_id}/journal",
+      "params": {
+        "profil_id": {
+          "type": "string",
+          "description": "Identifiant du profil (via studio_profils_lister).",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_episode_marquer_lu",
+      "description": "Journalise qu'un profil a écouté/lu un chapitre. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/episodes/{n}/marquer-lu",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro du chapitre.",
+          "requis": true
+        },
+        "profil_id": {
+          "type": "string",
+          "description": "Id du profil lecteur (via studio_profils_lister).",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_valeurs_lister",
+      "description": "Liste les 16 valeurs humaines pouvant être associées à un chapitre (courage, empathie, entraide…). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/valeurs",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "studio_episode_valeur_definir",
+      "description": "Retient ou change la valeur humaine illustrée par un chapitre (le Script Doctor en suggère une automatiquement à l'écriture ; cette route permet de la confirmer ou de la changer). ACTION.",
+      "methode": "PATCH",
+      "chemin": "/series/{serie_id}/episodes/{n}/valeur",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro du chapitre.",
+          "requis": true
+        },
+        "valeur": {
+          "type": "string",
+          "description": "Clé de valeur (via studio_valeurs_lister), ou absente/null pour retirer."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_famille_lire",
+      "description": "Lit le nom de famille cosmétique associé au compte (V1 saga familiale). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/famille",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "studio_famille_nom_definir",
+      "description": "Définit ou change le nom de famille cosmétique associé au compte (n'affecte aucune donnée d'enfant). ACTION.",
+      "methode": "PATCH",
+      "chemin": "/famille",
+      "params": {
+        "nom_famille": {
+          "type": "string",
+          "description": "Nouveau nom de famille (optionnel : absent/null pour retirer)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_arbre_noeud_lire",
+      "description": "Lecture SEULE d'un nœud d'arbre pour un profil (mode enfant) : texte adapté, audio si produit, et pour chaque choix s'il mène déjà à une branche écrite. Récupère serie_id via studio_series_lister et profil_id via studio_profils_lister.",
+      "methode": "GET",
+      "chemin": "/series/{serie_id}/arbre/{noeud_id}/lire",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "noeud_id": {
+          "type": "string",
+          "description": "Id du nœud d'arbre.",
+          "requis": true
+        },
+        "profil_id": {
+          "type": "string",
+          "description": "Id du profil lecteur (via studio_profils_lister).",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "studio_arbre_choisir",
+      "description": "Fait choisir à un profil une branche déjà écrite de l'arbre (journalise le choix). Refuse (404) toute branche pas encore écrite — jamais de génération à la volée. ACTION.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/arbre/{noeud_id}/choisir",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série.",
+          "requis": true
+        },
+        "noeud_id": {
+          "type": "string",
+          "description": "Id du nœud d'arbre courant.",
+          "requis": true
+        },
+        "profil_id": {
+          "type": "string",
+          "description": "Id du profil lecteur (via studio_profils_lister).",
+          "requis": true
+        },
+        "choix": {
+          "type": "string",
+          "description": "Le texte du choix retenu (parmi ceux renvoyés par studio_arbre_noeud_lire).",
+          "requis": true
+        }
+      },
+      "action": true
     }
   ]
 }
