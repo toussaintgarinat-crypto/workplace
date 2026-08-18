@@ -122,3 +122,22 @@ def test_front_pas_de_stored_xss_via_json_stringify_nom_profil():
     assert debut < fin
     panneau_profils = html[debut:fin]
     assert "JSON.stringify(p.nom)" not in panneau_profils
+
+
+def test_render_audios_fusionne_legacy_et_profils_au_lieu_d_ecraser():
+    # Revue finale I (fix wave 2) : un épisode écrit AVANT `ep.audios` n'a que les champs
+    # legacy (`ep.audio_url` etc). Dès qu'il reçoit un nouveau rendu pour un profil, le
+    # backend crée `ep.audios = {<profil_id>: {...}}` SANS toucher aux champs legacy — les
+    # deux doivent coexister dans l'UI. L'ancien code faisait `ep.audios ||
+    # (ep.audio_url ? ... : {})` : dès que `ep.audios` devient truthy (même `{}`), le rendu
+    # de référence legacy disparaît silencieusement — exactement le symptôme que toute cette
+    # fonctionnalité visait à éliminer, mais réapparu sur le chemin de mise à niveau d'un
+    # épisode pré-existant plutôt que sur le chemin multi-profil.
+    html = client.get("/").text
+    debut = html.index("function renderAudios(")
+    fin = html.index("\n}\n", debut) + len("\n}")
+    corps = html[debut:fin]
+    # Motif de fusion présent : legacy et ep.audios sont combinés, ni l'un ni l'autre écrasé.
+    assert "{...legacy, ...(ep.audios || {})}" in corps
+    # Garde-fou anti-régression : l'ancien motif d'écrasement ne doit jamais revenir.
+    assert "ep.audios || (ep.audio_url ?" not in corps

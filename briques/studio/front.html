@@ -569,10 +569,16 @@ function renderEpisode(ep){
 function renderAudios(ep){
   // Un rendu par profil, tous conservés (S231 revue finale, C1) — `ep.audios` est la source
   // depuis ce correctif ; `ep.audio_url` seul reste lisible pour une série écrite AVANT lui.
-  const audios = ep.audios || (ep.audio_url ? {reference: {url: ep.audio_url, duree: ep.duree,
+  // Revue finale I (fix wave 2) : fusion au lieu d'écrasement — un épisode pré-existant qui
+  // reçoit un nouveau rendu par profil garde `ep.audio_url` intact ET `ep.audios` peuplé ;
+  // un `||` ferait disparaître le rendu de référence dès que `ep.audios` devient truthy
+  // (y compris `{}`). La fusion laisse une entrée `reference` explicite dans `ep.audios`
+  // gagner sur celle synthétisée depuis les champs legacy.
+  const legacy = ep.audio_url ? {reference: {url: ep.audio_url, duree: ep.duree,
     casting: ep.casting, casting_source: ep.casting_source, langue_audio: ep.langue_audio,
-    profil_id: null}} : {});
-  return Object.values(audios).map(a=>{
+    profil_id: null}} : {};
+  const audios = {...legacy, ...(ep.audios || {})};
+  return Object.entries(audios).filter(([,a])=>a.url).map(([,a])=>{
     const profil = a.profil_id ? PROFILS.find(p=>p.id===a.profil_id) : null;
     const label = a.profil_id ? (profil ? esc(profil.nom) : 'Profil supprimé') : 'Référence';
     return `<div style="margin-top:8px">
