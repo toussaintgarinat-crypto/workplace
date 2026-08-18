@@ -110,18 +110,26 @@ def test_front_pas_de_stored_xss_via_json_stringify_nom_profil():
     # S231 revue finale, garde-fou anti-régression : le motif XSS stocké retiré par le
     # correctif Task 6 (nom de profil libre injecté sans échappement via JSON.stringify dans
     # un attribut HTML inline) ne doit jamais revenir DANS LE PANNEAU PROFILS LECTEURS.
-    #
-    # NB : "JSON.stringify(p.nom)" existe ailleurs dans ce fichier (`renommerPerso`, panneau
-    # Distribution/personnages) — motif PRÉ-EXISTANT, hors périmètre de cette feature (revue
-    # finale l'a noté comme suivi séparé, volontairement non touché ici). Un grep global sur
-    # toute la page donnerait donc un FAUX POSITIF ; on scope le garde-fou à la fonction
-    # `renderProfils` (le panneau introduit par CETTE feature) pour rester précis.
     html = client.get("/").text
     debut = html.index("function renderProfils(")
     fin = html.index("async function creerProfil(")
     assert debut < fin
     panneau_profils = html[debut:fin]
     assert "JSON.stringify(p.nom)" not in panneau_profils
+
+
+def test_front_pas_de_json_stringify_dans_un_attribut_inline_sur_toute_la_page():
+    # Motif "I6" (S231) fermé : renommerPerso/retenirPerso (panneau Distribution) et 4
+    # autres emplacements (étendre, decider, importerFiche) réutilisaient tous
+    # JSON.stringify(...) à l'intérieur d'un attribut onclick inline — cassable par un
+    # simple guillemet dans le texte libre (nom de personnage, titre de bible, choix
+    # d'arbre). Corrigé en sortant le texte libre des attributs (data-* + un unique
+    # listener délégué). Garde-fou anti-régression global : plus aucun JSON.stringify ne
+    # doit se retrouver interpolé dans un attribut on* de toute la page.
+    html = client.get("/").text
+    import re
+    for m in re.finditer(r'\bon\w+=[\'"][^\'"]*JSON\.stringify', html):
+        assert False, f"JSON.stringify réapparu dans un attribut inline : {html[m.start():m.start()+80]!r}"
 
 
 def test_render_audios_fusionne_legacy_et_profils_au_lieu_d_ecraser():
