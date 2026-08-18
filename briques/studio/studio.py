@@ -104,6 +104,38 @@ def _save_profil(profil: dict) -> None:
         json.dump(profil, f, ensure_ascii=False, indent=2)
 
 
+# ── Journal d'écoute/choix par profil (V1 saga familiale) ────────
+# Un fichier par profil, préfixé par le même id que le profil (portabilité, cf. ADR
+# 2026-08-18) : append-only, gardé séparé de PROFILS_DIR/{profil_id}.json pour ne pas
+# mélanger l'identité/config du profil (rarement modifiée) et son activité (modifiée à
+# chaque écoute).
+
+def _journal_path(profil_id: str) -> str:
+    return os.path.join(PROFILS_DIR, f"{profil_id}-journal.json")
+
+
+def _load_journal(profil_id: str) -> list:
+    p = _journal_path(profil_id)
+    if not os.path.exists(p):
+        return []
+    with open(p, encoding="utf-8") as f:
+        return json.load(f).get("evenements", [])
+
+
+def _ajouter_evenement(profil_id: str, evenement: dict) -> dict:
+    """Ajoute un événement au journal d'un profil (append-only). Complète `id`/`quand`
+    si absents ; ne les écrase jamais s'ils sont déjà fournis."""
+    complet = dict(evenement)
+    complet.setdefault("id", uuid.uuid4().hex)
+    complet.setdefault("quand", datetime.now(timezone.utc).isoformat())
+    evenements = _load_journal(profil_id)
+    evenements.append(complet)
+    with open(_journal_path(profil_id), "w", encoding="utf-8") as f:
+        json.dump({"profil_id": profil_id, "evenements": evenements}, f,
+                   ensure_ascii=False, indent=2)
+    return complet
+
+
 # ── Hiérarchie : Série → Cycles → Tomes → Chapitres (= episodes) ──
 
 def _tous_tomes(serie: dict) -> list:
