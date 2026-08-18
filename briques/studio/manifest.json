@@ -250,7 +250,7 @@
     },
     {
       "nom": "studio_audio_produire",
-      "description": "Produit l'audio d'un épisode déjà écrit (voix figées par personnage). Sans numéro, prend le dernier épisode. ACTION.",
+      "description": "Produit l'audio d'un épisode déjà écrit (voix figées par personnage). Sans numéro, prend le dernier épisode. Avec profil_id, adapte le registre au profil lecteur avant sonorisation ; chaque profil garde son propre rendu (aucun n'écrase les autres). ACTION.",
       "methode": "POST",
       "chemin": "/series/{serie_id}/audio",
       "params": {
@@ -262,9 +262,100 @@
         "n": {
           "type": "integer",
           "description": "Numéro d'épisode à sonoriser (optionnel : défaut = le dernier)."
+        },
+        "profil_id": {
+          "type": "string",
+          "description": "Id du profil lecteur (via studio_profils_lister) pour adapter le registre avant sonorisation (optionnel : sans profil_id, rendu de référence)."
         }
       },
       "action": true
+    },
+    {
+      "nom": "studio_profils_lister",
+      "description": "Liste les profils lecteurs de l'atelier (prénom, tranche d'âge). Un profil sert à adapter le texte et l'audio des chapitres à un lecteur précis (ex. un enfant), sans jamais changer l'histoire. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/profils",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "studio_profil_creer",
+      "description": "Crée un profil lecteur (prénom + tranche d'âge cible). ACTION.",
+      "methode": "POST",
+      "chemin": "/profils",
+      "params": {
+        "nom": {
+          "type": "string",
+          "description": "Prénom du profil (ex. « Fils », « Fille »).",
+          "requis": true
+        },
+        "cible": {
+          "type": "string",
+          "description": "Tranche d'âge (une des clés renvoyées par GET /cibles, ex. '0-3', '7-9', '10-12', 'adulte').",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_profil_modifier",
+      "description": "Modifie un profil lecteur : renommer, ou faire évoluer sa tranche d'âge au fil du temps. Récupère l'id via studio_profils_lister. ACTION.",
+      "methode": "PATCH",
+      "chemin": "/profils/{profil_id}",
+      "params": {
+        "profil_id": {
+          "type": "string",
+          "description": "Identifiant du profil (via studio_profils_lister).",
+          "requis": true
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nouveau prénom (optionnel)."
+        },
+        "cible": {
+          "type": "string",
+          "description": "Nouvelle tranche d'âge (optionnel)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_profil_supprimer",
+      "description": "Supprime un profil lecteur. N'affecte aucun chapitre ni audio déjà produit — seul le regroupement par profil disparaît. ACTION.",
+      "methode": "DELETE",
+      "chemin": "/profils/{profil_id}",
+      "params": {
+        "profil_id": {
+          "type": "string",
+          "description": "Identifiant du profil (via studio_profils_lister).",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "studio_episode_lire_adapte",
+      "description": "Texte d'un chapitre adapté au registre d'un profil lecteur (vocabulaire/longueur/intensité seulement, jamais l'intrigue ni les personnages). Recalculé à chaque appel, jamais stocké. Récupère serie_id via studio_series_lister et profil_id via studio_profils_lister. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/series/{serie_id}/episodes/{n}/adapte",
+      "params": {
+        "serie_id": {
+          "type": "string",
+          "description": "Id de la série (via studio_series_lister).",
+          "requis": true
+        },
+        "n": {
+          "type": "integer",
+          "description": "Numéro du chapitre.",
+          "requis": true
+        },
+        "profil_id": {
+          "type": "string",
+          "description": "Id du profil lecteur (via studio_profils_lister).",
+          "requis": true
+        }
+      },
+      "action": false
     },
     {
       "nom": "studio_serie_supprimer",
