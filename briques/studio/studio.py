@@ -471,6 +471,42 @@ async def _adapter_cible(texte: str, cible: str, langue: str = "fr") -> tuple:
     return adapte, True
 
 
+# ── Valeurs humaines illustrées par un chapitre (V1 saga familiale) ──
+# Liste fixe, choisie par le parent OU suggérée par le Script Doctor. Jamais d'analyse
+# comportementale de l'enfant ici — uniquement « quelle valeur ce CHAPITRE illustre-t-il ».
+VALEURS = {
+    "courage": "Courage", "honnetete": "Honnêteté", "respect": "Respect",
+    "empathie": "Empathie", "entraide": "Entraide", "patience": "Patience",
+    "perseverance": "Persévérance", "generosite": "Générosité",
+    "tolerance": "Tolérance", "curiosite": "Curiosité",
+    "responsabilite": "Responsabilité", "confiance": "Confiance",
+    "solidarite": "Solidarité", "justice": "Justice", "liberte": "Liberté",
+    "gratitude": "Gratitude",
+}
+
+
+async def _suggerer_valeur(texte: str) -> Optional[str]:
+    """Suggère UNE valeur humaine illustrée par ce chapitre (Script Doctor) — jamais
+    bloquant (même politique que `_traduire`/`_adapter_cible`) : `None` si le LLM échoue,
+    répond hors-liste, ou si `texte` est vide. N'écrit rien : l'appelant décide."""
+    if not texte:
+        return None
+    cles = ", ".join(VALEURS.keys())
+    try:
+        doctor = agent("Script Doctor")
+        brut = await _demander(
+            doctor,
+            "Quelle valeur humaine ce chapitre illustre-t-il le mieux (pas forcément "
+            "explicitement — une situation qui la met en jeu suffit) ? Choisis EXACTEMENT "
+            f"une clé parmi : {cles}. Réponds UNIQUEMENT en JSON : {{\"valeur\":\"...\"}}.\n\n"
+            + texte[:3000])
+    except Exception:  # noqa: BLE001
+        return None
+    data = _extraire_obj(brut) or {}
+    valeur = data.get("valeur")
+    return valeur if valeur in VALEURS else None
+
+
 # ── Distribution (personnages structurés, S47) ───────────────────
 
 def _cle_perso(nom: str) -> str:
