@@ -41,7 +41,17 @@ def _appeler_geo(zone_id: str) -> dict:
     return r.json()
 
 
-def _appeler_forge(prospects: list[dict]) -> dict:
+def _appeler_forge(prospects: list[dict], zone_nom: str | None = None) -> dict:
+    """`zone_nom`, si fourni, tague chaque prospect (`notes`) avec `f"Zone : {zone_nom}"`
+    — seule façon de retrouver « les prospects de CETTE campagne » côté CRM plus tard
+    (Forge n'a pas de colonne zone_id/campagne_id, cf. spec 2026-08-19). Les notes déjà
+    présentes sur le prospect (aucune source actuelle n'en pose, mais robuste si un jour
+    `geo` en ajoute) sont conservées, pas écrasées."""
+    if zone_nom:
+        tag = f"Zone : {zone_nom}"
+        for p in prospects:
+            existantes = (p.get("notes") or "").strip()
+            p["notes"] = f"{existantes} · {tag}" if existantes else tag
     base = _url("FORGE_URL", "http://host.docker.internal:5700")
     r = httpx.post(f"{base}/crm/import-lot", json={"prospects": prospects},
                    headers=_entetes("FORGE_KEY"), timeout=60)
@@ -64,14 +74,17 @@ def lire_zone_geo(zone_id: str) -> dict | None:
     return None
 
 
-def avertissement_type_zone(zone_id: str, type_campagne: str) -> str | None:
+def avertissement_type_zone(zone_id: str, type_campagne: str, zone: dict | None = None) -> str | None:
     """Best-effort : prévient si la zone référencée ne correspond visiblement pas au
     type de campagne déclaré (b2c attend une zone `logement`, b2b attend le contraire).
     Ne bloque JAMAIS la création d'une campagne — `geo` injoignable ou zone inconnue
-    d'ici = silence, pas une erreur (l'échec réel, s'il y en a un, apparaîtra de
-    toute façon à la première exécution horaire, déjà gérée en best-effort là-bas)."""
+    d'ici = silence, pas une erreur.
+
+    `zone`, si fournie, évite un second appel réseau : l'appelant (main.py) a déjà
+    résolu la zone pour calculer `zone_nom` — inutile de la relire ici."""
     try:
-        zone = lire_zone_geo(zone_id)
+        if zone is None:
+            zone = lire_zone_geo(zone_id)
         if zone is None:
             return None
         est_logement = zone.get("type") == "logement"
@@ -107,10 +120,11 @@ def _pousser_memoire(user_id: str, contenu: str) -> None:
         logger.warning("Veille-prospection push mémoire (user=%s) : %s", user_id, e)
 
 
-def _executer_campagne(campagne: dict) -> dict:
+def executer_campagne_unique(campagne: dict) -> dict:
     """Exécute UNE campagne. Ne lève jamais : les erreurs sont journalisées dans le
-    décompte renvoyé, jamais propagées à l'appelant (une campagne en échec ne doit pas
-    empêcher le traitement des autres)."""
+    décompte renvoyé, jamais propagées à l'appelant. Publique (pas de `_`) : utilisée par
+    le passage horloge (`_executer_campagne_sans_planter`) ET par la route d'exécution
+    manuelle scopée tenant (`main.py`, POST /campagnes/{id}/executer)."""
     try:
         rapport_geo = _appeler_geo(campagne["zone_id"])
     except httpx.HTTPError as e:
@@ -121,7 +135,7 @@ def _executer_campagne(campagne: dict) -> dict:
     nouveaux_crm, erreur = 0, None
     if prospects:
         try:
-            rapport_forge = _appeler_forge(prospects)
+            rapport_forge = _appeler_forge(prospects, campagne.get("zone_nom"))
             nouveaux_crm = rapport_forge.get("crees", 0)
         except httpx.HTTPError as e:
             erreur = str(e)
@@ -135,17 +149,12 @@ def _executer_campagne(campagne: dict) -> dict:
 
 
 def _executer_campagne_sans_planter(campagne: dict) -> bool:
-    """Enrobe `_executer_campagne` et les appels `stockage.*` qui suivent : une panne
-    inattendue (ex. corruption JSON de `geo`, ou une erreur SQLite imprévisible) est
-    journalisée et comptée comme « campagne traitée (sans succès) », jamais propagée.
-    Contrainte du plan : « Aucun échec ne doit faire planter le pipeline d'orchestration » —
-    plus large que les pannes HTTP déjà gérées dans `_executer_campagne`."""
     try:
-        resultat = _executer_campagne(campagne)
+        resultat = executer_campagne_unique(campagne)
         stockage.inserer_execution(campagne["id"], **resultat)
         stockage.maj_derniere_execution(campagne["id"])
         return True
-    except Exception as e:  # noqa: BLE001 — une campagne en échec inattendu ne doit jamais arrêter le lot
+    except Exception as e:  # noqa: BLE001
         logger.warning("Veille-prospection échec inattendu (campagne_id=%s, user_id=%s) : %s",
                        campagne["id"], campagne.get("user_id"), e)
         return False

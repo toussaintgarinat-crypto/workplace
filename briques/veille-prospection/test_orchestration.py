@@ -286,3 +286,93 @@ def test_avertissement_type_zone_robuste_si_zone_malformee(monkeypatch):
         [{"id": "z1", "type": "entreprise"}]))  # note : pas de clé "nom"
     a = orchestration.avertissement_type_zone("z1", "b2c")
     assert a is None  # best-effort : aucune exception levée, juste silence
+
+
+def test_avertissement_type_zone_accepte_zone_prefetchee(monkeypatch):
+    """Si `zone` est fournie, la fonction ne doit PAS rappeler `geo` — évite un 2e appel
+    réseau quand l'appelant (main.py) a déjà résolu la zone une fois."""
+    def _casse(*a, **k):
+        raise AssertionError("httpx.get ne doit pas être appelé quand zone= est fournie")
+    monkeypatch.setattr(orchestration.httpx, "get", _casse)
+    zone = {"id": "z1", "nom": "Entreprises Castres", "type": "entreprise"}
+    a = orchestration.avertissement_type_zone("z1", "b2c", zone=zone)
+    assert a and "logement" in a
+
+
+def test_appeler_forge_tague_zone_dans_notes(monkeypatch):
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        assert url.endswith("/crm/import-lot")
+        captes["json"] = json
+        return _Rep(200, {"crees": 1})
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    orchestration._appeler_forge([{"nom": "Chez Paul"}], zone_nom="Restos Castres")
+    assert captes["json"]["prospects"][0]["notes"] == "Zone : Restos Castres"
+
+
+def test_appeler_forge_conserve_notes_existantes_du_prospect(monkeypatch):
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        captes["json"] = json
+        return _Rep(200, {"crees": 1})
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    orchestration._appeler_forge([{"nom": "Chez Paul", "notes": "Dirigeant : P. Martin"}],
+                                 zone_nom="Restos Castres")
+    assert captes["json"]["prospects"][0]["notes"] == \
+        "Dirigeant : P. Martin · Zone : Restos Castres"
+
+
+def test_appeler_forge_sans_zone_nom_ninjecte_rien(monkeypatch):
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        captes["json"] = json
+        return _Rep(200, {"crees": 1})
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    orchestration._appeler_forge([{"nom": "Chez Paul"}])
+    assert "notes" not in captes["json"]["prospects"][0]
+
+
+def test_executer_campagne_unique_existe_et_retourne_le_decompte(monkeypatch):
+    """Renommage public de l'ancienne `_executer_campagne` — même comportement, exposé
+    pour la route d'exécution manuelle (main.py, tâche suivante)."""
+    c = stockage.creer_campagne("orch-hugo", "zone-hugo")
+
+    def _post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/prospection/enrichir-lot"):
+            return _Rep(200, {"prospects": [{"nom": "P"}], "compte": {"deja_enrichi": 0}})
+        if url.endswith("/crm/import-lot"):
+            return _Rep(200, {"crees": 1})
+        if url.endswith("/retenir"):
+            return _Rep(200, {"retenu": True})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    resultat = orchestration.executer_campagne_unique(c)
+    assert resultat == {"trouves": 1, "deja_connus": 0, "nouveaux_crm": 1, "erreur": None}
+
+
+def test_zone_nom_de_la_campagne_est_propage_aux_notes_crm(monkeypatch):
+    """Bout en bout : une campagne créée AVEC zone_nom tague bien les prospects envoyés
+    à forge lors de l'exécution (pas seulement `_appeler_forge` testée isolément)."""
+    c = stockage.creer_campagne("orch-iris", "zone-iris", zone_nom="Restos Castres")
+    captes = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/prospection/enrichir-lot"):
+            return _Rep(200, {"prospects": [{"nom": "Chez Paul"}], "compte": {"deja_enrichi": 0}})
+        if url.endswith("/crm/import-lot"):
+            captes["json"] = json
+            return _Rep(200, {"crees": 1})
+        if url.endswith("/retenir"):
+            return _Rep(200, {"retenu": True})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(orchestration.httpx, "post", _post)
+    orchestration.executer_campagnes(user_ids=["orch-iris"])
+    assert captes["json"]["prospects"][0]["notes"] == "Zone : Restos Castres"
