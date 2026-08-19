@@ -106,6 +106,22 @@
     </div>
     <div id="liste-campagnes-prospection" style="margin-top:16px"></div>
     <div id="erreur-prospection" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+
+    <div id="panneau-prospects" style="margin-top:24px" data-campagne-id="">
+      <h3>Prospects</h3>
+      <div id="liste-prospects"></div>
+      <div id="erreur-prospects" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+
+      <div id="zone-demarchage" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+        <h4 style="margin:0 0 4px">Préparer le démarchage</h4>
+        <p id="compte-selection-demarchage" style="color:var(--mut);font-size:.85rem;margin:0 0 10px"></p>
+        <input id="demarchage-expediteur" placeholder="Identité de l'expéditeur (obligatoire — mention légale)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);margin-bottom:8px">
+        <input id="demarchage-sujet" placeholder="Sujet — variables : {nom} {entreprise} {ville}" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);margin-bottom:8px">
+        <textarea id="demarchage-message" placeholder="Message — variables : {nom} {entreprise} {ville}" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)"></textarea>
+        <button onclick="preparerDemarchage()" style="margin-top:8px;padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;cursor:pointer">Préparer les brouillons</button>
+        <div id="resultat-demarchage" style="margin-top:8px;font-size:.85rem"></div>
+      </div>
+    </div>
   </div>
 </div>
 <script>
@@ -515,6 +531,7 @@ async function chargerCampagnesProspection() {
           </div>
           <div style="display:flex;gap:6px">
             <button id="btn-lancer-${c.id}" onclick="lancerCampagne(${c.id})" style="border:1px solid var(--accent);background:transparent;color:var(--accent);border-radius:8px;padding:5px 10px;cursor:pointer">Lancer maintenant</button>
+            <button onclick="voirProspects(${c.id})" style="border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:8px;padding:5px 10px;cursor:pointer">Voir les prospects</button>
             <button onclick="desactiverCampagne(${c.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Désactiver</button>
           </div>
         </div>
@@ -569,10 +586,74 @@ async function lancerCampagne(id) {
       ? `Erreur : ${res.erreur}`
       : `${res.trouves} trouvé(s), ${res.deja_connus} déjà connu(s), ${res.nouveaux_crm} nouveau(x) au CRM.`;
     await chargerCampagnesProspection();
+    if (document.getElementById('panneau-prospects').dataset.campagneId == id) await voirProspects(id);
   } catch (e) {
     resultat.textContent = String(e.message || e);
   } finally {
     bouton.disabled = false;
+  }
+}
+
+let PROSPECTS_SELECTIONNES = new Set();
+
+async function voirProspects(campagneId) {
+  const cible = document.getElementById('liste-prospects');
+  const erreur = document.getElementById('erreur-prospects');
+  erreur.textContent = '';
+  cible.innerHTML = 'Chargement…';
+  PROSPECTS_SELECTIONNES = new Set();
+  document.getElementById('panneau-prospects').dataset.campagneId = campagneId;
+  try {
+    const r = await fetch(`${API_BASE}/prospection/prospects?campagne_id=${campagneId}`);
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const data = await r.json();
+    if (!data.prospects.length) {
+      cible.innerHTML = '<p style="color:var(--mut)">Aucun prospect trouvé pour cette campagne (encore).</p>';
+      majFormulaireDemarchage();
+      return;
+    }
+    cible.innerHTML = data.prospects.map(p => `
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);${p.email ? '' : 'opacity:.55'}">
+        <input type="checkbox" ${p.email ? '' : 'disabled'} onchange="toggleProspectChoisi('${esc(p.id)}', this.checked)">
+        <span><b>${esc(p.nom || p.entreprise || '(sans nom)')}</b> — ${esc(p.email || 'pas d\'email trouvé')}${p.statut ? ` <span style="color:var(--mut);font-size:.8rem">· ${esc(p.statut)}</span>` : ''}</span>
+      </label>`).join('');
+    majFormulaireDemarchage();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+function toggleProspectChoisi(id, coche) {
+  if (coche) PROSPECTS_SELECTIONNES.add(id); else PROSPECTS_SELECTIONNES.delete(id);
+  majFormulaireDemarchage();
+}
+
+function majFormulaireDemarchage() {
+  document.getElementById('zone-demarchage').style.display = PROSPECTS_SELECTIONNES.size ? 'block' : 'none';
+  document.getElementById('compte-selection-demarchage').textContent =
+    `${PROSPECTS_SELECTIONNES.size} prospect(s) sélectionné(s)`;
+}
+
+async function preparerDemarchage() {
+  const expediteur = document.getElementById('demarchage-expediteur').value.trim();
+  const sujet = document.getElementById('demarchage-sujet').value.trim();
+  const message = document.getElementById('demarchage-message').value.trim();
+  const resultat = document.getElementById('resultat-demarchage');
+  resultat.textContent = '';
+  if (!expediteur || !sujet || !message) { resultat.textContent = 'Expéditeur, sujet et message sont requis.'; return; }
+  if (!PROSPECTS_SELECTIONNES.size) { resultat.textContent = 'Sélectionne au moins un prospect.'; return; }
+  const campagneId = Number(document.getElementById('panneau-prospects').dataset.campagneId);
+  try {
+    const r = await fetch(`${API_BASE}/prospection/demarchage`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({campagne_id: campagneId, prospect_ids: Array.from(PROSPECTS_SELECTIONNES),
+                            expediteur, sujet, message})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const res = await r.json();
+    resultat.textContent = res.message || `${res.prepares} brouillon(s) préparé(s).`;
+  } catch (e) {
+    resultat.textContent = String(e.message || e);
   }
 }
 

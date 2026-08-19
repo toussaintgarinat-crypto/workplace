@@ -97,3 +97,11 @@ def test_front_couvre_la_gestion_des_campagnes_prospection():
                      "creerCampagneProspection", "lancerCampagne", "desactiverCampagne",
                      "/prospection/campagnes", "/prospection/zones"):
         assert marqueur in html
+
+
+def test_front_couvre_les_prospects_et_le_demarchage():
+    html = client.get("/").text
+    for marqueur in ("voirProspects", "/prospection/prospects", "preparerDemarchage",
+                     "/prospection/demarchage", "toggleProspectChoisi",
+                     "panneau-prospects"):
+        assert marqueur in html
