@@ -510,6 +510,8 @@ async function chargerZonesProspection() {
   }
 }
 
+let DERNIER_RESULTAT_LANCEMENT = {};  // { [campagneId]: texte }
+
 async function chargerCampagnesProspection() {
   const cible = document.getElementById('liste-campagnes-prospection');
   const erreur = document.getElementById('erreur-prospection');
@@ -536,7 +538,7 @@ async function chargerCampagnesProspection() {
           </div>
         </div>
         ${c.avertissement ? `<p style="color:var(--bad);font-size:.8rem;margin:6px 0 0">${esc(c.avertissement)}</p>` : ''}
-        <div id="resultat-lancement-${c.id}" style="font-size:.85rem;margin-top:6px"></div>
+        <div id="resultat-lancement-${c.id}" style="font-size:.85rem;margin-top:6px">${esc(DERNIER_RESULTAT_LANCEMENT[c.id] || '')}</div>
       </div>`).join('');
   } catch (e) {
     erreur.textContent = String(e.message || e);
@@ -582,9 +584,11 @@ async function lancerCampagne(id) {
     const r = await fetch(`${API_BASE}/prospection/campagnes/${id}/executer`, {method: 'POST'});
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const res = await r.json();
-    resultat.textContent = res.erreur
+    const texte = res.erreur
       ? `Erreur : ${res.erreur}`
       : `${res.trouves} trouvé(s), ${res.deja_connus} déjà connu(s), ${res.nouveaux_crm} nouveau(x) au CRM.`;
+    DERNIER_RESULTAT_LANCEMENT[id] = texte;
+    resultat.textContent = texte;
     await chargerCampagnesProspection();
     if (document.getElementById('panneau-prospects').dataset.campagneId == id) await voirProspects(id);
   } catch (e) {
@@ -608,7 +612,9 @@ async function voirProspects(campagneId) {
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const data = await r.json();
     if (!data.prospects.length) {
-      cible.innerHTML = '<p style="color:var(--mut)">Aucun prospect trouvé pour cette campagne (encore).</p>';
+      cible.innerHTML = data.zone_nom
+        ? '<p style="color:var(--mut)">Aucun prospect trouvé pour cette campagne (encore).</p>'
+        : '<p style="color:var(--bad)">Cette campagne a été créée avant l\'enregistrement du nom de sa zone (ou la zone était injoignable à sa création) — ses prospects ne peuvent pas être rattachés. Désactive-la et recrée-en une sur la même zone.</p>';
       majFormulaireDemarchage();
       return;
     }
@@ -651,7 +657,15 @@ async function preparerDemarchage() {
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
     const res = await r.json();
-    resultat.textContent = res.message || `${res.prepares} brouillon(s) préparé(s).`;
+    let texte = res.message || `${res.prepares} brouillon(s) préparé(s).`;
+    if (res.ignores) {
+      const detail = Object.entries(res.ignores)
+        .filter(([, n]) => n > 0)
+        .map(([motif, n]) => `${n} ${motif.replace(/_/g, ' ')}`)
+        .join(', ');
+      if (detail) texte += ` (ignorés : ${detail})`;
+    }
+    resultat.textContent = texte;
   } catch (e) {
     resultat.textContent = String(e.message || e);
   }
