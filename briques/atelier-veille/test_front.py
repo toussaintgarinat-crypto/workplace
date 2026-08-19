@@ -89,3 +89,11 @@ def test_front_couvre_la_selection_de_thematique_pour_le_digest():
     for marqueur in ("chargerThematiquesDigest", "genererDigestThematique",
                      "select-thematique-digest"):
         assert marqueur in html
+
+
+def test_front_couvre_la_gestion_des_campagnes_prospection():
+    html = client.get("/").text
+    for marqueur in ("btn-prospection", "chargerCampagnesProspection", "chargerZonesProspection",
+                     "creerCampagneProspection", "lancerCampagne", "desactiverCampagne",
+                     "/prospection/campagnes", "/prospection/zones"):
+        assert marqueur in html
