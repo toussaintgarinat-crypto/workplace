@@ -9,6 +9,7 @@ dans le manifest) : cette brique est une SURFACE HUMAINE, pas un outil de l'assi
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,7 @@ VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120
 VEILLE_PROSPECTION_URL = os.getenv("VEILLE_PROSPECTION_URL", "http://host.docker.internal:6140")
 GEO_URL = os.getenv("GEO_URL", "http://host.docker.internal:6110")
 FORGE_URL = os.getenv("FORGE_URL", "http://host.docker.internal:5700")
+MAIL_URL = os.getenv("MAIL_URL", "http://host.docker.internal:6030")
 
 # MESH_HOST / MESH_PORT_OFFSET : même convention que core/urls_ui.py::url_brique. Caddy
 # termine le TLS du mesh et reverse-proxy en HTTP vers ce conteneur, donc `request.url.scheme`
@@ -109,6 +111,30 @@ class EnvoyerAudioGlobal(BaseModel):
     destinataires: list[str] = Field(min_length=1)
     sujet: Optional[str] = None
     message: Optional[str] = None
+
+
+class PreparerDemarchage(BaseModel):
+    campagne_id: int
+    prospect_ids: list[str] = Field(min_length=1)
+    expediteur: str = Field(min_length=1)
+    sujet: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    compte: str = ""
+
+
+_RE_COMMUNE = re.compile(r"Commune\s*:\s*([^·]+)")
+
+
+def _ville_depuis_notes(notes: str | None) -> str:
+    """Best-effort : extrait la commune du format `notes` posé par
+    `briques/forge/main.py::_prospect_vers_lead` (« NAF : … · Commune : X · … »). Un
+    format qui change côté Forge casse cette extraction SILENCIEUSEMENT (regex, pas un
+    contrat) — acceptable : {ville} reste juste vide, jamais une erreur (cf. spec
+    2026-08-19)."""
+    if not notes:
+        return ""
+    m = _RE_COMMUNE.search(notes)
+    return m.group(1).strip() if m else ""
 
 
 @app.get("/sante", tags=["système"])
@@ -533,3 +559,43 @@ async def prospects_campagne(campagne_id: int):
     tag = f"Zone : {zone_nom}"
     prospects = [p for p in crm.get("prospects", []) if tag in (p.get("notes") or "")]
     return {"campagne_id": campagne_id, "zone_nom": zone_nom, "prospects": prospects}
+
+
+@app.post("/prospection/demarchage", tags=["prospection"], status_code=201)
+async def preparer_demarchage(body: PreparerDemarchage):
+    """Prépare des brouillons de démarchage (mail, jamais envoyés) pour la sélection de
+    prospects d'UNE campagne. Les infos (nom/entreprise/email/ville) sont re-dérivées ICI
+    depuis le CRM — jamais celles envoyées par le navigateur — pour que la campagne et le
+    tag de zone restent la source de vérité, pas une saisie cliente."""
+    campagnes = await _get_json_ou_erreur(f"{VEILLE_PROSPECTION_URL}/campagnes",
+                                          "veille-prospection")
+    campagne = next((c for c in campagnes if c["id"] == body.campagne_id), None)
+    if campagne is None:
+        raise HTTPException(404, "Campagne introuvable.")
+    zone_nom = campagne.get("zone_nom")
+    leads_par_id: dict = {}
+    if zone_nom:
+        crm = await _get_json_ou_erreur(f"{FORGE_URL}/crm", "forge")
+        tag = f"Zone : {zone_nom}"
+        leads_par_id = {p["id"]: p for p in crm.get("prospects", [])
+                        if tag in (p.get("notes") or "")}
+    prospects = [
+        {"nom": leads_par_id[pid].get("nom"), "entreprise": leads_par_id[pid].get("entreprise"),
+         "email": leads_par_id[pid].get("email"),
+         "ville": _ville_depuis_notes(leads_par_id[pid].get("notes"))}
+        for pid in body.prospect_ids if pid in leads_par_id
+    ]
+    if not prospects:
+        raise HTTPException(422, "Aucun des prospects sélectionnés n'appartient à cette campagne.")
+    corps_aval = {"prospects": prospects, "sujet": body.sujet, "message": body.message,
+                 "expediteur": body.expediteur, "compte": body.compte}
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(f"{MAIL_URL}/demarchage/preparer", json=corps_aval)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"mail injoignable ({MAIL_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"mail a refusé la requête ({r.status_code}).")
+    return JSONResponse(content=corps, status_code=r.status_code)
