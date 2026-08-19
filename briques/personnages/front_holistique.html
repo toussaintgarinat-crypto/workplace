@@ -173,9 +173,10 @@ async function api(path, opts={}){
   <div class="panel" id="pan-desc">
     <h2>Profil calculé à partir de l'état civil</h2>
     <div class="row">
-      <div><label>Prénom(s)</label><input id="prenoms" value="Aria"></div>
-      <div><label>Nom</label><input id="nom" value="Solis"></div>
+      <div><label>Prénom(s)</label><input id="prenoms" value="Aria" placeholder="Jean Paul"></div>
+      <div><label>Nom</label><input id="nom" value="Solis" placeholder="Dupont"></div>
     </div>
+    <div class="hint" style="margin-top:2px">Plusieurs prénoms ? Sépare-les par un espace (ex. « Jean Paul ») — la ponctuation n'a aucun effet sur le calcul.</div>
     <div class="row">
       <div><label>Date de naissance</label><input id="date" type="date" value="1990-09-05"></div>
       <div><label>Heure (HH:MM)</label><input id="heure" value="14:30" placeholder="14:30"></div>

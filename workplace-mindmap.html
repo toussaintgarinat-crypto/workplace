@@ -117,7 +117,7 @@ const TREE = {
   "color": "c-blue",
   "port": "",
   "status": "🟢 Actif",
-  "desc": "Assistant IA modulaire + Usine à applications sur-mesure.\n\nPrincipe : noyau + briques (modèle Neovim).\nChaque brique a un manifest.json (port, description, tâches).\nLe Cœur les découvre et les branche automatiquement au démarrage.\n\nObjectif 1 : Ingestion → Audit → App sur-mesure\nObjectif 2 : Jarvis personnel (Cœur)\n\n~128 000 lignes de Python réel (hors venv/vendor/apps exportées), état 2026-07-21.\nVoir la section ÉTAT SPRINTS pour l'ordre chronologique des ajouts.\nDéployé sur : Mac Intel (dev) + HP Proxmox (prod)",
+  "desc": "Assistant IA modulaire + Usine à applications sur-mesure.\n\nPrincipe : noyau + briques (modèle Neovim).\nChaque brique a un manifest.json (port, description, tâches).\nLe Cœur les découvre et les branche automatiquement au démarrage.\n\nObjectif 1 : Ingestion → Audit → App sur-mesure\nObjectif 1 étendu (S227→S230) : + Entité entreprise unifiée → Entretien\n  guidé IA → ROI chiffré → Cahier des charges → Connecteurs métier réels\n  (CRM/compta) — pipeline \"Audit d'entreprise → conception de solutions\"\nObjectif 2 : Jarvis personnel (Cœur)\n\n~181 000 lignes de Python réel (hors venv/vendor/apps exportées), état 2026-08-13.\n40 briques (manifest.json) ; app-builder sorti en dépôt public séparé (S213).\nVoir la section ÉTAT SPRINTS pour l'ordre chronologique des ajouts.\nDéployé sur : Mac Intel (dev) + HP Proxmox (prod)",
   "children": [
     {
       "id": "coeur",
@@ -739,7 +739,27 @@ const TREE = {
               "color": "c-amber",
               "port": "",
               "status": "🟢 Actif",
-              "desc": "Realm : oria\nService account : forge-service\nJWT Bearer validation sur chaque endpoint.\n\nProvisioning user (S19) :\n  1er login → crée org + user en DB\n  Course fix S36 : savepoint + re-select\n  (évite double-provisioning concurrent)\n\nPropagation identité S36 :\n  X-Forge-User-Token (si présent)\n  Repli : token de service\n  174 tests verts après fix.",
+              "desc": "Realm : oria\nService account : forge-service\nJWT Bearer validation sur chaque endpoint.\n\nProvisioning user (S19) :\n  1er login → crée org + user en DB\n  Course fix S36 : savepoint + re-select\n  (évite double-provisioning concurrent)\n\nPropagation identité S36 :\n  X-Forge-User-Token (si présent)\n  Repli : token de service\n  174 tests verts après fix.\n\nS230 : le core reconnaît aussi l'identité du compte forge-service\nlui-même (UserContext.est_service, via la revendication JWT azp) —\nnécessaire pour que le mappeur connecteurs (tâche de fond, sans JWT\nutilisateur) puisse écrire sur une venture qu'il ne possède pas.\n⚠️ Ouvre un accès inter-tenant en écriture sur 2 routes internes\n(cf. adaptateur Forge sans auth, section SÉCURITÉ & DETTES).",
+              "children": []
+            },
+            {
+              "id": "frg-entite",
+              "icon": "🏢",
+              "label": "Entité Entreprise unifiée  (S227)",
+              "color": "c-amber",
+              "port": "GET /ventures/{id}/dossier",
+              "status": "🟢 Livré S227",
+              "desc": "Socle qui greffe le pipeline audit sur Forge : Ventures.type='audit'\n(jusque-là un simple libellé frontend) porte désormais de la vraie\ndonnée — geo_object_id, audit_id, profil_entreprise (JSON, 9\ncatégories qualitatives, alimentées par l'entretien S228).\n\nGET /ventures/{id}/dossier — agrégateur :\n  identite          ← briques/geo\n  audit business     ← briques/audit\n  auditMissions      ← système d'audit interne léger de Forge\n                        (distinct, non branché sur briques/audit)\n  documents           ← briques/ingestion (venture_id indexé)\n  profilEntreprise    ← Ventures.profil_entreprise\n\nRepli honnête section par section (\"indisponible\"/\"introuvable\"\ndistincts, jamais de 500 global même sur panne d'une source).\n\nRôle client_lecture : accès en lecture scopé à UNE venture (garde-\nfou centralisé _membre_actif() dans auth.py, routé sur 4 sites —\ncorrige une escalade de privilèges Critical trouvée en revue finale).",
+              "children": []
+            },
+            {
+              "id": "frg-entretien",
+              "icon": "🎙️",
+              "label": "Entretien guidé IA  (S228)",
+              "color": "c-amber",
+              "port": "POST /ventures/{id}/entretien/*",
+              "status": "🟢 Livré S228",
+              "desc": "Squelette fixe de 13 sections, table entretiens (Forge/Postgres) :\n  9 sections qualitatives → patch profil_entreprise par catégorie\n                             (fusion non destructive)\n  4 sections process       → transcript brut accumulé\n\nClôture best-effort :\n  1. push transcript → briques/ingestion (POST /ingerer multipart +\n     venture_id — jamais /documents/import, qui droppe venture_id)\n  2. rappelle POST {AUDIT_URL}/auditer\n\nEndpoints (owner-only, jamais client_lecture) :\n  POST /entretien/demarrer\n  POST /entretien/repondre\n  POST /entretien/terminer\n  GET  /entretien/etat\n\nCôté Cœur : core/entretien_routage.py bypass le LLM pour chaque tour\ntant qu'un entretien est actif — registre en mémoire keyé\naccord_action.cle(fil, personne), même motif que le gate S222\n(jamais un fil nu, sinon le \"suivant\" d'une personne répond pour une\nautre).",
               "children": []
             },
             {
@@ -884,7 +904,7 @@ const TREE = {
           "color": "c-green",
           "port": "Port 5300",
           "status": "🟢 Actif",
-          "desc": "4 couches LLM séquentielles (async).\nAppelle Gateway :4001 pour chaque couche.\n~54s par audit complet (gpt-4o-mini).\nSQLite : /data/audit.db",
+          "desc": "4 couches LLM séquentielles (async) + 1 couche ROI (S229,\ndéterministe Python, pas le LLM — déclenchée à la demande).\nAppelle Gateway :4001 pour chaque couche LLM.\n~54s par audit complet (gpt-4o-mini).\nSQLite : /data/audit.db",
           "children": [
             {
               "id": "aud-c1",
@@ -927,13 +947,23 @@ const TREE = {
               "children": []
             },
             {
+              "id": "aud-c5-roi",
+              "icon": "💶",
+              "label": "Couche 5 — ROI  (S229)",
+              "color": "c-lime",
+              "port": "POST /audits/{id}/chiffrer",
+              "status": "🟢 Livré S229",
+              "desc": "PAS une couche LLM comme les 4 premières : le coût horaire par pôle\n(commercial/production/administratif) et le statut sont décidés en\nPython, jamais par le LLM.\n\nSource du coût horaire :\n  fourni_client    → si le connecteur compta (S230, Harvest) a poussé\n                      un vrai chiffre via le mappeur\n  hypothese_llm    → repli si rien n'est fourni (jamais bloquant)\n\nAvertissement fixe (littéral, non généré) sur CHAQUE sortie :\n  \"Estimation à valider avec le client — non contractuelle.\"\n\nSortie JSON :\n  { statut, cout_horaire_par_pole{}, heures_economisees_estimees,\n    roi_euros_estimes, avertissement }\n\nDéclenchement automatique : le mappeur compta S230 (Harvest) rappelle\ncet endpoint après chaque sync réussie — n'écrase plus un ROI valide\npar NULL sur simple panne LLM transitoire (fix revue finale S230).",
+              "children": []
+            },
+            {
               "id": "aud-api",
               "icon": "📡",
               "label": "Endpoints",
               "color": "c-green",
               "port": "",
               "status": "",
-              "desc": "POST /auditer/tout\n  body : { doc_ids: [id1, id2, ...] }\n  → { audit_id, status: \"en_cours\" }\n\nGET  /audits/{id}\n  → { id, status, couches: { territoire, flux,\n      problemes, priorites }, duree_s }\n  status : en_cours | termine | erreur\n\nGET  /audits/{id}/resume\n  → résumé court (1 paragraph par couche)\n\nGET  /audits\n  → liste paginée\n\nDELETE /audits/{id}\n\nGET  /sante",
+              "desc": "POST /auditer/tout\n  body : { doc_ids: [id1, id2, ...] }\n  → { audit_id, status: \"en_cours\" }\n\nGET  /audits/{id}\n  → { id, status, couches: { territoire, flux,\n      problemes, priorites, roi }, duree_s }\n  status : en_cours | termine | erreur\n\nPOST /audits/{id}/chiffrer  (S229)\n  → calcule/rafraîchit la couche ROI, synchrone (1 appel LLM max)\n\nGET  /audits/{id}/resume\n  → résumé court (1 paragraph par couche)\n\nGET  /audits\n  → liste paginée\n\nDELETE /audits/{id}\n\nGET  /sante",
               "children": []
             }
           ]
@@ -1067,6 +1097,16 @@ const TREE = {
               "port": "",
               "status": "🟢 Actif",
               "desc": "À la génération d'une app hébergée + messagerie :\n  1. Token service account (workplace-provisioner)\n  2. Crée world (espace entreprise) dans Oria\n  3. Crée 1 salon par bounded_context de l'audit\n  4. Crée salon \"Général\"\n  5. Stocke world_id + salons dans apps.db\n\nSSO : OIDC Authorization Code + PKCE (zéro lib JS).\nSalons non chiffrés (widget léger, dette E2EE).",
+              "children": []
+            },
+            {
+              "id": "gen-cdc",
+              "icon": "📋",
+              "label": "Cahier des charges  (S229)",
+              "color": "c-lime",
+              "port": "cdc.py — table cahiers_des_charges",
+              "status": "🟢 Livré S229",
+              "desc": "Document formel généré à partir d'un audit déjà chiffré (couche ROI).\n12 sections écrites par le LLM + 1 section ROI assemblée par code\n(jamais par le LLM, mêmes chiffres que /audits/{id}/chiffrer).\n\nStatut du CDC :\n  genere   → utilisable, consommé par /generer pour tracer l'app\n  degrade  → LLM injoignable aux 2 tentatives (12 sections\n             \"_Non disponible._\"), reste consultable/exportable mais\n             plus jamais consommé silencieusement par /generer (fix\n             revue finale S229 — avant, un CDC dégradé écrasait tout\n             le contexte métier des générations futures sans le dire)\n\n/generer devient traçable au dernier CDC statut=genere quand il\nexiste (repli strictement inchangé sinon).\n\nEndpoints synchrones (1 appel LLM, pas de background_tasks) :\n  POST /cahier-des-charges { audit_id }\n  GET  /cahier-des-charges/{id}\n  GET  /cahier-des-charges/{id}/pdf   → via briques/export, thème rapport\n  POST /cahier-des-charges/{id}/pptx  → via briques/export, thème sobre,\n                                          5 slides, zéro coût LLM marginal",
               "children": []
             },
             {
@@ -1419,7 +1459,7 @@ const TREE = {
       "color": "c-green",
       "port": "briques/",
       "status": "🟢 Toutes livrées et actives",
-      "desc": "Historiquement listées ici comme \"en cours / futures\" (état 2026-07-05).\nToutes livrées et vérifiées healthy sur le HP depuis (état 2026-07-21,\n/sante-globale : 31 briques ok). Regroupées ici pour ne pas réorganiser\nl'arbre — voir aussi la section ÉTAT SPRINTS pour l'ordre d'arrivée.",
+      "desc": "Historiquement listées ici comme \"en cours / futures\" (état 2026-07-05).\nBloc du haut (fut-images → fut-appbuilder) vérifié healthy sur le HP au\n2026-07-21. Blocs ajoutés depuis (fut-veille-prospection → fut-standard-\ntelephonique, S193→S230) : CODÉS+testés+poussés sur main, mais chacun a\nson propre statut de déploiement — voir le champ \"status\" de chaque\ncarte (🟢 LIVE HP vérifié vs 🟡 reste le LIVE HP). Regroupées ici pour\nne pas réorganiser l'arbre — voir aussi la section ÉTAT SPRINTS.",
       "children": [
         {
           "id": "fut-images",
@@ -1554,11 +1594,163 @@ const TREE = {
         {
           "id": "fut-appbuilder",
           "icon": "🧱",
-          "label": "APP-BUILDER",
+          "label": "APP-BUILDER  — sorti du monorepo (S213)",
+          "color": "c-slate",
+          "port": "Dépôt public séparé",
+          "status": "🟡 Hors du repo Workplace",
+          "desc": "Strategic App Builder Studio — front dédié à la génération d'apps.\nSorti du monorepo (S213, 2026-07-28) dans un dépôt public séparé.\nSortie sèche : aucun script de synchro entre les deux dépôts.\nN'apparaît plus dans briques/ ni dans /sante-globale.",
+          "children": []
+        },
+        {
+          "id": "fut-veille-prospection",
+          "icon": "🕵️",
+          "label": "VEILLE-PROSPECTION  (S193)",
           "color": "c-green",
-          "port": "Famille generation",
-          "status": "🟢 Actif",
-          "desc": "Strategic App Builder Studio — front dédié à la génération d'apps\n(complément au Générateur historique). Pas de port propre exposé\n(app statique, non_applicable dans /sante-globale).",
+          "port": "Port 6140",
+          "status": "🟡 CODÉ+mergé main — reste LIVE HP",
+          "desc": "Prospection géo-scrapée : campagnes automatisées qui référencent une\nzone geo existante, enrichissent (site, coordonnées, dirigeants,\neffectifs, réseaux sociaux) et poussent au CRM Forge (le même pont que\nréutilise le mappeur CRM S230), avec un résumé mémorisé par personne.\nIsolé par personne (X-User-Id, motif mail S185/veille-info).",
+          "children": []
+        },
+        {
+          "id": "fut-export",
+          "icon": "🖨️",
+          "label": "EXPORT  (S194)",
+          "color": "c-green",
+          "port": "Port 6150",
+          "status": "🟢 Actif LIVE HP",
+          "desc": "Rendu PDF et PPTX déterministe (WeasyPrint + python-pptx), sans IA ni\ncoût LLM marginal : convertit du contenu structuré (Markdown thémé\npour le PDF, diapositives pour le PPTX) en fichier téléchargeable.\nService générique, appelé par : Studio (export livre), Forge (deck\nclient), cahier des charges S229 (thèmes rapport/sobre).",
+          "children": []
+        },
+        {
+          "id": "fut-atelier-images-video",
+          "icon": "🎨",
+          "label": "ATELIER IMAGES & VIDÉO",
+          "color": "c-green",
+          "port": "Port 6160",
+          "status": "🟢 Actif LIVE HP",
+          "desc": "Front unique qui réunit génération libre (Images/Vidéo) et synergies\nStudio (portrait, couverture, teaser, animer) + galerie de créations\nsauvegardées (brique Mémoire), sans dupliquer leur code.\nAucune capacité LLM : surface humaine, pas un outil de l'assistant.",
+          "children": []
+        },
+        {
+          "id": "fut-atelier-veille",
+          "icon": "🔭",
+          "label": "ATELIER VEILLE",
+          "color": "c-green",
+          "port": "Port 6130",
+          "status": "🟢 Actif LIVE HP",
+          "desc": "Front unique de la famille veille — réunit la carte Geo (iframe) et\nles sources RSS/digests/audio de Veille-Info (proxy HTTP), sans\ndupliquer leur code. Aucune capacité LLM : surface humaine.",
+          "children": []
+        },
+        {
+          "id": "fut-gateway-sync",
+          "icon": "🔄",
+          "label": "GATEWAY-SYNC",
+          "color": "c-green",
+          "port": "Port 4002",
+          "status": "🟢 Actif LIVE HP",
+          "desc": "Entretien des modèles gratuits de la Gateway — sync OpenRouter →\nLiteLLM. Boucle horloge, garde la liste des modèles gratuits à jour\nsans intervention manuelle.",
+          "children": []
+        },
+        {
+          "id": "fut-connecteurs",
+          "icon": "🔌",
+          "label": "CONNECTEURS  (S214 + S230)",
+          "color": "c-green",
+          "port": "Port 6200",
+          "status": "🟡 CODÉ+REVU — preuve PyAirbyte réelle en attente",
+          "desc": "Connecteurs Airbyte (600+, catalogue PyPI) pilotés en librairie, sans\nla plateforme Airbyte. Une source = un connecteur + une config\nchiffrée au repos ; sync incrémentale (curseur persisté), reprend\naprès interruption. Atterrit dans un cache local (DuckDB) — pas un\nentrepôt analytique (décision assumée). Isolé par personne.\n\nConfig JAMAIS via l'assistant/LLM — saisie API/atelier uniquement\n(garde-fou explicite, main.py:137-140).\n\n⚠️ Task 7 (S230) : l'action extraire (relit un flux déjà synchronisé\nsans re-syncer) n'a JAMAIS tourné contre PyAirbyte réel — Docker\nindisponible pendant tout le sprint. Dette honnêtement laissée en\nl'état (skipif, jamais maquillée par un mock).",
+          "children": [
+            {
+              "id": "conn-sources",
+              "icon": "📡",
+              "label": "Sources & sync",
+              "color": "c-green",
+              "port": "",
+              "status": "",
+              "desc": "GET  /sources                — liste (lecture seule, jamais les\n                                identifiants, juste présence/absence)\nPOST /sources                 — crée une source (config chiffrée)\nPOST /sync/executer           — horloge, cadence 24h, tolère l'échec\nListe blanche stricte des connecteurs mappés (source-hubspot,\nsource-harvest) — pas de détection automatique.",
+              "children": []
+            },
+            {
+              "id": "conn-mappeurs",
+              "icon": "🗺️",
+              "label": "Mappeurs CRM/compta  (S230)",
+              "color": "c-amber",
+              "port": "mappeurs.py",
+              "status": "🟢 Livré S230",
+              "desc": "Module mappeurs.py, dispatché best-effort après chaque sync réussie\n(mapper_apres_sync, jamais bloquant pour la sync elle-même) :\n\n_mapper_crm — HubSpot contacts/deals → Forge crm/import-lot\n  (venture_id explicite depuis S230 — avant, ciblait toujours la\n  1ère venture jamais créée, mise en cache pour la vie du process).\n  N'extrait que les flux réellement configurés (contacts et/ou deals).\n\n_mapper_compta — Harvest time_entries → coût horaire pondéré par\n  pôle → POST /audits/{id}/chiffrer (couche ROI S229). Fait basculer\n  le statut ROI de hypothese_llm à fourni_client.\n\n⚠️ Corrigés à la revue finale S230 : écrivait profil_entreprise\n[\"clients\"] en collision avec une des 9 catégories qualitatives de\nl'entretien S228 (renommé connecteurs_crm) ; compteur de nouveaux\nprospects gonflait sans fin (extraire relit le cache EN ENTIER à\nchaque appel, pas un delta) — piloté désormais par le vrai décompte\ndé-doublonné crees rendu par crm/import-lot.",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "fut-jeu-factions",
+          "icon": "⚔️",
+          "label": "JEU-FACTIONS  (S216→S219)",
+          "color": "c-green",
+          "port": "Port 6210",
+          "status": "🟡 CODÉ+mergé main — reste LIVE HP",
+          "desc": "Cercle privé (Keycloak, jeton signé + cookie — 0 repli mono-tenant,\nJEU_FACTIONS_KEY obligatoire, contrairement à Mémoire/Studio/Atelier).\nCréation de personnage holistique + factions à 2 niveaux (nation=\nélément, guilde=signe, classe=archétype) + combat 2D temps réel joué\nen zones de signe (PvE partagé, shardé) + voies d'archétype\npersonnelles avec groupes ouverts.",
+          "children": [
+            {
+              "id": "jf-idle",
+              "icon": "💤",
+              "label": "Progression idle  (S216)",
+              "color": "c-green",
+              "port": "POST /presence",
+              "status": "🟢 Livré",
+              "desc": "Heartbeat front (toutes les 30s tant que front.html est ouvert).\nBonus de progression d'archétype recalculé À LA LECTURE (jamais\npersisté comme un solde) — ne touche que les voies d'archétype,\njamais les zones de signe (100% combat joué). Aucun bénéfice à un\n\"carry\" (membre qui aide sans que ce soit sa propre étape).",
+              "children": []
+            },
+            {
+              "id": "jf-combat",
+              "icon": "🗡️",
+              "label": "Combat & quêtes jouées  (S217-S219)",
+              "color": "c-green",
+              "port": "WS /groupes/{id}/combat",
+              "status": "🟢 Livré",
+              "desc": "S217 — identité réelle scopée au cercle privé (jeton signé + cookie,\nseul motif qui couvre nativement une route WebSocket).\nS218 — les étapes de voie d'archétype sont un vrai combat joué\n(combat_moteur.py réutilisé, comme les zones de signe), plus une\ncomparaison de stats. tick.py (résolution passive) entièrement\nsupprimé.\nS219 — 30 textes de lore narratifs réels (10 archétypes × 3 étapes),\nremplacent le lore générique.",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "fut-jeu-factions-public",
+          "icon": "🌍",
+          "label": "JEU-FACTIONS-PUBLIC  (S220)",
+          "color": "c-green",
+          "port": "Port 6220",
+          "status": "🟢 Codé+poussé main",
+          "desc": "Exposition publique du jeu — brique INDÉPENDANTE de jeu-factions\n(cercle privé). Mêmes moteurs de jeu (copie-adaptation), mais comptes\nemail + mot de passe propres à la brique — aucune dépendance à core/\nni à Keycloak. JEU_FACTIONS_PUBLIC_SECRET obligatoire (HMAC de\nsession, propre à cette brique). Pas de manifest.json — non branchée\nau registre du Cœur, produit autonome.",
+          "children": []
+        },
+        {
+          "id": "fut-audit-fichiers",
+          "icon": "🛡️",
+          "label": "AUDIT-FICHIERS",
+          "color": "c-green",
+          "port": "Port 6170",
+          "status": "🟡 À tester",
+          "desc": "Scan antivirus (ClamAV, protocole clamd) d'un fichier AVANT qu'une\nautre brique ne l'accepte — malware par signatures connues. Service\ngénérique appelé en serveur-à-serveur (vision /extraire, peertube\n/videos/upload...). Adapté (MIT) de suitenumerique/file-scanner\n(ANCT/DINUM), simplifié pour Workplace.",
+          "children": []
+        },
+        {
+          "id": "fut-transferts",
+          "icon": "📦",
+          "label": "TRANSFERTS",
+          "color": "c-green",
+          "port": "Port 6180",
+          "status": "🟡 À tester",
+          "desc": "Transfert de gros fichiers (jusqu'à ~20 Gio) via un lien à\nexpiration, chiffré bout-en-bout dans le navigateur (AES-256-GCM /\nWebCrypto) — la clé ne transite jamais par le serveur (fragment\nd'URL). Service Worker du destinataire déchiffre en streaming direct\nvers le téléchargement.",
+          "children": []
+        },
+        {
+          "id": "fut-standard-telephonique",
+          "icon": "☎️",
+          "label": "STANDARD-TELEPHONIQUE",
+          "color": "c-green",
+          "port": "Port 6190",
+          "status": "🟡 À tester",
+          "desc": "Standard vocal téléphonique : un agent (livekit-agents) décroche les\nappels SIP entrants (pont sip-stack/roomkit-visio, S197), joue un\nmenu à 7 options, et — le temps que chaque usage réel soit construit\n— enregistre un message vocal, le transcrit (brique Transcription) et\nnotifie Telegram.",
           "children": []
         }
       ]
@@ -1622,9 +1814,19 @@ const TREE = {
       "label": "SÉCURITÉ & DETTES",
       "color": "c-red",
       "port": "Avant prod publique",
-      "status": "⚠️ 3 sprints à faire",
+      "status": "⚠️ 3 sprints à faire + 1 décision utilisateur",
       "desc": "Points de sécurité à traiter avant ouverture publique.",
       "children": [
+        {
+          "id": "secu-forge-adapter",
+          "icon": "🚨",
+          "label": "Adaptateur Forge sans auth  — décision I3 (S230)",
+          "color": "c-red",
+          "port": "briques/forge/main.py",
+          "status": "⚠️ Décision utilisateur requise",
+          "desc": "L'adaptateur Forge n'a AUCUNE authentification sur AUCUNE route, publié\nsur le réseau hôte. La bascule est_service (S230, Task 1) signifie que\ntout appelant anonyme connaissant l'UUID d'une venture peut désormais\nlire/écrire profil_entreprise/audit_id de N'IMPORTE QUELLE venture via\n2 routes internes — vraie exposition inter-tenant en écriture, absente\navant S230.\n\nCorrectif suggéré (fermer ces 2 routes sur FORGE_KEY) créerait une\nasymétrie d'auth face aux ~30 autres routes ouvertes du même fichier —\nquestion d'architecture pré-existante (confiance mesh-interne, décision\nS17), pas un bug étroit. Nécessite une décision utilisateur avant tout\ndéploiement LIVE.\n\nDette différée, PAS corrigée : signalée explicitement, pas perdue.",
+          "children": []
+        },
         {
           "id": "secu-cors",
           "icon": "🌐",
@@ -1662,7 +1864,7 @@ const TREE = {
           "color": "c-green",
           "port": "",
           "status": "🟢 Actif",
-          "desc": "OAuth state HMAC-SHA256 (S35) — anti-CSRF agenda Google.\nStripe webhook signature vérifiée (S21).\nForge : race condition login fix (S36).\nPropagation identité Forge (S36).\nVault chiffré pour Stripe + SMTP keys.\nKeycloak : service accounts dédiés par brique.",
+          "desc": "OAuth state HMAC-SHA256 (S35) — anti-CSRF agenda Google.\nStripe webhook signature vérifiée (S21).\nForge : race condition login fix (S36).\nPropagation identité Forge (S36).\nVault chiffré pour Stripe + SMTP keys.\nKeycloak : service accounts dédiés par brique.\nGate d'action réel (S222) — core/accord_action.py : message utilisateur\n  explicite + TTL + empreinte des arguments, remplace l'ancien gate\n  purement prompt-based (LLM pouvait s'auto-confirmer).\n5 fuites d'existence corrigées (S223) — 404/403 jamais inversés.\nEscalade de privilèges client_lecture corrigée (S227, garde-fou\n  centralisé _membre_actif()).",
           "children": []
         }
       ]
@@ -1672,8 +1874,8 @@ const TREE = {
       "icon": "📊",
       "label": "ÉTAT SPRINTS — Ajouts & ordre des features",
       "color": "c-slate",
-      "port": "2026-07-21",
-      "status": "🟢 S0→S192+ (~185 sprints, ~2.5 mois)",
+      "port": "2026-08-13",
+      "status": "🟢 S0→S230+ (~223 sprints, ~3.4 mois)",
       "desc": "Vue d'ensemble chronologique de tous les sprints réalisés, dans l'ordre\nd'arrivée des features (du plus ancien au plus récent). Chaque carte =\nun bloc de sprints consécutifs, avec le détail sprint par sprint dans sa\ndescription. Le dernier bloc = l'avancement le plus récent.",
       "children": [
         {
@@ -1772,8 +1974,48 @@ const TREE = {
           "label": "S169-S192+  Multi-utilisateur, accès distant, isolation, veille",
           "color": "c-green",
           "port": "2026-07",
-          "status": "✅ Complétés — le plus récent",
-          "desc": "SLIVE déploiement HP groupé — 52/52 healthy (2026-07-14)\nRoutage d'outils activé — Ollama local HP (all-minilm) + gate, ROUTAGE_OUTILS=1\nSprint hygiène infra — healthchecks + dépendances épinglées, déployé\nS169-S170 — Prospection & démarchage (pipeline B2B veille→CRM→brouillons mail LCEN)\nS171-S173 — Épopée identité multi-utilisateur du Cœur\nS174-S180 — Roadmap agenda best-in-class (chiffrement au repos AES-GCM vault)\nS181 — Accès distant cercle privé (Keycloak sur domaine mesh + onboarding QR NetBird)\nS182-S183 — Chacun son espace / multi-utilisateur niveau 2 + audit isolation (28 briques)\nS184-S187 — Isolation des briques restantes (écoute, mail, mémoire, studio)\nS188 — Habillage vidéo ffmpeg (brique vidéo)\nVeille brique parente + sous-briques — famille dashboard 🔭+geo, veille-info :6120\n  (RSS→résumé, digest audio via Voix)\nFix extra_hosts fleet-wide — 15 briques (16 services), host.docker.internal versionné\nFix GATEWAY_URL shadow — 5 briques (recherche/restaurant/synopsis/transcription/vidéo),\n  synopsis bump 1.2.3, LIVE HP 2026-07-21 — le tout dernier sprint en date",
+          "status": "✅ Complétés",
+          "desc": "SLIVE déploiement HP groupé — 52/52 healthy (2026-07-14)\nRoutage d'outils activé — Ollama local HP (all-minilm) + gate, ROUTAGE_OUTILS=1\nSprint hygiène infra — healthchecks + dépendances épinglées, déployé\nS169-S170 — Prospection & démarchage (pipeline B2B veille→CRM→brouillons mail LCEN)\nS171-S173 — Épopée identité multi-utilisateur du Cœur\nS174-S180 — Roadmap agenda best-in-class (chiffrement au repos AES-GCM vault)\nS181 — Accès distant cercle privé (Keycloak sur domaine mesh + onboarding QR NetBird)\nS182-S183 — Chacun son espace / multi-utilisateur niveau 2 + audit isolation (28 briques)\nS184-S187 — Isolation des briques restantes (écoute, mail, mémoire, studio)\nS188 — Habillage vidéo ffmpeg (brique vidéo)\nVeille brique parente + sous-briques — famille dashboard 🔭+geo, veille-info :6120\n  (RSS→résumé, digest audio via Voix)\nFix extra_hosts fleet-wide — 15 briques (16 services), host.docker.internal versionné\nFix GATEWAY_URL shadow — 5 briques (recherche/restaurant/synopsis/transcription/vidéo),\n  synopsis bump 1.2.3, LIVE HP 2026-07-21",
+          "children": []
+        },
+        {
+          "id": "spr-s193s215",
+          "icon": "✅",
+          "label": "S193-S215  Prospection geo + briques export/atelier/connecteurs + renommage ETL",
+          "color": "c-green",
+          "port": "2026-07",
+          "status": "✅ Complétés",
+          "desc": "S193 — Prospection géo-scrapée (brique Veille-Prospection :6140), reste LIVE HP\nAtelier Veille (front unique :6130) — carte Geo + sources RSS sans dupliquer le code\nS194 — Brique Export PDF+PPTX (:6150), CODÉ+PROUVÉ LIVE HP\nFix mail <style> + carte veille URL figée — CODÉ+POUSSÉ+LIVE HP\nAtelier Images & Vidéo (front unique :6160) — CODÉ+REVU+POUSSÉ\nS197 — sip-stack versionné + VM dédiée décidée (Proxmox)\nProxmox hyperviseur + VM sip-stack dédiée — prouvé bout-en-bout\nS199 — Audio global veille + suppression mail groupée + compaction personnages, LIVE HP\nAudit P1-P3 — timeouts digest, sync gateway orphelin, sources RSS mortes, LIVE HP\nBacklog S201-S209 (audit infra) — 9 sprints + SLIVE 14 briques rebuild\nFilet de test des briques en conteneur — scripts/tests_briques.sh (S206)\nBrique Gateway-Sync (:4002) — sync modèles gratuits OpenRouter→LiteLLM, LIVE HP\nVeille : sources Cosmétique + intentions enabled — réparée\nS210 — Contrat manifeste↔route (filet 242 capacités, 4 routes mortes trouvées), LIVE HP\nS211 — ETL auth + garde SSRF (SSRF prouvée exploitable AVANT correction), LIVE HP\nS212 — ETL OCR non bloquant + bump markitdown, LIVE HP\nS213 — App-builder sorti du monorepo (dépôt public séparé, sortie sèche)\nS214 — Brique Connecteurs PyAirbyte (:6200), CODÉ+PROUVÉ, reste LIVE HP\nS215 — Renommage etl → ingestion (brique + volume + fichier), LIVE HP\nDette : 8 fichiers test_*.py fantômes — soldée, filet AST anti-retour posé",
+          "children": []
+        },
+        {
+          "id": "spr-s216s220",
+          "icon": "✅",
+          "label": "S216-S220  Jeu-factions — idle, identité, quêtes, exposition publique",
+          "color": "c-green",
+          "port": "2026-07/08",
+          "status": "✅ Complétés — reste LIVE HP (S216-S219)",
+          "desc": "Jeu holistique jeu-factions, sous-projets 3-5 (1=personnages/factions et\n2=combat déjà livrés avant) :\nS216 — Progression idle des voies d'archétype pendant l'absence (bonus\n  recalculé à la lecture, jamais persisté comme un solde)\nS217 — Identité réelle scopée au cercle privé (jeton signé + cookie, zéro\n  repli mono-tenant, seule brique du repo dans ce cas)\nS218 — Étapes de voie d'archétype jouées en vrai combat (plus une\n  comparaison de stats), tick.py de résolution passive supprimé\nS219 — 30 textes de lore réels (10 archétypes × 3 étapes)\nS220 — Exposition publique (brique jeu-factions-public :6220, comptes\n  email propres, aucune dépendance à Keycloak/core), codé+poussé main\nDeux Critical trouvés seulement à la revue toute-branche S218/S219 (bonus\nidle réappliqué à chaque reconnexion WS ; seed de lore sauté si une ligne\nexistait déjà sur une base déployée) — invisibles à toute revue par tâche\nisolée ni à la suite de tests.",
+          "children": []
+        },
+        {
+          "id": "spr-s221s226",
+          "icon": "✅",
+          "label": "S221-S225  Emprunts LIA-Assistant (validation, sécurité, épistémique, observabilité)",
+          "color": "c-green",
+          "port": "2026-08-09",
+          "status": "🟡 CODÉ+TESTÉ — branche non mergée/non poussée",
+          "desc": "Idées empruntées à LIA-Assistant (AGPL-3.0 → idées seulement, jamais de\ncode). Branche s221-s225-emprunts-lia, 42 fichiers, +3426. 1478 smoke +\n668 core au vert. Reste : décision merge + LIVE HP. S226 (bilan chiffré,\ncritère = /validation/ecarts) non lancé.\n\nS221 — core/validation_args.py : args du LLM validés contre le manifeste\n  AVANT l'appel HTTP, branché dans Guardrail.before_call\n⚠️⚠️ S222 — ferme un trou de sécurité RÉEL en prod : le gate d'action\n  était purement prompt-based (LLM pouvait s'auto-confirmer). Désormais\n  core/accord_action.py : vrai message utilisateur, TTL, empreinte des\n  arguments, clé (fil, personne) — pas un fil nu (sinon le \"oui\" d'une\n  personne validerait l'action d'une autre). Prouvé en neutralisant le\n  gate : 5 tests de sécurité échouent alors.\nS223 — 5 fuites d'existence corrigées (404 inconnu / 403 non-autorisé,\n  jamais l'inverse) — mémoire, agenda×2, forge×2\nS224 — Confiance épistémique dérivée (preuve/contradiction comptés, jamais\n  une valeur écrite à la main) dans le frontmatter Memory\nS225 — /metrics sur le Cœur + Prometheus/Grafana/alertes — alertes\n  écrites mais NON routées (pas d'Alertmanager)",
+          "children": []
+        },
+        {
+          "id": "spr-s227s230",
+          "icon": "✅",
+          "label": "S227-S230  Cadrage \"Audit d'entreprise → conception de solutions\"",
+          "color": "c-green",
+          "port": "2026-08-11/13",
+          "status": "✅ Complétés — le plus récent (CLOS)",
+          "desc": "4 sprints séquentiels sur Forge/Audit/Générateur/Connecteurs, tous CODÉS+\nREVUS (revue toute-branche opus)+POUSSÉS sur main. Détail complet : voir\nfrg-entite/frg-entretien (Forge), aud-c5-roi (Audit), gen-cdc (Générateur)\net fut-connecteurs/conn-mappeurs (Connecteurs).\n\nS227 — Entité Entreprise unifiée (Ventures.geo_object_id/audit_id/\n  profil_entreprise, GET /ventures/{id}/dossier). Critical : escalade de\n  privilèges via le nouveau rôle client_lecture, corrigée.\nS228 — Entretien guidé IA (13 sections, routage structurel côté Cœur).\n  3 Critical : capacités manifest pointant vers des routes inexistantes +\n  identité non propagée + datetime naïf/aware cassant Postgres.\nS229 — ROI chiffré (5e couche audit, Python déterministe) + cahier des\n  charges exportable PDF/PPTX. 2 Critical : filet de contrat cassé par un\n  défaut Pydantic + CDC dégradé consommé silencieusement.\nS230 — Connecteurs métier réels (mappeurs HubSpot CRM + Harvest compta).\n  2 Critical : collision de clé profil_entreprise avec S228 + faux delta\n  cumulatif sur le compteur de prospects.\n\n⚠️⚠️ Leçon confirmée 4× : une revue par tâche isolée ne suffit JAMAIS,\nmême à 10-13/N tâches approuvées au premier passage — chaque sprint a vu\nla revue finale toute-branche trouver des Critical invisibles autrement.\n\nReste hors périmètre du cadrage : décision utilisateur sur I3 (adaptateur\nForge sans AUCUNE authentification — accès inter-tenant en écriture ouvert\npar S230, cf. section SÉCURITÉ & DETTES), preuve LIVE HP PyAirpyte réel\n(Task 7 S230), déploiement/mesure d'usage du pipeline en prod.",
           "children": []
         },
         {
@@ -1783,7 +2025,7 @@ const TREE = {
           "color": "c-orange",
           "port": "",
           "status": "🟡 À planifier",
-          "desc": "CORS Hardening (12+ briques en CORS_ORIGINS=* par défaut) → avant prod publique\nSecrets PeerTube (mot de passe par défaut workplace2026) → avant prod publique\nFORGE_DB_PASSWORD (placeholder dans .env.example) → avant prod publique\nForge monolithe à découper (65 routers/16k lignes) → différé après backlog sprints\nSprint Sablier — démarrage briques à la demande (idée, bloquant = accès socket Docker)\nS169-S170 reste — identité expéditeur mail\nS182 reste (non bloquant) — preuve navigateur 2 comptes\nVAPID push (S178) + gating endpoints — optionnel, roadmap agenda\nEnv-shadow restants à défaut vide (API_KEYS/GATEWAY_KEY/LITELLM_MASTER_KEY sur\n  quelques briques) — même piège que GATEWAY_URL, sans conséquence tant qu'aucune\n  clé n'est nécessaire via le .env racine sur ces briques précises",
+          "desc": "⚠️ I3 (S230) — décision utilisateur requise avant tout déploiement LIVE :\n  l'adaptateur Forge (main.py) n'a AUCUNE authentification sur AUCUNE route ;\n  la bascule est_service ouvre un accès inter-tenant en écriture. Voir\n  section SÉCURITÉ & DETTES.\nPreuve LIVE HP PyAirbyte réel (Task 7 S230) — Docker indisponible pendant\n  tout le sprint, action extraire jamais exécutée contre le vrai catalogue\nLIVE HP restant : jeu-factions (S216-S219), veille-prospection (S193),\n  connecteurs (S214), branche S221-S225 (emprunts LIA, ni mergée ni poussée)\nCORS Hardening (12+ briques en CORS_ORIGINS=* par défaut) → avant prod publique\nSecrets PeerTube (mot de passe par défaut workplace2026) → avant prod publique\nFORGE_DB_PASSWORD (placeholder dans .env.example) → avant prod publique\nForge monolithe à découper (65 routers/16k lignes) → différé après backlog sprints\nSprint Sablier — démarrage briques à la demande (idée, bloquant = accès socket Docker)\nS169-S170 reste — identité expéditeur mail\nS182 reste (non bloquant) — preuve navigateur 2 comptes\nVAPID push (S178) + gating endpoints — optionnel, roadmap agenda\nEnv-shadow restants à défaut vide (API_KEYS/GATEWAY_KEY/LITELLM_MASTER_KEY sur\n  quelques briques) — même piège que GATEWAY_URL, sans conséquence tant qu'aucune\n  clé n'est nécessaire via le .env racine sur ces briques précises",
           "children": []
         }
       ]
