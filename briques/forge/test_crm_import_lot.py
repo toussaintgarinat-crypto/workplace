@@ -196,6 +196,49 @@ def test_prospect_vers_lead_logement_jamais_de_notes_personnelles():
     assert "Importé depuis la veille geo (logement)" in lead["notes"]
 
 
+def test_prospect_vers_lead_logement_zone_nom_ajoute_aux_notes():
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F",
+        "zone_nom": "Logements Castres",
+    }, statut="à contacter")
+    assert "Zone : Logements Castres" in lead["notes"]
+
+
+def test_prospect_vers_lead_logement_sans_zone_nom_ninjecte_rien():
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F",
+    }, statut="à contacter")
+    assert "Zone :" not in lead["notes"]
+
+
+def test_prospect_vers_lead_logement_zone_nom_ne_reactive_pas_le_passthrough_notes():
+    """Garde-fou de régression : même avec zone_nom fourni, le champ notes du prospect
+    entrant (texte libre, potentiellement un nom de personne) reste bloqué pour les
+    logements — zone_nom est un canal séparé et contrôlé, pas une réouverture du
+    passthrough générique."""
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "adresse": "12 Rue des Lilas, Castres", "grade_dpe": "F",
+        "zone_nom": "Logements Castres",
+        "notes": "Propriétaire : Jean Dupont, tél 06 12 34 56 78",
+    }, statut="à contacter")
+    assert "Jean Dupont" not in lead["notes"]
+    assert "06 12 34 56 78" not in lead["notes"]
+    assert "Propriétaire" not in lead["notes"]
+    assert "Zone : Logements Castres" in lead["notes"]
+
+
+def test_prospect_vers_lead_entreprise_zone_nom_ajoute_aux_notes():
+    from main import _prospect_vers_lead
+    lead = _prospect_vers_lead({
+        "nom": "Chez Paul", "entreprise": "Chez Paul SARL", "commune": "Castres",
+        "zone_nom": "Restos Castres",
+    }, statut="à contacter")
+    assert "Zone : Restos Castres" in lead["notes"]
+
+
 def test_import_lot_accepte_prospects_logement_sans_nom(monkeypatch):
     store = _install_faux_core(monkeypatch, [])
     d = client.post("/crm/import-lot", json={"prospects": [
