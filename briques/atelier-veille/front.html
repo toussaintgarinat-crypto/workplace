@@ -592,7 +592,9 @@ async function lancerCampagne(id) {
     await chargerCampagnesProspection();
     if (document.getElementById('panneau-prospects').dataset.campagneId == id) await voirProspects(id);
   } catch (e) {
-    resultat.textContent = String(e.message || e);
+    const texte = String(e.message || e);
+    DERNIER_RESULTAT_LANCEMENT[id] = texte;
+    resultat.textContent = texte;
   } finally {
     bouton.disabled = false;
   }
