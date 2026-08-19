@@ -113,3 +113,40 @@ def test_creer_campagne_type_invalide_422(monkeypatch):
     r = client.post("/campagnes", headers=_entetes("main-gina"),
                     json={"zone_id": "zone-gina", "type": "b2x"})
     assert r.status_code == 422
+
+
+def test_creer_campagne_resout_zone_nom_via_geo(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo",
+                        lambda zone_id: {"id": zone_id, "nom": "Restos Castres", "type": "entreprise"})
+    r = client.post("/campagnes", headers=_entetes("main-henri"),
+                    json={"zone_id": "zone-castres"})
+    assert r.status_code == 201
+    assert r.json()["zone_nom"] == "Restos Castres"
+
+
+def test_creer_campagne_zone_nom_none_si_geo_injoignable(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    def _casse(zone_id):
+        raise Exception("geo down")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", _casse)
+    r = client.post("/campagnes", headers=_entetes("main-ines"),
+                    json={"zone_id": "zone-hs"})
+    assert r.status_code == 201
+    assert r.json()["zone_nom"] is None
+
+
+def test_creer_campagne_resout_zone_nom_une_seule_fois(monkeypatch):
+    """`lire_zone_geo` ne doit être appelée qu'UNE fois par création — le résultat est
+    réutilisé pour l'avertissement de cohérence type/zone (pas de 2e appel réseau)."""
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    appels = {"n": 0}
+    def _compte(zone_id):
+        appels["n"] += 1
+        return {"id": zone_id, "nom": "Logements Castres", "type": "logement"}
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", _compte)
+    r = client.post("/campagnes", headers=_entetes("main-jules"),
+                    json={"zone_id": "zone-logements", "type": "b2b"})
+    assert r.status_code == 201
+    assert appels["n"] == 1
+    assert "avertissement" in r.json()  # b2b sur zone logement → incohérence signalée
