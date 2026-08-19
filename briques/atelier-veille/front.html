@@ -37,6 +37,7 @@
     <button id="btn-sources" onclick="ouvrirOnglet('sources')">Sources RSS</button>
     <button id="btn-carte" onclick="ouvrirOnglet('carte')">Carte</button>
     <button id="btn-audioglobal" onclick="ouvrirOnglet('audioglobal')">Audio global</button>
+    <button id="btn-prospection" onclick="ouvrirOnglet('prospection')">Prospection</button>
   </nav>
 
   <div id="vue-carte" class="vue panel" style="padding:0;overflow:hidden">
@@ -91,18 +92,34 @@
     <h3 style="margin-top:24px">Historique</h3>
     <div id="historique-audioglobal"></div>
   </div>
+
+  <div id="vue-prospection" class="vue panel">
+    <h3>Campagnes de prospection</h3>
+    <p style="color:var(--mut);font-size:.82rem">Une campagne enrichit une zone existante (onglet Carte) et pousse les prospects trouvés au CRM. Rien n'est envoyé automatiquement.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <select id="select-zone-prospection" style="flex:2;min-width:200px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)"></select>
+      <select id="select-type-prospection" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)">
+        <option value="b2b">Entreprises (b2b)</option>
+        <option value="b2c">Logements (b2c)</option>
+      </select>
+      <button onclick="creerCampagneProspection()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#0b1622;font-weight:600;cursor:pointer">Créer la campagne</button>
+    </div>
+    <div id="liste-campagnes-prospection" style="margin-top:16px"></div>
+    <div id="erreur-prospection" style="color:var(--bad);margin-top:8px;font-size:.85rem"></div>
+  </div>
 </div>
 <script>
 const API_BASE = window.ATELIER_VEILLE_API_BASE || '';
 
 function ouvrirOnglet(nom) {
-  for (const n of ['carte', 'sources', 'digests', 'audioglobal']) {
+  for (const n of ['carte', 'sources', 'digests', 'audioglobal', 'prospection']) {
     document.getElementById('vue-' + n).classList.toggle('actif', n === nom);
     document.getElementById('btn-' + n).classList.toggle('actif', n === nom);
   }
   if (nom === 'sources') chargerSources();
   if (nom === 'digests') { chargerDigests(); chargerThematiquesDigest(); }
   if (nom === 'audioglobal') { chargerChoixDigests(); chargerHistoriqueAudioGlobal(); }
+  if (nom === 'prospection') { chargerZonesProspection(); chargerCampagnesProspection(); }
 }
 
 async function chargerConfig() {
@@ -455,6 +472,107 @@ async function chargerHistoriqueAudioGlobal() {
       </div>`).join('') : '<p style="color:var(--mut)">Aucun audio global généré pour l\'instant.</p>';
   } catch (e) {
     box.innerHTML = '<p style="color:var(--bad)">' + esc(e.message || e) + '</p>';
+  }
+}
+
+async function chargerZonesProspection() {
+  const select = document.getElementById('select-zone-prospection');
+  try {
+    const r = await fetch(`${API_BASE}/prospection/zones`);
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const zones = (await r.json()).zones || [];
+    if (!zones.length) {
+      select.innerHTML = '<option value="" disabled selected>Aucune zone geo — crée-en une dans l\'onglet Carte</option>';
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    select.innerHTML = zones.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} (${esc(z.type)})</option>`).join('');
+  } catch (e) {
+    select.innerHTML = '<option value="" disabled selected>Erreur de chargement</option>';
+    select.disabled = true;
+  }
+}
+
+async function chargerCampagnesProspection() {
+  const cible = document.getElementById('liste-campagnes-prospection');
+  const erreur = document.getElementById('erreur-prospection');
+  erreur.textContent = '';
+  try {
+    const r = await fetch(`${API_BASE}/prospection/campagnes`);
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const campagnes = await r.json();
+    if (!campagnes.length) {
+      cible.innerHTML = '<p style="color:var(--mut)">Aucune campagne de prospection active.</p>';
+      return;
+    }
+    cible.innerHTML = campagnes.map(c => `
+      <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <b>${esc(c.zone_nom || c.zone_id)}</b>
+            <span style="color:var(--mut);font-size:.8rem"> · ${esc(c.type)} · ${c.derniere_execution ? 'dernière exécution : ' + esc(c.derniere_execution.slice(0, 16).replace('T', ' ')) : 'jamais exécutée'}</span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button id="btn-lancer-${c.id}" onclick="lancerCampagne(${c.id})" style="border:1px solid var(--accent);background:transparent;color:var(--accent);border-radius:8px;padding:5px 10px;cursor:pointer">Lancer maintenant</button>
+            <button onclick="desactiverCampagne(${c.id})" style="border:1px solid var(--bad);background:transparent;color:var(--bad);border-radius:8px;padding:5px 10px;cursor:pointer">Désactiver</button>
+          </div>
+        </div>
+        ${c.avertissement ? `<p style="color:var(--bad);font-size:.8rem;margin:6px 0 0">${esc(c.avertissement)}</p>` : ''}
+        <div id="resultat-lancement-${c.id}" style="font-size:.85rem;margin-top:6px"></div>
+      </div>`).join('');
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function creerCampagneProspection() {
+  const zoneId = document.getElementById('select-zone-prospection').value;
+  const type = document.getElementById('select-type-prospection').value;
+  const erreur = document.getElementById('erreur-prospection');
+  erreur.textContent = '';
+  if (!zoneId) { erreur.textContent = 'Choisis une zone.'; return; }
+  try {
+    const r = await fetch(`${API_BASE}/prospection/campagnes`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({zone_id: zoneId, type})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    await chargerCampagnesProspection();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function desactiverCampagne(id) {
+  const erreur = document.getElementById('erreur-prospection');
+  erreur.textContent = '';
+  try {
+    const r = await fetch(`${API_BASE}/prospection/campagnes/${id}`, {method: 'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    await chargerCampagnesProspection();
+  } catch (e) {
+    erreur.textContent = String(e.message || e);
+  }
+}
+
+async function lancerCampagne(id) {
+  const bouton = document.getElementById(`btn-lancer-${id}`);
+  const resultat = document.getElementById(`resultat-lancement-${id}`);
+  bouton.disabled = true;
+  resultat.textContent = 'Lancement en cours (peut prendre jusqu\'à 3 minutes)…';
+  try {
+    const r = await fetch(`${API_BASE}/prospection/campagnes/${id}/executer`, {method: 'POST'});
+    if (!r.ok) throw new Error((await r.json()).detail || 'Erreur');
+    const res = await r.json();
+    resultat.textContent = res.erreur
+      ? `Erreur : ${res.erreur}`
+      : `${res.trouves} trouvé(s), ${res.deja_connus} déjà connu(s), ${res.nouveaux_crm} nouveau(x) au CRM.`;
+    await chargerCampagnesProspection();
+  } catch (e) {
+    resultat.textContent = String(e.message || e);
+  } finally {
+    bouton.disabled = false;
   }
 }
 
