@@ -42,16 +42,15 @@ def _appeler_geo(zone_id: str) -> dict:
 
 
 def _appeler_forge(prospects: list[dict], zone_nom: str | None = None) -> dict:
-    """`zone_nom`, si fourni, tague chaque prospect (`notes`) avec `f"Zone : {zone_nom}"`
-    — seule façon de retrouver « les prospects de CETTE campagne » côté CRM plus tard
-    (Forge n'a pas de colonne zone_id/campagne_id, cf. spec 2026-08-19). Les notes déjà
-    présentes sur le prospect (aucune source actuelle n'en pose, mais robuste si un jour
-    `geo` en ajoute) sont conservées, pas écrasées."""
+    """`zone_nom`, si fourni, est ajouté comme champ DÉDIÉ sur chaque prospect (jamais
+    injecté dans `notes`, qui reste un passthrough libre bloqué côté Forge pour les
+    prospects logement — contrainte légale, cf. briques/forge/test_crm_import_lot.py).
+    Forge lui-même compose "Zone : <nom>" dans ses propres notes code-authored à partir
+    de ce champ (les deux branches entreprise ET logement) — seule façon de retrouver
+    « les prospects de CETTE campagne » côté CRM sans dupliquer le schéma de zones."""
     if zone_nom:
-        tag = f"Zone : {zone_nom}"
         for p in prospects:
-            existantes = (p.get("notes") or "").strip()
-            p["notes"] = f"{existantes} · {tag}" if existantes else tag
+            p["zone_nom"] = zone_nom
     base = _url("FORGE_URL", "http://host.docker.internal:5700")
     r = httpx.post(f"{base}/crm/import-lot", json={"prospects": prospects},
                    headers=_entetes("FORGE_KEY"), timeout=60)
