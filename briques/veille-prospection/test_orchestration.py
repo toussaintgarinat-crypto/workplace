@@ -309,10 +309,10 @@ def test_appeler_forge_tague_zone_dans_notes(monkeypatch):
 
     monkeypatch.setattr(orchestration.httpx, "post", _post)
     orchestration._appeler_forge([{"nom": "Chez Paul"}], zone_nom="Restos Castres")
-    assert captes["json"]["prospects"][0]["notes"] == "Zone : Restos Castres"
+    assert captes["json"]["prospects"][0]["zone_nom"] == "Restos Castres"
 
 
-def test_appeler_forge_conserve_notes_existantes_du_prospect(monkeypatch):
+def test_appeler_forge_ne_touche_jamais_au_champ_notes(monkeypatch):
     captes = {}
 
     def _post(url, json=None, headers=None, timeout=None):
@@ -322,8 +322,8 @@ def test_appeler_forge_conserve_notes_existantes_du_prospect(monkeypatch):
     monkeypatch.setattr(orchestration.httpx, "post", _post)
     orchestration._appeler_forge([{"nom": "Chez Paul", "notes": "Dirigeant : P. Martin"}],
                                  zone_nom="Restos Castres")
-    assert captes["json"]["prospects"][0]["notes"] == \
-        "Dirigeant : P. Martin · Zone : Restos Castres"
+    assert captes["json"]["prospects"][0]["notes"] == "Dirigeant : P. Martin"
+    assert captes["json"]["prospects"][0]["zone_nom"] == "Restos Castres"
 
 
 def test_appeler_forge_sans_zone_nom_ninjecte_rien(monkeypatch):
@@ -335,7 +335,7 @@ def test_appeler_forge_sans_zone_nom_ninjecte_rien(monkeypatch):
 
     monkeypatch.setattr(orchestration.httpx, "post", _post)
     orchestration._appeler_forge([{"nom": "Chez Paul"}])
-    assert "notes" not in captes["json"]["prospects"][0]
+    assert "zone_nom" not in captes["json"]["prospects"][0]
 
 
 def test_executer_campagne_unique_existe_et_retourne_le_decompte(monkeypatch):
@@ -375,4 +375,5 @@ def test_zone_nom_de_la_campagne_est_propage_aux_notes_crm(monkeypatch):
 
     monkeypatch.setattr(orchestration.httpx, "post", _post)
     orchestration.executer_campagnes(user_ids=["orch-iris"])
-    assert captes["json"]["prospects"][0]["notes"] == "Zone : Restos Castres"
+    assert captes["json"]["prospects"][0]["zone_nom"] == "Restos Castres"
+    assert "notes" not in captes["json"]["prospects"][0]
