@@ -695,6 +695,8 @@ def _prospect_vers_lead(p: dict, statut: str) -> dict:
         if p.get("ref_externe"):
             notes.append(f"DPE : {p['ref_externe']}")
         notes.append("Importé depuis la veille geo (logement)")
+        if p.get("zone_nom"):
+            notes.append(f"Zone : {p['zone_nom']}")
         # La constante, pas le littéral : `_adresse_depuis_nom` la relit pour ré-extraire
         # l'adresse — un préfixe écrit en dur ici casserait silencieusement les DEUX
         # lecteurs (exposition à `forge_crm_lister` et dé-doublonnage au ré-import).
@@ -713,6 +715,8 @@ def _prospect_vers_lead(p: dict, statut: str) -> dict:
     notes.append("Importé depuis la veille geo")
     if (p.get("notes") or "").strip():
         notes.append(p["notes"].strip())
+    if p.get("zone_nom"):
+        notes.append(f"Zone : {p['zone_nom']}")
     charge = {"nom": (p.get("nom") or ent), "entreprise": ent,
               "email": p.get("email"), "telephone": p.get("telephone"),
               "statut": statut, "notes": " · ".join(notes)}
