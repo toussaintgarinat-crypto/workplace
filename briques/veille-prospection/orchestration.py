@@ -148,6 +148,11 @@ def executer_campagne_unique(campagne: dict) -> dict:
 
 
 def _executer_campagne_sans_planter(campagne: dict) -> bool:
+    """Enrobe `executer_campagne_unique` et les appels `stockage.*` qui suivent : une
+    panne inattendue (ex. corruption JSON de `geo`, ou une erreur SQLite imprévisible) est
+    journalisée et comptée comme « campagne traitée (sans succès) », jamais propagée.
+    Contrainte du plan : « Aucun échec ne doit faire planter le pipeline d'orchestration » —
+    plus large que les pannes HTTP déjà gérées dans `executer_campagne_unique`."""
     try:
         resultat = executer_campagne_unique(campagne)
         stockage.inserer_execution(campagne["id"], **resultat)
