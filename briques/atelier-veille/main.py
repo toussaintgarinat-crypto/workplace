@@ -33,6 +33,7 @@ GEO_PORT = int(os.getenv("GEO_PORT", "6110"))
 VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120")
 VEILLE_PROSPECTION_URL = os.getenv("VEILLE_PROSPECTION_URL", "http://host.docker.internal:6140")
 GEO_URL = os.getenv("GEO_URL", "http://host.docker.internal:6110")
+FORGE_URL = os.getenv("FORGE_URL", "http://host.docker.internal:5700")
 
 # MESH_HOST / MESH_PORT_OFFSET : même convention que core/urls_ui.py::url_brique. Caddy
 # termine le TLS du mesh et reverse-proxy en HTTP vers ce conteneur, donc `request.url.scheme`
@@ -496,3 +497,39 @@ async def lister_zones_prospection(x_user_id: Optional[str] = Header(None),
         detail = corps.get("detail") if isinstance(corps, dict) else None
         raise HTTPException(r.status_code, detail or f"geo a refusé la requête ({r.status_code}).")
     return corps
+
+
+async def _get_json_ou_erreur(url: str, service: str) -> dict | list:
+    """Petit helper local aux routes `/prospection/*` qui chaînent 2 appels amont — les
+    routes `/veille/*` existantes n'en ont pas besoin (un seul appel chacune)."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(url)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"{service} injoignable ({url}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"{service} a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.get("/prospection/prospects", tags=["prospection"])
+async def prospects_campagne(campagne_id: int):
+    """Prospects CRM rattachables à cette campagne — filtrés par le tag `"Zone : <nom>"`
+    posé dans les notes à l'export (cf. veille-prospection orchestration.py, Task 2).
+    Limite ASSUMÉE (spec 2026-08-19) : un filtrage texte, pas une vraie clé étrangère —
+    si `zone_nom` est `None` (jamais résolu à la création), on renvoie une liste VIDE
+    plutôt que tout le CRM (mieux vaut rien qu'une vue trompeuse)."""
+    campagnes = await _get_json_ou_erreur(f"{VEILLE_PROSPECTION_URL}/campagnes",
+                                          "veille-prospection")
+    campagne = next((c for c in campagnes if c["id"] == campagne_id), None)
+    if campagne is None:
+        raise HTTPException(404, "Campagne introuvable.")
+    zone_nom = campagne.get("zone_nom")
+    if not zone_nom:
+        return {"campagne_id": campagne_id, "zone_nom": None, "prospects": []}
+    crm = await _get_json_ou_erreur(f"{FORGE_URL}/crm", "forge")
+    tag = f"Zone : {zone_nom}"
+    prospects = [p for p in crm.get("prospects", []) if tag in (p.get("notes") or "")]
+    return {"campagne_id": campagne_id, "zone_nom": zone_nom, "prospects": prospects}
