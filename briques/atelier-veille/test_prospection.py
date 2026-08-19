@@ -144,3 +144,80 @@ def test_lister_zones_prospection_proxifie(monkeypatch):
     r = client.get("/prospection/zones")
     assert r.status_code == 200
     assert r.json()["zones"][0]["nom"] == "Restos Castres"
+
+
+def test_preparer_demarchage_extrait_ville_et_filtre_par_campagne(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "entreprise": "Chez Paul SARL", "email": "p@a.fr",
+             "notes": "NAF : 56.10A · Commune : Castres · Zone : Restos Castres"},
+        ]}),
+        "/demarchage/preparer": (201, {"ok": True, "prepares": 1, "ignores": {},
+                                       "message": "1 brouillon(s) préparé(s)."}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "Studio Web — 06 00 00 00 00",
+        "sujet": "Bonjour {nom}", "message": "On a vu {entreprise} à {ville}."
+    })
+    assert r.status_code == 201
+    _, _, _, corps_aval = Faux.dernier_appel
+    assert corps_aval["prospects"] == [{"nom": "Chez Paul", "entreprise": "Chez Paul SARL",
+                                        "email": "p@a.fr", "ville": "Castres"}]
+    assert corps_aval["sujet"] == "Bonjour {nom}"
+    assert corps_aval["expediteur"] == "Studio Web — 06 00 00 00 00"
+
+
+def test_preparer_demarchage_ville_vide_si_absente_des_notes(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "email": "p@a.fr", "notes": "Zone : Restos Castres"}]}),
+        "/demarchage/preparer": (201, {"ok": True, "prepares": 1, "ignores": {}}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "X", "sujet": "S", "message": "M"})
+    _, _, _, corps_aval = Faux.dernier_appel
+    assert corps_aval["prospects"][0]["ville"] == ""
+
+
+def test_preparer_demarchage_prospect_id_hors_campagne_est_ignore_422(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "email": "p@a.fr", "notes": "Zone : Restos Castres"}]}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["id-inconnu"], "expediteur": "X",
+        "sujet": "S", "message": "M"})
+    assert r.status_code == 422
+
+
+def test_preparer_demarchage_relaie_une_erreur_de_mail(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "email": "p@a.fr", "notes": "Zone : Restos Castres"}]}),
+        "/demarchage/preparer": (404, {"detail": "Boîte « x@y.fr » non connectée."}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "Studio Web",
+        "sujet": "S", "message": "M", "compte": "x@y.fr"})
+    assert r.status_code == 404
+    assert "non connectée" in r.json()["detail"]
+
+
+def test_preparer_demarchage_expediteur_vide_422_sans_appeler_mail(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "email": "p@a.fr", "notes": "Zone : Restos Castres"}]}),
+    }, boom_pour=["/demarchage/preparer"])
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    r = client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "", "sujet": "S", "message": "M"})
+    assert r.status_code == 422
