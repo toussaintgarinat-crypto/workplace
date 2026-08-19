@@ -51,7 +51,8 @@ def init() -> None:
     os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
     with _conn() as c:
         c.executescript(_SCHEMA)
-        for alter in ("ALTER TABLE campagnes ADD COLUMN type TEXT NOT NULL DEFAULT 'b2b'",):
+        for alter in ("ALTER TABLE campagnes ADD COLUMN type TEXT NOT NULL DEFAULT 'b2b'",
+                      "ALTER TABLE campagnes ADD COLUMN zone_nom TEXT"):
             try:
                 c.execute(alter)
             except sqlite3.OperationalError:
@@ -63,16 +64,17 @@ init()  # schéma prêt dès l'import (robuste même sous TestClient)
 
 def _campagne_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "user_id": r["user_id"], "zone_id": r["zone_id"],
-            "type": r["type"], "actif": bool(r["actif"]),
+            "type": r["type"], "zone_nom": r["zone_nom"], "actif": bool(r["actif"]),
             "derniere_execution": r["derniere_execution"], "created_at": r["created_at"]}
 
 
-def creer_campagne(user_id: str, zone_id: str, type_: str = "b2b") -> dict:
+def creer_campagne(user_id: str, zone_id: str, type_: str = "b2b",
+                   zone_nom: str | None = None) -> dict:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO campagnes (user_id, zone_id, type, actif, created_at) "
-            "VALUES (?,?,?,1,?)",
-            (user_id, zone_id, type_, _maintenant()))
+            "INSERT INTO campagnes (user_id, zone_id, type, zone_nom, actif, created_at) "
+            "VALUES (?,?,?,?,1,?)",
+            (user_id, zone_id, type_, zone_nom, _maintenant()))
         row = c.execute("SELECT * FROM campagnes WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _campagne_dict(row)
 
@@ -96,6 +98,16 @@ def supprimer_campagne(user_id: str, campagne_id: int) -> bool:
         cur = c.execute("UPDATE campagnes SET actif = 0 WHERE id = ? AND user_id = ?",
                         (campagne_id, user_id))
     return cur.rowcount > 0
+
+
+def lire_campagne(user_id: str, campagne_id: int) -> dict | None:
+    """Une campagne précise, scopée au tenant — active ou non (contrairement à
+    `lister_campagnes(actives_seulement=True)`, utile pour un 404 honnête plutôt qu'un
+    faux « introuvable » sur une campagne juste désactivée)."""
+    with _conn() as c:
+        row = c.execute("SELECT * FROM campagnes WHERE id = ? AND user_id = ?",
+                        (campagne_id, user_id)).fetchone()
+    return _campagne_dict(row) if row else None
 
 
 def lister_user_ids_actifs() -> list[str]:
