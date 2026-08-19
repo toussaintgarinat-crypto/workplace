@@ -150,3 +150,60 @@ def test_creer_campagne_resout_zone_nom_une_seule_fois(monkeypatch):
     assert r.status_code == 201
     assert appels["n"] == 1
     assert "avertissement" in r.json()  # b2b sur zone logement → incohérence signalée
+
+
+def test_executer_campagne_id_404_si_autre_tenant(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", lambda z: None)
+    r = client.post("/campagnes", headers=_entetes("main-karim"),
+                    json={"zone_id": "zone-karim"})
+    campagne_id = r.json()["id"]
+    r = client.post(f"/campagnes/{campagne_id}/executer", headers=_entetes("main-laura"))
+    assert r.status_code == 404
+
+
+def test_executer_campagne_id_404_si_inactive(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", lambda z: None)
+    r = client.post("/campagnes", headers=_entetes("main-mona"),
+                    json={"zone_id": "zone-mona"})
+    campagne_id = r.json()["id"]
+    client.delete(f"/campagnes/{campagne_id}", headers=_entetes("main-mona"))
+    r = client.post(f"/campagnes/{campagne_id}/executer", headers=_entetes("main-mona"))
+    assert r.status_code == 404
+
+
+def test_executer_campagne_id_retourne_le_resultat_et_persiste(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", lambda z: None)
+    r = client.post("/campagnes", headers=_entetes("main-nadia"),
+                    json={"zone_id": "zone-nadia"})
+    campagne_id = r.json()["id"]
+
+    appele_avec = {}
+    def _faux_executer(campagne):
+        appele_avec["id"] = campagne["id"]
+        return {"trouves": 5, "deja_connus": 2, "nouveaux_crm": 3, "erreur": None}
+    monkeypatch.setattr(main.orchestration, "executer_campagne_unique", _faux_executer)
+
+    r = client.post(f"/campagnes/{campagne_id}/executer", headers=_entetes("main-nadia"))
+    assert r.status_code == 200
+    assert r.json() == {"trouves": 5, "deja_connus": 2, "nouveaux_crm": 3, "erreur": None}
+    assert appele_avec["id"] == campagne_id
+
+    r = client.get(f"/campagnes/{campagne_id}/executions", headers=_entetes("main-nadia"))
+    assert len(r.json()) == 1
+    assert r.json()[0]["trouves"] == 5
+
+    r = client.get("/campagnes", headers=_entetes("main-nadia"))
+    assert r.json()[0]["derniere_execution"] is not None
+
+
+def test_lister_executions_404_si_autre_tenant(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", lambda z: None)
+    r = client.post("/campagnes", headers=_entetes("main-oscar"),
+                    json={"zone_id": "zone-oscar"})
+    campagne_id = r.json()["id"]
+    r = client.get(f"/campagnes/{campagne_id}/executions", headers=_entetes("main-paula"))
+    assert r.status_code == 404

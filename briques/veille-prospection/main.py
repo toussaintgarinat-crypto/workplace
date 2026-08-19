@@ -101,6 +101,28 @@ def supprimer_campagne_route(campagne_id: int, tenant: str = Depends(tenant_actu
     return {"ok": True}
 
 
+@app.post("/campagnes/{campagne_id}/executer", tags=["campagnes"])
+def executer_campagne_id_route(campagne_id: int, tenant: str = Depends(tenant_actuel)):
+    """Lance UNE campagne, tout de suite, scopée au tenant appelant — contrairement à
+    POST /campagnes/executer (jeton horloge, traite tout le monde). Synchrone : peut
+    prendre jusqu'à ~180 s (timeout de l'appel `geo` sous-jacent, lectures web réelles)."""
+    campagne = stockage.lire_campagne(tenant, campagne_id)
+    if not campagne or not campagne["actif"]:
+        raise HTTPException(404, "Campagne introuvable ou inactive.")
+    resultat = orchestration.executer_campagne_unique(campagne)
+    stockage.inserer_execution(campagne_id, **resultat)
+    stockage.maj_derniere_execution(campagne_id)
+    return resultat
+
+
+@app.get("/campagnes/{campagne_id}/executions", tags=["campagnes"])
+def lister_executions_route(campagne_id: int, tenant: str = Depends(tenant_actuel)):
+    campagne = stockage.lire_campagne(tenant, campagne_id)
+    if not campagne:
+        raise HTTPException(404, "Campagne introuvable.")
+    return stockage.lister_executions(campagne_id)
+
+
 @app.post("/campagnes/executer", tags=["campagnes"])
 def executer_campagnes_route(_: None = Depends(verifier_cle_horloge)):
     return orchestration.executer_campagnes()
