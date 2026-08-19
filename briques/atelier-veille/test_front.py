@@ -105,3 +105,32 @@ def test_front_couvre_les_prospects_et_le_demarchage():
                      "/prospection/demarchage", "toggleProspectChoisi",
                      "panneau-prospects"):
         assert marqueur in html
+
+
+def test_front_distingue_zone_nom_jamais_resolue_du_cas_normal_sans_prospects():
+    """Item C — quand data.zone_nom est null, la campagne ne pourra JAMAIS avoir de
+    prospects rattachés (créée avant résolution du nom de zone, ou zone geo injoignable
+    à la création) : le message doit le dire, pas afficher le message générique « rien
+    trouvé pour l'instant » qui laisse croire qu'attendre suffira."""
+    html = client.get("/").text
+    assert "ne peuvent pas être rattachés" in html
+    assert "Désactive-la et recrée-en une sur la même zone" in html
+    assert "Aucun prospect trouvé pour cette campagne (encore)" in html
+
+
+def test_front_conserve_le_resultat_de_lancement_apres_rechargement():
+    """Item D — chargerCampagnesProspection() reconstruit #liste-campagnes-prospection en
+    innerHTML juste après que lancerCampagne() y ait écrit son résultat : sans mémoriser
+    ce résultat, il est écrasé par une div vide au rechargement (y compris un message
+    d'erreur, le plus important à garder visible)."""
+    html = client.get("/").text
+    assert "DERNIER_RESULTAT_LANCEMENT" in html
+
+
+def test_front_affiche_le_detail_des_prospects_ignores_apres_demarchage():
+    """Item E — la réponse de mail POST /demarchage/preparer porte aussi res.ignores
+    ({sans_email, desinscrit, cadence_atteinte, trop_recent}) : jusqu'ici seul
+    res.message était affiché, le motif des prospects écartés restait invisible."""
+    html = client.get("/").text
+    assert "res.ignores" in html
+    assert "ignorés" in html
