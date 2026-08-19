@@ -124,7 +124,10 @@ def test_front_conserve_le_resultat_de_lancement_apres_rechargement():
     ce résultat, il est écrasé par une div vide au rechargement (y compris un message
     d'erreur, le plus important à garder visible)."""
     html = client.get("/").text
-    assert "DERNIER_RESULTAT_LANCEMENT" in html
+    assert html.count("DERNIER_RESULTAT_LANCEMENT[") >= 3
+    # 1 lecture (rendu de la div) + 2 écritures (succès ET erreur, sinon un lancement en
+    # échec perd son message au prochain rechargement — exactement le bug d'origine).
+    assert html.count("DERNIER_RESULTAT_LANCEMENT[id] = texte;") == 2
 
 
 def test_front_affiche_le_detail_des_prospects_ignores_apres_demarchage():

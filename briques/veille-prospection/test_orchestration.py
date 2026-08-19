@@ -299,7 +299,7 @@ def test_avertissement_type_zone_accepte_zone_prefetchee(monkeypatch):
     assert a and "logement" in a
 
 
-def test_appeler_forge_tague_zone_dans_notes(monkeypatch):
+def test_appeler_forge_tague_zone_dans_champ_dedie(monkeypatch):
     captes = {}
 
     def _post(url, json=None, headers=None, timeout=None):
