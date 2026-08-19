@@ -64,6 +64,18 @@
       "action": true,
       "niveau": 1,
       "socle": false
+    },
+    {
+      "nom": "veille_prospection_campagne_executer",
+      "description": "Lance MAINTENANT une campagne de prospection active, sans attendre le passage horloge quotidien. Sert « lance cette campagne maintenant », « relance la prospection sur [zone] ». Synchrone, peut prendre jusqu'à 3 minutes (lectures web réelles).",
+      "methode": "POST",
+      "chemin": "/campagnes/{campagne_id}/executer",
+      "params": {
+        "campagne_id": {"type": "integer", "description": "Identifiant de la campagne à lancer (voir veille_prospection_campagnes_lister).", "requis": true}
+      },
+      "action": true,
+      "niveau": 1,
+      "socle": false
     }
   ]
 }
