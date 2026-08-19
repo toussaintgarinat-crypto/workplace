@@ -20,6 +20,7 @@ services:
       - VEILLE_INFO_URL=http://host.docker.internal:6120
       - VEILLE_PROSPECTION_URL=http://host.docker.internal:6140
       - GEO_URL=http://host.docker.internal:6110
+      - FORGE_URL=http://host.docker.internal:5700
       # GEO_PUBLIC_URL, VEILLE_INFO_KEY : ABSENTS du `environment` exprès — viennent du .env
       # racine via env_file (piège « env shadow » : `VAR=${VAR:-}` s'interpole depuis le
       # shell/.env du dossier projet, PAS depuis env_file, et écraserait par du vide, cf.
