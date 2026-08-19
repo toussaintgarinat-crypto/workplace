@@ -31,6 +31,8 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], all
 GEO_PUBLIC_URL = os.getenv("GEO_PUBLIC_URL", "").strip()
 GEO_PORT = int(os.getenv("GEO_PORT", "6110"))
 VEILLE_INFO_URL = os.getenv("VEILLE_INFO_URL", "http://host.docker.internal:6120")
+VEILLE_PROSPECTION_URL = os.getenv("VEILLE_PROSPECTION_URL", "http://host.docker.internal:6140")
+GEO_URL = os.getenv("GEO_URL", "http://host.docker.internal:6110")
 
 # MESH_HOST / MESH_PORT_OFFSET : même convention que core/urls_ui.py::url_brique. Caddy
 # termine le TLS du mesh et reverse-proxy en HTTP vers ce conteneur, donc `request.url.scheme`
@@ -95,6 +97,11 @@ class RetaggerSource(BaseModel):
 
 class GenererAudioGlobal(BaseModel):
     ordre_thematiques: list[int] = Field(min_length=1)
+
+
+class CreerCampagneProspection(BaseModel):
+    zone_id: str = Field(min_length=1)
+    type: str = "b2b"
 
 
 class EnvoyerAudioGlobal(BaseModel):
@@ -396,4 +403,96 @@ async def executer_digest(body: ExecuterDigest | None = None):
     if r.status_code >= 400:
         detail = corps.get("detail") if isinstance(corps, dict) else None
         raise HTTPException(r.status_code, detail or f"veille-info a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.get("/prospection/campagnes", tags=["prospection"])
+async def lister_campagnes_prospection(x_user_id: Optional[str] = Header(None),
+                                       x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{VEILLE_PROSPECTION_URL}/campagnes", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-prospection injoignable ({VEILLE_PROSPECTION_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-prospection a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.post("/prospection/campagnes", tags=["prospection"], status_code=201)
+async def creer_campagne_prospection(body: CreerCampagneProspection,
+                                     x_user_id: Optional[str] = Header(None),
+                                     x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(f"{VEILLE_PROSPECTION_URL}/campagnes", headers=entetes,
+                             json=body.model_dump())
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-prospection injoignable ({VEILLE_PROSPECTION_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-prospection a refusé la requête ({r.status_code}).")
+    return JSONResponse(content=corps, status_code=r.status_code)
+
+
+@app.delete("/prospection/campagnes/{campagne_id}", tags=["prospection"])
+async def supprimer_campagne_prospection(campagne_id: int,
+                                         x_user_id: Optional[str] = Header(None),
+                                         x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.delete(f"{VEILLE_PROSPECTION_URL}/campagnes/{campagne_id}", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-prospection injoignable ({VEILLE_PROSPECTION_URL}) : {str(e)[:150]}")
+    if r.status_code == 404:
+        raise HTTPException(404, "Campagne introuvable.")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-prospection a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.post("/prospection/campagnes/{campagne_id}/executer", tags=["prospection"])
+async def executer_campagne_prospection(campagne_id: int,
+                                        x_user_id: Optional[str] = Header(None),
+                                        x_api_key: Optional[str] = Header(None)):
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        # 200s (pas 30) : l'appel geo sous-jacent (enrichir-lot) peut prendre jusqu'à 180s.
+        async with httpx.AsyncClient(timeout=200) as c:
+            r = await c.post(f"{VEILLE_PROSPECTION_URL}/campagnes/{campagne_id}/executer",
+                             headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"veille-prospection injoignable ({VEILLE_PROSPECTION_URL}) : {str(e)[:150]}")
+    if r.status_code == 404:
+        raise HTTPException(404, "Campagne introuvable ou inactive.")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"veille-prospection a refusé la requête ({r.status_code}).")
+    return corps
+
+
+@app.get("/prospection/zones", tags=["prospection"])
+async def lister_zones_prospection(x_user_id: Optional[str] = Header(None),
+                                   x_api_key: Optional[str] = Header(None)):
+    """Peuple le sélecteur de zone du formulaire de création de campagne — proxy vers
+    `geo GET /zones` (jamais dupliqué, geo reste la seule source de vérité des zones)."""
+    entetes = _entetes_aval(x_user_id, x_api_key)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{GEO_URL}/zones", headers=entetes)
+        corps = r.json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"geo injoignable ({GEO_URL}) : {str(e)[:150]}")
+    if r.status_code >= 400:
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        raise HTTPException(r.status_code, detail or f"geo a refusé la requête ({r.status_code}).")
     return corps
