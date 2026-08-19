@@ -22,6 +22,7 @@ def _client_multi(reponses, boom_pour=None):
 
     class FauxClient:
         dernier_appel = None
+        appels_get = []
         def __init__(self, *a, **k): pass
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
@@ -31,6 +32,8 @@ def _client_multi(reponses, boom_pour=None):
                     raise RuntimeError("connection refused")
             for suffixe, (status, corps) in reponses.items():
                 if url.endswith(suffixe):
+                    FauxClient.dernier_appel = ("GET", url, headers)
+                    FauxClient.appels_get.append((url, headers))
                     return FauxRep(status, corps)
             raise AssertionError(f"URL non mockée : {url}")
         async def post(self, url, headers=None, json=None, **k):
@@ -75,6 +78,21 @@ def test_prospects_campagne_sans_zone_nom_rend_liste_vide_sans_appeler_forge(mon
     r = client.get("/prospection/prospects?campagne_id=2")
     assert r.status_code == 200
     assert r.json() == {"campagne_id": 2, "zone_nom": None, "prospects": []}
+
+
+def test_prospects_campagne_relaie_lidentite(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": []}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    client.get("/prospection/prospects?campagne_id=1",
+              headers={"X-User-Id": "claire", "X-API-Key": "k"})
+    entetes = {"X-User-Id": "claire", "X-API-Key": "k"}
+    assert Faux.appels_get == [
+        (f"{M.VEILLE_PROSPECTION_URL}/campagnes", entetes),
+        (f"{M.FORGE_URL}/crm", entetes),
+    ]
 
 
 def test_lister_campagnes_prospection_proxifie(monkeypatch):
@@ -221,3 +239,23 @@ def test_preparer_demarchage_expediteur_vide_422_sans_appeler_mail(monkeypatch):
     r = client.post("/prospection/demarchage", json={
         "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "", "sujet": "S", "message": "M"})
     assert r.status_code == 422
+
+
+def test_preparer_demarchage_relaie_lidentite(monkeypatch):
+    Faux = _client_multi({
+        "/campagnes": (200, [{"id": 1, "zone_id": "z1", "zone_nom": "Restos Castres", "type": "b2b"}]),
+        "/crm": (200, {"prospects": [
+            {"id": "a", "nom": "Chez Paul", "email": "p@a.fr", "notes": "Zone : Restos Castres"}]}),
+        "/demarchage/preparer": (201, {"ok": True, "prepares": 1, "ignores": {}}),
+    })
+    monkeypatch.setattr(M.httpx, "AsyncClient", Faux)
+    entetes = {"X-User-Id": "claire", "X-API-Key": "k"}
+    client.post("/prospection/demarchage", json={
+        "campagne_id": 1, "prospect_ids": ["a"], "expediteur": "X", "sujet": "S", "message": "M"},
+        headers=entetes)
+    assert Faux.appels_get == [
+        (f"{M.VEILLE_PROSPECTION_URL}/campagnes", entetes),
+        (f"{M.FORGE_URL}/crm", entetes),
+    ]
+    _, _, headers_post, _ = Faux.dernier_appel
+    assert headers_post == entetes
