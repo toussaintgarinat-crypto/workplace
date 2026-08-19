@@ -5,37 +5,9 @@ par test_front.py/test_main.py/test_composition.py qui se partagent le fichier p
 from fastapi.testclient import TestClient
 
 import main as M
+from test_composition import _client_json
 
 client = TestClient(M.app)
-
-
-def _client_json(rep_json, status=200, boom=False):
-    """Motif identique à test_composition.py::_client_json — un seul endpoint mocké."""
-    class FauxRep:
-        status_code = status
-        def json(self):
-            return rep_json
-
-    class FauxClient:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): return False
-        async def get(self, url, headers=None, **k):
-            if boom:
-                raise RuntimeError("connection refused")
-            FauxClient.dernier_appel = ("GET", url, headers)
-            return FauxRep()
-        async def post(self, url, headers=None, json=None, **k):
-            if boom:
-                raise RuntimeError("connection refused")
-            FauxClient.dernier_appel = ("POST", url, headers, json)
-            return FauxRep()
-        async def delete(self, url, headers=None, **k):
-            if boom:
-                raise RuntimeError("connection refused")
-            FauxClient.dernier_appel = ("DELETE", url, headers)
-            return FauxRep()
-    return FauxClient
 
 
 def test_lister_campagnes_prospection_proxifie(monkeypatch):
