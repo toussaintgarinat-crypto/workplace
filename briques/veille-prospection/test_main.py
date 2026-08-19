@@ -207,3 +207,14 @@ def test_lister_executions_404_si_autre_tenant(monkeypatch):
     campagne_id = r.json()["id"]
     r = client.get(f"/campagnes/{campagne_id}/executions", headers=_entetes("main-paula"))
     assert r.status_code == 404
+
+
+def test_lister_executions_route_fonctionne_sur_campagne_desactivee(monkeypatch):
+    monkeypatch.setenv("VEILLE_PROSPECTION_KEY", "cle-coeur")
+    monkeypatch.setattr(main.orchestration, "lire_zone_geo", lambda z: None)
+    r = client.post("/campagnes", headers=_entetes("main-quentin"),
+                    json={"zone_id": "zone-quentin"})
+    campagne_id = r.json()["id"]
+    client.delete(f"/campagnes/{campagne_id}", headers=_entetes("main-quentin"))
+    r = client.get(f"/campagnes/{campagne_id}/executions", headers=_entetes("main-quentin"))
+    assert r.status_code == 200  # pas 404 : l'historique reste lisible après désactivation
