@@ -69,13 +69,25 @@ def lister_campagnes_route(tenant: str = Depends(tenant_actuel)):
     return stockage.lister_campagnes(tenant, actives_seulement=True)
 
 
+def _resoudre_zone_best_effort(zone_id: str) -> dict | None:
+    """Résout la zone `geo` une seule fois pour la création d'une campagne — best-effort
+    strict (jamais d'erreur remontée à l'appelant), le résultat est réutilisé à la fois
+    pour `zone_nom` et pour `avertissement_type_zone` (évite un 2e appel réseau)."""
+    try:
+        return orchestration.lire_zone_geo(zone_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @app.post("/campagnes", tags=["campagnes"], status_code=201)
 def creer_campagne_route(body: CreerCampagne, tenant: str = Depends(tenant_actuel)):
     type_ = body.type.strip().lower()
     if type_ not in ("b2b", "b2c"):
         raise HTTPException(422, "« type » doit être « b2b » ou « b2c ».")
-    campagne = stockage.creer_campagne(tenant, body.zone_id, type_=type_)
-    avertissement = orchestration.avertissement_type_zone(body.zone_id, type_)
+    zone = _resoudre_zone_best_effort(body.zone_id)
+    zone_nom = zone.get("nom") if zone else None
+    campagne = stockage.creer_campagne(tenant, body.zone_id, type_=type_, zone_nom=zone_nom)
+    avertissement = orchestration.avertissement_type_zone(body.zone_id, type_, zone=zone)
     if avertissement:
         campagne["avertissement"] = avertissement
     return campagne
