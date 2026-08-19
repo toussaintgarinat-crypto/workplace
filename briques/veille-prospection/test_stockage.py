@@ -91,3 +91,25 @@ def test_lister_campagnes_expose_le_type():
     stockage.creer_campagne("user-liste-type", "zone-y", type_="b2c")
     campagnes = stockage.lister_campagnes("user-liste-type")
     assert campagnes[0]["type"] == "b2c"
+
+
+def test_creer_campagne_stocke_zone_nom():
+    c = stockage.creer_campagne("zn-alice", "zone-1", zone_nom="Restos Castres")
+    assert c["zone_nom"] == "Restos Castres"
+    relue = stockage.lister_campagnes("zn-alice")[0]
+    assert relue["zone_nom"] == "Restos Castres"
+
+
+def test_creer_campagne_zone_nom_optionnel():
+    c = stockage.creer_campagne("zn-bob", "zone-2")
+    assert c["zone_nom"] is None
+
+
+def test_lire_campagne_isole_par_user_id():
+    c = stockage.creer_campagne("zn-carol", "zone-3")
+    assert stockage.lire_campagne("zn-carol", c["id"]) == c
+    assert stockage.lire_campagne("zn-mallory", c["id"]) is None
+
+
+def test_lire_campagne_introuvable_rend_none():
+    assert stockage.lire_campagne("zn-dave", 999999) is None
