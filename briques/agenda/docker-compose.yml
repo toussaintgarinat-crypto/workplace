@@ -97,12 +97,15 @@ networks:
     # (172.17–172.31/16 puis 192.168.0.0/16 découpé en /20) sont épuisés par
     # les ~35 autres briques déjà démarrées sur cette machine — sans ceci,
     # `docker compose up` échoue avec "all predefined address pools have
-    # been fully subnetted". 192.168.64.0/24 est dans le seul bloc /20 encore
-    # libre (192.168.64.0/20) au 2026-08-04 (vérifié via `docker network
-    # inspect` sur tous les réseaux existants).
+    # been fully subnetted". ⚠ Un bloc marqué « libre » ici peut être repris
+    # par une autre brique plus tard (ex : 192.168.64.0/24 est retombé dans
+    # 192.168.64.0/20, pris depuis par `video` début 2026-08-20) — revérifier
+    # via `docker network inspect` sur TOUS les réseaux existants avant de
+    # réutiliser un bloc. 10.0.15.0/24 est libre au 2026-08-20 (le pool
+    # 10.0.0.0/8 est le seul pool encore réellement dégagé).
     ipam:
       config:
-        - subnet: 192.168.64.0/24
+        - subnet: 10.0.15.0/24
   proxy_net:
     external: true
     name: proxy_net
