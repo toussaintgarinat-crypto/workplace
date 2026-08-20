@@ -45,5 +45,5 @@ propre au HP — sur un PC personnel, monter manuellement (ou adapter la règle,
 si le point de montage diffère de `/mnt/sauvegarde-usb`.
 
 Une fois le Cœur démarré et la clé montée, demander à l'assistant (dashboard `/dashboard`,
-onglet Assistant) : **« restaure depuis la clé »** — ou utiliser le bouton « Restaurer depuis
-la clé » du panneau ⚙ Sauvegarde.
+onglet Assistant) : **« restaure depuis la clé »** — ou utiliser le panneau 💾 Sauvegarde
+portable (clé USB), sur l'onglet Assistant du dashboard.

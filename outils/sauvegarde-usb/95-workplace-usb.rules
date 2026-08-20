@@ -4,7 +4,7 @@
 # formatage de la clé (cf. README.md de ce dossier).
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="WORKPLACE-USB", \
   RUN+="/bin/mkdir -p /mnt/sauvegarde-usb", \
-  RUN+="/bin/mount -o uid=1000,gid=1000 /dev/%k /mnt/sauvegarde-usb"
+  RUN+="/bin/mount /dev/%k /mnt/sauvegarde-usb"
 
 ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="WORKPLACE-USB", \
   RUN+="/bin/umount /mnt/sauvegarde-usb"
