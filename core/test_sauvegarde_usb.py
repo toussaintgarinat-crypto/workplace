@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import httpx
 import pytest
@@ -169,3 +170,34 @@ def test_decouvrir_sources_ignore_echec_branche_sqlite():
     assert len(sources) == 1
     assert {"brique": "memoire-db", "type": "postgres", "conteneur_id": "good-pg",
             "db": "memory", "user": "memory"} in sources
+
+
+def test_verifier_sentinelle_absente_leve(tmp_path):
+    with pytest.raises(RuntimeError, match="sentinelle"):
+        sauvegarde_usb.verifier_sentinelle(tmp_path)
+
+
+def test_verifier_sentinelle_presente_ne_leve_pas(tmp_path):
+    (tmp_path / sauvegarde_usb.SENTINELLE_NOM).write_text("")
+    sauvegarde_usb.verifier_sentinelle(tmp_path)  # ne doit rien lever
+
+
+def test_verifier_espace_insuffisant_leve(tmp_path, monkeypatch):
+    import shutil as shutil_mod
+
+    class FauxUsage:
+        free = 100
+
+    monkeypatch.setattr(shutil_mod, "disk_usage", lambda _: FauxUsage())
+    with pytest.raises(RuntimeError, match="Espace insuffisant"):
+        sauvegarde_usb.verifier_espace(tmp_path, octets_requis=1_000_000)
+
+
+def test_verifier_espace_suffisant_ne_leve_pas(tmp_path, monkeypatch):
+    import shutil as shutil_mod
+
+    class FauxUsage:
+        free = 10_000_000
+
+    monkeypatch.setattr(shutil_mod, "disk_usage", lambda _: FauxUsage())
+    sauvegarde_usb.verifier_espace(tmp_path, octets_requis=1_000_000)  # ne doit rien lever
