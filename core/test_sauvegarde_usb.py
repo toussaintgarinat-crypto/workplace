@@ -411,7 +411,7 @@ def test_restaurer_sqlite_et_postgres(tmp_path, monkeypatch):
         ],
     }))
 
-    put_requests = []  # Capture full PUT requests
+    appels_put = []  # Capture tous les appels PUT
 
     def handler(request: httpx.Request) -> httpx.Response:
         chemin = request.url.path
@@ -421,8 +421,8 @@ def test_restaurer_sqlite_et_postgres(tmp_path, monkeypatch):
                 {"Id": "pg1", "Names": ["/memoire-memoire-db-1"], "Image": "workplace/memoire-db-walg:0.1.0"},
             ])
         if chemin in ("/containers/sq1/archive", "/containers/pg1/archive") and request.method == "PUT":
-            # Verify path parameter and tar content
-            put_requests.append({
+            # Valide le paramètre chemin et le contenu tar
+            appels_put.append({
                 "path": chemin,
                 "param_path": request.url.params.get("path"),
                 "content": request.content,
@@ -444,33 +444,33 @@ def test_restaurer_sqlite_et_postgres(tmp_path, monkeypatch):
     resultat = asyncio.run(sauvegarde_usb.restaurer(tmp_path))
     par_brique = {r["brique"]: r for r in resultat["resultats"]}
 
-    # Verify successful restorations
+    # Vérifie les restaurations réussies
     assert par_brique["workplace_donnees"]["ok"] is True
     assert par_brique["memoire-memoire-db-1"]["ok"] is True
 
-    # Verify missing container is reported without blocking others
+    # Vérifie qu'un conteneur manquant est signalé sans bloquer les autres
     assert par_brique["brique-arretee"]["ok"] is False
     assert "introuvable" in par_brique["brique-arretee"]["message"]
 
-    # Verify ignored entries are skipped without crash
+    # Vérifie que les entrées ignorées sont sautées sans plantage
     assert par_brique["brique-ignoree"]["ok"] is False
     assert "Ignorée à la sauvegarde" in par_brique["brique-ignoree"]["message"]
 
-    # Verify exactly 2 PUT calls (sqlite + postgres), not 3 or 4
-    assert len(put_requests) == 2
+    # Vérifie exactement 2 appels PUT (sqlite + postgres), pas 3 ou 4
+    assert len(appels_put) == 2
 
-    # Verify SQLite PUT: correct path and valid tar content
-    sqlite_put = next(r for r in put_requests if r["path"] == "/containers/sq1/archive")
-    assert sqlite_put["param_path"] == "/data"  # Parent of /data/donnees.db
+    # Vérifie SQLite PUT : chemin correct et contenu tar valide
+    sqlite_put = next(r for r in appels_put if r["path"] == "/containers/sq1/archive")
+    assert sqlite_put["param_path"] == "/data"  # Parent de /data/donnees.db
     with tarfile.open(fileobj=io.BytesIO(sqlite_put["content"])) as tar:
         members = tar.getmembers()
         assert len(members) == 1
         assert members[0].name == "donnees.db"
         assert tar.extractfile(members[0]).read() == b"contenu-sqlite"
 
-    # Verify PostgreSQL PUT: correct path and valid tar content
-    pg_put = next(r for r in put_requests if r["path"] == "/containers/pg1/archive")
-    assert pg_put["param_path"] == "/tmp"  # Where psql reads the dump
+    # Vérifie PostgreSQL PUT : chemin correct et contenu tar valide
+    pg_put = next(r for r in appels_put if r["path"] == "/containers/pg1/archive")
+    assert pg_put["param_path"] == "/tmp"  # Où psql lit le dump
     with tarfile.open(fileobj=io.BytesIO(pg_put["content"])) as tar:
         members = tar.getmembers()
         assert len(members) == 1
