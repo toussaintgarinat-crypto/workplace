@@ -8,10 +8,38 @@ Unix — même motif que `config_assistant._docker_client()` (S168, redémarrage
 Gateway) : évite d'ajouter le SDK `docker` en dépendance pour un besoin déjà couvert.
 """
 import os
+import shutil
+from pathlib import Path
 
 import httpx
 
 DOCKER_SOCK = os.getenv("DOCKER_SOCK", "/var/run/docker.sock")
+
+SENTINELLE_NOM = ".cle-sauvegarde-workplace"
+
+
+def verifier_sentinelle(destination: Path) -> None:
+    """Garde-fou anti-écriture-silencieuse : refuse si le fichier sentinelle n'est pas déjà
+    présent à la racine du point de montage. Posé une fois, à la main, lors de la
+    préparation de la clé (cf. outils/sauvegarde-usb/README.md) — son absence signifie soit
+    que la clé n'est pas vraiment montée (le dossier existe mais est vide), soit qu'il ne
+    s'agit pas de LA clé de sauvegarde. Sans ce garde-fou, une sauvegarde lancée avec une clé
+    débranchée écrirait silencieusement sur le disque interne du HP."""
+    if not (destination / SENTINELLE_NOM).exists():
+        raise RuntimeError(
+            f"Clé de sauvegarde absente ou non montée sur {destination} "
+            f"(fichier sentinelle « {SENTINELLE_NOM} » introuvable)."
+        )
+
+
+def verifier_espace(destination: Path, octets_requis: int) -> None:
+    """Abandon propre AVANT d'écrire quoi que ce soit si la clé n'a pas la place."""
+    libre = shutil.disk_usage(destination).free
+    if libre < octets_requis:
+        raise RuntimeError(
+            f"Espace insuffisant sur {destination} : {libre} octet(s) libre(s), "
+            f"{octets_requis} requis."
+        )
 
 
 def _docker_client() -> httpx.AsyncClient:
