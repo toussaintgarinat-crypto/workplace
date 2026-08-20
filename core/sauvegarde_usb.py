@@ -76,25 +76,32 @@ async def _chercher_sqlite(client: httpx.AsyncClient, conteneur_id: str) -> list
 async def decouvrir_sources(client: httpx.AsyncClient) -> list[dict]:
     """Inventaire dynamique : interroge Docker plutôt qu'une liste figée (une liste en dur
     serait fausse dès la prochaine brique ajoutée — cf. spec). Ne considère que les
-    conteneurs ACTIFS (`/containers/json` sans `all=true` ne renvoie que ceux-là)."""
+    conteneurs ACTIFS (`/containers/json` sans `all=true` ne renvoie que ceux-là).
+
+    Conteneur en échec (inspection/exec échoue) est simplement ignoré, pas d'échec global."""
     r = await client.get("/containers/json")
     r.raise_for_status()
     sources: list[dict] = []
     for resume in r.json():
         conteneur_id = resume["Id"]
         nom = resume["Names"][0].lstrip("/")
-        if _est_postgres(resume.get("Image", "")):
-            insp = await client.get(f"/containers/{conteneur_id}/json")
-            insp.raise_for_status()
-            env = dict(e.split("=", 1) for e in insp.json()["Config"]["Env"] if "=" in e)
-            user = env.get("POSTGRES_USER", "postgres")
-            db = env.get("POSTGRES_DB", user)
-            sources.append({"brique": nom, "type": "postgres", "conteneur_id": conteneur_id,
-                             "db": db, "user": user})
-        else:
-            for chemin in await _chercher_sqlite(client, conteneur_id):
-                sources.append({"brique": nom, "type": "sqlite", "conteneur_id": conteneur_id,
-                                 "chemin": chemin})
+        try:
+            if _est_postgres(resume.get("Image", "")):
+                insp = await client.get(f"/containers/{conteneur_id}/json")
+                insp.raise_for_status()
+                env = dict(e.split("=", 1) for e in insp.json()["Config"]["Env"] if "=" in e)
+                user = env.get("POSTGRES_USER", "postgres")
+                db = env.get("POSTGRES_DB", user)
+                sources.append({"brique": nom, "type": "postgres", "conteneur_id": conteneur_id,
+                                 "db": db, "user": user})
+            else:
+                for chemin in await _chercher_sqlite(client, conteneur_id):
+                    sources.append({"brique": nom, "type": "sqlite", "conteneur_id": conteneur_id,
+                                     "chemin": chemin})
+        except Exception:
+            # Conteneur en échec (arrêt soudain, race condition, image sans shell, etc.)
+            # est simplement absent du manifeste, pas d'échec global.
+            continue
     return sources
 
 

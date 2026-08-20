@@ -104,3 +104,37 @@ def test_decouvrir_sources_ignore_conteneur_sans_db():
             return await sauvegarde_usb.decouvrir_sources(client)
 
     assert asyncio.run(go()) == []
+
+
+def test_decouvrir_sources_ignore_conteneur_en_echec():
+    """Conteneur dont l'inspection ou l'exec échoue ne doit pas planter la découverte —
+    les autres conteneurs (sains) doivent quand même être découverts."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json([
+                {"Id": "broken-pg", "Names": ["/db-broken"], "Image": "postgres:16"},
+                {"Id": "good-sq", "Names": ["/donnees-ok"], "Image": "workplace/donnees:0.3.0"},
+            ])
+        # L'inspection du conteneur Postgres échoue (ex. race condition, arrêt soudain)
+        if chemin == "/containers/broken-pg/json":
+            return httpx.Response(500, json={"message": "Internal Server Error"})
+        # Le conteneur SQLite fonctionne normalement
+        if chemin == "/containers/good-sq/exec":
+            return httpx.Response(200, json={"Id": "exec-find-ok"})
+        if chemin == "/exec/exec-find-ok/start":
+            return httpx.Response(200, content=_cadre_exec(1, b"/data/backup.db\n"))
+        if chemin == "/exec/exec-find-ok/json":
+            return httpx.Response(200, json={"ExitCode": 0})
+        raise AssertionError(f"appel inattendu : {chemin}")
+
+    async def go():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+        async with client:
+            return await sauvegarde_usb.decouvrir_sources(client)
+
+    sources = asyncio.run(go())
+    # Le conteneur brisé ne doit PAS être dans le résultat, mais le conteneur SQLite OK doit y être
+    assert len(sources) == 1
+    assert {"brique": "donnees-ok", "type": "sqlite", "conteneur_id": "good-sq",
+            "chemin": "/data/backup.db"} in sources
