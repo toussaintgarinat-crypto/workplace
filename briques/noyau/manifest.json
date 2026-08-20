@@ -40,5 +40,34 @@
       "idempotent": true,
       "tolere_echec": true
     }
+  ],
+  "capacites": [
+    {
+      "nom": "sauvegarde_usb_lancer",
+      "description": "Sauvegarde un instantané de toutes les bases du stack (Postgres et SQLite, découvertes dynamiquement) sur la clé USB actuellement branchée sur le HP. Écrase l'instantané précédent — un seul à la fois. Sert « sauvegarde sur la clé », « fais une sauvegarde ». Nécessite que la clé soit déjà branchée et préparée (fichier sentinelle posé).",
+      "methode": "POST",
+      "chemin": "/sauvegarde-usb/lancer",
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "sauvegarde_usb_restaurer",
+      "description": "Restaure toutes les bases depuis l'instantané présent sur la clé USB actuellement branchée, dans les conteneurs déjà démarrés du stack local. Sert « restaure depuis la clé », après avoir cloné le dépôt et démarré le Cœur sur une machine neuve.",
+      "methode": "POST",
+      "chemin": "/sauvegarde-usb/restaurer",
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    },
+    {
+      "nom": "env_exporter",
+      "description": "Renvoie le contenu actuel du fichier .env racine (tous les secrets/clés API du stack), pour que l'utilisateur le range lui-même où il veut (Drive, autre clé…). N'écrit jamais vers un service externe. Sert « exporte le .env », « donne-moi les secrets pour les sauvegarder ».",
+      "methode": "GET",
+      "chemin": "/sauvegarde-usb/env",
+      "action": true,
+      "niveau": 1,
+      "socle": false
+    }
   ]
 }
