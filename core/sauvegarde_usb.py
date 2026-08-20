@@ -237,3 +237,69 @@ async def sauvegarder(destination: Path) -> dict:
     manifeste = {"horodatage": datetime.now(timezone.utc).isoformat(), "sources": entrees}
     (destination / "manifest.json").write_text(json.dumps(manifeste, ensure_ascii=False, indent=2))
     return manifeste
+
+
+def _tar_dun_fichier(chemin_local: Path, nom_dans_tar: str) -> bytes:
+    tampon = io.BytesIO()
+    with tarfile.open(fileobj=tampon, mode="w") as tar:
+        tar.add(chemin_local, arcname=nom_dans_tar)
+    return tampon.getvalue()
+
+
+async def _restaurer_sqlite(client: httpx.AsyncClient, conteneur_id: str, entree: dict,
+                            source_dir: Path) -> None:
+    chemin_local = source_dir / entree["brique"] / entree["fichier"]
+    contenu_tar = _tar_dun_fichier(chemin_local, entree["fichier"])
+    dossier_cible = str(Path(entree["chemin"]).parent)
+    r = await client.put(f"/containers/{conteneur_id}/archive",
+                          params={"path": dossier_cible}, content=contenu_tar)
+    r.raise_for_status()
+
+
+async def _restaurer_postgres(client: httpx.AsyncClient, conteneur_id: str, entree: dict,
+                              source_dir: Path) -> None:
+    chemin_local = source_dir / entree["brique"] / entree["fichier"]
+    contenu_tar = _tar_dun_fichier(chemin_local, "restaurer.sql")
+    r = await client.put(f"/containers/{conteneur_id}/archive",
+                          params={"path": "/tmp"}, content=contenu_tar)
+    r.raise_for_status()
+    cmd = ["sh", "-c", f"psql -U {entree['user']} {entree['db']} < /tmp/restaurer.sql"]
+    code, sortie = await _exec(client, conteneur_id, cmd)
+    if code != 0:
+        raise RuntimeError(
+            f"Restauration Postgres échouée (code {code}) : "
+            f"{sortie.decode('utf-8', 'ignore')[:300]}")
+
+
+async def restaurer(source: Path) -> dict:
+    """Symétrique de `sauvegarder` : relit `manifest.json`, réinjecte chaque source dans le
+    conteneur ACTIF portant le même nom de brique. Une brique introuvable (conteneur pas
+    démarré) ou une entrée déjà marquée `ignore` est signalée sans bloquer les autres."""
+    verifier_sentinelle(source)
+    manifeste_path = source / "manifest.json"
+    if not manifeste_path.exists():
+        raise RuntimeError(f"Aucun manifest.json trouvé sur {source}.")
+    manifeste = json.loads(manifeste_path.read_text())
+
+    resultats = []
+    async with _docker_client() as client:
+        conteneurs = await decouvrir_conteneurs_par_brique(client)
+        for entree in manifeste["sources"]:
+            if entree.get("ignore"):
+                resultats.append({"brique": entree["brique"], "ok": False,
+                                   "message": "Ignorée à la sauvegarde : " + (entree.get("raison") or "")})
+                continue
+            conteneur_id = conteneurs.get(entree["brique"])
+            if not conteneur_id:
+                resultats.append({"brique": entree["brique"], "ok": False,
+                                   "message": "Conteneur cible introuvable (brique arrêtée ?)."})
+                continue
+            try:
+                if entree["type"] == "sqlite":
+                    await _restaurer_sqlite(client, conteneur_id, entree, source)
+                else:
+                    await _restaurer_postgres(client, conteneur_id, entree, source)
+                resultats.append({"brique": entree["brique"], "ok": True, "message": None})
+            except Exception as e:  # noqa: BLE001 — une brique en échec ne bloque pas les autres
+                resultats.append({"brique": entree["brique"], "ok": False, "message": str(e)})
+    return {"resultats": resultats}
