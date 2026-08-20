@@ -263,7 +263,7 @@ async def _restaurer_postgres(client: httpx.AsyncClient, conteneur_id: str, entr
     r = await client.put(f"/containers/{conteneur_id}/archive",
                           params={"path": "/tmp"}, content=contenu_tar)
     r.raise_for_status()
-    cmd = ["sh", "-c", f"psql -U {entree['user']} {entree['db']} < /tmp/restaurer.sql"]
+    cmd = ["psql", "-U", entree["user"], "-d", entree["db"], "-f", "/tmp/restaurer.sql"]
     code, sortie = await _exec(client, conteneur_id, cmd)
     if code != 0:
         raise RuntimeError(
