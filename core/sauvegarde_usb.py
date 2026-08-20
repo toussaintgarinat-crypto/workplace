@@ -227,8 +227,12 @@ async def sauvegarder(destination: Path) -> dict:
                 entrees.append({**_sans_conteneur_id(source), "fichier": None,
                                  "taille_octets": 0, "ignore": True, "raison": str(e)})
                 continue
+            # Calcule la taille réelle du fichier écrit sur destination (pas l'estimation pré-écriture)
+            # SQLite : taille exacte (copie octet pour octet)
+            # Postgres : taille du dump SQL logique (généralement << db size sur disque, pas d'index)
+            taille_reelle = (dest_dir / fichier).stat().st_size
             entrees.append({**_sans_conteneur_id(source), "fichier": fichier,
-                             "taille_octets": taille, "ignore": False, "raison": None})
+                             "taille_octets": taille_reelle, "ignore": False, "raison": None})
 
     manifeste = {"horodatage": datetime.now(timezone.utc).isoformat(), "sources": entrees}
     (destination / "manifest.json").write_text(json.dumps(manifeste, ensure_ascii=False, indent=2))
