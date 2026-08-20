@@ -54,3 +54,53 @@ async def _exec(client: httpx.AsyncClient, conteneur_id: str, cmd: list[str]) ->
     r3.raise_for_status()
     code = r3.json().get("ExitCode") or 0
     return code, sortie
+
+
+def _est_postgres(image: str) -> bool:
+    """Détecte une base Postgres par motif d'image — couvre les 6 bases connues du HP au
+    2026-08-20 (postgres:16.*, workplace/*-walg, patroni-pg16) sans en coder les noms."""
+    image = image.lower()
+    return any(motif in image for motif in ("postgres", "-walg", "patroni"))
+
+
+async def _chercher_sqlite(client: httpx.AsyncClient, conteneur_id: str) -> list[str]:
+    """Fichiers `*.db` sous /data (SQLite) dans un conteneur — motif vérifié en pratique
+    (inventaire manuel du HP, 2026-08-20) sur les 19 conteneurs SQLite du stack."""
+    code, sortie = await _exec(client, conteneur_id,
+                                ["find", "/data", "-maxdepth", "2", "-iname", "*.db"])
+    if code != 0:
+        return []
+    return [l for l in sortie.decode("utf-8", "ignore").splitlines() if l.strip()]
+
+
+async def decouvrir_sources(client: httpx.AsyncClient) -> list[dict]:
+    """Inventaire dynamique : interroge Docker plutôt qu'une liste figée (une liste en dur
+    serait fausse dès la prochaine brique ajoutée — cf. spec). Ne considère que les
+    conteneurs ACTIFS (`/containers/json` sans `all=true` ne renvoie que ceux-là)."""
+    r = await client.get("/containers/json")
+    r.raise_for_status()
+    sources: list[dict] = []
+    for resume in r.json():
+        conteneur_id = resume["Id"]
+        nom = resume["Names"][0].lstrip("/")
+        if _est_postgres(resume.get("Image", "")):
+            insp = await client.get(f"/containers/{conteneur_id}/json")
+            insp.raise_for_status()
+            env = dict(e.split("=", 1) for e in insp.json()["Config"]["Env"] if "=" in e)
+            user = env.get("POSTGRES_USER", "postgres")
+            db = env.get("POSTGRES_DB", user)
+            sources.append({"brique": nom, "type": "postgres", "conteneur_id": conteneur_id,
+                             "db": db, "user": user})
+        else:
+            for chemin in await _chercher_sqlite(client, conteneur_id):
+                sources.append({"brique": nom, "type": "sqlite", "conteneur_id": conteneur_id,
+                                 "chemin": chemin})
+    return sources
+
+
+async def decouvrir_conteneurs_par_brique(client: httpx.AsyncClient) -> dict[str, str]:
+    """Nom de brique (= nom du conteneur) → id du conteneur, pour les conteneurs ACTIFS.
+    Utilisé par la restauration pour retrouver la cible d'une entrée du manifeste."""
+    r = await client.get("/containers/json")
+    r.raise_for_status()
+    return {resume["Names"][0].lstrip("/"): resume["Id"] for resume in r.json()}

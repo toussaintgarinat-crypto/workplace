@@ -46,3 +46,61 @@ def test_exec_renvoie_code_et_stdout():
     assert code == 0
     assert sortie == b"ok\n"
     assert appels == ["/containers/abc123/exec", "/exec/exec1/start", "/exec/exec1/json"]
+
+
+def _reponse_containers_json(conteneurs: list[dict]) -> httpx.Response:
+    return httpx.Response(200, json=conteneurs)
+
+
+def test_decouvrir_sources_sqlite_et_postgres():
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json([
+                {"Id": "sq1", "Names": ["/workplace_donnees"], "Image": "workplace/donnees:0.3.0"},
+                {"Id": "pg1", "Names": ["/memoire-memoire-db-1"], "Image": "workplace/memoire-db-walg:0.1.0"},
+            ])
+        if chemin == "/containers/sq1/exec":
+            return httpx.Response(200, json={"Id": "exec-find"})
+        if chemin == "/exec/exec-find/start":
+            return httpx.Response(200, content=_cadre_exec(1, b"/data/donnees.db\n"))
+        if chemin == "/exec/exec-find/json":
+            return httpx.Response(200, json={"ExitCode": 0})
+        if chemin == "/containers/pg1/json":
+            return httpx.Response(200, json={"Config": {"Env": [
+                "POSTGRES_USER=memory", "POSTGRES_DB=memory", "PATH=/usr/bin"]}})
+        raise AssertionError(f"appel inattendu : {chemin}")
+
+    async def go():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+        async with client:
+            return await sauvegarde_usb.decouvrir_sources(client)
+
+    sources = asyncio.run(go())
+
+    assert {"brique": "workplace_donnees", "type": "sqlite", "conteneur_id": "sq1",
+            "chemin": "/data/donnees.db"} in sources
+    assert {"brique": "memoire-memoire-db-1", "type": "postgres", "conteneur_id": "pg1",
+            "db": "memory", "user": "memory"} in sources
+
+
+def test_decouvrir_sources_ignore_conteneur_sans_db():
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json(
+                [{"Id": "vide1", "Names": ["/mesh_caddy"], "Image": "caddy:2"}])
+        if chemin == "/containers/vide1/exec":
+            return httpx.Response(200, json={"Id": "exec-find"})
+        if chemin == "/exec/exec-find/start":
+            return httpx.Response(200, content=_cadre_exec(1, b""))
+        if chemin == "/exec/exec-find/json":
+            return httpx.Response(200, json={"ExitCode": 1})
+        raise AssertionError(f"appel inattendu : {chemin}")
+
+    async def go():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+        async with client:
+            return await sauvegarde_usb.decouvrir_sources(client)
+
+    assert asyncio.run(go()) == []
