@@ -29,5 +29,5 @@ manuelle (`mount | grep sauvegarde-usb` pour vérifier).
 ## 3. Utilisation
 
 Une fois la clé branchée (montée automatiquement), demander à l'assistant « sauvegarde sur
-la clé » ou utiliser le bouton du dashboard (⚙ → Sauvegarde). Pour restaurer sur une autre
-machine, voir `docs/INSTALLATION-MACHINE-NEUVE.md`.
+la clé » ou utiliser le panneau 💾 Sauvegarde portable (clé USB), sur l'onglet Assistant du
+dashboard. Pour restaurer sur une autre machine, voir `docs/INSTALLATION-MACHINE-NEUVE.md`.
