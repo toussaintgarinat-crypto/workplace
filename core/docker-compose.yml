@@ -77,12 +77,26 @@ services:
       # carte via ses capacités) vient du .env racine via env_file — NE PAS la redéclarer en
       # `RESTAURANT_KEY=${RESTAURANT_KEY:-}` : l'interpolation ne lit pas l'env_file → chaîne
       # VIDE qui écrase la vraie valeur (piège « env shadow ») → la brique refuse (401).
+      # NOYAU_KEY vient du .env racine via env_file — NE PAS la redéclarer en
+      # `NOYAU_KEY=${NOYAU_KEY:-}` (piège « env shadow », cf. AGENDA_KEY plus haut) :
+      # c'est la clé de service que le dispatch dynamique de capacités envoie en
+      # X-API-Key pour joindre les 3 routes /sauvegarde-usb/* du noyau lui-même
+      # (S233) — sans elle, le LLM ne peut pas déclencher sauvegarde/restauration/export.
+      - SAUVEGARDE_USB_MONTAGE=${SAUVEGARDE_USB_MONTAGE:-/mnt/sauvegarde-usb}
+      - ENV_RACINE_PATH=/env-racine/.env
     volumes:
       - ../briques:/briques:ro
       - core_data:/data
       - ../apps_exportees:/export
       # Le .env de la Gateway en écriture (pour y poser la clé OpenRouter)…
       - ../briques/gateway/.env:/gateway/.env
+      # .env racine en LECTURE SEULE (S233, export via ⚙ Sauvegarde) — jamais en écriture,
+      # ce module ne modifie jamais le .env, il ne fait que le lire pour l'exporter.
+      - ../.env:/env-racine/.env:ro
+      # Point de montage de la clé USB de sauvegarde portable (S233) — monté par une règle
+      # udev sur le HP (cf. outils/sauvegarde-usb/), vide/absent hors HP (le garde-fou
+      # sentinelle de sauvegarde_usb.py refuse alors proprement, cf. Task 3).
+      - ${SAUVEGARDE_USB_MONTAGE:-/mnt/sauvegarde-usb}:/mnt/sauvegarde-usb
       # …et le socket Docker (pour redémarrer la Gateway après changement de clé).
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
