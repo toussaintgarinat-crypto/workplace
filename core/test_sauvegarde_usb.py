@@ -1,4 +1,7 @@
 import asyncio
+import io
+import json
+import tarfile
 from pathlib import Path
 
 import httpx
@@ -201,3 +204,64 @@ def test_verifier_espace_suffisant_ne_leve_pas(tmp_path, monkeypatch):
 
     monkeypatch.setattr(shutil_mod, "disk_usage", lambda _: FauxUsage())
     sauvegarde_usb.verifier_espace(tmp_path, octets_requis=1_000_000)  # ne doit rien lever
+
+
+def _tar_dun_fichier(nom: str, contenu: bytes) -> bytes:
+    tampon = io.BytesIO()
+    with tarfile.open(fileobj=tampon, mode="w") as tar:
+        info = tarfile.TarInfo(name=nom)
+        info.size = len(contenu)
+        tar.addfile(info, io.BytesIO(contenu))
+    return tampon.getvalue()
+
+
+def test_sauvegarder_ecrit_manifest_et_fichiers(tmp_path, monkeypatch):
+    (tmp_path / sauvegarde_usb.SENTINELLE_NOM).write_text("")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json([
+                {"Id": "sq1", "Names": ["/workplace_donnees"], "Image": "workplace/donnees:0.3.0"},
+                {"Id": "pg1", "Names": ["/memoire-memoire-db-1"], "Image": "workplace/memoire-db-walg:0.1.0"},
+            ])
+        if chemin == "/containers/sq1/exec":
+            return httpx.Response(200, json={"Id": "exec-find"})
+        if chemin == "/exec/exec-find/start":
+            return httpx.Response(200, content=_cadre_exec(1, b"/data/donnees.db\n"))
+        if chemin == "/exec/exec-find/json":
+            return httpx.Response(200, json={"ExitCode": 0})
+        if chemin == "/containers/pg1/json":
+            return httpx.Response(200, json={"Config": {"Env": [
+                "POSTGRES_USER=memory", "POSTGRES_DB=memory"]}})
+        if chemin == "/containers/sq1/archive":
+            return httpx.Response(200, content=_tar_dun_fichier("donnees.db", b"contenu-sqlite"))
+        if chemin == "/containers/pg1/exec":
+            return httpx.Response(200, json={"Id": "exec-dump"})
+        if chemin == "/exec/exec-dump/start":
+            return httpx.Response(200, content=_cadre_exec(1, b"-- dump sql --\n"))
+        if chemin == "/exec/exec-dump/json":
+            return httpx.Response(200, json={"ExitCode": 0})
+        raise AssertionError(f"appel inattendu : {chemin}")
+
+    def _client_de_test():
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+
+    monkeypatch.setattr(sauvegarde_usb, "_docker_client", _client_de_test)
+
+    manifeste = asyncio.run(sauvegarde_usb.sauvegarder(tmp_path))
+
+    assert (tmp_path / "manifest.json").exists()
+    disque = json.loads((tmp_path / "manifest.json").read_text())
+    assert disque == manifeste
+    par_brique = {s["brique"]: s for s in manifeste["sources"]}
+    assert par_brique["workplace_donnees"]["fichier"] == "donnees.db"
+    assert (tmp_path / "workplace_donnees" / "donnees.db").read_bytes() == b"contenu-sqlite"
+    assert par_brique["memoire-memoire-db-1"]["fichier"] == "memory.sql"
+    assert (tmp_path / "memoire-memoire-db-1" / "memory.sql").read_bytes() == b"-- dump sql --\n"
+    assert all("conteneur_id" not in s for s in manifeste["sources"])
+
+
+def test_sauvegarder_refuse_sans_sentinelle(tmp_path):
+    with pytest.raises(RuntimeError, match="sentinelle"):
+        asyncio.run(sauvegarde_usb.sauvegarder(tmp_path))
