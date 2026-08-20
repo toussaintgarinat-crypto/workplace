@@ -605,6 +605,16 @@
       <div id="cerveau-msg" class="cerveau-msg"></div>
     </div>
 
+    <!-- Panneau de sauvegarde portable (clé USB) -->
+    <div class="panel">
+      <h3>💾 Sauvegarde portable (clé USB)</h3>
+      <p class="hint">Instantané à la demande de toutes les bases du stack, sur la clé USB branchée sur le HP. Un seul instantané à la fois (écrase le précédent).</p>
+      <button class="btn" id="btn-sauvegarde-lancer" onclick="lancerSauvegardeUsb()">Sauvegarder sur la clé</button>
+      <button class="btn ghost" id="btn-sauvegarde-restaurer" onclick="restaurerSauvegardeUsb()">Restaurer depuis la clé</button>
+      <button class="btn ghost" id="btn-env-exporter" onclick="exporterEnv()">Exporter le .env</button>
+      <div id="sauvegarde-msg"></div>
+    </div>
+
     <!-- Disposition 2-panes : sidebar (conversations + projets) | conversation active -->
     <div class="asst">
       <aside class="asst-side">
@@ -2487,6 +2497,60 @@ async function enregistrerCleFournisseur(id) {
     else cerveauMsg('⚠ Échec (' + (r.etape || '?') + ') : ' + (r.detail || ''), 'ko');
     await chargerCerveau(true);
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+}
+
+function sauvegardeMsg(texte, type) {
+  const el = document.getElementById('sauvegarde-msg');
+  el.textContent = texte;
+  el.className = type === 'ok' ? 'ok' : (type === 'ko' ? 'ko' : '');
+}
+
+async function lancerSauvegardeUsb() {
+  const btn = document.getElementById('btn-sauvegarde-lancer');
+  btn.classList.add('loading');
+  sauvegardeMsg('Sauvegarde en cours…', 'info');
+  try {
+    const r = await fetch('/sauvegarde-usb/lancer', { method: 'POST' });
+    const d = await r.json();
+    if (r.ok) {
+      const ignorees = (d.sources || []).filter(s => s.ignore).length;
+      sauvegardeMsg(`✔ ${d.sources.length - ignorees} base(s) sauvegardée(s)` +
+                    (ignorees ? `, ${ignorees} ignorée(s).` : '.'), 'ok');
+    } else {
+      sauvegardeMsg('⚠ ' + (d.detail || 'échec'), 'ko');
+    }
+  } catch (e) { sauvegardeMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
+
+async function restaurerSauvegardeUsb() {
+  const btn = document.getElementById('btn-sauvegarde-restaurer');
+  btn.classList.add('loading');
+  sauvegardeMsg('Restauration en cours…', 'info');
+  try {
+    const r = await fetch('/sauvegarde-usb/restaurer', { method: 'POST' });
+    const d = await r.json();
+    if (r.ok) {
+      const echecs = (d.resultats || []).filter(x => !x.ok);
+      sauvegardeMsg(echecs.length
+        ? `⚠ ${echecs.length} brique(s) en échec : ` + echecs.map(x => x.brique).join(', ')
+        : '✔ Toutes les bases restaurées.', echecs.length ? 'ko' : 'ok');
+    } else {
+      sauvegardeMsg('⚠ ' + (d.detail || 'échec'), 'ko');
+    }
+  } catch (e) { sauvegardeMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
+
+async function exporterEnv() {
+  const r = await fetch('/sauvegarde-usb/env');
+  if (!r.ok) { sauvegardeMsg('⚠ Export .env impossible.', 'ko'); return; }
+  const texte = await r.text();
+  const lien = document.createElement('a');
+  lien.href = URL.createObjectURL(new Blob([texte], { type: 'text/plain' }));
+  lien.download = '.env';
+  lien.click();
+  URL.revokeObjectURL(lien.href);
 }
 
 async function charger() {
