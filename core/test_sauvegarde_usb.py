@@ -387,3 +387,57 @@ def test_sauvegarder_taille_octets_est_taille_reelle(tmp_path, monkeypatch):
     # Postgres: taille réelle du dump SQL écrit, pas pg_database_size pré-écriture
     # Le dump SQL fait 16 octets (b"-- dump sql --\n")
     assert par_brique["memoire-memoire-db-1"]["taille_octets"] == len(b"-- dump sql --\n")
+
+
+def test_restaurer_sqlite_et_postgres(tmp_path, monkeypatch):
+    (tmp_path / sauvegarde_usb.SENTINELLE_NOM).write_text("")
+    (tmp_path / "workplace_donnees").mkdir()
+    (tmp_path / "workplace_donnees" / "donnees.db").write_bytes(b"contenu-sqlite")
+    (tmp_path / "memoire-memoire-db-1").mkdir()
+    (tmp_path / "memoire-memoire-db-1" / "memory.sql").write_bytes(b"-- dump --")
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "horodatage": "2026-08-20T18:00:00+00:00",
+        "sources": [
+            {"brique": "workplace_donnees", "type": "sqlite", "chemin": "/data/donnees.db",
+             "fichier": "donnees.db", "taille_octets": 14, "ignore": False, "raison": None},
+            {"brique": "memoire-memoire-db-1", "type": "postgres", "db": "memory",
+             "user": "memory", "fichier": "memory.sql", "taille_octets": 10,
+             "ignore": False, "raison": None},
+            {"brique": "brique-arretee", "type": "sqlite", "chemin": "/data/x.db",
+             "fichier": "x.db", "taille_octets": 1, "ignore": False, "raison": None},
+        ],
+    }))
+
+    appels_put = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json([
+                {"Id": "sq1", "Names": ["/workplace_donnees"], "Image": "workplace/donnees:0.3.0"},
+                {"Id": "pg1", "Names": ["/memoire-memoire-db-1"], "Image": "workplace/memoire-db-walg:0.1.0"},
+            ])
+        if chemin in ("/containers/sq1/archive", "/containers/pg1/archive") and request.method == "PUT":
+            appels_put.append(chemin)
+            return httpx.Response(200)
+        if chemin == "/containers/pg1/exec":
+            return httpx.Response(200, json={"Id": "exec-psql"})
+        if chemin == "/exec/exec-psql/start":
+            return httpx.Response(200, content=_cadre_exec(1, b""))
+        if chemin == "/exec/exec-psql/json":
+            return httpx.Response(200, json={"ExitCode": 0})
+        raise AssertionError(f"appel inattendu : {request.method} {chemin}")
+
+    def _client_de_test():
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+
+    monkeypatch.setattr(sauvegarde_usb, "_docker_client", _client_de_test)
+
+    resultat = asyncio.run(sauvegarde_usb.restaurer(tmp_path))
+    par_brique = {r["brique"]: r for r in resultat["resultats"]}
+
+    assert par_brique["workplace_donnees"]["ok"] is True
+    assert par_brique["memoire-memoire-db-1"]["ok"] is True
+    assert par_brique["brique-arretee"]["ok"] is False
+    assert "introuvable" in par_brique["brique-arretee"]["message"]
+    assert appels_put == ["/containers/sq1/archive", "/containers/pg1/archive"]
