@@ -7,8 +7,12 @@ Toutes les interactions Docker passent par l'API HTTP du démon via `httpx` sur 
 Unix — même motif que `config_assistant._docker_client()` (S168, redémarrage de la
 Gateway) : évite d'ajouter le SDK `docker` en dépendance pour un besoin déjà couvert.
 """
+import io
+import json
 import os
 import shutil
+import tarfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -139,3 +143,93 @@ async def decouvrir_conteneurs_par_brique(client: httpx.AsyncClient) -> dict[str
     r = await client.get("/containers/json")
     r.raise_for_status()
     return {resume["Names"][0].lstrip("/"): resume["Id"] for resume in r.json()}
+
+
+def _sans_conteneur_id(source: dict) -> dict:
+    """Le manifeste est portable (lu sur une AUTRE machine) : l'id de conteneur n'y a pas
+    sa place, il ne sera de toute façon plus valide ailleurs."""
+    return {k: v for k, v in source.items() if k != "conteneur_id"}
+
+
+async def _taille_sqlite(client: httpx.AsyncClient, source: dict) -> int:
+    code, sortie = await _exec(client, source["conteneur_id"], ["stat", "-c", "%s", source["chemin"]])
+    if code != 0:
+        return 0
+    try:
+        return int(sortie.decode().strip())
+    except ValueError:
+        return 0
+
+
+async def _taille_postgres(client: httpx.AsyncClient, source: dict) -> int:
+    cmd = ["psql", "-U", source["user"], "-d", source["db"], "-tAc",
+           f"SELECT pg_database_size('{source['db']}');"]
+    code, sortie = await _exec(client, source["conteneur_id"], cmd)
+    if code != 0:
+        return 0
+    try:
+        return int(sortie.decode().strip())
+    except ValueError:
+        return 0
+
+
+async def _copier_sqlite(client: httpx.AsyncClient, source: dict, dest_dir: Path) -> str:
+    """Équivalent `docker cp <conteneur>:<chemin> <dest>` via l'API `archive` (GET)."""
+    r = await client.get(f"/containers/{source['conteneur_id']}/archive",
+                          params={"path": source["chemin"]})
+    r.raise_for_status()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    nom_fichier = Path(source["chemin"]).name
+    with tarfile.open(fileobj=io.BytesIO(r.content)) as tar:
+        membre = tar.getmembers()[0]
+        with tar.extractfile(membre) as src:
+            (dest_dir / nom_fichier).write_bytes(src.read())
+    return nom_fichier
+
+
+async def _dumper_postgres(client: httpx.AsyncClient, source: dict, dest_dir: Path) -> str:
+    """Dump LOGIQUE (`pg_dump`), jamais de copie brute du répertoire de données — un dump
+    logique est portable entre machines/versions, une copie brute ne l'est pas (cf. spec)."""
+    code, sortie = await _exec(client, source["conteneur_id"],
+                                ["pg_dump", "-U", source["user"], source["db"]])
+    if code != 0:
+        raise RuntimeError(
+            f"pg_dump a échoué sur « {source['db']} » (code {code}) : "
+            f"{sortie.decode('utf-8', 'ignore')[:300]}")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    nom_fichier = f"{source['db']}.sql"
+    (dest_dir / nom_fichier).write_bytes(sortie)
+    return nom_fichier
+
+
+async def sauvegarder(destination: Path) -> dict:
+    """Instantané à la demande de toutes les bases actives, écrasant le précédent sur
+    `destination`. Un conteneur arrêté est simplement absent (pas d'échec global) ; un dump
+    qui échoue laisse une entrée `ignore: true` avec la raison, plutôt que de tout stopper."""
+    verifier_sentinelle(destination)
+    async with _docker_client() as client:
+        sources = await decouvrir_sources(client)
+        tailles = [
+            await (_taille_sqlite(client, s) if s["type"] == "sqlite" else _taille_postgres(client, s))
+            for s in sources
+        ]
+        verifier_espace(destination, sum(tailles))
+
+        entrees = []
+        for source, taille in zip(sources, tailles):
+            dest_dir = destination / source["brique"]
+            try:
+                if source["type"] == "sqlite":
+                    fichier = await _copier_sqlite(client, source, dest_dir)
+                else:
+                    fichier = await _dumper_postgres(client, source, dest_dir)
+            except Exception as e:  # noqa: BLE001 — une source en échec ne bloque pas les autres
+                entrees.append({**_sans_conteneur_id(source), "fichier": None,
+                                 "taille_octets": 0, "ignore": True, "raison": str(e)})
+                continue
+            entrees.append({**_sans_conteneur_id(source), "fichier": fichier,
+                             "taille_octets": taille, "ignore": False, "raison": None})
+
+    manifeste = {"horodatage": datetime.now(timezone.utc).isoformat(), "sources": entrees}
+    (destination / "manifest.json").write_text(json.dumps(manifeste, ensure_ascii=False, indent=2))
+    return manifeste
