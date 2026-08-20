@@ -22,8 +22,8 @@ from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
 from routers import (agenda, assistant, atelier_images_video_proxy, atelier_veille_proxy,
-                     dashboard, invite, mail_proxy, media_proxy, profil, studio_proxy,
-                     systeme, usine)
+                     dashboard, invite, mail_proxy, media_proxy, profil, sauvegarde_usb,
+                     studio_proxy, systeme, usine)
 from routers import auth as routeur_auth
 
 
@@ -83,6 +83,7 @@ app.add_middleware(
 _tenant = [Depends(lire_contexte_tenant)]
 
 app.include_router(systeme.router)
+app.include_router(sauvegarde_usb.router)
 app.include_router(routeur_auth.router)
 app.include_router(usine.router, dependencies=_tenant)
 app.include_router(dashboard.router, dependencies=[Depends(exiger_session)])
