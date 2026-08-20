@@ -389,6 +389,19 @@ def test_sauvegarder_taille_octets_est_taille_reelle(tmp_path, monkeypatch):
     assert par_brique["memoire-memoire-db-1"]["taille_octets"] == len(b"-- dump sql --\n")
 
 
+def test_lire_env_absent_leve(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV_RACINE_PATH", str(tmp_path / "absent.env"))
+    with pytest.raises(RuntimeError, match="introuvable"):
+        sauvegarde_usb.lire_env()
+
+
+def test_lire_env_renvoie_le_contenu(tmp_path, monkeypatch):
+    fichier = tmp_path / "vrai.env"
+    fichier.write_text("GATEWAY_KEY=abc123\n")
+    monkeypatch.setenv("ENV_RACINE_PATH", str(fichier))
+    assert sauvegarde_usb.lire_env() == "GATEWAY_KEY=abc123\n"
+
+
 def test_restaurer_sqlite_et_postgres(tmp_path, monkeypatch):
     (tmp_path / sauvegarde_usb.SENTINELLE_NOM).write_text("")
     (tmp_path / "workplace_donnees").mkdir()

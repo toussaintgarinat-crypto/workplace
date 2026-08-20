@@ -271,6 +271,16 @@ async def _restaurer_postgres(client: httpx.AsyncClient, conteneur_id: str, entr
             f"{sortie.decode('utf-8', 'ignore')[:300]}")
 
 
+def lire_env() -> str:
+    """Contenu brut du `.env` racine, monté en lecture seule dans `core` (cf.
+    `core/docker-compose.yml`, Task 8). Simple sortie du fichier — c'est à l'utilisateur de
+    le ranger ensuite où il veut (Drive, doc…) ; aucune écriture vers un service externe."""
+    chemin = Path(os.getenv("ENV_RACINE_PATH", "/env-racine/.env"))
+    if not chemin.exists():
+        raise RuntimeError(f".env introuvable à {chemin}.")
+    return chemin.read_text()
+
+
 async def restaurer(source: Path) -> dict:
     """Symétrique de `sauvegarder` : relit `manifest.json`, réinjecte chaque source dans le
     conteneur ACTIF portant le même nom de brique. Une brique introuvable (conteneur pas
