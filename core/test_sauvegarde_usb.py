@@ -108,7 +108,7 @@ def test_decouvrir_sources_ignore_conteneur_sans_db():
 
 def test_decouvrir_sources_ignore_conteneur_en_echec():
     """Conteneur dont l'inspection ou l'exec échoue ne doit pas planter la découverte —
-    les autres conteneurs (sains) doivent quand même être découverts."""
+    les autres conteneurs (sains) doivent quand même être découverts. Teste la branche Postgres."""
     def handler(request: httpx.Request) -> httpx.Response:
         chemin = request.url.path
         if chemin == "/containers/json":
@@ -138,3 +138,34 @@ def test_decouvrir_sources_ignore_conteneur_en_echec():
     assert len(sources) == 1
     assert {"brique": "donnees-ok", "type": "sqlite", "conteneur_id": "good-sq",
             "chemin": "/data/backup.db"} in sources
+
+
+def test_decouvrir_sources_ignore_echec_branche_sqlite():
+    """Conteneur SQLite dont l'exec échoue ne doit pas planter la découverte —
+    les autres conteneurs (sains) doivent quand même être découverts. Teste la branche SQLite."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        chemin = request.url.path
+        if chemin == "/containers/json":
+            return _reponse_containers_json([
+                {"Id": "broken-sq", "Names": ["/donnees-broken"], "Image": "workplace/donnees:0.3.0"},
+                {"Id": "good-pg", "Names": ["/memoire-db"], "Image": "workplace/memoire-db-walg:0.1.0"},
+            ])
+        # Le conteneur SQLite échoue lors de l'exec find (ex. image sans shell, permissions)
+        if chemin == "/containers/broken-sq/exec":
+            return httpx.Response(500, json={"message": "Cannot create exec instance"})
+        # Le conteneur Postgres fonctionne normalement
+        if chemin == "/containers/good-pg/json":
+            return httpx.Response(200, json={"Config": {"Env": [
+                "POSTGRES_USER=memory", "POSTGRES_DB=memory", "PATH=/usr/bin"]}})
+        raise AssertionError(f"appel inattendu : {chemin}")
+
+    async def go():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://docker")
+        async with client:
+            return await sauvegarde_usb.decouvrir_sources(client)
+
+    sources = asyncio.run(go())
+    # Le conteneur SQLite brisé ne doit PAS être dans le résultat, mais le conteneur Postgres OK doit y être
+    assert len(sources) == 1
+    assert {"brique": "memoire-db", "type": "postgres", "conteneur_id": "good-pg",
+            "db": "memory", "user": "memory"} in sources
