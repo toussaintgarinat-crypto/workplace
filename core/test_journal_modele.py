@@ -114,6 +114,48 @@ def test_payload_non_serialisable_json_retourne_false_ne_leve_jamais():
     # Pas d'exception levée, juste False
 
 
+def test_bornage_meme_si_check_vivant_echoue(monkeypatch):
+    """Le bornage doit tourner INCONDITIONNELLEMENT, même si le check vivant échoue
+    (corruption détectée). C'est critique pour garder la taille bornée justement quand
+    quelque chose ne va pas — c'est le cas où on EN A LE PLUS BESOIN."""
+    _reset()
+    # Note: _max() a un minimum de 50, donc on utilise 60 (qui sera 60)
+    monkeypatch.setenv("MODELE_JOURNAL_MAX", "60")
+
+    # Phase 1 : Écrire 80 lignes (dépasse max*1.2=72, donc sera tronqué à 60)
+    for i in range(80):
+        jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
+                             messages=[{"role": "user", "content": f"msg {i}"}])
+    tous_apres_80 = jm._lignes()
+    assert len(tous_apres_80) <= 72, f"Bounding should have triggered: {len(tous_apres_80)} lines"
+
+    # Phase 2 : Maintenant simuler une corruption du check vivant
+    vu = {}
+
+    def _faux_verifier_toujours_false(attendue, lignes_pre_lues=None):
+        vu["verif_appelee"] = True
+        return False  # Simule une corruption détectée
+
+    monkeypatch.setattr(jm, "_verifier_derniere_ligne", _faux_verifier_toujours_false)
+
+    # Phase 3 : Écrire 30 lignes supplémentaires avec le check en échec
+    # (total théorique 110, bien au-delà de max*1.2=72)
+    for i in range(80, 110):
+        result = jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
+                                      messages=[{"role": "user", "content": f"msg {i}"}])
+        # enregistrer_appel renvoie False car le check échoue
+        assert result is False
+
+    assert vu.get("verif_appelee") is True, "Verification check should have been called"
+
+    # Phase 4 : Vérification critique — LE BORNAGE DOIT QUAND MÊME AVOIR TOURNÉE
+    # même si le check vivant échouait à chaque fois
+    tous_finaux = jm._lignes()
+    assert len(tous_finaux) <= 72, \
+        f"CRITICAL: Bounding MUST happen even when check fails. " \
+        f"Got {len(tous_finaux)} lines, expected ≤72 (max=60, max*1.2=72)"
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
