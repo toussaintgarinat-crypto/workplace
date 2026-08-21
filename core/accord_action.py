@@ -154,7 +154,9 @@ class Registre:
 
         Un message vide N'EST PAS un tour de parole (S234, audit gate-forge) : sans ce
         garde-fou, un appel qui atteint cette méthode sans avoir extrait de VRAI message
-        utilisateur accordait quand même toutes les demandes en attente."""
+        utilisateur accordait quand même toutes les demandes en attente. Le retour anticipé
+        laisse aussi intacts les compteurs de lecture (`_lectures`) : un message vide n'est
+        pas un tour, donc rien ne doit en dépendre — ni un accord, ni une remise à zéro."""
         if not (message or "").strip():
             return
         self._purger(fil)
