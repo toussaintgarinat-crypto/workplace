@@ -150,7 +150,13 @@ class Registre:
         accords — sauf s'il s'agit d'un refus explicite, auquel cas elles disparaissent.
 
         C'est ICI que se joue toute la garantie : sans passage par cette méthode, aucune
-        demande ne devient jamais un accord, et donc aucun `confirme=true` ne passe."""
+        demande ne devient jamais un accord, et donc aucun `confirme=true` ne passe.
+
+        Un message vide N'EST PAS un tour de parole (S234, audit gate-forge) : sans ce
+        garde-fou, un appel qui atteint cette méthode sans avoir extrait de VRAI message
+        utilisateur accordait quand même toutes les demandes en attente."""
+        if not (message or "").strip():
+            return
         self._purger(fil)
         self._lectures.pop(fil, None)  # nouveau tour : les compteurs de lecture repartent
         en_cours = self._demandes.get(fil) or []

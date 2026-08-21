@@ -184,3 +184,15 @@ def test_les_compteurs_de_lecture_repartent_au_tour_suivant(reg, monkeypatch):
     reg.noter_lecture("fil-1", "mail_lister")
     reg.tour_utilisateur("fil-1", "et ensuite ?")
     assert reg.noter_lecture("fil-1", "mail_lister") is None
+
+
+def test_tour_utilisateur_message_vide_n_accorde_rien(reg):
+    """Un message vide n'est PAS un tour de parole humain : une demande en attente doit
+    rester en attente, pas devenir un accord gratuit. Sans ce garde-fou, un appelant qui
+    (par bug ou par surface future) atteint `tour_utilisateur` avec un dernier message
+    utilisateur vide rouvre exactement le trou que S222 a fermé."""
+    reg.demander("fil-1", "mail_envoyer", ARGS)
+    reg.tour_utilisateur("fil-1", "")
+    ok, msg = reg.consommer("fil-1", "mail_envoyer", {**ARGS, "confirme": True})
+    assert ok is False
+    assert "n'a pas encore répondu" in msg
