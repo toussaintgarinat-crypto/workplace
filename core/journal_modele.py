@@ -126,12 +126,16 @@ def _lignes() -> list[dict]:
 
 def _verifier_et_borner_avec_lignes(attendue: dict) -> bool:
     """Lit le fichier UNE FOIS après écriture pour vérifier l'intégrité (dernière ligne)
-    et décider du bornage. Appelé sous le verrou."""
+    et décider du bornage. Appelé sous le verrou.
+
+    Important : le bornage DOIT tourner INCONDITIONNELLEMENT, indépendamment du résultat
+    de la vérification. C'est critique pour garder la taille bornée justement quand
+    une corruption/troncature est détectée."""
     lignes = _lignes()
     # Appel _verifier_derniere_ligne en passant les lignes déjà lues (évite une 2e lecture du fichier)
-    if not _verifier_derniere_ligne(attendue, lignes_pre_lues=lignes):
-        return False
-    # Vérification OK, maintenant décider du bornage avec LA MÊME LISTE DE LIGNES
+    ok = _verifier_derniere_ligne(attendue, lignes_pre_lues=lignes)
+
+    # Bornage INCONDITIONNELLEMENT, même si la vérification a échoué
     mx = _max()
     if len(lignes) > int(mx * 1.2):
         try:
@@ -139,7 +143,8 @@ def _verifier_et_borner_avec_lignes(attendue: dict) -> bool:
                                         for x in lignes[-mx:]) + "\n", encoding="utf-8")
         except OSError:
             pass
-    return True
+
+    return ok
 
 
 def appels(fil: str, limite: int = 100) -> list[dict]:
