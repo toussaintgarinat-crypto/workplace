@@ -14,9 +14,17 @@ des clients externes, qui partage seulement le registre.
 Transport : Streamable HTTP — un POST JSON-RPC sur `/mcp`. Méthodes : `initialize`,
 `tools/list`, `tools/call`, `ping`. Le co-agent planificateur exécutif est exposé comme un
 outil ordinaire (`coagent_lancer`) : un client MCP peut donc déléguer une tâche multi-briques
-autonome. Sécurité : clé `MCP_KEY` (header) si définie, kill-switch `MCP_ACTIF`. La
-confirmation des actions (`confirme=true`) reste EXIGÉE par `outils.executer` — on ne
-contourne aucun garde-fou : un agent autonome doit la passer explicitement.
+autonome. Sécurité : clé `MCP_KEY` (header) si définie, kill-switch `MCP_ACTIF`.
+
+⚠ Le gate d'action structurel (S222, `accord_action.REGISTRE`) NE COUVRE PAS ce chemin :
+`tools/call` appelle `outils.executer` directement, sans jamais passer par `converser` ni
+par le registre d'accords (audit S234). Un client qui passe `confirme=true` dès le premier
+appel l'exécute immédiatement — seule la garde TEXTUELLE de `_confirmation()`
+(`outils_communs.py`) s'applique, et elle ne protège qu'un LLM qui ignore encore qu'il doit
+passer `confirme=true`, pas un appelant qui le sait déjà. Choix assumé, documenté dans
+`docs/decisions/2026-08-09-gate-action-structurel.md` : un client MCP est par nature un
+appelant autonome sans tour de parole humain à intercaler. Ne pas lire cette absence comme
+un oubli.
 """
 import os
 
