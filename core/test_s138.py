@@ -101,6 +101,16 @@ def test_cout():
     assert llm_pipeline._cout("inconnu/modele", 1000, 1000, None) == 0.0
 
 
+def test_noms_outils_best_effort_sur_entree_malformee():
+    """`_noms_outils()` est appelée inline aux call-sites de journal_modele, AVANT le
+    best-effort interne de `enregistrer_appel` : elle doit donc être défensive elle-même,
+    jamais lever, quelle que soit la forme de `tools`."""
+    assert llm_pipeline._noms_outils(None) == []
+    assert llm_pipeline._noms_outils([]) == []
+    assert llm_pipeline._noms_outils([{"function": "pas un dict"}]) == []
+    assert llm_pipeline._noms_outils(["pas un dict du tout"]) == []
+
+
 def test_pipeline_et_journal():
     res = asyncio.run(llm_pipeline.completer(
         [{"role": "user", "content": "salut"}],

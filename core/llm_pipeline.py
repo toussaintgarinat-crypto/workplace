@@ -106,10 +106,14 @@ def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None)
 
 def _noms_outils(tools: list[dict] | None) -> list[str]:
     """Noms des outils offerts au modèle pour CET appel — pas leurs schémas complets
-    (statiques/dérivables du code `outils.py`, cf. journal_modele)."""
+    (statiques/dérivables du code `outils.py`, cf. journal_modele). Best-effort : ne
+    doit jamais faire échouer un appel LLM."""
     if not tools:
         return []
-    return [nom for t in tools if (nom := ((t or {}).get("function") or {}).get("name"))]
+    try:
+        return [nom for t in tools if (nom := ((t or {}).get("function") or {}).get("name"))]
+    except Exception:  # noqa: BLE001 — jamais bloquant
+        return []
 
 
 def _ordonner_selon_budget(modeles: list[str]) -> tuple[list[str], bool]:
