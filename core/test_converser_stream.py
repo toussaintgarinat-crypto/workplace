@@ -98,9 +98,11 @@ def test_converser_journalise_chaque_appel_dans_journal_modele(monkeypatch):
     ]
 
     def handler(req):
-        # `converser()` fait d'autres requêtes HTTP sur le même client partagé (ex. sonde
-        # `muscle.tete_de_cascade`) : ne consommer les tours SSE que sur l'endpoint
-        # completions réel, sous peine de vider `tours_restants` pour la mauvaise requête.
+        # `converser()` fait d'autres requêtes HTTP avant même d'atteindre la boucle LLM
+        # (ex. `config_assistant.chaine_modeles()` → `lister_modeles()` sonde `/v1/models`,
+        # gatée par `cascade_auto`, vraie par défaut) : ne consommer les tours SSE que sur
+        # l'endpoint completions réel, sous peine de vider `tours_restants` pour la mauvaise
+        # requête.
         if not str(req.url).endswith("/v1/chat/completions"):
             return httpx.Response(404)
         return httpx.Response(200, content=tours_restants.pop(0))
