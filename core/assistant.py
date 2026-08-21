@@ -280,7 +280,7 @@ async def converser(messages: list[dict], registre,
                 async for evt in llm_pipeline.completer_flux(
                         historique, modeles=modeles, tools=outils_actifs,
                         tool_choice="auto", temperature=0.2, etiquette="chat",
-                        conf=conf, client=client):
+                        fil=fil_accord, conf=conf, client=client):
                     if evt["type"] == "delta":
                         yield {"type": "texte_delta", "contenu": evt["contenu"]}
                     elif evt["type"] == "fin":
@@ -294,7 +294,7 @@ async def converser(messages: list[dict], registre,
                 res = await llm_pipeline.completer(
                     historique, modeles=modeles, tools=outils_actifs,
                     tool_choice="auto", temperature=0.2, etiquette="chat",
-                    conf=conf, client=client,
+                    fil=fil_accord, conf=conf, client=client,
                 )
                 if not res.ok:
                     yield {"type": "erreur", "contenu": res.erreur or "Aucun modèle disponible."}

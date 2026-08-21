@@ -13,15 +13,19 @@ import tempfile
 os.environ["ASSISTANT_CONFIG_PATH"] = os.path.join(tempfile.mkdtemp(), "cfg.json")
 os.environ.setdefault("GATEWAY_KEY", "sk-test-local")
 os.environ["STREAM_ACTIF"] = "1"
+os.environ["MODELE_JOURNAL_PATH"] = os.path.join(tempfile.mkdtemp(), "modele.jsonl")
 sys.path.insert(0, os.path.dirname(__file__))
 
 import assistant  # noqa: E402
 import llm_pipeline  # noqa: E402
 import outils  # noqa: E402
+import httpx  # noqa: E402
+import json  # noqa: E402
+import journal_modele  # noqa: E402
 
 
-async def _converser(messages):
-    return [evt async for evt in assistant.converser(messages, registre=None)]
+async def _converser(messages, fil=None):
+    return [evt async for evt in assistant.converser(messages, registre=None, fil=fil)]
 
 
 def test_converser_streame_texte():
@@ -77,9 +81,60 @@ def test_converser_boucle_outils_en_streaming():
     assert outil["nom"] == "liste_entreprises"
 
 
+def _sse(*chunks) -> bytes:
+    corps = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
+    return corps.encode()
+
+
+def test_converser_journalise_chaque_appel_dans_journal_modele(monkeypatch):
+    """Bout-en-bout (assistant → llm_pipeline RÉEL → journal_modele), sans mocker
+    completer_flux lui-même : un tour à 2 itérations (1 tool call puis 1 réponse finale)
+    produit exactement 2 lignes dans journal_modele, sous le fil d'accord S222."""
+    tours_restants = [
+        _sse({"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "call_1", "function": {
+                "name": "liste_entreprises", "arguments": "{}"}}]}}]}),
+        _sse({"choices": [{"delta": {"content": "Voici le bilan."}}]}),
+    ]
+
+    def handler(req):
+        # `converser()` fait d'autres requêtes HTTP sur le même client partagé (ex. sonde
+        # `muscle.tete_de_cascade`) : ne consommer les tours SSE que sur l'endpoint
+        # completions réel, sous peine de vider `tours_restants` pour la mauvaise requête.
+        if not str(req.url).endswith("/v1/chat/completions"):
+            return httpx.Response(404)
+        return httpx.Response(200, content=tours_restants.pop(0))
+
+    # Capture la classe RÉELLE avant patch : le patch ci-dessous remplace l'attribut
+    # `httpx.AsyncClient` — y référer *dans* le lambda recréerait le lambda lui-même
+    # (récursion infinie), d'où la capture par fermeture ici.
+    AsyncClientReel = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda *a, **k: AsyncClientReel(transport=httpx.MockTransport(handler)))
+
+    async def faux_exec(nom, args, registre):
+        return '{"entreprises": []}'
+
+    ancien_exec = outils.executer
+    outils.executer = faux_exec
+    try:
+        asyncio.run(_converser(
+            [{"role": "user", "content": "où en sont les entreprises ?"}], fil="fil-e2e"))
+    finally:
+        outils.executer = ancien_exec
+
+    appels = journal_modele.appels("fil-e2e")
+    assert len(appels) == 2, appels
+    assert appels[0]["message_recu"]["tool_calls"][0]["function"]["name"] == "liste_entreprises"
+    assert appels[1]["message_recu"]["content"] == "Voici le bilan."
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
-            fn()
+            try:
+                fn()
+            except TypeError:                 # tests à fixture monkeypatch : sautés en direct
+                continue
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
