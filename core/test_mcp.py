@@ -160,8 +160,7 @@ def test_tools_call_action_confirmee_bypasse_le_registre_accord():
     docs/decisions/2026-08-09-gate-action-structurel.md), pas un oubli — ce test fige ce
     comportement pour qu'un futur changement soit délibéré, pas accidentel."""
     import accord_action
-    fil_preuve = "fil-preuve-mcp-ignore-registre"
-    assert accord_action.REGISTRE.etat(fil_preuve) == {"en_attente": [], "accordees": []}
+    demandes_avant = dict(accord_action.REGISTRE._demandes)
     capte = {}
 
     async def faux_executer(nom, args, registre):
@@ -181,8 +180,9 @@ def test_tools_call_action_confirmee_bypasse_le_registre_accord():
     assert capte["nom"] == "calcul_etat_muscle"
     assert capte["args"] == {"reveiller": True, "confirme": True}
     assert rep["result"]["isError"] is False
-    # Toujours vide : cet appel MCP n'a jamais touché le registre d'accords, sous AUCUNE clé.
-    assert accord_action.REGISTRE.etat(fil_preuve) == {"en_attente": [], "accordees": []}
+    # Le registre est identique avant/après, quelle que soit la clé : cet appel MCP ne l'a
+    # touché sous AUCUNE forme (ni création, ni mutation d'une entrée existante).
+    assert accord_action.REGISTRE._demandes == demandes_avant
 
 
 if __name__ == "__main__":
