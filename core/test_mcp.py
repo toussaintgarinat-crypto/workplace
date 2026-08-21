@@ -154,6 +154,32 @@ def test_kill_switch():
         os.environ.pop("MCP_ACTIF", None)
 
 
+def test_tools_call_action_confirmee_bypasse_le_registre_accord():
+    """MCP ne passe JAMAIS par accord_action.REGISTRE (S222) : `tools/call` appelle
+    `outils.executer` directement. C'est un choix assumé (ADR
+    docs/decisions/2026-08-09-gate-action-structurel.md), pas un oubli — ce test fige ce
+    comportement pour qu'un futur changement soit délibéré, pas accidentel."""
+    capte = {}
+
+    async def faux_executer(nom, args, registre):
+        capte["nom"], capte["args"] = nom, args
+        return json.dumps({"ok": True})
+
+    orig = outils.executer
+    outils.executer = faux_executer
+    try:
+        rep = _t({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                  "params": {"name": "calcul_etat_muscle",
+                             "arguments": {"reveiller": True, "confirme": True}}})
+    finally:
+        outils.executer = orig
+    # Exécuté immédiatement malgré `action: True` et SANS accord préalable dans le
+    # registre : c'est le chemin documenté comme non couvert par le gate.
+    assert capte["nom"] == "calcul_etat_muscle"
+    assert capte["args"] == {"reveiller": True, "confirme": True}
+    assert rep["result"]["isError"] is False
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
