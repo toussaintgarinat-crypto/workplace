@@ -15,6 +15,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["USAGE_LLM_PATH"] = os.path.join(_tmp, "usage.jsonl")
 os.environ["LLM_CACHE_PATH"] = os.path.join(_tmp, "cache.jsonl")
 os.environ["SHADOW_RUNS_PATH"] = os.path.join(_tmp, "shadow.jsonl")
+os.environ["MODELE_JOURNAL_PATH"] = os.path.join(_tmp, "modele.jsonl")
 os.environ.setdefault("LLM_BUDGET_MOIS_USD", "0")
 os.environ.setdefault("GATEWAY_KEY", "sk-test-local")  # clé factice : les modules l'exigent désormais
 sys.path.insert(0, os.path.dirname(__file__))
@@ -22,6 +23,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import cache_semantique  # noqa: E402
 import journal_usage  # noqa: E402
 import llm_pipeline  # noqa: E402
+import journal_modele  # noqa: E402
 import pytest  # noqa: E402
 import routage  # noqa: E402
 import shadow  # noqa: E402
@@ -107,6 +109,37 @@ def test_pipeline_et_journal():
     assert res.tokens_in == 123 and res.tokens_out == 45 and res.cout_usd == 0.0042
     r = journal_usage.resume()
     assert r["total"]["appels"] == 1 and r["total"]["tokens_in"] == 123
+
+
+def test_pipeline_journalise_dans_journal_modele():
+    res = asyncio.run(llm_pipeline.completer(
+        [{"role": "system", "content": "sys"}, {"role": "user", "content": "salut"}],
+        modeles=["openai/gpt-4o-mini"], etiquette="chat", fil="fil-test-s138",
+        client=_FakeClient()))
+    assert res.ok
+    appels = journal_modele.appels("fil-test-s138")
+    assert len(appels) == 1
+    a = appels[0]
+    assert a["modele"] == "openai/gpt-4o-mini"
+    assert a["messages"][-1]["content"] == "salut"
+    assert a["message_recu"]["content"] == "bonjour"
+
+
+def test_pipeline_ne_journalise_pas_sur_hit_cache_semantique():
+    """Un hit du cache sémantique ne fait atteindre AUCUN modèle ce tour-ci : pas de
+    nouvelle ligne journal_modele (cf. spec, décision explicite)."""
+    cli = _FakeClient()
+    prompt = [{"role": "system", "content": "archiviste"},
+              {"role": "user", "content": "range ce devis, encore"}]
+    asyncio.run(llm_pipeline.completer(
+        prompt, modeles=["openai/gpt-4o-mini"], temperature=0, etiquette="classement",
+        trim_contexte=False, cache=True, fil="fil-cache-s138", client=cli))
+    n_avant = len(journal_modele.appels("fil-cache-s138"))
+    assert n_avant == 1  # le 1er appel (miss) a bien été journalisé
+    asyncio.run(llm_pipeline.completer(
+        prompt, modeles=["openai/gpt-4o-mini"], temperature=0, etiquette="classement",
+        trim_contexte=False, cache=True, fil="fil-cache-s138", client=cli))
+    assert len(journal_modele.appels("fil-cache-s138")) == n_avant  # hit → pas de nouvelle ligne
 
 
 def test_cache_semantique():

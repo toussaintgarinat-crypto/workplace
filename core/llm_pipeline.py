@@ -27,6 +27,7 @@ import httpx
 
 import cache as cache_prefixe  # S90b — aliasé : `cache` est déjà un paramètre booléen de completer()
 import cache_semantique
+import journal_modele
 import journal_usage
 import routage
 import shadow
@@ -103,6 +104,14 @@ def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None)
     return (tokens_in / 1_000_000) * p_in + (tokens_out / 1_000_000) * p_out
 
 
+def _noms_outils(tools: list[dict] | None) -> list[str]:
+    """Noms des outils offerts au modèle pour CET appel — pas leurs schémas complets
+    (statiques/dérivables du code `outils.py`, cf. journal_modele)."""
+    if not tools:
+        return []
+    return [nom for t in tools if (nom := ((t or {}).get("function") or {}).get("name"))]
+
+
 def _ordonner_selon_budget(modeles: list[str]) -> tuple[list[str], bool]:
     """Si le budget est en blocage, on ne garde que les modèles gratuits. Sinon on
     laisse l'ordre voulu par l'appelant. Renvoie (modeles, budget_force_gratuit)."""
@@ -144,6 +153,7 @@ async def completer(
     max_tokens: int | None = None,
     response_format: dict | None = None,
     etiquette: str = "chat",
+    fil: str | None = None,
     trim_contexte: bool = True,
     cache: bool = False,
     conf: dict | None = None,
@@ -204,6 +214,9 @@ async def completer(
             journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
                                        tokens_out=0, cout_usd=0, trimmed_tokens=trimmed,
                                        erreur=msg)
+            journal_modele.enregistrer_appel(fil=fil, etiquette=etiquette, modele=None,
+                                             messages=messages, outils_offerts=_noms_outils(tools),
+                                             erreur=msg)
             return Resultat(erreur=msg, trimmed_tokens=trimmed)
 
         for modele in modeles_effectifs:
@@ -235,6 +248,10 @@ async def completer(
                     modele=modele, etiquette=etiquette, tokens_in=tokens_in,
                     tokens_out=tokens_out, cout_usd=cout, trimmed_tokens=trimmed,
                     routed_to=routed, complexite=complexite)
+                journal_modele.enregistrer_appel(
+                    fil=fil, etiquette=etiquette, modele=modele,
+                    messages=payload["messages"], outils_offerts=_noms_outils(tools),
+                    message_recu=message)
                 # On ne met en cache qu'une vraie réponse texte (pas un appel d'outil).
                 if cacheable and not message.get("tool_calls"):
                     await cache_semantique.stocker(client, messages, scope, message, modele)
@@ -259,6 +276,9 @@ async def completer(
         journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
                                   tokens_out=0, cout_usd=0, trimmed_tokens=trimmed,
                                   erreur=erreur)
+        journal_modele.enregistrer_appel(fil=fil, etiquette=etiquette, modele=None,
+                                         messages=messages, outils_offerts=_noms_outils(tools),
+                                         erreur=erreur)
         return Resultat(erreur=erreur, trimmed_tokens=trimmed, modeles_essayes=essayes)
     finally:
         if proprietaire:
@@ -274,6 +294,7 @@ async def completer_flux(
     temperature: float = 0.2,
     max_tokens: int | None = None,
     etiquette: str = "chat",
+    fil: str | None = None,
     trim_contexte: bool = True,
     conf: dict | None = None,
     timeout: float = 120,
@@ -316,6 +337,9 @@ async def completer_flux(
             msg = "Budget LLM atteint et aucun modèle gratuit configuré."
             journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
                                        tokens_out=0, cout_usd=0, trimmed_tokens=trimmed, erreur=msg)
+            journal_modele.enregistrer_appel(fil=fil, etiquette=etiquette, modele=None,
+                                             messages=messages, outils_offerts=_noms_outils(tools),
+                                             erreur=msg)
             yield {"type": "erreur", "erreur": msg}
             return
 
@@ -394,6 +418,10 @@ async def completer_flux(
                 modele=modele, etiquette=etiquette, tokens_in=tokens_in,
                 tokens_out=tokens_out, cout_usd=cout, trimmed_tokens=trimmed,
                 routed_to=routed, complexite=complexite)
+            journal_modele.enregistrer_appel(
+                fil=fil, etiquette=etiquette, modele=modele,
+                messages=payload["messages"], outils_offerts=_noms_outils(tools),
+                message_recu=message)
             if contenu and not tool_frags and not _sans_cout_marginal(modele) \
                     and shadow.echantillonne(conf):
                 shadow.planifier(messages, conf, contenu, modele, cout, etiquette)
@@ -406,6 +434,9 @@ async def completer_flux(
         erreur = f"Aucun modèle disponible ({derniere_erreur})."
         journal_usage.enregistrer(modele=None, etiquette=etiquette, tokens_in=0,
                                   tokens_out=0, cout_usd=0, trimmed_tokens=trimmed, erreur=erreur)
+        journal_modele.enregistrer_appel(fil=fil, etiquette=etiquette, modele=None,
+                                         messages=messages, outils_offerts=_noms_outils(tools),
+                                         erreur=erreur)
         yield {"type": "erreur", "erreur": erreur}
     finally:
         if proprietaire:

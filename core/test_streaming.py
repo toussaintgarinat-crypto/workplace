@@ -13,6 +13,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["USAGE_LLM_PATH"] = os.path.join(_tmp, "usage.jsonl")
 os.environ["LLM_CACHE_PATH"] = os.path.join(_tmp, "cache.jsonl")
 os.environ["SHADOW_RUNS_PATH"] = os.path.join(_tmp, "shadow.jsonl")
+os.environ["MODELE_JOURNAL_PATH"] = os.path.join(_tmp, "modele.jsonl")
 os.environ.setdefault("LLM_BUDGET_MOIS_USD", "0")
 os.environ.setdefault("GATEWAY_KEY", "sk-test-local")
 sys.path.insert(0, os.path.dirname(__file__))
@@ -21,6 +22,7 @@ import httpx  # noqa: E402
 
 import journal_usage  # noqa: E402
 import llm_pipeline  # noqa: E402
+import journal_modele  # noqa: E402
 
 
 def _sse(*chunks) -> bytes:
@@ -58,6 +60,46 @@ def test_flux_texte():
     assert fin["message"]["content"] == "Bonjour"
     assert fin["resultat"].modele_utilise == "free/x"
     assert fin["resultat"].tokens_out == 2
+
+
+def test_flux_journalise_dans_journal_modele():
+    def h(req):
+        return httpx.Response(200, content=_sse(
+            {"choices": [{"delta": {"content": "Bon"}}]},
+            {"choices": [{"delta": {"content": "jour"}}]},
+        ))
+
+    async def go():
+        async with _client(h) as c:
+            return await _collecter(llm_pipeline.completer_flux(
+                [{"role": "system", "content": "sys"}, {"role": "user", "content": "salut"}],
+                modeles=["free/x"], etiquette="chat", fil="fil-test-streaming", client=c))
+    asyncio.run(go())
+    appels = journal_modele.appels("fil-test-streaming")
+    assert len(appels) == 1
+    assert appels[0]["modele"] == "free/x"
+    assert appels[0]["message_recu"]["content"] == "Bonjour"
+
+
+def test_flux_erreur_journalisee_dans_journal_modele():
+    ancien = journal_usage.peut_appeler_payant
+    journal_usage.peut_appeler_payant = lambda: False
+    try:
+        def h(req):
+            raise AssertionError("aucun appel réseau ne doit partir si le budget bloque")
+
+        async def go():
+            async with _client(h) as c:
+                return await _collecter(llm_pipeline.completer_flux(
+                    [{"role": "user", "content": "x"}], modeles=["openai/gpt-4o"],
+                    etiquette="chat", fil="fil-erreur-streaming", client=c))
+        asyncio.run(go())
+    finally:
+        journal_usage.peut_appeler_payant = ancien
+    appels = journal_modele.appels("fil-erreur-streaming")
+    assert len(appels) == 1
+    assert appels[0]["modele"] is None
+    assert "Budget" in appels[0]["erreur"]
 
 
 # ── tool_calls réassemblés depuis les fragments ───────────────────────────────
