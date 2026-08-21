@@ -83,7 +83,7 @@ def test_check_vivant_detecte_un_ecart_et_ne_leve_jamais(monkeypatch):
     _reset()
     vu = {}
 
-    def _faux_verifier(attendue):
+    def _faux_verifier(attendue, lignes_pre_lues=None):
         vu["appele"] = True
         return False
 
@@ -100,6 +100,18 @@ def test_check_vivant_reussit_normalement():
     _reset()
     assert jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
                                 messages=[{"role": "user", "content": "x"}]) is True
+
+
+def test_payload_non_serialisable_json_retourne_false_ne_leve_jamais():
+    """Si messages/message_recu contient quelque chose de non sérialisable JSON
+    (objet brut, datetime, etc.), enregistrer_appel renvoie False et ne lève JAMAIS.
+    Cela respecte la contrainte best-effort du module."""
+    _reset()
+    # Un objet non sérialisable (object() ne peut pas être converti en JSON)
+    ok = jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
+                              messages=[{"role": "user", "content": object()}])
+    assert ok is False
+    # Pas d'exception levée, juste False
 
 
 if __name__ == "__main__":
