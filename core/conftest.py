@@ -57,6 +57,7 @@ _CHEMINS = {
     "IDENTITE_PATH": "identite.json",
     "LIVRAISONS_DB": "livraisons.db",
     "LLM_CACHE_PATH": "llm_cache.jsonl",
+    "MODELE_JOURNAL_PATH": "journal_modele.jsonl",
     "PROFIL_PATH": "profil.md",
     "PROJETS_PATH": "projets.json",
     "PROPRIOCEPTION_PATH": "proprioception.jsonl",
