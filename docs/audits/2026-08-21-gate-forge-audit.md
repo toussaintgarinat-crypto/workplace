@@ -19,7 +19,7 @@ seulement apparent (drapeau d'affichage sans conséquence structurelle) ?
   `before_call` (seul `block`/`warn`/`allow` sont retournés) — code mort défensif, pas un
   risque, pas de correctif dans ce sprint (YAGNI).
 - **Concurrence sur `accord_action.REGISTRE`** — `demander()`, `consommer()`,
-  `tour_utilisateur()` (accord_action.py:113-171) sont 100% synchrones, aucun `await` interne :
+  `tour_utilisateur()` (accord_action.py:113-173) sont 100% synchrones, aucun `await` interne :
   chacune s'exécute jusqu'au bout avant qu'un autre appel ne reprenne la main. La boucle
   englobante SUSPEND bien entre `consommer()` (assistant.py:347) et `outils.executer()`
   (assistant.py:381) — au `yield` de assistant.py:360 — mais `consommer()` retire l'accord de
@@ -38,14 +38,14 @@ seulement apparent (drapeau d'affichage sans conséquence structurelle) ?
 
 ### Trouvaille 1 (Important) — `tour_utilisateur()` accorde sur un message vide
 
-**Fichier** : `core/accord_action.py:148-171`
+**Fichier** : `core/accord_action.py:148-173`
 
 **Scénario** : `tour_utilisateur(fil, message)` est appelé sans condition à
 `core/routers/assistant.py:223` sur CHAQUE requête `/assistant/chat`, avec
 `dernier_user = ""` si aucun message `role == "user"` n'est trouvé dans la requête
 (routers/assistant.py:202-208). Dans `tour_utilisateur`, un message vide ne matche pas
 `est_refus("")` (le motif de refus ne matche rien sur une chaîne vide) — la méthode tombe
-donc dans la branche qui ACCORDE toutes les demandes en attente (accord_action.py:168-171),
+donc dans la branche qui ACCORDE toutes les demandes en attente (accord_action.py:170-173),
 même si aucun humain n'a réellement parlé. Ça recrée, pour ce cas précis, exactement le trou
 que S222 a fermé : un accord produit sans qu'un vrai tour de parole humain ne se soit
 intercalé. Aucun appelant connu n'envoie aujourd'hui une requête avec un dernier message
@@ -57,7 +57,7 @@ exactement la leçon de l'ADR S222 sur le drapeau SSE).
 
 ### Trouvaille 2 (Important, documentation) — `core/mcp.py` sur-affirme la protection
 
-**Fichier** : `core/mcp.py:19-27` (docstring du module)
+**Fichier** : `core/mcp.py:19-28` (docstring du module)
 
 **Scénario** : le docstring affirme *« La confirmation des actions (`confirme=true`) reste
 EXIGÉE par `outils.executer` — on ne contourne aucun garde-fou »*. C'est trompeur :
@@ -65,7 +65,7 @@ EXIGÉE par `outils.executer` — on ne contourne aucun garde-fou »*. C'est tro
 `accord_action` — la seule vérification de `confirme` est **textuelle**, dans
 `outils_communs._confirmation()` (déclenchée à `outils_communs.py:175-176`), qui refuse
 seulement si `confirme` est absent. Un client MCP qui connaît la convention et passe
-`confirme=true` dès le PREMIER appel (`core/mcp.py:103`, `tools/call` → `outils.executer`
+`confirme=true` dès le PREMIER appel (`core/mcp.py:104`, `tools/call` → `outils.executer`
 direct) exécute immédiatement, sans jamais passer par `accord_action.REGISTRE` — exactement
 le chemin que `docs/decisions/2026-08-09-gate-action-structurel.md` documente déjà comme
 non couvert (« co-agent autonome et Gateway MCP … ne sont pas couverts »). Le code se comporte
@@ -84,16 +84,18 @@ de la trousse OFFERTE au LLM du co-agent — c'est le vrai garde-fou souverain d
 docstring du module ("le co-agent est LECTURE SEULE"). Mais `coagent.py:192` exécute
 `outils.executer(nom, args, registre)` avec le `nom` renvoyé par le LLM, SANS revérifier que ce
 nom fait partie de la trousse offerte. `outils.executer`/`_executer` (core/outils.py) ne fait
-lui-même aucun contrôle d'allowlist par nom — contrairement à `core/mcp.py:100`
+lui-même aucun contrôle d'allowlist par nom — contrairement à `core/mcp.py:101`
 (`tools/call`), qui valide explicitement `nom` contre `lister_outils(registre)` avant tout
 dispatch. Un LLM qui émettrait un nom d'outil hors de sa trousse (action incluse) verrait donc
-cet appel s'exécuter, faute de second contrôle à l'exécution.
+cet appel s'exécuter — sous réserve, comme pour le contournement MCP de la Trouvaille 2, qu'il
+pense aussi à passer `confirme=true` : la garde textuelle de `_confirmation()`/des dispatchers
+de domaine s'applique ici aussi, elle n'est simplement pas doublée d'un contrôle d'allowlist.
 
 **Verdict** : Différée — hors périmètre de ce sprint. L'ADR S222
 (`docs/decisions/2026-08-09-gate-action-structurel.md:99-103`) note déjà que "le co-agent
 mériterait de ne pas pouvoir exécuter d'action confirmée du tout" et que c'est "un sprint à
 part". Ce correctif, quand il sera fait, est court : valider `nom` contre la trousse offerte
-avant `outils.executer` à `coagent.py:192`, même motif que `mcp.py:100`.
+avant `outils.executer` à `coagent.py:192`, même motif que `mcp.py:101`.
 
 ## Verdict final
 
