@@ -124,6 +124,56 @@ def test_panne_reseau_sans_cache_renvoie_vide():
     assert asyncio.run(go()) == {}
 
 
+# ── resoudre / resoudre_avec_provenance ─────────────────────────────────────
+
+def test_resoudre_sans_couches_egale_charger():
+    import config_assistant
+    _reset_cache()
+    def h(req):
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.resoudre("acme", "alice", client=c)
+    assert asyncio.run(go()) == config_assistant.charger()
+
+
+def test_resoudre_precedence_global_organisation_utilisateur():
+    _reset_cache()
+    def h(req):
+        if "/entites/_organisation/" in req.url.path:
+            return httpx.Response(200, json=[
+                {"persona": "pro", "fallback_models": ["m-org"], "_id": "r1"}
+            ])
+        if "/entites/alice/" in req.url.path:
+            return httpx.Response(200, json=[{"persona": "chaleureux", "_id": "r2"}])
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.resoudre("acme", "alice", client=c)
+    conf = asyncio.run(go())
+    assert conf["persona"] == "chaleureux"          # utilisateur gagne sur organisation
+    assert conf["fallback_models"] == ["m-org"]      # organisation gagne sur global
+    assert conf["langue"] == "fr"                    # ni touché : reste le global
+
+
+def test_resoudre_avec_provenance():
+    _reset_cache()
+    def h(req):
+        if "/entites/_organisation/" in req.url.path:
+            return httpx.Response(200, json=[{"langue": "en", "_id": "r1"}])
+        if "/entites/alice/" in req.url.path:
+            return httpx.Response(200, json=[{"persona": "pro", "_id": "r2"}])
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.resoudre_avec_provenance("acme", "alice", client=c)
+    r = asyncio.run(go())
+    assert r["resolu"]["langue"] == "en"
+    assert r["resolu"]["persona"] == "pro"
+    assert r["provenance"] == {"langue": "organisation", "persona": "utilisateur"}
+    assert "model" not in r["provenance"]            # jamais touché → pas de provenance
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
