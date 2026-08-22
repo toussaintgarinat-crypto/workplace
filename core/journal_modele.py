@@ -16,14 +16,17 @@ Accroché dans `llm_pipeline.completer()`/`completer_flux()`, au même point que
 finalisés (après résumé à froid, trim, cache-préfixe), et le seul point de passage de
 TOUS les appels LLM du Cœur (chat, classement, MOA, briefing, proprioception…).
 
-Runtime check vivant : après CHAQUE écriture, on relit immédiatement la dernière ligne
-et on vérifie qu'elle égale ce qu'on vient de sérialiser. Un écart (troncature disque,
+Runtime check vivant : après CHAQUE écriture, on relit immédiatement la QUEUE du
+fichier (pas tout le fichier — coûteux dès qu'il grossit) et on vérifie que sa
+dernière ligne égale ce qu'on vient de sérialiser. Un écart (troncature disque,
 écriture concurrente corrompue) loggue une erreur — jamais une exception, même
 convention best-effort non bloquante que le reste des journaux du Cœur.
 
 Best-effort et NON bloquant : journaliser ne doit jamais casser un appel LLM. Borné en
 taille (`MODELE_JOURNAL_MAX` lignes, plus bas que les journaux texte vu la taille des
-lignes qui embarquent des historiques de messages entiers).
+lignes qui embarquent des historiques de messages entiers) — le bornage réel
+(lecture+réécriture intégrale, coûteux) n'est vérifié qu'une fois tous les
+`INTERVALLE_BORNAGE` appels (compteur en mémoire de process), pas à chaque écriture.
 """
 import json
 import logging
@@ -38,6 +41,17 @@ CHEMIN = Path(os.getenv("MODELE_JOURNAL_PATH", "/data/journal_modele.jsonl"))
 
 _verrou = threading.Lock()
 
+# Taille de la queue relue pour le check vivant (pas tout le fichier — cf. module docstring).
+# 1 Mo est largement suffisant même pour une ligne embarquant un gros historique de messages.
+_TAILLE_QUEUE_CHECK = 1024 * 1024
+
+# Le bornage réel (lecture+réécriture intégrale, coûteux) n'est vérifié qu'une fois tous les
+# INTERVALLE_BORNAGE appels — pas à CHAQUE écriture. Compteur en mémoire de process : remis à
+# zéro implicitement à chaque redémarrage (pas besoin de persistance, un léger dépassement du
+# bornage au redémarrage n'est pas un problème).
+INTERVALLE_BORNAGE = 50
+_compteur_depuis_bornage = 0
+
 
 def _max() -> int:
     try:
@@ -46,35 +60,74 @@ def _max() -> int:
         return 2000
 
 
-def _verifier_derniere_ligne(attendue: dict, lignes_pre_lues: list[dict] | None = None) -> bool:
-    """Runtime check : vérifie que la dernière ligne du fichier égale exactement ce qu'on vient
-    de sérialiser. Appelé sous le verrou, juste après l'écriture.
+def _verifier_derniere_ligne(attendue: dict) -> bool:
+    """Runtime check bon marché : lit seulement la QUEUE du fichier (pas tout le fichier —
+    lecture+parse intégrale coûteuse, cf. revue finale S234) et vérifie que sa dernière
+    ligne égale exactement ce qu'on vient de sérialiser. Appelé sous le verrou, juste après
+    l'écriture.
 
-    Si lignes_pre_lues est fourni, les utilise (évite une 2e lecture du fichier).
-    Sinon relit le fichier (pour backward compatibility / monkeypatch de tests)."""
-    if lignes_pre_lues is not None:
-        lignes = lignes_pre_lues
-    else:
-        try:
-            contenu = CHEMIN.read_text(encoding="utf-8")
-        except OSError:
-            logger.error("journal_modele: invariant violé — relecture impossible juste après écriture")
-            return False
-        lignes = [l for l in contenu.splitlines() if l.strip()]
-        try:
-            lignes = [json.loads(l) for l in lignes]
-        except json.JSONDecodeError:
-            logger.error("journal_modele: invariant violé — dernière ligne illisible juste après écriture")
-            return False
-
-    if not lignes:
-        logger.error("journal_modele: invariant violé — fichier vide juste après écriture")
+    Si la queue relue ne contient aucune ligne complète (cas extrême d'une ligne
+    individuelle plus grosse que la queue), c'est un échec de vérification honnête —
+    log + False, jamais une exception ni une supposition optimiste."""
+    try:
+        taille = CHEMIN.stat().st_size
+        taille_lue = min(taille, _TAILLE_QUEUE_CHECK)
+        with CHEMIN.open("rb") as f:
+            f.seek(taille - taille_lue)
+            bloc = f.read()
+    except OSError:
+        logger.error("journal_modele: invariant violé — relecture impossible juste après écriture")
         return False
-    if lignes[-1] != attendue:
+
+    texte = bloc.decode("utf-8", errors="replace")
+    if taille > taille_lue:
+        # Le bloc peut commencer au milieu d'une ligne : on jette le fragment initial
+        # potentiellement tronqué. La DERNIÈRE ligne, elle, est forcément complète — le
+        # fichier se termine toujours par un "\n" (cf. écriture ci-dessous).
+        idx = texte.find("\n")
+        texte = texte[idx + 1:] if idx != -1 else ""
+
+    lignes = [l for l in texte.splitlines() if l.strip()]
+    if not lignes:
+        logger.error("journal_modele: invariant violé — aucune ligne complète dans la queue "
+                     "relue (ligne individuelle probablement > %d octets)", _TAILLE_QUEUE_CHECK)
+        return False
+    try:
+        derniere = json.loads(lignes[-1])
+    except json.JSONDecodeError:
+        logger.error("journal_modele: invariant violé — dernière ligne illisible juste après écriture")
+        return False
+    if derniere != attendue:
         logger.error("journal_modele: invariant violé — la dernière ligne relue diffère de "
                      "ce qui vient d'être écrit")
         return False
     return True
+
+
+def _borner_si_necessaire() -> None:
+    """Bornage best-effort — coûteux (lecture+réécriture intégrale du fichier), donc pas
+    évalué à CHAQUE écriture : seulement une fois tous les INTERVALLE_BORNAGE appels
+    (compteur en mémoire de process). Le fichier reste borné à ~MODELE_JOURNAL_MAX lignes
+    À TERME, avec une tolérance de l'ordre d'INTERVALLE_BORNAGE lignes entre 2 vérifications
+    — pas garanti exactement après chaque appel individuel.
+
+    DOIT tourner INCONDITIONNELLEMENT, y compris quand le check vivant échoue (c'est le
+    cas où on en a le plus besoin). Appelé sous le verrou, indépendamment de la vérification
+    d'intégrité."""
+    global _compteur_depuis_bornage
+    _compteur_depuis_bornage += 1
+    if _compteur_depuis_bornage < INTERVALLE_BORNAGE:
+        return
+    _compteur_depuis_bornage = 0
+
+    lignes = _lignes()
+    mx = _max()
+    if len(lignes) > int(mx * 1.2):
+        try:
+            CHEMIN.write_text("\n".join(json.dumps(x, ensure_ascii=False)
+                                        for x in lignes[-mx:]) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 def enregistrer_appel(*, fil: str | None, etiquette: str, modele: str | None,
@@ -98,8 +151,9 @@ def enregistrer_appel(*, fil: str | None, etiquette: str, modele: str | None,
             CHEMIN.parent.mkdir(parents=True, exist_ok=True)
             with CHEMIN.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(ligne, ensure_ascii=False) + "\n")
-            # Une seule lecture du fichier après l'écriture (utilisée pour vérification + bornage)
-            ok = _verifier_et_borner_avec_lignes(ligne)
+            ok = _verifier_derniere_ligne(ligne)
+            # Bornage INCONDITIONNEL, même si le check vivant a échoué (cf. docstring).
+            _borner_si_necessaire()
             return ok
     except (OSError, TypeError, ValueError) as e:
         logger.warning("journal_modele: écriture impossible : %s", e)
@@ -122,29 +176,6 @@ def _lignes() -> list[dict]:
     except OSError:
         return []
     return out
-
-
-def _verifier_et_borner_avec_lignes(attendue: dict) -> bool:
-    """Lit le fichier UNE FOIS après écriture pour vérifier l'intégrité (dernière ligne)
-    et décider du bornage. Appelé sous le verrou.
-
-    Important : le bornage DOIT tourner INCONDITIONNELLEMENT, indépendamment du résultat
-    de la vérification. C'est critique pour garder la taille bornée justement quand
-    une corruption/troncature est détectée."""
-    lignes = _lignes()
-    # Appel _verifier_derniere_ligne en passant les lignes déjà lues (évite une 2e lecture du fichier)
-    ok = _verifier_derniere_ligne(attendue, lignes_pre_lues=lignes)
-
-    # Bornage INCONDITIONNELLEMENT, même si la vérification a échoué
-    mx = _max()
-    if len(lignes) > int(mx * 1.2):
-        try:
-            CHEMIN.write_text("\n".join(json.dumps(x, ensure_ascii=False)
-                                        for x in lignes[-mx:]) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-
-    return ok
 
 
 def appels(fil: str, limite: int = 100) -> list[dict]:
