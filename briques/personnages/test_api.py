@@ -157,11 +157,18 @@ def test_portrait_descendant():
     assert data["traditions"]["signe_solaire"]["nom"] == "Vierge"
     assert data["traditions"]["maya"]["glyphe"]
     p = data["portrait"]
-    assert p["archetype"] and len(p["forces"]) == 3
+    # forces = 3 issues des stats + jusqu'à 3 issues des aspects majeurs du theme_complet
+    assert p["archetype"] and 3 <= len(p["forces"]) <= 6
     assert p["pierre_equilibrage"]["compense"] == p["faiblesse"]
-    # empreinte expliquée : chaque tradition vient avec son sens
+    assert data["theme_complet"]["fondations"]["soleil"]
+    # empreinte expliquée : chaque tradition vient avec son sens (les angles/dominantes
+    # du theme_complet enrichi n'ont pas de table de sens dédiée, comportement upstream)
     emp = data["empreinte"]
-    assert emp and all(e["valeur"] and e["sens"] for e in emp)
+    SANS_SENS = {"theme_fondation_ascendant", "theme_fondation_descendant",
+                 "theme_fondation_milieu_du_ciel", "theme_fondation_fond_du_ciel",
+                 "theme_dominante_planete", "theme_dominante_signe", "theme_dominante_maison"}
+    assert emp and all(e["valeur"] for e in emp)
+    assert all(e["sens"] for e in emp if e["id"] not in SANS_SENS)
     assert any(e["cle"] == "Égypte" for e in emp)
 
 

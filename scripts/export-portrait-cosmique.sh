@@ -13,8 +13,10 @@ EXCLUDES=(--exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache')
 
 mkdir -p "$DEST/engine"
 
-FICHIERS=(traditions.py synthese.py significations.py
-          test_traditions.py test_synthese.py test_significations.py)
+FICHIERS=(traditions.py synthese.py significations.py aspects.py dominantes.py
+          ephemeride.py maisons.py theme_complet.py
+          test_traditions.py test_synthese.py test_significations.py test_aspects.py
+          test_dominantes.py test_ephemeride.py test_maisons.py test_theme_complet.py)
 
 for f in "${FICHIERS[@]}"; do
     cp "$SRC/$f" "$DEST/engine/$f"
