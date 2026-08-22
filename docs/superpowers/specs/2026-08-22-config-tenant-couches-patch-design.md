@@ -101,8 +101,16 @@ immédiatement l'entrée de cache correspondante (write-through, pas d'attente d
   le front (panneau ⚙ Cerveau) et, après le changement de call-site ci-dessus, le
   chemin de chat.
 - `GET|PUT /assistant/config/organisation` — lit/écrit la couche organisation seule
-  (pas le résolu). `org_id` provient de la même résolution que `tenant_actuel` côté
-  brique `données` (JWT sinon `X-Org-ID` sinon `"defaut"`) — `"defaut"` est une
+  (pas le résolu). `org_id` provient de `contexte_tenant.contexte_actuel().org_id`, qui
+  aujourd'hui ne vient QUE de l'en-tête `X-Org-ID` posé par l'appelant — aucune
+  dérivation JWT/session n'existe dans ce dépôt (aucune table d'appartenance
+  utilisateur→organisation nulle part). C'est une frontière de confiance déjà partagée
+  par d'autres appels S2S existants (`core/outils_domaines/documents.py`), pas une
+  régression de ce chantier — mais elle devient ici porteuse d'enjeu (choix du
+  modèle/persona d'un tenant entier). Si ce chantier passe en usage multi-org réel,
+  cette frontière devra être fermée séparément (dériver `org_id` d'une revendication de
+  session plutôt que d'un en-tête arbitraire) — hors périmètre ici (cf. revue finale de
+  branche, 2026-08-22). `"defaut"` reste une
   organisation légitime comme une autre, pas un cas rejeté : un déploiement mono-org
   peut ainsi patcher sa propre config org sans configurer Keycloak au préalable.
 - `GET|PUT /assistant/config/utilisateur` — lit/écrit la couche utilisateur seule.
