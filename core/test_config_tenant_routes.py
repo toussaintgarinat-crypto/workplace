@@ -25,7 +25,7 @@ from routers.assistant import (  # noqa: E402
 
 
 def test_organisation_put_cle_inconnue_leve_400():
-    contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
+    jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
     async def faux_ecrire(org_id, patch, client=None):
         raise ValueError("clé(s) inconnue(s) : bidule")
     ancien = config_tenant.ecrire_couche_organisation
@@ -36,10 +36,11 @@ def test_organisation_put_cle_inconnue_leve_400():
         assert exc.value.status_code == 400
     finally:
         config_tenant.ecrire_couche_organisation = ancien
+        contexte_tenant.reinitialiser(jetons)
 
 
 def test_organisation_put_panne_reseau_leve_502():
-    contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
+    jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
     async def faux_ecrire(org_id, patch, client=None):
         raise httpx.ConnectError("refused", request=httpx.Request("GET", "http://x"))
     ancien = config_tenant.ecrire_couche_organisation
@@ -50,10 +51,11 @@ def test_organisation_put_panne_reseau_leve_502():
         assert exc.value.status_code == 502
     finally:
         config_tenant.ecrire_couche_organisation = ancien
+        contexte_tenant.reinitialiser(jetons)
 
 
 def test_utilisateur_put_cle_inconnue_leve_400():
-    contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
+    jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
     async def faux_ecrire(org_id, utilisateur, patch, client=None):
         raise ValueError("clé(s) inconnue(s) : bidule")
     ancien = config_tenant.ecrire_couche_utilisateur
@@ -64,3 +66,4 @@ def test_utilisateur_put_cle_inconnue_leve_400():
         assert exc.value.status_code == 400
     finally:
         config_tenant.ecrire_couche_utilisateur = ancien
+        contexte_tenant.reinitialiser(jetons)
