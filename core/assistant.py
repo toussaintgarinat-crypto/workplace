@@ -22,6 +22,8 @@ import httpx
 
 import catalogue
 import config_assistant
+import config_tenant
+import contexte_tenant
 import conscience
 import guardrails_outils
 import langue as langue_mod
@@ -148,8 +150,10 @@ async def converser(messages: list[dict], registre,
         + maintenant.strftime("%A %d %B %Y, %H:%M")
         + f" (ISO : {maintenant.isoformat(timespec='minutes')}, fuseau Europe/Paris)."
     )
-    # Modèle + persona lus à CHAUD (réglables depuis le front, cf. config_assistant).
-    conf = config_assistant.charger()
+    # Modèle + persona lus à CHAUD, résolus par tenant (S234-veille chantier 3) :
+    # global < organisation < utilisateur — cf. config_tenant.py.
+    ctx = contexte_tenant.contexte_actuel()
+    conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur)
     # Addendum d'auto-amélioration (S69) : une consigne issue d'une proposition VALIDÉE
     # puis APPLIQUÉE (gate humain). Vide tant que rien n'a été activé → prompt fondateur.
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
