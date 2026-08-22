@@ -279,6 +279,51 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 
 ---
 
+## S93 — Seam `EspaceTravail` (local ↔ distant) ✅ LIVRÉ (2026-08-22)
+
+**Livré.** 4e et dernier chantier de la veille GitHub deepseek-ai/deepseek-harness (Cordis) :
+applique le pattern **« capability seam » à 3 rôles** (Service Definition / Provider /
+Consumer) à l'espace de travail du chantier. Jusqu'ici `main.py` (le Consumer) importait
+directement `git_atelier` : le worktree jetable était câblé en dur sur CETTE machine, aucune
+façon de basculer un jour vers un sandbox distant (conteneur, VM dédiée) sans réécrire les
+endpoints. Nouveau module `espace_travail.py` :
+  - **Service Definition** `EspaceTravail` : interface (`nom`, `disponible()`, `ouvrir`/`diff`/
+    `resume_diff`/`briques_touchees`/`fusionner`/`jeter`) — le contrat dont `main.py` a
+    réellement besoin, indépendant de git/du local.
+  - **Provider** `EspaceTravailLocal` : délègue tel quel à `git_atelier` (comportement
+    HISTORIQUE inchangé, `git_atelier.ErreurGit` traduite en `ErreurEspace` générique).
+  - **Provider** `EspaceTravailDistant` : STUB HONNÊTE (même philosophie que le mock `Factice`
+    d'`agents.py`) — `disponible()` répond toujours `False`, chaque opération lève
+    `ErreurEspace` avec un message clair plutôt qu'un faux succès. Rien n'est implémenté :
+    ce chantier pose le SEAM, pas un vrai sandbox distant.
+  - `choisir_espace(nom="")` : factory (env `DEV_ESPACE`), retombe TOUJOURS sur Local si le nom
+    demandé est absent/indisponible — jamais de silence trompeur, même logique que
+    `agents.choisir()`.
+
+`main.py` refactoré : les 6 usages directs de `git_atelier` (ouvrir/diff/resume_diff/
+briques_touchees/fusionner/jeter + `/sante`) remplacés par `_espace()` = `choisir_espace()` ;
+`import git_atelier` retiré de `main.py` — le Consumer ne connaît plus que l'interface.
+`git_atelier.py` lui-même INCHANGÉ (toujours la seule implémentation réelle, testée en direct
+par `test_git_atelier.py`).
+
+**+17 tests** (`test_espace_travail.py`) → **90 tests brique dev verts** (0 régression) :
+délégation fidèle de Local sur un vrai dépôt jetable (round-trip ouvrir/diff/briques_touchees/
+fusion+conflit, même invariant « prod jamais touchée » que `test_git_atelier.py`), honnêteté de
+Distant (jamais disponible, lève sur toute opération), et `choisir_espace()` (défaut local, nom
+explicite, repli silencieux-mais-honnête sur nom inconnu/indisponible, lecture `DEV_ESPACE`).
+
+**Revue finale** (skill `code-review`, niveau high) : voir résultat consigné dans la mémoire du
+sprint.
+
+**Why.** Clôt la veille [[veille-deepseek-harness-cordis-plugin]] (4/4 chantiers). Le seam est
+POSÉ, pas exploité : aucun provider distant réel n'existe encore, mais `main.py` n'a plus besoin
+d'être retouché le jour où un vrai sandbox distant sera câblé — seul `EspaceTravailDistant`
+changera.
+
+**Dépend de.** S86 (le filet git existant, `git_atelier.py`, non modifié par ce chantier).
+
+---
+
 ### Récap des numéros
 
 | Sprint | Titre | État |
@@ -290,3 +335,4 @@ gate, diff, fusion sur validation, le tout visible dans l'onglet + l'IDE.
 | **S90** | Porte progressive (niveau-0/1) + prompt caching | ✅ livré + prouvé LIVE (cache 12×, 32 tests) |
 | **S91** | Création de skills + accroche MCP | ✅ livré + prouvé LIVE (v0.5.0, 52 tests) |
 | **S92** | IDE code-server + pilotage Cœur `dev_demander` | ✅ livré + prouvé LIVE (v0.6.0, 55 tests) |
+| **S93** | Seam `EspaceTravail` (local ↔ distant) | ✅ livré (90 tests) |
