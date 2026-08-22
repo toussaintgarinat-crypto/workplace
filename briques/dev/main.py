@@ -58,6 +58,13 @@ Nouveau en v0.6.0 (S92 — pilotage du Cœur « à la voix » + IDE web, le spri
     tout le cycle plan→code→gate→fusion EN PARLANT, gate dans le chat (boutons S76).
   • IDE web : un conteneur `code-server` monté sur le dépôt → onglet iframe « Atelier dev » au
     dashboard du Cœur (cf. briques/dev/docker-compose.yml), avec la task trace S89 à côté.
+
+Nouveau en v0.8.0 (S93 — seam `EspaceTravail`, refactor interne sans nouvelle capacité) :
+  • Les 6 opérations de cycle de vie du chantier (ouvrir/diff/resume_diff/briques_touchees/
+    fusionner/jeter) ne passent plus par `git_atelier` directement mais par
+    `espace_travail.choisir_espace()` — une interface `EspaceTravail` (Service Definition) avec
+    un provider `Local` (comportement inchangé) et un provider `Distant` (STUB honnête, non
+    implémenté). Prépare un futur sandbox distant sans retoucher ce fichier.
 """
 from __future__ import annotations
 
@@ -75,11 +82,16 @@ from pydantic import BaseModel
 
 import agents
 import domaine
-import git_atelier
+import espace_travail
 import plan as plan_mod
 import rebuild
 import skills_atelier
 import traceur
+
+
+def _espace() -> espace_travail.EspaceTravail:
+    """L'espace de travail du chantier (seam local/distant, cf. `espace_travail.py`)."""
+    return espace_travail.choisir_espace()
 
 DEV_DB = os.environ.get("DEV_DB", os.path.join(os.path.dirname(__file__), "chantiers.json"))
 DEV_KEY = os.environ.get("DEV_KEY", "")  # vide = ouvert (atelier local) ; défini = exigé
@@ -91,7 +103,7 @@ def _debloquees() -> frozenset:
     return frozenset(b.strip() for b in brut.split(",") if b.strip())
 
 
-app = FastAPI(title="Workplace — auto-atelier dev", version="0.7.0")
+app = FastAPI(title="Workplace — auto-atelier dev", version="0.8.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o] or ["*"],
@@ -162,7 +174,7 @@ def sante():
     return {
         "ok": True,
         "version": app.version,
-        "depot_git": git_atelier.est_un_depot(),
+        "depot_git": _espace().disponible(),
         "agents_disponibles": [a().nom for a in (agents.ClaudeCode, agents.OpenCode, agents.Factice)
                                if a().disponible()],
     }
@@ -171,7 +183,8 @@ def sante():
 @app.post("/chantiers", dependencies=[Depends(garde)], status_code=201)
 def ouvrir(corps: ChantierEntree):
     """Ouvre un chantier : worktree isolé + branche neuve depuis la base. Prod intacte."""
-    if not git_atelier.est_un_depot():
+    espace = _espace()
+    if not espace.disponible():
         raise HTTPException(status_code=503, detail="dépôt git introuvable : pas de filet")
     if not corps.intention.strip():
         raise HTTPException(status_code=422, detail="intention requise")
@@ -180,8 +193,8 @@ def ouvrir(corps: ChantierEntree):
     if domaine.branche_protegee(branche):
         raise HTTPException(status_code=400, detail="branche protégée refusée")
     try:
-        worktree = git_atelier.ouvrir_chantier(branche, corps.base)
-    except git_atelier.ErreurGit as e:
+        worktree = espace.ouvrir(branche, corps.base)
+    except espace_travail.ErreurEspace as e:
         raise HTTPException(status_code=409, detail=str(e))
     ch = domaine.Chantier(
         id=cid, intention=corps.intention, brique_cible=corps.brique_cible,
@@ -308,8 +321,8 @@ async def demander(corps: ChantierEntree):
     ch = _chantier(cid)
     if ch.statut == domaine.REVUE:     # diff prêt → on joint le résumé pour la revue au chat
         try:
-            extra["diff_stats"] = git_atelier.resume_diff(ch.branche, ch.base)
-        except git_atelier.ErreurGit:
+            extra["diff_stats"] = _espace().resume_diff(ch.branche, ch.base)
+        except espace_travail.ErreurEspace:
             pass
     return {**ch_dict, **extra}
 
@@ -318,10 +331,11 @@ async def demander(corps: ChantierEntree):
 def diff(cid: str):
     """Le diff de la branche par rapport à la base (ce que l'humain relit au gate)."""
     ch = _chantier(cid)
+    espace = _espace()
     try:
-        texte = git_atelier.diff_chantier(ch.branche, ch.base)
-        stats = git_atelier.resume_diff(ch.branche, ch.base)
-    except git_atelier.ErreurGit as e:
+        texte = espace.diff(ch.branche, ch.base)
+        stats = espace.resume_diff(ch.branche, ch.base)
+    except espace_travail.ErreurEspace as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"branche": ch.branche, "base": ch.base, "stats": stats, "diff": texte}
 
@@ -373,9 +387,10 @@ def fusionner(cid: str, corps: FusionEntree):
                             detail="confirmation requise (confirme=true) : la fusion modifie main")
 
     # Garde-fou briques sensibles : on lit le diff pour savoir ce qui serait touché.
+    espace = _espace()
     try:
-        touchees = git_atelier.briques_touchees(ch.branche, ch.base)
-    except git_atelier.ErreurGit as e:
+        touchees = espace.briques_touchees(ch.branche, ch.base)
+    except espace_travail.ErreurEspace as e:
         raise HTTPException(status_code=409, detail=str(e))
     autorisee, bloquantes = domaine.fusion_autorisee(touchees, _debloquees())
     if not autorisee:
@@ -386,8 +401,8 @@ def fusionner(cid: str, corps: FusionEntree):
 
     # Fusion réelle dans main (merge --no-ff, jamais de force). Un conflit est remonté propre.
     try:
-        sortie = git_atelier.fusionner(ch.branche, ch.base)
-    except git_atelier.ErreurGit as e:
+        sortie = espace.fusionner(ch.branche, ch.base)
+    except espace_travail.ErreurEspace as e:
         raise HTTPException(status_code=409, detail=str(e))
 
     # Rebuild CIBLÉ des briques modifiées (simulé honnête par défaut ; réel si DEV_REBUILD=1).
@@ -395,7 +410,7 @@ def fusionner(cid: str, corps: FusionEntree):
 
     # La branche est fusionnée → on transite et on jette le worktree (le chantier est clos).
     ch.avancer(domaine.FUSIONNE)
-    git_atelier.jeter_chantier(ch.branche)
+    espace.jeter(ch.branche)
     _ranger(ch)
     return {"ok": True, "statut": ch.statut, "fusion": sortie,
             "briques_touchees": touchees, "rebuilds": rebuilds}
@@ -405,7 +420,7 @@ def fusionner(cid: str, corps: FusionEntree):
 def jeter(cid: str):
     """Jette le worktree + la branche : le chantier disparaît, la prod n'a jamais bougé."""
     ch = _chantier(cid)
-    git_atelier.jeter_chantier(ch.branche)
+    _espace().jeter(ch.branche)
     traceur.Traceur(traceur.fichier_pour(cid)).effacer()  # la trace live disparaît avec le chantier
     ch.statut = domaine.JETE
     _ranger(ch)
