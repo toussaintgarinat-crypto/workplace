@@ -53,6 +53,77 @@ def test_fusion_ne_mute_pas_base():
     assert base == {"a": 1}
 
 
+# ── _lire_couche / lire_couche_organisation / lire_couche_utilisateur ──────
+
+def test_lire_couche_absente_renvoie_vide():
+    _reset_cache()
+    def h(req):
+        assert req.headers.get("X-Org-ID") == "acme"
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    assert asyncio.run(go()) == {}
+
+
+def test_lire_couche_existante_sans_metadonnees():
+    _reset_cache()
+    def h(req):
+        return httpx.Response(200, json=[
+            {"persona": "pro", "_id": "r1", "_cree": "t0", "_maj": "t1"}
+        ])
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.lire_couche_utilisateur("acme", "alice", client=c)
+    assert asyncio.run(go()) == {"persona": "pro"}
+
+
+def test_cache_evite_appel_reseau_dans_ttl():
+    _reset_cache()
+    appels = []
+    def h(req):
+        appels.append(1)
+        return httpx.Response(200, json=[{"persona": "pro", "_id": "r1"}])
+    async def go():
+        async with _client(h) as c:
+            await config_tenant.lire_couche_organisation("acme", client=c)
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    resultat = asyncio.run(go())
+    assert resultat == {"persona": "pro"}
+    assert len(appels) == 1
+
+
+def test_panne_reseau_repli_cache_expire():
+    _reset_cache()
+    def h_ok(req):
+        return httpx.Response(200, json=[{"persona": "pro", "_id": "r1"}])
+    async def premiere_lecture():
+        async with _client(h_ok) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    asyncio.run(premiere_lecture())
+    # Fait vieillir l'entrée de cache au-delà du TTL sans la vider.
+    cle = ("organisation", "acme", config_tenant.ENTITE_ORGANISATION)
+    _, patch = config_tenant._cache[cle]
+    config_tenant._cache[cle] = (0.0, patch)
+
+    def h_down(req):
+        raise httpx.ConnectError("refused", request=req)
+    async def deuxieme_lecture():
+        async with _client(h_down) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    assert asyncio.run(deuxieme_lecture()) == {"persona": "pro"}
+
+
+def test_panne_reseau_sans_cache_renvoie_vide():
+    _reset_cache()
+    def h_down(req):
+        raise httpx.ConnectError("refused", request=req)
+    async def go():
+        async with _client(h_down) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    assert asyncio.run(go()) == {}
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):
