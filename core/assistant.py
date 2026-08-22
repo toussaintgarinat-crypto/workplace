@@ -152,11 +152,14 @@ async def converser(messages: list[dict], registre,
     )
     # Modèle + persona lus à CHAUD, résolus par tenant (S234-veille chantier 3) :
     # global < organisation < utilisateur — cf. config_tenant.py.
-    # Timeout court, pas celui (5 s) du chemin d'écriture admin : ici le repli ({} =
+    # Timeout court (3 s), sous celui (5 s) du chemin d'écriture admin : ici le repli ({} =
     # aucune surcharge) est inoffensif par construction, donc échouer vite vaut mieux
-    # que retarder tout le tour de chat (revue finale de branche 2026-08-22).
+    # que retarder tout le tour de chat. Relevé de 1.5 s à 3 s en 2e revue finale
+    # (2026-08-22) : à 1.5 s, une brique données simplement lente (ex. 2 s sous charge,
+    # pas en panne) déclenchait le cache négatif partagé (10 s) — aveuglant AUSSI les
+    # lecteurs admin (timeout 5 s) qui auraient pourtant réussi seuls.
     ctx = contexte_tenant.contexte_actuel()
-    async with httpx.AsyncClient(timeout=1.5) as _config_client:
+    async with httpx.AsyncClient(timeout=3) as _config_client:
         conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur, client=_config_client)
     # Addendum d'auto-amélioration (S69) : une consigne issue d'une proposition VALIDÉE
     # puis APPLIQUÉE (gate humain). Vide tant que rien n'a été activé → prompt fondateur.

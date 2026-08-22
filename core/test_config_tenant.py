@@ -279,6 +279,15 @@ def test_valider_patch_accepte_types_corrects_de_chaque_famille():
     })  # ne lève pas
 
 
+def test_types_simples_couvre_tout_le_schema_connu():
+    # Garde-fou anti-régression : si une future clé est ajoutée à
+    # config_assistant.charger() sans entrée correspondante ici, elle
+    # échapperait à toute validation de type dans valider_patch — exactement
+    # le bug Critical corrigé en revue finale (2026-08-22).
+    couvertes = set(config_tenant._TYPES_SIMPLES) | {"fallback_models", "voix_fin_mode"}
+    assert config_tenant._cles_connues() <= couvertes
+
+
 def test_ecrire_couche_utilisateur_id_reserve_leve_valeur_invalide():
     async def go():
         return await config_tenant.ecrire_couche_utilisateur("acme", "_organisation", {"persona": "x"})
