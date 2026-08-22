@@ -100,12 +100,7 @@ async def lire_couche_utilisateur(org_id: str | None, utilisateur: str,
 async def resoudre(org_id: str | None, utilisateur: str,
                    client: httpx.AsyncClient | None = None) -> dict:
     """Config résolue : global < organisation < utilisateur (JSON Merge Patch)."""
-    import config_assistant  # import tardif : évite tout cycle au chargement
-    base = config_assistant.charger()
-    patch_org = await lire_couche_organisation(org_id, client)
-    fusionne = _fusion(base, patch_org)
-    patch_user = await lire_couche_utilisateur(org_id, utilisateur, client) if utilisateur else {}
-    return _fusion(fusionne, patch_user)
+    return (await resoudre_avec_provenance(org_id, utilisateur, client))["resolu"]
 
 
 async def resoudre_avec_provenance(org_id: str | None, utilisateur: str,
