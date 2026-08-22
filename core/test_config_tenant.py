@@ -174,6 +174,104 @@ def test_resoudre_avec_provenance():
     assert "model" not in r["provenance"]            # jamais touché → pas de provenance
 
 
+# ── valider_patch / ecrire_couche_* ─────────────────────────────────────────
+
+def test_valider_patch_rejette_cle_inconnue():
+    try:
+        config_tenant.valider_patch({"persona": "pro", "bidule": 1})
+        assert False, "aurait dû lever ValueError"
+    except ValueError as e:
+        assert "bidule" in str(e)
+
+
+def test_valider_patch_accepte_patch_partiel_valide():
+    config_tenant.valider_patch({"persona": "pro", "langue": "en"})  # ne lève pas
+
+
+def test_ecrire_couche_creation():
+    _reset_cache()
+    def h(req):
+        if req.method == "GET":
+            return httpx.Response(200, json=[])
+        assert req.method == "POST"
+        assert req.headers.get("X-Org-ID") == "acme"
+        import json as _json
+        assert _json.loads(req.content) == {"persona": "pro"}
+        return httpx.Response(201, json={"persona": "pro", "_id": "r1",
+                                         "_cree": "t0", "_maj": "t0"})
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.ecrire_couche_organisation("acme", {"persona": "pro"}, client=c)
+    assert asyncio.run(go()) == {"persona": "pro"}
+
+
+def test_ecrire_couche_mise_a_jour_fusionne_sur_existant():
+    _reset_cache()
+    def h(req):
+        if req.method == "GET":
+            return httpx.Response(200, json=[
+                {"persona": "pro", "langue": "en", "_id": "r1", "_cree": "t0", "_maj": "t0"}
+            ])
+        assert req.method == "PUT"
+        assert req.url.path.endswith("/r1")
+        import json as _json
+        assert _json.loads(req.content) == {"persona": "pro", "langue": "fr"}
+        return httpx.Response(200, json={"persona": "pro", "langue": "fr",
+                                         "_id": "r1", "_cree": "t0", "_maj": "t1"})
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.ecrire_couche_organisation("acme", {"langue": "fr"}, client=c)
+    assert asyncio.run(go()) == {"persona": "pro", "langue": "fr"}
+
+
+def test_ecrire_couche_invalide_cache_avant_expiration():
+    _reset_cache()
+    def h(req):
+        if req.method == "GET":
+            return httpx.Response(200, json=[])
+        return httpx.Response(201, json={"persona": "pro", "_id": "r1"})
+    async def ecrire():
+        async with _client(h) as c:
+            return await config_tenant.ecrire_couche_organisation("acme", {"persona": "pro"}, client=c)
+    asyncio.run(ecrire())
+
+    def h_jamais_appele(req):
+        raise AssertionError("ne doit pas taper le réseau : le cache vient d'être posé")
+    async def relire():
+        async with _client(h_jamais_appele) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    assert asyncio.run(relire()) == {"persona": "pro"}
+
+
+def test_ecrire_couche_panne_reseau_remonte_erreur():
+    _reset_cache()
+    def h_down(req):
+        raise httpx.ConnectError("refused", request=req)
+    async def go():
+        async with _client(h_down) as c:
+            return await config_tenant.ecrire_couche_organisation("acme", {"persona": "pro"}, client=c)
+    try:
+        asyncio.run(go())
+        assert False, "aurait dû laisser remonter httpx.ConnectError"
+    except httpx.ConnectError:
+        pass
+
+
+def test_ecrire_couche_utilisateur_cle_cache_distincte_de_organisation():
+    _reset_cache()
+    def h(req):
+        if req.method == "GET":
+            return httpx.Response(200, json=[])
+        return httpx.Response(201, json={"persona": "chaleureux", "_id": "r1"})
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.ecrire_couche_utilisateur(
+                "acme", "alice", {"persona": "chaleureux"}, client=c)
+    asyncio.run(go())
+    assert ("utilisateur", "acme", "alice") in config_tenant._cache
+    assert ("organisation", "acme", config_tenant.ENTITE_ORGANISATION) not in config_tenant._cache
+
+
 if __name__ == "__main__":
     for nom, fn in list(globals().items()):
         if nom.startswith("test_") and callable(fn):

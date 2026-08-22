@@ -117,3 +117,62 @@ async def resoudre_avec_provenance(org_id: str | None, utilisateur: str,
     provenance = {cle: "organisation" for cle in patch_org}
     provenance.update({cle: "utilisateur" for cle in patch_user})
     return {"resolu": resolu, "provenance": provenance}
+
+
+def _cles_connues() -> frozenset:
+    import config_assistant  # import tardif : évite tout cycle au chargement
+    return frozenset(config_assistant.charger().keys())
+
+
+def valider_patch(patch: dict) -> None:
+    """Lève ValueError si le patch contient une clé hors du schéma connu de
+    config_assistant.charger() — jamais de clé inconnue écrite silencieusement."""
+    inconnues = set(patch) - _cles_connues()
+    if inconnues:
+        raise ValueError(f"clé(s) inconnue(s) : {', '.join(sorted(inconnues))}")
+
+
+async def _ecrire_couche(niveau: str, org_id: str, entite_id: str, patch: dict,
+                         client: httpx.AsyncClient | None = None) -> dict:
+    """Fusionne `patch` sur la couche existante et la persiste (upsert : PUT si un
+    enregistrement existe déjà pour (app_id, entite_id), POST sinon). Jamais
+    silencieuse : une erreur réseau vers données remonte à l'appelant (pas de faux
+    succès, pas de patch perdu sans le dire)."""
+    valider_patch(patch)
+    propre = client is None
+    client = client or httpx.AsyncClient(timeout=_TIMEOUT)
+    try:
+        entetes = {"X-Org-ID": org_id}
+        r = await client.get(_url(entite_id), headers=entetes)
+        r.raise_for_status()
+        existants = r.json()
+        if existants:
+            actuel = _sans_metadonnees(existants[-1])
+            nouveau = _fusion(actuel, patch)
+            r = await client.put(f"{_url(entite_id)}/{existants[-1]['_id']}",
+                                 json=nouveau, headers=entetes)
+        else:
+            nouveau = dict(patch)
+            r = await client.post(_url(entite_id), json=nouveau, headers=entetes)
+        r.raise_for_status()
+        resultat = _sans_metadonnees(r.json())
+        _cache[(niveau, org_id, entite_id)] = (time.monotonic(), resultat)
+        return resultat
+    finally:
+        if propre:
+            await client.aclose()
+
+
+async def ecrire_couche_organisation(org_id: str | None, patch: dict,
+                                     client: httpx.AsyncClient | None = None) -> dict:
+    """Patch (partiel) la couche organisation. Lève ValueError (clé inconnue) ou
+    httpx.HTTPError (brique données injoignable)."""
+    return await _ecrire_couche("organisation", _org_eff(org_id), ENTITE_ORGANISATION,
+                                patch, client)
+
+
+async def ecrire_couche_utilisateur(org_id: str | None, utilisateur: str, patch: dict,
+                                    client: httpx.AsyncClient | None = None) -> dict:
+    """Patch (partiel) la couche utilisateur. Lève ValueError (clé inconnue) ou
+    httpx.HTTPError (brique données injoignable)."""
+    return await _ecrire_couche("utilisateur", _org_eff(org_id), utilisateur, patch, client)
