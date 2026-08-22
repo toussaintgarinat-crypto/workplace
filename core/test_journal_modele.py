@@ -173,6 +173,29 @@ def test_bornage_meme_si_check_vivant_echoue(monkeypatch):
         f"Got {len(tous_finaux)} lines, expected ≤72 (max=60, max*1.2=72)"
 
 
+def test_verifier_derniere_ligne_detecte_un_vrai_ecart_sans_stub():
+    """Les 2 tests ci-dessus remplacent ENTIÈREMENT `_verifier_derniere_ligne` par un stub :
+    ils prouvent que `enregistrer_appel` propage False sans lever, mais RIEN ne prouve que
+    la vraie comparaison détecte un vrai écart (revue finale S234, point 5). Ce test corrompt
+    le fichier sur disque puis appelle la VRAIE fonction directement — il doit échouer si
+    quelqu'un inverse par erreur `!=` en `==`."""
+    _reset()
+    assert jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
+                                messages=[{"role": "user", "content": "original"}]) is True
+    attendue = jm._lignes()[-1]
+
+    # Corruption directe du fichier : on ajoute une ligne JSON valide mais DIFFÉRENTE de
+    # ce qui vient d'être écrit (simule une écriture concurrente/partielle).
+    with jm.CHEMIN.open("a", encoding="utf-8") as f:
+        f.write('{"ts": 0, "fil": "f", "etiquette": "chat", "modele": "autre", '
+                '"messages": [], "outils_offerts": [], "message_recu": null, '
+                '"erreur": null}\n')
+
+    # Appel DIRECT de la vraie fonction (pas de stub) avec le dict attendu ORIGINAL :
+    # la dernière ligne du fichier a changé, la comparaison doit détecter l'écart.
+    assert jm._verifier_derniere_ligne(attendue) is False
+
+
 def test_verifier_derniere_ligne_reussit_sans_stub_sur_gros_fichier():
     """Contrepartie positive du test ci-dessus, sur un fichier dont la taille dépasse la
     queue relue (_TAILLE_QUEUE_CHECK) : la vraie comparaison doit continuer à réussir en
