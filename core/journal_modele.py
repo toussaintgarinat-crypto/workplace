@@ -14,12 +14,18 @@ mélanger des tool_calls/contenus système casserait ce contrat.
 Accroché dans `llm_pipeline.completer()`/`completer_flux()`, au même point que
 `journal_usage.enregistrer()` : c'est le seul endroit où les messages sont RÉELLEMENT
 finalisés (après résumé à froid, trim, cache-préfixe), et le seul point de passage de
-TOUS les appels LLM du Cœur (chat, classement, MOA, briefing, proprioception…).
+TOUS les appels LLM du Cœur (chat, classement, briefing, proprioception…).
 
-Exception connue : `shadow.py` (rejeu d'un candidat moins cher en tâche de fond,
-déclenché depuis le chemin de succès de `llm_pipeline`) appelle la Gateway
-directement (`{GATEWAY_URL}/v1/chat/completions`), hors de ce point de passage — non
-couvert par cet invariant à ce jour.
+Exceptions connues (appels Gateway directs, hors de ce point de passage — non couverts
+par cet invariant à ce jour) :
+  - `shadow.py` (rejeu d'un candidat moins cher en tâche de fond, déclenché depuis le
+    chemin de succès de `llm_pipeline`) ;
+  - `moa.py` (`_appeler_reference`, N appels de référence + 1 agrégateur par question
+    complexe, déclenchés depuis `assistant.converser`) — la plus grosse surface non
+    couverte : N+1 appels par question, jamais journalisés ici ;
+  - `summarisation.py` (`condenser`, résumé à froid de l'historique) — pourtant appelé
+    DEPUIS le chemin critique de `llm_pipeline._preparer()`, avant même le trim ; il
+    journalise dans `journal_usage` (étiquette « resume ») mais pas ici.
 
 Asymétrie de forme à connaître en lisant le journal : sur le chemin de succès,
 `messages` loggué est `payload["messages"]`, c'est-à-dire APRÈS application du
