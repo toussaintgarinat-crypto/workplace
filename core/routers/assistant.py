@@ -466,6 +466,16 @@ async def assistant_config_post(corps: dict):
     return {"ok": ok, "config": conf, "chaine_effective": chaine, "tete": tete, "detail": detail}
 
 
+async def _traduire_erreurs_config(coro):
+    """Traduit les erreurs de config_tenant en HTTPException (ValueError→400, panne réseau→502)."""
+    try:
+        return await coro
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
+
+
 @router.get("/assistant/config/organisation", tags=["assistant"])
 async def assistant_config_organisation_get():
     """Patch brut de la couche organisation (pas le résolu) — pour l'inspecter/l'éditer."""
@@ -478,12 +488,7 @@ async def assistant_config_organisation_put(corps: dict):
     """Patch (partiel) la couche organisation. Corps : clés du schéma config_assistant
     (model, persona, langue, voix_provider…). Clé hors schéma → 400."""
     ctx = contexte_tenant.contexte_actuel()
-    try:
-        return await config_tenant.ecrire_couche_organisation(ctx.org_id, corps)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
+    return await _traduire_erreurs_config(config_tenant.ecrire_couche_organisation(ctx.org_id, corps))
 
 
 @router.get("/assistant/config/utilisateur", tags=["assistant"])
@@ -497,12 +502,8 @@ async def assistant_config_utilisateur_get():
 async def assistant_config_utilisateur_put(corps: dict):
     """Patch (partiel) la couche utilisateur. Clé hors schéma connu → 400."""
     ctx = contexte_tenant.contexte_actuel()
-    try:
-        return await config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
+    return await _traduire_erreurs_config(
+        config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps))
 
 
 @router.get("/assistant/config/resolue", tags=["assistant"])
