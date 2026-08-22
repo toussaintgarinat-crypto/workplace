@@ -16,6 +16,18 @@ Accroché dans `llm_pipeline.completer()`/`completer_flux()`, au même point que
 finalisés (après résumé à froid, trim, cache-préfixe), et le seul point de passage de
 TOUS les appels LLM du Cœur (chat, classement, MOA, briefing, proprioception…).
 
+Exception connue : `shadow.py` (rejeu d'un candidat moins cher en tâche de fond,
+déclenché depuis le chemin de succès de `llm_pipeline`) appelle la Gateway
+directement (`{GATEWAY_URL}/v1/chat/completions`), hors de ce point de passage — non
+couvert par cet invariant à ce jour.
+
+Asymétrie de forme à connaître en lisant le journal : sur le chemin de succès,
+`messages` loggué est `payload["messages"]`, c'est-à-dire APRÈS application du
+préfixe de cache par modèle (`cache_prefixe.appliquer`) ; sur les 2 chemins d'échec
+(budget épuisé, aucun modèle joignable), c'est la version PRÉ-préfixe-cache — cohérent
+puisque rien n'a été réellement envoyé dans ces cas, mais la forme de `messages` diffère
+donc selon que `erreur` est présent ou non.
+
 Runtime check vivant : après CHAQUE écriture, on relit immédiatement la QUEUE du
 fichier (pas tout le fichier — coûteux dès qu'il grossit) et on vérifie que sa
 dernière ligne égale ce qu'on vient de sérialiser. Un écart (troncature disque,
