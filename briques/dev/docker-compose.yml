@@ -26,6 +26,13 @@ services:
       - DEV_DB=/data/chantiers.json
       - DEV_TRACES=/data/traces
       - DEV_SKILLS_DIR=/data/skills
+      # Le dépôt monté (bind mount) appartient à l'UID de l'hôte, pas à celui du conteneur :
+      # git refuse par défaut (« dubious ownership »). Config via env (git ≥2.31, pas de
+      # fichier à écrire) → survit à chaque rebuild, sans faire confiance à TOUT le système
+      # de fichiers (safe.directory ciblé sur /repo, pas `*`).
+      - GIT_CONFIG_COUNT=1
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=/repo
       # CORS_ORIGINS : ABSENTE d'`environment` EXPRÈS — elle vient du .env racine via
       # env_file. `${CORS_ORIGINS:-*}` s'interpole depuis le dossier du compose, PAS
       # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
