@@ -110,10 +110,20 @@ immédiatement l'entrée de cache correspondante (write-through, pas d'attente d
   modèle/persona d'un tenant entier). Si ce chantier passe en usage multi-org réel,
   cette frontière devra être fermée séparément (dériver `org_id` d'une revendication de
   session plutôt que d'un en-tête arbitraire) — hors périmètre ici (cf. revue finale de
-  branche, 2026-08-22). `"defaut"` reste une
+  branche, 2026-08-22). Le routeur assistant lui-même n'exige aucune session
+  (`core/main.py`, `dependencies=_tenant` sans `exiger_session`) — un appelant non
+  authentifié qui atteint le Cœur peut donc choisir n'importe quel `X-Org-ID`, y compris
+  pour les nouveaux endpoints DELETE ; ce n'est pas une régression (`POST
+  /assistant/config`, déjà sur ce routeur, a un rayon d'action encore plus large sans
+  authentification), mais toute fermeture future de cette frontière devra couvrir le
+  routeur entier, pas seulement la dérivation d'`org_id`. `"defaut"` reste une
   organisation légitime comme une autre, pas un cas rejeté : un déploiement mono-org
   peut ainsi patcher sa propre config org sans configurer Keycloak au préalable.
 - `GET|PUT /assistant/config/utilisateur` — lit/écrit la couche utilisateur seule.
+- `DELETE /assistant/config/{organisation,utilisateur}` — supprime la couche (retour à
+  ce que voyait le niveau du dessous). No-op si absente. Seul recours pour retirer un
+  patch invalide ou indésirable, ajouté en revue finale de branche (2026-08-22) après
+  qu'un premier passage n'avait laissé aucun moyen de nettoyer une couche mal typée.
 - `GET /assistant/config/resolue` — **debug/transparence** : renvoie le résolu +, pour
   chaque clé, quelle couche a eu le dernier mot (`global`|`organisation`|`utilisateur`).
   Cohérent avec l'invariant « visible du modèle = traçable » déjà posé côté
