@@ -228,6 +228,22 @@ def test_verifier_derniere_ligne_echoue_honnetement_sur_ligne_geante():
     assert jm._verifier_derniere_ligne(ligne_geante) is False
 
 
+def test_enregistrer_appel_ne_leve_jamais_meme_sur_exception_inattendue(monkeypatch):
+    """Le module promet ABSOLUMENT « Ne lève jamais » (best-effort) — pas seulement pour
+    OSError/TypeError/ValueError. Une exception inattendue ailleurs dans le chemin
+    d'écriture (ex. bug dans le bornage) ne doit pas non plus remonter à l'appelant
+    (revue finale S234, point 6 : le `except` doit être aussi large que la promesse)."""
+    _reset()
+
+    def _boom():
+        raise RuntimeError("bug inattendu dans le bornage")
+
+    monkeypatch.setattr(jm, "_borner_si_necessaire", _boom)
+    ok = jm.enregistrer_appel(fil="f", etiquette="chat", modele="m",
+                              messages=[{"role": "user", "content": "x"}])
+    assert ok is False
+
+
 if __name__ == "__main__":
     import inspect
 
