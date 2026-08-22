@@ -373,9 +373,16 @@ async def assistant_projet_supprimer(projet_id: str):
 async def assistant_config_get():
     """État du « cerveau » : modèle courant, modèles disponibles, clé OpenRouter définie ?
 
-    Résolu par tenant (S234-veille chantier 3) : global < organisation < utilisateur."""
+    Résolu par tenant (S234-veille chantier 3) : global < organisation < utilisateur.
+
+    "provenance" liste les clés effectivement surchargées par une couche
+    organisation/utilisateur — le panneau ⚙ Cerveau actuel ne l'exploite pas encore
+    (limite connue, cf. revue finale de branche 2026-08-22) : une sauvegarde globale
+    reste bien persistée même si une couche l'occulte pour ce tenant, mais rien ne le
+    signale aujourd'hui dans le front."""
     ctx = contexte_tenant.contexte_actuel()
-    conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur)
+    r = await config_tenant.resoudre_avec_provenance(ctx.org_id, ctx.utilisateur)
+    conf, provenance = r["resolu"], r["provenance"]
     return {
         "model": conf["model"],
         "fallback_models": conf["fallback_models"],
@@ -404,6 +411,7 @@ async def assistant_config_get():
         # Repli souverain CPU sur le Cœur (S62) : dernier maillon local de la cascade.
         "repli_souverain": conf["repli_souverain"],
         "repli_souverain_avant_payant": conf["repli_souverain_avant_payant"],
+        "provenance": provenance,
     }
 
 
@@ -467,10 +475,13 @@ async def assistant_config_post(corps: dict):
 
 
 async def _traduire_erreurs_config(coro):
-    """Traduit les erreurs de config_tenant en HTTPException (ValueError→400, panne réseau→502)."""
+    """Traduit les erreurs de config_tenant en HTTPException (ValeurInvalide→400, panne
+    réseau→502). Volontairement ciblé sur ValeurInvalide et pas sur ValueError nu : un
+    json.JSONDecodeError (réponse données malformée) n'est PAS la faute de l'appelant et
+    ne doit pas devenir un faux 400 (revue finale de branche 2026-08-22)."""
     try:
         return await coro
-    except ValueError as e:
+    except config_tenant.ValeurInvalide as e:
         raise HTTPException(status_code=400, detail=str(e))
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
@@ -504,6 +515,25 @@ async def assistant_config_utilisateur_put(corps: dict):
     ctx = contexte_tenant.contexte_actuel()
     return await _traduire_erreurs_config(
         config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps))
+
+
+@router.delete("/assistant/config/organisation", tags=["assistant"])
+async def assistant_config_organisation_delete():
+    """Supprime la couche organisation (retour au global). No-op si absente — seul
+    recours pour retirer un patch devenu indésirable ou invalide."""
+    ctx = contexte_tenant.contexte_actuel()
+    await _traduire_erreurs_config(config_tenant.supprimer_couche_organisation(ctx.org_id))
+    return {"ok": True}
+
+
+@router.delete("/assistant/config/utilisateur", tags=["assistant"])
+async def assistant_config_utilisateur_delete():
+    """Supprime la couche utilisateur (retour à ce que voit l'organisation, ou le
+    global). No-op si absente."""
+    ctx = contexte_tenant.contexte_actuel()
+    await _traduire_erreurs_config(
+        config_tenant.supprimer_couche_utilisateur(ctx.org_id, ctx.utilisateur))
+    return {"ok": True}
 
 
 @router.get("/assistant/config/resolue", tags=["assistant"])

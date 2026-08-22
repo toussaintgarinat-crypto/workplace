@@ -19,6 +19,8 @@ from fastapi import HTTPException  # noqa: E402
 import config_tenant  # noqa: E402
 import contexte_tenant  # noqa: E402
 from routers.assistant import (  # noqa: E402
+    assistant_config_get,
+    assistant_config_organisation_delete,
     assistant_config_organisation_put,
     assistant_config_utilisateur_put,
 )
@@ -27,7 +29,7 @@ from routers.assistant import (  # noqa: E402
 def test_organisation_put_cle_inconnue_leve_400():
     jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
     async def faux_ecrire(org_id, patch, client=None):
-        raise ValueError("clé(s) inconnue(s) : bidule")
+        raise config_tenant.ValeurInvalide("clé(s) inconnue(s) : bidule")
     ancien = config_tenant.ecrire_couche_organisation
     config_tenant.ecrire_couche_organisation = faux_ecrire
     try:
@@ -54,10 +56,49 @@ def test_organisation_put_panne_reseau_leve_502():
         contexte_tenant.reinitialiser(jetons)
 
 
+def test_organisation_delete_panne_reseau_leve_502():
+    jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
+    async def faux_supprimer(org_id, client=None):
+        raise httpx.ConnectError("refused", request=httpx.Request("GET", "http://x"))
+    ancien = config_tenant.supprimer_couche_organisation
+    config_tenant.supprimer_couche_organisation = faux_supprimer
+    try:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(assistant_config_organisation_delete())
+        assert exc.value.status_code == 502
+    finally:
+        config_tenant.supprimer_couche_organisation = ancien
+        contexte_tenant.reinitialiser(jetons)
+
+
+def test_config_get_expose_la_provenance():
+    """GET /assistant/config renvoie aussi quelles clés viennent d'une couche
+    organisation/utilisateur (Fix 7, revue finale de branche 2026-08-22)."""
+    import config_assistant
+    jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
+    resolu = config_assistant.charger()
+    resolu["persona"] = "pro"
+
+    async def faux_resoudre(org_id, utilisateur, client=None):
+        return {"resolu": resolu, "provenance": {"persona": "organisation"}}
+    async def faux_lister():
+        return []
+    anciens = (config_tenant.resoudre_avec_provenance, config_assistant.lister_modeles)
+    config_tenant.resoudre_avec_provenance = faux_resoudre
+    config_assistant.lister_modeles = faux_lister
+    try:
+        reponse = asyncio.run(assistant_config_get())
+        assert reponse["provenance"] == {"persona": "organisation"}
+        assert reponse["persona"] == "pro"          # le résolu est bien celui des couches
+    finally:
+        config_tenant.resoudre_avec_provenance, config_assistant.lister_modeles = anciens
+        contexte_tenant.reinitialiser(jetons)
+
+
 def test_utilisateur_put_cle_inconnue_leve_400():
     jetons = contexte_tenant.definir_contexte(org_id="acme", utilisateur="alice")
     async def faux_ecrire(org_id, utilisateur, patch, client=None):
-        raise ValueError("clé(s) inconnue(s) : bidule")
+        raise config_tenant.ValeurInvalide("clé(s) inconnue(s) : bidule")
     ancien = config_tenant.ecrire_couche_utilisateur
     config_tenant.ecrire_couche_utilisateur = faux_ecrire
     try:
