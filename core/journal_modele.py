@@ -167,7 +167,9 @@ def enregistrer_appel(*, fil: str | None, etiquette: str, modele: str | None,
             # Bornage INCONDITIONNEL, même si le check vivant a échoué (cf. docstring).
             _borner_si_necessaire()
             return ok
-    except (OSError, TypeError, ValueError) as e:
+    except Exception as e:
+        # Volontairement large (pas juste OSError/TypeError/ValueError) : le module
+        # promet « Ne lève jamais » ABSOLUMENT (best-effort) — cf. docstring.
         logger.warning("journal_modele: écriture impossible : %s", e)
         return False
 
