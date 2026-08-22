@@ -114,6 +114,57 @@ def test_panne_reseau_repli_cache_expire():
     assert asyncio.run(deuxieme_lecture()) == {"persona": "pro"}
 
 
+def test_lire_couche_reponse_malformee_ne_leve_pas():
+    _reset_cache()
+    def h(req):
+        return httpx.Response(200, json={"detail": "pas une liste"})
+    async def go():
+        async with _client(h) as c:
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    assert asyncio.run(go()) == {}
+
+
+def test_panne_reseau_pose_un_cache_negatif_court():
+    _reset_cache()
+    appels = []
+    def h_down(req):
+        appels.append(1)
+        raise httpx.ConnectError("refused", request=req)
+    async def deux_lectures():
+        async with _client(h_down) as c:
+            await config_tenant.lire_couche_organisation("acme", client=c)
+            return await config_tenant.lire_couche_organisation("acme", client=c)
+    resultat = asyncio.run(deux_lectures())
+    assert resultat == {}
+    assert len(appels) == 1  # la 2e lecture sert le cache négatif, pas de 2e appel réseau
+
+
+def test_lire_couche_utilisateur_id_reserve_renvoie_vide():
+    _reset_cache()
+    def h_jamais_appele(req):
+        raise AssertionError("ne doit jamais taper le réseau pour un id réservé")
+    async def go():
+        async with _client(h_jamais_appele) as c:
+            return await config_tenant.lire_couche_utilisateur("acme", "_organisation", client=c)
+    assert asyncio.run(go()) == {}
+
+
+def test_cache_borne_evince_les_plus_anciennes():
+    _reset_cache()
+    ancien_max = config_tenant._CACHE_MAX
+    config_tenant._CACHE_MAX = 3
+    try:
+        for i in range(5):
+            config_tenant._cache_set(("organisation", f"org{i}", "_organisation"),
+                                     (0.0, {"n": i}))
+        assert len(config_tenant._cache) == 3
+        # Les 2 plus anciennes (org0, org1) doivent avoir été évincées.
+        assert ("organisation", "org0", "_organisation") not in config_tenant._cache
+        assert ("organisation", "org4", "_organisation") in config_tenant._cache
+    finally:
+        config_tenant._CACHE_MAX = ancien_max
+
+
 def test_panne_reseau_sans_cache_renvoie_vide():
     _reset_cache()
     def h_down(req):
@@ -186,6 +237,56 @@ def test_valider_patch_rejette_cle_inconnue():
 
 def test_valider_patch_accepte_patch_partiel_valide():
     config_tenant.valider_patch({"persona": "pro", "langue": "en"})  # ne lève pas
+
+
+def test_valider_patch_rejette_type_incorrect():
+    try:
+        config_tenant.valider_patch({"cascade_free_n": "trois"})
+        assert False, "aurait dû lever ValeurInvalide"
+    except config_tenant.ValeurInvalide as e:
+        assert "cascade_free_n" in str(e)
+
+
+def test_valider_patch_rejette_bool_pour_un_champ_numerique():
+    # bool est une sous-classe d'int en Python — piège classique à couvrir explicitement.
+    try:
+        config_tenant.valider_patch({"cascade_free_n": True})
+        assert False, "aurait dû lever ValeurInvalide"
+    except config_tenant.ValeurInvalide:
+        pass
+
+
+def test_valider_patch_rejette_fallback_models_mal_forme():
+    try:
+        config_tenant.valider_patch({"fallback_models": "pas-une-liste"})
+        assert False, "aurait dû lever ValeurInvalide"
+    except config_tenant.ValeurInvalide:
+        pass
+
+
+def test_valider_patch_rejette_voix_fin_mode_invalide():
+    try:
+        config_tenant.valider_patch({"voix_fin_mode": "clignote"})
+        assert False, "aurait dû lever ValeurInvalide"
+    except config_tenant.ValeurInvalide:
+        pass
+
+
+def test_valider_patch_accepte_types_corrects_de_chaque_famille():
+    config_tenant.valider_patch({
+        "model": "openai/gpt-4o-mini", "cascade_free_n": 3, "shadow_taux": 0.1,
+        "routage_actif": True, "fallback_models": ["a", "b"], "voix_fin_mode": "silence",
+    })  # ne lève pas
+
+
+def test_ecrire_couche_utilisateur_id_reserve_leve_valeur_invalide():
+    async def go():
+        return await config_tenant.ecrire_couche_utilisateur("acme", "_organisation", {"persona": "x"})
+    try:
+        asyncio.run(go())
+        assert False, "aurait dû lever ValeurInvalide"
+    except config_tenant.ValeurInvalide:
+        pass
 
 
 def test_ecrire_couche_creation():
@@ -270,6 +371,66 @@ def test_ecrire_couche_utilisateur_cle_cache_distincte_de_organisation():
     asyncio.run(go())
     assert ("utilisateur", "acme", "alice") in config_tenant._cache
     assert ("organisation", "acme", config_tenant.ENTITE_ORGANISATION) not in config_tenant._cache
+
+
+def test_resoudre_avec_provenance_fait_les_deux_lectures_en_parallele():
+    _reset_cache()
+    ordre = []
+    def h(req):
+        if "/entites/_organisation/" in req.url.path:
+            ordre.append("org")
+        elif "/entites/alice/" in req.url.path:
+            ordre.append("user")
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            await config_tenant.resoudre_avec_provenance("acme", "alice", client=c)
+    asyncio.run(go())
+    assert set(ordre) == {"org", "user"}  # les deux ont bien été appelées (gather)
+
+
+# ── supprimer_couche_* (recours : retirer un patch indésirable/invalide) ────
+
+def test_supprimer_couche_organisation_existante():
+    _reset_cache()
+    appels = []
+    def h(req):
+        appels.append(req.method)
+        if req.method == "GET":
+            return httpx.Response(200, json=[{"persona": "pro", "_id": "r1"}])
+        assert req.method == "DELETE"
+        assert req.url.path.endswith("/r1")
+        return httpx.Response(204)
+    async def go():
+        async with _client(h) as c:
+            await config_tenant.supprimer_couche_organisation("acme", client=c)
+    asyncio.run(go())
+    assert appels == ["GET", "DELETE"]
+    assert ("organisation", "acme", config_tenant.ENTITE_ORGANISATION) not in config_tenant._cache
+
+
+def test_supprimer_couche_absente_est_un_noop():
+    _reset_cache()
+    def h(req):
+        assert req.method == "GET"
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            await config_tenant.supprimer_couche_organisation("acme", client=c)
+    asyncio.run(go())  # ne doit pas lever
+
+
+def test_supprimer_couche_panne_reseau_remonte_erreur():
+    def h_down(req):
+        raise httpx.ConnectError("refused", request=req)
+    async def go():
+        async with _client(h_down) as c:
+            await config_tenant.supprimer_couche_organisation("acme", client=c)
+    try:
+        asyncio.run(go())
+        assert False, "aurait dû laisser remonter httpx.ConnectError"
+    except httpx.ConnectError:
+        pass
 
 
 if __name__ == "__main__":

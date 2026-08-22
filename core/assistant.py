@@ -152,8 +152,12 @@ async def converser(messages: list[dict], registre,
     )
     # Modèle + persona lus à CHAUD, résolus par tenant (S234-veille chantier 3) :
     # global < organisation < utilisateur — cf. config_tenant.py.
+    # Timeout court, pas celui (5 s) du chemin d'écriture admin : ici le repli ({} =
+    # aucune surcharge) est inoffensif par construction, donc échouer vite vaut mieux
+    # que retarder tout le tour de chat (revue finale de branche 2026-08-22).
     ctx = contexte_tenant.contexte_actuel()
-    conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur)
+    async with httpx.AsyncClient(timeout=1.5) as _config_client:
+        conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur, client=_config_client)
     # Addendum d'auto-amélioration (S69) : une consigne issue d'une proposition VALIDÉE
     # puis APPLIQUÉE (gate humain). Vide tant que rien n'a été activé → prompt fondateur.
     systeme = (PROMPT_SYSTEME + personas.prompt_de(conf.get("persona"))
