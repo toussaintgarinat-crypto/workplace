@@ -132,11 +132,28 @@ def test_converser_journalise_chaque_appel_dans_journal_modele(monkeypatch):
 
 
 if __name__ == "__main__":
-    for nom, fn in list(globals().items()):
-        if nom.startswith("test_") and callable(fn):
-            try:
-                fn()
-            except TypeError:                 # tests à fixture monkeypatch : sautés en direct
-                continue
-            print(f"  ✓ {nom}")
-    print("\n✅ TOUS LES TESTS PASSENT")
+    import inspect
+
+    reussis, sautes = [], []
+    for nom, fn in sorted(globals().items()):
+        if not (nom.startswith("test_") and callable(fn)):
+            continue
+        # Inspection de signature AVANT l'appel — pas un `except TypeError` après coup, qui
+        # avalerait aussi un vrai TypeError levé PENDANT le corps d'un test (bug réel). Un
+        # test qui déclare des paramètres (fixture pytest, ex. `monkeypatch`) est sauté
+        # explicitement ; un test sans paramètre qui lève doit continuer à faire planter
+        # le lanceur (revue finale S234, point 4).
+        if inspect.signature(fn).parameters:
+            print(f"  ⊘ {nom} (sauté, nécessite pytest)")
+            sautes.append(nom)
+            continue
+        fn()
+        print(f"  ✓ {nom}")
+        reussis.append(nom)
+
+    if sautes:
+        print(f"\n✅ {len(reussis)}/{len(reussis) + len(sautes)} tests exécutés directement "
+              f"passent ({len(sautes)} sautés, nécessitent pytest — lance "
+              f"`pytest {os.path.basename(__file__)}` pour les inclure)")
+    else:
+        print(f"\n✅ TOUS LES TESTS PASSENT ({len(reussis)}/{len(reussis)})")
