@@ -17,6 +17,7 @@ import catalogue
 import ciblage
 import classer
 import config_assistant
+import config_tenant
 import contexte_tenant
 import entretien_routage
 import horloge
@@ -370,8 +371,11 @@ async def assistant_projet_supprimer(projet_id: str):
 
 @router.get("/assistant/config", tags=["assistant"])
 async def assistant_config_get():
-    """État du « cerveau » : modèle courant, modèles disponibles, clé OpenRouter définie ?"""
-    conf = config_assistant.charger()
+    """État du « cerveau » : modèle courant, modèles disponibles, clé OpenRouter définie ?
+
+    Résolu par tenant (S234-veille chantier 3) : global < organisation < utilisateur."""
+    ctx = contexte_tenant.contexte_actuel()
+    conf = await config_tenant.resoudre(ctx.org_id, ctx.utilisateur)
     return {
         "model": conf["model"],
         "fallback_models": conf["fallback_models"],
@@ -460,6 +464,53 @@ async def assistant_config_post(corps: dict):
     tete = chaine[0] if chaine else (conf.get("model") or conf.get("repli_payant"))
     ok, detail = await config_assistant.tester_modele(tete)
     return {"ok": ok, "config": conf, "chaine_effective": chaine, "tete": tete, "detail": detail}
+
+
+@router.get("/assistant/config/organisation", tags=["assistant"])
+async def assistant_config_organisation_get():
+    """Patch brut de la couche organisation (pas le résolu) — pour l'inspecter/l'éditer."""
+    ctx = contexte_tenant.contexte_actuel()
+    return await config_tenant.lire_couche_organisation(ctx.org_id)
+
+
+@router.put("/assistant/config/organisation", tags=["assistant"])
+async def assistant_config_organisation_put(corps: dict):
+    """Patch (partiel) la couche organisation. Corps : clés du schéma config_assistant
+    (model, persona, langue, voix_provider…). Clé hors schéma → 400."""
+    ctx = contexte_tenant.contexte_actuel()
+    try:
+        return await config_tenant.ecrire_couche_organisation(ctx.org_id, corps)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
+
+
+@router.get("/assistant/config/utilisateur", tags=["assistant"])
+async def assistant_config_utilisateur_get():
+    """Patch brut de la couche utilisateur (pas le résolu)."""
+    ctx = contexte_tenant.contexte_actuel()
+    return await config_tenant.lire_couche_utilisateur(ctx.org_id, ctx.utilisateur)
+
+
+@router.put("/assistant/config/utilisateur", tags=["assistant"])
+async def assistant_config_utilisateur_put(corps: dict):
+    """Patch (partiel) la couche utilisateur. Clé hors schéma connu → 400."""
+    ctx = contexte_tenant.contexte_actuel()
+    try:
+        return await config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"brique données injoignable : {e}")
+
+
+@router.get("/assistant/config/resolue", tags=["assistant"])
+async def assistant_config_resolue_get():
+    """Debug/transparence : résolu + provenance par clé (quelle couche a eu le dernier
+    mot). Cohérent avec l'invariant « visible du modèle = traçable » (journal_modele)."""
+    ctx = contexte_tenant.contexte_actuel()
+    return await config_tenant.resoudre_avec_provenance(ctx.org_id, ctx.utilisateur)
 
 
 # ── Profil utilisateur (contexte d'amorçage, éditable depuis le dashboard) ──
