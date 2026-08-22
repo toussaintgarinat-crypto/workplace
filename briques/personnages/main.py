@@ -23,6 +23,7 @@ import moteur
 import significations
 import stockage
 import synthese
+import theme_complet
 import traditions
 
 app = FastAPI(title="Personnages — distribution & casting", version="0.8.0")
@@ -109,6 +110,8 @@ class FicheHolistique(BaseModel):
     langue_sortie:  str = "fr"              # "fr" ou "en" (S194) : langue du portrait/empreinte
                                              # DÉTERMINISTES. Sans rapport avec `LectureApprofondie.
                                              # langue` (texte libre passé au LLM, ex. "français").
+    systeme_maisons: str = "whole_sign"     # "whole_sign" | "placidus" | "equal_house"
+    methode_dominantes: str = "comptage_dignite"  # "comptage_dignite" | "score_complexe"
 
 
 class RechercheInverse(BaseModel):
@@ -223,17 +226,35 @@ def holistique_traditions(body: FicheHolistique, _cle: str = Depends(cle_api)):
     return traditions.calculer(body.model_dump())
 
 
+@app.post("/holistique/theme", tags=["holistique"])
+def holistique_theme(body: FicheHolistique, _cle: str = Depends(cle_api)):
+    """Carte astrologique complète (fondations, 10 corps, points évolutifs, maisons,
+    aspects, dominantes). Seule la date est absolument requise — sans heure/lieu, seules
+    les fondations Soleil/Lune sont calculées (Lune approximative sans heure) ; le reste
+    en repli honnête."""
+    tc = theme_complet.theme_complet(body.model_dump())
+    if not tc.get("fondations", {}).get("soleil"):
+        raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
+    return tc
+
+
 @app.post("/holistique/portrait", tags=["holistique"])
 def holistique_portrait(body: FicheHolistique, _cle: str = Depends(cle_api)):
     """Mode DESCENDANT complet : fiche → traditions → tags → stats → archétype + forces /
-    faiblesse + pierre d'équilibrage + récit. Le différenciateur « holistique »."""
-    trad = traditions.calculer(body.model_dump())
+    faiblesse + pierre d'équilibrage + récit. Enrichi de la carte astro complète (aspects,
+    maisons, dominantes planète×signe) quand elle est calculable. Le différenciateur « holistique »."""
+    fiche = body.model_dump()
+    trad = traditions.calculer(fiche)
     if not trad.get("signe_solaire"):    # les stats dérivent de la date → elle est requise ici
         raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
-    p = synthese.portrait(trad, nom=body.prenoms or body.nom, langue=body.langue_sortie)
-    return {"traditions": trad, "portrait": p,
-            "empreinte": significations.expliquer(trad, body.langue_sortie),
-            "glossaire": significations.glossaire(body.langue_sortie)}
+    tc = theme_complet.theme_complet_depuis_traditions(trad, fiche)
+    p = synthese.portrait(trad, theme_complet=tc, nom=body.prenoms or body.nom, langue=body.langue_sortie)
+    en = (body.langue_sortie or "fr").lower().startswith("en")
+    return {"traditions": trad, "theme_complet": tc, "portrait": p,
+            "empreinte": significations.expliquer(trad, body.langue_sortie, theme_complet=tc),
+            "glossaire": significations.glossaire(body.langue_sortie),
+            "didactique": significations.didactique(body.langue_sortie),
+            "signes_sens": (significations.SIGNES_SENS_EN if en else significations.SIGNES_SENS)}
 
 
 @app.post("/holistique/lecture-approfondie", tags=["holistique"])
@@ -245,8 +266,9 @@ async def holistique_lecture_approfondie(body: LectureApprofondie, _cle: str = D
     trad = traditions.calculer(fiche)
     if not trad.get("signe_solaire"):
         raise HTTPException(422, "Fiche insuffisante : fournis au moins une date de naissance valide.")
-    p = synthese.portrait(trad, nom=body.prenoms or body.nom, langue=body.langue_sortie)
-    emp = significations.expliquer(trad, body.langue_sortie)
+    tc = theme_complet.theme_complet_depuis_traditions(trad, fiche)
+    p = synthese.portrait(trad, theme_complet=tc, nom=body.prenoms or body.nom, langue=body.langue_sortie)
+    emp = significations.expliquer(trad, body.langue_sortie, theme_complet=tc)
     try:
         texte = await llm.approfondir_lecture(p, emp, body.langue, body.llm)
         if texte:

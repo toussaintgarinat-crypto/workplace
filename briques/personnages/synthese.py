@@ -305,12 +305,16 @@ def _archetype(stats: dict) -> str:
     return max(_ARCHETYPES, key=lambda a: sum(stats.get(s, 0) for s in a[1]))[0]
 
 
-def portrait(trad: dict, nom: str = "", langue: str = "fr") -> dict:
+def portrait(trad: dict, nom: str = "", langue: str = "fr",
+             theme_complet: dict | None = None) -> dict:
     """Fiche de personnage complète à partir des traditions calculées.
 
     `langue="fr"` (défaut) : sortie STRICTEMENT identique à avant l'i18n (S194), zéro
     régression. `langue="en"` : même forme (mêmes clés JSON), valeurs traduites.
-    Retourne {stats, archetype, forces, faiblesse, pierre_equilibrage, recit}."""
+    Retourne {stats, archetype, forces, faiblesse, pierre_equilibrage, recit}.
+
+    Si `theme_complet` est fourni, enrichit l'archétype et le récit avec les dominantes
+    (planète × signe), les aspects majeurs les plus exacts, et la rétrogradation."""
     stats = stats_depuis_traditions(trad)
     classe = sorted(STATS, key=lambda s: stats[s], reverse=True)
     forces = classe[:3]
@@ -320,7 +324,7 @@ def portrait(trad: dict, nom: str = "", langue: str = "fr") -> dict:
     recit = _recit(arch, stats, forces, faiblesse, pierre_nom, pierre_vertu, trad, nom, langue)
 
     if (langue or "fr").lower().startswith("en"):
-        return {
+        p = {
             "stats": {STATS_LABEL_EN[s]: v for s, v in stats.items()},
             "archetype": _ARCHETYPES_EN.get(arch, arch),
             "forces": [STATS_LABEL_EN[f] for f in forces],
@@ -330,15 +334,63 @@ def portrait(trad: dict, nom: str = "", langue: str = "fr") -> dict:
                                    "compense": STATS_LABEL_EN[faiblesse]},
             "recit": recit,
         }
-    return {
-        "stats": stats,
-        "archetype": arch,
-        "forces": forces,
-        "faiblesse": faiblesse,
-        "pierre_equilibrage": {"pierre": pierre_nom, "vertu": pierre_vertu,
-                               "compense": faiblesse},
-        "recit": recit,
-    }
+    else:
+        p = {
+            "stats": stats,
+            "archetype": arch,
+            "forces": forces,
+            "faiblesse": faiblesse,
+            "pierre_equilibrage": {"pierre": pierre_nom, "vertu": pierre_vertu,
+                                   "compense": faiblesse},
+            "recit": recit,
+        }
+
+    if theme_complet:
+        p = _enrichir_avec_theme_complet(p, theme_complet, langue)
+
+    return p
+
+
+def _enrichir_avec_theme_complet(p: dict, tc: dict, langue: str) -> dict:
+    """Enrichit le portrait avec les données de la carte astro complète."""
+    lg = "en" if (langue or "fr").lower().startswith("en") else "fr"
+
+    dom = tc.get("dominantes") or {}
+    planete_dom = dom.get("planete", {}).get("dominante")
+    signe_dom = dom.get("signe", {}).get("dominant")
+    element_dom = dom.get("element", {}).get("dominant")
+    mode_dom = dom.get("mode", {}).get("dominant")
+
+    # — Enrichir l'archétype (planète dominante × signe dominant) —
+    if planete_dom and signe_dom:
+        clef = SIG.CLEFS_CORPS.get(planete_dom, {}).get(lg, "")
+        if clef:
+            p["archetype"] = f"{p.get('archetype', '')} — {planete_dom} en {signe_dom} dominant ({clef})".strip(" —")
+
+    # — Paragraphe tempérament (élément + mode dominants) —
+    if element_dom and mode_dom:
+        elem_clef = SIG.CLEFS_DOMINANTES.get("element", {}).get(element_dom, {}).get(lg, "")
+        mode_clef = SIG.CLEFS_DOMINANTES.get("mode", {}).get(mode_dom, {}).get(lg, "")
+        p["recit"] += f"\n\nTempérament : dominante {element_dom} {mode_dom.lower()} — {elem_clef}, {mode_clef}."
+
+    # — Aspects majeurs très exacts (top 3) dans les forces —
+    aspects = tc.get("aspects") or []
+    majeurs = sorted([a for a in aspects if a.get("type") == "majeur"
+                      and a.get("exactitude", 0) > 0.8],
+                     key=lambda a: a.get("exactitude", 0), reverse=True)[:3]
+    for asp in majeurs:
+        clef = SIG.CLEFS_ASPECTS.get(asp.get("aspect", ""), {}).get(lg, "")
+        force = f"{asp.get('aspect','').title()} {asp.get('point_a','?')}-{asp.get('point_b','?')} ({clef})"
+        if isinstance(p.get("forces"), list):
+            p["forces"].append(force)
+
+    # — Rétrogradation de la planète dominante —
+    if planete_dom:
+        corps_info = (tc.get("dix_corps") or {}).get(planete_dom, {}) or {}
+        if corps_info.get("retrograde"):
+            p["recit"] += f"\n\n{planete_dom} rétrograde : intériorisation de son énergie."
+
+    return p
 
 
 # Élément d'un signe (pour la tonalité d'ouverture).

@@ -181,3 +181,47 @@ def test_coherence_descendant_montant():
     trad = T.calculer({"date_naissance": f"2000-{plage[0]:02d}-{plage[1]:02d}"})
     stats = S.stats_depuis_traditions(trad)
     assert stats["Combativité"] >= 60
+
+
+# ── portrait() avec theme_complet (task 11) ───────────────────────
+def test_portrait_avec_theme_complet_enrichit_archetype():
+    """portrait() avec theme_complet enrichit l'archétype."""
+    trad = {"signe_solaire": {"nom": "Bélier"}}
+    tc = {
+        "fondations": {"soleil": {"signe": "Bélier"}},
+        "dix_corps": {"Soleil": {"signe": "Bélier"}, "Mars": {"signe": "Bélier"}},
+        "dominantes": {"element": {"dominant": "Feu"},
+                       "mode": {"dominant": "Cardinal"},
+                       "planete": {"dominante": "Mars"},
+                       "signe": {"dominant": "Bélier"}},
+        "aspects": [{"aspect": "trigone", "type": "majeur", "point_a": "Soleil",
+                     "point_b": "Jupiter", "orb": 0.3, "exactitude": 0.96}],
+    }
+    p = S.portrait(trad, nom="Test", langue="fr", theme_complet=tc)
+    assert "archetype" in p
+    assert "recit" in p
+    assert "Feu" in p["recit"] or "feu" in p["recit"].lower() or "Cardinal" in p["recit"]
+
+
+def test_portrait_avec_theme_complet_aspects_dans_forces():
+    """Les aspects majeurs très exacts apparaissent dans les forces."""
+    trad = {"signe_solaire": {"nom": "Bélier"}}
+    tc = {
+        "dominantes": {"element": {"dominant": "Feu"}, "mode": {"dominant": "Cardinal"},
+                       "planete": {"dominante": "Mars"}, "signe": {"dominant": "Bélier"},
+                       "maison": {"dominante": 1}},
+        "aspects": [{"aspect": "trigone", "type": "majeur", "point_a": "Soleil",
+                     "point_b": "Jupiter", "orb": 0.3, "exactitude": 0.96}],
+    }
+    p = S.portrait(trad, nom="Test", langue="fr", theme_complet=tc)
+    forces_text = " ".join(p.get("forces", []))
+    assert "trigone" in forces_text.lower() or "jupiter" in forces_text.lower() \
+        or "trigone" in p.get("recit", "").lower()
+
+
+def test_portrait_sans_theme_complet_compatible():
+    """portrait() sans theme_complet reste compatible."""
+    trad = {"signe_solaire": {"nom": "Bélier"}}
+    p = S.portrait(trad, nom="Test", langue="fr")
+    assert "archetype" in p
+    assert "recit" in p

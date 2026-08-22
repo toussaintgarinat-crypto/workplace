@@ -63,6 +63,7 @@ def test_ecritures_marquees_action():
         "personnage_distribution_proposer", "personnage_portrait_generer",
         "personnage_distribution_proposer_dans", "personnage_holistique_traditions",
         "personnage_holistique_lecture", "personnage_recherche_inverse",
+        "personnage_theme_complet",
     }
     for c in _MANIFEST["capacites"]:
         if c["methode"] in ("POST", "PATCH", "DELETE") and c["nom"] not in lecture_via_post:

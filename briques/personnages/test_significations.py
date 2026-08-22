@@ -118,6 +118,7 @@ def test_glossaire_fr_structure():
         "Astrologie occidentale", "Astrologie chinoise", "Astrologie védique",
         "Autres traditions", "Numérologie",
         "Statistiques de personnalité", "Synthèse du portrait",
+        "Carte astro complète",
     ]
     ids = {it["id"] for t in g for it in t["items"]}
     assert {"soleil", "lune", "ascendant", "chinoise", "animal_heure",
@@ -164,3 +165,107 @@ def test_expliquer_empreinte_possede_ids_stables():
     assert cles_vers_ids["Soleil"] == "soleil"
     assert cles_vers_ids["Lune"] == "lune"
     assert cles_vers_ids["Ascendant"] == "ascendant"
+
+
+# ── Clefs theme_complet (task 10) ─────────────────────────────────
+def test_clefs_corps_10_entrees():
+    assert set(Z.CLEFS_CORPS.keys()) == {"Soleil", "Lune", "Mercure", "Vénus",
+                                         "Mars", "Jupiter", "Saturne", "Uranus",
+                                         "Neptune", "Pluton"}
+    for corps, clef in Z.CLEFS_CORPS.items():
+        assert "fr" in clef and "en" in clef
+
+
+def test_clefs_points_evolutifs_4():
+    assert set(Z.CLEFS_POINTS_EVOLUTIFS.keys()) == {"noeud_nord", "noeud_sud",
+                                                     "chiron", "lilith"}
+
+
+def test_clefs_aspects_presentes():
+    assert "trigone" in Z.CLEFS_ASPECTS
+    assert "carre" in Z.CLEFS_ASPECTS
+
+
+def test_clefs_dominantes_element():
+    assert "Feu" in Z.CLEFS_DOMINANTES.get("element", {})
+
+
+def test_expliquer_avec_theme_complet():
+    """expliquer() avec theme_complet ajoute une sous-section carte astro."""
+    trad = {"signe_solaire": {"nom": "Bélier"}}
+    tc = {"fondations": {"soleil": {"signe": "Bélier", "longitude": 0.0}},
+          "dix_corps": {"Soleil": {"signe": "Bélier"}},
+          "dominantes": {"element": {"dominant": "Feu"}}}
+    res = Z.expliquer(trad, "fr", theme_complet=tc)
+    assert any("carte" in e.get("id", "").lower() or "theme" in e.get("id", "").lower()
+               for e in res)
+
+
+def test_expliquer_sans_theme_complet_compatible():
+    """expliquer() sans theme_complet reste compatible (pas d'erreur)."""
+    trad = {"signe_solaire": {"nom": "Bélier"}}
+    res = Z.expliquer(trad, "fr")
+    assert isinstance(res, list)
+
+
+# ── Couche didactique (cartes pédagogiques) ───────────────────────
+_DIDACTIQUE_IDS_ATTENDUS = [
+    "theme_fondation_soleil", "theme_fondation_lune",
+    "theme_fondation_ascendant", "theme_fondation_descendant",
+    "theme_fondation_milieu_du_ciel", "theme_fondation_fond_du_ciel",
+    "theme_corps_soleil", "theme_corps_lune", "theme_corps_mercure",
+    "theme_corps_vénus", "theme_corps_mars", "theme_corps_jupiter",
+    "theme_corps_saturne", "theme_corps_uranus", "theme_corps_neptune",
+    "theme_corps_pluton",
+    "theme_point_noeud_nord", "theme_point_noeud_sud",
+    "theme_point_chiron", "theme_point_lilith",
+    "theme_fondations", "theme_corps", "theme_points_evolutifs",
+    "theme_maisons", "theme_aspects", "theme_dominantes",
+]
+
+
+def test_didactique_fr_structure():
+    d = Z.didactique("fr")
+    assert set(d.keys()) == set(_DIDACTIQUE_IDS_ATTENDUS), (
+        f"manquent={set(_DIDACTIQUE_IDS_ATTENDUS)-set(d.keys())}, "
+        f"en_trop={set(d.keys())-set(_DIDACTIQUE_IDS_ATTENDUS)}")
+    for k, e in d.items():
+        assert e.get("question"), f"{k} sans question"
+        assert isinstance(e.get("domaines"), list) and len(e["domaines"]) >= 3, (
+            f"{k} domaines invalides")
+        assert e.get("conclusion"), f"{k} sans conclusion"
+
+
+def test_didactique_ids_connus_du_glossaire():
+    """Toute clé didactique existe dans GLOSSAIRE_FR (garde-fou doublon)."""
+    for k in Z.DIDACTIQUE_FR:
+        assert Z.GLOSSAIRE_FR.get(k), f"clé didactique inconnue du glossaire FR : {k}"
+
+
+def test_didactique_distinction_soleil_lune_facettes():
+    """Soleil/Lune ont 2 facettes distinctes (pilier vs corps)."""
+    d = Z.didactique("fr")
+    assert d["theme_fondation_soleil"]["conclusion"] != d["theme_corps_soleil"]["conclusion"]
+    assert d["theme_fondation_lune"]["conclusion"] != d["theme_corps_lune"]["conclusion"]
+    assert d["theme_fondation_soleil"]["question"] != d["theme_corps_soleil"]["question"]
+
+
+def test_didactique_en_memes_cles_que_fr():
+    fr = Z.didactique("fr")
+    en = Z.didactique("en")
+    assert set(fr.keys()) == set(en.keys()), (
+        f"clés divergentes : {set(fr)^set(en)}")
+    for k in en:
+        e = en[k]
+        assert e.get("question"), f"{k} EN sans question"
+        assert isinstance(e.get("domaines"), list) and len(e["domaines"]) >= 3, (
+            f"{k} EN domaines invalides")
+        assert e.get("conclusion"), f"{k} EN sans conclusion"
+
+
+def test_didactique_en_valeurs_differentes_de_fr():
+    """Les valeurs EN sont bien traduites (pas un copier-coller)."""
+    fr = Z.didactique("fr")
+    en = Z.didactique("en")
+    diff = [k for k in fr if fr[k]["question"] == en[k]["question"]]
+    assert not diff, f"entrées EN non traduites : {diff[:3]}"

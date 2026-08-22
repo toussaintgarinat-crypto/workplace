@@ -1,8 +1,8 @@
 {
   "nom": "personnages",
   "famille": "metier",
-  "version": "0.12.0",
-  "description": "Génération de personnages : distributions structurées (LLM) + casting vocal STABLE agnostique au TTS + moteur HOLISTIQUE multi-traditions (numérologie, astro occidentale/chinoise/védique, égyptien, celte, amérindien, maya Tzolkin) avec synthèse tags→stats→archétype→pierre d'équilibrage (descendant) et recherche inverse description→signes/date (montant), en français ou en anglais (`langue_sortie`, S194). Produit autonome vendable seul : stateless ET stateful (cloisonné par clé API). LLM Gateway par défaut ou Bring-Your-Own-Key. Extrait du Studio Oria (S47), étendu en S49.",
+  "version": "0.13.0",
+  "description": "Génération de personnages : distributions structurées (LLM) + casting vocal STABLE agnostique au TTS + moteur HOLISTIQUE multi-traditions (numérologie, astro occidentale/chinoise/védique, égyptien, celte, amérindien, maya Tzolkin) avec synthèse tags→stats→archétype→pierre d'équilibrage (descendant) et recherche inverse description→signes/date (montant), en français ou en anglais (`langue_sortie`, S194). Carte astro complète (10 corps, maisons, aspects, dominantes) synchronisée depuis le standalone Portrait Cosmique et exposée en `personnage_theme_complet` + intégrée au portrait. Produit autonome vendable seul : stateless ET stateful (cloisonné par clé API). LLM Gateway par défaut ou Bring-Your-Own-Key. Extrait du Studio Oria (S47), étendu en S49.",
   "role": "personnages",
   "couche": "backend",
   "statut": "a_tester",
@@ -85,7 +85,7 @@
     },
     {
       "nom": "personnage_portrait_generer",
-      "description": "Portrait holistique ÉCRIT d'un personnage à partir de son état civil (traditions, archétype, forces/faiblesses, pierre d'équilibrage, récit). Aucune image n'est produite. La date de naissance est indispensable.",
+      "description": "Portrait holistique ÉCRIT d'un personnage à partir de son état civil (traditions, archétype, forces/faiblesses, pierre d'équilibrage, récit). Enrichi de la carte astro complète quand heure+lieu sont fournis (maisons, aspects majeurs, dominante planète×signe×maison) : le récit et les forces en tiennent alors compte. Aucune image n'est produite. La date de naissance est indispensable.",
       "methode": "POST",
       "chemin": "/holistique/portrait",
       "params": {
@@ -103,7 +103,7 @@
         },
         "heure_naissance": {
           "type": "string",
-          "description": "Heure de naissance 'HH:MM' (affine l'ascendant et les maisons)."
+          "description": "Heure de naissance 'HH:MM' (affine l'ascendant, les maisons et les aspects)."
         },
         "latitude": {
           "type": "number",
@@ -124,6 +124,60 @@
         "langue_sortie": {
           "type": "string",
           "description": "Langue du portrait déterministe : 'fr' (défaut) ou 'en'."
+        },
+        "systeme_maisons": {
+          "type": "string",
+          "description": "Système de maisons pour la carte astro complète : 'whole_sign' (défaut), 'placidus' ou 'equal_house'."
+        },
+        "methode_dominantes": {
+          "type": "string",
+          "description": "Méthode de calcul de la dominante planétaire : 'comptage_dignite' (défaut) ou 'score_complexe'."
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "personnage_theme_complet",
+      "description": "Carte astrologique complète et brute d'un personnage : 10 corps (Soleil…Pluton), points évolutifs (nœuds, Chiron, Lilith), maisons, aspects majeurs entre corps, dominante planète×signe×maison. Sans heure ni lieu, seules les fondations Soleil/Lune (approximative) sont calculables — repli honnête. À utiliser pour une analyse astrale détaillée plutôt qu'un récit ; personnage_portrait_generer inclut déjà un résumé de cette carte dans son récit.",
+      "methode": "POST",
+      "chemin": "/holistique/theme",
+      "params": {
+        "prenoms": {
+          "type": "string",
+          "description": "Prénom(s) (optionnel, non utilisé par le calcul astral)."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom de famille (optionnel)."
+        },
+        "date_naissance": {
+          "type": "string",
+          "description": "Date de naissance 'AAAA-MM-JJ'. Sans elle, la brique refuse (422).",
+          "requis": true
+        },
+        "heure_naissance": {
+          "type": "string",
+          "description": "Heure de naissance 'HH:MM' (indispensable pour l'ascendant, les maisons et les aspects précis)."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude du lieu de naissance (décimale)."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude du lieu de naissance (décimale, EST positif)."
+        },
+        "utc_offset": {
+          "type": "number",
+          "description": "Décalage local→UTC à la naissance, en heures."
+        },
+        "systeme_maisons": {
+          "type": "string",
+          "description": "'whole_sign' (défaut), 'placidus' ou 'equal_house'."
+        },
+        "methode_dominantes": {
+          "type": "string",
+          "description": "'comptage_dignite' (défaut) ou 'score_complexe'."
         }
       },
       "action": false
