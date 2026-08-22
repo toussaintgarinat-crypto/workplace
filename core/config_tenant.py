@@ -95,3 +95,30 @@ async def lire_couche_utilisateur(org_id: str | None, utilisateur: str,
                                   client: httpx.AsyncClient | None = None) -> dict:
     """Patch brut de la couche utilisateur (pas le résolu)."""
     return await _lire_couche("utilisateur", _org_eff(org_id), utilisateur, client)
+
+
+async def resoudre(org_id: str | None, utilisateur: str,
+                   client: httpx.AsyncClient | None = None) -> dict:
+    """Config résolue : global < organisation < utilisateur (JSON Merge Patch)."""
+    import config_assistant  # import tardif : évite tout cycle au chargement
+    base = config_assistant.charger()
+    patch_org = await lire_couche_organisation(org_id, client)
+    fusionne = _fusion(base, patch_org)
+    patch_user = await lire_couche_utilisateur(org_id, utilisateur, client) if utilisateur else {}
+    return _fusion(fusionne, patch_user)
+
+
+async def resoudre_avec_provenance(org_id: str | None, utilisateur: str,
+                                   client: httpx.AsyncClient | None = None) -> dict:
+    """Résolu + provenance : pour chaque clé effectivement patchée par une couche,
+    quelle couche a eu le dernier mot ('organisation'|'utilisateur'). Une clé absente
+    de `provenance` vient de la couche globale (comportement par défaut) — cohérent
+    avec l'invariant « visible du modèle = traçable » (journal_modele)."""
+    import config_assistant  # import tardif : évite tout cycle au chargement
+    base = config_assistant.charger()
+    patch_org = await lire_couche_organisation(org_id, client)
+    patch_user = await lire_couche_utilisateur(org_id, utilisateur, client) if utilisateur else {}
+    resolu = _fusion(_fusion(base, patch_org), patch_user)
+    provenance = {cle: "organisation" for cle in patch_org}
+    provenance.update({cle: "utilisateur" for cle in patch_user})
+    return {"resolu": resolu, "provenance": provenance}
