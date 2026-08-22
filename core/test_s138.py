@@ -138,9 +138,14 @@ def test_pipeline_journalise_dans_journal_modele():
 def test_pipeline_ne_journalise_pas_sur_hit_cache_semantique():
     """Un hit du cache sémantique ne fait atteindre AUCUN modèle ce tour-ci : pas de
     nouvelle ligne journal_modele (cf. spec, décision explicite)."""
+    # Sujet du test : la NON-journalisation sur hit de cache — pas la correspondance
+    # du cache lui-même. Système et prompt volontairement sans rapport avec
+    # test_cache_semantique (scope_hash différent, cf. cache_semantique.scope_hash) :
+    # une similarité cosinus coïncidente entre les embeddings factices de deux tests
+    # ne peut alors jamais produire un hit croisé, quel que soit PYTHONHASHSEED.
     cli = _FakeClient()
-    prompt = [{"role": "system", "content": "archiviste"},
-              {"role": "user", "content": "range ce devis, encore"}]
+    prompt = [{"role": "system", "content": "traducteur-juridique-anglais"},
+              {"role": "user", "content": "convertis cette clause de garantie en anglais soutenu"}]
     asyncio.run(llm_pipeline.completer(
         prompt, modeles=["openai/gpt-4o-mini"], temperature=0, etiquette="classement",
         trim_contexte=False, cache=True, fil="fil-cache-s138", client=cli))
