@@ -178,3 +178,62 @@ def test_supprimer_monde_cloisonne_par_cle_api():
     meta = stockage_spatial.creer_monde("cle-o", _cellules_factices(3), seed=1)
     assert stockage_spatial.supprimer_monde("autre-cle", meta["id"]) is False
     assert stockage_spatial.lire_monde("cle-o", meta["id"]) is not None
+
+
+def test_migration_alter_table_enfants_from_legacy_schema(monkeypatch, tmp_path):
+    """Correctif revue finale (Important) : la branche `ALTER TABLE ADD COLUMN` de
+    `_ajouter_colonne()` était jamais testée dans stockage_spatial.py non plus —
+    `conftest.py` détruit+recrée la DB fraîche à chaque test, donc `CREATE TABLE IF NOT EXISTS`
+    crée toujours la table complète avec `sexe` déjà présent.
+
+    Ce test simule une DB legacy (Sprint A/B) SANS la colonne `sexe` ni les tables spatiales,
+    puis vérifie que la migration via `_conn()` crée/ajoute correctement les colonnes."""
+    import sqlite3
+
+    # Créer une DB legacy avec l'ancien schéma (SANS sexe, sans tables spatiales)
+    legacy_db = tmp_path / "legacy_spatial.db"
+    legacy_conn = sqlite3.connect(str(legacy_db))
+
+    # Créer uniquement la table enfants (sans sexe) — pas les tables spatiales encore
+    legacy_conn.execute("""CREATE TABLE enfants (
+        id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, prenoms TEXT, nom TEXT,
+        parent_a_id TEXT, parent_b_id TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+    legacy_conn.execute("INSERT INTO enfants (id, cle_api, prenoms, nom, parent_a_id, "
+                        "parent_b_id, donnees, cree_le) VALUES (?,?,?,?,?,?,?,?)",
+                        ("legacy-enfant", "legacy-spatial-cle", "LegacyChild", "Parent", None, None,
+                         '{"theme": {}, "description_genome": "legacy", "heredite": {}, "mutation_survenue": false}',
+                         "2026-01-01T00:00:00+00:00"))
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    # Rediriger stockage_spatial.DB_PATH vers la legacy DB
+    original_db_path = stockage_spatial.DB_PATH
+    monkeypatch.setattr(stockage_spatial, "DB_PATH", str(legacy_db))
+
+    try:
+        # Appeler `lire_monde()` qui passe par `_conn()` → migration exécutée
+        # Même si le monde n'existe pas, _conn() crée/migre les tables
+        result = stockage_spatial.lire_monde("legacy-spatial-cle", "nonexistent-monde")
+        assert result is None, "Monde n'existe pas, mais tables sont migrées"
+
+        # Créer un monde → cela utilise la DB migrée
+        meta = stockage_spatial.creer_monde("legacy-spatial-cle", _cellules_factices(2), seed=99)
+        assert meta["id"], "Monde créé avec succès"
+
+        # Créer un enfant via stockage (qui partage la même DB)
+        # Mais nous ne pouvons pas importer stockage ici sans risquer les chemins
+        # À la place, vérifier que les tables spatiales existent et que sexe est prêt
+        with stockage_spatial._conn() as c:
+            # Vérifier que sexe colonne existe maintenant
+            infos = c.execute("PRAGMA table_info(enfants)").fetchall()
+            colonnes = {row[1] for row in infos}
+            assert "sexe" in colonnes, "colonne sexe doit exister après migration"
+
+            # Vérifier qu'on peut lire l'ancien enfant legacy
+            old_row = c.execute("SELECT * FROM enfants WHERE id=?", ("legacy-enfant",)).fetchone()
+            assert old_row is not None, "Enfant legacy doit être accessible"
+            assert old_row["sexe"] is None, "sexe legacy doit être None"
+
+    finally:
+        # Restaurer le DB_PATH original
+        monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)
