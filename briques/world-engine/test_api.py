@@ -276,6 +276,167 @@ def test_genome_croiser_parent_id_introuvable_404():
     assert r.status_code == 404
 
 
+def _monde_factice(n=10):
+    """Monde déterministe pour les tests de placement : chaque cellule i a pour
+    SEULE voisine (i+1)%n — évite toute dépendance à la géométrie Voronoï réelle
+    (déjà testée dans test_spatial.py/test_stockage_spatial.py)."""
+    cellules = [{"cellule_id": i, "x": float(i), "y": float(i), "biome": "plaine",
+                 "ressources": [], "voisins": [(i + 1) % n]} for i in range(n)]
+    return stockage_spatial.creer_monde("public", cellules, seed=1)
+
+
+@respx.mock
+def test_genome_croiser_place_enfant_voisin_du_parent_si_place():
+    monde = _monde_factice()
+    theme_mere = _portrait_factice("Mercure", "Vierge", "Vierge")
+    eid_mere = stockage.creer("public", "Mere", "", None, None, theme_mere, "d", {"resume": {}}, False)
+    stockage_spatial.placer(monde["id"], eid_mere, 0)  # seule voisine de 0 : cellule 1
+
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid_mere, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    assert r.json()["cellule_id"] == 1
+
+
+@respx.mock
+def test_genome_croiser_sans_monde_id_pas_de_placement():
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),
+                     httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0})
+    assert r.status_code == 200
+    assert r.json()["cellule_id"] is None
+
+
+@respx.mock
+def test_genome_croiser_parent_fiche_brute_placement_aleatoire_borne():
+    monde = _monde_factice()
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),
+                     httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {**_FICHE_A, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    assert 0 <= r.json()["cellule_id"] < 10
+
+
+@respx.mock
+def test_genome_croiser_parent_stocke_non_place_placement_aleatoire_borne():
+    monde = _monde_factice()
+    theme_mere = _portrait_factice("Mercure", "Vierge", "Vierge")
+    eid_mere = stockage.creer("public", "Mere", "", None, None, theme_mere, "d", {"resume": {}}, False)
+    # eid_mere n'a jamais été placé sur aucun monde
+
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid_mere, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    assert 0 <= r.json()["cellule_id"] < 10
+
+
+@respx.mock
+def test_genome_croiser_parent_place_dans_un_autre_monde_placement_aleatoire_borne():
+    monde_a = _monde_factice()
+    monde_b = _monde_factice()
+    theme_mere = _portrait_factice("Mercure", "Vierge", "Vierge")
+    eid_mere = stockage.creer("public", "Mere", "", None, None, theme_mere, "d", {"resume": {}}, False)
+    stockage_spatial.placer(monde_a["id"], eid_mere, 0)  # placée dans monde_a...
+
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid_mere, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde_b["id"]})  # ...mais le croisement cible monde_b
+    assert r.status_code == 200
+    assert 0 <= r.json()["cellule_id"] < 10
+
+
+@respx.mock
+def test_genome_croiser_monde_id_introuvable_404():
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "monde_id": "id-inconnu"})
+    assert r.status_code == 404
+
+
+@respx.mock
+def test_genome_croiser_parent_b_marque_f_devient_reference():
+    monde = _monde_factice()
+    theme_pere = _portrait_factice("Mars", "Bélier", "Bélier")
+    theme_mere = _portrait_factice("Mercure", "Vierge", "Vierge")
+    eid_pere = stockage.creer("public", "Pere", "", None, None, theme_pere, "d", {"resume": {}}, False)
+    eid_mere = stockage.creer("public", "Mere", "", None, None, theme_mere, "d", {"resume": {}}, False)
+    stockage_spatial.placer(monde["id"], eid_mere, 3)  # seule voisine de 3 : cellule 4
+
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")))
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid_pere, "sexe": "M"}, "parent_b": {"id": eid_mere, "sexe": "F"},
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    assert r.json()["cellule_id"] == 4
+
+
+@respx.mock
+def test_genome_croiser_deux_parents_marques_f_parent_a_gagne():
+    monde = _monde_factice()
+    theme_a = _portrait_factice("Mercure", "Vierge", "Vierge")
+    theme_b = _portrait_factice("Mars", "Bélier", "Bélier")
+    eid_a = stockage.creer("public", "A", "", None, None, theme_a, "d", {"resume": {}}, False)
+    eid_b = stockage.creer("public", "B", "", None, None, theme_b, "d", {"resume": {}}, False)
+    stockage_spatial.placer(monde["id"], eid_a, 0)   # seule voisine de 0 : cellule 1
+    stockage_spatial.placer(monde["id"], eid_b, 5)   # seule voisine de 5 : cellule 6 (disjoint de 1)
+
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")))
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid_a, "sexe": "F"}, "parent_b": {"id": eid_b, "sexe": "F"},
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    assert r.json()["cellule_id"] == 1  # parent_a (0→1), pas parent_b (5→6)
+
+
 def test_genome_enfants_lister_et_lire():
     eid = stockage.creer("public", "Nova", "Test", None, None,
                           _portrait_factice(), "desc", {"resume": {"A": 1}}, False)

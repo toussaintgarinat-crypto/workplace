@@ -7,7 +7,7 @@ calcul astral — ne duplique jamais le moteur.
 import os
 from datetime import date
 from random import Random
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +67,8 @@ class FicheParent(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     utc_offset: Optional[float] = None
+    sexe: Optional[Literal["F", "M"]] = None  # rôle dans CE croisement (placement, Sprint B) —
+                                                # pas un trait de la personne, jamais deviné.
 
 
 class ReferenceParent(BaseModel):
@@ -78,6 +80,7 @@ class ReferenceParent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
+    sexe: Optional[Literal["F", "M"]] = None
 
 
 ParentInput = Union[ReferenceParent, FicheParent]
@@ -96,6 +99,7 @@ class Croisement(BaseModel):
                                   # de 15-30° pour un lieu européen et fausse maisons/dominantes)
     annee_enfant: Optional[int] = Field(default=None, ge=1, le=9999)
     mutation_rate: float = Field(default=0.10, ge=0.0, le=1.0)
+    monde_id: Optional[str] = None  # place l'enfant à sa naissance (Sprint B) — absent = non placé
 
 
 class CreerMonde(BaseModel):
@@ -159,15 +163,44 @@ async def _theme_parent(parent: ParentInput, cle_api_val: str, qui: str) -> dict
     return theme
 
 
+def _parent_reference_naissance(parent_a: ParentInput, parent_b: ParentInput) -> ParentInput:
+    """Parent de référence pour l'héritage de position à la naissance : celui
+    marqué sexe="F" ; à défaut (aucun "F", ou les deux marqués "F"), parent_a."""
+    if parent_a.sexe == "F" and parent_b.sexe != "F":
+        return parent_a
+    if parent_b.sexe == "F" and parent_a.sexe != "F":
+        return parent_b
+    return parent_a
+
+
+def _cellule_naissance(monde_id: str, parent_ref: ParentInput, rng: Random) -> int:
+    """Cellule de naissance dans `monde_id` (déjà vérifié existant par l'appelant) :
+    voisine aléatoire de la cellule du parent de référence s'il y est déjà placé
+    DANS CE monde, sinon cellule aléatoire bornée du monde."""
+    voisins = None
+    if isinstance(parent_ref, ReferenceParent):
+        cellule_parent = stockage_spatial.placement_cellule(monde_id, parent_ref.id)
+        if cellule_parent is not None:
+            voisins = stockage_spatial.voisins_cellule(monde_id, cellule_parent)
+    if voisins:
+        return rng.choice(voisins)
+    return rng.randrange(stockage_spatial.nb_cellules_monde(monde_id))
+
+
 @app.post("/genome/croiser", tags=["genome"])
 async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     """Croise 2 profils cosmiques (via `personnages`, ou un enfant déjà stocké
     référencé par id) pour produire un enfant au thème astronomiquement réel, avec
     un récit d'hérédité en post-traitement — coïncidence assumée, pas une vraie
-    génétique astrale (voir `fusion.comparer_dix_corps`)."""
+    génétique astrale (voir `fusion.comparer_dix_corps`). Si `monde_id` est fourni,
+    l'enfant est aussi placé sur ce monde spatial (Sprint B) — voisin de la cellule
+    du parent de référence (sexe="F", sinon parent_a) s'il y est déjà, sinon cellule
+    aléatoire bornée."""
     if (isinstance(body.parent_a, ReferenceParent) and isinstance(body.parent_b, ReferenceParent)
             and body.parent_a.id == body.parent_b.id):
         raise HTTPException(422, "Un enfant ne peut pas être croisé avec lui-même.")
+    if body.monde_id is not None and not stockage_spatial.monde_existe(_cle, body.monde_id):
+        raise HTTPException(404, f"Monde '{body.monde_id}' introuvable.")
     theme_a = await _theme_parent(body.parent_a, _cle, "Parent A")
     theme_b = await _theme_parent(body.parent_b, _cle, "Parent B")
 
@@ -219,9 +252,19 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
         enfant_id = None
         avertissement = f"Enfant calculé mais non persisté : {e}"
 
+    cellule_id = None
+    if body.monde_id is not None and enfant_id is not None:
+        try:
+            parent_ref = _parent_reference_naissance(body.parent_a, body.parent_b)
+            cellule_id = _cellule_naissance(body.monde_id, parent_ref, Random())
+            stockage_spatial.placer(body.monde_id, enfant_id, cellule_id)
+        except Exception as e:
+            cellule_id = None
+            avertissement = f"Enfant persisté mais non placé : {e}"
+
     return {"parentA": theme_a, "parentB": theme_b, "description_genome": description,
             "enfant": theme_enfant, "heredite": heredite, "mutation_survenue": mutation_survenue,
-            "enfant_id": enfant_id, "avertissement": avertissement}
+            "enfant_id": enfant_id, "cellule_id": cellule_id, "avertissement": avertissement}
 
 
 @app.get("/genome/enfants", tags=["genome"])
