@@ -1,0 +1,5 @@
+# Brique world-engine — croisement de profils cosmiques. Aucune lib lourde : la
+# logique est du Python pur (stdlib), seul l'appel à `personnages` sort en HTTP.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
