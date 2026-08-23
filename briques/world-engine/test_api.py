@@ -87,7 +87,7 @@ def test_genome_croiser_chemin_heureux():
         return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "prenoms_enfant": "Nova", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "prenoms_enfant": "Nova", "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
         "annee_enfant": 2015, "mutation_rate": 0.0})
     assert r.status_code == 200
     data = r.json()
@@ -102,7 +102,7 @@ def test_genome_croiser_personnages_injoignable_502():
     respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(side_effect=httpx.ConnectError("down"))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 502
 
 
@@ -112,7 +112,7 @@ def test_genome_croiser_fiche_parent_invalide_propage_422():
         return_value=httpx.Response(422, json={"detail": "Fiche insuffisante."}))
     r = client.post("/genome/croiser", json={
         "parent_a": {"prenoms": "X"}, "parent_b": _FICHE_B,
-        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 422
 
 
@@ -124,7 +124,7 @@ def test_genome_croiser_aucun_signe_reconnu_422():
         return_value=httpx.Response(200, json={"signes": []}))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 422
 
 
@@ -136,7 +136,7 @@ def test_genome_croiser_parent_a_422_prioritaire_meme_si_b_indisponible():
         side_effect=[httpx.Response(422, json={"detail": "Fiche A insuffisante."})])
     r = client.post("/genome/croiser", json={
         "parent_a": {"prenoms": "X"}, "parent_b": _FICHE_B,
-        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 422
 
 
@@ -148,5 +148,5 @@ def test_genome_croiser_detail_replie_sur_texte_si_corps_non_dict():
         return_value=httpx.Response(422, json=["erreur inattendue"]))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 422

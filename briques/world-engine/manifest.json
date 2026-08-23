@@ -48,6 +48,11 @@
           "description": "Longitude EST-positive du lieu de naissance de l'enfant. Obligatoire.",
           "requis": true
         },
+        "heure_naissance_enfant": {
+          "type": "string",
+          "description": "Heure de naissance de l'enfant 'HH:MM'. Obligatoire : sans elle, personnages ne calcule qu'un thème dégradé (sans dix_corps/dominantes/aspects), rendant l'hérédité incomparable.",
+          "requis": true
+        },
         "utc_offset_enfant": {
           "type": "number",
           "description": "Décalage local→UTC au lieu de naissance de l'enfant (optionnel)."
