@@ -124,6 +124,8 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if ra.status_code != 200:
         _propager_ou_502(ra, "Parent A")
+    theme_a = ra.json()
+    _exiger_theme_complet(theme_a, "Parent A")
 
     try:
         rb = await personnages_client.portrait(body.parent_b.model_dump())
@@ -131,8 +133,7 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if rb.status_code != 200:
         _propager_ou_502(rb, "Parent B")
-    theme_a, theme_b = ra.json(), rb.json()
-    _exiger_theme_complet(theme_a, "Parent A")
+    theme_b = rb.json()
     _exiger_theme_complet(theme_b, "Parent B")
 
     description, mutation_survenue = fusion.fusionner_description(

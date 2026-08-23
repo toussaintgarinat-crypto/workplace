@@ -8,7 +8,8 @@ def test_date_pour_signe_vierge():
 
 def test_date_pour_signe_capricorne_reste_dans_l_annee_donnee():
     """Capricorne est à cheval sur le nouvel an (22 déc → 19 jan) : on ancre sur le
-    DÉBUT de plage (22 décembre), qui reste toujours dans l'année demandée."""
+    début de plage + marge anti-cuspide (26 décembre), qui reste toujours dans
+    l'année demandée."""
     assert fusion.date_pour_signe("Capricorne", 2000) == "2000-12-26"
 
 
