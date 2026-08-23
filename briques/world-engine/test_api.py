@@ -346,3 +346,38 @@ def test_genome_croiser_stockage_echoue_repond_quand_meme(monkeypatch):
     data = r.json()
     assert data["enfant_id"] is None
     assert data["avertissement"] is not None and "disque plein" in data["avertissement"]
+
+
+def test_genome_arbre_trois_generations():
+    gp = stockage.creer("public", "GrandParent", "", None, None,
+                         _portrait_factice(), "d", {"resume": {}}, False)
+    p = stockage.creer("public", "Parent", "", gp, None,
+                        _portrait_factice(), "d", {"resume": {}}, False)
+    e = stockage.creer("public", "Enfant", "", p, None,
+                        _portrait_factice(), "d", {"resume": {}}, False)
+
+    r = client.get(f"/genome/arbre/{e}")
+    assert r.status_code == 200
+    arbre = r.json()
+    assert arbre["id"] == e
+    assert arbre["parent_a"]["id"] == p
+    assert arbre["parent_a"]["parent_a"]["id"] == gp
+    assert arbre["parent_a"]["parent_a"]["parent_a"] is None
+    assert arbre["parent_b"] is None
+
+
+def test_genome_arbre_branche_tronquee_apres_suppression():
+    gp = stockage.creer("public", "GrandParent", "", None, None,
+                         _portrait_factice(), "d", {"resume": {}}, False)
+    e = stockage.creer("public", "Enfant", "", gp, None,
+                        _portrait_factice(), "d", {"resume": {}}, False)
+    stockage.supprimer("public", gp)
+
+    r = client.get(f"/genome/arbre/{e}")
+    assert r.status_code == 200
+    assert r.json()["parent_a"] is None   # gp supprimé, branche tronquée, pas d'erreur
+
+
+def test_genome_arbre_racine_introuvable_404():
+    r = client.get("/genome/arbre/id-inconnu")
+    assert r.status_code == 404

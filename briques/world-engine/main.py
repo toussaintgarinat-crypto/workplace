@@ -227,3 +227,25 @@ def genome_enfant_lire(eid: str, _cle: str = Depends(cle_api)):
 def genome_enfant_supprimer(eid: str, _cle: str = Depends(cle_api)):
     if not stockage.supprimer(_cle, eid):
         raise HTTPException(404, f"Enfant '{eid}' introuvable.")
+
+
+def _noeud_arbre(cle_api_val: str, eid: str) -> dict | None:
+    """Reconstruit récursivement la lignée d'un enfant stocké. S'arrête dès qu'un
+    parent est absent (fiche brute d'origine, ou enfant stocké supprimé entre-temps
+    — les deux cas sont indistinguables et traités pareil : branche `null`)."""
+    enfant = stockage.lire(cle_api_val, eid)
+    if enfant is None:
+        return None
+    return {
+        "id": enfant["id"], "prenoms": enfant["prenoms"], "nom": enfant["nom"],
+        "parent_a": _noeud_arbre(cle_api_val, enfant["parent_a_id"]) if enfant["parent_a_id"] else None,
+        "parent_b": _noeud_arbre(cle_api_val, enfant["parent_b_id"]) if enfant["parent_b_id"] else None,
+    }
+
+
+@app.get("/genome/arbre/{eid}", tags=["genome"])
+def genome_arbre_lire(eid: str, _cle: str = Depends(cle_api)):
+    noeud = _noeud_arbre(_cle, eid)
+    if noeud is None:
+        raise HTTPException(404, f"Enfant '{eid}' introuvable.")
+    return noeud
