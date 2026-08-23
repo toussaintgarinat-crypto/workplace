@@ -1,0 +1,4 @@
+# Dépendances de test uniquement (le socle pytest/pytest-asyncio/httpx est fourni
+# par scripts/tests_briques.sh). respx simule les réponses de `personnages` sans
+# réseau — indispensable puisque cette brique ne fait QUE des appels sortants.
+respx==0.22.0
