@@ -64,6 +64,8 @@ class Croisement(BaseModel):
     nom_enfant: str = ""
     latitude_enfant: float      # jamais deviné : requis
     longitude_enfant: float     # jamais deviné : requis
+    heure_naissance_enfant: str  # "HH:MM" — jamais deviné : requis (sans elle, personnages
+                                  # ne calcule qu'un theme_complet dégradé, sans dix_corps)
     utc_offset_enfant: Optional[float] = None
     annee_enfant: Optional[int] = None   # défaut : année courante, sans signification d'hérédité
     mutation_rate: float = 0.10
@@ -119,7 +121,7 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
 
     fiche_enfant = {
         "prenoms": body.prenoms_enfant, "nom": body.nom_enfant,
-        "date_naissance": date_enfant, "heure_naissance": None,
+        "date_naissance": date_enfant, "heure_naissance": body.heure_naissance_enfant,
         "latitude": body.latitude_enfant, "longitude": body.longitude_enfant,
         "utc_offset": body.utc_offset_enfant,
     }
