@@ -7,6 +7,7 @@ import respx
 from fastapi.testclient import TestClient
 
 import main
+import stockage
 
 client = TestClient(main.app)
 
@@ -37,6 +38,11 @@ def test_auth_rejette_cle_absente_quand_api_keys_configuree(monkeypatch):
     assert result == "vraie-cle"
     monkeypatch.delenv("API_KEYS", raising=False)
     importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # main.app est un NOUVEL objet après reload — resynchronise
+                                    # le client de test, sinon les tests suivants tournent contre
+                                    # les classes Pydantic (Croisement/ReferenceParent) FIGÉES
+                                    # d'avant ce reload et l'isinstance() de _theme_parent échoue.
 
 
 def test_sante_jamais_protegee_meme_avec_api_keys(monkeypatch):
@@ -47,6 +53,8 @@ def test_sante_jamais_protegee_meme_avec_api_keys(monkeypatch):
     assert c.get("/sante").status_code == 200
     monkeypatch.delenv("API_KEYS", raising=False)
     importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # même resynchronisation qu'au-dessus.
 
 
 PERSONNAGES_URL = "http://host.docker.internal:5900"
@@ -225,3 +233,37 @@ def test_genome_croiser_401_personnages_devient_502():
         "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
         "utc_offset_enfant": 1.0})
     assert r.status_code == 502
+
+
+@respx.mock
+def test_genome_croiser_parent_a_par_id_reutilise_stockage():
+    """parent_a peut être {"id": ...} référençant un enfant déjà stocké : son thème
+    est relu depuis stockage.py, personnages n'est PAS rappelé pour ce parent."""
+    theme_stocke = _portrait_factice("Mercure", "Vierge", "Vierge")
+    eid = stockage.creer("public", "Nova", "Test", None, None,
+                          theme_stocke, "desc", {"resume": {}}, False)
+
+    route_portrait = respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),   # parent B
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])  # enfant
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid}, "parent_b": _FICHE_B,
+        "prenoms_enfant": "Nova2", "heure_naissance_enfant": "10:00",
+        "latitude_enfant": 43.6, "longitude_enfant": 1.44, "utc_offset_enfant": 1.0,
+        "annee_enfant": 2015, "mutation_rate": 0.0})
+    assert r.status_code == 200
+    assert route_portrait.call_count == 2  # parent B + enfant seulement — PAS parent A
+
+
+@respx.mock
+def test_genome_croiser_parent_id_introuvable_404():
+    """@respx.mock sans aucune route enregistrée : si l'id-lookup régressait vers un
+    appel réseau, ça lèverait plutôt que de pendre sur host.docker.internal."""
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": "id-inconnu"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
+    assert r.status_code == 404
