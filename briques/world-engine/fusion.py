@@ -20,3 +20,35 @@ def date_pour_signe(signe: str, annee: int) -> str:
     naissance) — c'est un choix pratique pour obtenir une vraie date calculable."""
     mois, jour = SIGNE_PLAGES[signe]
     return f"{annee:04d}-{mois:02d}-{jour:02d}"
+
+
+# Traits « mutants » : pool local à world-engine, volontairement indépendant des
+# tables de significations de `personnages` (pure flaveur narrative, pas de lien
+# avec le moteur astro — donc pas d'import de code entre les deux briques).
+MOTS_MUTATION = [
+    "Rébellion", "Étrangeté", "Prescience", "Chaos créateur", "Magnétisme sombre",
+    "Don occulte", "Instabilité géniale", "Charisme brut", "Intuition foudroyante",
+    "Ombre habitée", "Force tellurique", "Éclat imprévisible",
+]
+
+
+def fusionner_description(theme_a: dict, theme_b: dict, mutation_rate: float, rng) -> tuple[str, bool]:
+    """Fusionne les traits dominants de 2 réponses `/holistique/portrait` en une
+    description texte, destinée à `/holistique/recherche-inverse`.
+
+    Avec probabilité `mutation_rate` (tirée via `rng.random()`), injecte un trait
+    absent des deux parents (`rng.choice(MOTS_MUTATION)`). Renvoie
+    (description, mutation_survenue)."""
+    forces_a = theme_a["portrait"]["forces"][:2]
+    forces_b = theme_b["portrait"]["forces"][:2]
+    dom_a = theme_a["theme_complet"]["dominantes"]
+    dom_b = theme_b["theme_complet"]["dominantes"]
+    traits = [*forces_a, *forces_b,
+              dom_a["planete"]["dominante"], dom_b["planete"]["dominante"],
+              dom_a["signe"]["dominant"], dom_b["signe"]["dominant"]]
+
+    mutation_survenue = rng.random() < mutation_rate
+    if mutation_survenue:
+        traits.append(rng.choice(MOTS_MUTATION))
+
+    return "Personnage combinant " + ", ".join(traits) + ".", mutation_survenue
