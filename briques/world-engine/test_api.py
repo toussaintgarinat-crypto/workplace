@@ -126,3 +126,27 @@ def test_genome_croiser_aucun_signe_reconnu_422():
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
         "latitude_enfant": 43.6, "longitude_enfant": 1.44})
     assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_croiser_parent_a_422_prioritaire_meme_si_b_indisponible():
+    """Correctif : A doit être entièrement résolu avant que B soit appelé. Si A est
+    invalide (422) et que B serait injoignable, la réponse doit rester 422 (pas 502)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(422, json={"detail": "Fiche A insuffisante."})])
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"prenoms": "X"}, "parent_b": _FICHE_B,
+        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+    assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_croiser_detail_replie_sur_texte_si_corps_non_dict():
+    """Correctif : _detail() ne doit jamais lever, même si le corps d'erreur de
+    personnages est un JSON valide mais pas un objet (ex: une liste)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(422, json=["erreur inattendue"]))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+    assert r.status_code == 422

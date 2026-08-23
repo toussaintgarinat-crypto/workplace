@@ -71,9 +71,10 @@ class Croisement(BaseModel):
 
 def _detail(resp) -> str:
     """Message d'erreur d'une réponse `personnages` non-200 — repli honnête sur le
-    texte brut si le corps n'est pas du JSON valide (ne lève jamais)."""
+    texte brut si le corps n'est pas du JSON valide OU n'est pas un objet (ne lève jamais)."""
     try:
-        return resp.json().get("detail", resp.text)
+        corps = resp.json()
+        return corps.get("detail", resp.text) if isinstance(corps, dict) else resp.text
     except ValueError:
         return resp.text
 
