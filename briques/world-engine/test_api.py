@@ -275,6 +275,54 @@ def test_genome_croiser_parent_id_introuvable_404():
     assert r.status_code == 404
 
 
+def test_genome_enfants_lister_et_lire():
+    eid = stockage.creer("public", "Nova", "Test", None, None,
+                          _portrait_factice(), "desc", {"resume": {"A": 1}}, False)
+
+    r = client.get("/genome/enfants")
+    assert r.status_code == 200
+    ids = [e["id"] for e in r.json()]
+    assert eid in ids
+    assert "theme" not in r.json()[0]   # liste allégée
+
+    r2 = client.get(f"/genome/enfants/{eid}")
+    assert r2.status_code == 200
+    assert r2.json()["prenoms"] == "Nova"
+    assert r2.json()["theme"]["theme_complet"]["dominantes"]["signe"]["dominant"] == "Vierge"
+
+
+def test_genome_enfant_lire_introuvable_404():
+    r = client.get("/genome/enfants/id-inconnu")
+    assert r.status_code == 404
+
+
+def test_genome_enfants_cloisonnes_par_cle_api(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "cle-x,cle-y")
+    importlib.reload(main)
+    c = TestClient(main.app)
+    eid = main.stockage.creer("cle-x", "Secret", "", None, None,
+                               _portrait_factice(), "d", {"resume": {}}, False)
+    r_x = c.get("/genome/enfants", headers={"X-API-Key": "cle-x"})
+    r_y = c.get("/genome/enfants", headers={"X-API-Key": "cle-y"})
+    assert any(e["id"] == eid for e in r_x.json())
+    assert not any(e["id"] == eid for e in r_y.json())
+    monkeypatch.delenv("API_KEYS", raising=False)
+    importlib.reload(main)
+
+
+def test_genome_enfant_supprimer():
+    eid = stockage.creer("public", "Nova", "Test", None, None,
+                          _portrait_factice(), "d", {"resume": {}}, False)
+    r = client.delete(f"/genome/enfants/{eid}")
+    assert r.status_code == 204
+    assert client.get(f"/genome/enfants/{eid}").status_code == 404
+
+
+def test_genome_enfant_supprimer_introuvable_404():
+    r = client.delete("/genome/enfants/id-inconnu")
+    assert r.status_code == 404
+
+
 @respx.mock
 def test_genome_croiser_stockage_echoue_repond_quand_meme(monkeypatch):
     """Un échec d'écriture SQLite après un croisement réussi ne fait jamais échouer

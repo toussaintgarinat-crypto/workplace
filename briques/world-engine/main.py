@@ -208,3 +208,22 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     return {"parentA": theme_a, "parentB": theme_b, "description_genome": description,
             "enfant": theme_enfant, "heredite": heredite, "mutation_survenue": mutation_survenue,
             "enfant_id": enfant_id, "avertissement": avertissement}
+
+
+@app.get("/genome/enfants", tags=["genome"])
+def genome_enfants_lister(_cle: str = Depends(cle_api)):
+    return stockage.lister(_cle)
+
+
+@app.get("/genome/enfants/{eid}", tags=["genome"])
+def genome_enfant_lire(eid: str, _cle: str = Depends(cle_api)):
+    enfant = stockage.lire(_cle, eid)
+    if enfant is None:
+        raise HTTPException(404, f"Enfant '{eid}' introuvable.")
+    return enfant
+
+
+@app.delete("/genome/enfants/{eid}", status_code=204, tags=["genome"])
+def genome_enfant_supprimer(eid: str, _cle: str = Depends(cle_api)):
+    if not stockage.supprimer(_cle, eid):
+        raise HTTPException(404, f"Enfant '{eid}' introuvable.")
