@@ -93,7 +93,7 @@
     },
     {
       "nom": "genome_arbre_lire",
-      "description": "Reconstruit récursivement la lignée d'un enfant stocké (parents, grands-parents…) en remontant les ids stockés. S'arrête dès qu'un parent était une fiche brute (pas un enfant stocké) ou a été supprimé — la branche vaut alors null, jamais une erreur.",
+      "description": "Reconstruit récursivement la lignée d'un enfant stocké (parents, grands-parents…) en remontant les ids stockés. S'arrête dès qu'un parent était une fiche brute (pas un enfant stocké) ou a été supprimé — la branche vaut alors null, jamais une erreur. La chaîne de parenté est un DAG, pas un arbre : si un même ancêtre est atteignable par plusieurs chemins (pedigree collapse, ex. deux enfants croisés qui partagent un grand-parent), il n'est développé qu'une fois — ses réapparitions suivantes sont des stubs `{\"id\":..., \"prenoms\":..., \"nom\":..., \"deja_present\": true}`, à distinguer d'une branche `null` (qui signifie l'absence d'ancêtre stocké, pas une répétition).",
       "methode": "GET",
       "chemin": "/genome/arbre/{eid}",
       "params": {

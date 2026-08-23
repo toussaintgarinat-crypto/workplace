@@ -308,6 +308,11 @@ def test_genome_enfants_cloisonnes_par_cle_api(monkeypatch):
     assert not any(e["id"] == eid for e in r_y.json())
     monkeypatch.delenv("API_KEYS", raising=False)
     importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # même resynchronisation que les 2 tests d'auth
+                                    # au-dessus — sinon les tests suivants qui
+                                    # exercent {"id": ...} tournent contre les
+                                    # classes Pydantic FIGÉES d'avant ce reload.
 
 
 def test_genome_enfant_supprimer():
@@ -381,3 +386,50 @@ def test_genome_arbre_branche_tronquee_apres_suppression():
 def test_genome_arbre_racine_introuvable_404():
     r = client.get("/genome/arbre/id-inconnu")
     assert r.status_code == 404
+
+
+def test_genome_arbre_ancetre_partage_devient_stub_pas_reexpanse():
+    """La lignée est un DAG, pas un arbre : gp est partagé par p1 et p2 (pedigree
+    collapse). Correctif Critical revue finale : la 2e apparition de gp doit être
+    un stub `deja_present` — pas un noeud entièrement redéveloppé (parent_a/parent_b),
+    sans quoi la réexpansion explose exponentiellement avec la profondeur."""
+    gp = stockage.creer("public", "GrandParent", "", None, None,
+                         _portrait_factice(), "d", {"resume": {}}, False)
+    p1 = stockage.creer("public", "Parent1", "", gp, None,
+                         _portrait_factice(), "d", {"resume": {}}, False)
+    p2 = stockage.creer("public", "Parent2", "", gp, None,
+                         _portrait_factice(), "d", {"resume": {}}, False)
+    e = stockage.creer("public", "Enfant", "", p1, p2,
+                        _portrait_factice(), "d", {"resume": {}}, False)
+
+    r = client.get(f"/genome/arbre/{e}")
+    assert r.status_code == 200
+    arbre = r.json()
+    assert arbre["parent_a"]["id"] == p1
+    assert arbre["parent_b"]["id"] == p2
+
+    premier_gp = arbre["parent_a"]["parent_a"]
+    second_gp = arbre["parent_b"]["parent_a"]
+    assert premier_gp["id"] == gp
+    assert second_gp["id"] == gp
+    # Le 1er atteint (via p1) est pleinement développé...
+    assert "parent_a" in premier_gp and "parent_b" in premier_gp
+    assert premier_gp.get("deja_present") is not True
+    # ...le 2e (via p2, même gp) est un stub : pas re-développé, marqué deja_present.
+    assert second_gp.get("deja_present") is True
+    assert "parent_a" not in second_gp and "parent_b" not in second_gp
+
+
+@respx.mock
+def test_genome_croiser_refuse_auto_croisement_422():
+    """Croiser un enfant stocké avec lui-même (même id des deux côtés) est le cas
+    le plus pathologique du problème d'ancêtre partagé — refusé avant tout appel
+    réseau. @respx.mock sans route enregistrée : un appel HTTP réel lèverait."""
+    eid = stockage.creer("public", "Nova", "Test", None, None,
+                          _portrait_factice(), "d", {"resume": {}}, False)
+    r = client.post("/genome/croiser", json={
+        "parent_a": {"id": eid}, "parent_b": {"id": eid},
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
+    assert r.status_code == 422
+    assert "lui-même" in r.json()["detail"]
