@@ -2,7 +2,7 @@
   "nom": "world-engine",
   "famille": "metier",
   "version": "0.1.0",
-  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (comparaison des 10 corps aux 2 parents — coïncidence assumée, pas une vraie génétique astrale). Premier maillon du rapport d'architecture « World Engine » : la simulation temporelle et la cartographie restent hors périmètre tant que ce croisement ne prouve pas son intérêt narratif.",
+  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (comparaison des 10 corps aux 2 parents — coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent. Deuxième maillon du rapport d'architecture « World Engine » (Génome + Spatial) : la simulation temporelle (horloge/ticks) et le compilateur de packs restent hors périmètre.",
   "role": "world-engine",
   "couche": "backend",
   "statut": "a_tester",
@@ -10,24 +10,24 @@
   "port": 6220,
   "url_sante": "http://host.docker.internal:6220/sante",
   "depends_on": ["personnages"],
-  "offre": ["croisement_genome_cosmique"],
+  "offre": ["croisement_genome_cosmique", "maillage_spatial"],
   "besoin": ["personnages"],
   "taches": [],
   "capacites": [
     {
       "nom": "genome_croiser",
-      "description": "Croise 2 profils cosmiques (fiches parents avec date/heure/lieu de naissance) pour produire un enfant : thème astral calculé à une vraie date indépendante, avec un récit d'hérédité comparant les 10 corps de l'enfant aux 2 parents. Le lieu de naissance de l'enfant est indispensable (jamais deviné). L'enfant produit est automatiquement stocké (enfant_id dans la réponse) et peut être réutilisé comme parent d'un croisement suivant.",
+      "description": "Croise 2 profils cosmiques (fiches parents avec date/heure/lieu de naissance) pour produire un enfant : thème astral calculé à une vraie date indépendante, avec un récit d'hérédité comparant les 10 corps de l'enfant aux 2 parents. Le lieu de naissance de l'enfant est indispensable (jamais deviné). L'enfant produit est automatiquement stocké (enfant_id dans la réponse) et peut être réutilisé comme parent d'un croisement suivant. Si monde_id est fourni, l'enfant est aussi placé sur ce monde (cellule_id dans la réponse, null si monde_id absent).",
       "methode": "POST",
       "chemin": "/genome/croiser",
       "params": {
         "parent_a": {
           "type": "object",
-          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset — OU {\"id\": \"...\"} référençant un enfant déjà stocké par un croisement précédent (relu sans rappeler personnages). heure_naissance/latitude/longitude sont EFFECTIVEMENT nécessaires pour une fiche brute : sans eux, personnages renvoie un thème dégradé et l'appel échoue en 422.",
+          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset, sexe ('F'/'M', optionnel — désigne le parent de référence pour l'héritage de position si monde_id est fourni) — OU {\"id\": \"...\"} référençant un enfant déjà stocké (même champ sexe optionnel accepté sur la référence). heure_naissance/latitude/longitude sont EFFECTIVEMENT nécessaires pour une fiche brute : sans eux, personnages renvoie un thème dégradé et l'appel échoue en 422.",
           "requis": true
         },
         "parent_b": {
           "type": "object",
-          "description": "Fiche du parent B, même forme que parent_a (fiche brute OU {\"id\": \"...\"}, mêmes contraintes).",
+          "description": "Fiche du parent B, même forme que parent_a (fiche brute OU {\"id\": \"...\"}, mêmes contraintes, même champ sexe optionnel).",
           "requis": true
         },
         "prenoms_enfant": {
@@ -65,6 +65,10 @@
         "mutation_rate": {
           "type": "number",
           "description": "Probabilité (0.0 à 1.0 inclus, défaut 0.10, borné) d'injecter un trait absent des 2 parents dans la description fusionnée avant recherche du signe de l'enfant."
+        },
+        "monde_id": {
+          "type": "string",
+          "description": "Id d'un monde spatial existant où placer l'enfant à sa naissance (optionnel, Sprint B). Absent ⇒ enfant non placé (cellule_id: null dans la réponse). Présent ⇒ l'enfant nait dans une cellule voisine de celle du parent de référence (marqué sexe:'F' ; à défaut parent_a) s'il y est déjà placé DANS CE MÊME monde, sinon dans une cellule aléatoire bornée du monde. monde_id introuvable ou d'une autre clé API → 404."
         }
       },
       "action": true
@@ -114,6 +118,93 @@
         "eid": {
           "type": "string",
           "description": "Id de l'enfant stocké à supprimer.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "spatial_monde_creer",
+      "description": "Génère et persiste un nouveau monde spatial : maillage de cellules Voronoï, biomes et ressources dérivés d'un bruit cohérent (altitude/humidité). nb_cellules borné 10-2000. seed optionnel (généré et renvoyé si absent) — mêmes (nb_cellules, seed) ⇒ même monde, reproductible.",
+      "methode": "POST",
+      "chemin": "/spatial/mondes",
+      "params": {
+        "nb_cellules": {
+          "type": "integer",
+          "description": "Nombre de cellules du monde (10 à 2000).",
+          "requis": true
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Graine de génération (optionnel, générée et renvoyée si absente)."
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "spatial_monde_forker",
+      "description": "Clone un monde existant (mêmes cellules, mêmes biomes/ressources/voisins, mêmes enfants déjà placés) sous un nouvel id indépendant — pour représenter une lignée temporelle qui diverge sans affecter le monde d'origine. Le monde source n'est jamais modifié.",
+      "methode": "POST",
+      "chemin": "/spatial/mondes/{mid}/forker",
+      "params": {
+        "mid": {
+          "type": "string",
+          "description": "Id du monde source à cloner.",
+          "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "spatial_mondes_lister",
+      "description": "Liste les mondes générés (id, nb_cellules, seed, forked_from_id, date de création). Cloisonné par clé API.",
+      "methode": "GET",
+      "chemin": "/spatial/mondes",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "spatial_monde_lire",
+      "description": "Lit un monde complet : toutes ses cellules (position, biome, ressources, voisins) avec les enfants du génome placés sur chacune.",
+      "methode": "GET",
+      "chemin": "/spatial/mondes/{mid}",
+      "params": {
+        "mid": {
+          "type": "string",
+          "description": "Id du monde à lire.",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "spatial_cellule_lire",
+      "description": "Lit une cellule précise d'un monde (position, biome, ressources, voisins, enfants placés dessus).",
+      "methode": "GET",
+      "chemin": "/spatial/mondes/{mid}/cellules/{cid}",
+      "params": {
+        "mid": {
+          "type": "string",
+          "description": "Id du monde.",
+          "requis": true
+        },
+        "cid": {
+          "type": "integer",
+          "description": "Id de la cellule dans ce monde.",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "spatial_monde_supprimer",
+      "description": "Supprime un monde (cascade : ses cellules et les placements d'enfants dessus).",
+      "methode": "DELETE",
+      "chemin": "/spatial/mondes/{mid}",
+      "params": {
+        "mid": {
+          "type": "string",
+          "description": "Id du monde à supprimer.",
           "requis": true
         }
       },
