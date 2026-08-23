@@ -6,7 +6,8 @@ d'hérédité en post-traitement (comparaison des 10 corps aux 2 parents).
 
 Voir la spec : `docs/superpowers/specs/2026-08-22-world-engine-genome-cosmique-design.md`.
 
-Stateless : aucune donnée n'est persistée. Dépend de la brique `personnages`
-(port 5900) en HTTP — pas de duplication du moteur astro.
+Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`)
+— voir `stockage.py`. Dépend de la brique `personnages` (port 5900) en HTTP pour
+tout calcul astral — pas de duplication du moteur astro.
 
 Port : 6220.

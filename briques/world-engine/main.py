@@ -1,7 +1,8 @@
 """Brique « world-engine » — croisement de 2 profils cosmiques (génome cosmique).
 
-Stateless : entrée → sortie, rien stocké. Dépend de `personnages` (port 5900) en
-HTTP pour tout calcul astral — ne duplique jamais le moteur.
+Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`)
+— voir `stockage.py`. Dépend de `personnages` (port 5900) en HTTP pour tout
+calcul astral — ne duplique jamais le moteur.
 """
 import os
 from datetime import date
@@ -153,7 +154,11 @@ async def _theme_parent(parent: ParentInput, cle_api_val: str, qui: str) -> dict
 async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     """Croise 2 profils cosmiques (via `personnages`, ou un enfant déjà stocké
     référencé par id) pour produire un enfant au thème astronomiquement réel, avec
-    un récit d'hérédité en post-traitement."""
+    un récit d'hérédité en post-traitement — coïncidence assumée, pas une vraie
+    génétique astrale (voir `fusion.comparer_dix_corps`)."""
+    if (isinstance(body.parent_a, ReferenceParent) and isinstance(body.parent_b, ReferenceParent)
+            and body.parent_a.id == body.parent_b.id):
+        raise HTTPException(422, "Un enfant ne peut pas être croisé avec lui-même.")
     theme_a = await _theme_parent(body.parent_a, _cle, "Parent A")
     theme_b = await _theme_parent(body.parent_b, _cle, "Parent B")
 
@@ -229,17 +234,34 @@ def genome_enfant_supprimer(eid: str, _cle: str = Depends(cle_api)):
         raise HTTPException(404, f"Enfant '{eid}' introuvable.")
 
 
-def _noeud_arbre(cle_api_val: str, eid: str) -> dict | None:
+def _noeud_arbre(cle_api_val: str, eid: str, vus: set[str] | None = None) -> dict | None:
     """Reconstruit récursivement la lignée d'un enfant stocké. S'arrête dès qu'un
     parent est absent (fiche brute d'origine, ou enfant stocké supprimé entre-temps
-    — les deux cas sont indistinguables et traités pareil : branche `null`)."""
+    — les deux cas sont indistinguables et traités pareil : branche `null`).
+
+    La chaîne de parenté est un DAG par construction (ids uuid4, arêtes remontant
+    toujours vers le passé — donc acyclique), PAS un arbre : un même ancêtre peut
+    être atteignable par plusieurs chemins (ex. deux enfants croisés qui partagent
+    un grand-parent, ou même parent_a == parent_b). `vus` mémoïse les ids déjà
+    développés dans CE parcours pour éviter une ré-expansion exponentielle du
+    même sous-arbre et pour ne jamais présenter un même ancêtre comme s'il
+    s'agissait de personnes distinctes. Un ancêtre déjà développé ailleurs revient
+    en stub `{"id":..., "prenoms":..., "nom":..., "deja_present": True}` — jamais
+    en `None` : les deux ont un sens différent pour l'appelant (`None` = pas
+    d'ancêtre stocké au-delà de ce point, stub = ancêtre stocké mais déjà montré
+    ailleurs dans cet arbre)."""
+    vus = set() if vus is None else vus
     enfant = stockage.lire(cle_api_val, eid)
     if enfant is None:
         return None
+    if eid in vus:
+        return {"id": enfant["id"], "prenoms": enfant["prenoms"], "nom": enfant["nom"],
+                "deja_present": True}
+    vus.add(eid)
     return {
         "id": enfant["id"], "prenoms": enfant["prenoms"], "nom": enfant["nom"],
-        "parent_a": _noeud_arbre(cle_api_val, enfant["parent_a_id"]) if enfant["parent_a_id"] else None,
-        "parent_b": _noeud_arbre(cle_api_val, enfant["parent_b_id"]) if enfant["parent_b_id"] else None,
+        "parent_a": _noeud_arbre(cle_api_val, enfant["parent_a_id"], vus) if enfant["parent_a_id"] else None,
+        "parent_b": _noeud_arbre(cle_api_val, enfant["parent_b_id"], vus) if enfant["parent_b_id"] else None,
     }
 
 
