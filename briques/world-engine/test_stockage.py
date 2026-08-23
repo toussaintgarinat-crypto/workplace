@@ -90,3 +90,59 @@ def test_creer_sans_sexe_reste_none():
                           _theme_factice(), "desc", {"resume": {}}, False)
     enfant = stockage.lire("cle-sexe", eid)
     assert enfant["sexe"] is None
+
+
+def test_migration_alter_table_from_legacy_schema(monkeypatch, tmp_path):
+    """Correctif revue finale (Important) : la branche `ALTER TABLE ADD COLUMN` de
+    `_ajouter_colonne()` était jamais testée — `conftest.py` détruit+recrée la DB fraîche
+    à chaque test, donc `CREATE TABLE IF NOT EXISTS enfants` crée toujours la table avec
+    `sexe` présent, et la migration est un no-op.
+
+    Ce test simule une DB legacy (Sprint A/B) SANS la colonne `sexe`, puis vérifiée que
+    la migration via `_conn()` l'ajoute réellement."""
+    import sqlite3
+
+    # Créer une DB legacy avec l'ancien schéma (SANS sexe)
+    legacy_db = tmp_path / "legacy_enfants.db"
+    legacy_conn = sqlite3.connect(str(legacy_db))
+    legacy_conn.execute("""CREATE TABLE enfants (
+        id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, prenoms TEXT, nom TEXT,
+        parent_a_id TEXT, parent_b_id TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+    legacy_conn.execute("INSERT INTO enfants (id, cle_api, prenoms, nom, parent_a_id, "
+                        "parent_b_id, donnees, cree_le) VALUES (?,?,?,?,?,?,?,?)",
+                        ("old-child-id", "legacy-cle", "Legacy", "Enfant", None, None,
+                         '{"theme": {}, "description_genome": "old", "heredite": {}, "mutation_survenue": false}',
+                         "2026-01-01T00:00:00+00:00"))
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    # Rediriger stockage.DB_PATH vers la legacy DB
+    original_db_path = stockage.DB_PATH
+    monkeypatch.setattr(stockage, "DB_PATH", str(legacy_db))
+
+    try:
+        # Appeler `lire()` qui passe par `_conn()` → migration exécutée
+        enfant = stockage.lire("legacy-cle", "old-child-id")
+
+        # Migration réussie : sexe doit être présent et lisible
+        assert enfant is not None, "Enfant legacy doit être lisible après migration"
+        assert "sexe" in enfant, "sexe doit être présent dans enfant"
+        assert enfant["sexe"] is None, "sexe doit être None pour un enfant legacy"
+
+        # Créer un nouvel enfant AVEC sexe pour vérifier la colonne est vraiment usable
+        eid_new = stockage.creer("legacy-cle", "Nova", "Test", None, None,
+                                 _theme_factice(), "new desc", {"resume": {}}, False, sexe="F")
+
+        # Lire le nouvel enfant : sexe doit être "F"
+        enfant_new = stockage.lire("legacy-cle", eid_new)
+        assert enfant_new["sexe"] == "F", "Nouvel enfant avec sexe='F' doit être persisté correctement"
+
+        # Lister tous les enfants de cette cle → vérifier sexe dans la liste
+        enfants = stockage.lister("legacy-cle")
+        assert len(enfants) >= 2, "Doit avoir au moins l'ancien et le nouveau enfant"
+        nova = next(e for e in enfants if e["id"] == eid_new)
+        assert nova["sexe"] == "F", "sexe doit être visible dans lister()"
+
+    finally:
+        # Restaurer le DB_PATH original
+        monkeypatch.setattr(stockage, "DB_PATH", original_db_path)
