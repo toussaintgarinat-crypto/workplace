@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import fusion
 import personnages_client
+import spatial
 import stockage
+import stockage_spatial
 
 app = FastAPI(title="World Engine — Génome Cosmique", version="0.1.0")
 
@@ -94,6 +96,13 @@ class Croisement(BaseModel):
                                   # de 15-30° pour un lieu européen et fausse maisons/dominantes)
     annee_enfant: Optional[int] = Field(default=None, ge=1, le=9999)
     mutation_rate: float = Field(default=0.10, ge=0.0, le=1.0)
+
+
+class CreerMonde(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nb_cellules: int = Field(ge=10, le=2000)
+    seed: Optional[int] = None
 
 
 def _detail(resp) -> str:
@@ -271,3 +280,50 @@ def genome_arbre_lire(eid: str, _cle: str = Depends(cle_api)):
     if noeud is None:
         raise HTTPException(404, f"Enfant '{eid}' introuvable.")
     return noeud
+
+
+@app.post("/spatial/mondes", tags=["spatial"])
+def spatial_monde_creer(body: CreerMonde, _cle: str = Depends(cle_api)):
+    """Génère et persiste un nouveau monde : maillage Voronoï, biomes/ressources
+    dérivés d'un bruit cohérent. `seed` généré si absent (renvoyé dans la réponse,
+    même (nb_cellules, seed) ⇒ même monde)."""
+    seed = body.seed if body.seed is not None else Random().randrange(2**31)
+    cellules = spatial.generer_monde(body.nb_cellules, seed)
+    return stockage_spatial.creer_monde(_cle, cellules, seed)
+
+
+@app.post("/spatial/mondes/{mid}/forker", tags=["spatial"])
+def spatial_monde_forker(mid: str, _cle: str = Depends(cle_api)):
+    """Clone un monde existant (cellules + enfants placés) sous un nouvel id
+    indépendant. Le monde source n'est jamais modifié."""
+    nouveau = stockage_spatial.forker_monde(_cle, mid)
+    if nouveau is None:
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    return nouveau
+
+
+@app.get("/spatial/mondes", tags=["spatial"])
+def spatial_mondes_lister(_cle: str = Depends(cle_api)):
+    return stockage_spatial.lister_mondes(_cle)
+
+
+@app.get("/spatial/mondes/{mid}", tags=["spatial"])
+def spatial_monde_lire(mid: str, _cle: str = Depends(cle_api)):
+    monde = stockage_spatial.lire_monde(_cle, mid)
+    if monde is None:
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    return monde
+
+
+@app.get("/spatial/mondes/{mid}/cellules/{cid}", tags=["spatial"])
+def spatial_cellule_lire(mid: str, cid: int, _cle: str = Depends(cle_api)):
+    cellule = stockage_spatial.lire_cellule(_cle, mid, cid)
+    if cellule is None:
+        raise HTTPException(404, f"Cellule '{cid}' du monde '{mid}' introuvable.")
+    return cellule
+
+
+@app.delete("/spatial/mondes/{mid}", status_code=204, tags=["spatial"])
+def spatial_monde_supprimer(mid: str, _cle: str = Depends(cle_api)):
+    if not stockage_spatial.supprimer_monde(_cle, mid):
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")

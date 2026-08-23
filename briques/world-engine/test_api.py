@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import main
 import stockage
+import stockage_spatial
 
 client = TestClient(main.app)
 
@@ -433,3 +434,89 @@ def test_genome_croiser_refuse_auto_croisement_422():
         "utc_offset_enfant": 1.0})
     assert r.status_code == 422
     assert "lui-même" in r.json()["detail"]
+
+
+def test_spatial_monde_creer_puis_lire():
+    r = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 42})
+    assert r.status_code == 200
+    meta = r.json()
+    assert meta["nb_cellules"] == 10
+    assert meta["seed"] == 42
+
+    r2 = client.get(f"/spatial/mondes/{meta['id']}")
+    assert r2.status_code == 200
+    monde = r2.json()
+    assert len(monde["cellules"]) == 10
+
+
+def test_spatial_monde_creer_sans_seed_genere_un_seed():
+    r = client.post("/spatial/mondes", json={"nb_cellules": 10})
+    assert r.status_code == 200
+    assert isinstance(r.json()["seed"], int)
+
+
+def test_spatial_monde_creer_nb_cellules_hors_bornes_422():
+    assert client.post("/spatial/mondes", json={"nb_cellules": 5}).status_code == 422
+    assert client.post("/spatial/mondes", json={"nb_cellules": 3000}).status_code == 422
+
+
+def test_spatial_mondes_lister():
+    r = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1})
+    mid = r.json()["id"]
+    r2 = client.get("/spatial/mondes")
+    assert any(m["id"] == mid for m in r2.json())
+    assert "cellules" not in r2.json()[0]
+
+
+def test_spatial_monde_lire_introuvable_404():
+    assert client.get("/spatial/mondes/id-inconnu").status_code == 404
+
+
+def test_spatial_cellule_lire():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1}).json()["id"]
+    r = client.get(f"/spatial/mondes/{mid}/cellules/0")
+    assert r.status_code == 200
+    assert r.json()["cellule_id"] == 0
+    assert client.get(f"/spatial/mondes/{mid}/cellules/999").status_code == 404
+
+
+def test_spatial_monde_forker():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1}).json()["id"]
+    r = client.post(f"/spatial/mondes/{mid}/forker")
+    assert r.status_code == 200
+    fork = r.json()
+    assert fork["forked_from_id"] == mid
+    assert fork["id"] != mid
+    assert client.get(f"/spatial/mondes/{fork['id']}").status_code == 200
+
+
+def test_spatial_monde_forker_introuvable_404():
+    assert client.post("/spatial/mondes/id-inconnu/forker").status_code == 404
+
+
+def test_spatial_monde_supprimer():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1}).json()["id"]
+    r = client.delete(f"/spatial/mondes/{mid}")
+    assert r.status_code == 204
+    assert client.get(f"/spatial/mondes/{mid}").status_code == 404
+
+
+def test_spatial_monde_supprimer_introuvable_404():
+    assert client.delete("/spatial/mondes/id-inconnu").status_code == 404
+
+
+def test_spatial_mondes_cloisonnes_par_cle_api(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "cle-x,cle-y")
+    importlib.reload(main)
+    c = TestClient(main.app)
+    mid = c.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1},
+                  headers={"X-API-Key": "cle-x"}).json()["id"]
+    r_x = c.get(f"/spatial/mondes/{mid}", headers={"X-API-Key": "cle-x"})
+    r_y = c.get(f"/spatial/mondes/{mid}", headers={"X-API-Key": "cle-y"})
+    assert r_x.status_code == 200
+    assert r_y.status_code == 404
+    monkeypatch.delenv("API_KEYS", raising=False)
+    importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # resynchronise après reload, même motif que les autres
+                                    # tests d'auth de ce fichier.
