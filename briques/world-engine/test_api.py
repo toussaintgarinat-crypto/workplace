@@ -102,6 +102,12 @@ def test_genome_croiser_chemin_heureux():
     assert data["heredite"]["resume"] == {"A": 10, "B": 0, "commun": 0, "mutation": 0}
     assert data["mutation_survenue"] is False
     assert "description_genome" in data
+    assert isinstance(data["enfant_id"], str) and data["enfant_id"]
+    assert data["avertissement"] is None
+    stocke = stockage.lire("public", data["enfant_id"])
+    assert stocke["prenoms"] == "Nova"
+    assert stocke["parent_a_id"] is None   # parent_a était une fiche brute, pas une référence
+    assert stocke["parent_b_id"] is None
 
     # Correctif revue finale : verrouille le corps EXACT envoyé à personnages pour
     # l'enfant (date dérivée du signe avec marge anti-cuspide, heure/lieu/utc_offset
@@ -267,3 +273,28 @@ def test_genome_croiser_parent_id_introuvable_404():
         "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
         "utc_offset_enfant": 1.0})
     assert r.status_code == 404
+
+
+@respx.mock
+def test_genome_croiser_stockage_echoue_repond_quand_meme(monkeypatch):
+    """Un échec d'écriture SQLite après un croisement réussi ne fait jamais échouer
+    la requête : le calcul est bon, seule la persistance a un problème."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),
+                     httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+
+    def _echec(*a, **k):
+        raise OSError("disque plein")
+    monkeypatch.setattr(main.stockage, "creer", _echec)
+
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["enfant_id"] is None
+    assert data["avertissement"] is not None and "disque plein" in data["avertissement"]
