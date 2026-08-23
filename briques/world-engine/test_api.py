@@ -165,8 +165,11 @@ def test_genome_croiser_detail_replie_sur_texte_si_corps_non_dict():
     assert r.status_code == 422
 
 
+@respx.mock
 def test_genome_croiser_sans_heure_enfant_422():
-    """heure_naissance_enfant est requis (Pydantic) : sans lui, 422 avant tout appel réseau."""
+    """heure_naissance_enfant est requis (Pydantic) : sans lui, 422 avant tout appel réseau.
+    @respx.mock sans aucune route enregistrée : si la garde Pydantic régressait, le moindre
+    appel HTTP réel serait intercepté et lèverait plutôt que de pendre sur host.docker.internal."""
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
         "latitude_enfant": 43.6, "longitude_enfant": 1.44, "utc_offset_enfant": 1.0})
@@ -184,6 +187,25 @@ def test_genome_croiser_parent_theme_degrade_422():
     del theme_degrade["theme_complet"]["dix_corps"]
     respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
         return_value=httpx.Response(200, json=theme_degrade))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
+    assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_croiser_parent_a_theme_degrade_prioritaire_meme_si_b_indisponible():
+    """Correctif revue finale (round 2) : le contrôle sémantique de A (thème dégradé)
+    doit être résolu AVANT tout appel réseau pour B — même invariant que le correctif
+    HTTP de statut (commit 1fc80ce), réintroduit un temps sur le contrôle sémantique
+    par le correctif Critical précédent. Si A est dégradé et que B serait injoignable,
+    la réponse doit rester 422 (pas 502)."""
+    theme_degrade = _portrait_factice()
+    del theme_degrade["theme_complet"]["dominantes"]
+    del theme_degrade["theme_complet"]["dix_corps"]
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=theme_degrade)])
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
         "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
