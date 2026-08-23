@@ -16,18 +16,18 @@
   "capacites": [
     {
       "nom": "genome_croiser",
-      "description": "Croise 2 profils cosmiques (fiches parents avec date/heure/lieu de naissance) pour produire un enfant : thème astral calculé à une vraie date indépendante, avec un récit d'hérédité comparant les 10 corps de l'enfant aux 2 parents. Le lieu de naissance de l'enfant est indispensable (jamais deviné). Analyse, ne persiste rien.",
+      "description": "Croise 2 profils cosmiques (fiches parents avec date/heure/lieu de naissance) pour produire un enfant : thème astral calculé à une vraie date indépendante, avec un récit d'hérédité comparant les 10 corps de l'enfant aux 2 parents. Le lieu de naissance de l'enfant est indispensable (jamais deviné). L'enfant produit est automatiquement stocké (enfant_id dans la réponse) et peut être réutilisé comme parent d'un croisement suivant.",
       "methode": "POST",
       "chemin": "/genome/croiser",
       "params": {
         "parent_a": {
           "type": "object",
-          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset. heure_naissance/latitude/longitude sont EFFECTIVEMENT nécessaires : sans eux, personnages renvoie un thème dégradé et l'appel échoue en 422.",
+          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset — OU {\"id\": \"...\"} référençant un enfant déjà stocké par un croisement précédent (relu sans rappeler personnages). heure_naissance/latitude/longitude sont EFFECTIVEMENT nécessaires pour une fiche brute : sans eux, personnages renvoie un thème dégradé et l'appel échoue en 422.",
           "requis": true
         },
         "parent_b": {
           "type": "object",
-          "description": "Fiche du parent B, même forme que parent_a (heure_naissance/latitude/longitude effectivement nécessaires, même contrainte).",
+          "description": "Fiche du parent B, même forme que parent_a (fiche brute OU {\"id\": \"...\"}, mêmes contraintes).",
           "requis": true
         },
         "prenoms_enfant": {
@@ -67,7 +67,57 @@
           "description": "Probabilité (0.0 à 1.0 inclus, défaut 0.10, borné) d'injecter un trait absent des 2 parents dans la description fusionnée avant recherche du signe de l'enfant."
         }
       },
+      "action": true
+    },
+    {
+      "nom": "genome_enfants_lister",
+      "description": "Liste les enfants générés par des croisements précédents et stockés (id, prénoms, nom, ids des parents s'ils étaient eux-mêmes des enfants stockés, date de création). Cloisonné par clé API : ne montre jamais les enfants d'un autre client.",
+      "methode": "GET",
+      "chemin": "/genome/enfants",
+      "params": {},
       "action": false
+    },
+    {
+      "nom": "genome_enfant_lire",
+      "description": "Lit la fiche complète d'un enfant stocké : thème astral, récit d'hérédité, description fusionnée, ids des parents.",
+      "methode": "GET",
+      "chemin": "/genome/enfants/{eid}",
+      "params": {
+        "eid": {
+          "type": "string",
+          "description": "Id de l'enfant stocké à lire.",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "genome_arbre_lire",
+      "description": "Reconstruit récursivement la lignée d'un enfant stocké (parents, grands-parents…) en remontant les ids stockés. S'arrête dès qu'un parent était une fiche brute (pas un enfant stocké) ou a été supprimé — la branche vaut alors null, jamais une erreur.",
+      "methode": "GET",
+      "chemin": "/genome/arbre/{eid}",
+      "params": {
+        "eid": {
+          "type": "string",
+          "description": "Id de l'enfant stocké dont on veut reconstruire la lignée.",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "genome_enfant_supprimer",
+      "description": "Supprime un enfant stocké. Pas de suppression en cascade : un descendant qui le référence verra sa branche tronquée dans genome_arbre_lire (traitée comme absente, pas une erreur).",
+      "methode": "DELETE",
+      "chemin": "/genome/enfants/{eid}",
+      "params": {
+        "eid": {
+          "type": "string",
+          "description": "Id de l'enfant stocké à supprimer.",
+          "requis": true
+        }
+      },
+      "action": true
     }
   ]
 }
