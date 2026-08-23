@@ -1,7 +1,33 @@
 """Tests du stockage SQLite du maillage spatial (mondes/cellules/placements) —
 Sprint B. Même motif que test_stockage.py (DB temporaire posée par conftest.py)."""
+import re
+from pathlib import Path
+
 import stockage
 import stockage_spatial
+
+
+def _extraire_ddl_enfants(chemin_module: str) -> str:
+    """Extrait le bloc `CREATE TABLE IF NOT EXISTS enfants (...)` (colonnes incluses)
+    du texte source d'un module — helper simple, pas un vrai parseur SQL : suffisant
+    pour comparer les deux copies dupliquées de cette DDL (stockage.py et
+    stockage_spatial.py) et détecter toute dérive entre elles."""
+    texte = Path(chemin_module).read_text(encoding="utf-8")
+    m = re.search(r"CREATE TABLE IF NOT EXISTS enfants\s*\((.*?)\)\"\"\"", texte, re.DOTALL)
+    assert m, f"DDL 'enfants' introuvable dans {chemin_module}"
+    return re.sub(r"\s+", " ", m.group(1)).strip()
+
+
+def test_ddl_enfants_identique_a_stockage():
+    """Correctif revue finale (Important) : la table `enfants` est dupliquée entre
+    stockage.py et stockage_spatial.py (fix latent Task 2, duplication endossée par
+    la revue — pas refactorée ici). Rien ne garantissait que les deux schémas restent
+    identiques : ce test pince les deux DDL en synchro, il doit casser si l'une des
+    deux copies dérive de l'autre."""
+    ici = Path(__file__).parent
+    ddl_stockage = _extraire_ddl_enfants(str(ici / "stockage.py"))
+    ddl_spatial = _extraire_ddl_enfants(str(ici / "stockage_spatial.py"))
+    assert ddl_stockage == ddl_spatial
 
 
 def _cellules_factices(n=3):
