@@ -1,0 +1,25 @@
+services:
+  world-engine:
+    build: .
+    container_name: workplace_world_engine
+    image: workplace/world-engine:0.1.0
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      - "6220:6220"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre `personnages` sous Linux
+    environment:
+      - PORT=6220
+      - PERSONNAGES_URL=http://host.docker.internal:5900
+      # PERSONNAGES_KEY (clé d'intégration Cœur) vient du .env racine via env_file —
+      # NE PAS la redéclarer en `PERSONNAGES_KEY=${PERSONNAGES_KEY:-}` (piège « env
+      # shadow » : chaîne vide qui écraserait la vraie valeur).
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6220/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
