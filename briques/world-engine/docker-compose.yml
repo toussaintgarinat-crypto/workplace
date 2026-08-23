@@ -18,7 +18,7 @@ services:
       # NE PAS la redéclarer en `PERSONNAGES_KEY=${PERSONNAGES_KEY:-}` (piège « env
       # shadow » : chaîne vide qui écraserait la vraie valeur).
     volumes:
-      - world_engine_data:/data   # lignées d'enfants générés (persistance Sprint A)
+      - world_engine_data:/data   # lignées d'enfants (Sprint A) + mondes spatiaux (Sprint B)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6220/sante')"]
