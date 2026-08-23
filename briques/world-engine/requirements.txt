@@ -1,5 +1,6 @@
-# Brique world-engine — croisement de profils cosmiques. Aucune lib lourde : la
-# logique est du Python pur (stdlib), seul l'appel à `personnages` sort en HTTP.
+# Brique world-engine — croisement de profils cosmiques + maillage spatial (Sprint B).
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
+scipy==1.14.1
+opensimplex==0.4.5.1
