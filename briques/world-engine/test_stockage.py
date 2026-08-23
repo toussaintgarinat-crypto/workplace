@@ -1,0 +1,78 @@
+"""Tests du stockage SQLite des enfants générés (couche persistance du Sprint A)."""
+import stockage
+
+
+def _theme_factice(signe="Vierge") -> dict:
+    return {
+        "traditions": {"signe_solaire": {"nom": signe}},
+        "portrait": {"archetype": "Le Gardien", "forces": ["Sagesse", "Stabilité"]},
+        "theme_complet": {
+            "dominantes": {"planete": {"dominante": "Mercure"}, "signe": {"dominant": signe}},
+            "dix_corps": {c: {"signe": signe} for c in
+                          ["Soleil", "Lune", "Mercure", "Vénus", "Mars", "Jupiter",
+                           "Saturne", "Uranus", "Neptune", "Pluton"]},
+        },
+    }
+
+
+def test_creer_puis_lire():
+    eid = stockage.creer("cle-a", "Nova", "Test", None, None,
+                          _theme_factice(), "desc genome", {"resume": {"A": 5}}, False)
+    assert isinstance(eid, str) and eid
+
+    e = stockage.lire("cle-a", eid)
+    assert e["id"] == eid
+    assert e["prenoms"] == "Nova"
+    assert e["nom"] == "Test"
+    assert e["parent_a_id"] is None
+    assert e["parent_b_id"] is None
+    assert e["theme"]["theme_complet"]["dominantes"]["signe"]["dominant"] == "Vierge"
+    assert e["description_genome"] == "desc genome"
+    assert e["heredite"] == {"resume": {"A": 5}}
+    assert e["mutation_survenue"] is False
+    assert e["cree_le"]
+
+
+def test_lire_introuvable_renvoie_none():
+    assert stockage.lire("cle-a", "id-inconnu") is None
+
+
+def test_lire_cloisonne_par_cle_api():
+    eid = stockage.creer("cle-b", "Secret", "", None, None,
+                          _theme_factice(), "d", {"resume": {}}, False)
+    assert stockage.lire("cle-b", eid) is not None
+    assert stockage.lire("autre-cle", eid) is None
+
+
+def test_lister_cloisonne_et_ordonne():
+    stockage.creer("cle-c", "Premier", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
+    eid2 = stockage.creer("cle-c", "Second", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
+    resultats = stockage.lister("cle-c")
+    assert [e["prenoms"] for e in resultats] == ["Second", "Premier"]  # plus récent d'abord
+    assert "theme" not in resultats[0]  # liste allégée, pas le snapshot complet
+    assert resultats[0]["id"] == eid2
+    assert stockage.lister("cle-vide") == []
+
+
+def test_lister_expose_les_ids_parents():
+    gp = stockage.creer("cle-d", "GrandParent", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
+    p = stockage.creer("cle-d", "Parent", "", gp, None, _theme_factice(), "d", {"resume": {}}, False)
+    resultats = {e["id"]: e for e in stockage.lister("cle-d")}
+    assert resultats[p]["parent_a_id"] == gp
+    assert resultats[p]["parent_b_id"] is None
+
+
+def test_supprimer():
+    eid = stockage.creer("cle-e", "Nova", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
+    assert stockage.supprimer("cle-e", eid) is True
+    assert stockage.lire("cle-e", eid) is None
+
+
+def test_supprimer_introuvable_renvoie_false():
+    assert stockage.supprimer("cle-e", "id-inconnu") is False
+
+
+def test_supprimer_cloisonne_par_cle_api():
+    eid = stockage.creer("cle-f", "Nova", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
+    assert stockage.supprimer("autre-cle", eid) is False   # ne supprime pas chez une autre clé
+    assert stockage.lire("cle-f", eid) is not None          # toujours là
