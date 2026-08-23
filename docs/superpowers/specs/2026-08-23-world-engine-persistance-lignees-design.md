@@ -52,17 +52,19 @@ CREATE TABLE IF NOT EXISTS enfants (
     prenoms TEXT, nom TEXT,
     parent_a_id TEXT,              -- NULL si parent_a était une fiche brute
     parent_b_id TEXT,              -- NULL si parent_b était une fiche brute
-    donnees TEXT NOT NULL,         -- JSON : {theme_complet, description_genome,
+    donnees TEXT NOT NULL,         -- JSON : {theme, description_genome,
                                     --         heredite, mutation_survenue}
     cree_le TEXT
 )
 CREATE INDEX idx_enfant_cle ON enfants(cle_api)
 ```
 
-- `donnees` est un snapshot complet du thème de l'enfant, même forme que la
-  réponse `POST /holistique/portrait` de `personnages` — permet de le
-  réinjecter tel quel comme `theme_a`/`theme_b` d'un croisement suivant sans
-  rappeler `personnages`.
+- `donnees.theme` est le snapshot **complet** de la réponse
+  `POST /holistique/portrait` de `personnages` (`traditions`+`portrait`+
+  `theme_complet`, pas seulement `theme_complet`) — nécessaire pour être
+  réinjecté tel quel comme `theme_a`/`theme_b` d'un croisement suivant : la
+  fusion des traits (`fusion.fusionner_description`) lit aussi
+  `portrait.forces`, absent de `theme_complet` seul.
 - `parent_a_id`/`parent_b_id` restent `NULL` quand le parent de ce croisement
   était une fiche brute plutôt qu'un enfant stocké. C'est ce qui borne la
   profondeur reconstructible par `GET /genome/arbre/{id}` : il remonte tant
