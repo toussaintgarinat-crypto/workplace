@@ -1,6 +1,5 @@
 """Tests API de world-engine."""
 import importlib
-import os
 
 import httpx
 import pytest
@@ -79,7 +78,7 @@ def _portrait_factice(dominante_planete="Mercure", dominante_signe="Vierge",
 
 @respx.mock
 def test_genome_croiser_chemin_heureux():
-    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+    route_portrait = respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
         side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),   # parent A
                      httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),        # parent B
                      httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])    # enfant
@@ -88,7 +87,7 @@ def test_genome_croiser_chemin_heureux():
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
         "prenoms_enfant": "Nova", "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
-        "annee_enfant": 2015, "mutation_rate": 0.0})
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0})
     assert r.status_code == 200
     data = r.json()
     assert data["enfant"]["theme_complet"]["dominantes"]["signe"]["dominant"] == "Vierge"
@@ -96,13 +95,23 @@ def test_genome_croiser_chemin_heureux():
     assert data["mutation_survenue"] is False
     assert "description_genome" in data
 
+    # Correctif revue finale : verrouille le corps EXACT envoyé à personnages pour
+    # l'enfant (date dérivée du signe avec marge anti-cuspide, heure/lieu/utc_offset
+    # propagés tels quels — jamais None, jamais une valeur d'un parent copiée par erreur).
+    import json as _json
+    fiche_enfant_envoyee = _json.loads(route_portrait.calls[2].request.content)
+    assert fiche_enfant_envoyee == {
+        "prenoms": "Nova", "nom": "", "date_naissance": "2015-08-27",
+        "heure_naissance": "10:00", "latitude": 43.6, "longitude": 1.44, "utc_offset": 1.0}
+
 
 @respx.mock
 def test_genome_croiser_personnages_injoignable_502():
     respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(side_effect=httpx.ConnectError("down"))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
     assert r.status_code == 502
 
 
@@ -112,7 +121,8 @@ def test_genome_croiser_fiche_parent_invalide_propage_422():
         return_value=httpx.Response(422, json={"detail": "Fiche insuffisante."}))
     r = client.post("/genome/croiser", json={
         "parent_a": {"prenoms": "X"}, "parent_b": _FICHE_B,
-        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
     assert r.status_code == 422
 
 
@@ -124,7 +134,8 @@ def test_genome_croiser_aucun_signe_reconnu_422():
         return_value=httpx.Response(200, json={"signes": []}))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
     assert r.status_code == 422
 
 
@@ -136,7 +147,8 @@ def test_genome_croiser_parent_a_422_prioritaire_meme_si_b_indisponible():
         side_effect=[httpx.Response(422, json={"detail": "Fiche A insuffisante."})])
     r = client.post("/genome/croiser", json={
         "parent_a": {"prenoms": "X"}, "parent_b": _FICHE_B,
-        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
     assert r.status_code == 422
 
 
@@ -148,5 +160,46 @@ def test_genome_croiser_detail_replie_sur_texte_si_corps_non_dict():
         return_value=httpx.Response(422, json=["erreur inattendue"]))
     r = client.post("/genome/croiser", json={
         "parent_a": _FICHE_A, "parent_b": _FICHE_B,
-        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44})
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
     assert r.status_code == 422
+
+
+def test_genome_croiser_sans_heure_enfant_422():
+    """heure_naissance_enfant est requis (Pydantic) : sans lui, 422 avant tout appel réseau."""
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "latitude_enfant": 43.6, "longitude_enfant": 1.44, "utc_offset_enfant": 1.0})
+    assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_croiser_parent_theme_degrade_422():
+    """personnages peut répondre 200 avec un theme_complet DÉGRADÉ (sans heure de
+    naissance côté parent) — pas une erreur de son côté, mais world-engine doit
+    refuser honnêtement plutôt que de planter en KeyError sur dominantes/dix_corps
+    absents (Critical de la revue finale)."""
+    theme_degrade = _portrait_factice()
+    del theme_degrade["theme_complet"]["dominantes"]
+    del theme_degrade["theme_complet"]["dix_corps"]
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=theme_degrade))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
+    assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_croiser_401_personnages_devient_502():
+    """Un 401 de personnages (ex: WORLD_ENGINE_KEY mal configurée côté world-engine)
+    ne doit JAMAIS être confondu avec un rejet DE L'APPELANT : mappé en 502, pas
+    propagé tel quel (Important de la revue finale)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(401, json={"detail": "Clé API manquante ou invalide."}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0})
+    assert r.status_code == 502

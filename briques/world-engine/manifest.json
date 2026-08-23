@@ -22,12 +22,12 @@
       "params": {
         "parent_a": {
           "type": "object",
-          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset.",
+          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset. heure_naissance/latitude/longitude sont EFFECTIVEMENT nécessaires : sans eux, personnages renvoie un thème dégradé et l'appel échoue en 422.",
           "requis": true
         },
         "parent_b": {
           "type": "object",
-          "description": "Fiche du parent B, même forme que parent_a.",
+          "description": "Fiche du parent B, même forme que parent_a (heure_naissance/latitude/longitude effectivement nécessaires, même contrainte).",
           "requis": true
         },
         "prenoms_enfant": {
@@ -55,15 +55,16 @@
         },
         "utc_offset_enfant": {
           "type": "number",
-          "description": "Décalage local→UTC au lieu de naissance de l'enfant (optionnel)."
+          "description": "Décalage local→UTC au lieu de naissance de l'enfant. Obligatoire : un défaut à 0 décalerait l'ascendant de 15-30° pour un lieu européen et fausserait maisons/dominantes.",
+          "requis": true
         },
         "annee_enfant": {
           "type": "integer",
-          "description": "Année de naissance de l'enfant (optionnel, défaut : année courante). Choix pratique sans signification d'hérédité — comme le lieu."
+          "description": "Année de naissance de l'enfant (optionnel, défaut : année courante, bornée 1-9999). Choix pratique sans signification d'hérédité — comme le lieu."
         },
         "mutation_rate": {
           "type": "number",
-          "description": "Probabilité (0.0-1.0, défaut 0.10) d'injecter un trait absent des 2 parents dans la description fusionnée avant recherche du signe de l'enfant."
+          "description": "Probabilité (0.0 à 1.0 inclus, défaut 0.10, borné) d'injecter un trait absent des 2 parents dans la description fusionnée avant recherche du signe de l'enfant."
         }
       },
       "action": false
