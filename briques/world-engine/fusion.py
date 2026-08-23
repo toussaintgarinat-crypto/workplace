@@ -52,3 +52,32 @@ def fusionner_description(theme_a: dict, theme_b: dict, mutation_rate: float, rn
         traits.append(rng.choice(MOTS_MUTATION))
 
     return "Personnage combinant " + ", ".join(traits) + ".", mutation_survenue
+
+
+CORPS = ["Soleil", "Lune", "Mercure", "Vénus", "Mars", "Jupiter",
+         "Saturne", "Uranus", "Neptune", "Pluton"]
+
+
+def comparer_dix_corps(dix_corps_enfant: dict, dix_corps_a: dict, dix_corps_b: dict) -> dict:
+    """Compare le signe de chacun des 10 corps de l'enfant à ceux des 2 parents.
+
+    C'est un post-traitement NARRATIF : le thème de l'enfant est calculé
+    indépendamment (vraie date, vraie astronomie) — une correspondance de signe
+    est donc une coïncidence assumée, pas une vraie hérédité génétique."""
+    par_corps = []
+    resume = {"A": 0, "B": 0, "commun": 0, "mutation": 0}
+    for corps in CORPS:
+        signe_e = dix_corps_enfant[corps]["signe"]
+        match_a = signe_e == dix_corps_a[corps]["signe"]
+        match_b = signe_e == dix_corps_b[corps]["signe"]
+        if match_a and match_b:
+            origine = "commun"
+        elif match_a:
+            origine = "A"
+        elif match_b:
+            origine = "B"
+        else:
+            origine = "mutation"
+        resume[origine] += 1
+        par_corps.append({"corps": corps, "signe_enfant": signe_e, "origine": origine})
+    return {"par_corps": par_corps, "resume": resume}
