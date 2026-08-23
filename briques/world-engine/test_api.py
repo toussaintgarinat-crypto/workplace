@@ -121,6 +121,29 @@ def test_genome_croiser_chemin_heureux():
 
 
 @respx.mock
+def test_genome_croiser_sexe_absent_du_corps_envoye_a_personnages():
+    """Correctif revue finale (Important) : `sexe` est un rôle DANS ce croisement
+    (placement, Sprint B), jamais un trait de la fiche envoyée à `personnages` — ne
+    doit jamais franchir la frontière de la brique, même si `personnages` l'ignore
+    aujourd'hui par défaut Pydantic (extra="ignore")."""
+    route_portrait = respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),   # parent A
+                     httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),        # parent B
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])    # enfant
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": {**_FICHE_A, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0})
+    assert r.status_code == 200
+
+    import json as _json
+    corps_parent_a = _json.loads(route_portrait.calls[0].request.content)
+    assert "sexe" not in corps_parent_a
+
+
+@respx.mock
 def test_genome_croiser_personnages_injoignable_502():
     respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(side_effect=httpx.ConnectError("down"))
     r = client.post("/genome/croiser", json={
@@ -490,6 +513,20 @@ def test_genome_enfant_supprimer_introuvable_404():
     assert r.status_code == 404
 
 
+def test_genome_enfant_supprimer_purge_placement_spatial_orphelin():
+    """Correctif revue finale (Minor) : supprimer un enfant placé sur un monde ne
+    doit pas laisser de rangée `placements` morte dans stockage_spatial.py."""
+    monde = _monde_factice()
+    eid = stockage.creer("public", "Nova", "Test", None, None,
+                          _portrait_factice(), "d", {"resume": {}}, False)
+    stockage_spatial.placer(monde["id"], eid, 0)
+    assert stockage_spatial.placement_cellule(monde["id"], eid) == 0
+
+    r = client.delete(f"/genome/enfants/{eid}")
+    assert r.status_code == 204
+    assert stockage_spatial.placement_cellule(monde["id"], eid) is None
+
+
 @respx.mock
 def test_genome_croiser_stockage_echoue_repond_quand_meme(monkeypatch):
     """Un échec d'écriture SQLite après un croisement réussi ne fait jamais échouer
@@ -513,6 +550,37 @@ def test_genome_croiser_stockage_echoue_repond_quand_meme(monkeypatch):
     data = r.json()
     assert data["enfant_id"] is None
     assert data["avertissement"] is not None and "disque plein" in data["avertissement"]
+
+
+@respx.mock
+def test_genome_croiser_monde_supprime_pendant_croisement_avertissement_lisible(monkeypatch):
+    """Correctif revue finale (Minor) : course rare (TOCTOU) — le monde est supprimé
+    entre le monde_existe() en tête de route et le placement. Avant le correctif,
+    rng.randrange(None) levait un TypeError opaque ; l'avertissement doit maintenant
+    être un message lisible. Même motif que test_genome_croiser_stockage_echoue_repond_quand_meme."""
+    monde = _monde_factice()
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge")),
+                     httpx.Response(200, json=_portrait_factice("Mars", "Bélier", "Bélier")),
+                     httpx.Response(200, json=_portrait_factice("Mercure", "Vierge", "Vierge"))])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge", "score": 5}]}))
+
+    def _monde_supprime_entretemps(monde_id):
+        return None
+    monkeypatch.setattr(main.stockage_spatial, "nb_cellules_monde", _monde_supprime_entretemps)
+
+    r = client.post("/genome/croiser", json={
+        "parent_a": {**_FICHE_A, "sexe": "F"}, "parent_b": _FICHE_B,
+        "heure_naissance_enfant": "10:00", "latitude_enfant": 43.6, "longitude_enfant": 1.44,
+        "utc_offset_enfant": 1.0, "annee_enfant": 2015, "mutation_rate": 0.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cellule_id"] is None
+    assert data["avertissement"] is not None
+    assert "supprimé" in data["avertissement"]
+    assert "TypeError" not in data["avertissement"]
 
 
 def test_genome_arbre_trois_generations():
@@ -681,3 +749,42 @@ def test_spatial_mondes_cloisonnes_par_cle_api(monkeypatch):
     global client
     client = TestClient(main.app)  # resynchronise après reload, même motif que les autres
                                     # tests d'auth de ce fichier.
+
+
+def test_spatial_forker_cloisonne_par_cle_api(monkeypatch):
+    """Correctif revue finale (Important) : gap de couverture cloisonnement — la
+    seule opération /spatial/* qui crée une copie (fork) n'avait aucun test HTTP-level
+    de cloisonnement. Même motif que test_spatial_mondes_cloisonnes_par_cle_api."""
+    monkeypatch.setenv("API_KEYS", "cle-x,cle-y")
+    importlib.reload(main)
+    c = TestClient(main.app)
+    mid = c.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1},
+                  headers={"X-API-Key": "cle-x"}).json()["id"]
+    r_y = c.post(f"/spatial/mondes/{mid}/forker", headers={"X-API-Key": "cle-y"})
+    assert r_y.status_code == 404
+    r_x = c.post(f"/spatial/mondes/{mid}/forker", headers={"X-API-Key": "cle-x"})
+    assert r_x.status_code == 200
+    monkeypatch.delenv("API_KEYS", raising=False)
+    importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # resynchronise après reload, même motif que les autres
+                                    # tests d'auth de ce fichier.
+
+
+def test_spatial_monde_creer_meme_seed_meme_maillage():
+    """Bout-en-bout : même (nb_cellules, seed) ⇒ même maillage — les deux mondes créés
+    séparément doivent avoir des cellules identiques (biome/ressources/voisins/x/y par
+    cellule_id), seuls id/cree_le du monde lui-même diffèrent légitimement."""
+    r1 = client.post("/spatial/mondes", json={"nb_cellules": 15, "seed": 777})
+    r2 = client.post("/spatial/mondes", json={"nb_cellules": 15, "seed": 777})
+    assert r1.status_code == 200 and r2.status_code == 200
+    id1, id2 = r1.json()["id"], r2.json()["id"]
+    assert id1 != id2
+
+    monde1 = client.get(f"/spatial/mondes/{id1}").json()
+    monde2 = client.get(f"/spatial/mondes/{id2}").json()
+
+    def _sans_champs_identite(cellules):
+        return [{k: v for k, v in cel.items() if k != "enfants"} for cel in cellules]
+
+    assert _sans_champs_identite(monde1["cellules"]) == _sans_champs_identite(monde2["cellules"])

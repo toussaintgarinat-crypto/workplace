@@ -30,6 +30,10 @@ def _conn() -> sqlite3.Connection:
         enfant_id TEXT NOT NULL, monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
         place_le TEXT, PRIMARY KEY (enfant_id, monde_id))""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_placement_monde ON placements(monde_id)")
+    # DUPLIQUÉE depuis stockage.py::_conn() (fix latent Task 2 : GET /spatial/mondes/{id}
+    # 500ait sur une DB fraîche sans cette table). Le schéma DOIT rester identique entre
+    # les deux copies — test_stockage_spatial.py::test_ddl_enfants_identique_a_stockage
+    # pince les deux en synchro.
     c.execute("""CREATE TABLE IF NOT EXISTS enfants (
         id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, prenoms TEXT, nom TEXT,
         parent_a_id TEXT, parent_b_id TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
@@ -75,6 +79,8 @@ def monde_existe(cle_api: str, monde_id: str) -> bool:
 
 
 def nb_cellules_monde(monde_id: str) -> int | None:
+    """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
     with _conn() as c:
         r = c.execute("SELECT nb_cellules FROM mondes WHERE id=?", (monde_id,)).fetchone()
     return r["nb_cellules"] if r else None
@@ -126,6 +132,8 @@ def lire_cellule(cle_api: str, monde_id: str, cellule_id: int) -> dict | None:
 
 
 def voisins_cellule(monde_id: str, cellule_id: int) -> list[int] | None:
+    """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
     with _conn() as c:
         r = c.execute("SELECT voisins FROM cellules WHERE monde_id=? AND cellule_id=?",
                        (monde_id, cellule_id)).fetchone()
@@ -133,6 +141,8 @@ def voisins_cellule(monde_id: str, cellule_id: int) -> list[int] | None:
 
 
 def placement_cellule(monde_id: str, enfant_id: str) -> int | None:
+    """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
     with _conn() as c:
         r = c.execute("SELECT cellule_id FROM placements WHERE monde_id=? AND enfant_id=?",
                        (monde_id, enfant_id)).fetchone()
@@ -140,10 +150,22 @@ def placement_cellule(monde_id: str, enfant_id: str) -> int | None:
 
 
 def placer(monde_id: str, enfant_id: str, cellule_id: int) -> None:
+    """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
     with _conn() as c:
         c.execute("INSERT OR REPLACE INTO placements (enfant_id, monde_id, cellule_id, place_le) "
                    "VALUES (?,?,?,?)",
                    (enfant_id, monde_id, cellule_id, datetime.now(timezone.utc).isoformat()))
+
+
+def supprimer_placements_enfant(enfant_id: str) -> None:
+    """Supprime tous les placements de cet enfant, dans TOUS les mondes — appelée
+    après `stockage.supprimer(cle_api, enfant_id)` pour ne pas laisser de rangée
+    `placements` orpheline. Pas de cloisonnement `cle_api` ici : l'appartenance de
+    `enfant_id` au tenant a déjà été confirmée par `stockage.supprimer()` avant cet
+    appel (voir `main.py::genome_enfant_supprimer`)."""
+    with _conn() as c:
+        c.execute("DELETE FROM placements WHERE enfant_id=?", (enfant_id,))
 
 
 def forker_monde(cle_api: str, monde_id: str) -> dict | None:

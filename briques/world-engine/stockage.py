@@ -18,6 +18,10 @@ def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
+    # DUPLIQUÉE dans stockage_spatial.py::_conn() (fix latent Task 2 : GET
+    # /spatial/mondes/{id} 500ait sur une DB fraîche sans cette table). Le schéma DOIT
+    # rester identique entre les deux copies — test_stockage_spatial.py::
+    # test_ddl_enfants_identique_a_stockage pince les deux en synchro.
     c.execute("""CREATE TABLE IF NOT EXISTS enfants (
         id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, prenoms TEXT, nom TEXT,
         parent_a_id TEXT, parent_b_id TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")

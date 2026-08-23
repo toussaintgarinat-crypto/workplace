@@ -153,7 +153,10 @@ async def _theme_parent(parent: ParentInput, cle_api_val: str, qui: str) -> dict
             raise HTTPException(404, f"{qui} : enfant stocké '{parent.id}' introuvable.")
         return enfant["theme"]
     try:
-        r = await personnages_client.portrait(parent.model_dump())
+        # exclude={"sexe"} : rôle dans CE croisement (placement, Sprint B), pas un
+        # trait de la fiche envoyée à `personnages` — ne doit jamais franchir la
+        # frontière de la brique (voir doc du champ sur FicheParent).
+        r = await personnages_client.portrait(parent.model_dump(exclude={"sexe"}))
     except personnages_client.PersonnagesIndisponible as e:
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if r.status_code != 200:
@@ -184,7 +187,15 @@ def _cellule_naissance(monde_id: str, parent_ref: ParentInput, rng: Random) -> i
             voisins = stockage_spatial.voisins_cellule(monde_id, cellule_parent)
     if voisins:
         return rng.choice(voisins)
-    return rng.randrange(stockage_spatial.nb_cellules_monde(monde_id))
+    nb = stockage_spatial.nb_cellules_monde(monde_id)
+    if nb is None:
+        # Course rare (TOCTOU) : le monde a été supprimé entre la vérification
+        # monde_existe() en tête de route et cet appel (fenêtre des `await` vers
+        # personnages). Message lisible plutôt que le TypeError opaque de
+        # rng.randrange(None) — capté par le try/except de genome_croiser, il
+        # finit dans `avertissement`.
+        raise RuntimeError(f"Monde '{monde_id}' supprimé pendant le croisement.")
+    return rng.randrange(nb)
 
 
 @app.post("/genome/croiser", tags=["genome"])
@@ -284,6 +295,13 @@ def genome_enfant_lire(eid: str, _cle: str = Depends(cle_api)):
 def genome_enfant_supprimer(eid: str, _cle: str = Depends(cle_api)):
     if not stockage.supprimer(_cle, eid):
         raise HTTPException(404, f"Enfant '{eid}' introuvable.")
+    # Purge les placements spatiaux orphelins (Sprint B) — sans ça, une rangée
+    # `placements` morte survit dans stockage_spatial.py sous cet enfant_id (jamais
+    # rejouée : les lectures utilisent un INNER JOIN sur `enfants` qui l'exclut déjà,
+    # mais autant ne pas la laisser traîner). Pas de cloisonnement cle_api ici : cet
+    # enfant_id vient d'être confirmé appartenir à _cle par stockage.supprimer()
+    # ci-dessus, et placer() n'est jamais appelé avec un enfant_id d'un autre tenant.
+    stockage_spatial.supprimer_placements_enfant(eid)
 
 
 def _noeud_arbre(cle_api_val: str, eid: str, vus: set[str] | None = None) -> dict | None:
