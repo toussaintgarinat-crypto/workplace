@@ -69,6 +69,15 @@ class Croisement(BaseModel):
     mutation_rate: float = 0.10
 
 
+def _detail(resp) -> str:
+    """Message d'erreur d'une réponse `personnages` non-200 — repli honnête sur le
+    texte brut si le corps n'est pas du JSON valide (ne lève jamais)."""
+    try:
+        return resp.json().get("detail", resp.text)
+    except ValueError:
+        return resp.text
+
+
 @app.post("/genome/croiser", tags=["genome"])
 async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     """Croise 2 profils cosmiques (via `personnages`) pour produire un enfant au
@@ -77,13 +86,17 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     génétique astrale)."""
     try:
         ra = await personnages_client.portrait(body.parent_a.model_dump())
-        rb = await personnages_client.portrait(body.parent_b.model_dump())
     except personnages_client.PersonnagesIndisponible as e:
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if ra.status_code != 200:
-        raise HTTPException(ra.status_code, f"Parent A : {ra.json().get('detail', ra.text)}")
+        raise HTTPException(ra.status_code, f"Parent A : {_detail(ra)}")
+
+    try:
+        rb = await personnages_client.portrait(body.parent_b.model_dump())
+    except personnages_client.PersonnagesIndisponible as e:
+        raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if rb.status_code != 200:
-        raise HTTPException(rb.status_code, f"Parent B : {rb.json().get('detail', rb.text)}")
+        raise HTTPException(rb.status_code, f"Parent B : {_detail(rb)}")
     theme_a, theme_b = ra.json(), rb.json()
 
     description, mutation_survenue = fusion.fusionner_description(
@@ -94,7 +107,7 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     except personnages_client.PersonnagesIndisponible as e:
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if rri.status_code != 200:
-        raise HTTPException(rri.status_code, f"Recherche inverse : {rri.json().get('detail', rri.text)}")
+        raise HTTPException(rri.status_code, f"Recherche inverse : {_detail(rri)}")
     signes = rri.json().get("signes") or []
     if not signes:
         raise HTTPException(422, "Impossible de dériver un signe pour l'enfant à partir "
@@ -114,7 +127,7 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
     except personnages_client.PersonnagesIndisponible as e:
         raise HTTPException(502, f"Brique personnages injoignable : {e}")
     if re_.status_code != 200:
-        raise HTTPException(re_.status_code, f"Enfant : {re_.json().get('detail', re_.text)}")
+        raise HTTPException(re_.status_code, f"Enfant : {_detail(re_)}")
     theme_enfant = re_.json()
 
     heredite = fusion.comparer_dix_corps(
