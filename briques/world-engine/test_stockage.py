@@ -76,3 +76,17 @@ def test_supprimer_cloisonne_par_cle_api():
     eid = stockage.creer("cle-f", "Nova", "", None, None, _theme_factice(), "d", {"resume": {}}, False)
     assert stockage.supprimer("autre-cle", eid) is False   # ne supprime pas chez une autre clé
     assert stockage.lire("cle-f", eid) is not None          # toujours là
+
+
+def test_creer_et_lire_persiste_le_sexe():
+    eid = stockage.creer("cle-sexe", "Ana", "Dupont", None, None,
+                          _theme_factice(), "desc", {"resume": {}}, False, sexe="F")
+    enfant = stockage.lire("cle-sexe", eid)
+    assert enfant["sexe"] == "F"
+
+
+def test_creer_sans_sexe_reste_none():
+    eid = stockage.creer("cle-sexe", "Bo", "Martin", None, None,
+                          _theme_factice(), "desc", {"resume": {}}, False)
+    enfant = stockage.lire("cle-sexe", eid)
+    assert enfant["sexe"] is None

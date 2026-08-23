@@ -67,6 +67,8 @@ class Croisement(BaseModel):
     annee_enfant: Optional[int] = Field(default=None, ge=1, le=9999)
     mutation_rate: float = Field(default=0.10, ge=0.0, le=1.0)
     monde_id: Optional[str] = None  # place l'enfant à sa naissance (Sprint B) — absent = non placé
+    sexe_enfant: Optional[Literal["F", "M"]] = None  # trait persistant de l'enfant (Sprint C) —
+                                                      # nécessaire à l'horloge pour apparier des couples F/M
 
 
 def _detail(resp) -> str:
@@ -217,7 +219,7 @@ async def executer_croisement(body: Croisement, cle_api_val: str) -> dict:
     try:
         enfant_id = stockage.creer(cle_api_val, body.prenoms_enfant, body.nom_enfant,
                                     parent_a_id, parent_b_id, theme_enfant,
-                                    description, heredite, mutation_survenue)
+                                    description, heredite, mutation_survenue, body.sexe_enfant)
         avertissement = None
     except Exception as e:
         enfant_id = None

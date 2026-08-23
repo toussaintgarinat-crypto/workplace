@@ -665,6 +665,25 @@ def test_genome_croiser_refuse_auto_croisement_422():
     assert "lui-même" in r.json()["detail"]
 
 
+@respx.mock
+def test_genome_croiser_sexe_enfant_persiste():
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice()),
+                     httpx.Response(200, json=_portrait_factice()),
+                     httpx.Response(200, json=_portrait_factice())])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge"}]}))
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "latitude_enfant": 48.0, "longitude_enfant": 2.0,
+        "heure_naissance_enfant": "10:00", "utc_offset_enfant": 1.0,
+        "sexe_enfant": "M"})
+    assert r.status_code == 200
+    eid = r.json()["enfant_id"]
+    enfant = client.get(f"/genome/enfants/{eid}").json()
+    assert enfant["sexe"] == "M"
+
+
 def test_spatial_monde_creer_puis_lire():
     r = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 42})
     assert r.status_code == 200

@@ -13,6 +13,18 @@ from pathlib import Path
 DB_PATH = os.getenv("WORLD_ENGINE_DB", "/data/world_engine.db")
 
 
+def _colonne_absente(c: sqlite3.Connection, table: str, colonne: str) -> bool:
+    infos = c.execute(f"PRAGMA table_info({table})").fetchall()
+    return colonne not in {row[1] for row in infos}
+
+
+def _ajouter_colonne(c: sqlite3.Connection, table: str, colonne: str, ddl_type: str) -> None:
+    """Migration idempotente : sans le contrôle PRAGMA, `ALTER TABLE ADD COLUMN`
+    échouerait sur une base déjà migrée (colonne déjà présente)."""
+    if _colonne_absente(c, table, colonne):
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {colonne} {ddl_type}")
+
+
 def _conn() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
@@ -36,7 +48,8 @@ def _conn() -> sqlite3.Connection:
     # pince les deux en synchro.
     c.execute("""CREATE TABLE IF NOT EXISTS enfants (
         id TEXT PRIMARY KEY, cle_api TEXT NOT NULL, prenoms TEXT, nom TEXT,
-        parent_a_id TEXT, parent_b_id TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+        parent_a_id TEXT, parent_b_id TEXT, sexe TEXT, donnees TEXT NOT NULL, cree_le TEXT)""")
+    _ajouter_colonne(c, "enfants", "sexe", "TEXT")
     return c
 
 
