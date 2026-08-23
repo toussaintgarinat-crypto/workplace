@@ -194,5 +194,17 @@ async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
         theme_a["theme_complet"]["dix_corps"],
         theme_b["theme_complet"]["dix_corps"])
 
+    parent_a_id = body.parent_a.id if isinstance(body.parent_a, ReferenceParent) else None
+    parent_b_id = body.parent_b.id if isinstance(body.parent_b, ReferenceParent) else None
+    try:
+        enfant_id = stockage.creer(_cle, body.prenoms_enfant, body.nom_enfant,
+                                    parent_a_id, parent_b_id, theme_enfant,
+                                    description, heredite, mutation_survenue)
+        avertissement = None
+    except Exception as e:
+        enfant_id = None
+        avertissement = f"Enfant calculé mais non persisté : {e}"
+
     return {"parentA": theme_a, "parentB": theme_b, "description_genome": description,
-            "enfant": theme_enfant, "heredite": heredite, "mutation_survenue": mutation_survenue}
+            "enfant": theme_enfant, "heredite": heredite, "mutation_survenue": mutation_survenue,
+            "enfant_id": enfant_id, "avertissement": avertissement}
