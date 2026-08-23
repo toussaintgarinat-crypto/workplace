@@ -6,14 +6,15 @@ HTTP pour tout calcul astral — ne duplique jamais le moteur.
 import os
 from datetime import date
 from random import Random
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 import fusion
 import personnages_client
+import stockage
 
 app = FastAPI(title="World Engine — Génome Cosmique", version="0.1.0")
 
@@ -54,6 +55,8 @@ class FicheParent(BaseModel):
     personnages renvoie un theme_complet dégradé (sans dominantes/dix_corps) et
     _exiger_theme_complet() refuse la fiche avec un 422 explicite plutôt que de
     laisser le calcul planter plus loin."""
+    model_config = ConfigDict(extra="forbid")
+
     prenoms: str = ""
     nom: str = ""
     date_naissance: str = ""
@@ -63,9 +66,23 @@ class FicheParent(BaseModel):
     utc_offset: Optional[float] = None
 
 
+class ReferenceParent(BaseModel):
+    """Référence à un enfant déjà stocké (Sprint A), utilisable comme parent d'un
+    nouveau croisement — évite de recopier date/heure/lieu de naissance d'un
+    enfant déjà généré. `extra="forbid"` sur les deux modèles rend le choix entre
+    fiche brute et référence déterministe pour Pydantic (aucun input valide ne
+    peut matcher les deux à la fois)."""
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+
+
+ParentInput = Union[ReferenceParent, FicheParent]
+
+
 class Croisement(BaseModel):
-    parent_a: FicheParent
-    parent_b: FicheParent
+    parent_a: ParentInput
+    parent_b: ParentInput
     prenoms_enfant: str = ""
     nom_enfant: str = ""
     latitude_enfant: float       # jamais deviné : requis
@@ -112,29 +129,33 @@ def _exiger_theme_complet(theme: dict, qui: str) -> dict:
     return tc
 
 
+async def _theme_parent(parent: ParentInput, cle_api_val: str, qui: str) -> dict:
+    """Résout le thème d'un parent : soit en rappelant `personnages` (fiche brute),
+    soit en relisant un enfant déjà stocké (référence par id) — sans appel réseau
+    dans ce second cas."""
+    if isinstance(parent, ReferenceParent):
+        enfant = stockage.lire(cle_api_val, parent.id)
+        if enfant is None:
+            raise HTTPException(404, f"{qui} : enfant stocké '{parent.id}' introuvable.")
+        return enfant["theme"]
+    try:
+        r = await personnages_client.portrait(parent.model_dump())
+    except personnages_client.PersonnagesIndisponible as e:
+        raise HTTPException(502, f"Brique personnages injoignable : {e}")
+    if r.status_code != 200:
+        _propager_ou_502(r, qui)
+    theme = r.json()
+    _exiger_theme_complet(theme, qui)
+    return theme
+
+
 @app.post("/genome/croiser", tags=["genome"])
 async def genome_croiser(body: Croisement, _cle: str = Depends(cle_api)):
-    """Croise 2 profils cosmiques (via `personnages`) pour produire un enfant au
-    thème astronomiquement réel, avec un récit d'hérédité en post-traitement
-    (comparaison des 10 corps aux 2 parents — coïncidence assumée, pas une vraie
-    génétique astrale)."""
-    try:
-        ra = await personnages_client.portrait(body.parent_a.model_dump())
-    except personnages_client.PersonnagesIndisponible as e:
-        raise HTTPException(502, f"Brique personnages injoignable : {e}")
-    if ra.status_code != 200:
-        _propager_ou_502(ra, "Parent A")
-    theme_a = ra.json()
-    _exiger_theme_complet(theme_a, "Parent A")
-
-    try:
-        rb = await personnages_client.portrait(body.parent_b.model_dump())
-    except personnages_client.PersonnagesIndisponible as e:
-        raise HTTPException(502, f"Brique personnages injoignable : {e}")
-    if rb.status_code != 200:
-        _propager_ou_502(rb, "Parent B")
-    theme_b = rb.json()
-    _exiger_theme_complet(theme_b, "Parent B")
+    """Croise 2 profils cosmiques (via `personnages`, ou un enfant déjà stocké
+    référencé par id) pour produire un enfant au thème astronomiquement réel, avec
+    un récit d'hérédité en post-traitement."""
+    theme_a = await _theme_parent(body.parent_a, _cle, "Parent A")
+    theme_b = await _theme_parent(body.parent_b, _cle, "Parent B")
 
     description, mutation_survenue = fusion.fusionner_description(
         theme_a, theme_b, body.mutation_rate, Random())
