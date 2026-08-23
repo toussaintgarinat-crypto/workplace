@@ -57,3 +57,31 @@ def test_fusionner_description_avec_mutation_forcee():
     description, mutation_survenue = fusion.fusionner_description(theme_a, theme_b, 0.10, rng)
     assert mutation_survenue is True
     assert fusion.MOTS_MUTATION[0] in description
+
+
+def _dix_corps(signes: dict) -> dict:
+    """signes = {"Soleil": "Vierge", ...} → forme minimale de theme_complet.dix_corps."""
+    return {corps: {"signe": signe} for corps, signe in signes.items()}
+
+
+def test_comparer_dix_corps_repartition():
+    enfant = _dix_corps({
+        "Soleil": "Vierge", "Lune": "Bélier", "Mercure": "Cancer",
+        "Vénus": "Lion", "Mars": "Gémeaux", "Jupiter": "Balance",
+        "Saturne": "Scorpion", "Uranus": "Sagittaire", "Neptune": "Capricorne",
+        "Pluton": "Verseau",
+    })
+    parent_a = _dix_corps({c: "Vierge" for c in fusion.CORPS})       # matche Soleil seul
+    parent_b = _dix_corps({c: "Bélier" for c in fusion.CORPS})       # matche Lune seul
+    heredite = fusion.comparer_dix_corps(enfant, parent_a, parent_b)
+    assert heredite["resume"] == {"A": 1, "B": 1, "commun": 0, "mutation": 8}
+    soleil = next(c for c in heredite["par_corps"] if c["corps"] == "Soleil")
+    assert soleil == {"corps": "Soleil", "signe_enfant": "Vierge", "origine": "A"}
+
+
+def test_comparer_dix_corps_commun_aux_deux_parents():
+    enfant = _dix_corps({c: "Poissons" for c in fusion.CORPS})
+    parent_a = _dix_corps({c: "Poissons" for c in fusion.CORPS})
+    parent_b = _dix_corps({c: "Poissons" for c in fusion.CORPS})
+    heredite = fusion.comparer_dix_corps(enfant, parent_a, parent_b)
+    assert heredite["resume"] == {"A": 0, "B": 0, "commun": 10, "mutation": 0}
