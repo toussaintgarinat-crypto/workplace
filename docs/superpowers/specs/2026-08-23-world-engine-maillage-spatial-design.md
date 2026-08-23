@@ -191,8 +191,18 @@ Règle de placement :
   confondu avec un 422 de forme.
 - Échec d'écriture du placement après un croisement réussi → jamais un 500 ;
   `cellule_id: null` + `avertissement`.
-- Régions Voronoï non bornées clippées à la bounding box, jamais une
-  coordonnée infinie qui casserait le JSON de réponse.
+- Chaque cellule expose uniquement son point générateur `(x, y)` (toujours
+  fini, dans `[0, TAILLE_MONDE]²` par construction) — jamais le polygone de
+  sa région Voronoï. Une région non bornée (sur l'enveloppe convexe) n'a donc
+  jamais de coordonnée infinie à exposer : le risque que cette section visait
+  à l'origine (clipper un polygone) ne se pose pas avec ce choix de
+  représentation.
+  ⚠️ Limitation connue (confirmée avec l'utilisateur en revue finale de
+  branche, 2026-08-23) : l'absence de géométrie de région est un choix
+  délibéré pour ce sprint backend, mais un futur rendu visuel de la carte
+  aura besoin des polygones (pas seulement des points) — dette à reprendre
+  dans un sprint ultérieur (probablement lié au Compilateur ou à une brique
+  de rendu dédiée), pas dans ce sprint.
 
 ## Tests
 
