@@ -1,0 +1,67 @@
+{
+  "nom": "world-engine",
+  "famille": "metier",
+  "version": "0.1.0",
+  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (comparaison des 10 corps aux 2 parents — coïncidence assumée, pas une vraie génétique astrale). Premier maillon du rapport d'architecture « World Engine » : la simulation temporelle et la cartographie restent hors périmètre tant que ce croisement ne prouve pas son intérêt narratif.",
+  "role": "world-engine",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/world-engine",
+  "port": 6220,
+  "url_sante": "http://host.docker.internal:6220/sante",
+  "depends_on": ["personnages"],
+  "offre": ["croisement_genome_cosmique"],
+  "besoin": ["personnages"],
+  "taches": [],
+  "capacites": [
+    {
+      "nom": "genome_croiser",
+      "description": "Croise 2 profils cosmiques (fiches parents avec date/heure/lieu de naissance) pour produire un enfant : thème astral calculé à une vraie date indépendante, avec un récit d'hérédité comparant les 10 corps de l'enfant aux 2 parents. Le lieu de naissance de l'enfant est indispensable (jamais deviné). Analyse, ne persiste rien.",
+      "methode": "POST",
+      "chemin": "/genome/croiser",
+      "params": {
+        "parent_a": {
+          "type": "object",
+          "description": "Fiche du parent A : prenoms, nom, date_naissance ('AAAA-MM-JJ', requis), heure_naissance ('HH:MM'), latitude, longitude, utc_offset.",
+          "requis": true
+        },
+        "parent_b": {
+          "type": "object",
+          "description": "Fiche du parent B, même forme que parent_a.",
+          "requis": true
+        },
+        "prenoms_enfant": {
+          "type": "string",
+          "description": "Prénom(s) de l'enfant à naître."
+        },
+        "nom_enfant": {
+          "type": "string",
+          "description": "Nom de famille de l'enfant."
+        },
+        "latitude_enfant": {
+          "type": "number",
+          "description": "Latitude du lieu de naissance de l'enfant. Obligatoire : jamais deviné ni moyenné entre les parents.",
+          "requis": true
+        },
+        "longitude_enfant": {
+          "type": "number",
+          "description": "Longitude EST-positive du lieu de naissance de l'enfant. Obligatoire.",
+          "requis": true
+        },
+        "utc_offset_enfant": {
+          "type": "number",
+          "description": "Décalage local→UTC au lieu de naissance de l'enfant (optionnel)."
+        },
+        "annee_enfant": {
+          "type": "integer",
+          "description": "Année de naissance de l'enfant (optionnel, défaut : année courante). Choix pratique sans signification d'hérédité — comme le lieu."
+        },
+        "mutation_rate": {
+          "type": "number",
+          "description": "Probabilité (0.0-1.0, défaut 0.10) d'injecter un trait absent des 2 parents dans la description fusionnée avant recherche du signe de l'enfant."
+        }
+      },
+      "action": false
+    }
+  ]
+}
