@@ -4,7 +4,9 @@ Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`
 — voir `stockage.py`. Dépend de `personnages` (port 5900) en HTTP pour tout
 calcul astral — ne duplique jamais le moteur.
 """
+import asyncio
 import os
+from datetime import datetime, timezone
 from random import Random
 from typing import Optional
 
@@ -13,8 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 import genome_moteur
+import horloge_moteur
 import spatial
 import stockage
+import stockage_horloge
 import stockage_spatial
 
 app = FastAPI(title="World Engine — Génome Cosmique", version="0.1.0")
@@ -52,6 +56,12 @@ class CreerMonde(BaseModel):
 
     nb_cellules: int = Field(ge=10, le=2000)
     seed: Optional[int] = None
+
+
+class DemarrerHorloge(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intervalle_secondes: int = Field(ge=5, le=86400)
 
 
 @app.post("/genome/croiser", tags=["genome"])
@@ -131,19 +141,24 @@ def genome_arbre_lire(eid: str, _cle: str = Depends(cle_api)):
 def spatial_monde_creer(body: CreerMonde, _cle: str = Depends(cle_api)):
     """Génère et persiste un nouveau monde : maillage Voronoï, biomes/ressources
     dérivés d'un bruit cohérent. `seed` généré si absent (renvoyé dans la réponse,
-    même (nb_cellules, seed) ⇒ même monde)."""
+    même (nb_cellules, seed) ⇒ même monde). Un monde a TOUJOURS une horloge
+    (Sprint C), en tick manuel par défaut."""
     seed = body.seed if body.seed is not None else Random().randrange(2**31)
     cellules = spatial.generer_monde(body.nb_cellules, seed)
-    return stockage_spatial.creer_monde(_cle, cellules, seed)
+    monde = stockage_spatial.creer_monde(_cle, cellules, seed)
+    stockage_horloge.initialiser_horloge(monde["id"])
+    return monde
 
 
 @app.post("/spatial/mondes/{mid}/forker", tags=["spatial"])
 def spatial_monde_forker(mid: str, _cle: str = Depends(cle_api)):
     """Clone un monde existant (cellules + enfants placés) sous un nouvel id
-    indépendant. Le monde source n'est jamais modifié."""
+    indépendant. Le monde source n'est jamais modifié. L'horloge du fork reprend
+    le tick du monde source mais reste inactive (Sprint C)."""
     nouveau = stockage_spatial.forker_monde(_cle, mid)
     if nouveau is None:
         raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    stockage_horloge.copier_pour_fork(mid, nouveau["id"])
     return nouveau
 
 
@@ -172,3 +187,69 @@ def spatial_cellule_lire(mid: str, cid: int, _cle: str = Depends(cle_api)):
 def spatial_monde_supprimer(mid: str, _cle: str = Depends(cle_api)):
     if not stockage_spatial.supprimer_monde(_cle, mid):
         raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    stockage_horloge.supprimer_pour_monde(mid)
+
+
+@app.post("/horloge/{mid}/tick", tags=["horloge"])
+async def horloge_tick(mid: str, _cle: str = Depends(cle_api)):
+    """Avance manuellement ce monde d'exactement 1 tick (1 an narratif) — voir
+    `horloge_moteur.executer_tick` pour le détail de la mécanique."""
+    if not stockage_spatial.monde_existe(_cle, mid):
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    return await horloge_moteur.executer_tick(mid, _cle)
+
+
+@app.post("/horloge/{mid}/demarrer", tags=["horloge"])
+def horloge_demarrer(mid: str, body: DemarrerHorloge, _cle: str = Depends(cle_api)):
+    """Active l'avancement automatique de ce monde (scheduler in-process, opt-in).
+    Un monde nouvellement créé ou forké reste en tick manuel tant que cet endpoint
+    n'est pas appelé."""
+    if not stockage_spatial.monde_existe(_cle, mid):
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    stockage_horloge.demarrer(mid, body.intervalle_secondes)
+    return stockage_horloge.lire_horloge(mid)
+
+
+@app.post("/horloge/{mid}/arreter", tags=["horloge"])
+def horloge_arreter(mid: str, _cle: str = Depends(cle_api)):
+    """Désactive l'avancement automatique (les ticks déjà passés restent acquis)."""
+    if not stockage_spatial.monde_existe(_cle, mid):
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    stockage_horloge.arreter(mid)
+    return stockage_horloge.lire_horloge(mid)
+
+
+@app.get("/horloge/{mid}", tags=["horloge"])
+def horloge_lire(mid: str, _cle: str = Depends(cle_api)):
+    if not stockage_spatial.monde_existe(_cle, mid):
+        raise HTTPException(404, f"Monde '{mid}' introuvable.")
+    return stockage_horloge.lire_horloge(mid)
+
+
+SCHEDULER_INTERVALLE_S = int(os.getenv("HORLOGE_SCHEDULER_INTERVALLE_S", "5"))
+_SCHEDULER_ACTIF = os.getenv("HORLOGE_SCHEDULER_DESACTIVE", "").strip() != "1"
+
+
+async def _boucle_scheduler():
+    """Tâche de fond in-process (pas de queue externe — volume modéré visé ce
+    sprint, voir design). Vérifie périodiquement les horloges actives dont
+    l'intervalle est écoulé et déclenche leur tick. Une erreur sur un monde
+    n'interrompt jamais la boucle ni les autres mondes."""
+    while True:
+        await asyncio.sleep(SCHEDULER_INTERVALLE_S)
+        maintenant = datetime.now(timezone.utc).isoformat()
+        try:
+            dues = stockage_horloge.horloges_actives_a_declencher(maintenant)
+        except Exception:
+            continue
+        for due in dues:
+            try:
+                await horloge_moteur.executer_tick(due["monde_id"], due["cle_api"])
+            except Exception:
+                continue
+
+
+@app.on_event("startup")
+async def _demarrer_scheduler():
+    if _SCHEDULER_ACTIF:
+        asyncio.create_task(_boucle_scheduler())

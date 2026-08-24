@@ -840,3 +840,54 @@ def test_genome_croiser_place_enfant_avec_le_tick_courant_du_monde():
     cellule_id = r.json()["cellule_id"]
     population = stockage_spatial.population_vivante_cellule(monde["id"], cellule_id)
     assert any(h["id"] == eid and h["ne_au_tick"] == 5 for h in population)
+
+
+def test_horloge_monde_a_une_horloge_des_sa_creation():
+    r = client.post("/spatial/mondes", json={"nb_cellules": 10})
+    mid = r.json()["id"]
+    etat = client.get(f"/horloge/{mid}").json()
+    assert etat == {"monde_id": mid, "tick_actuel": 0, "actif": False,
+                     "intervalle_secondes": None, "derniere_execution": None}
+
+
+def test_horloge_tick_manuel_avance_le_compteur():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
+    resultat = client.post(f"/horloge/{mid}/tick").json()
+    assert resultat["tick_actuel"] == 1
+    assert client.get(f"/horloge/{mid}").json()["tick_actuel"] == 1
+
+
+def test_horloge_tick_monde_introuvable_404():
+    r = client.post("/horloge/id-inconnu/tick")
+    assert r.status_code == 404
+
+
+def test_horloge_demarrer_puis_arreter():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
+    r = client.post(f"/horloge/{mid}/demarrer", json={"intervalle_secondes": 60})
+    assert r.status_code == 200
+    assert r.json()["actif"] is True
+    r = client.post(f"/horloge/{mid}/arreter")
+    assert r.json()["actif"] is False
+
+
+def test_horloge_demarrer_intervalle_hors_bornes_422():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
+    r = client.post(f"/horloge/{mid}/demarrer", json={"intervalle_secondes": 1})
+    assert r.status_code == 422
+
+
+def test_horloge_fork_reprend_tick_mais_reste_inactif():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
+    client.post(f"/horloge/{mid}/tick")
+    client.post(f"/horloge/{mid}/tick")
+    fork_id = client.post(f"/spatial/mondes/{mid}/forker").json()["id"]
+    etat_fork = client.get(f"/horloge/{fork_id}").json()
+    assert etat_fork["tick_actuel"] == 2
+    assert etat_fork["actif"] is False
+
+
+def test_horloge_supprimer_monde_purge_horloge():
+    mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
+    client.delete(f"/spatial/mondes/{mid}")
+    assert client.get(f"/horloge/{mid}").status_code == 404
