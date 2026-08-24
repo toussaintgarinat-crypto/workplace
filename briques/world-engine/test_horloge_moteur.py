@@ -116,3 +116,31 @@ async def test_tick_naissance_couple_appelle_genome_moteur():
             naissance_observee = True
             break
     assert naissance_observee
+
+
+@pytest.mark.asyncio
+async def test_tick_couple_forme_ce_tick_ne_tente_pas_naissance_ce_meme_tick(monkeypatch):
+    """Régression constraint 3 : un couple formé PENDANT ce tick (étape 5) ne doit
+    jamais être éligible à une tentative de naissance CE MÊME tick (étape 6) —
+    seuls les couples déjà actifs AVANT ce tick le sont. On force `former_couples`
+    à former le couple à coup sûr et `tente_naissance_couple` à toujours réussir :
+    si la naissance survient quand même, c'est que le tick a (à tort) inclus un
+    couple fraîchement formé dans sa boucle de reproduction."""
+    # n_cellules=1 : une seule cellule, donc le mock de `former_couples` (forcé à
+    # toujours renvoyer ce couple) n'est invoqué qu'une fois par tick — avec
+    # plusieurs cellules il serait appelé une fois par cellule et formerait le
+    # même couple plusieurs fois, faussant l'assertion sur `couples_formes`.
+    monde = _monde_avec_habitants("cle-tk6", n_cellules=1)
+    # ne_au_tick=-20 : adultes fécondables dès ce tick, aucun couple préexistant.
+    a = _ajouter_habitant("cle-tk6", monde["id"], 0, "F", ne_au_tick=-20)
+    b = _ajouter_habitant("cle-tk6", monde["id"], 0, "M", ne_au_tick=-20)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "former_couples",
+                         lambda *a_, **k: [(a, b)])
+    monkeypatch.setattr(horloge_moteur.horloge, "tente_naissance_couple",
+                         lambda *a_, **k: True)
+
+    resultat = await horloge_moteur.executer_tick(monde["id"], "cle-tk6")
+
+    assert resultat["couples_formes"] == 1
+    assert resultat["naissances"] == 0
