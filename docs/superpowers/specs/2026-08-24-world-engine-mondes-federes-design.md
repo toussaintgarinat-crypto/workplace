@@ -99,14 +99,23 @@ sur UN monde non fédéré. Ce sprint ajoute la fédération de plusieurs mondes
 - **Tout couple actif est dissous avant le départ** — même motif que la mort
   (Sprint C), pour la même raison : un couple ne peut jamais avoir ses deux
   membres dans des mondes différents.
-- **Verrouillage inter-pays à l'écriture.** L'écriture de la migration
-  transfrontière touche deux pays (origine + destination) qui peuvent avoir
-  chacun un tick en cours (scheduler in-process indépendant, Sprint C).
-  L'exécution acquiert le verrou du pays destination en plus de celui du
-  pays courant déjà tenu pour la durée du tick, **toujours dans un ordre
-  trié par `monde_id`** (jamais l'ordre d'appel) — élimine tout risque
-  d'interblocage avec un tick concurrent sur l'autre pays qui ferait le
-  mouvement inverse au même moment.
+- **Verrouillage inter-pays à l'écriture, par timeout — pas par ordre trié.**
+  L'écriture de la migration transfrontière touche deux pays (origine +
+  destination) qui peuvent avoir chacun un tick en cours (scheduler
+  in-process indépendant, Sprint C). **Correction (revue du plan
+  d'implémentation)** : une première version de ce document proposait un
+  ordre d'acquisition trié par `monde_id` pour éliminer l'interblocage —
+  c'est inexact, puisque le verrou du pays D'ORIGINE est déjà tenu en entrée
+  du tick (`executer_tick`), AVANT même de savoir qu'une migration
+  transfrontière aura lieu : l'ordre d'acquisition n'est donc jamais neutre,
+  et deux tics concurrents faisant le mouvement inverse l'un de l'autre (A→B
+  et B→A au même instant) restent en interblocage classique malgré un tri.
+  Mécanisme retenu à la place : l'acquisition du verrou du pays destination
+  se fait avec un **timeout court** (`asyncio.wait_for`, quelques secondes) ;
+  en cas de timeout, CETTE émigration précise échoue proprement (capturée
+  dans `avertissements`, l'habitant reste dans son pays d'origine ce tick,
+  retentera au tick suivant), sans jamais bloquer indéfiniment ni
+  interbloquer.
 - **Reproduction/couples transfrontières, synchronisation des ticks,
   diplomatie/guerre/ressources entre pays, rendu carte fédérée**
   explicitement hors périmètre — voir section dédiée en fin de document.
@@ -187,8 +196,9 @@ jugée saturée :
      Sprint C, **inchangée**.
 3. Traitement d'une migration transfrontière réussie, dans l'ordre :
    1. Acquérir le verrou du pays destination (en plus de celui du pays
-      courant déjà tenu pour la durée du tick), ordre trié par `monde_id`
-      des deux pays impliqués — jamais l'ordre d'appel.
+      courant déjà tenu pour la durée du tick) avec un timeout court — voir
+      correction ci-dessus. Timeout dépassé → cette émigration échoue
+      proprement (`avertissements`), passer à l'émigrant suivant.
    2. Si l'habitant a un couple `actif=1` : le dissoudre (`actif=0`,
       `dissous_au_tick=tick_actuel+1`), même motif que la mort (Sprint C).
    3. Calculer l'âge au départ : `age = (tick_actuel + 1) − ne_au_tick`
@@ -285,8 +295,9 @@ permission refusée.
 - Suppression d'une fédération : jamais de suppression en cascade vers
   `mondes`/`cellules`/`placements`/`couples`/`horloges` — uniquement les
   tables propres à la fédération.
-- Verrous inter-pays toujours acquis dans un ordre trié par `monde_id` —
-  élimine l'interblocage par construction, pas par détection a posteriori.
+- Verrou du pays destination acquis avec timeout court — un interblocage
+  potentiel se résout par échec isolé et propre de cette émigration
+  (`avertissements`), jamais par un blocage indéfini du tick.
 
 ## Tests prévus
 
