@@ -92,3 +92,34 @@ def test_derive_heure_et_offset_format_valide():
 def test_tirer_sexe_deterministe():
     assert horloge.tirer_sexe(Random(1)) == horloge.tirer_sexe(Random(1))
     assert horloge.tirer_sexe(Random(1)) in ("F", "M")
+
+
+def test_migre_frontiere_deterministe_avec_seed_fixe():
+    a = horloge.migre_frontiere(Random(7))
+    b = horloge.migre_frontiere(Random(7))
+    assert a == b
+
+
+def test_migre_frontiere_moins_probable_que_migre_intra_pays():
+    # Sur un grand nombre de tirages avec le MÊME flux de random, la fréquence de
+    # succès de migre_frontiere doit rester nettement sous celle de migre (Sprint C)
+    # — traduit "franchir une frontière est un choix plus lourd" (design).
+    rng_a, rng_b = Random(123), Random(123)
+    n = 5000
+    freq_frontiere = sum(horloge.migre_frontiere(rng_a) for _ in range(n)) / n
+    freq_intra = sum(horloge.migre(rng_b) for _ in range(n)) / n
+    assert freq_frontiere < freq_intra
+
+
+def test_tirer_pays_destination_choisit_parmi_la_liste():
+    rng = Random(1)
+    pays = ["m1", "m2", "m3"]
+    for _ in range(20):
+        assert horloge.tirer_pays_destination(pays, rng) in pays
+
+
+def test_tirer_cellule_destination_bornee():
+    rng = Random(1)
+    for _ in range(50):
+        cid = horloge.tirer_cellule_destination(7, rng)
+        assert 0 <= cid < 7
