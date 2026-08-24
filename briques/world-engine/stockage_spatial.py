@@ -248,9 +248,14 @@ def supprimer_placements_enfant(enfant_id: str) -> None:
 
 
 def population_vivante_cellule(monde_id: str, cellule_id: int) -> list[dict]:
-    """Habitants vivants ET NON ÉMIGRÉS placés sur cette cellule (Sprint D : un
-    émigré reste `vivant=1` mais ne compte plus pour son pays d'origine — voir
-    design). ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    """Habitants vivants ET NON ÉMIGRÉS placés sur cette cellule, avec leur sexe
+    (Sprint C, voir stockage.py) et leur tick de naissance DANS ce monde — snapshot
+    utilisé par l'horloge pour décider mortalité/couples/reproduction.
+
+    Sprint D : un émigré reste `vivant=1` mais ne compte plus pour son pays
+    d'origine (voir design) — le filtre `emigre=0` s'ajoute au critère `vivant=1`.
+
+    ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
     with _conn() as c:
         rows = c.execute(
             "SELECT e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
@@ -261,8 +266,20 @@ def population_vivante_cellule(monde_id: str, cellule_id: int) -> list[dict]:
 
 
 def population_vivante_monde(monde_id: str) -> dict[int, list[dict]]:
-    """Version « tout le monde en une requête » de `population_vivante_cellule`
-    (même filtre `emigre=0` ajouté en Sprint D), groupée par `cellule_id`."""
+    """Version « tout le monde en une requête » de `population_vivante_cellule`,
+    groupée par `cellule_id` (même motif de regroupement que `_enfants_par_cellule`).
+
+    Correctif revue finale (Critical) : `horloge_moteur.executer_tick` ouvrait une
+    connexion SQLite PAR CELLULE (chacune rejouant la DDL complète + plusieurs sondes
+    `PRAGMA table_info`) — ~12 s de blocage synchrone dans un `async def` sur un
+    monde de 2000 cellules (taille légale), assez pour faire tomber le healthcheck.
+    `population_vivante_cellule` reste en place pour les autres appelants/tests.
+
+    Sprint D : filtre `emigre=0` ajouté (un émigré ne compte plus pour son pays
+    d'origine). Une cellule sans habitant vivant non-émigré est ABSENTE du dict
+    (utiliser `.get(cid, [])` — un `resultat[cid]` direct lève `KeyError`).
+
+    ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
     with _conn() as c:
         rows = c.execute(
             "SELECT p.cellule_id AS cid, e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
