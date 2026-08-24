@@ -412,3 +412,52 @@ def test_migration_legacy_seme_ressources_stock_au_lieu_de_le_laisser_vide(monke
         assert stockage_spatial.lire_ressources_stock("monde-legacy", 0) == {"ble": 1.0}
     finally:
         monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)
+
+
+def test_semis_legacy_survit_a_l_echec_du_bloc_appelant(monkeypatch, tmp_path):
+    """Correctif 2e revue finale (Important) : le semis doit être commité TOUT DE
+    SUITE, pas laissé dans la transaction de l'appelant.
+
+    L'`ALTER TABLE` qui arme le semis est auto-commité immédiatement par le module
+    `sqlite3` ; l'UPDATE de semis, lui, appartenait au `with _conn() as c:` de
+    l'appelant. Si ce bloc lève (ou est annulé) juste après, l'ALTER survit mais le
+    semis est perdu — et comme le déclencheur est one-shot (« la colonne vient
+    d'être ajoutée »), il ne se représente JAMAIS : les cellules legacy restent à
+    `ressources_stock={}` pour toujours, donc jugées saturées en permanence et
+    figées technologiquement.
+
+    On simule l'appelant qui échoue par un `rollback()` sur la connexion tout juste
+    ouverte par `_conn()` — c'est exactement ce que fait un `with sqlite3` dont le
+    bloc lève."""
+    import json
+    import sqlite3
+
+    legacy_db = tmp_path / "legacy_semis_durable.db"
+    legacy = sqlite3.connect(str(legacy_db))
+    legacy.execute("""CREATE TABLE cellules (
+        monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
+        x REAL NOT NULL, y REAL NOT NULL, biome TEXT NOT NULL,
+        ressources TEXT NOT NULL, voisins TEXT NOT NULL,
+        PRIMARY KEY (monde_id, cellule_id))""")
+    legacy.execute(
+        "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins) "
+        "VALUES (?,?,?,?,?,?,?)",
+        ("monde-legacy", 0, 1.0, 2.0, "plaine", json.dumps(["ble"]), json.dumps([])))
+    legacy.commit()
+    legacy.close()
+
+    original_db_path = stockage_spatial.DB_PATH
+    monkeypatch.setattr(stockage_spatial, "DB_PATH", str(legacy_db))
+    try:
+        # 1re connexion = migration + semis one-shot, puis l'appelant « échoue ».
+        c = stockage_spatial._conn()
+        c.rollback()
+        c.close()
+
+        # 2e connexion : la colonne existe déjà, le semis ne se rejouera pas. Le
+        # stock doit donc déjà être là — sinon il est perdu définitivement.
+        assert stockage_spatial.lire_ressources_stock("monde-legacy", 0) == \
+            {"ble": stockage_spatial.STOCK_INITIAL_PAR_RESSOURCE}, \
+            "le semis legacy doit être durable même si le bloc appelant est annulé"
+    finally:
+        monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)

@@ -51,6 +51,16 @@ def _seeder_ressources_stock_legacy(c: sqlite3.Connection) -> None:
         "UPDATE cellules SET ressources_stock=? WHERE monde_id=? AND cellule_id=?",
         [(json.dumps({nom: STOCK_INITIAL_PAR_RESSOURCE for nom in json.loads(r["ressources"])},
                       ensure_ascii=False), r["monde_id"], r["cellule_id"]) for r in rows])
+    # `commit()` IMMÉDIAT (correctif 2e revue finale, Important) : l'`ALTER TABLE`
+    # qui déclenche ce semis est auto-commité tout de suite par le module `sqlite3`,
+    # mais cet UPDATE, lui, appartient à la transaction de l'appelant (`with _conn()
+    # as c:`). Si ce bloc appelant lève ensuite pour une raison quelconque, l'ALTER
+    # survit et l'UPDATE est annulé — or le déclencheur est one-shot (« la colonne
+    # vient d'être ajoutée ») et ne se représentera JAMAIS : les cellules legacy
+    # resteraient à `ressources_stock={}` définitivement, donc saturées en
+    # permanence et figées technologiquement. C'est exactement le bug que ce semis
+    # est censé fermer.
+    c.commit()
 
 
 def _conn() -> sqlite3.Connection:
