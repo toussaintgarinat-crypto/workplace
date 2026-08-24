@@ -82,6 +82,28 @@ def migre(rng: Random) -> bool:
     return rng.random() < PROBABILITE_MIGRATION_SI_SATURE
 
 
+# --- Migration transfrontière (Sprint D) ---
+PROBABILITE_MIGRATION_FRONTIERE = 0.05  # plus faible que PROBABILITE_MIGRATION_SI_SATURE (0.20) —
+                                          # franchir une frontière est un choix plus lourd que
+                                          # changer de cellule voisine (voir design)
+
+
+def migre_frontiere(rng: Random) -> bool:
+    return rng.random() < PROBABILITE_MIGRATION_FRONTIERE
+
+
+def tirer_pays_destination(pays_adjacents: list[str], rng: Random) -> str:
+    return rng.choice(pays_adjacents)
+
+
+def tirer_cellule_destination(nb_cellules_destination: int, rng: Random) -> int:
+    """Cellule aléatoire bornée dans le pays destination — pas de notion de
+    cellule-frontière géométrique entre deux maillages Voronoï séparés (voir
+    design), même repli que le placement d'un parent sans position connue
+    (Sprint B)."""
+    return rng.randrange(nb_cellules_destination)
+
+
 def est_adulte_fecond(age: int) -> bool:
     return AGE_ADULTE_MIN <= age <= AGE_FECONDITE_MAX
 
