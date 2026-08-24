@@ -101,9 +101,95 @@ def test_copier_pour_fork_duplique_les_couples_actifs():
 
 
 def test_supprimer_pour_monde_purge_horloge_et_couples():
+    """La suppression se fait TOUJOURS dans l'ordre de `main.py` :
+    `stockage_spatial.supprimer_monde` d'abord, puis cette cascade. L'ordre compte
+    depuis le rattrapage paresseux de `lire_horloge` (correctif revue finale) : tant
+    que la ligne `mondes` existe, relire l'horloge d'un monde vivant RECRÉE sa ligne
+    par défaut — c'est précisément le comportement voulu pour un monde legacy."""
     monde = stockage_spatial.creer_monde("cle-h10", _cellules_factices(), seed=1)
     stockage_horloge.initialiser_horloge(monde["id"])
     stockage_horloge.former_couple(monde["id"], 0, "hab-a", "hab-b", tick=1)
+    stockage_spatial.supprimer_monde("cle-h10", monde["id"])
     stockage_horloge.supprimer_pour_monde(monde["id"])
     assert stockage_horloge.lire_horloge(monde["id"]) is None
     assert stockage_horloge.couples_actifs_cellule(monde["id"], 0) == []
+
+
+# --- Correctifs revue finale Sprint C ---
+
+def test_couples_actifs_monde_groupe_par_cellule_et_ignore_les_dissous():
+    """Correctif revue finale (Critical) : accesseur en lot remplaçant N appels à
+    `couples_actifs_cellule` (un par cellule) dans `horloge_moteur.executer_tick`."""
+    monde = stockage_spatial.creer_monde("cle-h11", _cellules_factices(), seed=1)
+    c0 = stockage_horloge.former_couple(monde["id"], 0, "a", "b", tick=1)
+    c2 = stockage_horloge.former_couple(monde["id"], 2, "c", "d", tick=1)
+    mort = stockage_horloge.former_couple(monde["id"], 2, "e", "f", tick=1)
+    stockage_horloge.dissoudre_couple(mort, tick=2)
+
+    par_cellule = stockage_horloge.couples_actifs_monde(monde["id"])
+    assert set(par_cellule) == {0, 2}
+    assert [c["id"] for c in par_cellule[0]] == [c0]
+    assert [c["id"] for c in par_cellule[2]] == [c2]
+
+
+def test_former_couples_lot_et_dissoudre_couples_en_lot():
+    monde = stockage_spatial.creer_monde("cle-h12", _cellules_factices(), seed=1)
+    ids = stockage_horloge.former_couples_lot(
+        monde["id"], [(0, "a", "b"), (1, "c", "d")], tick=3)
+    assert len(ids) == 2
+    assert [c["id"] for c in stockage_horloge.couples_actifs_cellule(monde["id"], 0)] == [ids[0]]
+    assert [c["id"] for c in stockage_horloge.couples_actifs_cellule(monde["id"], 1)] == [ids[1]]
+
+    stockage_horloge.dissoudre_couples(ids, tick=4)
+    assert stockage_horloge.couples_actifs_monde(monde["id"]) == {}
+
+
+def test_deplacer_couples_habitants_recale_la_cellule_du_couple():
+    """Correctif revue finale (Important) : un couple indexé sur la cellule
+    d'origine d'un migrant le rendait « célibataire » dans sa cellule d'arrivée,
+    donc éligible à un SECOND couple actif simultané."""
+    monde = stockage_spatial.creer_monde("cle-h13", _cellules_factices(), seed=1)
+    cid = stockage_horloge.former_couple(monde["id"], 0, "hab-a", "hab-b", tick=1)
+    stockage_horloge.deplacer_couples_habitants(monde["id"], [("hab-b", 2)])
+    assert stockage_horloge.couples_actifs_cellule(monde["id"], 0) == []
+    actifs_2 = stockage_horloge.couples_actifs_cellule(monde["id"], 2)
+    assert [c["id"] for c in actifs_2] == [cid]
+
+
+def test_deplacer_couples_habitants_ignore_les_couples_dissous():
+    monde = stockage_spatial.creer_monde("cle-h14", _cellules_factices(), seed=1)
+    cid = stockage_horloge.former_couple(monde["id"], 0, "hab-a", "hab-b", tick=1)
+    stockage_horloge.dissoudre_couple(cid, tick=2)
+    stockage_horloge.deplacer_couples_habitants(monde["id"], [("hab-a", 2)])
+    assert stockage_horloge.couples_actifs_monde(monde["id"]) == {}
+
+
+def test_lire_horloge_rattrape_un_monde_sans_ligne_horloges():
+    """Correctif revue finale (Important) : un monde antérieur au Sprint C (ou dont
+    `initialiser_horloge` a échoué après un `creer_monde` déjà commité) n'a aucune
+    ligne `horloges`. `lire_horloge` renvoyait None ⇒ `GET /horloge/{id}` répondait
+    `200 null` et `demarrer`/`arreter` faisaient un UPDATE sur zéro ligne."""
+    monde = stockage_spatial.creer_monde("cle-h15", _cellules_factices(), seed=1)
+    # PAS de initialiser_horloge : on simule le monde legacy.
+    etat = stockage_horloge.lire_horloge(monde["id"])
+    assert etat == {"monde_id": monde["id"], "tick_actuel": 0, "actif": False,
+                     "intervalle_secondes": None, "derniere_execution": None}
+
+    # La ligne est bien PERSISTÉE, pas juste fabriquée en mémoire.
+    stockage_horloge.marquer_execution(monde["id"], 1)
+    assert stockage_horloge.lire_horloge(monde["id"])["tick_actuel"] == 1
+
+
+def test_demarrer_et_arreter_prennent_effet_sur_un_monde_sans_ligne_horloges():
+    monde = stockage_spatial.creer_monde("cle-h16", _cellules_factices(), seed=1)
+    stockage_horloge.demarrer(monde["id"], 60)  # aucune ligne `horloges` au départ
+    etat = stockage_horloge.lire_horloge(monde["id"])
+    assert etat["actif"] is True and etat["intervalle_secondes"] == 60
+    stockage_horloge.arreter(monde["id"])
+    assert stockage_horloge.lire_horloge(monde["id"])["actif"] is False
+
+
+def test_lire_horloge_ne_rattrape_pas_un_monde_inexistant():
+    """Le rattrapage est conditionné à l'existence du MONDE : un id inventé (ou un
+    monde supprimé) ne doit jamais créer de ligne `horloges` fantôme."""
+    assert stockage_horloge.lire_horloge("monde-jamais-cree") is None
