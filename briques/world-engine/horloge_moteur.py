@@ -30,6 +30,7 @@ from fastapi import HTTPException
 
 import genome_moteur
 import horloge
+import stockage_federation
 import stockage_horloge
 import stockage_spatial
 
@@ -67,6 +68,31 @@ def _verrou_tick(monde_id: str) -> asyncio.Lock:
     return verrou
 
 
+VERROU_DESTINATION_TIMEOUT_S = 5.0
+
+
+async def _acquerir_verrou_destination(monde_id: str) -> asyncio.Lock | None:
+    """Tente d'acquérir le verrou de tick du pays DESTINATION d'une migration
+    transfrontière, avec un timeout court.
+
+    Un ordre d'acquisition trié par `monde_id` ne suffirait PAS à éliminer
+    l'interblocage ici : le verrou du pays D'ORIGINE est déjà tenu en entrée du
+    tick (`executer_tick`), avant même de savoir qu'une migration transfrontière
+    aura lieu — l'ordre n'est donc jamais neutre, et 2 tics concurrents faisant le
+    mouvement inverse l'un de l'autre (A→B et B→A au même instant) resteraient en
+    interblocage classique malgré un tri (voir design, section corrigée).
+
+    Renvoie le verrou ACQUIS (à libérer par l'appelant), ou None si le timeout est
+    dépassé — dans ce cas CETTE émigration précise échoue proprement (capturée
+    dans `avertissements` par l'appelant), sans jamais bloquer indéfiniment."""
+    verrou = _verrou_tick(monde_id)
+    try:
+        await asyncio.wait_for(verrou.acquire(), timeout=VERROU_DESTINATION_TIMEOUT_S)
+        return verrou
+    except asyncio.TimeoutError:
+        return None
+
+
 async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
     """Avance `monde_id` d'exactement 1 tick. Sérialisé par monde : un second
     appelant simultané ATTEND la fin du premier (il n'échoue pas)."""
@@ -85,8 +111,11 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         raise HTTPException(404, f"Monde '{monde_id}' introuvable.")
     seed = monde["seed"]
 
+    pays_adjacents_ids = stockage_federation.pays_adjacents(monde_id)
+    nb_cellules_adjacents = {pid: stockage_spatial.nb_cellules_monde(pid) for pid in pays_adjacents_ids}
+
     avertissements: list[str] = []
-    naissances = morts = migrations = couples_formes = couples_dissous = 0
+    naissances = morts = migrations = migrations_transfrontieres = couples_formes = couples_dissous = 0
     niveaux_tech: list[float] = []
 
     # --- Phase 1 : instantané figé du monde en début de tick (3 requêtes au total,
@@ -120,6 +149,7 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     maj_cellules: dict[int, tuple[dict, float]] = {}  # cellule_id -> (stock, niveau_technologie)
     morts_a_appliquer: list[str] = []
     migrations_a_appliquer: list[tuple[str, int]] = []
+    emigrations_a_appliquer: list[tuple[str, str, int, int]] = []  # eid, monde_id_dest, cellule_id_dest, age
     couples_a_dissoudre: list[str] = []
     couples_a_former: list[tuple[int, str, str]] = []
     naissances_a_tenter: list[tuple[int, str, str, str, str]] = []  # cid, a, b, sexe_a, sexe_b
@@ -160,10 +190,38 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
             else:
                 vivants.append(h)
 
-        # 4) Migration — décidée sur l'état du DÉBUT de tick ; un habitant qui migre
-        # reste éligible couples/reproduction dans SA cellule d'origine ce même tick.
+        # 4) Migration — décidée sur l'état du DÉBUT de tick.
+        #
+        # 4a) Transfrontière (Sprint D) D'ABORD, repli sur l'intra-pays existant
+        # ENSUITE — jamais les deux pour le même habitant le même tick. Contrairement
+        # à un migrant intra-pays, un émigrant est retiré de `vivants` MAINTENANT :
+        # il ne participe plus aux couples/reproduction de sa cellule d'origine ce
+        # tick (franchir une frontière est un choix plus lourd que changer de
+        # cellule voisine — voir design). Son couple actif éventuel est dissous via
+        # le mécanisme de dissolution mondiale ci-dessous (5b), pas ici.
+        rng_front = _rng(seed, tick_suivant, cid, "migration_frontiere")
+        cellule_saturee_ici = horloge.cellule_saturee(len(vivants), stock_cellule)
+        if cellule_saturee_ici and pays_adjacents_ids:
+            restants = []
+            for h in vivants:
+                if horloge.migre_frontiere(rng_front):
+                    dest_pays = horloge.tirer_pays_destination(pays_adjacents_ids, rng_front)
+                    nb_dest = nb_cellules_adjacents.get(dest_pays)
+                    if nb_dest:  # défensif : un pays adjacent supprimé (DELETE /spatial/mondes)
+                                 # entre le rattachement et ce tick renverrait None ici — la
+                                 # fédération ne cascade pas sur la suppression d'un monde (le
+                                 # monde reste l'entité première, voir design) ; l'habitant reste
+                                 # alors simplement dans son pays d'origine ce tick.
+                        dest_cellule = horloge.tirer_cellule_destination(nb_dest, rng_front)
+                        age = tick_suivant - h["ne_au_tick"]
+                        emigrations_a_appliquer.append((h["id"], dest_pays, dest_cellule, age))
+                        continue
+                restants.append(h)
+            vivants = restants
+
+        # 4b) Intra-pays (Sprint C, inchangé) — sur les habitants NON émigrés ci-dessus.
         rng_mig = _rng(seed, tick_suivant, cid, "migration")
-        if cel["voisins"] and horloge.cellule_saturee(len(vivants), stock_cellule):
+        if cel["voisins"] and cellule_saturee_ici:
             for h in vivants:
                 if horloge.migre(rng_mig):
                     migrations_a_appliquer.append((h["id"], rng_mig.choice(cel["voisins"])))
@@ -179,6 +237,8 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         dissous_ids |= {c["id"] for c in actifs if horloge.dissout(rng_c)}
         etat_cellules[cid] = (vivants, actifs, rng_c)
 
+    emigrants_tous = {eid for eid, _, _, _ in emigrations_a_appliquer}
+
     # 5b) Dissolution par décès — recherche MONDIALE (correctif 2e revue finale,
     # Important) — design §3 : « tout couple actif impliquant cet habitant est
     # dissous ». La ligne du couple peut résider dans une cellule où le défunt
@@ -186,7 +246,8 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     # chercher dans la seule cellule du défunt la manquait, et le couple restait
     # `actif=1` à jamais.
     dissous_ids |= {c["id"] for c in tous_couples_actifs
-                    if c["habitant_a_id"] in morts_tous or c["habitant_b_id"] in morts_tous}
+                    if c["habitant_a_id"] in morts_tous or c["habitant_b_id"] in morts_tous
+                    or c["habitant_a_id"] in emigrants_tous or c["habitant_b_id"] in emigrants_tous}
     couples_a_dissoudre.extend(c["id"] for c in tous_couples_actifs if c["id"] in dissous_ids)
 
     # `deja_en_couple` MONDIAL (correctif 2e revue finale, Important) : un habitant
@@ -344,9 +405,30 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         except Exception as e:
             avertissements.append(f"Couples des migrants non recalés : {e}")
 
+    if emigrations_a_appliquer:
+        for eid, dest_monde_id, dest_cellule_id, age in emigrations_a_appliquer:
+            verrou_dest = await _acquerir_verrou_destination(dest_monde_id)
+            if verrou_dest is None:
+                avertissements.append(
+                    f"Émigration de {eid} vers {dest_monde_id} non appliquée : "
+                    "verrou du pays destination indisponible (retentera au tick suivant).")
+                continue
+            try:
+                horloge_dest = stockage_horloge.lire_horloge(dest_monde_id)
+                tick_dest = horloge_dest["tick_actuel"] if horloge_dest else 0
+                stockage_spatial.marquer_emigre(monde_id, eid, tick_suivant, dest_monde_id)
+                stockage_spatial.placer(dest_monde_id, eid, dest_cellule_id,
+                                          ne_au_tick=tick_dest - age)
+                migrations_transfrontieres += 1
+            except Exception as e:
+                avertissements.append(f"Émigration de {eid} vers {dest_monde_id} non appliquée : {e}")
+            finally:
+                verrou_dest.release()
+
     return {
         "monde_id": monde_id, "tick_actuel": tick_suivant,
         "naissances": naissances, "morts": morts, "migrations": migrations,
+        "migrations_transfrontieres": migrations_transfrontieres,
         "couples_formes": couples_formes, "couples_dissous": couples_dissous,
         "niveau_technologie_moyen": (sum(niveaux_tech) / len(niveaux_tech)) if niveaux_tech else 0.0,
         "avertissements": avertissements,

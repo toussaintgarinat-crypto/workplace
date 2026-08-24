@@ -450,3 +450,169 @@ async def test_le_deces_dissout_le_couple_meme_parti_dans_une_autre_cellule(monk
         "le couple du défunt doit être trouvé et dissous même si sa ligne réside "
         "dans une autre cellule que la sienne")
     assert stockage_horloge.couples_actifs_monde(monde["id"]) == {}
+
+
+# --- Sprint D : migration transfrontière ---
+
+import stockage_federation
+
+
+def _crf_pair(cle="cle-fed"):
+    """2 pays d'1 cellule chacun, rattachés à une fédération et déclarés adjacents
+    — topologie minimale pour exercer une émigration."""
+    origine = _monde_avec_habitants(cle, n_cellules=1)
+    destination = _monde_avec_habitants(cle, n_cellules=1)
+    f = stockage_federation.creer_federation(cle, "F")
+    stockage_federation.rattacher_pays(f["id"], origine["id"], cle, None)
+    stockage_federation.rattacher_pays(f["id"], destination["id"], cle, None)
+    stockage_federation.declarer_adjacence(f["id"], origine["id"], destination["id"])
+    return origine, destination
+
+
+@pytest.mark.asyncio
+async def test_tick_emigre_habitant_cellule_saturee_pays_adjacent(monkeypatch):
+    origine, destination = _crf_pair("cle-fed1")
+    eid = _ajouter_habitant("cle-fed1", origine["id"], 0, "F", ne_au_tick=-20)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+
+    resultat = await horloge_moteur.executer_tick(origine["id"], "cle-fed1")
+
+    assert resultat["migrations_transfrontieres"] == 1
+    assert resultat["migrations"] == 0  # jamais les deux à la fois pour le même habitant
+    assert stockage_spatial.population_vivante_cellule(origine["id"], 0) == []
+    assert stockage_spatial.population_vivante_cellule(destination["id"], 0) == [
+        {"id": eid, "sexe": "F", "ne_au_tick": stockage_spatial.population_vivante_cellule(
+            destination["id"], 0)[0]["ne_au_tick"]}]
+
+
+@pytest.mark.asyncio
+async def test_emigration_preserve_lage_reel(monkeypatch):
+    origine, destination = _crf_pair("cle-fed2")
+    # habitant né au tick -20 : âgé de 21 au tick 1 (tick_suivant=1, age=1-(-20)=21)
+    eid = _ajouter_habitant("cle-fed2", origine["id"], 0, "F", ne_au_tick=-20)
+    # avance la destination de 10 ticks AVANT l'émigration, pour que ne_au_tick ne
+    # puisse pas coïncider par hasard entre les 2 pays si le recalcul était omis
+    for _ in range(10):
+        await horloge_moteur.executer_tick(destination["id"], "cle-fed2")
+
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+    resultat = await horloge_moteur.executer_tick(origine["id"], "cle-fed2")
+
+    assert resultat["migrations_transfrontieres"] == 1
+    arrive = stockage_spatial.population_vivante_cellule(destination["id"], 0)[0]
+    assert arrive["id"] == eid
+    # âge réel au départ = 1 - (-20) = 21 ; horloge destination était à 10, donc
+    # ne_au_tick attendu = 10 - 21 = -11 (peut être négatif, comme n'importe quel
+    # habitant "déjà adulte" injecté directement — voir _ajouter_habitant)
+    assert arrive["ne_au_tick"] == -11
+
+
+@pytest.mark.asyncio
+async def test_emigration_dissout_le_couple_actif_avant_le_depart(monkeypatch):
+    origine, destination = _crf_pair("cle-fed3")
+    a = _ajouter_habitant("cle-fed3", origine["id"], 0, "F", ne_au_tick=-30)
+    b = _ajouter_habitant("cle-fed3", origine["id"], 0, "M", ne_au_tick=-30)
+    couple_id = stockage_horloge.former_couple(origine["id"], 0, a, b, tick=0)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    # seul `a` émigre (ordre de population_vivante_monde : a avant b, voir tests Sprint C)
+    ordre = iter([True, False])
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: next(ordre))
+
+    resultat = await horloge_moteur.executer_tick(origine["id"], "cle-fed3")
+
+    assert resultat["migrations_transfrontieres"] == 1
+    assert resultat["couples_dissous"] == 1
+    assert stockage_horloge.couples_actifs_monde(origine["id"]) == {}
+
+
+@pytest.mark.asyncio
+async def test_ligne_origine_conservee_marquee_emigre_jamais_supprimee(monkeypatch):
+    origine, destination = _crf_pair("cle-fed4")
+    eid = _ajouter_habitant("cle-fed4", origine["id"], 0, "F", ne_au_tick=-20)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+    resultat = await horloge_moteur.executer_tick(origine["id"], "cle-fed4")
+
+    with stockage_spatial._conn() as c:
+        r = c.execute("SELECT * FROM placements WHERE monde_id=? AND enfant_id=?",
+                       (origine["id"], eid)).fetchone()
+    assert r is not None, "la ligne d'origine ne doit jamais être supprimée"
+    assert r["vivant"] == 1
+    assert r["mort_au_tick"] is None
+    assert r["emigre"] == 1
+    assert r["emigre_vers_monde_id"] == destination["id"]
+
+
+@pytest.mark.asyncio
+async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypatch):
+    """Le pays destination a son verrou déjà tenu (simulé directement, sans passer
+    par un vrai tick concurrent) : l'émigration doit échouer PROPREMENT (capturée
+    dans avertissements), jamais planter le tick ni bloquer indéfiniment — voir
+    design, correction sur le verrouillage inter-pays."""
+    origine, destination = _crf_pair("cle-fed6")
+    eid = _ajouter_habitant("cle-fed6", origine["id"], 0, "F", ne_au_tick=-20)
+
+    monkeypatch.setattr(horloge_moteur, "VERROU_DESTINATION_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+
+    verrou_destination = horloge_moteur._verrou_tick(destination["id"])
+    await verrou_destination.acquire()
+    try:
+        resultat = await horloge_moteur.executer_tick(origine["id"], "cle-fed6")
+    finally:
+        verrou_destination.release()
+
+    assert resultat["migrations_transfrontieres"] == 0
+    assert any("verrou" in a.lower() for a in resultat["avertissements"])
+    # l'habitant reste dans son pays d'origine, jamais marqué émigré
+    assert stockage_spatial.population_vivante_cellule(origine["id"], 0)[0]["id"] == eid
+
+
+@pytest.mark.asyncio
+async def test_pas_de_pays_adjacent_jamais_d_emigration(monkeypatch):
+    """Un pays hors fédération (ou sans adjacence déclarée) ne doit jamais tenter
+    de migration transfrontière, même si le jet aurait toujours réussi."""
+    monde = _monde_avec_habitants("cle-fed5", n_cellules=1)
+    _ajouter_habitant("cle-fed5", monde["id"], 0, "F", ne_au_tick=-20)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+
+    resultat = await horloge_moteur.executer_tick(monde["id"], "cle-fed5")
+
+    assert resultat["migrations_transfrontieres"] == 0
+
+
+@pytest.mark.asyncio
+async def test_determinisme_migration_transfrontiere_meme_seed(monkeypatch):
+    """Même motif que le déterminisme Sprint C : même (seed, tick, cellule) ⇒
+    mêmes décisions de migration transfrontière sur 2 exécutions isolées (2
+    fédérations parallèles indépendantes avec le même seed d'origine)."""
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    resultats = []
+    for suffixe in ("x", "y"):
+        cle = f"cle-fed-det-{suffixe}"
+        cellules = [{"cellule_id": 0, "x": 0.0, "y": 0.0, "biome": "plaine",
+                     "ressources": ["ble"], "voisins": []}]
+        origine = stockage_spatial.creer_monde(cle, cellules, seed=999)
+        stockage_horloge.initialiser_horloge(origine["id"])
+        destination = stockage_spatial.creer_monde(cle, cellules, seed=1)
+        stockage_horloge.initialiser_horloge(destination["id"])
+        f = stockage_federation.creer_federation(cle, "F")
+        stockage_federation.rattacher_pays(f["id"], origine["id"], cle, None)
+        stockage_federation.rattacher_pays(f["id"], destination["id"], cle, None)
+        stockage_federation.declarer_adjacence(f["id"], origine["id"], destination["id"])
+        for i in range(10):
+            _ajouter_habitant(cle, origine["id"], 0, "F" if i % 2 == 0 else "M", ne_au_tick=-20)
+
+        resultat = await horloge_moteur.executer_tick(origine["id"], cle)
+        resultats.append(resultat["migrations_transfrontieres"])
+
+    assert resultats[0] == resultats[1]
