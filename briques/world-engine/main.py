@@ -18,6 +18,7 @@ import genome_moteur
 import horloge_moteur
 import spatial
 import stockage
+import stockage_federation
 import stockage_horloge
 import stockage_spatial
 
@@ -62,6 +63,32 @@ class DemarrerHorloge(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     intervalle_secondes: int = Field(ge=5, le=86400)
+
+
+class CreerFederation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nom: Optional[str] = None
+
+
+class RattacherPays(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monde_id: str
+    nom: Optional[str] = None
+
+
+class DetacherPays(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monde_id: str
+
+
+class DeclarerAdjacence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monde_id_a: str
+    monde_id_b: str
 
 
 @app.post("/genome/croiser", tags=["genome"])
@@ -224,6 +251,81 @@ def horloge_lire(mid: str, _cle: str = Depends(cle_api)):
     if not stockage_spatial.monde_existe(_cle, mid):
         raise HTTPException(404, f"Monde '{mid}' introuvable.")
     return stockage_horloge.lire_horloge(mid)
+
+
+def _federation_visible(federation_id: str, cle_api_val: str) -> dict | None:
+    """Créateur OU tout propriétaire d'au moins un pays membre peuvent VOIR une
+    fédération (voir design) — dérivé directement de `lire_federation` (déjà lu
+    intégralement), pas d'une requête `membre()` séparée."""
+    federation = stockage_federation.lire_federation(federation_id)
+    if federation is None:
+        return None
+    if (federation["createur_cle_api"] != cle_api_val
+            and not any(p["cle_api"] == cle_api_val for p in federation["pays"])):
+        return None
+    return federation
+
+
+@app.post("/federation", tags=["federation"])
+def federation_creer(body: CreerFederation, _cle: str = Depends(cle_api)):
+    return stockage_federation.creer_federation(_cle, body.nom)
+
+
+@app.post("/federation/{fid}/rattacher", tags=["federation"])
+def federation_rattacher(fid: str, body: RattacherPays, _cle: str = Depends(cle_api)):
+    """Exige que `_cle` soit propriétaire de `body.monde_id` — seul le propriétaire
+    d'un pays peut le rattacher (voir design, consentement fort)."""
+    if not stockage_spatial.monde_existe(_cle, body.monde_id):
+        raise HTTPException(404, f"Monde '{body.monde_id}' introuvable.")
+    resultat = stockage_federation.rattacher_pays(fid, body.monde_id, _cle, body.nom)
+    if resultat is None:
+        raise HTTPException(404, f"Fédération '{fid}' introuvable.")
+    return resultat
+
+
+@app.post("/federation/{fid}/detacher", tags=["federation"])
+def federation_detacher(fid: str, body: DetacherPays, _cle: str = Depends(cle_api)):
+    if not stockage_federation.detacher_pays(fid, body.monde_id, _cle):
+        raise HTTPException(404, f"Pays '{body.monde_id}' non membre de la fédération '{fid}' pour cette clé.")
+    return {"federation_id": fid, "monde_id": body.monde_id, "detache": True}
+
+
+@app.post("/federation/{fid}/adjacence", tags=["federation"])
+def federation_adjacence(fid: str, body: DeclarerAdjacence, _cle: str = Depends(cle_api)):
+    if body.monde_id_a == body.monde_id_b:
+        raise HTTPException(422, "Un pays ne peut pas être déclaré adjacent à lui-même.")
+    if not stockage_federation.membre(fid, _cle):
+        raise HTTPException(404, f"Fédération '{fid}' introuvable ou vous n'y êtes pas membre.")
+    resultat = stockage_federation.declarer_adjacence(fid, body.monde_id_a, body.monde_id_b)
+    if resultat is None:
+        raise HTTPException(404, "Un des deux pays n'est pas membre de cette fédération.")
+    return resultat
+
+
+@app.get("/federation/{fid}", tags=["federation"])
+def federation_lire(fid: str, _cle: str = Depends(cle_api)):
+    federation = _federation_visible(fid, _cle)
+    if federation is None:
+        raise HTTPException(404, f"Fédération '{fid}' introuvable.")
+    return federation
+
+
+@app.get("/federation/{fid}/etat", tags=["federation"])
+def federation_etat(fid: str, _cle: str = Depends(cle_api)):
+    if _federation_visible(fid, _cle) is None:
+        raise HTTPException(404, f"Fédération '{fid}' introuvable.")
+    return stockage_federation.population_vivante_federation(fid)
+
+
+@app.get("/federation", tags=["federation"])
+def federation_lister(_cle: str = Depends(cle_api)):
+    return stockage_federation.lister_federations(_cle)
+
+
+@app.delete("/federation/{fid}", status_code=204, tags=["federation"])
+def federation_supprimer(fid: str, _cle: str = Depends(cle_api)):
+    if not stockage_federation.supprimer_federation(_cle, fid):
+        raise HTTPException(404, f"Fédération '{fid}' introuvable.")
 
 
 SCHEDULER_INTERVALLE_S = int(os.getenv("HORLOGE_SCHEDULER_INTERVALLE_S", "5"))
