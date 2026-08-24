@@ -90,14 +90,12 @@ async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
             for h in vivants:
                 if horloge.migre(rng_mig):
                     migrations_a_appliquer.append((h["id"], rng_mig.choice(cel["voisins"])))
-                    migrations += 1
 
         # 5) Couples : dissolution puis formation
         rng_c = _rng(seed, tick_suivant, cid, "couples")
         actifs = couples_par_cellule[cid]
         dissous_ici = [c for c in actifs if horloge.dissout(rng_c)]
         couples_a_dissoudre.extend(c["id"] for c in dissous_ici)
-        couples_dissous += len(dissous_ici)
         dissous_ids = {c["id"] for c in dissous_ici}
         deja_en_couple = ({c["habitant_a_id"] for c in actifs if c["id"] not in dissous_ids} |
                            {c["habitant_b_id"] for c in actifs if c["id"] not in dissous_ids})
@@ -111,7 +109,6 @@ async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
                            and horloge.est_adulte_fecond(tick_suivant - h["ne_au_tick"])]
         nouveaux = horloge.former_couples(celibataires_f, celibataires_m, rng_c)
         couples_a_former.extend((cid, a, b) for a, b in nouveaux)
-        couples_formes += len(nouveaux)
         nouvellement_pris = {a for a, _ in nouveaux} | {b for _, b in nouveaux}
 
         # 6) Reproduction — SEULS les couples déjà actifs AVANT ce tick tentent une
@@ -148,24 +145,13 @@ async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
         except Exception as e:
             avertissements.append(f"Mort de {enfant_id} non appliquée : {e}")
 
-    for enfant_id, nouvelle_cellule in migrations_a_appliquer:
-        try:
-            stockage_spatial.deplacer_placement(monde_id, enfant_id, nouvelle_cellule)
-        except Exception as e:
-            avertissements.append(f"Migration de {enfant_id} non appliquée : {e}")
-
-    for couple_id in couples_a_dissoudre:
-        try:
-            stockage_horloge.dissoudre_couple(couple_id, tick_suivant)
-        except Exception as e:
-            avertissements.append(f"Dissolution du couple {couple_id} non appliquée : {e}")
-
-    for cid, a, b in couples_a_former:
-        try:
-            stockage_horloge.former_couple(monde_id, cid, a, b, tick_suivant)
-        except Exception as e:
-            avertissements.append(f"Formation du couple {a}/{b} non appliquée : {e}")
-
+    # Naissances AVANT migrations : `genome_moteur._cellule_naissance` fait une
+    # lecture LIVE du placement du parent de référence pour situer le nouveau-né.
+    # Si une migration de ce même tick était déjà écrite en base, un parent
+    # migré-mais-encore-fécondable-ici verrait sa naissance placée relativement à
+    # sa cellule d'ARRIVÉE au lieu de la cellule qui a servi à décider cette
+    # reproduction — voir design/constante "instantané figé, pas de contamination
+    # entre groupes d'écritures d'un même tick".
     cellules_par_id = {c["cellule_id"]: c for c in monde["cellules"]}
     for cid, a, b, sexe_a, sexe_b in naissances_a_tenter:
         rng_naissance = _rng(seed, tick_suivant, cid, f"naissance:{a}:{b}")
@@ -183,12 +169,36 @@ async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
             monde_id=monde_id,
         )
         try:
-            await genome_moteur.executer_croisement(corps, cle_api_val)
-            naissances += 1
+            resultat = await genome_moteur.executer_croisement(corps, cle_api_val)
+            if resultat["enfant_id"] is not None:
+                naissances += 1
+            if resultat.get("avertissement"):
+                avertissements.append(f"Naissance {a}/{b} : {resultat['avertissement']}")
         except HTTPException as e:
             avertissements.append(f"Naissance {a}/{b} non aboutie : {e.detail}")
         except Exception as e:
             avertissements.append(f"Naissance {a}/{b} non aboutie : {e}")
+
+    for enfant_id, nouvelle_cellule in migrations_a_appliquer:
+        try:
+            stockage_spatial.deplacer_placement(monde_id, enfant_id, nouvelle_cellule)
+            migrations += 1
+        except Exception as e:
+            avertissements.append(f"Migration de {enfant_id} non appliquée : {e}")
+
+    for couple_id in couples_a_dissoudre:
+        try:
+            stockage_horloge.dissoudre_couple(couple_id, tick_suivant)
+            couples_dissous += 1
+        except Exception as e:
+            avertissements.append(f"Dissolution du couple {couple_id} non appliquée : {e}")
+
+    for cid, a, b in couples_a_former:
+        try:
+            stockage_horloge.former_couple(monde_id, cid, a, b, tick_suivant)
+            couples_formes += 1
+        except Exception as e:
+            avertissements.append(f"Formation du couple {a}/{b} non appliquée : {e}")
 
     stockage_horloge.marquer_execution(monde_id, tick_suivant)
 
