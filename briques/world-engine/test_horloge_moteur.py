@@ -144,3 +144,32 @@ async def test_tick_couple_forme_ce_tick_ne_tente_pas_naissance_ce_meme_tick(mon
 
     assert resultat["couples_formes"] == 1
     assert resultat["naissances"] == 0
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_scenario_plusieurs_ticks_population_evolue():
+    """Bout-en-bout : peuple un monde de plusieurs adultes fécondables, avance
+    suffisamment de ticks, vérifie qu'au moins une naissance OU une mort a eu lieu
+    (les deux sont probabilistes — sur assez de ticks, au moins l'un des deux doit
+    se produire, sinon la mécanique de tick ne fait rien d'observable)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=PORTRAIT_FACTICE))
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge"}]}))
+
+    monde = _monde_avec_habitants("cle-scenario", n_cellules=1)
+    for i in range(6):
+        sexe = "F" if i % 2 == 0 else "M"
+        # theme=PORTRAIT_FACTICE : certains de ces habitants seront réellement
+        # croisés au fil des ticks (couples formés automatiquement par l'étape 5).
+        _ajouter_habitant("cle-scenario", monde["id"], 0, sexe, ne_au_tick=-30, theme=PORTRAIT_FACTICE)
+    stockage_spatial.ecrire_ressources_stock(monde["id"], 0, {"ble": 100.0})
+
+    total_naissances = total_morts = 0
+    for _ in range(50):
+        resultat = await horloge_moteur.executer_tick(monde["id"], "cle-scenario")
+        total_naissances += resultat["naissances"]
+        total_morts += resultat["morts"]
+
+    assert total_naissances > 0 or total_morts > 0
