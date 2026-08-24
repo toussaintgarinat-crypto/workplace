@@ -176,11 +176,12 @@ def supprimer_federation(cle_api: str, federation_id: str) -> bool:
 
 
 def population_vivante_federation(federation_id: str) -> dict | None:
-    """Agrégat pour `GET /federation/{id}/etat` : population vivante (hors
-    émigrés — `vivant=1 AND emigre=0`) par pays membre + total. Lit `placements`
-    (propriété de stockage_spatial.py, même base SQLite) SANS en dupliquer la DDL
-    — même hypothèse que stockage_horloge.horloges_actives_a_declencher : un pays
-    n'est rattachable (voir rattacher_pays) que s'il existe déjà, donc la table
+    """Agrégat pour `GET /federation/{id}/etat` : population vivante (actuellement
+    `vivant=1` seulement ; filtrage `emigre=0` non encore appliqué car la colonne
+    `emigre` n'existe pas encore sur `placements`). Par pays membre + total. Lit
+    `placements` (propriété de stockage_spatial.py, même base SQLite) SANS en
+    dupliquer la DDL — même hypothèse que stockage_horloge.horloges_actives_a_declencher :
+    un pays n'est rattachable (voir rattacher_pays) que s'il existe déjà, donc la table
     `placements` existe forcément par construction dès qu'il y a ≥1 pays membre."""
     with _conn() as c:
         if _federation_row(c, federation_id) is None:
@@ -191,6 +192,9 @@ def population_vivante_federation(federation_id: str) -> dict | None:
         total = 0
         for r in membres:
             mid = r["monde_id"]
+            # TODO(Task 2): Once stockage_spatial.py adds `emigre` column to `placements`,
+            # update this query to: WHERE monde_id=? AND vivant=1 AND emigre=0 to avoid
+            # double-counting habitants who have emigrated to adjacent countries.
             n = c.execute(
                 "SELECT COUNT(*) AS n FROM placements WHERE monde_id=? AND vivant=1",
                 (mid,)).fetchone()["n"]
