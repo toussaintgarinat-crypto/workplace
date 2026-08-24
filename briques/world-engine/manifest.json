@@ -2,7 +2,7 @@
   "nom": "world-engine",
   "famille": "metier",
   "version": "0.1.0",
-  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent, ET une horloge de simulation (ticks/ères) qui fait vivre un monde : vieillissement/mortalité, migration, couples, reproduction. Troisième maillon du rapport d'architecture « World Engine » (Génome + Spatial + Horloge) : les mondes fédérés (pays→monde) et la mise à l'échelle (queue Redis/RabbitMQ) restent hors périmètre.",
+  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent, ET une horloge de simulation (ticks/ères) qui fait vivre un monde : vieillissement/mortalité, migration, couples, reproduction. ET une fédération de mondes (chacun devenant un « pays ») avec migration transfrontière entre pays adjacents. Quatrième maillon du rapport d'architecture « World Engine » (Génome + Spatial + Horloge + Fédération) : la mise à l'échelle (queue Redis/RabbitMQ) reste hors périmètre.",
   "role": "world-engine",
   "couche": "backend",
   "statut": "a_tester",
@@ -10,7 +10,7 @@
   "port": 6220,
   "url_sante": "http://host.docker.internal:6220/sante",
   "depends_on": ["personnages"],
-  "offre": ["croisement_genome_cosmique", "maillage_spatial", "horloge_simulation"],
+  "offre": ["croisement_genome_cosmique", "maillage_spatial", "horloge_simulation", "federation_pays"],
   "besoin": ["personnages"],
   "taches": [],
   "capacites": [
@@ -254,6 +254,89 @@
         "mid": {"type": "string", "description": "Id du monde.", "requis": true}
       },
       "action": false
+    },
+    {
+      "nom": "federation_creer",
+      "description": "Crée une fédération de pays vide (nom optionnel). N'importe quelle clé API peut créer une fédération ; elle en devient créatrice.",
+      "methode": "POST",
+      "chemin": "/federation",
+      "params": {
+        "nom": {"type": "string", "description": "Nom d'affichage de la fédération (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "federation_rattacher",
+      "description": "Rattache un monde spatial existant à une fédération, où il devient un « pays ». Seul le propriétaire de ce monde peut le rattacher (jamais le créateur de la fédération pour le compte d'un tiers). Un nom d'affichage optionnel peut être donné, propre à cette fédération.",
+      "methode": "POST",
+      "chemin": "/federation/{fid}/rattacher",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération.", "requis": true},
+        "monde_id": {"type": "string", "description": "Id du monde à rattacher comme pays.", "requis": true},
+        "nom": {"type": "string", "description": "Nom d'affichage du pays dans cette fédération (optionnel)."}
+      },
+      "action": true
+    },
+    {
+      "nom": "federation_detacher",
+      "description": "Détache un pays d'une fédération (retire aussi ses adjacences dans cette fédération). Seul le propriétaire du pays peut le détacher, à tout moment. Le monde sous-jacent n'est jamais supprimé.",
+      "methode": "POST",
+      "chemin": "/federation/{fid}/detacher",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération.", "requis": true},
+        "monde_id": {"type": "string", "description": "Id du pays à détacher.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "federation_adjacence_declarer",
+      "description": "Déclare que 2 pays déjà membres d'une même fédération sont adjacents, ouvrant la migration transfrontière entre eux lors des ticks. N'importe quel membre de la fédération (possédant au moins un pays dedans) peut déclarer ce lien.",
+      "methode": "POST",
+      "chemin": "/federation/{fid}/adjacence",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération.", "requis": true},
+        "monde_id_a": {"type": "string", "description": "Id du premier pays (déjà membre).", "requis": true},
+        "monde_id_b": {"type": "string", "description": "Id du second pays (déjà membre).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "federation_lire",
+      "description": "Lit une fédération : nom, créateur, liste des pays membres (avec leur nom d'affichage dans cette fédération) et des adjacences déclarées entre eux. Visible par le créateur ou tout propriétaire d'un pays membre.",
+      "methode": "GET",
+      "chemin": "/federation/{fid}",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération.", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "federation_etat_lire",
+      "description": "Population vivante (hors habitants émigrés vers un autre pays) par pays membre d'une fédération, et le total agrégé. Même visibilité que federation_lire.",
+      "methode": "GET",
+      "chemin": "/federation/{fid}/etat",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération.", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "federation_lister",
+      "description": "Liste les fédérations où la clé API appelante est créatrice ou possède au moins un pays membre.",
+      "methode": "GET",
+      "chemin": "/federation",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "federation_supprimer",
+      "description": "Supprime une fédération (détache tous ses pays, jamais de suppression des mondes sous-jacents). Seule la clé API créatrice peut supprimer.",
+      "methode": "DELETE",
+      "chemin": "/federation/{fid}",
+      "params": {
+        "fid": {"type": "string", "description": "Id de la fédération à supprimer.", "requis": true}
+      },
+      "action": true
     }
   ]
 }
