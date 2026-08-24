@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import main
 import stockage
+import stockage_horloge
 import stockage_spatial
 
 client = TestClient(main.app)
@@ -807,3 +808,35 @@ def test_spatial_monde_creer_meme_seed_meme_maillage():
         return [{k: v for k, v in cel.items() if k != "enfants"} for cel in cellules]
 
     assert _sans_champs_identite(monde1["cellules"]) == _sans_champs_identite(monde2["cellules"])
+
+
+def stockage_spatial_test_cellules(n=2):
+    return [{"cellule_id": i, "x": float(i) * 10, "y": float(i) * 5, "biome": "plaine",
+             "ressources": ["ble"], "voisins": [j for j in range(n) if j != i]}
+            for i in range(n)]
+
+
+@respx.mock
+def test_genome_croiser_place_enfant_avec_le_tick_courant_du_monde():
+    """L'enfant hérite du tick_actuel de l'horloge du monde au moment du
+    placement — pas toujours 0 — sinon son âge serait faux dès que le monde a
+    déjà avancé (voir horloge.py/horloge_moteur.py, Sprint C)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        side_effect=[httpx.Response(200, json=_portrait_factice()),
+                     httpx.Response(200, json=_portrait_factice()),
+                     httpx.Response(200, json=_portrait_factice())])
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge"}]}))
+    monde = stockage_spatial.creer_monde("public", stockage_spatial_test_cellules(), seed=1)
+    stockage_horloge.initialiser_horloge(monde["id"])
+    stockage_horloge.marquer_execution(monde["id"], 5)  # simule un monde déjà au tick 5
+    r = client.post("/genome/croiser", json={
+        "parent_a": _FICHE_A, "parent_b": _FICHE_B,
+        "latitude_enfant": 48.0, "longitude_enfant": 2.0,
+        "heure_naissance_enfant": "10:00", "utc_offset_enfant": 1.0,
+        "monde_id": monde["id"]})
+    assert r.status_code == 200
+    eid = r.json()["enfant_id"]
+    cellule_id = r.json()["cellule_id"]
+    population = stockage_spatial.population_vivante_cellule(monde["id"], cellule_id)
+    assert any(h["id"] == eid and h["ne_au_tick"] == 5 for h in population)

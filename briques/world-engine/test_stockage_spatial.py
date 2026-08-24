@@ -237,3 +237,74 @@ def test_migration_alter_table_enfants_from_legacy_schema(monkeypatch, tmp_path)
     finally:
         # Restaurer le DB_PATH original
         monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)
+
+
+def test_placer_avec_ne_au_tick_et_population_vivante():
+    monde = stockage_spatial.creer_monde("cle-tick1", _cellules_factices(2), seed=1)
+    stockage.creer("cle-tick1", "Ana", "X", None, None, {"theme": {}}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-tick1")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=3)
+    pop = stockage_spatial.population_vivante_cellule(monde["id"], 0)
+    assert pop == [{"id": eid, "sexe": "F", "ne_au_tick": 3}]
+
+
+def test_placer_defaut_ne_au_tick_zero():
+    monde = stockage_spatial.creer_monde("cle-tick2", _cellules_factices(2), seed=1)
+    stockage.creer("cle-tick2", "Bo", "X", None, None, {"theme": {}}, "d", {}, False, sexe="M")
+    eid = stockage.lister("cle-tick2")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0)
+    pop = stockage_spatial.population_vivante_cellule(monde["id"], 0)
+    assert pop[0]["ne_au_tick"] == 0
+
+
+def test_marquer_mort_exclut_de_la_population_vivante():
+    monde = stockage_spatial.creer_monde("cle-tick3", _cellules_factices(2), seed=1)
+    stockage.creer("cle-tick3", "Cy", "X", None, None, {"theme": {}}, "d", {}, False, sexe="M")
+    eid = stockage.lister("cle-tick3")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0)
+    stockage_spatial.marquer_mort(monde["id"], eid, tick=7)
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 0) == []
+
+
+def test_deplacer_placement_change_de_cellule():
+    monde = stockage_spatial.creer_monde("cle-tick4", _cellules_factices(2), seed=1)
+    stockage.creer("cle-tick4", "Do", "X", None, None, {"theme": {}}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-tick4")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0)
+    stockage_spatial.deplacer_placement(monde["id"], eid, 1)
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 0) == []
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 1)[0]["id"] == eid
+
+
+def test_ressources_stock_lire_ecrire():
+    monde = stockage_spatial.creer_monde("cle-tick5", _cellules_factices(2), seed=1)
+    stock = stockage_spatial.lire_ressources_stock(monde["id"], 0)
+    assert stock == {"ble": 50.0}  # cellule factice a ["ble"] comme ressources, stock initial demi-plafond
+    stockage_spatial.ecrire_ressources_stock(monde["id"], 0, {"ble": 12.5})
+    assert stockage_spatial.lire_ressources_stock(monde["id"], 0) == {"ble": 12.5}
+
+
+def test_niveau_technologie_lire_ecrire_defaut_zero():
+    monde = stockage_spatial.creer_monde("cle-tick6", _cellules_factices(2), seed=1)
+    assert stockage_spatial.lire_niveau_technologie(monde["id"], 0) == 0.0
+    stockage_spatial.ecrire_niveau_technologie(monde["id"], 0, 2.5)
+    assert stockage_spatial.lire_niveau_technologie(monde["id"], 0) == 2.5
+
+
+def test_forker_monde_copie_ressources_stock_et_technologie():
+    monde = stockage_spatial.creer_monde("cle-tick7", _cellules_factices(2), seed=1)
+    stockage_spatial.ecrire_niveau_technologie(monde["id"], 0, 3.0)
+    stockage_spatial.ecrire_ressources_stock(monde["id"], 0, {"ble": 7.0})
+    fork = stockage_spatial.forker_monde("cle-tick7", monde["id"])
+    assert stockage_spatial.lire_niveau_technologie(fork["id"], 0) == 3.0
+    assert stockage_spatial.lire_ressources_stock(fork["id"], 0) == {"ble": 7.0}
+
+
+def test_forker_monde_copie_placements_avec_ne_au_tick_et_vivant():
+    monde = stockage_spatial.creer_monde("cle-tick8", _cellules_factices(2), seed=1)
+    stockage.creer("cle-tick8", "Eu", "X", None, None, {"theme": {}}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-tick8")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=4)
+    fork = stockage_spatial.forker_monde("cle-tick8", monde["id"])
+    pop_fork = stockage_spatial.population_vivante_cellule(fork["id"], 0)
+    assert pop_fork == [{"id": eid, "sexe": "F", "ne_au_tick": 4}]

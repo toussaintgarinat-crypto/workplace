@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import fusion
 import personnages_client
 import stockage
+import stockage_horloge
 import stockage_spatial
 
 
@@ -230,7 +231,9 @@ async def executer_croisement(body: Croisement, cle_api_val: str) -> dict:
         try:
             parent_ref = _parent_reference_naissance(body.parent_a, body.parent_b)
             cellule_id = _cellule_naissance(body.monde_id, parent_ref, Random())
-            stockage_spatial.placer(body.monde_id, enfant_id, cellule_id)
+            horloge_etat = stockage_horloge.lire_horloge(body.monde_id)
+            ne_au_tick = horloge_etat["tick_actuel"] if horloge_etat else 0
+            stockage_spatial.placer(body.monde_id, enfant_id, cellule_id, ne_au_tick=ne_au_tick)
         except Exception as e:
             cellule_id = None
             avertissement = f"Enfant persisté mais non placé : {e}"
