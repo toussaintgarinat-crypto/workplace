@@ -97,6 +97,26 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     couples_par_cellule = stockage_horloge.couples_actifs_monde(monde_id)
 
     # --- Phase 2 : calcul pur (aucune écriture encore) ---
+    #
+    # ⚠️ Découpée en DEUX passes sur les cellules (correctif 2e revue finale,
+    # Important ×2). Les couples sont indexés par `cellule_id`, mais dès qu'un
+    # membre migre, le couple SUIT le migrant (`deplacer_couples_habitants`) et sa
+    # `cellule_id` ne correspond plus à celle de l'autre membre. Deux décisions ne
+    # peuvent donc plus se prendre cellule par cellule :
+    #   - `deja_en_couple` : le membre resté sur place ne voyait plus AUCUN couple
+    #     dans sa propre cellule et repartait dans le vivier des célibataires — il
+    #     pouvait former un SECOND couple actif pendant que le premier vivait encore
+    #     ailleurs ;
+    #   - la dissolution par décès : chercher le couple du défunt dans SA seule
+    #     cellule le manquait quand le couple avait suivi le partenaire migré, et le
+    #     couple restait `actif=1` à jamais.
+    # Les deux se règlent avec une vue MONDIALE, sans une seule requête de plus :
+    # `couples_par_cellule` contient déjà tous les couples actifs du monde.
+    # Le découpage est ce qui rend cette vue JUSTE : la passe 2a arrête d'abord les
+    # morts ET les dissolutions aléatoires de TOUTES les cellules, la vue mondiale
+    # est calculée UNE fois entre les deux, et la passe 2b (formation +
+    # reproduction) la consomme — une dissolution décidée en traitant la cellule X
+    # est donc bien prise en compte quand la cellule Y est traitée ensuite.
     maj_cellules: dict[int, tuple[dict, float]] = {}  # cellule_id -> (stock, niveau_technologie)
     morts_a_appliquer: list[str] = []
     migrations_a_appliquer: list[tuple[str, int]] = []
@@ -104,7 +124,20 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     couples_a_former: list[tuple[int, str, str]] = []
     naissances_a_tenter: list[tuple[int, str, str, str, str]] = []  # cid, a, b, sexe_a, sexe_b
 
-    for cel in sorted(monde["cellules"], key=lambda c: c["cellule_id"]):
+    cellules_triees = sorted(monde["cellules"], key=lambda c: c["cellule_id"])
+    # Vue mondiale à plat des couples actifs (ordre déterministe : par cellule
+    # croissante, puis ordre de lecture). Chaque couple actif du monde y figure
+    # exactement une fois, quelle que soit la cellule où sa ligne réside.
+    tous_couples_actifs = [c for cid_ in sorted(couples_par_cellule)
+                           for c in couples_par_cellule[cid_]]
+
+    # --- Passe 2a : ressources, technologie, mortalité, migration, et le tirage de
+    # dissolution aléatoire des couples de chaque cellule. ---
+    etat_cellules: dict[int, tuple[list[dict], list[dict], Random]] = {}  # cid -> (vivants, actifs, rng_c)
+    morts_tous: set[str] = set()
+    dissous_ids: set[str] = set()
+
+    for cel in cellules_triees:
         cid = cel["cellule_id"]
         pop = population.get(cid, [])
         stock_cellule = cel["ressources_stock"]
@@ -119,12 +152,11 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         # 3) Mortalité
         rng_m = _rng(seed, tick_suivant, cid, "mortalite")
         vivants = []
-        morts_ici: set[str] = set()
         for h in pop:
             age = tick_suivant - h["ne_au_tick"]
             if horloge.meurt(age, niveau_cellule, rng_m):
                 morts_a_appliquer.append(h["id"])
-                morts_ici.add(h["id"])
+                morts_tous.add(h["id"])
             else:
                 vivants.append(h)
 
@@ -136,25 +168,42 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
                 if horloge.migre(rng_mig):
                     migrations_a_appliquer.append((h["id"], rng_mig.choice(cel["voisins"])))
 
-        # 5) Couples : dissolution puis formation
+        # 5a) Dissolution par hasard — le tirage est fait pour CHAQUE couple actif,
+        # y compris ceux que le décès d'un membre va dissoudre plus bas : ne pas
+        # sauter de tirage garde le flux du RNG identique quelle que soit la
+        # mortalité du tick (déterminisme par (seed, tick, cellule)). Le tirage
+        # reste bien PAR CELLULE — chaque couple actif appartient à exactement une
+        # cellule, donc chacun est tiré une fois et une seule sur le monde entier.
         rng_c = _rng(seed, tick_suivant, cid, "couples")
         actifs = couples_par_cellule.get(cid, [])
-        # Dissolution par hasard — le tirage est fait pour CHAQUE couple actif, y
-        # compris ceux que le décès d'un membre va dissoudre juste en dessous : ne
-        # pas sauter de tirage garde le flux du RNG identique quelle que soit la
-        # mortalité du tick (déterminisme par (seed, tick, cellule)).
-        dissous_ids = {c["id"] for c in actifs if horloge.dissout(rng_c)}
-        # Dissolution par décès (correctif revue finale, Important) — design §3 :
-        # « tout couple actif impliquant cet habitant est dissous ». Sans ça le
-        # couple restait `actif=1` à jamais, et surtout le SURVIVANT restait exclu
-        # des célibataires de sa cellule (via `deja_en_couple`) jusqu'à ce que la
-        # dissolution aléatoire (5 %/tick) finisse par tomber — sans raison de fiction.
-        dissous_ids |= {c["id"] for c in actifs
-                        if c["habitant_a_id"] in morts_ici or c["habitant_b_id"] in morts_ici}
-        couples_a_dissoudre.extend(c["id"] for c in actifs if c["id"] in dissous_ids)
-        deja_en_couple = ({c["habitant_a_id"] for c in actifs if c["id"] not in dissous_ids} |
-                           {c["habitant_b_id"] for c in actifs if c["id"] not in dissous_ids})
+        dissous_ids |= {c["id"] for c in actifs if horloge.dissout(rng_c)}
+        etat_cellules[cid] = (vivants, actifs, rng_c)
 
+    # 5b) Dissolution par décès — recherche MONDIALE (correctif 2e revue finale,
+    # Important) — design §3 : « tout couple actif impliquant cet habitant est
+    # dissous ». La ligne du couple peut résider dans une cellule où le défunt
+    # n'habite plus (ou n'a jamais habité) si son partenaire a migré avant : la
+    # chercher dans la seule cellule du défunt la manquait, et le couple restait
+    # `actif=1` à jamais.
+    dissous_ids |= {c["id"] for c in tous_couples_actifs
+                    if c["habitant_a_id"] in morts_tous or c["habitant_b_id"] in morts_tous}
+    couples_a_dissoudre.extend(c["id"] for c in tous_couples_actifs if c["id"] in dissous_ids)
+
+    # `deja_en_couple` MONDIAL (correctif 2e revue finale, Important) : un habitant
+    # est « déjà en couple » s'il apparaît dans N'IMPORTE QUEL couple encore actif
+    # du monde, pas seulement dans un couple indexé sur sa propre cellule. Calculé
+    # UNE fois, après que toutes les dissolutions du tick (hasard + décès, toutes
+    # cellules) sont arrêtées — c'est ce qui fait enfin tenir l'invariant du design
+    # « un habitant n'a au plus qu'un couple actif à la fois ».
+    deja_en_couple = {h for c in tous_couples_actifs if c["id"] not in dissous_ids
+                      for h in (c["habitant_a_id"], c["habitant_b_id"])}
+
+    # --- Passe 2b : formation de couples puis reproduction, cellule par cellule. ---
+    for cel in cellules_triees:
+        cid = cel["cellule_id"]
+        vivants, actifs, rng_c = etat_cellules[cid]
+
+        # 5c) Formation
         vivants_par_id = {h["id"]: h for h in vivants}
         celibataires_f = [h["id"] for h in vivants if h["sexe"] == "F"
                            and h["id"] not in deja_en_couple
@@ -165,9 +214,15 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         nouveaux = horloge.former_couples(celibataires_f, celibataires_m, rng_c)
         couples_a_former.extend((cid, a, b) for a, b in nouveaux)
         nouvellement_pris = {a for a, _ in nouveaux} | {b for _, b in nouveaux}
+        # Un couple formé ici verrouille ses deux membres pour les cellules encore à
+        # traiter dans cette même passe. Ceinture-et-bretelles : un habitant n'ayant
+        # qu'un seul placement (clé primaire `(enfant_id, monde_id)`), il n'apparaît
+        # dans les `vivants` que d'UNE cellule — mais l'index mondial doit rester
+        # vrai à tout instant de la passe, pas seulement à son début.
+        deja_en_couple |= nouvellement_pris
 
         # 6) Reproduction — SEULS les couples déjà actifs AVANT ce tick tentent une
-        # naissance (les couples formés à l'étape 5 ci-dessus attendent le tick
+        # naissance (les couples formés à l'étape 5c ci-dessus attendent le tick
         # suivant — évite "formé et déjà parent le même tick").
         rng_n = _rng(seed, tick_suivant, cid, "naissances")
         for c in actifs:

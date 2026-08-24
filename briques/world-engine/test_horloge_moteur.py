@@ -357,3 +357,96 @@ async def test_deux_ticks_concurrents_sur_le_meme_monde_ne_s_entrelacent_pas(mon
     assert observes == [(1, 1), (2, 2)], (
         "l'horloge ne doit jamais bouger PENDANT la phase de naissances d'un tick "
         f"— entrelacement observé : {observes}")
+
+
+@pytest.mark.asyncio
+async def test_le_partenaire_reste_sur_place_ne_forme_pas_un_second_couple(monkeypatch):
+    """Correctif 2e revue finale (Important) : `deja_en_couple` était calculé sur les
+    seuls couples indexés sur LA cellule traitée. Dès qu'un membre migre, le couple
+    le suit (`deplacer_couples_habitants`) : le membre resté sur place ne voyait
+    plus aucun couple dans sa propre cellule, retombait dans le vivier des
+    célibataires et pouvait former un SECOND couple actif — les deux couples
+    restaient alors `actif=1` en même temps pour le même habitant."""
+    monde = _monde_avec_habitants("cle-tk-2couples", n_cellules=2)
+    a = _ajouter_habitant("cle-tk-2couples", monde["id"], 0, "F", ne_au_tick=-30)
+    b = _ajouter_habitant("cle-tk-2couples", monde["id"], 0, "M", ne_au_tick=-30)
+    libre = _ajouter_habitant("cle-tk-2couples", monde["id"], 0, "M", ne_au_tick=-30)
+    couple_id = stockage_horloge.former_couple(monde["id"], 0, a, b, tick=0)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
+    # Aucune naissance : le test porte sur les couples, pas sur la reproduction
+    # (et `executer_croisement` appellerait `personnages` en HTTP réel).
+    monkeypatch.setattr(horloge_moteur.horloge, "tente_naissance_couple", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "tenter_rencontres_occasionnelles",
+                         lambda f, m, rng: [])
+
+    # --- Tick 1 : SEUL `b` migre vers la cellule 1 ; son couple l'y suit. ---
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a_, **k: True)
+    ordre = iter([h["id"] for h in stockage_spatial.population_vivante_monde(monde["id"])[0]])
+    monkeypatch.setattr(horloge_moteur.horloge, "migre", lambda rng: next(ordre) == b)
+    await horloge_moteur.executer_tick(monde["id"], "cle-tk-2couples")
+    assert [c["id"] for c in stockage_horloge.couples_actifs_cellule(monde["id"], 1)] == [couple_id]
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 1)[0]["id"] == b
+
+    # --- Tick 2 : `a` est seule dans la cellule 0 avec `libre`. Elle est TOUJOURS
+    # en couple avec `b` (dans la cellule 1) : elle ne doit pas se réapparier. ---
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "former_couples",
+                         lambda f, m, rng: [(f[0], m[0])] if f and m else [])
+
+    resultat = await horloge_moteur.executer_tick(monde["id"], "cle-tk-2couples")
+
+    assert resultat["couples_formes"] == 0, (
+        "le membre resté sur place est encore en couple : aucun second couple ne "
+        "doit se former")
+    actifs = [c for cs in stockage_horloge.couples_actifs_monde(monde["id"]).values() for c in cs]
+    assert [c["id"] for c in actifs] == [couple_id]
+    assert actifs[0]["cellule_id"] == 1
+    impliques = [c for c in actifs if a in (c["habitant_a_id"], c["habitant_b_id"])]
+    assert len(impliques) == 1, "un habitant ne doit JAMAIS avoir 2 couples actifs à la fois"
+
+
+@pytest.mark.asyncio
+async def test_le_deces_dissout_le_couple_meme_parti_dans_une_autre_cellule(monkeypatch):
+    """Correctif 2e revue finale (Important) : la dissolution par décès ne cherchait
+    le couple du défunt que parmi les couples indexés sur SA cellule. Quand le
+    partenaire avait migré avant (emportant la ligne du couple avec lui), le couple
+    du défunt était invisible depuis sa propre cellule et survivait `actif=1` à
+    jamais."""
+    monde = _monde_avec_habitants("cle-tk-mort-loin", n_cellules=2)
+    a = _ajouter_habitant("cle-tk-mort-loin", monde["id"], 0, "F", ne_au_tick=-30)
+    b = _ajouter_habitant("cle-tk-mort-loin", monde["id"], 0, "M", ne_au_tick=-30)
+    couple_id = stockage_horloge.former_couple(monde["id"], 0, a, b, tick=0)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "tente_naissance_couple", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "tenter_rencontres_occasionnelles",
+                         lambda f, m, rng: [])
+
+    # --- Tick 1 : SEUL `b` migre vers la cellule 1 ; le couple y est recalé. ---
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a_, **k: True)
+    ordre_mig = iter([h["id"] for h in stockage_spatial.population_vivante_monde(monde["id"])[0]])
+    monkeypatch.setattr(horloge_moteur.horloge, "migre", lambda rng: next(ordre_mig) == b)
+    await horloge_moteur.executer_tick(monde["id"], "cle-tk-mort-loin")
+    assert [c["id"] for c in stockage_horloge.couples_actifs_cellule(monde["id"], 1)] == [couple_id]
+
+    # --- Tick 2 : c'est `a` (restée cellule 0) qui meurt, alors que la ligne du
+    # couple vit désormais cellule 1. Le couple doit quand même être dissous. ---
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a_, **k: False)
+    # `horloge.meurt` ne reçoit pas l'identité de l'habitant : on s'appuie sur le
+    # fait qu'il est appelé une fois par habitant, cellules dans l'ordre croissant
+    # (même ordre que `population_vivante_monde`, voir le test du veuf).
+    pop = stockage_spatial.population_vivante_monde(monde["id"])
+    ordre_mort = iter([h["id"] for cid in sorted(pop) for h in pop[cid]])
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt",
+                         lambda age, niveau, rng: next(ordre_mort) == a)
+
+    resultat = await horloge_moteur.executer_tick(monde["id"], "cle-tk-mort-loin")
+
+    assert resultat["morts"] == 1
+    assert resultat["couples_dissous"] == 1, (
+        "le couple du défunt doit être trouvé et dissous même si sa ligne réside "
+        "dans une autre cellule que la sienne")
+    assert stockage_horloge.couples_actifs_monde(monde["id"]) == {}
