@@ -891,3 +891,51 @@ def test_horloge_supprimer_monde_purge_horloge():
     mid = client.post("/spatial/mondes", json={"nb_cellules": 10}).json()["id"]
     client.delete(f"/spatial/mondes/{mid}")
     assert client.get(f"/horloge/{mid}").status_code == 404
+
+
+def test_horloge_routes_cloisonnees_par_cle_api(monkeypatch):
+    """Correctif revue finale (Important) : gap de couverture cloisonnement —
+    les 4 routes /horloge/* n'avaient aucun test HTTP-level de cloisonnement.
+    Même motif que test_spatial_mondes_cloisonnes_par_cle_api."""
+    monkeypatch.setenv("API_KEYS", "cle-h-x,cle-h-y")
+    importlib.reload(main)
+    c = TestClient(main.app)
+
+    # Créer un monde avec la clé X
+    mid = c.post("/spatial/mondes", json={"nb_cellules": 10},
+                  headers={"X-API-Key": "cle-h-x"}).json()["id"]
+
+    # Tenter d'accéder avec la clé Y — tous les 4 horloge routes doivent retourner 404
+    r_get_y = c.get(f"/horloge/{mid}", headers={"X-API-Key": "cle-h-y"})
+    assert r_get_y.status_code == 404
+
+    r_tick_y = c.post(f"/horloge/{mid}/tick", headers={"X-API-Key": "cle-h-y"})
+    assert r_tick_y.status_code == 404
+
+    r_demarrer_y = c.post(f"/horloge/{mid}/demarrer", json={"intervalle_secondes": 60},
+                           headers={"X-API-Key": "cle-h-y"})
+    assert r_demarrer_y.status_code == 404
+
+    r_arreter_y = c.post(f"/horloge/{mid}/arreter", headers={"X-API-Key": "cle-h-y"})
+    assert r_arreter_y.status_code == 404
+
+    # Vérifier que les mêmes opérations réussissent avec la clé X
+    r_get_x = c.get(f"/horloge/{mid}", headers={"X-API-Key": "cle-h-x"})
+    assert r_get_x.status_code == 200
+
+    r_tick_x = c.post(f"/horloge/{mid}/tick", headers={"X-API-Key": "cle-h-x"})
+    assert r_tick_x.status_code == 200
+
+    r_demarrer_x = c.post(f"/horloge/{mid}/demarrer", json={"intervalle_secondes": 60},
+                          headers={"X-API-Key": "cle-h-x"})
+    assert r_demarrer_x.status_code == 200
+
+    r_arreter_x = c.post(f"/horloge/{mid}/arreter", headers={"X-API-Key": "cle-h-x"})
+    assert r_arreter_x.status_code == 200
+
+    # Restaurer l'état initial
+    monkeypatch.delenv("API_KEYS", raising=False)
+    importlib.reload(main)
+    global client
+    client = TestClient(main.app)  # resynchronise après reload, même motif que les autres
+                                    # tests d'auth de ce fichier.
