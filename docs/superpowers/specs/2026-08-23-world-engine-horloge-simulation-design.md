@@ -183,8 +183,17 @@ jamais faire migrer un habitant déjà mort ce tick) :
    - Chaque paire de célibataires F/M compatibles restants (non en couple) a
      une probabilité indépendante, plus faible, de produire un enfant
      (rencontre occasionnelle).
-   Un nouvel enfant est placé automatiquement sur la cellule de ses parents
-   avec `ne_au_tick = tick_actuel + 1`.
+   Un nouvel enfant est placé automatiquement, avec `ne_au_tick = tick_actuel +
+   1`, en réutilisant le même mécanisme de placement que les croisements
+   manuels (`genome_moteur._cellule_naissance`, Sprint B) : une cellule
+   **voisine** de celle du parent de référence, jamais la cellule exacte des
+   parents. **Correction post-revue finale** : une première version de ce
+   document affirmait à tort « sur la cellule de ses parents » — décision
+   actée avec l'utilisateur de garder le comportement Sprint B (voisine),
+   partagé avec les naissances manuelles, plutôt que de créer un chemin de
+   code spécial aux naissances automatiques. La latitude/longitude dérivée
+   pour le thème astral (voir décision ci-dessus) doit décrire la cellule où
+   l'enfant est **réellement placé** (la voisine), jamais celle du parent.
 
 Toute erreur d'écriture isolée (ex. échec de persister une naissance) ne fait
 jamais échouer le tick entier — capturée, ajoutée aux `avertissements` du
