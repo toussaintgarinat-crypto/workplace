@@ -2,7 +2,7 @@
   "nom": "world-engine",
   "famille": "metier",
   "version": "0.1.0",
-  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (comparaison des 10 corps aux 2 parents — coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent. Deuxième maillon du rapport d'architecture « World Engine » (Génome + Spatial) : la simulation temporelle (horloge/ticks) et le compilateur de packs restent hors périmètre.",
+  "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent, ET une horloge de simulation (ticks/ères) qui fait vivre un monde : vieillissement/mortalité, migration, couples, reproduction. Troisième maillon du rapport d'architecture « World Engine » (Génome + Spatial + Horloge) : les mondes fédérés (pays→monde) et la mise à l'échelle (queue Redis/RabbitMQ) restent hors périmètre.",
   "role": "world-engine",
   "couche": "backend",
   "statut": "a_tester",
@@ -10,7 +10,7 @@
   "port": 6220,
   "url_sante": "http://host.docker.internal:6220/sante",
   "depends_on": ["personnages"],
-  "offre": ["croisement_genome_cosmique", "maillage_spatial"],
+  "offre": ["croisement_genome_cosmique", "maillage_spatial", "horloge_simulation"],
   "besoin": ["personnages"],
   "taches": [],
   "capacites": [
@@ -69,6 +69,10 @@
         "monde_id": {
           "type": "string",
           "description": "Id d'un monde spatial existant où placer l'enfant à sa naissance (optionnel, Sprint B). Absent ⇒ enfant non placé (cellule_id: null dans la réponse). Présent ⇒ l'enfant nait dans une cellule voisine de celle du parent de référence (marqué sexe:'F' ; à défaut parent_a) s'il y est déjà placé DANS CE MÊME monde, sinon dans une cellule aléatoire bornée du monde. monde_id introuvable ou d'une autre clé API → 404."
+        },
+        "sexe_enfant": {
+          "type": "string",
+          "description": "Sexe de l'enfant ('F'/'M', optionnel) — persisté sur l'enfant stocké (Sprint C). Nécessaire pour que l'horloge de simulation puisse l'apparier automatiquement en couple par la suite. Absent : jamais deviné, l'enfant restera non appariable par l'horloge."
         }
       },
       "action": true
@@ -209,6 +213,47 @@
         }
       },
       "action": true
+    },
+    {
+      "nom": "horloge_tick",
+      "description": "Avance manuellement un monde spatial d'exactement 1 tick (1 an narratif) : régénération/consommation des ressources et progression technologique par cellule, vieillissement et mortalité (réduite par la technologie), migration poussée par la rareté, formation/dissolution de couples, naissances automatiques (couples établis + rencontres occasionnelles rares) via le même mécanisme que genome_croiser. Renvoie un résumé (naissances, morts, migrations, couples formés/dissous, niveau de technologie moyen, avertissements).",
+      "methode": "POST",
+      "chemin": "/horloge/{mid}/tick",
+      "params": {
+        "mid": {"type": "string", "description": "Id du monde à faire avancer.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "horloge_demarrer",
+      "description": "Active l'avancement automatique d'un monde : un scheduler interne (in-process, pas de service externe) déclenchera un tick toutes les intervalle_secondes tant que l'horloge n'est pas arrêtée. Un monde nouvellement créé ou forké reste en tick manuel tant que cet endpoint n'est pas appelé.",
+      "methode": "POST",
+      "chemin": "/horloge/{mid}/demarrer",
+      "params": {
+        "mid": {"type": "string", "description": "Id du monde.", "requis": true},
+        "intervalle_secondes": {"type": "integer", "description": "Délai entre deux ticks automatiques (5 à 86400 secondes).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "horloge_arreter",
+      "description": "Désactive l'avancement automatique d'un monde. Les ticks déjà passés restent acquis ; le tick manuel reste toujours possible.",
+      "methode": "POST",
+      "chemin": "/horloge/{mid}/arreter",
+      "params": {
+        "mid": {"type": "string", "description": "Id du monde.", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "horloge_lire",
+      "description": "Lit l'état courant de l'horloge d'un monde : tick_actuel, actif (mode automatique ou non), intervalle_secondes, date de dernière exécution.",
+      "methode": "GET",
+      "chemin": "/horloge/{mid}",
+      "params": {
+        "mid": {"type": "string", "description": "Id du monde.", "requis": true}
+      },
+      "action": false
     }
   ]
 }
