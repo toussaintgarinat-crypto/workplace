@@ -80,11 +80,15 @@ def _conn() -> sqlite3.Connection:
     c.execute("""CREATE TABLE IF NOT EXISTS placements (
         enfant_id TEXT NOT NULL, monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
         place_le TEXT, ne_au_tick INTEGER NOT NULL DEFAULT 0, vivant INTEGER NOT NULL DEFAULT 1,
-        mort_au_tick INTEGER, PRIMARY KEY (enfant_id, monde_id))""")
+        mort_au_tick INTEGER, emigre INTEGER NOT NULL DEFAULT 0, emigre_au_tick INTEGER,
+        emigre_vers_monde_id TEXT, PRIMARY KEY (enfant_id, monde_id))""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_placement_monde ON placements(monde_id)")
     _ajouter_colonne(c, "placements", "ne_au_tick", "INTEGER NOT NULL DEFAULT 0")
     _ajouter_colonne(c, "placements", "vivant", "INTEGER NOT NULL DEFAULT 1")
     _ajouter_colonne(c, "placements", "mort_au_tick", "INTEGER")
+    _ajouter_colonne(c, "placements", "emigre", "INTEGER NOT NULL DEFAULT 0")
+    _ajouter_colonne(c, "placements", "emigre_au_tick", "INTEGER")
+    _ajouter_colonne(c, "placements", "emigre_vers_monde_id", "TEXT")
     if _ajouter_colonne(c, "cellules", "ressources_stock", "TEXT NOT NULL DEFAULT '{}'"):
         _seeder_ressources_stock_legacy(c)
     _ajouter_colonne(c, "cellules", "niveau_technologie", "REAL NOT NULL DEFAULT 0.0")
@@ -244,36 +248,26 @@ def supprimer_placements_enfant(enfant_id: str) -> None:
 
 
 def population_vivante_cellule(monde_id: str, cellule_id: int) -> list[dict]:
-    """Habitants vivants placés sur cette cellule, avec leur sexe (Sprint C, voir
-    stockage.py) et leur tick de naissance DANS ce monde — snapshot utilisé par
-    l'horloge pour décider mortalité/couples/reproduction. ⚠️ Ne vérifie PAS
-    `cle_api` : même motif que le reste de ce module."""
+    """Habitants vivants ET NON ÉMIGRÉS placés sur cette cellule (Sprint D : un
+    émigré reste `vivant=1` mais ne compte plus pour son pays d'origine — voir
+    design). ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
     with _conn() as c:
         rows = c.execute(
             "SELECT e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
             "FROM placements p JOIN enfants e ON p.enfant_id = e.id "
-            "WHERE p.monde_id=? AND p.cellule_id=? AND p.vivant=1",
+            "WHERE p.monde_id=? AND p.cellule_id=? AND p.vivant=1 AND p.emigre=0",
             (monde_id, cellule_id)).fetchall()
     return [{"id": r["id"], "sexe": r["sexe"], "ne_au_tick": r["ne_au_tick"]} for r in rows]
 
 
 def population_vivante_monde(monde_id: str) -> dict[int, list[dict]]:
-    """Version « tout le monde en une requête » de `population_vivante_cellule`,
-    groupée par `cellule_id` (même motif de regroupement que `_enfants_par_cellule`).
-
-    Correctif revue finale (Critical) : `horloge_moteur.executer_tick` ouvrait une
-    connexion SQLite PAR CELLULE (chacune rejouant la DDL complète + 5 sondes
-    `PRAGMA table_info`) — ~12 s de blocage synchrone dans un `async def` sur un
-    monde de 2000 cellules (taille légale), assez pour faire tomber le healthcheck.
-    `population_vivante_cellule` reste en place pour les autres appelants/tests.
-
-    Une cellule sans habitant vivant est ABSENTE du dict (utiliser `.get(cid, [])`).
-    ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    """Version « tout le monde en une requête » de `population_vivante_cellule`
+    (même filtre `emigre=0` ajouté en Sprint D), groupée par `cellule_id`."""
     with _conn() as c:
         rows = c.execute(
             "SELECT p.cellule_id AS cid, e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
             "FROM placements p JOIN enfants e ON p.enfant_id = e.id "
-            "WHERE p.monde_id=? AND p.vivant=1", (monde_id,)).fetchall()
+            "WHERE p.monde_id=? AND p.vivant=1 AND p.emigre=0", (monde_id,)).fetchall()
     par_cellule: dict[int, list[dict]] = {}
     for r in rows:
         par_cellule.setdefault(r["cid"], []).append(
@@ -311,6 +305,17 @@ def marquer_morts(monde_id: str, enfant_ids: list[str], tick: int) -> None:
         c.executemany(
             "UPDATE placements SET vivant=0, mort_au_tick=? WHERE monde_id=? AND enfant_id=?",
             [(tick, monde_id, eid) for eid in enfant_ids])
+
+
+def marquer_emigre(monde_id: str, enfant_id: str, tick: int, monde_id_destination: str) -> None:
+    """Marque un départ transfrontière (Sprint D) — distinct de la mort : `vivant`
+    n'est PAS mis à 0 ici, seul `emigre` change. ⚠️ Ne vérifie PAS `cle_api` :
+    même motif que le reste de ce module (appelée par horloge_moteur.py, pas
+    depuis une requête HTTP)."""
+    with _conn() as c:
+        c.execute("UPDATE placements SET emigre=1, emigre_au_tick=?, emigre_vers_monde_id=? "
+                   "WHERE monde_id=? AND enfant_id=?",
+                   (tick, monde_id_destination, monde_id, enfant_id))
 
 
 def lire_ressources_stock(monde_id: str, cellule_id: int) -> dict:
@@ -376,9 +381,11 @@ def forker_monde(cle_api: str, monde_id: str) -> dict | None:
         placements = c.execute("SELECT * FROM placements WHERE monde_id=?", (monde_id,)).fetchall()
         c.executemany(
             "INSERT INTO placements (enfant_id, monde_id, cellule_id, place_le, "
-            "ne_au_tick, vivant, mort_au_tick) VALUES (?,?,?,?,?,?,?)",
+            "ne_au_tick, vivant, mort_au_tick, emigre, emigre_au_tick, emigre_vers_monde_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             [(r["enfant_id"], nid, r["cellule_id"], r["place_le"], r["ne_au_tick"],
-              r["vivant"], r["mort_au_tick"]) for r in placements])
+              r["vivant"], r["mort_au_tick"], r["emigre"], r["emigre_au_tick"],
+              r["emigre_vers_monde_id"]) for r in placements])
     return {"id": nid, "nb_cellules": m["nb_cellules"], "seed": m["seed"],
             "forked_from_id": monde_id, "cree_le": cree_le}
 
