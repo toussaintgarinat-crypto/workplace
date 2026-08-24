@@ -308,3 +308,107 @@ def test_forker_monde_copie_placements_avec_ne_au_tick_et_vivant():
     fork = stockage_spatial.forker_monde("cle-tick8", monde["id"])
     pop_fork = stockage_spatial.population_vivante_cellule(fork["id"], 0)
     assert pop_fork == [{"id": eid, "sexe": "F", "ne_au_tick": 4}]
+
+
+# --- Correctifs revue finale Sprint C : accès en lot (Critical, perf du tick) ---
+
+def test_population_vivante_monde_groupe_par_cellule_et_exclut_les_morts():
+    """Correctif revue finale (Critical) : accesseur en lot remplaçant N appels à
+    `population_vivante_cellule` (un par cellule) dans `horloge_moteur.executer_tick`."""
+    monde = stockage_spatial.creer_monde("cle-lot1", _cellules_factices(3), seed=1)
+    a = stockage.creer("cle-lot1", "A", "X", None, None, {}, "d", {}, False, sexe="F")
+    b = stockage.creer("cle-lot1", "B", "X", None, None, {}, "d", {}, False, sexe="M")
+    mort = stockage.creer("cle-lot1", "C", "X", None, None, {}, "d", {}, False, sexe="M")
+    stockage_spatial.placer(monde["id"], a, 0, ne_au_tick=2)
+    stockage_spatial.placer(monde["id"], b, 2, ne_au_tick=5)
+    stockage_spatial.placer(monde["id"], mort, 0)
+    stockage_spatial.marquer_mort(monde["id"], mort, tick=9)
+
+    par_cellule = stockage_spatial.population_vivante_monde(monde["id"])
+    assert par_cellule == {0: [{"id": a, "sexe": "F", "ne_au_tick": 2}],
+                            2: [{"id": b, "sexe": "M", "ne_au_tick": 5}]}
+    # cellule 1 vide ⇒ absente du dict (l'appelant fait .get(cid, []))
+    assert 1 not in par_cellule
+
+
+def test_population_vivante_monde_cloisonnee_au_monde():
+    monde_a = stockage_spatial.creer_monde("cle-lot2", _cellules_factices(2), seed=1)
+    monde_b = stockage_spatial.creer_monde("cle-lot2", _cellules_factices(2), seed=1)
+    eid = stockage.creer("cle-lot2", "A", "X", None, None, {}, "d", {}, False, sexe="F")
+    stockage_spatial.placer(monde_a["id"], eid, 0)
+    assert stockage_spatial.population_vivante_monde(monde_b["id"]) == {}
+
+
+def test_ecrire_ressources_et_technologie_monde_en_lot():
+    monde = stockage_spatial.creer_monde("cle-lot3", _cellules_factices(3), seed=1)
+    stockage_spatial.ecrire_ressources_et_technologie_monde(
+        monde["id"], {0: ({"ble": 1.5}, 0.25), 2: ({"ble": 9.0}, 3.0)})
+    assert stockage_spatial.lire_ressources_stock(monde["id"], 0) == {"ble": 1.5}
+    assert stockage_spatial.lire_niveau_technologie(monde["id"], 0) == 0.25
+    assert stockage_spatial.lire_ressources_stock(monde["id"], 2) == {"ble": 9.0}
+    assert stockage_spatial.lire_niveau_technologie(monde["id"], 2) == 3.0
+    # cellule 1 non citée ⇒ inchangée
+    assert stockage_spatial.lire_niveau_technologie(monde["id"], 1) == 0.0
+
+
+def test_marquer_morts_et_deplacer_placements_en_lot():
+    monde = stockage_spatial.creer_monde("cle-lot4", _cellules_factices(3), seed=1)
+    a = stockage.creer("cle-lot4", "A", "X", None, None, {}, "d", {}, False, sexe="F")
+    b = stockage.creer("cle-lot4", "B", "X", None, None, {}, "d", {}, False, sexe="M")
+    c = stockage.creer("cle-lot4", "C", "X", None, None, {}, "d", {}, False, sexe="M")
+    for eid in (a, b, c):
+        stockage_spatial.placer(monde["id"], eid, 0)
+
+    stockage_spatial.marquer_morts(monde["id"], [a, b], tick=4)
+    assert [h["id"] for h in stockage_spatial.population_vivante_cellule(monde["id"], 0)] == [c]
+
+    stockage_spatial.deplacer_placements(monde["id"], [(c, 2)])
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 0) == []
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 2)[0]["id"] == c
+
+
+def test_migration_legacy_seme_ressources_stock_au_lieu_de_le_laisser_vide(monkeypatch, tmp_path):
+    """Correctif revue finale (Important) : `ALTER TABLE cellules ADD COLUMN
+    ressources_stock ... DEFAULT '{}'` laissait les cellules d'un monde antérieur au
+    Sprint C avec un stock VIDE — `horloge.cellule_saturee` les jugeait alors
+    toujours saturées et `evoluer_ressources_et_technologie` court-circuitait, donc
+    zéro progression technologique à jamais. Même motif de test que
+    `test_migration_alter_table_enfants_from_legacy_schema`."""
+    import json
+    import sqlite3
+
+    legacy_db = tmp_path / "legacy_cellules.db"
+    legacy = sqlite3.connect(str(legacy_db))
+    # Schéma `cellules` de Sprint B : ni ressources_stock ni niveau_technologie.
+    legacy.execute("""CREATE TABLE cellules (
+        monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
+        x REAL NOT NULL, y REAL NOT NULL, biome TEXT NOT NULL,
+        ressources TEXT NOT NULL, voisins TEXT NOT NULL,
+        PRIMARY KEY (monde_id, cellule_id))""")
+    legacy.executemany(
+        "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins) "
+        "VALUES (?,?,?,?,?,?,?)",
+        [("monde-legacy", 0, 1.0, 2.0, "plaine", json.dumps(["ble", "betail"]), json.dumps([1])),
+         ("monde-legacy", 1, 3.0, 4.0, "ocean", json.dumps([]), json.dumps([0]))])
+    legacy.commit()
+    legacy.close()
+
+    original_db_path = stockage_spatial.DB_PATH
+    monkeypatch.setattr(stockage_spatial, "DB_PATH", str(legacy_db))
+    try:
+        # N'importe quel appel passe par `_conn()` ⇒ migration + semis one-shot.
+        stockage_spatial.lire_monde("cle-legacy", "monde-inexistant")
+
+        stock_0 = stockage_spatial.lire_ressources_stock("monde-legacy", 0)
+        assert stock_0 == {"ble": stockage_spatial.STOCK_INITIAL_PAR_RESSOURCE,
+                            "betail": stockage_spatial.STOCK_INITIAL_PAR_RESSOURCE}, \
+            "une cellule legacy doit être semée depuis sa liste qualitative `ressources`"
+        # Cellule sans ressource qualitative : légitimement vide, jamais inventée.
+        assert stockage_spatial.lire_ressources_stock("monde-legacy", 1) == {}
+
+        # Le semis est one-shot : une écriture ultérieure n'est pas réécrasée par
+        # une connexion suivante.
+        stockage_spatial.ecrire_ressources_stock("monde-legacy", 0, {"ble": 1.0})
+        assert stockage_spatial.lire_ressources_stock("monde-legacy", 0) == {"ble": 1.0}
+    finally:
+        monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)

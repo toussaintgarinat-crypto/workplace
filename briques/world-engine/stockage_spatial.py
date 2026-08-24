@@ -18,11 +18,39 @@ def _colonne_absente(c: sqlite3.Connection, table: str, colonne: str) -> bool:
     return colonne not in {row[1] for row in infos}
 
 
-def _ajouter_colonne(c: sqlite3.Connection, table: str, colonne: str, ddl_type: str) -> None:
+def _ajouter_colonne(c: sqlite3.Connection, table: str, colonne: str, ddl_type: str) -> bool:
     """Migration idempotente : sans le contrôle PRAGMA, `ALTER TABLE ADD COLUMN`
-    échouerait sur une base déjà migrée (colonne déjà présente)."""
+    échouerait sur une base déjà migrée (colonne déjà présente). Renvoie True
+    UNIQUEMENT quand la colonne vient d'être ajoutée — permet de brancher un
+    remplissage rétroactif qui ne doit tourner qu'une seule fois (voir
+    `_seeder_ressources_stock_legacy`)."""
     if _colonne_absente(c, table, colonne):
         c.execute(f"ALTER TABLE {table} ADD COLUMN {colonne} {ddl_type}")
+        return True
+    return False
+
+
+def _seeder_ressources_stock_legacy(c: sqlite3.Connection) -> None:
+    """Correctif revue finale (Important) : `ALTER TABLE cellules ADD COLUMN
+    ressources_stock ... DEFAULT '{}'` laisse les cellules d'un monde antérieur au
+    Sprint C avec un stock VIDE. Or un stock vide rend
+    `horloge.cellule_saturee(pop, {})` toujours vrai (somme nulle) et fait
+    court-circuiter `horloge.evoluer_ressources_et_technologie` — un tel monde
+    serait figé technologiquement et en migration permanente dès son premier tick.
+    On sème donc, une seule fois (au moment de l'ALTER, voir `_ajouter_colonne`),
+    le stock numérique à partir de la liste qualitative `ressources` déjà présente,
+    au même demi-plafond que `creer_monde` pour les mondes neufs.
+
+    Les cellules SANS ressource qualitative (`_tirer_ressources` peut renvoyer une
+    liste vide) restent légitimement à `'{}'` — ne pas les re-sémer à chaque
+    connexion est précisément la raison du déclenchement one-shot."""
+    rows = c.execute("SELECT monde_id, cellule_id, ressources FROM cellules").fetchall()
+    if not rows:
+        return
+    c.executemany(
+        "UPDATE cellules SET ressources_stock=? WHERE monde_id=? AND cellule_id=?",
+        [(json.dumps({nom: STOCK_INITIAL_PAR_RESSOURCE for nom in json.loads(r["ressources"])},
+                      ensure_ascii=False), r["monde_id"], r["cellule_id"]) for r in rows])
 
 
 def _conn() -> sqlite3.Connection:
@@ -47,7 +75,8 @@ def _conn() -> sqlite3.Connection:
     _ajouter_colonne(c, "placements", "ne_au_tick", "INTEGER NOT NULL DEFAULT 0")
     _ajouter_colonne(c, "placements", "vivant", "INTEGER NOT NULL DEFAULT 1")
     _ajouter_colonne(c, "placements", "mort_au_tick", "INTEGER")
-    _ajouter_colonne(c, "cellules", "ressources_stock", "TEXT NOT NULL DEFAULT '{}'")
+    if _ajouter_colonne(c, "cellules", "ressources_stock", "TEXT NOT NULL DEFAULT '{}'"):
+        _seeder_ressources_stock_legacy(c)
     _ajouter_colonne(c, "cellules", "niveau_technologie", "REAL NOT NULL DEFAULT 0.0")
     # DUPLIQUÉE depuis stockage.py::_conn() (fix latent Task 2 : GET /spatial/mondes/{id}
     # 500ait sur une DB fraîche sans cette table). Le schéma DOIT rester identique entre
@@ -218,6 +247,30 @@ def population_vivante_cellule(monde_id: str, cellule_id: int) -> list[dict]:
     return [{"id": r["id"], "sexe": r["sexe"], "ne_au_tick": r["ne_au_tick"]} for r in rows]
 
 
+def population_vivante_monde(monde_id: str) -> dict[int, list[dict]]:
+    """Version « tout le monde en une requête » de `population_vivante_cellule`,
+    groupée par `cellule_id` (même motif de regroupement que `_enfants_par_cellule`).
+
+    Correctif revue finale (Critical) : `horloge_moteur.executer_tick` ouvrait une
+    connexion SQLite PAR CELLULE (chacune rejouant la DDL complète + 5 sondes
+    `PRAGMA table_info`) — ~12 s de blocage synchrone dans un `async def` sur un
+    monde de 2000 cellules (taille légale), assez pour faire tomber le healthcheck.
+    `population_vivante_cellule` reste en place pour les autres appelants/tests.
+
+    Une cellule sans habitant vivant est ABSENTE du dict (utiliser `.get(cid, [])`).
+    ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT p.cellule_id AS cid, e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
+            "FROM placements p JOIN enfants e ON p.enfant_id = e.id "
+            "WHERE p.monde_id=? AND p.vivant=1", (monde_id,)).fetchall()
+    par_cellule: dict[int, list[dict]] = {}
+    for r in rows:
+        par_cellule.setdefault(r["cid"], []).append(
+            {"id": r["id"], "sexe": r["sexe"], "ne_au_tick": r["ne_au_tick"]})
+    return par_cellule
+
+
 def deplacer_placement(monde_id: str, enfant_id: str, nouvelle_cellule_id: int) -> None:
     """⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
     with _conn() as c:
@@ -225,11 +278,29 @@ def deplacer_placement(monde_id: str, enfant_id: str, nouvelle_cellule_id: int) 
                    (nouvelle_cellule_id, monde_id, enfant_id))
 
 
+def deplacer_placements(monde_id: str, deplacements: list[tuple[str, int]]) -> None:
+    """Version lot de `deplacer_placement` (`(enfant_id, nouvelle_cellule_id)`), en
+    une seule connexion/transaction — voir `population_vivante_monde` pour le
+    pourquoi. ⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    with _conn() as c:
+        c.executemany("UPDATE placements SET cellule_id=? WHERE monde_id=? AND enfant_id=?",
+                       [(cel, monde_id, eid) for eid, cel in deplacements])
+
+
 def marquer_mort(monde_id: str, enfant_id: str, tick: int) -> None:
     """⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
     with _conn() as c:
         c.execute("UPDATE placements SET vivant=0, mort_au_tick=? WHERE monde_id=? AND enfant_id=?",
                    (tick, monde_id, enfant_id))
+
+
+def marquer_morts(monde_id: str, enfant_ids: list[str], tick: int) -> None:
+    """Version lot de `marquer_mort`, en une seule connexion/transaction — voir
+    `population_vivante_monde`. ⚠️ Ne vérifie PAS `cle_api` : même motif."""
+    with _conn() as c:
+        c.executemany(
+            "UPDATE placements SET vivant=0, mort_au_tick=? WHERE monde_id=? AND enfant_id=?",
+            [(tick, monde_id, eid) for eid in enfant_ids])
 
 
 def lire_ressources_stock(monde_id: str, cellule_id: int) -> dict:
@@ -256,6 +327,20 @@ def ecrire_niveau_technologie(monde_id: str, cellule_id: int, niveau: float) -> 
     with _conn() as c:
         c.execute("UPDATE cellules SET niveau_technologie=? WHERE monde_id=? AND cellule_id=?",
                    (niveau, monde_id, cellule_id))
+
+
+def ecrire_ressources_et_technologie_monde(monde_id: str,
+                                            par_cellule: dict[int, tuple[dict, float]]) -> None:
+    """Écrit stock de ressources ET niveau de technologie de PLUSIEURS cellules
+    (`{cellule_id: (stock, niveau)}`) en une seule connexion/transaction — voir
+    `population_vivante_monde` pour le pourquoi. ⚠️ Ne vérifie PAS `cle_api` :
+    même motif que le reste de ce module."""
+    with _conn() as c:
+        c.executemany(
+            "UPDATE cellules SET ressources_stock=?, niveau_technologie=? "
+            "WHERE monde_id=? AND cellule_id=?",
+            [(json.dumps(stock, ensure_ascii=False), niveau, monde_id, cid)
+             for cid, (stock, niveau) in par_cellule.items()])
 
 
 def forker_monde(cle_api: str, monde_id: str) -> dict | None:
