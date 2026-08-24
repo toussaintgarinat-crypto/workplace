@@ -557,11 +557,17 @@ async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypat
     dans avertissements), jamais planter le tick ni bloquer indéfiniment — voir
     design, correction sur le verrouillage inter-pays."""
     origine, destination = _crf_pair("cle-fed6")
-    eid = _ajouter_habitant("cle-fed6", origine["id"], 0, "F", ne_au_tick=-20)
+    eid = _ajouter_habitant("cle-fed6", origine["id"], 0, "F", ne_au_tick=-30)
+    conjoint = _ajouter_habitant("cle-fed6", origine["id"], 0, "M", ne_au_tick=-30)
+    couple_id = stockage_horloge.former_couple(origine["id"], 0, eid, conjoint, tick=0)
 
     monkeypatch.setattr(horloge_moteur, "VERROU_DESTINATION_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
     monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
-    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+    # seul `eid` tente d'émigrer (ordre de population_vivante_monde : eid avant conjoint)
+    ordre = iter([True, False])
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: next(ordre))
 
     verrou_destination = horloge_moteur._verrou_tick(destination["id"])
     await verrou_destination.acquire()
@@ -574,6 +580,42 @@ async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypat
     assert any("verrou" in a.lower() for a in resultat["avertissements"])
     # l'habitant reste dans son pays d'origine, jamais marqué émigré
     assert stockage_spatial.population_vivante_cellule(origine["id"], 0)[0]["id"] == eid
+    # ... et son couple SURVIT : une émigration avortée ne doit jamais détruire le
+    # couple de quelqu'un qui n'est finalement pas parti (correctif revue Task 4).
+    assert resultat["couples_dissous"] == 0
+    actifs = stockage_horloge.couples_actifs_monde(origine["id"])
+    assert [c["id"] for c in actifs.get(0, [])] == [couple_id]
+
+
+@pytest.mark.asyncio
+async def test_auto_adjacence_ignoree_jamais_d_emigration_vers_soi_meme(monkeypatch):
+    """Un pays déclaré adjacent à LUI-MÊME ne doit jamais être une destination de
+    migration : sinon chaque émigrant viserait le pays dont le verrou de tick est
+    déjà tenu par ce tick même (verrou non réentrant) et attendrait le timeout
+    complet, un par un — N × VERROU_DESTINATION_TIMEOUT_S de blocage par tick
+    (correctif revue Task 4). Le timeout est volontairement laissé à sa valeur
+    NORMALE ici : si l'auto-adjacence n'était pas filtrée, le test durerait des
+    dizaines de secondes au lieu de terminer instantanément."""
+    monde = _monde_avec_habitants("cle-fed7", n_cellules=1)
+    f = stockage_federation.creer_federation("cle-fed7", "F")
+    stockage_federation.rattacher_pays(f["id"], monde["id"], "cle-fed7", None)
+    stockage_federation.declarer_adjacence(f["id"], monde["id"], monde["id"])
+    assert stockage_federation.pays_adjacents(monde["id"]) == [monde["id"]], (
+        "prérequis du test : l'auto-adjacence est bien stockée en amont")
+
+    ids = [_ajouter_habitant("cle-fed7", monde["id"], 0, "F", ne_au_tick=-20)
+           for _ in range(4)]
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+
+    resultat = await horloge_moteur.executer_tick(monde["id"], "cle-fed7")
+
+    assert resultat["migrations_transfrontieres"] == 0
+    assert not any("verrou" in a.lower() for a in resultat["avertissements"])
+    # personne n'a été marqué émigré : tout le monde est encore là
+    assert sorted(h["id"] for h in stockage_spatial.population_vivante_cellule(
+        monde["id"], 0)) == sorted(ids)
 
 
 @pytest.mark.asyncio
