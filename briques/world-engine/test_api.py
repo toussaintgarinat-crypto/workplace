@@ -893,6 +893,54 @@ def test_horloge_supprimer_monde_purge_horloge():
     assert client.get(f"/horloge/{mid}").status_code == 404
 
 
+def _monde_legacy_sans_horloge(cle_api: str = "public") -> str:
+    """Monde qui existe dans `mondes` mais n'a AUCUNE ligne `horloges` : reproduit
+    soit un monde antérieur au Sprint C, soit un monde dont `initialiser_horloge` a
+    échoué APRÈS que `creer_monde` a déjà commité. On passe volontairement par le
+    stockage plutôt que par `POST /spatial/mondes` (qui, lui, initialise l'horloge)."""
+    cellules = [{"cellule_id": i, "x": float(i), "y": 0.0, "biome": "plaine",
+                 "ressources": ["ble"], "voisins": [j for j in range(3) if j != i]}
+                for i in range(3)]
+    return stockage_spatial.creer_monde(cle_api, cellules, seed=7)["id"]
+
+
+def test_horloge_lire_monde_legacy_sans_ligne_horloges():
+    """Correctif revue finale (Important) : `GET /horloge/{id}` renvoyait `200 null`
+    (FastAPI sérialisant le `None` de `lire_horloge`) sur un monde sans ligne
+    `horloges`. Il doit désormais renvoyer un état par défaut réel."""
+    mid = _monde_legacy_sans_horloge()
+    r = client.get(f"/horloge/{mid}")
+    assert r.status_code == 200
+    assert r.json() == {"monde_id": mid, "tick_actuel": 0, "actif": False,
+                         "intervalle_secondes": None, "derniere_execution": None}
+
+
+def test_horloge_demarrer_arreter_prennent_effet_sur_un_monde_legacy():
+    """Correctif revue finale (Important) : sans ligne `horloges`, l'UPDATE de
+    `demarrer`/`arreter` ne touchait AUCUNE ligne — l'appelant croyait le scheduler
+    activé alors que rien ne se passait."""
+    mid = _monde_legacy_sans_horloge()
+    r = client.post(f"/horloge/{mid}/demarrer", json={"intervalle_secondes": 60})
+    assert r.status_code == 200
+    assert r.json()["actif"] is True
+    assert r.json()["intervalle_secondes"] == 60
+    assert client.get(f"/horloge/{mid}").json()["actif"] is True
+
+    r = client.post(f"/horloge/{mid}/arreter")
+    assert r.status_code == 200
+    assert r.json()["actif"] is False
+    assert client.get(f"/horloge/{mid}").json()["actif"] is False
+
+
+def test_horloge_tick_manuel_fonctionne_sur_un_monde_legacy():
+    """Corollaire : un monde legacy devient tickable au lieu de lever un 404
+    « Horloge introuvable » depuis `horloge_moteur.executer_tick`."""
+    mid = _monde_legacy_sans_horloge()
+    r = client.post(f"/horloge/{mid}/tick")
+    assert r.status_code == 200
+    assert r.json()["tick_actuel"] == 1
+
+
 def test_horloge_routes_cloisonnees_par_cle_api(monkeypatch):
     """Correctif revue finale (Important) : gap de couverture cloisonnement —
     les 4 routes /horloge/* n'avaient aucun test HTTP-level de cloisonnement.
