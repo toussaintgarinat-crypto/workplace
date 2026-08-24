@@ -461,3 +461,58 @@ def test_semis_legacy_survit_a_l_echec_du_bloc_appelant(monkeypatch, tmp_path):
             "le semis legacy doit être durable même si le bloc appelant est annulé"
     finally:
         monkeypatch.setattr(stockage_spatial, "DB_PATH", original_db_path)
+
+
+# --- Sprint D : champ `emigre` (distinct de la mort) ---
+
+def test_marquer_emigre_exclut_de_la_population_vivante_sans_le_tuer():
+    monde = stockage_spatial.creer_monde("cle-emig1", _cellules_factices(2), seed=1)
+    stockage.creer("cle-emig1", "Em", "X", None, None, {}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-emig1")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=0)
+
+    stockage_spatial.marquer_emigre(monde["id"], eid, tick=5, monde_id_destination="monde-dest")
+
+    # exclu de la population vivante du pays d'origine...
+    assert stockage_spatial.population_vivante_cellule(monde["id"], 0) == []
+    assert stockage_spatial.population_vivante_monde(monde["id"]) == {}
+    # ...mais la ligne existe toujours, vivant=1, mort_au_tick NULL (pas mort)
+    with stockage_spatial._conn() as c:
+        r = c.execute("SELECT * FROM placements WHERE monde_id=? AND enfant_id=?",
+                       (monde["id"], eid)).fetchone()
+    assert r["vivant"] == 1
+    assert r["mort_au_tick"] is None
+    assert r["emigre"] == 1
+    assert r["emigre_au_tick"] == 5
+    assert r["emigre_vers_monde_id"] == "monde-dest"
+
+
+def test_placer_dans_nouveau_pays_reinitialise_emigre():
+    monde_a = stockage_spatial.creer_monde("cle-emig2", _cellules_factices(2), seed=1)
+    monde_b = stockage_spatial.creer_monde("cle-emig2", _cellules_factices(2), seed=2)
+    stockage.creer("cle-emig2", "Em", "X", None, None, {}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-emig2")[0]["id"]
+    stockage_spatial.placer(monde_a["id"], eid, 0, ne_au_tick=0)
+    stockage_spatial.marquer_emigre(monde_a["id"], eid, tick=5, monde_id_destination=monde_b["id"])
+
+    stockage_spatial.placer(monde_b["id"], eid, 1, ne_au_tick=3)
+
+    assert stockage_spatial.population_vivante_cellule(monde_b["id"], 1) == [
+        {"id": eid, "sexe": "F", "ne_au_tick": 3}]
+
+
+def test_forker_monde_copie_le_statut_emigre():
+    monde = stockage_spatial.creer_monde("cle-emig3", _cellules_factices(2), seed=1)
+    stockage.creer("cle-emig3", "Em", "X", None, None, {}, "d", {}, False, sexe="F")
+    eid = stockage.lister("cle-emig3")[0]["id"]
+    stockage_spatial.placer(monde["id"], eid, 0)
+    stockage_spatial.marquer_emigre(monde["id"], eid, tick=2, monde_id_destination="ailleurs")
+
+    fork = stockage_spatial.forker_monde("cle-emig3", monde["id"])
+
+    with stockage_spatial._conn() as c:
+        r = c.execute("SELECT * FROM placements WHERE monde_id=? AND enfant_id=?",
+                       (fork["id"], eid)).fetchone()
+    assert r["emigre"] == 1
+    assert r["emigre_au_tick"] == 2
+    assert r["emigre_vers_monde_id"] == "ailleurs"
