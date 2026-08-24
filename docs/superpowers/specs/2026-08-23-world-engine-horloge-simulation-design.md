@@ -194,6 +194,16 @@ jamais faire migrer un habitant déjà mort ce tick) :
    code spécial aux naissances automatiques. La latitude/longitude dérivée
    pour le thème astral (voir décision ci-dessus) doit décrire la cellule où
    l'enfant est **réellement placé** (la voisine), jamais celle du parent.
+   **Écart assumé (revue finale de branche, correctifs)** : la latitude/
+   longitude dérivée décrit en pratique la cellule du PARENT, pas la cellule
+   voisine réellement choisie — `genome_moteur._cellule_naissance` fait sa
+   propre lecture et son propre tirage (non seedé) après coup, l'exposer
+   pour respecter cette phrase à la lettre créerait un couplage réel entre
+   `horloge_moteur.py` et la logique de croisement manuel pour un écart
+   cosmétique (l'enfant reste ~toujours dans une cellule adjacente,
+   narrativement proche). Documenté dans le code (commentaire sur la ligne
+   de dérivation dans `horloge_moteur.py`), accepté tel quel plutôt que
+   silencieusement laissé en contradiction avec ce document.
 
 Toute erreur d'écriture isolée (ex. échec de persister une naissance) ne fait
 jamais échouer le tick entier — capturée, ajoutée aux `avertissements` du
