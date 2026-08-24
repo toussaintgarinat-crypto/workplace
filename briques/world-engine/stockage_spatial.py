@@ -37,11 +37,18 @@ def _conn() -> sqlite3.Connection:
         monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
         x REAL NOT NULL, y REAL NOT NULL, biome TEXT NOT NULL,
         ressources TEXT NOT NULL, voisins TEXT NOT NULL,
+        ressources_stock TEXT NOT NULL DEFAULT '{}', niveau_technologie REAL NOT NULL DEFAULT 0.0,
         PRIMARY KEY (monde_id, cellule_id))""")
     c.execute("""CREATE TABLE IF NOT EXISTS placements (
         enfant_id TEXT NOT NULL, monde_id TEXT NOT NULL, cellule_id INTEGER NOT NULL,
-        place_le TEXT, PRIMARY KEY (enfant_id, monde_id))""")
+        place_le TEXT, ne_au_tick INTEGER NOT NULL DEFAULT 0, vivant INTEGER NOT NULL DEFAULT 1,
+        mort_au_tick INTEGER, PRIMARY KEY (enfant_id, monde_id))""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_placement_monde ON placements(monde_id)")
+    _ajouter_colonne(c, "placements", "ne_au_tick", "INTEGER NOT NULL DEFAULT 0")
+    _ajouter_colonne(c, "placements", "vivant", "INTEGER NOT NULL DEFAULT 1")
+    _ajouter_colonne(c, "placements", "mort_au_tick", "INTEGER")
+    _ajouter_colonne(c, "cellules", "ressources_stock", "TEXT NOT NULL DEFAULT '{}'")
+    _ajouter_colonne(c, "cellules", "niveau_technologie", "REAL NOT NULL DEFAULT 0.0")
     # DUPLIQUÉE depuis stockage.py::_conn() (fix latent Task 2 : GET /spatial/mondes/{id}
     # 500ait sur une DB fraîche sans cette table). Le schéma DOIT rester identique entre
     # les deux copies — test_stockage_spatial.py::test_ddl_enfants_identique_a_stockage
@@ -58,9 +65,15 @@ def _meta(r: sqlite3.Row) -> dict:
             "forked_from_id": r["forked_from_id"], "cree_le": r["cree_le"]}
 
 
+STOCK_INITIAL_PAR_RESSOURCE = 50.0  # demi-plafond — voir horloge.PLAFOND_RESSOURCE (100.0), pas
+                                     # importé ici pour ne pas coupler le stockage à la mécanique
+
+
 def creer_monde(cle_api: str, cellules: list[dict], seed: int, forked_from_id: str | None = None) -> dict:
     """Persiste un monde déjà généré (`cellules` = sortie de `spatial.generer_monde`,
-    ou une copie lors d'un fork). Renvoie ses métadonnées."""
+    ou une copie lors d'un fork). Renvoie ses métadonnées. Chaque ressource
+    qualitative (Sprint B) démarre avec un stock numérique à demi-plafond
+    (Sprint C) — voir `horloge.evoluer_ressources_et_technologie`."""
     mid = uuid.uuid4().hex
     cree_le = datetime.now(timezone.utc).isoformat()
     with _conn() as c:
@@ -68,11 +81,13 @@ def creer_monde(cle_api: str, cellules: list[dict], seed: int, forked_from_id: s
                    "VALUES (?,?,?,?,?,?)",
                    (mid, cle_api, len(cellules), seed, forked_from_id, cree_le))
         c.executemany(
-            "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins, "
+            "ressources_stock, niveau_technologie) VALUES (?,?,?,?,?,?,?,?,0.0)",
             [(mid, cel["cellule_id"], cel["x"], cel["y"], cel["biome"],
               json.dumps(cel["ressources"], ensure_ascii=False),
-              json.dumps(cel["voisins"])) for cel in cellules])
+              json.dumps(cel["voisins"]),
+              json.dumps({r: STOCK_INITIAL_PAR_RESSOURCE for r in cel["ressources"]}, ensure_ascii=False))
+             for cel in cellules])
     return {"id": mid, "nb_cellules": len(cellules), "seed": seed,
             "forked_from_id": forked_from_id, "cree_le": cree_le}
 
@@ -116,6 +131,8 @@ def _enfants_par_cellule(c: sqlite3.Connection, monde_id: str) -> dict[int, list
 def _cellule_dict(r: sqlite3.Row, enfants: list[dict]) -> dict:
     return {"cellule_id": r["cellule_id"], "x": r["x"], "y": r["y"], "biome": r["biome"],
             "ressources": json.loads(r["ressources"]), "voisins": json.loads(r["voisins"]),
+            "ressources_stock": json.loads(r["ressources_stock"]),
+            "niveau_technologie": r["niveau_technologie"],
             "enfants": enfants}
 
 
@@ -162,13 +179,19 @@ def placement_cellule(monde_id: str, enfant_id: str) -> int | None:
     return r["cellule_id"] if r else None
 
 
-def placer(monde_id: str, enfant_id: str, cellule_id: int) -> None:
+def placer(monde_id: str, enfant_id: str, cellule_id: int, ne_au_tick: int = 0) -> None:
     """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
-    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction.
+
+    `ne_au_tick` (Sprint C) : tick de l'horloge de ce monde au moment de cette
+    naissance — 0 par défaut (placement sans notion de tick, ou monde jamais
+    avancé). `vivant=1` toujours à la création d'un placement (une naissance ne
+    peut pas naître déjà morte)."""
     with _conn() as c:
-        c.execute("INSERT OR REPLACE INTO placements (enfant_id, monde_id, cellule_id, place_le) "
-                   "VALUES (?,?,?,?)",
-                   (enfant_id, monde_id, cellule_id, datetime.now(timezone.utc).isoformat()))
+        c.execute("INSERT OR REPLACE INTO placements "
+                   "(enfant_id, monde_id, cellule_id, place_le, ne_au_tick, vivant) "
+                   "VALUES (?,?,?,?,?,1)",
+                   (enfant_id, monde_id, cellule_id, datetime.now(timezone.utc).isoformat(), ne_au_tick))
 
 
 def supprimer_placements_enfant(enfant_id: str) -> None:
@@ -181,10 +204,65 @@ def supprimer_placements_enfant(enfant_id: str) -> None:
         c.execute("DELETE FROM placements WHERE enfant_id=?", (enfant_id,))
 
 
+def population_vivante_cellule(monde_id: str, cellule_id: int) -> list[dict]:
+    """Habitants vivants placés sur cette cellule, avec leur sexe (Sprint C, voir
+    stockage.py) et leur tick de naissance DANS ce monde — snapshot utilisé par
+    l'horloge pour décider mortalité/couples/reproduction. ⚠️ Ne vérifie PAS
+    `cle_api` : même motif que le reste de ce module."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT e.id AS id, e.sexe AS sexe, p.ne_au_tick AS ne_au_tick "
+            "FROM placements p JOIN enfants e ON p.enfant_id = e.id "
+            "WHERE p.monde_id=? AND p.cellule_id=? AND p.vivant=1",
+            (monde_id, cellule_id)).fetchall()
+    return [{"id": r["id"], "sexe": r["sexe"], "ne_au_tick": r["ne_au_tick"]} for r in rows]
+
+
+def deplacer_placement(monde_id: str, enfant_id: str, nouvelle_cellule_id: int) -> None:
+    """⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    with _conn() as c:
+        c.execute("UPDATE placements SET cellule_id=? WHERE monde_id=? AND enfant_id=?",
+                   (nouvelle_cellule_id, monde_id, enfant_id))
+
+
+def marquer_mort(monde_id: str, enfant_id: str, tick: int) -> None:
+    """⚠️ Ne vérifie PAS `cle_api` : même motif que le reste de ce module."""
+    with _conn() as c:
+        c.execute("UPDATE placements SET vivant=0, mort_au_tick=? WHERE monde_id=? AND enfant_id=?",
+                   (tick, monde_id, enfant_id))
+
+
+def lire_ressources_stock(monde_id: str, cellule_id: int) -> dict:
+    with _conn() as c:
+        r = c.execute("SELECT ressources_stock FROM cellules WHERE monde_id=? AND cellule_id=?",
+                       (monde_id, cellule_id)).fetchone()
+    return json.loads(r["ressources_stock"]) if r else {}
+
+
+def ecrire_ressources_stock(monde_id: str, cellule_id: int, stock: dict) -> None:
+    with _conn() as c:
+        c.execute("UPDATE cellules SET ressources_stock=? WHERE monde_id=? AND cellule_id=?",
+                   (json.dumps(stock, ensure_ascii=False), monde_id, cellule_id))
+
+
+def lire_niveau_technologie(monde_id: str, cellule_id: int) -> float:
+    with _conn() as c:
+        r = c.execute("SELECT niveau_technologie FROM cellules WHERE monde_id=? AND cellule_id=?",
+                       (monde_id, cellule_id)).fetchone()
+    return r["niveau_technologie"] if r else 0.0
+
+
+def ecrire_niveau_technologie(monde_id: str, cellule_id: int, niveau: float) -> None:
+    with _conn() as c:
+        c.execute("UPDATE cellules SET niveau_technologie=? WHERE monde_id=? AND cellule_id=?",
+                   (niveau, monde_id, cellule_id))
+
+
 def forker_monde(cle_api: str, monde_id: str) -> dict | None:
     """Clone un monde : mêmes cellules (mêmes cellule_id, biomes, ressources,
-    voisins — pas de régénération) et mêmes placements, sous un nouvel id. Le
-    monde source n'est jamais modifié."""
+    voisins, stock de ressources, niveau de technologie — pas de régénération) et
+    mêmes placements (y compris âge/statut vivant), sous un nouvel id. Le monde
+    source n'est jamais modifié."""
     with _conn() as c:
         m = c.execute("SELECT * FROM mondes WHERE id=? AND cle_api=?", (monde_id, cle_api)).fetchone()
         if m is None:
@@ -196,14 +274,16 @@ def forker_monde(cle_api: str, monde_id: str) -> dict | None:
                    (nid, cle_api, m["nb_cellules"], m["seed"], monde_id, cree_le))
         cellules = c.execute("SELECT * FROM cellules WHERE monde_id=?", (monde_id,)).fetchall()
         c.executemany(
-            "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins) "
-            "VALUES (?,?,?,?,?,?,?)",
-            [(nid, r["cellule_id"], r["x"], r["y"], r["biome"], r["ressources"], r["voisins"])
-             for r in cellules])
+            "INSERT INTO cellules (monde_id, cellule_id, x, y, biome, ressources, voisins, "
+            "ressources_stock, niveau_technologie) VALUES (?,?,?,?,?,?,?,?,?)",
+            [(nid, r["cellule_id"], r["x"], r["y"], r["biome"], r["ressources"], r["voisins"],
+              r["ressources_stock"], r["niveau_technologie"]) for r in cellules])
         placements = c.execute("SELECT * FROM placements WHERE monde_id=?", (monde_id,)).fetchall()
         c.executemany(
-            "INSERT INTO placements (enfant_id, monde_id, cellule_id, place_le) VALUES (?,?,?,?)",
-            [(r["enfant_id"], nid, r["cellule_id"], r["place_le"]) for r in placements])
+            "INSERT INTO placements (enfant_id, monde_id, cellule_id, place_le, "
+            "ne_au_tick, vivant, mort_au_tick) VALUES (?,?,?,?,?,?,?)",
+            [(r["enfant_id"], nid, r["cellule_id"], r["place_le"], r["ne_au_tick"],
+              r["vivant"], r["mort_au_tick"]) for r in placements])
     return {"id": nid, "nb_cellules": m["nb_cellules"], "seed": m["seed"],
             "forked_from_id": monde_id, "cree_le": cree_le}
 
