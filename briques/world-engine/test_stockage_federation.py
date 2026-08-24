@@ -166,6 +166,22 @@ def test_population_vivante_federation_agrege_par_pays():
         m1["id"]: 1, m2["id"]: 1}
 
 
+def test_population_vivante_federation_exclut_les_emigres():
+    """Un émigré reste vivant=1 mais ne doit plus compter pour son pays
+    d'origine (voir stockage_spatial.marquer_emigre, Task 2)."""
+    import stockage
+    f = stockage_federation.creer_federation("cle-a", "F1")
+    m1 = stockage_spatial.creer_monde("cle-a", _cellules(2), seed=1)
+    stockage_federation.rattacher_pays(f["id"], m1["id"], "cle-a", None)
+    e1 = stockage.creer("cle-a", "A", "X", None, None, {}, "d", {}, False, sexe="F")
+    stockage_spatial.placer(m1["id"], e1, 0)
+    stockage_spatial.marquer_emigre(m1["id"], e1, tick=1, monde_id_destination="ailleurs")
+
+    etat = stockage_federation.population_vivante_federation(f["id"])
+    assert etat["population_totale"] == 0
+    assert etat["pays"] == [{"monde_id": m1["id"], "population_vivante": 0}]
+
+
 def test_population_vivante_federation_introuvable_renvoie_none():
     assert stockage_federation.population_vivante_federation("id-inconnu") is None
 
