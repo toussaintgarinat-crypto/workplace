@@ -88,31 +88,45 @@ def calculer_latences_tick(observations: list[tuple[float, int]]) -> dict:
     n'importe quel ordre. Ne retient que les instants où `tick_actuel` a
     RÉELLEMENT augmenté (déduplique le polling qui observe plusieurs fois le même
     tick) et calcule l'écart de temps entre deux incréments consécutifs. Renvoie
-    {} si moins de 2 incréments observés (rien à mesurer)."""
+    {} si moins de 2 incréments observés (rien à mesurer).
+
+    ⚠️ Correctif revue finale (Critical) : `ecart_min_s`/`ecart_p50_s`/
+    `ecart_p95_s`/`ecart_max_s` sont quantifiés par la période de polling de
+    l'appelant (`observer --intervalle-poll`) — chaque écart est un multiple
+    entier de cette période, pas une mesure continue. Seul `ecart_moyen_s`
+    (portée totale / nombre d'incréments, indépendant du pas de polling) est
+    un estimateur non biaisé de l'intervalle réel entre deux ticks — c'est
+    LUI qu'il faut lire pour juger une dérive, pas les percentiles."""
     vus = sorted(observations, key=lambda o: o[0])
     if not vus:
         return {}
 
     increments = []
+    dernier_tick = None
     i = 0
     while i < len(vus):
         current_tick = vus[i][1]
-        # Find the last occurrence of this tick
+        # Dernière occurrence de ce tick avant qu'il n'incrémente (borne
+        # conservative de la fenêtre de transition, voir revue Task 3).
         last_ts = vus[i][0]
         j = i + 1
         while j < len(vus) and vus[j][1] == current_tick:
             last_ts = vus[j][0]
             j += 1
-        # Only add if it's a new tick
-        if not increments or increments[-1][1] != current_tick:
+        # Garde de monotonicité (Minor revue finale) : un tick non croissant
+        # (bruit/désordre) n'est jamais accepté comme un nouvel incrément.
+        if dernier_tick is None or current_tick > dernier_tick:
             increments.append((last_ts, current_tick))
+            dernier_tick = current_tick
         i = j
 
     if len(increments) < 2:
         return {}
     ecarts = sorted(increments[i][0] - increments[i - 1][0] for i in range(1, len(increments)))
+    ecart_moyen = (increments[-1][0] - increments[0][0]) / (len(increments) - 1)
     return {
         "nb_ticks_observes": len(increments) - 1,
+        "ecart_moyen_s": ecart_moyen,
         "ecart_min_s": ecarts[0],
         "ecart_p50_s": ecarts[len(ecarts) // 2],
         "ecart_p95_s": ecarts[min(len(ecarts) - 1, int(len(ecarts) * 0.95))],
@@ -160,6 +174,13 @@ def commande_observer(args: argparse.Namespace) -> None:
                 except ErreurAPI as e:
                     ligne = {"ts": time.time(), "monde_id": m["id"],
                              "tick_actuel": None, "actif": None, "erreur": str(e)}
+                except OSError as e:
+                    # Correctif revue finale (Important) : un incident réseau isolé
+                    # (reset, DNS, timeout) sur UNE lecture ne doit jamais faire
+                    # planter une fenêtre d'observation de 12 minutes sans surveillance
+                    # — même motif que le correctif OSError de `rafale-manuelle`.
+                    ligne = {"ts": time.time(), "monde_id": m["id"], "tick_actuel": None,
+                             "actif": None, "erreur": f"{type(e).__name__}: {e}"}
                 f.write(json.dumps(ligne) + "\n")
             f.flush()
             time.sleep(args.intervalle_poll)
@@ -177,6 +198,33 @@ def commande_arreter_scheduler(args: argparse.Namespace) -> None:
         print(f"scheduler arrêté pour {m['id']}")
 
 
+def _tick_manuel_chronometre(base_url: str, cle_api: str, monde_id: str
+                              ) -> tuple[dict | None, float, str | None]:
+    """Chronomètre l'appel DANS le thread qui l'exécute, succès ou échec —
+    renvoie (resultat, duree_s, erreur). Correctif revue finale (Critical) :
+    mesurer au moment de la CONSOMMATION du future (`time.time() - debut_round`,
+    ancienne version) donnait le temps CUMULÉ écoulé depuis le début du round
+    jusqu'à cette consommation — un maximum croissant dans l'ordre de
+    soumission, pas la durée de CET appel. Sur les données réelles de la
+    mesure de charge, ça gonflait la médiane rapportée de ~1,0s (vraie
+    médiane par tick) à ~5,8s. Chronométrer ICI, dans le thread, donne la
+    vraie durée de chaque appel quel que soit l'ordre de consommation."""
+    debut = time.time()
+    try:
+        resultat = tick_manuel(base_url, cle_api, monde_id)
+        return resultat, time.time() - debut, None
+    except ErreurAPI as e:
+        return None, time.time() - debut, str(e)
+    except OSError as e:
+        # Un tick manuel peut légitimement dépasser TIMEOUT_S (15s) : une
+        # naissance déclenche un appel HTTP vers `personnages` avec son propre
+        # timeout de 30s (voir horloge_moteur.py). Un dépassement ici est un
+        # résultat de mesure en soi (latence réelle sous charge), pas une
+        # raison de faire planter toute la rafale — découvert en exécution
+        # réelle (TimeoutError, sous-classe d'OSError, non catché à l'origine).
+        return None, time.time() - debut, f"{type(e).__name__}: {e}"
+
+
 def commande_rafale_manuelle(args: argparse.Namespace) -> None:
     """Déclenche des ticks manuels CONCURRENTS sur les 5 mondes, round par round —
     seul chemin qui expose `avertissements` (le scheduler les jette, voir
@@ -187,33 +235,16 @@ def commande_rafale_manuelle(args: argparse.Namespace) -> None:
     chemin_avert = Path(args.sortie) / "avertissements.jsonl"
     with chemin_avert.open("a") as f:
         for round_ in range(args.nb_rounds):
-            debuts = {m["id"]: time.time() for m in mondes}
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(mondes)) as pool:
-                futurs = {pool.submit(tick_manuel, args.base_url, m["cle_api"], m["id"]): m
-                          for m in mondes}
-                for fut, m in futurs.items():
-                    try:
-                        resultat = fut.result()
-                        ligne = {"round": round_, "monde_id": m["id"],
-                                  "duree_s": time.time() - debuts[m["id"]],
-                                  "tick_actuel": resultat.get("tick_actuel"),
-                                  "avertissements": resultat.get("avertissements", []),
-                                  "erreur": None}
-                    except ErreurAPI as e:
-                        ligne = {"round": round_, "monde_id": m["id"], "duree_s": None,
-                                  "tick_actuel": None, "avertissements": [], "erreur": str(e)}
-                    except OSError as e:
-                        # Un tick manuel peut légitimement dépasser TIMEOUT_S (15s) :
-                        # une naissance déclenche un appel HTTP vers `personnages` avec
-                        # son propre timeout de 30s (voir horloge_moteur.py). Un dépassement
-                        # ici est un résultat de mesure en soi (latence réelle sous charge),
-                        # pas une raison de faire planter toute la rafale — découvert en
-                        # exécution réelle (TimeoutError, sous-classe d'OSError, non catché
-                        # à l'origine).
-                        ligne = {"round": round_, "monde_id": m["id"],
-                                  "duree_s": time.time() - debuts[m["id"]],
-                                  "tick_actuel": None, "avertissements": [],
-                                  "erreur": f"{type(e).__name__}: {e}"}
+                futurs = {pool.submit(_tick_manuel_chronometre, args.base_url,
+                                       m["cle_api"], m["id"]): m for m in mondes}
+                for fut in concurrent.futures.as_completed(futurs):
+                    m = futurs[fut]
+                    resultat, duree, erreur = fut.result()
+                    ligne = {"round": round_, "monde_id": m["id"], "duree_s": duree,
+                              "tick_actuel": (resultat or {}).get("tick_actuel"),
+                              "avertissements": (resultat or {}).get("avertissements", []),
+                              "erreur": erreur}
                     f.write(json.dumps(ligne) + "\n")
             f.flush()
     print(f"{args.nb_rounds} rounds de tick manuel concurrent écrits dans {chemin_avert}")
@@ -257,13 +288,24 @@ def commande_setup(args: argparse.Namespace) -> None:
             except ErreurAPI as e:
                 ko += 1
                 print(f"  fondateur échoué ({taches[fut]}) : {e}")
+            except OSError as e:
+                # Correctif revue finale (Important) : un incident réseau isolé sur
+                # UN fondateur ne doit jamais faire échouer tout le peuplement
+                # (~200 appels) — même motif que `rafale-manuelle`/`observer`.
+                ko += 1
+                print(f"  fondateur échoué ({taches[fut]}) : {type(e).__name__}: {e}")
     print(f"peuplement : {ok} fondateurs créés, {ko} échecs "
           f"({len(mondes)} mondes × {args.fondateurs_par_monde})")
 
     Path(args.sortie).mkdir(parents=True, exist_ok=True)
-    (Path(args.sortie) / "mondes.json").write_text(json.dumps(
+    chemin_mondes = Path(args.sortie) / "mondes.json"
+    chemin_mondes.write_text(json.dumps(
         {"federation_id": federation["id"], "mondes": mondes}, indent=2))
-    print(f"état écrit dans {args.sortie}/mondes.json")
+    # Correctif revue finale (Important) : ce fichier contient les cle_api EN
+    # CLAIR (nécessaire aux sous-commandes suivantes) — 0600 plutôt que le 0644
+    # par défaut, jamais lisible par d'autres utilisateurs de la machine.
+    chemin_mondes.chmod(0o600)
+    print(f"état écrit dans {chemin_mondes} (permissions 0600)")
 
 
 def construire_parser() -> argparse.ArgumentParser:

@@ -5,7 +5,7 @@
   "description": "Prototype exploratoire : croise 2 profils cosmiques (via la brique personnages) pour produire un enfant dont le thème astral est calculé à une vraie date, avec un récit d'hérédité en post-traitement (coïncidence assumée, pas une vraie génétique astrale). Persiste les lignées (arbre généalogique) ET un maillage spatial (mondes Voronoï forkables, biomes/ressources) sur lequel les enfants naissent, ET une horloge de simulation (ticks/ères) qui fait vivre un monde : vieillissement/mortalité, migration, couples, reproduction. ET une fédération de mondes (chacun devenant un « pays ») avec migration transfrontière entre pays adjacents. Quatrième maillon du rapport d'architecture « World Engine » (Génome + Spatial + Horloge + Fédération) : la mise à l'échelle (queue Redis/RabbitMQ) reste hors périmètre.",
   "role": "world-engine",
   "couche": "backend",
-  "statut": "a_tester",
+  "statut": "actif",
   "chemin_source": "~/Desktop/Workplace/briques/world-engine",
   "port": 6230,
   "url_sante": "http://host.docker.internal:6230/sante",
