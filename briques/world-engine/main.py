@@ -5,6 +5,7 @@ Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`
 calcul astral — ne duplique jamais le moteur.
 """
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
 from random import Random
@@ -21,6 +22,8 @@ import stockage
 import stockage_federation
 import stockage_horloge
 import stockage_spatial
+
+_log = logging.getLogger("world-engine")
 
 app = FastAPI(title="World Engine — Génome Cosmique", version="0.1.0")
 
@@ -368,11 +371,29 @@ SCHEDULER_INTERVALLE_S = int(os.getenv("HORLOGE_SCHEDULER_INTERVALLE_S", "5"))
 _SCHEDULER_ACTIF = os.getenv("HORLOGE_SCHEDULER_DESACTIVE", "").strip() != "1"
 
 
+async def _executer_et_consigner(monde_id: str, cle_api_val: str) -> None:
+    """Exécute un tick et consigne son issue. N'importe quelle exception est
+    attrapée ici, jamais laissée remonter à `asyncio.gather` — c'est ce qui
+    isole un monde en échec des autres mondes du même passage."""
+    try:
+        resultat = await horloge_moteur.executer_tick(monde_id, cle_api_val)
+        for avertissement in resultat.get("avertissements", []):
+            _log.warning("monde=%s %s", monde_id, avertissement)
+    except Exception:
+        _log.exception("tick en échec monde=%s", monde_id)
+
+
+async def _executer_passage(dues: list[dict]) -> None:
+    """Exécute tous les mondes dus d'un même passage EN PARALLÈLE — la durée
+    du passage devient max(durées) au lieu de Σ(durées). Voir
+    docs/superpowers/specs/2026-08-25-world-engine-sprint-e-scheduler-parallele-design.md."""
+    await asyncio.gather(*(_executer_et_consigner(d["monde_id"], d["cle_api"]) for d in dues))
+
+
 async def _boucle_scheduler():
     """Tâche de fond in-process (pas de queue externe — volume modéré visé ce
     sprint, voir design). Vérifie périodiquement les horloges actives dont
-    l'intervalle est écoulé et déclenche leur tick. Une erreur sur un monde
-    n'interrompt jamais la boucle ni les autres mondes."""
+    l'intervalle est écoulé et déclenche leur tick."""
     while True:
         await asyncio.sleep(SCHEDULER_INTERVALLE_S)
         maintenant = datetime.now(timezone.utc).isoformat()
@@ -380,11 +401,7 @@ async def _boucle_scheduler():
             dues = stockage_horloge.horloges_actives_a_declencher(maintenant)
         except Exception:
             continue
-        for due in dues:
-            try:
-                await horloge_moteur.executer_tick(due["monde_id"], due["cle_api"])
-            except Exception:
-                continue
+        await _executer_passage(dues)
 
 
 @app.on_event("startup")
