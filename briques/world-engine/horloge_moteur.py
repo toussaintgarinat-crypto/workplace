@@ -30,6 +30,7 @@ from fastapi import HTTPException
 
 import genome_moteur
 import horloge
+import stockage
 import stockage_federation
 import stockage_horloge
 import stockage_spatial
@@ -464,6 +465,20 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
                 stockage_spatial.marquer_emigre(monde_id, eid, tick_suivant, dest_monde_id)
                 stockage_spatial.placer(dest_monde_id, eid, dest_cellule_id,
                                           ne_au_tick=tick_dest - age)
+                # Transfert de propriété (correctif revue finale, Important) : « il vit
+                # là-bas maintenant, c'est un habitant de ce tenant ». Sans lui, un
+                # migrant arrivé chez un tenant DIFFÉRENT ne pouvait plus jamais se
+                # reproduire : le tick de destination appelle
+                # `genome_moteur.executer_croisement(..., cle_api_destination)`, qui
+                # résout ses parents par `stockage.lire(cle_api, parent_id)` — cloisonné.
+                # Sa ligne `enfants` restant au tenant d'origine, la naissance échouait
+                # silencieusement (simple « introuvable » dans `avertissements`).
+                # `None` = monde destination disparu entre-temps : on saute le transfert
+                # plutôt que d'écrire une propriété absurde (ne devrait pas arriver —
+                # `nb_cellules_monde` a déjà répondu non-None pour ce pays en passe 2a).
+                proprietaire_dest = stockage_spatial.proprietaire_monde(dest_monde_id)
+                if proprietaire_dest is not None:
+                    stockage.transferer_proprietaire(eid, proprietaire_dest)
                 migrations_transfrontieres += 1
             except Exception as e:
                 avertissements.append(f"Émigration de {eid} vers {dest_monde_id} non appliquée : {e}")

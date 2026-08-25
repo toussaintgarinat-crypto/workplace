@@ -157,6 +157,18 @@ def nb_cellules_monde(monde_id: str) -> int | None:
     return r["nb_cellules"] if r else None
 
 
+def proprietaire_monde(monde_id: str) -> str | None:
+    """`cle_api` propriétaire de ce monde, par id seul — utilisée par la migration
+    transfrontière (Sprint D) pour savoir à quel tenant transférer un habitant qui
+    change de pays (voir `stockage.transferer_proprietaire`).
+
+    ⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé que `monde_id`
+    est légitime dans son contexte (même motif que `nb_cellules_monde`)."""
+    with _conn() as c:
+        r = c.execute("SELECT cle_api FROM mondes WHERE id=?", (monde_id,)).fetchone()
+    return r["cle_api"] if r else None
+
+
 def _enfants_par_cellule(c: sqlite3.Connection, monde_id: str) -> dict[int, list[dict]]:
     """Enfants placés dans ce monde, groupés par cellule_id — lecture jointe à la
     table `enfants` de `stockage.py` (même base SQLite, tables distinctes)."""

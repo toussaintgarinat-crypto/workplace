@@ -98,6 +98,14 @@ def test_nb_cellules_monde():
     assert stockage_spatial.nb_cellules_monde("id-inconnu") is None
 
 
+def test_proprietaire_monde():
+    """Lookup par id seul (même motif que `nb_cellules_monde`) — utilisé par la
+    migration transfrontière pour savoir à quel tenant transférer un émigrant."""
+    meta = stockage_spatial.creer_monde("cle-proprio", _cellules_factices(2), seed=1)
+    assert stockage_spatial.proprietaire_monde(meta["id"]) == "cle-proprio"
+    assert stockage_spatial.proprietaire_monde("id-inconnu") is None
+
+
 def test_placer_et_lire_avec_enfants():
     meta = stockage_spatial.creer_monde("cle-h", _cellules_factices(3), seed=1)
     eid = stockage.creer("cle-h", "Nova", "Test", None, None,

@@ -92,6 +92,26 @@ def lire(cle_api: str, eid: str) -> dict | None:
     return _ligne_complete(r) if r else None
 
 
+def transferer_proprietaire(enfant_id: str, nouvelle_cle_api: str) -> None:
+    """Change le propriétaire (`cle_api`) d'un enfant — utilisé par la migration
+    transfrontière (Sprint D) : un habitant émigré devient la propriété du tenant
+    du pays destination (« il vit là-bas maintenant »).
+
+    C'est la condition NÉCESSAIRE pour qu'il reste reproductible dans son nouveau
+    pays : le tick de destination appelle `genome_moteur.executer_croisement(...,
+    cle_api_destination)`, qui résout ses parents par `lire(cle_api, parent_id)`
+    — cloisonné. Sans ce transfert, un migrant arrivé chez un tenant différent
+    échouait silencieusement à toute naissance (« enfant stocké introuvable »
+    dans les `avertissements` du tick) et restait stérile à jamais.
+
+    ⚠️ Ne vérifie PAS le propriétaire actuel : l'appelant (horloge_moteur.py) a
+    déjà établi le droit du migrant à partir (adjacence déclarée au sein d'une
+    fédération dont son pays est membre, voir design) — jamais appelée depuis une
+    requête HTTP."""
+    with _conn() as c:
+        c.execute("UPDATE enfants SET cle_api=? WHERE id=?", (nouvelle_cle_api, enfant_id))
+
+
 def supprimer(cle_api: str, eid: str) -> bool:
     with _conn() as c:
         cur = c.execute("DELETE FROM enfants WHERE id=? AND cle_api=?", (eid, cle_api))
