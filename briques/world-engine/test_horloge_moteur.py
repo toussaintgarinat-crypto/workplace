@@ -771,3 +771,68 @@ async def test_determinisme_migration_transfrontiere_meme_seed(monkeypatch):
         resultats.append(resultat["migrations_transfrontieres"])
 
     assert resultats[0] == resultats[1]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_bout_en_bout_migration_transfrontiere_reelle_sur_plusieurs_ticks():
+    """Scénario bout-en-bout exigé par le design (section « Tests prévus ») et
+    absent jusqu'ici : deux pays rattachés à une fédération, adjacence déclarée,
+    plusieurs ticks avancés sur CHACUN indépendamment, au moins une migration
+    transfrontière observée.
+
+    Contrairement à tous les autres tests Sprint D de ce fichier, ni
+    `cellule_saturee` ni `migre_frontiere` ne sont monkeypatchés : c'est la VRAIE
+    chaîne probabiliste (`PROBABILITE_MIGRATION_FRONTIERE = 0.05`, saturation
+    calculée sur les ressources réelles) qui est exercée. Test volontairement
+    probabiliste et un peu lent, même classe que
+    `test_scenario_plusieurs_ticks_population_evolue`.
+
+    Les 2 pays appartiennent à des tenants DIFFÉRENTS : le transfert de propriété
+    des émigrants (`stockage.transferer_proprietaire`) est donc lui aussi exercé
+    de bout en bout, sans mock.
+
+    Calibrage de la saturation, sans truquer la mécanique : une cellule est saturée
+    quand `population > stock total`. Le stock est semé à 1.0 (au lieu du
+    demi-plafond 50.0) pour saturer dès le 1er tick plutôt qu'au bout d'une
+    dizaine, et 10 habitants par cellule consomment plus que la régénération
+    (`(100 − q) × 0.10 < 10` dès `q > 0`) : la cellule reste donc drainée, donc
+    saturée, tout le long. 20 habitants × 0.05 × 30 ticks ⇒ probabilité de
+    n'observer AUCUN passage de frontière de l'ordre de 1e-13."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=PORTRAIT_FACTICE))
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge"}]}))
+
+    cle_o, cle_d = "cle-e2e-origine", "cle-e2e-destination"
+    origine, destination = _crf_pair_multi_tenant(cle_o, cle_d, n_cellules=2)
+    for cid in range(2):
+        for i in range(10):
+            _ajouter_habitant(cle_o, origine["id"], cid, "F" if i % 2 == 0 else "M",
+                               ne_au_tick=-20, theme=PORTRAIT_FACTICE)
+        stockage_spatial.ecrire_ressources_stock(origine["id"], cid, {"ble": 1.0})
+        stockage_spatial.ecrire_ressources_stock(destination["id"], cid, {"ble": 1.0})
+
+    total_transfrontieres = 0
+    for _ in range(30):
+        # Chaque pays avance INDÉPENDAMMENT (aucune synchronisation de tick entre
+        # pays d'une fédération — voir design).
+        total_transfrontieres += (
+            await horloge_moteur.executer_tick(origine["id"], cle_o))["migrations_transfrontieres"]
+        total_transfrontieres += (
+            await horloge_moteur.executer_tick(destination["id"], cle_d))["migrations_transfrontieres"]
+
+    assert total_transfrontieres > 0, (
+        "aucune migration transfrontière observée sur 30 ticks × 2 pays adjacents "
+        "peuplés et saturés — la chaîne probabiliste réelle ne se déclenche jamais")
+
+    # Le pays destination est réellement peuplé, et TOUS ses habitants vivants
+    # appartiennent bien à SON tenant (immigrants transférés compris) : sans le
+    # transfert de propriété, un immigrant resterait illisible pour `cle_d` et
+    # stérile chez lui.
+    arrivants = [h for hs in stockage_spatial.population_vivante_monde(destination["id"]).values()
+                 for h in hs]
+    assert arrivants, "le pays destination doit avoir reçu au moins un habitant"
+    illisibles = [h["id"] for h in arrivants if stockage.lire(cle_d, h["id"]) is None]
+    assert illisibles == [], (
+        f"habitants du pays destination inaccessibles à son propre tenant : {illisibles}")
