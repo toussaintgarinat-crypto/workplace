@@ -257,10 +257,10 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     #
     # Un seul verrou par pays destination (dédupliqué) : deux émigrants vers le même
     # pays ne doivent pas tenter d'acquérir deux fois le même `asyncio.Lock` (non
-    # réentrant → interblocage contre soi-même). Les verrous obtenus sont TENUS
-    # jusqu'à la fin du tick (passe 2b + phase 3) et libérés dans le `finally` final.
-    # La passe 2b ne fait aucune E/S sur ces pays (calcul pur en mémoire) : les tenir
-    # pendant ce temps n'ajoute aucune dépendance croisée nouvelle.
+    # réentrant → interblocage contre soi-même). Les verrous obtenus sont tenus le
+    # temps de la passe 2b (calcul pur en mémoire, aucune E/S sur ces pays) et des
+    # écritures d'émigration, puis libérés IMMÉDIATEMENT — voir
+    # `_liberer_verrous_destinations` et le correctif d'ordonnancement plus bas.
     #
     # ⚠️ Honnêteté : un émigrant dont le verrou échoue reste dans son pays d'origine
     # et GARDE son couple, mais il a déjà été retiré de `vivants` en passe 2a — il ne
@@ -269,22 +269,37 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     verrous_destinations: dict[str, asyncio.Lock] = {}
     destinations_indisponibles: set[str] = set()
     emigrations_confirmees: list[tuple[str, str, int, int]] = []
-    for candidat in emigrations_a_appliquer:
-        eid_c, dest_c = candidat[0], candidat[1]
-        if dest_c not in verrous_destinations and dest_c not in destinations_indisponibles:
-            verrou_obtenu = await _acquerir_verrou_destination(dest_c)
-            if verrou_obtenu is None:
-                destinations_indisponibles.add(dest_c)
-            else:
-                verrous_destinations[dest_c] = verrou_obtenu
-        if dest_c in destinations_indisponibles:
-            avertissements.append(
-                f"Émigration de {eid_c} vers {dest_c} non appliquée : "
-                "verrou du pays destination indisponible (retentera au tick suivant).")
-            continue
-        emigrations_confirmees.append(candidat)
+
+    def _liberer_verrous_destinations() -> None:
+        """Libère chaque verrou destination acquis EXACTEMENT une fois, sur tous les
+        chemins. L'entrée est retirée du dict AVANT le `release()` : le `finally`
+        final, qui rappelle cette même fonction, ne peut donc jamais re-libérer un
+        verrou déjà rendu (un `release()` sur un verrou non tenu lèverait)."""
+        while verrous_destinations:
+            _, verrou_dest = verrous_destinations.popitem()
+            verrou_dest.release()
 
     try:
+        # ⚠️ La boucle d'ACQUISITION est à l'intérieur de ce `try` (correctif revue
+        # finale, Minor) : quand elle le précédait, un verrou déjà obtenu fuyait
+        # définitivement si le tick était annulé (`CancelledError`, non capturée par
+        # `_acquerir_verrou_destination` qui ne traite que `TimeoutError`) au milieu de
+        # la boucle — le pays destination restait alors bloqué pour toujours.
+        for candidat in emigrations_a_appliquer:
+            eid_c, dest_c = candidat[0], candidat[1]
+            if dest_c not in verrous_destinations and dest_c not in destinations_indisponibles:
+                verrou_obtenu = await _acquerir_verrou_destination(dest_c)
+                if verrou_obtenu is None:
+                    destinations_indisponibles.add(dest_c)
+                else:
+                    verrous_destinations[dest_c] = verrou_obtenu
+            if dest_c in destinations_indisponibles:
+                avertissements.append(
+                    f"Émigration de {eid_c} vers {dest_c} non appliquée : "
+                    "verrou du pays destination indisponible (retentera au tick suivant).")
+                continue
+            emigrations_confirmees.append(candidat)
+
         # Seules les émigrations CONFIRMÉES (verrou destination en main) alimentent la
         # dissolution mondiale ci-dessous — jamais la liste brute des candidats.
         emigrants_tous = {eid for eid, _, _, _ in emigrations_confirmees}
@@ -395,6 +410,28 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
         except Exception as e:
             avertissements.append(f"Avancement de l'horloge non enregistré : {e}")
 
+        # --- Émigrations AVANT les naissances, verrous destination rendus tout de
+        # suite (correctif revue finale, Important) ---
+        #
+        # La boucle de naissances ci-dessous `await` un appel HTTP vers `personnages`
+        # (timeout 30 s PAR naissance). Quand les écritures d'émigration venaient
+        # après, les verrous de tick des pays DESTINATION restaient tenus pendant tout
+        # ce temps : un tick d'origine avec plusieurs naissances bloquait les ticks
+        # PROPRES d'un autre pays derrière lui (défaut de débit/latence — jamais une
+        # corruption, le timeout finissait par rendre la main). Les rendre ici ramène
+        # leur durée de détention aux seules écritures SQLite locales.
+        #
+        # Aucune dépendance perdue à l'inversion : un émigrant a été retiré de
+        # `vivants` dès la passe 2a, il n'est donc jamais parent d'une naissance de ce
+        # tick — ni `marquer_emigre` (qui ne touche pas `cellule_id`), ni le transfert
+        # de propriété ne peuvent influencer le placement ou la filiation d'un
+        # nouveau-né. Les migrations INTRA-pays, elles, restent bien après les
+        # naissances : voir le commentaire juste en dessous.
+        if emigrations_confirmees:
+            migrations_transfrontieres = _ecrire_emigrations(
+                monde_id, tick_suivant, emigrations_confirmees, avertissements)
+        _liberer_verrous_destinations()
+
         # Naissances AVANT migrations : `genome_moteur._cellule_naissance` fait une
         # lecture LIVE du placement du parent de référence pour situer le nouveau-né.
         # Si une migration de ce même tick était déjà écrite en base, un parent
@@ -455,34 +492,6 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
             except Exception as e:
                 avertissements.append(f"Couples des migrants non recalés : {e}")
 
-        for eid, dest_monde_id, dest_cellule_id, age in emigrations_confirmees:
-            # Verrou du pays destination déjà acquis plus haut et toujours tenu : ne
-            # jamais le ré-acquérir ici (`asyncio.Lock` n'est pas réentrant). Chaque
-            # écriture reste isolée : une émigration ratée n'interrompt pas les autres.
-            try:
-                horloge_dest = stockage_horloge.lire_horloge(dest_monde_id)
-                tick_dest = horloge_dest["tick_actuel"] if horloge_dest else 0
-                stockage_spatial.marquer_emigre(monde_id, eid, tick_suivant, dest_monde_id)
-                stockage_spatial.placer(dest_monde_id, eid, dest_cellule_id,
-                                          ne_au_tick=tick_dest - age)
-                # Transfert de propriété (correctif revue finale, Important) : « il vit
-                # là-bas maintenant, c'est un habitant de ce tenant ». Sans lui, un
-                # migrant arrivé chez un tenant DIFFÉRENT ne pouvait plus jamais se
-                # reproduire : le tick de destination appelle
-                # `genome_moteur.executer_croisement(..., cle_api_destination)`, qui
-                # résout ses parents par `stockage.lire(cle_api, parent_id)` — cloisonné.
-                # Sa ligne `enfants` restant au tenant d'origine, la naissance échouait
-                # silencieusement (simple « introuvable » dans `avertissements`).
-                # `None` = monde destination disparu entre-temps : on saute le transfert
-                # plutôt que d'écrire une propriété absurde (ne devrait pas arriver —
-                # `nb_cellules_monde` a déjà répondu non-None pour ce pays en passe 2a).
-                proprietaire_dest = stockage_spatial.proprietaire_monde(dest_monde_id)
-                if proprietaire_dest is not None:
-                    stockage.transferer_proprietaire(eid, proprietaire_dest)
-                migrations_transfrontieres += 1
-            except Exception as e:
-                avertissements.append(f"Émigration de {eid} vers {dest_monde_id} non appliquée : {e}")
-
         return {
             "monde_id": monde_id, "tick_actuel": tick_suivant,
             "naissances": naissances, "morts": morts, "migrations": migrations,
@@ -492,7 +501,47 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
             "avertissements": avertissements,
         }
     finally:
-        # Un `release()` par verrou acquis, exactement une fois (dict dédupliqué par
-        # pays destination), même si une écriture a levé.
-        for verrou_dest in verrous_destinations.values():
-            verrou_dest.release()
+        # Filet : libère ce qui resterait tenu si une exception a court-circuité la
+        # libération anticipée ci-dessus (ou si le tick a été annulé pendant
+        # l'acquisition). Idempotent — voir `_liberer_verrous_destinations`.
+        _liberer_verrous_destinations()
+
+
+def _ecrire_emigrations(monde_id: str, tick_suivant: int,
+                         emigrations_confirmees: list[tuple[str, str, int, int]],
+                         avertissements: list[str]) -> int:
+    """Applique les écritures d'émigration (verrous destination déjà tenus par
+    l'appelant) et renvoie le nombre d'émigrations réellement appliquées.
+
+    Extrait de `_executer_tick` (correctif revue finale, Important) pour rendre
+    évident que ce bloc s'exécute AVANT la boucle de naissances — voir le
+    commentaire d'ordonnancement au point d'appel."""
+    appliquees = 0
+    for eid, dest_monde_id, dest_cellule_id, age in emigrations_confirmees:
+        # Verrou du pays destination déjà acquis par l'appelant et toujours tenu : ne
+        # jamais le ré-acquérir ici (`asyncio.Lock` n'est pas réentrant). Chaque
+        # écriture reste isolée : une émigration ratée n'interrompt pas les autres.
+        try:
+            horloge_dest = stockage_horloge.lire_horloge(dest_monde_id)
+            tick_dest = horloge_dest["tick_actuel"] if horloge_dest else 0
+            stockage_spatial.marquer_emigre(monde_id, eid, tick_suivant, dest_monde_id)
+            stockage_spatial.placer(dest_monde_id, eid, dest_cellule_id,
+                                     ne_au_tick=tick_dest - age)
+            # Transfert de propriété (correctif revue finale, Important) : « il vit
+            # là-bas maintenant, c'est un habitant de ce tenant ». Sans lui, un
+            # migrant arrivé chez un tenant DIFFÉRENT ne pouvait plus jamais se
+            # reproduire : le tick de destination appelle
+            # `genome_moteur.executer_croisement(..., cle_api_destination)`, qui
+            # résout ses parents par `stockage.lire(cle_api, parent_id)` — cloisonné.
+            # Sa ligne `enfants` restant au tenant d'origine, la naissance échouait
+            # silencieusement (simple « introuvable » dans `avertissements`).
+            # `None` = monde destination disparu entre-temps : on saute le transfert
+            # plutôt que d'écrire une propriété absurde (ne devrait pas arriver —
+            # `nb_cellules_monde` a déjà répondu non-None pour ce pays en passe 2a).
+            proprietaire_dest = stockage_spatial.proprietaire_monde(dest_monde_id)
+            if proprietaire_dest is not None:
+                stockage.transferer_proprietaire(eid, proprietaire_dest)
+            appliquees += 1
+        except Exception as e:
+            avertissements.append(f"Émigration de {eid} vers {dest_monde_id} non appliquée : {e}")
+    return appliquees
