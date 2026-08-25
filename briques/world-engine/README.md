@@ -13,7 +13,10 @@ Voir les specs :
 
 Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`)
 — voir `stockage.py`. Dépend de la brique `personnages` (port 5900) en HTTP pour
-tout calcul astral — pas de duplication du moteur astro.
+tout calcul astral — pas de duplication du moteur astro. Exception à ce
+cloisonnement (Sprint D) : un habitant qui migre vers un pays fédéré d'une autre
+`cle_api` voit sa ligne `enfants` transférée au tenant du pays destination — voir
+plus bas.
 
 Génère et persiste aussi des mondes spatiaux (maillage Voronoï, biomes/ressources
 par bruit cohérent, forkables pour représenter des lignées temporelles divergentes)

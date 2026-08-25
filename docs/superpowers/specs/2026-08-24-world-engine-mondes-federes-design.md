@@ -194,12 +194,25 @@ jugée saturée :
      habitant ne repasse pas par la migration intra-pays ce tick.
    - **Échec, ou ensemble vide** : repli exact sur la migration intra-pays
      Sprint C, **inchangée**.
-3. Traitement d'une migration transfrontière réussie, dans l'ordre :
-   1. Acquérir le verrou du pays destination (en plus de celui du pays
-      courant déjà tenu pour la durée du tick) avec un timeout court — voir
-      correction ci-dessus. Timeout dépassé → cette émigration échoue
-      proprement (`avertissements`), passer à l'émigrant suivant.
-   2. Si l'habitant a un couple `actif=1` : le dissoudre (`actif=0`,
+3. Traitement des migrations transfrontières décidées à l'étape 2, dans
+   l'ordre :
+   1. **Résoudre TOUS les verrous destination avant toute dissolution de
+      couple** — pas émigrant par émigrant comme une première version de ce
+      document le décrivait. Pour chaque pays destination distinct parmi les
+      émigrants décidés (dédupliqué : un même pays destination n'est
+      verrouillé qu'une fois, même si plusieurs émigrants y vont), tenter le
+      verrou avec un timeout court (voir correction ci-dessus). Timeout
+      dépassé → toutes les émigrations vers CE pays échouent proprement
+      (`avertissements`), l'habitant reste chez lui. **Correction (revue
+      finale de branche, Important corrigé)** : une première version faisait
+      l'inverse — décider la dissolution du couple dès l'INTENTION de migrer,
+      avant même de savoir si le verrou serait obtenu. En conditions réelles,
+      un émigrant dont le verrou timeoutait restait chez lui (correct) mais
+      son couple était quand même dissous (incorrect — il n'était jamais
+      parti). La dissolution n'est donc décidée qu'une fois le verrou
+      destination confirmé.
+   2. Pour chaque émigrant dont le verrou a été obtenu : si l'habitant a un
+      couple `actif=1`, le dissoudre (`actif=0`,
       `dissous_au_tick=tick_actuel+1`), même motif que la mort (Sprint C).
    3. Calculer l'âge au départ : `age = (tick_actuel + 1) − ne_au_tick`
       (placement d'origine).
@@ -210,8 +223,37 @@ jugée saturée :
    5. Insérer une nouvelle ligne `placements` dans le pays destination :
       `cellule_id=<cellule tirée>`, `ne_au_tick = tick_actuel_destination −
       age`, `vivant=1`, `emigre=0`, `mort_au_tick=NULL`.
-   6. Libérer le verrou destination.
-4. Toute erreur isolée à cette étape (échec d'écriture) est capturée et
+   6. **Transférer la propriété de l'enfant** (Correction, revue finale de
+      branche, Important corrigé) : la ligne `enfants` de l'habitant change
+      de `cle_api` pour celle du propriétaire du pays destination. Sans ça,
+      un migrant entre deux pays de `cle_api` différentes ne pouvait plus
+      jamais se reproduire dans son nouveau pays — `genome_moteur` résout
+      ses parents par `cle_api`, et sa ligne `enfants` restait celle du
+      tenant d'origine (échec silencieux, juste un avertissement). Décision
+      utilisateur : « il vit maintenant là-bas, c'est l'habitant de ce
+      tenant ». Cette écriture n'a lieu QUE pour un émigrant dont le verrou
+      a été confirmé (jamais pour un émigrant resté chez lui après
+      timeout) — la chaîne de consentement tient mécaniquement : le
+      rattachement (déjà propriétaire-only) et l'adjacence (déjà
+      membre-only) sont les actes de consentement du pays destination ;
+      cette conséquence de transfert d'un habitant n'ajoute aucune capacité
+      nouvelle côté destination, seul le tenant D'ORIGINE peut déclencher sa
+      propre migration en faisant avancer son propre tick.
+   7. Une fois toutes les écritures de ce pays destination appliquées,
+      libérer son verrou — **avant** la phase de naissances du tick (voir
+      correction suivante), pas après.
+4. **Verrous destination libérés avant la boucle de naissances, pas après**
+   (Correction, revue finale de branche, Important corrigé) : une première
+   version tenait les verrous destination jusqu'à la toute fin du tick, ce
+   qui incluait les appels HTTP vers `personnages` déclenchés par les
+   naissances (jusqu'à 30 s de timeout chacun) — un tick avec plusieurs
+   naissances pouvait bloquer un pays adjacent pendant toute cette durée.
+   Aucun mécanisme des naissances ne dépend des écritures de migration
+   (un émigrant est déjà retiré des `vivants` avant la formation de couples/
+   reproduction de ce tick), donc les verrous destination sont libérés dès
+   que les écritures de migration sont posées, bien avant la boucle de
+   naissances.
+5. Toute erreur isolée à cette étape (échec d'écriture) est capturée et
    ajoutée aux `avertissements` du résumé du tick d'origine — ne fait jamais
    échouer le tick entier, même motif que le reste de Sprint C.
 
@@ -224,7 +266,22 @@ permission ci-dessus, 404 sur id absent ou permission refusée (jamais 403).
 ### `POST /federation`
 
 Params : `nom` (optionnel). Crée une fédération vide. `createur_cle_api` =
-la `cle_api` appelante. Réponse : `{id, nom, createur_cle_api, cree_le}`.
+la `cle_api` appelante (stocké, jamais renvoyé — voir correction ci-dessous).
+Réponse : `{id, nom, cree_le}`.
+
+**Correction (revue finale de branche, Critical corrigé)** : une première
+version de ce document renvoyait `createur_cle_api` dans cette réponse, et
+`createur_cle_api`/`cle_api` par pays dans les réponses `GET` ci-dessous —
+exécuté en conditions réelles, ça permettait à n'importe quel membre d'une
+fédération de lire la clé API brute d'un autre membre (ou de la créatrice)
+et de s'en servir pour usurper entièrement ce tenant (créer/lire/supprimer
+ses mondes et enfants) — contournement complet du cloisonnement de la
+brique, dans la fonctionnalité dont l'objet même est de mélanger des
+tenants. Décision utilisateur : **ces champs ne sont plus jamais renvoyés
+sur le fil HTTP**, dans aucune réponse `/federation/*`. Les vérifications de
+permission internes (`_federation_visible`, etc.) continuent de comparer les
+`cle_api` réelles côté serveur — seule la sérialisation change. Les formes
+de réponse ci-dessous sont corrigées en conséquence.
 
 ### `POST /federation/{id}/rattacher`
 
@@ -254,9 +311,9 @@ quel que soit l'ordre fourni en entrée).
 ### `GET /federation/{id}`
 
 Exige que la `cle_api` appelante soit créatrice ou propriétaire d'au moins
-un pays membre. Réponse : `{id, nom, createur_cle_api, cree_le, pays:
-[{monde_id, nom, cle_api, rattache_le}], adjacences: [{monde_id_a,
-monde_id_b}]}`. 404 si absente ou permission refusée.
+un pays membre. Réponse : `{id, nom, cree_le, pays: [{monde_id, nom,
+rattache_le}], adjacences: [{monde_id_a, monde_id_b}]}` — jamais de
+`cle_api`, voir correction ci-dessus. 404 si absente ou permission refusée.
 
 ### `GET /federation/{id}/etat`
 
@@ -267,7 +324,7 @@ population_vivante}], population_totale}` — `population_vivante` par pays =
 ### `GET /federation`
 
 Liste des fédérations où la `cle_api` appelante est créatrice ou membre :
-`[{id, nom, createur_cle_api, cree_le}]`.
+`[{id, nom, cree_le}]` — jamais de `cle_api`, voir correction ci-dessus.
 
 ### `DELETE /federation/{id}`
 

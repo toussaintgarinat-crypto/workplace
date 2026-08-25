@@ -214,11 +214,13 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
                 if horloge.migre_frontiere(rng_front):
                     dest_pays = horloge.tirer_pays_destination(pays_adjacents_ids, rng_front)
                     nb_dest = nb_cellules_adjacents.get(dest_pays)
-                    if nb_dest:  # défensif : un pays adjacent supprimé (DELETE /spatial/mondes)
-                                 # entre le rattachement et ce tick renverrait None ici — la
-                                 # fédération ne cascade pas sur la suppression d'un monde (le
-                                 # monde reste l'entité première, voir design) ; l'habitant reste
-                                 # alors simplement dans son pays d'origine ce tick.
+                    if nb_dest:  # défensif : `nb_cellules_adjacents` a été résolu en DÉBUT de
+                                 # tick (voir plus haut) — un pays adjacent supprimé PENDANT ce
+                                 # tick (DELETE /spatial/mondes, qui cascade bien sur les
+                                 # fédérations depuis le correctif revue finale) renverrait quand
+                                 # même None ici pour cette fenêtre de course résiduelle ;
+                                 # l'habitant reste alors simplement dans son pays d'origine ce
+                                 # tick.
                         dest_cellule = horloge.tirer_cellule_destination(nb_dest, rng_front)
                         age = tick_suivant - h["ne_au_tick"]
                         emigrations_a_appliquer.append((h["id"], dest_pays, dest_cellule, age))
