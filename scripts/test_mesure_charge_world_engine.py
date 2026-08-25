@@ -41,6 +41,17 @@ def test_calculer_latences_tick_ecart_moyen_non_biaise_par_le_pas_de_polling():
     assert resultat["ecart_moyen_s"] == (14.0 - 0.0) / 3
 
 
+def test_calculer_latences_tick_ecart_moyen_robuste_aux_ticks_manques():
+    # Correctif re-revue (Minor) : si le pas de polling est trop lent pour
+    # voir CHAQUE tick, le nombre d'incréments OBSERVÉS (1 ici, de 1 à 3)
+    # sous-compte le nombre de ticks réellement écoulés (2, de 1 à 3) —
+    # diviser par le premier donnerait 10.0 (faux, double la vraie moyenne).
+    # Diviser par l'écart de VALEUR de tick (2) donne la vraie moyenne : 5.0.
+    observations = [(0.0, 1), (10.0, 3)]  # tick 2 jamais observé
+    resultat = calculer_latences_tick(observations)
+    assert resultat["ecart_moyen_s"] == 5.0
+
+
 def test_calculer_latences_tick_ignore_un_tick_non_monotone():
     # Un tick qui reculerait (bruit/désordre) ne doit jamais être accepté
     # comme un nouvel incrément — sinon un écart négatif fausserait le calcul.

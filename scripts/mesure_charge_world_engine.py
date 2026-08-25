@@ -123,7 +123,13 @@ def calculer_latences_tick(observations: list[tuple[float, int]]) -> dict:
     if len(increments) < 2:
         return {}
     ecarts = sorted(increments[i][0] - increments[i - 1][0] for i in range(1, len(increments)))
-    ecart_moyen = (increments[-1][0] - increments[0][0]) / (len(increments) - 1)
+    # Correctif re-revue (Minor) : diviser par l'écart de VALEUR de tick
+    # (dernier - premier), pas par le nombre d'incréments OBSERVÉS — reste
+    # correct même si le pas de polling est un jour trop lent pour voir
+    # chaque tick (incréments manqués), auquel cas les deux ne coïncident
+    # plus. Sans effet sur cette mesure (0 tick manqué observé), mais rend
+    # "indépendant du pas de polling" (docstring) vrai sans condition.
+    ecart_moyen = (increments[-1][0] - increments[0][0]) / (increments[-1][1] - increments[0][1])
     return {
         "nb_ticks_observes": len(increments) - 1,
         "ecart_moyen_s": ecart_moyen,
