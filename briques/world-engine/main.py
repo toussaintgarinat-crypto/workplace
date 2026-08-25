@@ -215,6 +215,10 @@ def spatial_monde_supprimer(mid: str, _cle: str = Depends(cle_api)):
     if not stockage_spatial.supprimer_monde(_cle, mid):
         raise HTTPException(404, f"Monde '{mid}' introuvable.")
     stockage_horloge.supprimer_pour_monde(mid)
+    # Même cascade côté fédérations (correctif revue finale, Important) : sans elle,
+    # un monde supprimé restait « pays membre » à jamais dans GET /federation/{id},
+    # avec ses adjacences — et les ticks continuaient de le proposer en destination.
+    stockage_federation.detacher_pays_de_toutes_federations(mid)
 
 
 @app.post("/horloge/{mid}/tick", tags=["horloge"])

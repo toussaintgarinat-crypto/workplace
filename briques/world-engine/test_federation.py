@@ -128,6 +128,27 @@ def test_federation_supprimer_ne_touche_pas_le_monde():
     assert client.get(f"/spatial/mondes/{mid}").status_code == 200
 
 
+def test_supprimer_un_monde_le_retire_de_sa_federation():
+    """Correctif revue finale (Important) : `DELETE /spatial/mondes/{id}` cascadait
+    sur l'horloge mais pas sur `federation_pays`/`federation_adjacences` — un monde
+    supprimé continuait d'apparaître comme pays membre, à jamais, avec ses
+    adjacences (et les ticks le proposaient encore en destination)."""
+    fid = client.post("/federation", json={}).json()["id"]
+    m1 = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1}).json()["id"]
+    m2 = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 2}).json()["id"]
+    client.post(f"/federation/{fid}/rattacher", json={"monde_id": m1})
+    client.post(f"/federation/{fid}/rattacher", json={"monde_id": m2})
+    client.post(f"/federation/{fid}/adjacence", json={"monde_id_a": m1, "monde_id_b": m2})
+
+    assert client.delete(f"/spatial/mondes/{m1}").status_code == 204
+
+    lu = client.get(f"/federation/{fid}").json()
+    assert [p["monde_id"] for p in lu["pays"]] == [m2]
+    assert lu["adjacences"] == []
+    # l'autre pays, lui, est intact
+    assert client.get(f"/spatial/mondes/{m2}").status_code == 200
+
+
 def test_federation_supprimer_introuvable_404():
     assert client.delete("/federation/id-inconnu").status_code == 404
 
