@@ -26,3 +26,26 @@ def test_calculer_latences_tick_calcule_percentiles_sur_plusieurs_increments():
 def test_calculer_latences_tick_vide_si_moins_de_deux_increments():
     assert calculer_latences_tick([(0.0, 1), (2.0, 1)]) == {}
     assert calculer_latences_tick([]) == {}
+
+
+def test_calculer_latences_tick_ecart_moyen_non_biaise_par_le_pas_de_polling():
+    # Écarts individuels inégaux (4s/6s/4s) : ecart_p50_s (4.0) ne représente
+    # QU'UN des trois écarts, pas la tendance réelle — c'est exactement ce
+    # que la revue finale a signalé comme trompeur quand ces écarts sont eux-
+    # mêmes quantifiés par le pas de polling de l'appelant. ecart_moyen_s
+    # (portée totale / nb d'incréments) reste, lui, un estimateur exact et
+    # non biaisé de la tendance quel que soit le pas de polling :
+    # (14 - 0) / 3 = 4.6666...
+    observations = [(0.0, 1), (4.0, 2), (10.0, 3), (14.0, 4)]
+    resultat = calculer_latences_tick(observations)
+    assert resultat["ecart_moyen_s"] == (14.0 - 0.0) / 3
+
+
+def test_calculer_latences_tick_ignore_un_tick_non_monotone():
+    # Un tick qui reculerait (bruit/désordre) ne doit jamais être accepté
+    # comme un nouvel incrément — sinon un écart négatif fausserait le calcul.
+    observations = [(0.0, 1), (5.0, 2), (7.0, 1), (10.0, 3)]
+    resultat = calculer_latences_tick(observations)
+    assert resultat["nb_ticks_observes"] == 2
+    assert resultat["ecart_min_s"] == 5.0
+    assert resultat["ecart_max_s"] == 5.0

@@ -22,7 +22,10 @@
 ### Les `.env` à fournir
 - **Avec gabarit** (remplir sur le HP) : `.env` (racine), `briques/agenda/.env`,
   `briques/gateway/.env`, `briques/forge/.env` *(nouveau gabarit S125)*,
-  `oria-stack/infra/keycloak/.env` *(nouveau gabarit S125)*.
+  `oria-stack/infra/keycloak/.env` *(nouveau gabarit S125)*,
+  `briques/world-engine/.env` *(optionnel, second tenant `API_KEYS` — voir
+  mesure de charge Sprint E ; sans lui `world-engine` reste utilisable avec
+  un seul tenant, `WORLD_ENGINE_KEY` du `.env` racine)*.
 - **Sans gabarit** (copier le fichier réel) : `briques/forge/forge/.env`,
   `briques/agenda/backend/.env`, `briques/memoire/.env`. Ils contiennent des secrets
   qui n'ont pas d'équivalent régénérable.
@@ -47,6 +50,7 @@ cp briques/gateway/.env.example briques/gateway/.env    # clé OpenRouter…
 cp briques/forge/.env.example briques/forge/.env        # FORGE_DB_PASSWORD, FORGE_ENCRYPTION_KEY…
 cp briques/agenda/.env.example briques/agenda/.env       # AGENDA_VAULT_SECRET…
 cp oria-stack/infra/keycloak/.env.example oria-stack/infra/keycloak/.env
+cp briques/world-engine/.env.example briques/world-engine/.env  # optionnel, 2e tenant
 # Puis copier les .env SANS gabarit depuis la machine de dev :
 #   briques/forge/forge/.env  briques/agenda/backend/.env  briques/memoire/.env
 ```
