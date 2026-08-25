@@ -653,6 +653,54 @@ async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_verrou_destination_libere_avant_la_boucle_de_naissances(monkeypatch):
+    """Correctif revue finale (Important) : les écritures d'émigration venaient
+    APRÈS la boucle de naissances, qui `await` un appel HTTP vers `personnages`
+    (30 s de timeout PAR naissance). Les verrous de tick des pays DESTINATION
+    restaient donc tenus pendant tout ce temps, bloquant derrière eux les ticks
+    PROPRES d'un autre pays (défaut de débit, jamais de corruption).
+
+    On observe l'état du verrou destination DEPUIS l'intérieur d'une naissance :
+    il doit déjà être rendu."""
+    import asyncio
+
+    cle = "cle-fed-verrou-naissance"
+    origine, destination = _crf_pair(cle)
+    a = _ajouter_habitant(cle, origine["id"], 0, "F", ne_au_tick=-20)
+    b = _ajouter_habitant(cle, origine["id"], 0, "M", ne_au_tick=-20)
+    _ajouter_habitant(cle, origine["id"], 0, "F", ne_au_tick=-20)  # la partante
+    stockage_horloge.former_couple(origine["id"], 0, a, b, tick=0)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a_, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "tente_naissance_couple", lambda *a_, **k: True)
+    # Seule la 3e habitante émigre (ordre de population_vivante_monde) : le couple
+    # reste sur place pour que la naissance ait bien lieu ce tick.
+    ordre = iter([False, False, True])
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: next(ordre))
+
+    verrou_destination = horloge_moteur._verrou_tick(destination["id"])
+    observes: list[bool] = []
+
+    async def _croisement_lent(corps, cle_):
+        observes.append(verrou_destination.locked())
+        await asyncio.sleep(0)
+        return {"enfant_id": None, "cellule_id": None, "avertissement": None}
+
+    monkeypatch.setattr(horloge_moteur.genome_moteur, "executer_croisement", _croisement_lent)
+
+    resultat = await horloge_moteur.executer_tick(origine["id"], cle)
+
+    assert resultat["migrations_transfrontieres"] == 1
+    assert observes, "prérequis du test : au moins une naissance doit être tentée"
+    assert not any(observes), (
+        "le verrou du pays destination ne doit plus être tenu pendant la boucle de "
+        f"naissances — observé : {observes}")
+    assert not verrou_destination.locked()
+
+
+@pytest.mark.asyncio
 async def test_auto_adjacence_ignoree_jamais_d_emigration_vers_soi_meme(monkeypatch):
     """Un pays déclaré adjacent à LUI-MÊME ne doit jamais être une destination de
     migration : sinon chaque émigrant viserait le pays dont le verrou de tick est
