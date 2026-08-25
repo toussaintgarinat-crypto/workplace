@@ -469,6 +469,71 @@ def _crf_pair(cle="cle-fed"):
     return origine, destination
 
 
+def _crf_pair_multi_tenant(cle_origine: str, cle_destination: str, n_cellules=1):
+    """Comme `_crf_pair`, mais les 2 pays appartiennent à des tenants DIFFÉRENTS —
+    la configuration réellement fédérée (voir design : « une fédération peut
+    mélanger des cle_api différentes ») que `_crf_pair` n'exerce jamais."""
+    origine = _monde_avec_habitants(cle_origine, n_cellules=n_cellules)
+    destination = _monde_avec_habitants(cle_destination, n_cellules=n_cellules)
+    f = stockage_federation.creer_federation(cle_origine, "F")
+    stockage_federation.rattacher_pays(f["id"], origine["id"], cle_origine, None)
+    stockage_federation.rattacher_pays(f["id"], destination["id"], cle_destination, None)
+    stockage_federation.declarer_adjacence(f["id"], origine["id"], destination["id"])
+    return origine, destination
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_emigrant_vers_un_autre_tenant_reste_fecond_dans_son_nouveau_pays(monkeypatch):
+    """Correctif revue finale (Important) : un habitant émigré vers un pays d'un
+    AUTRE tenant ne pouvait plus jamais se reproduire. Le tick de destination
+    appelle `genome_moteur.executer_croisement(..., cle_api_destination)`, qui
+    résout les parents via `stockage.lire(cle_api, parent_id)` — cloisonné. La
+    ligne `enfants` du migrant appartenant encore au tenant d'ORIGINE, la
+    naissance échouait silencieusement (« enfant stocké introuvable » dans les
+    `avertissements`), rendant le migrant stérile à vie chez lui.
+
+    L'émigration transfère désormais la propriété de l'habitant au tenant du pays
+    destination (`stockage.transferer_proprietaire`)."""
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=PORTRAIT_FACTICE))
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Vierge"}]}))
+
+    cle_o, cle_d = "cle-fed-tenant-o", "cle-fed-tenant-d"
+    origine, destination = _crf_pair_multi_tenant(cle_o, cle_d)
+    migrante = _ajouter_habitant(cle_o, origine["id"], 0, "F", ne_au_tick=-20,
+                                  theme=PORTRAIT_FACTICE)
+    local = _ajouter_habitant(cle_d, destination["id"], 0, "M", ne_au_tick=-20,
+                               theme=PORTRAIT_FACTICE)
+
+    monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: True)
+
+    resultat = await horloge_moteur.executer_tick(origine["id"], cle_o)
+    assert resultat["migrations_transfrontieres"] == 1
+
+    assert stockage.lire(cle_d, migrante) is not None, (
+        "le migrant doit devenir un habitant du tenant du pays destination")
+    assert stockage.lire(cle_o, migrante) is None, (
+        "... et ne plus appartenir au tenant d'origine")
+
+    # Il s'apparie sur place, puis son nouveau pays avance d'un tick : la naissance
+    # doit ABOUTIR. Avant le correctif : 0 naissance + « introuvable » en avertissement.
+    stockage_horloge.former_couple(destination["id"], 0, migrante, local, tick=0)
+    monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "migre_frontiere", lambda rng: False)
+    monkeypatch.setattr(horloge_moteur.horloge, "tente_naissance_couple", lambda *a_, **k: True)
+
+    resultat_d = await horloge_moteur.executer_tick(destination["id"], cle_d)
+
+    assert not any("introuvable" in a for a in resultat_d["avertissements"]), (
+        resultat_d["avertissements"])
+    assert resultat_d["naissances"] == 1, resultat_d["avertissements"]
+
+
 @pytest.mark.asyncio
 async def test_tick_emigre_habitant_cellule_saturee_pays_adjacent(monkeypatch):
     origine, destination = _crf_pair("cle-fed1")

@@ -37,6 +37,21 @@ def test_lire_introuvable_renvoie_none():
     assert stockage.lire("cle-a", "id-inconnu") is None
 
 
+def test_transferer_proprietaire_change_le_tenant():
+    """Migration transfrontière (Sprint D) : un émigré devient la propriété du
+    tenant du pays destination — sans quoi il ne peut plus jamais être résolu
+    comme parent d'un croisement dans son nouveau pays (voir
+    horloge_moteur.py, phase d'émigration)."""
+    eid = stockage.creer("cle-depart", "Nova", "Test", None, None,
+                          _theme_factice(), "desc", {}, False, sexe="F")
+    stockage.transferer_proprietaire(eid, "cle-arrivee")
+    assert stockage.lire("cle-depart", eid) is None
+    lu = stockage.lire("cle-arrivee", eid)
+    assert lu is not None and lu["id"] == eid
+    assert lu["prenoms"] == "Nova"  # le reste de la fiche est intact
+    assert [e["id"] for e in stockage.lister("cle-arrivee")] == [eid]
+
+
 def test_lire_cloisonne_par_cle_api():
     eid = stockage.creer("cle-b", "Secret", "", None, None,
                           _theme_factice(), "d", {"resume": {}}, False)
