@@ -302,7 +302,7 @@
     },
     {
       "nom": "federation_lire",
-      "description": "Lit une fédération : nom, créateur, liste des pays membres (avec leur nom d'affichage dans cette fédération) et des adjacences déclarées entre eux. Visible par le créateur ou tout propriétaire d'un pays membre.",
+      "description": "Lit une fédération : nom, liste des pays membres (avec leur nom d'affichage dans cette fédération) et des adjacences déclarées entre eux. Visible par le créateur ou tout propriétaire d'un pays membre. Les clés API des propriétaires ne sont jamais renvoyées.",
       "methode": "GET",
       "chemin": "/federation/{fid}",
       "params": {

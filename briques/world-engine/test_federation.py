@@ -33,7 +33,10 @@ def test_federation_rattacher_puis_lire():
     assert r.status_code == 200
 
     lu = client.get(f"/federation/{fid}").json()
-    assert lu["pays"] == [{"monde_id": mid, "nom": "France", "cle_api": "public",
+    # Pas de `cle_api` dans la réponse HTTP (correctif revue finale, Critical) : c'est
+    # la vraie clé d'authentification du propriétaire du pays — voir
+    # main._federation_publique et le test multi-tenant en fin de fichier.
+    assert lu["pays"] == [{"monde_id": mid, "nom": "France",
                             "rattache_le": lu["pays"][0]["rattache_le"]}]
 
 
@@ -190,6 +193,70 @@ def test_federation_adjacence_exige_etre_membre_pas_seulement_createur(monkeypat
     r2 = c.post(f"/federation/{fid}/adjacence", json={"monde_id_a": m1, "monde_id_b": m2},
                 headers={"X-API-Key": "cle-y"})
     assert r2.status_code == 200
+    monkeypatch.delenv("API_KEYS", raising=False)
+    importlib.reload(main)
+    global client
+    client = TestClient(main.app)
+
+
+def _cles_api_presentes(noeud) -> list[str]:
+    """Récursif : tout nom de champ `cle_api`/`createur_cle_api` trouvé À N'IMPORTE
+    QUEL niveau d'imbrication de la réponse JSON."""
+    trouves = []
+    if isinstance(noeud, dict):
+        for k, v in noeud.items():
+            if k in ("cle_api", "createur_cle_api"):
+                trouves.append(k)
+            trouves.extend(_cles_api_presentes(v))
+    elif isinstance(noeud, list):
+        for v in noeud:
+            trouves.extend(_cles_api_presentes(v))
+    return trouves
+
+
+def test_federation_ne_renvoie_jamais_les_cles_api_brutes(monkeypatch):
+    """Correctif revue finale (Critical) : `GET /federation/{id}` et `GET /federation`
+    renvoyaient `createur_cle_api` et le `cle_api` de chaque pays — les VRAIES clés
+    d'authentification (`X-API-Key`). Une fédération étant multi-tenant par
+    construction, n'importe quel membre pouvait donc lire la clé du créateur ou d'un
+    autre membre et usurper complètement ce tenant.
+
+    Scénario réel à 2 tenants : `cle-x` crée la fédération, `cle-y` y rattache SON
+    pays. Aucune des deux réponses, lue par l'un ou l'autre, ne doit contenir de
+    champ `cle_api`/`createur_cle_api` — ni la valeur brute d'une clé."""
+    monkeypatch.setenv("API_KEYS", "cle-x,cle-y")
+    importlib.reload(main)
+    c = TestClient(main.app)
+
+    creation = c.post("/federation", json={"nom": "Fuite"}, headers={"X-API-Key": "cle-x"})
+    assert creation.status_code == 200
+    assert _cles_api_presentes(creation.json()) == [], creation.json()
+    fid = creation.json()["id"]
+
+    mid = c.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 1},
+                 headers={"X-API-Key": "cle-y"}).json()["id"]
+    assert c.post(f"/federation/{fid}/rattacher", json={"monde_id": mid, "nom": "Pays Y"},
+                  headers={"X-API-Key": "cle-y"}).status_code == 200
+
+    for lecteur in ("cle-x", "cle-y"):
+        lu = c.get(f"/federation/{fid}", headers={"X-API-Key": lecteur})
+        assert lu.status_code == 200
+        assert _cles_api_presentes(lu.json()) == [], (lecteur, lu.json())
+        assert "cle-x" not in lu.text and "cle-y" not in lu.text, (lecteur, lu.text)
+        # le contenu légitime, lui, est bien là
+        assert [p["monde_id"] for p in lu.json()["pays"]] == [mid]
+
+        liste = c.get("/federation", headers={"X-API-Key": lecteur})
+        assert liste.status_code == 200
+        assert _cles_api_presentes(liste.json()) == [], (lecteur, liste.json())
+        assert "cle-x" not in liste.text and "cle-y" not in liste.text, (lecteur, liste.text)
+        assert fid in [f["id"] for f in liste.json()]
+
+    # l'agrégat consenti (`/etat`) n'en a jamais contenu — vérifié explicitement
+    etat = c.get(f"/federation/{fid}/etat", headers={"X-API-Key": "cle-y"})
+    assert etat.status_code == 200
+    assert _cles_api_presentes(etat.json()) == [], etat.json()
+
     monkeypatch.delenv("API_KEYS", raising=False)
     importlib.reload(main)
     global client
