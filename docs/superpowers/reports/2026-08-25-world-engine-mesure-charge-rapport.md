@@ -25,35 +25,65 @@ fournit ce volume réel, mesuré en LIVE sur le HP, pas estimé.
   scheduler automatique les jette silencieusement (voir constat plus bas).
 - `docker stats` échantillonné en parallèle sur toute la fenêtre.
 
-**Croissance organique observée** : partis de 200 fondateurs, le peuplement a
-atteint **3 473 enfants créés au total** (fondateurs + naissances automatiques
-des ticks, tous tenants confondus) dont **1 582 vivants** à la fin de la mesure
-(mortalité liée à l'âge + reproduction ont largement dépassé le peuplement
-initial en 146 ticks). Le scénario a donc sollicité `genome_moteur.executer_croisement`
+**Croissance organique observée** (mesurée juste après la fenêtre scheduler de
+126 ticks, via `GET /genome/enfants` par tenant et `GET /federation/{id}/etat`) :
+partis de 200 fondateurs, le peuplement a atteint **3 473 enfants créés au
+total** (fondateurs + naissances automatiques des ticks, tous tenants
+confondus) dont **1 582 vivants** à ce point de la mesure (mortalité liée à
+l'âge + reproduction ont largement dépassé le peuplement initial en 126
+ticks). Le scénario a donc sollicité `genome_moteur.executer_croisement`
 (et ses ~4 appels internes vers `personnages`) plusieurs milliers de fois, pas
 seulement les 200 fondateurs — plus de charge réelle que le plan ne l'anticipait.
 
 ## Résultat 1 — Latence et dérive de tick (fenêtre scheduler, intervalle configuré 5s)
 
-| Monde | Ticks observés | écart min | écart p50 | écart p95 | écart max |
-|---|---|---|---|---|---|
-| febbac99d4c3… | 126 | 4,09s | 6,16s | 6,27s | 6,30s |
-| f8393296602e… | 126 | 4,09s | 6,15s | 6,27s | 6,30s |
-| 7df2e55ef98e… | 126 | 4,09s | 6,16s | 6,27s | 6,29s |
-| 5f4299e416d3… | 126 | 4,09s | 6,16s | 6,27s | **8,35s** |
-| 13346d1c3eb1… | 126 | 4,09s | 6,16s | 6,28s | **8,36s** |
+⚠️ **Correctif post-revue finale** (commit `1284fdc`) : la première version de
+ce rapport présentait un tableau min/p50/p95/max et concluait à « +23% de dérive ». Ces
+écarts sont en réalité **quantifiés par la période de polling de `observer`
+(~2,05s)** — chaque écart individuel est un multiple entier de ce pas, pas une
+mesure continue de l'intervalle réel entre deux ticks. Le percentile p50 tombe
+sur UN bucket de polling, pas sur la tendance réelle. Seule la **moyenne**
+(portée totale / nombre d'incréments), indépendante du pas de polling, est un
+estimateur non biaisé :
+
+| Monde | Ticks observés | écart moyen (non biaisé) |
+|---|---|---|
+| febbac99d4c3… | 126 | 5,699s |
+| f8393296602e… | 126 | 5,698s |
+| 7df2e55ef98e… | 126 | 5,698s |
+| 5f4299e416d3… | 126 | 5,698s |
+| 13346d1c3eb1… | 126 | 5,698s |
 
 **Lecture** : le scheduler ne tient pas l'intervalle configuré de 5s — l'écart
-médian réel est ~6,15-6,16s, soit environ **+23% de dérive systématique** sur
-les 5 mondes, constante et reproductible (pas un bruit isolé). 2 des 5 mondes
-montrent un pic isolé à ~8,3-8,4s (écart max), les 3 autres restent bornés à
-~6,3s. Le plancher à 4,09s (jamais en dessous) est cohérent avec le
-comportement du scheduler in-process (`asyncio.sleep(SCHEDULER_INTERVALLE_S)`
-puis vérification, jamais un déclenchement anticipé).
+moyen réel est **5,698s, soit +14,0% de dérive systématique** (identique aux
+6 décimales près sur les 5 mondes — pas du bruit, un effet structurel). La
+cause est lisible directement dans le code, pas à deviner : `main.py:376-387`
+(`_boucle_scheduler`) est **une seule boucle `asyncio` qui `await` chaque
+monde dû, EN SÉRIE**, pas en parallèle. L'intervalle réel par monde est donc
+`sleep(5s) + Σ(durée du tick de chaque monde dû dans cette passe)` — avec 5
+mondes qui tiquent tous ensemble à chaque passage, ces ~0,7s supplémentaires
+par monde (5,698 - 5,0 ≈ le temps de tick des 4 autres mondes de la passe,
+divisé entre eux) sont exactement ce mécanisme. **Conséquence directe et
+gratuite pour Sprint E** : cette dérive croît linéairement avec le nombre de
+mondes actifs, puisque chaque monde supplémentaire allonge la même boucle
+série — c'est le signal de mise à l'échelle que cette mesure devait produire.
+Autre conséquence du même mécanisme : deux mondes ne peuvent JAMAIS tiquer
+concurremment sous le scheduler automatique actuel — la contention de verrou
+du Résultat 2 décrit un régime que le déploiement d'aujourd'hui n'atteint
+jamais tout seul (ticks manuels concurrents ou un futur multi-worker, pas le
+scheduler tel quel).
 
 ## Résultat 2 — Avertissements de verrou (rafale manuelle, 20 rounds × 5 mondes = 100 ticks)
 
-**143 avertissements sur 100 ticks manuels concurrents, 0 erreur/timeout de
+⚠️ **Correctif post-revue finale** (commit `1284fdc`) : le `duree_s` de la
+première version de ce rapport (p50=5,78s) était un artefact de mesure — le code mesurait le temps
+écoulé au moment de la CONSOMMATION de chaque `Future` dans l'ordre de
+soumission (`for fut, m in futurs.items(): fut.result()`, bloquant), donc un
+**maximum croissant** dans cet ordre, pas la durée de l'appel lui-même. Corrigé
+(`_tick_manuel_chronometre`, chronométrage DANS le thread qui exécute l'appel)
+et la rafale rejouée proprement avec le script corrigé :
+
+**104 avertissements sur 100 ticks manuels concurrents, 0 erreur/timeout de
 transport.** Chaque avertissement, sans exception, est de la forme :
 
 > `Émigration de <id> vers <pays> non appliquée : verrou du pays destination
@@ -61,19 +91,22 @@ transport.** Chaque avertissement, sans exception, est de la forme :
 
 Ce sont exactement les avertissements de `horloge_moteur._acquerir_verrou_destination`
 (Sprint D) — le verrou de tick du pays destination, tenu par le tick concurrent
-de CE pays, expire après `VERROU_DESTINATION_TIMEOUT_S = 5.0s`. La durée des
-ticks manuels de la rafale confirme ce mécanisme : `duree_s` min=0,22s
-p50=5,78s p95=6,58s **max=10,77s** — la majorité des ticks concurrents attend
-bien près des 5s du timeout de verrou avant de continuer (voire deux verrous en
-série dans les cas les plus chargés, ~10,8s).
+de CE pays, expire après `VERROU_DESTINATION_TIMEOUT_S = 5.0s`. La durée
+CORRECTEMENT mesurée des ticks manuels de la rafale : `duree_s` min=0,26s
+**p50=1,22s** p95=6,39s max=10,79s — la **médiane** d'un tick concurrent est
+rapide (~1,2s, la majorité des ticks n'attendent AUCUN verrou), mais la queue
+haute (p95/max) montre bien des ticks qui attendent près des 5s du timeout de
+verrou (voire deux verrous en série, ~10,8s dans les cas les plus chargés).
 
-**Lecture** : avec 5 pays qui tiquent EXACTEMENT en même temps (rafale
-manuelle) et une population significative en migration transfrontière, la
-contention de verrou destination n'est pas un cas rare — elle survient dans
-la majorité des rounds (avertissements présents dans 17 des 20 rounds). C'est
-le comportement DOCUMENTÉ et ASSUMÉ du Sprint D (l'émigration échouée
-retentera au tick suivant, aucune corruption), mais c'est un signal réel de
-contention sous charge concurrente.
+**Lecture corrigée** : avec 5 pays qui tiquent EXACTEMENT en même temps
+(rafale manuelle) et une population significative en migration transfrontière,
+la contention de verrou destination touche une **minorité mais non négligeable**
+des ticks (avertissements dans 12 des 20 rounds sur cette rafale) — pas « la
+majorité attend le timeout » comme la version précédente le concluait à tort.
+C'est le comportement DOCUMENTÉ et ASSUMÉ du Sprint D (l'émigration échouée
+retentera au tick suivant, aucune corruption), et — voir Résultat 1 — un
+régime que le scheduler automatique actuel n'atteint jamais tout seul (ses
+ticks sont sériels, jamais concurrents entre mondes).
 
 **Constat d'observabilité (limite découverte pendant cette mesure)** : le
 scheduler automatique (`main.py:_boucle_scheduler`) appelle
@@ -89,24 +122,38 @@ opérationnel un jour.
 ## Résultat 3 — Contention SQLite
 
 **Aucune** ligne contenant `locked`, `traceback` ou `error` dans les logs du
-conteneur sur toute la fenêtre (~20 minutes, `docker logs --since 20m`).
-Malgré la charge réelle (146 ticks × 5 mondes concurrents + rafale manuelle +
-3473 créations d'enfants), SQLite n'a montré aucun signe de contention
-visible dans les logs applicatifs à cette échelle.
+conteneur, vérifié à deux reprises (`docker logs --since 20m`, une première
+fois après le scheduler + la 1ère rafale manuelle, une seconde fois après la
+rafale manuelle rejouée pour le correctif `duree_s` ci-dessus). Malgré la
+charge réelle (126 ticks × 5 mondes via scheduler + 2 rafales de 100 ticks
+manuels concurrents + 3473 créations d'enfants au total), SQLite n'a montré
+aucun signe de contention visible dans les logs applicatifs à cette échelle.
 
-## Résultat 4 — CPU / mémoire (25 échantillons valides sur ~20 minutes, `docker stats`)
+## Résultat 4 — CPU / mémoire (25 échantillons, `docker stats`)
 
-- **CPU** : min 0,08% — médiane 1,19% — **max 36,39%** (pic isolé, probablement
-  une salve de naissances concurrentes déclenchant plusieurs appels HTTP vers
-  `personnages` en parallèle).
-- **Mémoire** : très stable, 97,16 MiB → 101,0 MiB sur toute la fenêtre (pas de
-  tendance à la hausse observable sur cette durée — aucun signal de fuite,
-  mais 20 minutes ne prouvent rien sur des heures/jours).
+⚠️ **Correctif post-revue finale** : les échantillons couvrent la **fenêtre
+scheduler (11,9 min, 19:17:19→19:29:15 UTC)**, PAS ~20 minutes comme la
+version précédente l'affirmait — l'échantillonnage s'est arrêté avant le
+début des rafales manuelles, qui ne sont donc **pas couvertes** par ces
+chiffres alors qu'elles sont la charge concurrente la plus lourde du
+scénario. Le fichier brut contient aussi une ligne corrompue (`7GiB`,
+fragment d'écriture entrelacée entre deux lancements de la boucle
+d'échantillonnage — l'un s'était arrêté prématurément et a dû être relancé
+en cours de mesure), exclue du calcul ci-dessous.
 
-## Deux correctifs hors-plan découverts en déployant réellement
+- **CPU** (fenêtre scheduler seule) : min 0,08% — médiane 1,19% — **max
+  36,39%** (pic isolé, probablement une salve de naissances concurrentes
+  déclenchant plusieurs appels HTTP vers `personnages` en parallèle).
+- **Mémoire** (fenêtre scheduler seule) : très stable, 97,16 MiB → 101,0 MiB
+  (pas de tendance à la hausse observable sur cette durée — aucun signal de
+  fuite, mais ~12 minutes ne prouvent rien sur des heures/jours, et la
+  charge la plus lourde du scénario — les rafales manuelles — n'a jamais été
+  échantillonnée).
+
+## Trois correctifs hors-plan découverts en déployant/mesurant réellement
 
 Aucun n'était anticipé par la spec — trouvés uniquement parce que le
-déploiement était réel, pas simulé :
+déploiement et la mesure étaient réels, pas simulés :
 
 1. **Collision de port réelle** : `world-engine` et `jeu-factions-public`
    réclamaient tous deux le port `6220` en dur dans leur `docker-compose.yml`/
@@ -128,15 +175,27 @@ dépasser les 15s du script (une naissance chaîne un appel HTTP à `personnages
 avec son propre timeout de 30s). Corrigé pour capturer ce cas comme les autres
 échecs isolés plutôt que de faire planter toute la rafale (commit `b71f4a8`).
 
+## Disposition des données de test
+
+Les 5 mondes/pays, la fédération, et les ~3 500+ enfants créés par ce
+scénario **restent en place** sur le déploiement permanent du HP — non
+supprimés après la mesure. Les deux clés `API_KEYS`/`WORLD_ENGINE_KEY`
+générées pour ce test (à usage unique prévu) sont donc toujours valides et
+authentifient toujours ces données ; leur rotation, ainsi que la suppression
+ou la conservation de ce peuplement de test, sont une décision opérationnelle
+à prendre séparément, pas incluse dans ce rapport.
+
 ## Ce que ce rapport ne dit pas
 
 Ce rapport constate des chiffres, il ne tranche pas Redis vs RabbitMQ ni
 aucune autre décision d'architecture — c'est la matière du prochain
-brainstorming Sprint E, pas de ce document. Deux pistes de lecture pour ce
-futur brainstorming, sans les trancher ici : la dérive de +23% sur l'intervalle
-de tick a une cause à investiguer (charge CPU ? latence `personnages` ?) avant
-de conclure qu'elle nécessite une queue ; la contention de verrou destination
-n'est significative que sous ticks VRAIMENT concurrents (rafale manuelle) — le
-scheduler automatique, lui, espace naturellement les ticks des différents
-mondes et n'a montré aucun avertissement observable (faute d'observabilité,
-voir Résultat 2 — pas la même chose que « aucune contention »).
+brainstorming Sprint E, pas de ce document. Il nomme un mécanisme (le
+scheduler sériel, Résultat 1) parce que c'est un fait lisible dans le code,
+pas une recommandation ; les décisions de conception restent pour le
+brainstorming à venir, en particulier : la dérive croît-elle vraiment
+linéairement avec le nombre de mondes (à vérifier avec plus de 5 mondes avant
+de la tenir pour acquise à plus grande échelle) ; la contention de verrou
+mesurée en rafale manuelle a-t-elle une pertinence opérationnelle tant que le
+scheduler reste sériel (elle n'apparaît dans AUCUN mode d'usage normal
+aujourd'hui) ; et l'angle mort d'observabilité du scheduler (Résultat 2)
+mérite-t-il d'être corrigé en amont de Sprint E ou à l'intérieur.
