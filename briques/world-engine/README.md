@@ -1,4 +1,4 @@
-# world-engine — Génome Cosmique + Maillage Spatial + Horloge de simulation
+# world-engine — Génome Cosmique + Maillage Spatial + Horloge de simulation + Mondes fédérés
 
 Prototype : croise 2 profils cosmiques (via la brique `personnages`) pour produire
 un enfant dont le thème astral est calculé à une vraie date, avec un récit
@@ -9,6 +9,7 @@ Voir les specs :
 - `docs/superpowers/specs/2026-08-23-world-engine-persistance-lignees-design.md`
 - `docs/superpowers/specs/2026-08-23-world-engine-maillage-spatial-design.md`
 - `docs/superpowers/specs/2026-08-23-world-engine-horloge-simulation-design.md`
+- `docs/superpowers/specs/2026-08-24-world-engine-mondes-federes-design.md`
 
 Persiste automatiquement chaque enfant produit (SQLite, cloisonné par `cle_api`)
 — voir `stockage.py`. Dépend de la brique `personnages` (port 5900) en HTTP pour
@@ -27,7 +28,19 @@ par la rareté des ressources, couples formés/dissous par hasard, reproduction
 pure) et `horloge_moteur.py` (orchestrateur). Déclenchement manuel
 (`POST /horloge/{id}/tick`) ou automatique opt-in par monde
 (`POST /horloge/{id}/demarrer`, scheduler in-process — pas de queue externe,
-volume visé modéré ce sprint). Mondes fédérés (pays→monde) et mise à l'échelle
-(traitement vectorisé, queue Redis/RabbitMQ) restent hors périmètre.
+volume visé modéré ce sprint).
+
+Fédère enfin plusieurs mondes (`/federation`, Sprint D) : chaque monde rattaché
+devient un « pays », des adjacences sont déclarées explicitement entre pays d'une
+même fédération, et les habitants d'une cellule saturée peuvent franchir une
+frontière vers un pays adjacent (migration transfrontière, âge préservé, ligne
+d'origine conservée et marquée « émigré ») — voir `stockage_federation.py`. Une
+fédération peut mélanger plusieurs `cle_api`, chaque acte ayant sa règle de
+consentement (voir `docs/superpowers/specs/2026-08-24-world-engine-mondes-federes-design.md`).
+Chaque pays garde son horloge autonome : aucune synchronisation de ticks.
+
+La mise à l'échelle (traitement vectorisé, queue Redis/RabbitMQ) reste hors
+périmètre, tout comme la reproduction transfrontière, la diplomatie entre pays et
+le rendu d'une carte fédérée.
 
 Port : 6220.
