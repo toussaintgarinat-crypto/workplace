@@ -117,6 +117,27 @@ def detacher_pays(federation_id: str, monde_id: str, cle_api: str) -> bool:
     return True
 
 
+def detacher_pays_de_toutes_federations(monde_id: str) -> None:
+    """Cascade appelée depuis main.py APRÈS la suppression d'un monde (même motif
+    que `stockage_horloge.supprimer_pour_monde`) : retire ce monde de TOUTES les
+    fédérations où il était membre, avec ses adjacences.
+
+    Correctif revue finale (Important) : sans cette cascade, `DELETE
+    /spatial/mondes/{id}` laissait des lignes `federation_pays`/
+    `federation_adjacences` orphelines à jamais — le pays supprimé continuait
+    d'apparaître dans `GET /federation/{id}` avec des données mortes, et
+    `pays_adjacents` proposait toujours une destination inexistante aux ticks.
+
+    Pas de contrôle `cle_api` ici (contrairement à `detacher_pays`) : l'appelant
+    vient de faire supprimer ce monde par `stockage_spatial.supprimer_monde`, qui
+    a déjà validé la propriété. Le monde n'existant plus, il ne peut plus être
+    membre de quoi que ce soit — y compris de fédérations d'autres tenants."""
+    with _conn() as c:
+        c.execute("DELETE FROM federation_pays WHERE monde_id=?", (monde_id,))
+        c.execute("DELETE FROM federation_adjacences WHERE monde_id_a=? OR monde_id_b=?",
+                   (monde_id, monde_id))
+
+
 def membre(federation_id: str, cle_api: str) -> bool:
     """`cle_api` possède-t-elle au moins un pays membre de cette fédération ?
     (Le créateur d'une fédération SANS pays à lui n'est PAS "membre" au sens de

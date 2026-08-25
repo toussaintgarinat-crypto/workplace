@@ -131,6 +131,27 @@ def test_pays_adjacents_aucune_federation_renvoie_liste_vide():
     assert stockage_federation.pays_adjacents(m1["id"]) == []
 
 
+def test_detacher_pays_de_toutes_federations_cascade_partout():
+    """Correctif revue finale (Important) : un monde supprimé doit disparaître de
+    TOUTES ses fédérations (et de toutes ses adjacences), pas seulement d'une."""
+    f1 = stockage_federation.creer_federation("cle-a", "F1")
+    f2 = stockage_federation.creer_federation("cle-a", "F2")
+    m1 = stockage_spatial.creer_monde("cle-a", _cellules(2), seed=1)
+    m2 = stockage_spatial.creer_monde("cle-a", _cellules(2), seed=2)
+    for f in (f1, f2):
+        stockage_federation.rattacher_pays(f["id"], m1["id"], "cle-a", None)
+        stockage_federation.rattacher_pays(f["id"], m2["id"], "cle-a", None)
+        stockage_federation.declarer_adjacence(f["id"], m1["id"], m2["id"])
+
+    stockage_federation.detacher_pays_de_toutes_federations(m1["id"])
+
+    for f in (f1, f2):
+        lu = stockage_federation.lire_federation(f["id"])
+        assert [p["monde_id"] for p in lu["pays"]] == [m2["id"]]
+        assert lu["adjacences"] == []
+    assert stockage_federation.pays_adjacents(m2["id"]) == []
+
+
 def test_supprimer_federation_ne_touche_jamais_les_mondes():
     f = stockage_federation.creer_federation("cle-a", "F1")
     m1 = stockage_spatial.creer_monde("cle-a", _cellules(2), seed=1)
