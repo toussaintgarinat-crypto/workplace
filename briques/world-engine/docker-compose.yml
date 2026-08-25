@@ -6,6 +6,14 @@ services:
     env_file:
       - path: ../../.env
         required: false
+      # Fichier LOCAL à cette brique (non versionné, comme tout .env — voir
+      # .gitignore), chargé APRÈS le .env racine : sert à donner à world-engine
+      # une seconde clé API_KEYS distincte de WORLD_ENGINE_KEY, SANS jamais
+      # écrire cette variable dans le .env racine partagé par ~22 autres
+      # briques (l'y écrire activerait l'auth fail-closed pour TOUTES ces
+      # briques, effet de bord hors périmètre — voir mesure de charge Sprint E).
+      - path: .env
+        required: false
     ports:
       - "6230:6230"
     extra_hosts:
