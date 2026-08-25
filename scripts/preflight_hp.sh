@@ -54,6 +54,7 @@ REQUIS=(
   "briques/agenda/backend/.env"
   "briques/donnees/.env:opt"   # optionnel : donnees tourne auth-off sans .env
   "oria-stack/infra/keycloak/.env:opt"  # requis seulement pour le Niveau B
+  "briques/world-engine/.env:opt"  # optionnel : 2e tenant API_KEYS, voir mesure de charge Sprint E
 )
 for entree in "${REQUIS[@]}"; do
   f="${entree%%:*}"; flag="${entree##*:}"

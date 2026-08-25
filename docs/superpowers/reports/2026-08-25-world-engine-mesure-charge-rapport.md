@@ -23,7 +23,10 @@ fournit ce volume réel, mesuré en LIVE sur le HP, pas estimé.
 - Puis scheduler arrêté, **rafale de 20 rounds de ticks manuels concurrents**
   sur les 5 mondes (100 appels au total) pour capturer `avertissements` — le
   scheduler automatique les jette silencieusement (voir constat plus bas).
-- `docker stats` échantillonné en parallèle sur toute la fenêtre.
+  Rejouée une seconde fois après un correctif de mesure (voir Résultat 2) ;
+  les chiffres de ce rapport sont ceux de la seconde rafale, propre.
+- `docker stats` échantillonné pendant la fenêtre scheduler **seule** (11,9
+  min) — voir Résultat 4, la rafale manuelle n'a pas été échantillonnée.
 
 **Croissance organique observée** (mesurée juste après la fenêtre scheduler de
 126 ticks, via `GET /genome/enfants` par tenant et `GET /federation/{id}/etat`) :
@@ -55,23 +58,29 @@ estimateur non biaisé :
 | 13346d1c3eb1… | 126 | 5,698s |
 
 **Lecture** : le scheduler ne tient pas l'intervalle configuré de 5s — l'écart
-moyen réel est **5,698s, soit +14,0% de dérive systématique** (identique aux
-6 décimales près sur les 5 mondes — pas du bruit, un effet structurel). La
-cause est lisible directement dans le code, pas à deviner : `main.py:376-387`
+moyen réel est **5,698s, soit +14,0% de dérive systématique** (identiques à
+~10⁻⁴ près sur les 5 mondes — pas du bruit, un effet structurel). La cause
+est lisible directement dans le code, pas à deviner : `main.py:370-387`
 (`_boucle_scheduler`) est **une seule boucle `asyncio` qui `await` chaque
-monde dû, EN SÉRIE**, pas en parallèle. L'intervalle réel par monde est donc
-`sleep(5s) + Σ(durée du tick de chaque monde dû dans cette passe)` — avec 5
-mondes qui tiquent tous ensemble à chaque passage, ces ~0,7s supplémentaires
-par monde (5,698 - 5,0 ≈ le temps de tick des 4 autres mondes de la passe,
-divisé entre eux) sont exactement ce mécanisme. **Conséquence directe et
-gratuite pour Sprint E** : cette dérive croît linéairement avec le nombre de
-mondes actifs, puisque chaque monde supplémentaire allonge la même boucle
-série — c'est le signal de mise à l'échelle que cette mesure devait produire.
-Autre conséquence du même mécanisme : deux mondes ne peuvent JAMAIS tiquer
-concurremment sous le scheduler automatique actuel — la contention de verrou
-du Résultat 2 décrit un régime que le déploiement d'aujourd'hui n'atteint
-jamais tout seul (ticks manuels concurrents ou un futur multi-worker, pas le
-scheduler tel quel).
+monde dû, EN SÉRIE**, pas en parallèle (`for due in dues: await
+horloge_moteur.executer_tick(...)`). L'intervalle réel par monde est donc
+`sleep(5s) + Σ(durée du tick de CHAQUE monde dû dans cette passe, le sien
+inclus)` — avec 5 mondes dus à chaque passage, les ~0,698s supplémentaires
+mesurés sont la somme des 5 durées de tick de cette passe (≈0,14s de coût
+moyen par tick), pas une part du temps « des 4 autres » divisée entre eux.
+**Signal pour Sprint E, à formuler comme une hypothèse à vérifier, pas un
+fait établi par cette seule mesure** : ce mécanisme implique que la dérive
+devrait croître AU MOINS linéairement avec le nombre de mondes actifs
+(chaque monde supplémentaire allonge la même boucle série) — mais le coût
+par tick lui-même peut aussi croître avec la population/la contention, donc
+la vraie courbe pourrait être plus qu'une droite. Une seule mesure à 5 mondes
+ne permet pas de trancher — voir la question ouverte en conclusion. Autre
+conséquence du même mécanisme, celle-ci directement lisible dans le code
+sans extrapolation : deux mondes ne peuvent JAMAIS tiquer concurremment sous
+le scheduler automatique actuel — la contention de verrou du Résultat 2
+décrit un régime que le déploiement d'aujourd'hui n'atteint jamais tout seul
+(ticks manuels concurrents ou un futur multi-worker, pas le scheduler tel
+quel).
 
 ## Résultat 2 — Avertissements de verrou (rafale manuelle, 20 rounds × 5 mondes = 100 ticks)
 
