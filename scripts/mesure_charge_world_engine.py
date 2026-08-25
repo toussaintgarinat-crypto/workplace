@@ -83,6 +83,89 @@ def creer_fondateur(base_url: str, cle_api: str, monde_id: str, sexe: str,
     return appeler(base_url, "POST", "/genome/croiser", cle_api, corps)
 
 
+def calculer_latences_tick(observations: list[tuple[float, int]]) -> dict:
+    """`observations` = [(timestamp_epoch, tick_actuel), ...] pour UN monde, dans
+    n'importe quel ordre. Ne retient que les instants où `tick_actuel` a
+    RÉELLEMENT augmenté (déduplique le polling qui observe plusieurs fois le même
+    tick) et calcule l'écart de temps entre deux incréments consécutifs. Renvoie
+    {} si moins de 2 incréments observés (rien à mesurer)."""
+    vus = sorted(observations, key=lambda o: o[0])
+    if not vus:
+        return {}
+
+    increments = []
+    i = 0
+    while i < len(vus):
+        current_tick = vus[i][1]
+        # Find the last occurrence of this tick
+        last_ts = vus[i][0]
+        j = i + 1
+        while j < len(vus) and vus[j][1] == current_tick:
+            last_ts = vus[j][0]
+            j += 1
+        # Only add if it's a new tick
+        if not increments or increments[-1][1] != current_tick:
+            increments.append((last_ts, current_tick))
+        i = j
+
+    if len(increments) < 2:
+        return {}
+    ecarts = sorted(increments[i][0] - increments[i - 1][0] for i in range(1, len(increments)))
+    return {
+        "nb_ticks_observes": len(increments) - 1,
+        "ecart_min_s": ecarts[0],
+        "ecart_p50_s": ecarts[len(ecarts) // 2],
+        "ecart_p95_s": ecarts[min(len(ecarts) - 1, int(len(ecarts) * 0.95))],
+        "ecart_max_s": ecarts[-1],
+    }
+
+
+def demarrer_horloge(base_url: str, cle_api: str, monde_id: str, intervalle_s: int) -> dict:
+    return appeler(base_url, "POST", f"/horloge/{monde_id}/demarrer", cle_api,
+                    {"intervalle_secondes": intervalle_s})
+
+
+def arreter_horloge(base_url: str, cle_api: str, monde_id: str) -> dict:
+    return appeler(base_url, "POST", f"/horloge/{monde_id}/arreter", cle_api)
+
+
+def lire_horloge(base_url: str, cle_api: str, monde_id: str) -> dict:
+    return appeler(base_url, "GET", f"/horloge/{monde_id}", cle_api)
+
+
+def _charger_mondes(sortie: str) -> dict:
+    return json.loads((Path(sortie) / "mondes.json").read_text())
+
+
+def commande_demarrer_scheduler(args: argparse.Namespace) -> None:
+    etat = _charger_mondes(args.sortie)
+    for m in etat["mondes"]:
+        demarrer_horloge(args.base_url, m["cle_api"], m["id"], args.intervalle_secondes)
+        print(f"scheduler démarré pour {m['id']} (intervalle {args.intervalle_secondes}s)")
+
+
+def commande_observer(args: argparse.Namespace) -> None:
+    etat = _charger_mondes(args.sortie)
+    mondes = etat["mondes"]
+    fin = time.monotonic() + args.duree_minutes * 60
+    chemin_obs = Path(args.sortie) / "observations.jsonl"
+    with chemin_obs.open("a") as f:
+        while time.monotonic() < fin:
+            for m in mondes:
+                try:
+                    horloge = lire_horloge(args.base_url, m["cle_api"], m["id"])
+                    ligne = {"ts": time.time(), "monde_id": m["id"],
+                             "tick_actuel": horloge.get("tick_actuel"),
+                             "actif": horloge.get("actif"), "erreur": None}
+                except ErreurAPI as e:
+                    ligne = {"ts": time.time(), "monde_id": m["id"],
+                             "tick_actuel": None, "actif": None, "erreur": str(e)}
+                f.write(json.dumps(ligne) + "\n")
+            f.flush()
+            time.sleep(args.intervalle_poll)
+    print(f"observation terminée, écrit dans {chemin_obs}")
+
+
 def commande_setup(args: argparse.Namespace) -> None:
     rng = random.Random(args.graine)
     cles = [args.cle_api_a, args.cle_api_b]
@@ -143,6 +226,15 @@ def construire_parser() -> argparse.ArgumentParser:
     s.add_argument("--concurrence", type=int, default=5)
     s.add_argument("--graine", type=int, default=42)
     s.set_defaults(func=commande_setup)
+
+    s = sous.add_parser("demarrer-scheduler", help="active le scheduler auto sur les 5 mondes")
+    s.add_argument("--intervalle-secondes", type=int, default=5)
+    s.set_defaults(func=commande_demarrer_scheduler)
+
+    s = sous.add_parser("observer", help="échantillonne tick_actuel de chaque monde")
+    s.add_argument("--duree-minutes", type=float, default=12.0)
+    s.add_argument("--intervalle-poll", type=float, default=2.0)
+    s.set_defaults(func=commande_observer)
 
     return p
 
