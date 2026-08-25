@@ -151,7 +151,10 @@ def monde_existe(cle_api: str, monde_id: str) -> bool:
 
 def nb_cellules_monde(monde_id: str) -> int | None:
     """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
-    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction."""
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction (sauf
+    migration transfrontière, Sprint D, où le consentement vient du rattachement
+    à la fédération, pas de `monde_existe` : `horloge_moteur` interroge ici des
+    pays adjacents appartenant délibérément à d'AUTRES tenants)."""
     with _conn() as c:
         r = c.execute("SELECT nb_cellules FROM mondes WHERE id=?", (monde_id,)).fetchone()
     return r["nb_cellules"] if r else None
@@ -163,7 +166,9 @@ def proprietaire_monde(monde_id: str) -> str | None:
     change de pays (voir `stockage.transferer_proprietaire`).
 
     ⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé que `monde_id`
-    est légitime dans son contexte (même motif que `nb_cellules_monde`)."""
+    est légitime dans son contexte (même motif que `nb_cellules_monde`) — ici le
+    consentement vient du rattachement à la fédération, pas de `monde_existe`,
+    puisque le pays destination appartient par nature à un autre tenant."""
     with _conn() as c:
         r = c.execute("SELECT cle_api FROM mondes WHERE id=?", (monde_id,)).fetchone()
     return r["cle_api"] if r else None
@@ -236,7 +241,10 @@ def placement_cellule(monde_id: str, enfant_id: str) -> int | None:
 
 def placer(monde_id: str, enfant_id: str, cellule_id: int, ne_au_tick: int = 0) -> None:
     """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
-    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction.
+    `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction (sauf
+    migration transfrontière, Sprint D, où le consentement vient du rattachement
+    à la fédération, pas de `monde_existe` : le placement de l'arrivant se fait
+    dans un pays destination qui peut appartenir à un autre tenant).
 
     `ne_au_tick` (Sprint C) : tick de l'horloge de ce monde au moment de cette
     naissance — 0 par défaut (placement sans notion de tick, ou monde jamais
