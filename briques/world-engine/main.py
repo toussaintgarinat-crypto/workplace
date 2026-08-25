@@ -256,7 +256,12 @@ def horloge_lire(mid: str, _cle: str = Depends(cle_api)):
 def _federation_visible(federation_id: str, cle_api_val: str) -> dict | None:
     """Créateur OU tout propriétaire d'au moins un pays membre peuvent VOIR une
     fédération (voir design) — dérivé directement de `lire_federation` (déjà lu
-    intégralement), pas d'une requête `membre()` séparée."""
+    intégralement), pas d'une requête `membre()` séparée.
+
+    ⚠️ Renvoie la fédération COMPLÈTE, `createur_cle_api` et `cle_api` par pays
+    inclus : ces champs sont la matière même du contrôle de permission ci-dessous.
+    Ils ne doivent JAMAIS ressortir tels quels dans une réponse HTTP — voir
+    `_federation_publique`, appliquée systématiquement APRÈS ce contrôle."""
     federation = stockage_federation.lire_federation(federation_id)
     if federation is None:
         return None
@@ -266,9 +271,34 @@ def _federation_visible(federation_id: str, cle_api_val: str) -> dict | None:
     return federation
 
 
+def _federation_publique(federation: dict) -> dict:
+    """Vue HTTP d'une fédération : les `cle_api` brutes sont RETIRÉES (correctif
+    revue finale, Critical).
+
+    `createur_cle_api` et le `cle_api` de chaque pays sont les VRAIES clés
+    d'authentification (`X-API-Key`) de leurs propriétaires. Une fédération étant
+    multi-tenant par construction (voir design), les exposer permettait à
+    n'importe quel membre de lire la clé du créateur ou d'un autre membre et
+    d'usurper complètement ce tenant (créer/lire/supprimer ses mondes et ses
+    enfants) — contournement total du cloisonnement.
+
+    Le stockage (`stockage_federation.lire_federation`) garde volontairement ces
+    champs : la logique interne (permissions, `_federation_visible`) en a besoin.
+    Seule la vue HTTP les efface, une fois la permission déjà vérifiée."""
+    return {
+        "id": federation["id"], "nom": federation["nom"], "cree_le": federation["cree_le"],
+        "pays": [{"monde_id": p["monde_id"], "nom": p["nom"], "rattache_le": p["rattache_le"]}
+                 for p in federation["pays"]],
+        "adjacences": federation["adjacences"],
+    }
+
+
 @app.post("/federation", tags=["federation"])
 def federation_creer(body: CreerFederation, _cle: str = Depends(cle_api)):
-    return stockage_federation.creer_federation(_cle, body.nom)
+    """La réponse ne réémet jamais `createur_cle_api` (= la clé de l'appelant) —
+    voir `_federation_publique`."""
+    federation = stockage_federation.creer_federation(_cle, body.nom)
+    return {"id": federation["id"], "nom": federation["nom"], "cree_le": federation["cree_le"]}
 
 
 @app.post("/federation/{fid}/rattacher", tags=["federation"])
@@ -307,7 +337,7 @@ def federation_lire(fid: str, _cle: str = Depends(cle_api)):
     federation = _federation_visible(fid, _cle)
     if federation is None:
         raise HTTPException(404, f"Fédération '{fid}' introuvable.")
-    return federation
+    return _federation_publique(federation)
 
 
 @app.get("/federation/{fid}/etat", tags=["federation"])
@@ -319,7 +349,9 @@ def federation_etat(fid: str, _cle: str = Depends(cle_api)):
 
 @app.get("/federation", tags=["federation"])
 def federation_lister(_cle: str = Depends(cle_api)):
-    return stockage_federation.lister_federations(_cle)
+    """`createur_cle_api` retiré de chaque entrée — voir `_federation_publique`."""
+    return [{"id": f["id"], "nom": f["nom"], "cree_le": f["cree_le"]}
+            for f in stockage_federation.lister_federations(_cle)]
 
 
 @app.delete("/federation/{fid}", status_code=204, tags=["federation"])
