@@ -202,6 +202,18 @@ def commande_rafale_manuelle(args: argparse.Namespace) -> None:
                     except ErreurAPI as e:
                         ligne = {"round": round_, "monde_id": m["id"], "duree_s": None,
                                   "tick_actuel": None, "avertissements": [], "erreur": str(e)}
+                    except OSError as e:
+                        # Un tick manuel peut légitimement dépasser TIMEOUT_S (15s) :
+                        # une naissance déclenche un appel HTTP vers `personnages` avec
+                        # son propre timeout de 30s (voir horloge_moteur.py). Un dépassement
+                        # ici est un résultat de mesure en soi (latence réelle sous charge),
+                        # pas une raison de faire planter toute la rafale — découvert en
+                        # exécution réelle (TimeoutError, sous-classe d'OSError, non catché
+                        # à l'origine).
+                        ligne = {"round": round_, "monde_id": m["id"],
+                                  "duree_s": time.time() - debuts[m["id"]],
+                                  "tick_actuel": None, "avertissements": [],
+                                  "erreur": f"{type(e).__name__}: {e}"}
                     f.write(json.dumps(ligne) + "\n")
             f.flush()
     print(f"{args.nb_rounds} rounds de tick manuel concurrent écrits dans {chemin_avert}")
