@@ -166,6 +166,47 @@ def commande_observer(args: argparse.Namespace) -> None:
     print(f"observation terminée, écrit dans {chemin_obs}")
 
 
+def tick_manuel(base_url: str, cle_api: str, monde_id: str) -> dict:
+    return appeler(base_url, "POST", f"/horloge/{monde_id}/tick", cle_api)
+
+
+def commande_arreter_scheduler(args: argparse.Namespace) -> None:
+    etat = _charger_mondes(args.sortie)
+    for m in etat["mondes"]:
+        arreter_horloge(args.base_url, m["cle_api"], m["id"])
+        print(f"scheduler arrêté pour {m['id']}")
+
+
+def commande_rafale_manuelle(args: argparse.Namespace) -> None:
+    """Déclenche des ticks manuels CONCURRENTS sur les 5 mondes, round par round —
+    seul chemin qui expose `avertissements` (le scheduler les jette, voir
+    Contexte technique du plan). Sollicite volontairement les verrous destination
+    (Sprint D) en faisant tiquer plusieurs pays adjacents en même temps."""
+    etat = _charger_mondes(args.sortie)
+    mondes = etat["mondes"]
+    chemin_avert = Path(args.sortie) / "avertissements.jsonl"
+    with chemin_avert.open("a") as f:
+        for round_ in range(args.nb_rounds):
+            debuts = {m["id"]: time.time() for m in mondes}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(mondes)) as pool:
+                futurs = {pool.submit(tick_manuel, args.base_url, m["cle_api"], m["id"]): m
+                          for m in mondes}
+                for fut, m in futurs.items():
+                    try:
+                        resultat = fut.result()
+                        ligne = {"round": round_, "monde_id": m["id"],
+                                  "duree_s": time.time() - debuts[m["id"]],
+                                  "tick_actuel": resultat.get("tick_actuel"),
+                                  "avertissements": resultat.get("avertissements", []),
+                                  "erreur": None}
+                    except ErreurAPI as e:
+                        ligne = {"round": round_, "monde_id": m["id"], "duree_s": None,
+                                  "tick_actuel": None, "avertissements": [], "erreur": str(e)}
+                    f.write(json.dumps(ligne) + "\n")
+            f.flush()
+    print(f"{args.nb_rounds} rounds de tick manuel concurrent écrits dans {chemin_avert}")
+
+
 def commande_setup(args: argparse.Namespace) -> None:
     rng = random.Random(args.graine)
     cles = [args.cle_api_a, args.cle_api_b]
@@ -235,6 +276,13 @@ def construire_parser() -> argparse.ArgumentParser:
     s.add_argument("--duree-minutes", type=float, default=12.0)
     s.add_argument("--intervalle-poll", type=float, default=2.0)
     s.set_defaults(func=commande_observer)
+
+    s = sous.add_parser("arreter-scheduler", help="désactive le scheduler auto sur les 5 mondes")
+    s.set_defaults(func=commande_arreter_scheduler)
+
+    s = sous.add_parser("rafale-manuelle", help="ticks manuels concurrents, capture les avertissements")
+    s.add_argument("--nb-rounds", type=int, default=20)
+    s.set_defaults(func=commande_rafale_manuelle)
 
     return p
 
