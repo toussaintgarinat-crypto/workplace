@@ -7,11 +7,14 @@ services:
       - path: ../../.env
         required: false
     ports:
-      - "6220:6220"
+      - "6230:6230"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # joindre `personnages` sous Linux
     environment:
-      - PORT=6220
+      # 6220 réassigné à `jeu-factions-public` (déjà en service sur le HP au
+      # moment du premier déploiement LIVE de world-engine) — voir
+      # docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md
+      - PORT=6230
       - PERSONNAGES_URL=http://host.docker.internal:5900
       - WORLD_ENGINE_DB=/data/world_engine.db
       # PERSONNAGES_KEY (clé d'intégration Cœur) vient du .env racine via env_file —
@@ -21,7 +24,7 @@ services:
       - world_engine_data:/data   # lignées d'enfants (Sprint A) + mondes spatiaux (Sprint B)
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6220/sante')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6230/sante')"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -46,4 +46,6 @@ La mise à l'échelle (traitement vectorisé, queue Redis/RabbitMQ) reste hors
 périmètre, tout comme la reproduction transfrontière, la diplomatie entre pays et
 le rendu d'une carte fédérée.
 
-Port : 6220.
+Port : 6230 (6220 réassigné à `jeu-factions-public`, déjà en service sur le HP au
+moment du premier déploiement LIVE de world-engine — voir
+`docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md`).

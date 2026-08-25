@@ -256,7 +256,7 @@ def commande_setup(args: argparse.Namespace) -> None:
 
 def construire_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--base-url", default="http://192.168.1.89:6220")
+    p.add_argument("--base-url", default="http://192.168.1.89:6230")
     p.add_argument("--sortie", default="/tmp/world-engine-charge")
     sous = p.add_subparsers(dest="commande", required=True)
 
