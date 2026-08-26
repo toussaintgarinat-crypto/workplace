@@ -79,17 +79,26 @@ def lire_horloge(monde_id: str) -> dict | None:
 
 def demarrer(monde_id: str, intervalle_secondes: int) -> None:
     """`lire_horloge` d'abord : garantit la ligne `horloges` (rattrapage paresseux)
-    pour que l'UPDATE ci-dessous ne porte jamais sur zéro ligne en silence.
+    pour que la transaction ci-dessous ne porte jamais sur zéro ligne en silence.
 
     Jitter au tout premier démarrage (`derniere_execution` encore `NULL`) : évite
     que plusieurs mondes démarrés ensemble avec le même intervalle restent
     perpétuellement dus au même instant (mesuré en LIVE, Sprint E — voir
     docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md).
     Un monde déjà tické avant garde sa phase existante : `derniere_execution`
-    n'est pas modifié dans ce cas."""
-    horloge = lire_horloge(monde_id)
+    n'est pas modifié dans ce cas.
+
+    Lecture de `derniere_execution` et écriture dans LA MÊME transaction
+    (`BEGIN IMMEDIATE`, correctif revue) : lire puis écrire dans deux
+    connexions séparées laissait une fenêtre où un tick manuel concurrent sur
+    ce même monde (`marquer_execution`, autorisé même horloge inactive)
+    pouvait faire écraser sa `derniere_execution` fraîchement posée par la
+    valeur jitterée calculée avant lui."""
+    lire_horloge(monde_id)  # rattrapage paresseux uniquement, résultat non utilisé ici
     with _conn() as c:
-        if horloge["derniere_execution"] is None:
+        c.execute("BEGIN IMMEDIATE")
+        r = c.execute("SELECT derniere_execution FROM horloges WHERE monde_id=?", (monde_id,)).fetchone()
+        if r is not None and r["derniere_execution"] is None:
             derniere_execution_initiale = (
                 datetime.now(timezone.utc) - timedelta(seconds=random.uniform(0, intervalle_secondes))
             ).isoformat()
