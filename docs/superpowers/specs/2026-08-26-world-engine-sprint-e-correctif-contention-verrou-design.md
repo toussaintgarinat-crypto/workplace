@@ -3,6 +3,40 @@
 **Date** : 2026-08-26
 **Statut** : design approuvé, plan d'implémentation à venir
 
+## Mise à jour post-validation LIVE (v2 du correctif)
+
+Le correctif initial (timeout 1.0s + jitter au TOUT PREMIER démarrage
+uniquement, `derniere_execution IS NULL`) a été codé, revu (2 Important
+trouvés et corrigés en revue — test manquant + race TOCTOU, voir
+`.superpowers/sdd/task-1-report.md`) et validé en LIVE sur le HP. Résultat :
+dérive descendue de +94,6% à **+40,4%** (écart moyen 7,02s), avertissements
+de verrou montés de 328 à **608** sur la fenêtre de 12 min. Le timeout
+réduit a bien aidé, mais **le jitter n'a jamais été exercé par ce test** :
+les 5 mondes existants avaient déjà tické ~300 fois ensemble AVANT que ce
+correctif n'existe, donc `derniere_execution` n'était déjà plus `NULL` —
+la condition qui déclenche le jitter ne s'est jamais activée. Les mondes
+restent synchronisés indéfiniment une fois qu'ils l'ont été, le
+comportement « garde sa phase existante » de la v1 les maintenait dans cet
+état pour toujours.
+
+Décision utilisateur (brainstorming) : **étendre le jitter à CHAQUE appel à
+`demarrer()`**, pas seulement au tout premier — un monde déjà en lockstep
+avec ses voisins ne se désynchronise jamais tout seul, donc seul un
+redémarrage qui rejitte systématiquement peut casser une synchronisation
+déjà installée. Ce choix contredit la décision v1 (« un monde déjà tické
+avant garde sa phase existante ») ; cette décision reposait sur une
+hypothèse (les mondes se désynchroniseraient naturellement, ou n'avaient
+besoin d'être désynchronisés qu'une fois) invalidée par la mesure LIVE.
+Effet secondaire positif : cela **simplifie** le code de `demarrer` plutôt
+que de l'alourdir — plus besoin de lire `derniere_execution` avant
+d'écrire, donc plus besoin de la transaction `BEGIN IMMEDIATE` ajoutée en
+revue pour fermer la race TOCTOU de la v1 (elle disparaît avec la
+condition qui la rendait nécessaire). Compromis assumé : un redémarrage
+après une pause perd la continuité exacte de son ancien rythme (nouvelle
+phase aléatoire à chaque fois) — acceptable, `tick_actuel` (la progression
+réelle) n'est jamais affecté par `demarrer`, seul l'horodatage de
+planification change.
+
 ## Contexte
 
 Suite de [world-engine-sprint-e-scheduler-parallele-design](2026-08-25-world-engine-sprint-e-scheduler-parallele-design.md).
