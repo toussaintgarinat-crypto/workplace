@@ -134,7 +134,9 @@ transport.** Chaque avertissement, sans exception, est de la forme :
 
 Ce sont exactement les avertissements de `horloge_moteur._acquerir_verrou_destination`
 (Sprint D) — le verrou de tick du pays destination, tenu par le tick concurrent
-de CE pays, expire après `VERROU_DESTINATION_TIMEOUT_S = 5.0s`. La durée
+de CE pays, expirait alors après `VERROU_DESTINATION_TIMEOUT_S = 5.0s` (constante
+retirée depuis, voir la note Sprint E en tête de ce rapport — la fonction est
+devenue non-bloquante). La durée
 CORRECTEMENT mesurée des ticks manuels de la rafale : `duree_s` min=0,26s
 **p50=1,22s** p95=6,39s max=10,79s — la **médiane** d'un tick concurrent est
 rapide (~1,2s, la majorité des ticks n'attendent AUCUN verrou), mais la queue

@@ -74,7 +74,7 @@ def test_demarrer_horloge_deja_tickee_est_rejitteree_au_redemarrage():
     assert etat_apres["actif"] is True
 
 
-def test_horloges_actives_a_declencher_jamais_executee_est_due_au_plus_tard_apres_intervalle(monkeypatch):
+def test_horloges_actives_a_declencher_due_au_plus_tard_apres_intervalle(monkeypatch):
     from datetime import datetime, timezone
     monkeypatch.setattr(stockage_horloge.random, "uniform", lambda a, b: b)  # pire cas : jitter maximal
     monde = stockage_spatial.creer_monde("cle-h4b", _cellules_factices(), seed=1)
@@ -85,7 +85,7 @@ def test_horloges_actives_a_declencher_jamais_executee_est_due_au_plus_tard_apre
     assert any(d["monde_id"] == monde["id"] and d["cle_api"] == "cle-h4b" for d in dues)
 
 
-def test_horloges_actives_a_declencher_jamais_executee_pas_forcement_due_immediatement(monkeypatch):
+def test_horloges_actives_a_declencher_pas_due_si_jitter_nul(monkeypatch):
     from datetime import datetime, timezone
     monkeypatch.setattr(stockage_horloge.random, "uniform", lambda a, b: 0.0)  # jitter minimal
     monde = stockage_spatial.creer_monde("cle-h4c", _cellules_factices(), seed=1)

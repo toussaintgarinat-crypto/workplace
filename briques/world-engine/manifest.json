@@ -226,7 +226,7 @@
     },
     {
       "nom": "horloge_demarrer",
-      "description": "Active l'avancement automatique d'un monde : un scheduler interne (in-process, pas de service externe) déclenchera un tick toutes les intervalle_secondes tant que l'horloge n'est pas arrêtée. Un monde nouvellement créé ou forké reste en tick manuel tant que cet endpoint n'est pas appelé.",
+      "description": "Active l'avancement automatique d'un monde : un scheduler interne (in-process, pas de service externe) déclenchera un tick toutes les intervalle_secondes tant que l'horloge n'est pas arrêtée. Le tout premier tick après cet appel survient à un instant aléatoire dans les intervalle_secondes qui suivent, pas exactement après intervalle_secondes (décalage volontaire pour éviter que plusieurs mondes démarrés ensemble ne tiquent tous au même instant). Un monde nouvellement créé ou forké reste en tick manuel tant que cet endpoint n'est pas appelé.",
       "methode": "POST",
       "chemin": "/horloge/{mid}/demarrer",
       "params": {
@@ -247,7 +247,7 @@
     },
     {
       "nom": "horloge_lire",
-      "description": "Lit l'état courant de l'horloge d'un monde : tick_actuel, actif (mode automatique ou non), intervalle_secondes, date de dernière exécution.",
+      "description": "Lit l'état courant de l'horloge d'un monde : tick_actuel, actif (mode automatique ou non), intervalle_secondes, derniere_execution. Ce dernier champ est la date du dernier tick réel, SAUF juste après un appel à horloge_demarrer : il sert alors d'ancrage de planification légèrement dans le passé, pas d'un tick déjà survenu.",
       "methode": "GET",
       "chemin": "/horloge/{mid}",
       "params": {
