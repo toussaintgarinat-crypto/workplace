@@ -133,15 +133,21 @@ async def executer_fondation(body: FondationSolo, cle_api_val: str) -> dict:
                           description_genome=body.description, heredite={},
                           mutation_survenue=False, sexe=body.sexe)
 
-    nb = stockage_spatial.nb_cellules_monde(body.monde_id)
-    if nb is None:
-        raise HTTPException(404, f"Monde '{body.monde_id}' introuvable.")
-    cellule_id = Random().randrange(nb)
-    horloge_etat = stockage_horloge.lire_horloge(body.monde_id)
-    ne_au_tick = horloge_etat["tick_actuel"] if horloge_etat else 0
-    stockage_spatial.placer(body.monde_id, eid, cellule_id, ne_au_tick=ne_au_tick)
+    cellule_id = None
+    avertissement = None
+    try:
+        nb = stockage_spatial.nb_cellules_monde(body.monde_id)
+        if nb is None:
+            raise RuntimeError(f"Monde '{body.monde_id}' supprimé pendant la fondation.")
+        cellule_id = Random().randrange(nb)
+        horloge_etat = stockage_horloge.lire_horloge(body.monde_id)
+        ne_au_tick = horloge_etat["tick_actuel"] if horloge_etat else 0
+        stockage_spatial.placer(body.monde_id, eid, cellule_id, ne_au_tick=ne_au_tick)
+    except Exception as e:
+        cellule_id = None
+        avertissement = f"Fondateur persisté mais non placé : {e}"
 
-    return {"eid": eid, "cellule_id": cellule_id, "theme": theme}
+    return {"eid": eid, "cellule_id": cellule_id, "theme": theme, "avertissement": avertissement}
 
 
 def _detail(resp) -> str:

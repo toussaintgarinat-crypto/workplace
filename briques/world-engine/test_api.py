@@ -1039,3 +1039,33 @@ def test_genome_fonder_aucun_signe_derive_422():
         "monde_id": monde["id"], "description": "x", "latitude": 48.85, "longitude": 2.35,
         "heure_naissance": "12:00", "utc_offset": 1.0})
     assert r.status_code == 422
+
+
+@respx.mock
+def test_genome_fonder_monde_supprime_pendant_fondation_avertissement_lisible(monkeypatch):
+    """Course rare (TOCTOU) — le monde est supprimé entre monde_existe() en tête de
+    route et le placement. Le fondateur est déjà persisté à ce stade : il ne doit
+    jamais être caché derrière un 404 — même motif que
+    test_genome_croiser_monde_supprime_pendant_croisement_avertissement_lisible."""
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 103}).json()
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Lion", "score": 5}]}))
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=_portrait_factice("Soleil", "Lion", "Lion")))
+
+    def _monde_supprime_entretemps(monde_id):
+        return None
+    monkeypatch.setattr(main.stockage_spatial, "nb_cellules_monde", _monde_supprime_entretemps)
+
+    r = client.post("/genome/fonder", json={
+        "monde_id": monde["id"], "description": "Une aventurière rusée et loyale.",
+        "prenoms": "Elara", "latitude": 48.85, "longitude": 2.35,
+        "heure_naissance": "12:00", "utc_offset": 1.0})
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data["eid"], str) and data["eid"]
+    assert data["cellule_id"] is None
+    assert data["avertissement"] is not None
+    assert "supprimé" in data["avertissement"]
+    stocke = stockage.lire("public", data["eid"])
+    assert stocke["prenoms"] == "Elara"
