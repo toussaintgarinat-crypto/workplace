@@ -69,29 +69,34 @@ def _verrou_tick(monde_id: str) -> asyncio.Lock:
     return verrou
 
 
-VERROU_DESTINATION_TIMEOUT_S = 1.0
-
-
 async def _acquerir_verrou_destination(monde_id: str) -> asyncio.Lock | None:
     """Tente d'acquérir le verrou de tick du pays DESTINATION d'une migration
-    transfrontière, avec un timeout court.
+    transfrontière — tentative NON-BLOQUANTE (correctif v3, Sprint E) : mesuré
+    en LIVE (3 tours de mesure, avec et sans jitter de démarrage), une attente
+    même courte (1.0s) coûtait presque à chaque collision sans réduire le
+    nombre d'échecs qui finissaient par se produire de toute façon — voir
+    docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md,
+    section « Mise à jour n°2 ». Le verdict (retentera au tick suivant) est
+    identique, seule l'attente disparaît.
 
     Un ordre d'acquisition trié par `monde_id` ne suffirait PAS à éliminer
     l'interblocage ici : le verrou du pays D'ORIGINE est déjà tenu en entrée du
     tick (`executer_tick`), avant même de savoir qu'une migration transfrontière
-    aura lieu — l'ordre n'est donc jamais neutre, et 2 tics concurrents faisant le
-    mouvement inverse l'un de l'autre (A→B et B→A au même instant) resteraient en
-    interblocage classique malgré un tri (voir design, section corrigée).
+    aura lieu — l'ordre n'est donc jamais neutre. Sans objet avec une tentative
+    non-bloquante (aucune attente possible, donc aucun interblocage possible ici
+    non plus).
 
-    Renvoie le verrou ACQUIS (à libérer par l'appelant), ou None si le timeout est
-    dépassé — dans ce cas CETTE émigration précise échoue proprement (capturée
-    dans `avertissements` par l'appelant), sans jamais bloquer indéfiniment."""
+    Renvoie le verrou ACQUIS (à libérer par l'appelant), ou `None` s'il est déjà
+    tenu — dans ce cas CETTE émigration précise échoue proprement (capturée
+    dans `avertissements`), sans attendre. `verrou.locked()` puis `acquire()`
+    sans `await` entre les deux : dans le modèle coopératif d'asyncio, aucune
+    tâche ne peut s'intercaler entre le test et l'acquisition, donc pas de
+    fenêtre de course."""
     verrou = _verrou_tick(monde_id)
-    try:
-        await asyncio.wait_for(verrou.acquire(), timeout=VERROU_DESTINATION_TIMEOUT_S)
-        return verrou
-    except asyncio.TimeoutError:
+    if verrou.locked():
         return None
+    await verrou.acquire()
+    return verrou
 
 
 async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
@@ -115,9 +120,8 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     # Un pays n'est JAMAIS adjacent à lui-même pour la migration (correctif revue
     # Task 4, Important) : une auto-adjacence stockée en amont ferait cibler à chaque
     # émigrant le pays dont le verrou de tick est DÉJÀ tenu par ce tick — verrou non
-    # réentrant, donc N émigrants = N × VERROU_DESTINATION_TIMEOUT_S de blocage, le
-    # verrou d'origine tenu pendant tout ce temps. Filtré au point d'usage, quoi que
-    # la table d'adjacences contienne.
+    # réentrant, donc chaque émigrant échouerait (correctement, mais inutilement).
+    # Filtré au point d'usage, quoi que la table d'adjacences contienne.
     pays_adjacents_ids = [p for p in stockage_federation.pays_adjacents(monde_id) if p != monde_id]
     nb_cellules_adjacents = {pid: stockage_spatial.nb_cellules_monde(pid) for pid in pays_adjacents_ids}
 
@@ -284,9 +288,10 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     try:
         # ⚠️ La boucle d'ACQUISITION est à l'intérieur de ce `try` (correctif revue
         # finale, Minor) : quand elle le précédait, un verrou déjà obtenu fuyait
-        # définitivement si le tick était annulé (`CancelledError`, non capturée par
-        # `_acquerir_verrou_destination` qui ne traite que `TimeoutError`) au milieu de
-        # la boucle — le pays destination restait alors bloqué pour toujours.
+        # définitivement si le tick était annulé (`CancelledError`, jamais capturée
+        # par `_acquerir_verrou_destination`, non-bloquante depuis le correctif v3 et
+        # qui ne traite donc plus aucune exception) au milieu de la boucle — le pays
+        # destination restait alors bloqué pour toujours.
         for candidat in emigrations_a_appliquer:
             eid_c, dest_c = candidat[0], candidat[1]
             if dest_c not in verrous_destinations and dest_c not in destinations_indisponibles:
