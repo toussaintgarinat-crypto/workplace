@@ -21,18 +21,39 @@
 > | + jitter à chaque démarrage | 7,02s | +40,7% | 522 | `b84acf0` |
 > | + verrou destination non-bloquant | **6,22s** | **+24,4%** | 1700 | `12079d6`+`a59e395` |
 >
-> Décision utilisateur (2026-08-26) : s'arrêter à +24,4% — amélioration
-> réelle et substantielle (dérive divisée par ~4 par rapport au pire point
+> Décision utilisateur initiale (2026-08-26) : s'arrêter à +24,4% —
+> amélioration réelle (dérive divisée par ~4 par rapport au pire point
 > mesuré), zéro erreur de tick sur toutes les fenêtres. Le nombre
 > d'avertissements monte à chaque étape car chaque échec de verrou coûte
 > de moins en moins cher (jusqu'à 1s d'attente à l'origine, quasi 0 avec le
 > verrou non-bloquant) — plus d'échecs enregistrés, mais moins de temps
-> total perdu. Piste identifiée mais **non vérifiée** pour la dérive
-> résiduelle (+24,4%) : un tick isolé sans concurrence prend ~0,38s
-> (mesuré le 26/08, population ~1482) contre ~1,2s de coût observé par
-> passage — l'écart pourrait venir d'une contention sur le service
-> `personnages` partagé sous 5 appels HTTP concurrents (mécanisme différent
-> du verrou destination, pas encore investigué).
+> total perdu.
+>
+> **Revue finale de branche** (tout le Sprint E) : a infirmé par mesure
+> directe la piste `personnages` ci-dessus autant qu'une affirmation trop
+> forte de sa propre analyse — vérifié en LIVE (5 rounds de ticks
+> concurrents réels) que les migrations transfrontières réussissaient à
+> ~53% (77/145), pas 0% comme la revue l'avait d'abord affirmé sur la seule
+> lecture du code. En revanche, la revue a identifié par calcul la vraie
+> cause structurelle de la dérive résiduelle ET de l'inertie du jitter :
+> `_boucle_scheduler` sonde à la MÊME cadence
+> (`HORLOGE_SCHEDULER_INTERVALLE_S`, 5s) que l'intervalle des mondes du
+> scénario (5s) — dès que la durée d'un passage dépasse 0, TOUS les mondes
+> redeviennent dus au même passage, pour toujours (le jitter ne peut
+> décaler que le tout premier passage, jamais les suivants). Correctif :
+> `HORLOGE_SCHEDULER_INTERVALLE_S=1` en déploiement (`docker-compose.yml`,
+> commit `4ce4141`) — AUCUN changement de code Python, la variable existe
+> depuis le Sprint C. Re-mesure LIVE du 2026-08-26 :
+>
+> | Étape | Écart moyen | Dérive | Avertissements/12min |
+> |---|---|---|---|
+> | + découplage cadence de sondage | **5,55s** | **+11,0%** | **59** |
+>
+> **Meilleur que le régime sériel de départ** (+11,0% contre +14,0%), et
+> les avertissements chutent de ×29 (1700→59). Zéro erreur. Décision
+> utilisateur finale : s'arrêter ici — voir
+> `docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md`
+> pour le détail complet des 5 cycles.
 
 **Date** : 2026-08-25
 **Contexte** : voir [spec](../specs/2026-08-25-world-engine-mesure-charge-design.md) et
