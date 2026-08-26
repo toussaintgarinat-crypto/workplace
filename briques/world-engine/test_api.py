@@ -1069,3 +1069,35 @@ def test_genome_fonder_monde_supprime_pendant_fondation_avertissement_lisible(mo
     assert "supprimé" in data["avertissement"]
     stocke = stockage.lire("public", data["eid"])
     assert stocke["prenoms"] == "Elara"
+
+
+def test_genome_enfant_lire_simulation_null_sans_placement():
+    eid = stockage.creer("public", "Nova", "", None, None, {"theme_complet": {}}, "desc", {}, False)
+    r = client.get(f"/genome/enfants/{eid}")
+    assert r.status_code == 200
+    assert r.json()["simulation"] is None
+
+
+def test_genome_enfant_lire_simulation_vivante():
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 200}).json()
+    eid = stockage.creer("public", "Nova", "", None, None, {"theme_complet": {}}, "desc", {}, False)
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=0)
+    r = client.get(f"/genome/enfants/{eid}")
+    sim = r.json()["simulation"]
+    assert sim["monde_id"] == monde["id"]
+    assert sim["cellule_id"] == 0
+    assert sim["vivant"] is True
+    assert sim["mort_au_tick"] is None
+    assert sim["age_actuel_ticks"] == 0
+
+
+def test_genome_enfant_lire_simulation_morte():
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 201}).json()
+    eid = stockage.creer("public", "Nova", "", None, None, {"theme_complet": {}}, "desc", {}, False)
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=0)
+    stockage_spatial.marquer_mort(monde["id"], eid, 6)
+    r = client.get(f"/genome/enfants/{eid}")
+    sim = r.json()["simulation"]
+    assert sim["vivant"] is False
+    assert sim["mort_au_tick"] == 6
+    assert sim["age_actuel_ticks"] == 6

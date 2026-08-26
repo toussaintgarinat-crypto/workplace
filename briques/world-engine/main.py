@@ -114,11 +114,28 @@ def genome_enfants_lister(_cle: str = Depends(cle_api)):
     return stockage.lister(_cle)
 
 
+def _simulation_enfant(eid: str) -> Optional[dict]:
+    """État simulé courant d'un enfant placé (pont Studio↔world-engine) : âge en ticks
+    écoulés depuis sa naissance, position, vivant ou mort. `None` si jamais placé sur
+    aucun monde. Age calculé jusqu'au tick actuel du monde s'il est vivant, jusqu'à son
+    `mort_au_tick` sinon (un mort n'a pas continué à vieillir après sa mort)."""
+    p = stockage_spatial.lire_placement_par_enfant(eid)
+    if p is None:
+        return None
+    horloge_etat = stockage_horloge.lire_horloge(p["monde_id"])
+    tick_actuel = horloge_etat["tick_actuel"] if horloge_etat else p["ne_au_tick"]
+    tick_reference = tick_actuel if p["vivant"] else p["mort_au_tick"]
+    return {"monde_id": p["monde_id"], "cellule_id": p["cellule_id"],
+            "ne_au_tick": p["ne_au_tick"], "age_actuel_ticks": tick_reference - p["ne_au_tick"],
+            "vivant": bool(p["vivant"]), "mort_au_tick": p["mort_au_tick"]}
+
+
 @app.get("/genome/enfants/{eid}", tags=["genome"])
 def genome_enfant_lire(eid: str, _cle: str = Depends(cle_api)):
     enfant = stockage.lire(_cle, eid)
     if enfant is None:
         raise HTTPException(404, f"Enfant '{eid}' introuvable.")
+    enfant["simulation"] = _simulation_enfant(eid)
     return enfant
 
 
