@@ -94,10 +94,20 @@ propagation d'une exception dédiée). Ce document conçoit le pont
 **`briques/world-engine` (nouveau code)**
 
 - `POST /genome/fonder` — body `{monde_id, description, prenoms, nom,
-  sexe?}`. En interne : appelle
-  `personnages_client.recherche_inverse(description)` pour un thème
+  latitude, longitude, heure_naissance, utc_offset, annee?, sexe?}`. Les 4
+  champs de naissance sont requis pour la même raison que les champs
+  `*_enfant` de `/genome/croiser` (jamais devinés) : sans eux, `personnages`
+  renvoie un thème dégradé, et un fondateur au thème dégradé casserait
+  `comparer_dix_corps` (exige `dix_corps` complet) s'il sert un jour de
+  parent dans un croisement normal via `ReferenceParent`. Studio les
+  remplit avec des valeurs par défaut fixes (voir `world_engine_client.py`
+  côté Studio) — un choix technique sans signification narrative, comme
+  `annee_enfant` déjà aujourd'hui. En interne : appelle
+  `personnages_client.recherche_inverse(description)` pour un signe
   plausible (même mécanisme que la mutation existante dans
-  `executer_croisement`), crée et stocke directement un « enfant » fondateur
+  `executer_croisement`), dérive une date de naissance via
+  `fusion.date_pour_signe`, appelle `personnages_client.portrait` pour un
+  thème complet réel, crée et stocke directement un « enfant » fondateur
   sans passer par un croisement à 2 parents, le place sur une cellule du
   monde (réutilise la logique de placement de `_cellule_naissance`, sans
   influence de position d'un parent). Renvoie `{eid, cellule_id, theme}`.
