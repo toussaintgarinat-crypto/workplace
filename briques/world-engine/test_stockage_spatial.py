@@ -524,3 +524,26 @@ def test_forker_monde_copie_le_statut_emigre():
     assert r["emigre"] == 1
     assert r["emigre_au_tick"] == 2
     assert r["emigre_vers_monde_id"] == "ailleurs"
+
+
+def test_lire_placement_par_enfant_absent():
+    assert stockage_spatial.lire_placement_par_enfant("id-inconnu") is None
+
+
+def test_lire_placement_par_enfant_vivant():
+    monde = stockage_spatial.creer_monde("cle-a", _cellules_factices(3), seed=10)
+    eid = stockage.creer("cle-a", "Nova", "", None, None, {"theme_complet": {}}, "desc", {}, False)
+    stockage_spatial.placer(monde["id"], eid, 1, ne_au_tick=5)
+    p = stockage_spatial.lire_placement_par_enfant(eid)
+    assert p == {"monde_id": monde["id"], "cellule_id": 1, "ne_au_tick": 5,
+                 "vivant": 1, "mort_au_tick": None}
+
+
+def test_lire_placement_par_enfant_mort():
+    monde = stockage_spatial.creer_monde("cle-a", _cellules_factices(3), seed=11)
+    eid = stockage.creer("cle-a", "Nova", "", None, None, {"theme_complet": {}}, "desc", {}, False)
+    stockage_spatial.placer(monde["id"], eid, 0, ne_au_tick=0)
+    stockage_spatial.marquer_mort(monde["id"], eid, 7)
+    p = stockage_spatial.lire_placement_par_enfant(eid)
+    assert p["vivant"] == 0
+    assert p["mort_au_tick"] == 7
