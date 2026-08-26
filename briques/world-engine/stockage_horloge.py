@@ -13,7 +13,8 @@ from __future__ import annotations
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = os.getenv("WORLD_ENGINE_DB", "/data/world_engine.db")
@@ -78,11 +79,26 @@ def lire_horloge(monde_id: str) -> dict | None:
 
 def demarrer(monde_id: str, intervalle_secondes: int) -> None:
     """`lire_horloge` d'abord : garantit la ligne `horloges` (rattrapage paresseux)
-    pour que l'UPDATE ci-dessous ne porte jamais sur zéro ligne en silence."""
-    lire_horloge(monde_id)
+    pour que l'UPDATE ci-dessous ne porte jamais sur zéro ligne en silence.
+
+    Jitter au tout premier démarrage (`derniere_execution` encore `NULL`) : évite
+    que plusieurs mondes démarrés ensemble avec le même intervalle restent
+    perpétuellement dus au même instant (mesuré en LIVE, Sprint E — voir
+    docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md).
+    Un monde déjà tické avant garde sa phase existante : `derniere_execution`
+    n'est pas modifié dans ce cas."""
+    horloge = lire_horloge(monde_id)
     with _conn() as c:
-        c.execute("UPDATE horloges SET actif=1, intervalle_secondes=? WHERE monde_id=?",
-                   (intervalle_secondes, monde_id))
+        if horloge["derniere_execution"] is None:
+            derniere_execution_initiale = (
+                datetime.now(timezone.utc) - timedelta(seconds=random.uniform(0, intervalle_secondes))
+            ).isoformat()
+            c.execute(
+                "UPDATE horloges SET actif=1, intervalle_secondes=?, derniere_execution=? WHERE monde_id=?",
+                (intervalle_secondes, derniere_execution_initiale, monde_id))
+        else:
+            c.execute("UPDATE horloges SET actif=1, intervalle_secondes=? WHERE monde_id=?",
+                       (intervalle_secondes, monde_id))
 
 
 def arreter(monde_id: str) -> None:

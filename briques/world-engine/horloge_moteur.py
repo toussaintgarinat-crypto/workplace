@@ -69,7 +69,7 @@ def _verrou_tick(monde_id: str) -> asyncio.Lock:
     return verrou
 
 
-VERROU_DESTINATION_TIMEOUT_S = 5.0
+VERROU_DESTINATION_TIMEOUT_S = 1.0
 
 
 async def _acquerir_verrou_destination(monde_id: str) -> asyncio.Lock | None:

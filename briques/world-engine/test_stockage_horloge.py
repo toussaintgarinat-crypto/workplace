@@ -42,12 +42,41 @@ def test_marquer_execution_avance_tick_et_horodate():
     assert etat["derniere_execution"] is not None
 
 
-def test_horloges_actives_a_declencher_jamais_executee_est_due():
+def test_demarrer_horloge_jamais_executee_initialise_derniere_execution_dans_les_bornes_du_jitter():
+    from datetime import datetime, timedelta, timezone
     monde = stockage_spatial.creer_monde("cle-h4", _cellules_factices(), seed=1)
     stockage_horloge.initialiser_horloge(monde["id"])
+    avant = datetime.now(timezone.utc)
     stockage_horloge.demarrer(monde["id"], 60)
-    dues = stockage_horloge.horloges_actives_a_declencher("2026-01-01T00:00:00+00:00")
-    assert any(d["monde_id"] == monde["id"] and d["cle_api"] == "cle-h4" for d in dues)
+    apres = datetime.now(timezone.utc)
+    etat = stockage_horloge.lire_horloge(monde["id"])
+    derniere_execution = datetime.fromisoformat(etat["derniere_execution"])
+    # Jitter dans [0, intervalle_secondes] appliqué à l'instant de l'appel : la
+    # valeur stockée doit tomber entre (avant - 60s) et (apres), quelle que soit
+    # la valeur aléatoire tirée.
+    assert (avant - timedelta(seconds=60)) <= derniere_execution <= apres
+
+
+def test_horloges_actives_a_declencher_jamais_executee_est_due_au_plus_tard_apres_intervalle(monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(stockage_horloge.random, "uniform", lambda a, b: b)  # pire cas : jitter maximal
+    monde = stockage_spatial.creer_monde("cle-h4b", _cellules_factices(), seed=1)
+    stockage_horloge.initialiser_horloge(monde["id"])
+    stockage_horloge.demarrer(monde["id"], 60)
+    maintenant = datetime.now(timezone.utc).isoformat()
+    dues = stockage_horloge.horloges_actives_a_declencher(maintenant)
+    assert any(d["monde_id"] == monde["id"] and d["cle_api"] == "cle-h4b" for d in dues)
+
+
+def test_horloges_actives_a_declencher_jamais_executee_pas_forcement_due_immediatement(monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(stockage_horloge.random, "uniform", lambda a, b: 0.0)  # jitter minimal
+    monde = stockage_spatial.creer_monde("cle-h4c", _cellules_factices(), seed=1)
+    stockage_horloge.initialiser_horloge(monde["id"])
+    stockage_horloge.demarrer(monde["id"], 60)
+    maintenant = datetime.now(timezone.utc).isoformat()
+    dues = stockage_horloge.horloges_actives_a_declencher(maintenant)
+    assert not any(d["monde_id"] == monde["id"] for d in dues)
 
 
 def test_horloges_actives_a_declencher_ignore_inactif():

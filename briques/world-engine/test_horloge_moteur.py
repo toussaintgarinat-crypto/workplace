@@ -836,3 +836,7 @@ async def test_bout_en_bout_migration_transfrontiere_reelle_sur_plusieurs_ticks(
     illisibles = [h["id"] for h in arrivants if stockage.lire(cle_d, h["id"]) is None]
     assert illisibles == [], (
         f"habitants du pays destination inaccessibles à son propre tenant : {illisibles}")
+
+
+def test_verrou_destination_timeout_par_defaut_est_1_0s():
+    assert horloge_moteur.VERROU_DESTINATION_TIMEOUT_S == 1.0
