@@ -37,6 +37,88 @@ phase aléatoire à chaque fois) — acceptable, `tick_actuel` (la progression
 réelle) n'est jamais affecté par `demarrer`, seul l'horodatage de
 planification change.
 
+## Mise à jour n°2 — le jitter systématique ne suffit pas (v3 du correctif)
+
+Le jitter étendu à chaque démarrage a été codé, revu (0 Critical/Important)
+et validé en LIVE : **aucune amélioration mesurable**. Écart moyen
+identique à celui du timeout seul (~7,02s, +40,4% puis +40,7%),
+avertissements de verrou similaires (608 puis 522 sur 12 min). Vérifié
+empiriquement que le jitter fonctionne bien (les 5 mondes démarrent
+désormais à des instants clairement étalés, pas simultanés) — mais ça ne
+change presque rien au résultat.
+
+Cause statistique, pas un bug : avec 5 mondes répartis aléatoirement sur un
+cycle de 5s, l'écart minimal attendu entre les deux mondes les plus proches
+en phase est de l'ordre de 5/(5×6) ≈ 0,17s — bien en dessous du temps qu'un
+tick contesté peut prendre (jusqu'à 1,0s, le timeout de verrou). À ce
+ratio (nombre de mondes / longueur de cycle / coût maximal d'une
+collision), une paire de mondes reste presque toujours assez proche en
+phase pour se percuter, quel que soit le tirage aléatoire. Le jitter ne
+peut pas résoudre un problème de RATIO, seulement de synchronisation
+permanente (ce qu'il a effectivement résolu : +94,6% → +40,4%, un
+plafond atteint dès le seul timeout réduit).
+
+Décision utilisateur : passer à une refonte du mécanisme de verrouillage
+lui-même plutôt que de continuer à chercher un meilleur timing.
+
+### Diagnostic de fond (lu dans le code, pas une hypothèse)
+
+`_acquerir_verrou_destination` acquiert `_verrou_tick(monde_id)` — c'est
+**le même verrou** qui sérialise l'exécution complète du tick du pays
+destination (`executer_tick` : `async with _verrou_tick(monde_id): ...`).
+Ce n'est pas un verrou étroit dédié à l'écriture d'une migration : c'est
+le verrou d'exécution ENTIER du pays destination, emprunté tel quel. Un
+migrant vers le pays B doit donc attendre que TOUT le tick de B se
+termine, pas seulement une écriture — d'où un coût de collision proche de
+la durée d'un tick complet (~0,2-1s selon la charge), pas de quelques
+millisecondes.
+
+Le mécanisme d'échec est déjà sûr et accepté depuis le Sprint D : verrou
+indisponible → l'émigration échoue proprement, capturée dans
+`avertissements`, retentera au tick suivant, zéro corruption. L'attente
+actuelle (`asyncio.wait_for(..., timeout=1.0)`) ne fait que retarder ce
+verdict déjà connu — elle espère que le tick concurrent libère le verrou
+à temps, mais les trois mesures LIVE (avec et sans jitter) montrent que ce
+pari ne paie quasiment jamais : le coût de l'attente est payé presque à
+chaque collision, sans réduire le nombre d'échecs qui finissent par se
+produire de toute façon.
+
+### Décision de conception
+
+**Rendre la tentative d'acquisition non-bloquante, pas remplacer le
+verrou.** Deux options explorées :
+
+- **Verrou séparé, plus étroit, dédié à l'écriture seule** (l'idée
+  d'origine d'« Option 3 ») — libérerait le tick du pays destination de
+  toute dépendance envers les migrations entrantes. Écartée : elle change
+  la portée de la synchronisation entre les mondes, ce qui retoucherait
+  aux invariants de correction établis avec soin au Sprint D (ordre
+  dissolution de couple / verrou destination, atomicité de la passe 2b —
+  voir les commentaires de revue dans `horloge_moteur.py` autour de la
+  résolution des verrous). Risque de régression plus élevé qu'un gain
+  incertain ne le justifie.
+- **Vérification non-bloquante sur le MÊME verrou** (retenue) :
+  `_acquerir_verrou_destination` vérifie `verrou.locked()` — si déjà tenu,
+  échoue INSTANTANÉMENT (même verdict qu'avant, juste sans l'attente) ; si
+  libre, `await verrou.acquire()` réussit immédiatement (dans le modèle
+  coopératif d'asyncio, aucune tâche ne peut s'intercaler entre le test
+  `.locked()` et l'`acquire()` puisqu'aucun `await` ne les sépare — pas de
+  fenêtre de course). Ne change ni la portée du verrou, ni son
+  identité, ni aucun invariant Sprint D — seulement la présence d'une
+  attente avant l'échec. `VERROU_DESTINATION_TIMEOUT_S` devient inutile et
+  est retiré (plus de valeur à monkeypatcher pour les tests qui simulaient
+  un timeout court).
+
+## Hors périmètre (mise à jour v3)
+
+- Le verrou séparé pour l'écriture seule (ci-dessus) reste noté comme
+  option de repli si la mesure LIVE de ce correctif s'avère encore
+  insuffisante — pas codé dans ce sprint.
+- Le comportement de re-tentative au tick suivant reste inchangé — c'est
+  précisément ce qui permet de rendre l'acquisition non-bloquante sans
+  perdre en fiabilité : l'échec instantané mène exactement au même filet
+  de sécurité qu'un échec après attente.
+
 ## Contexte
 
 Suite de [world-engine-sprint-e-scheduler-parallele-design](2026-08-25-world-engine-sprint-e-scheduler-parallele-design.md).
