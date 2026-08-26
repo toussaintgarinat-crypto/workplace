@@ -239,6 +239,24 @@ def placement_cellule(monde_id: str, enfant_id: str) -> int | None:
     return r["cellule_id"] if r else None
 
 
+def lire_placement_par_enfant(enfant_id: str) -> dict | None:
+    """Placement complet (monde, cellule, âge/statut) de cet enfant, quel que soit son
+    statut vivant/mort — contrairement à `population_vivante_*`, qui filtre `vivant=1`.
+    Utilisé par `main.py::genome_enfant_lire` pour le champ `simulation` (pont
+    Studio↔world-engine). ⚠️ Ne vérifie PAS `cle_api` : l'appelant a déjà validé
+    l'appartenance de `enfant_id` via `stockage.lire(cle_api, eid)`. Un enfant placé dans
+    plusieurs mondes (cas non prévu par le pont, qui n'en fonde qu'un par personnage)
+    renvoie son placement le plus récent."""
+    with _conn() as c:
+        r = c.execute("SELECT monde_id, cellule_id, ne_au_tick, vivant, mort_au_tick "
+                       "FROM placements WHERE enfant_id=? ORDER BY place_le DESC LIMIT 1",
+                       (enfant_id,)).fetchone()
+    if r is None:
+        return None
+    return {"monde_id": r["monde_id"], "cellule_id": r["cellule_id"],
+            "ne_au_tick": r["ne_au_tick"], "vivant": r["vivant"], "mort_au_tick": r["mort_au_tick"]}
+
+
 def placer(monde_id: str, enfant_id: str, cellule_id: int, ne_au_tick: int = 0) -> None:
     """⚠️ Ne vérifie PAS `cle_api` : l'appelant DOIT avoir déjà validé
     `monde_existe(cle_api, monde_id)` avant d'appeler cette fonction (sauf
