@@ -102,6 +102,13 @@ async def genome_croiser(body: genome_moteur.Croisement, _cle: str = Depends(cle
     return await genome_moteur.executer_croisement(body, _cle)
 
 
+@app.post("/genome/fonder", tags=["genome"])
+async def genome_fonder(body: genome_moteur.FondationSolo, _cle: str = Depends(cle_api)):
+    """Crée un habitant fondateur sans croisement à 2 parents (pont Studio↔world-engine)
+    — voir `genome_moteur.executer_fondation` pour le détail."""
+    return await genome_moteur.executer_fondation(body, _cle)
+
+
 @app.get("/genome/enfants", tags=["genome"])
 def genome_enfants_lister(_cle: str = Depends(cle_api)):
     return stockage.lister(_cle)

@@ -72,6 +72,78 @@ class Croisement(BaseModel):
                                                       # nécessaire à l'horloge pour apparier des couples F/M
 
 
+class FondationSolo(BaseModel):
+    """Crée un habitant fondateur SANS croisement à 2 parents (pont Studio↔world-engine,
+    voir docs/superpowers/specs/2026-08-26-pont-studio-world-engine-design.md) : un
+    personnage de fiction n'a pas de vrais parents à inventer, seulement une description.
+    `latitude`/`longitude`/`heure_naissance`/`utc_offset` restent requis pour la même
+    raison que les champs `*_enfant` de `Croisement` : sans eux, `personnages` renvoie un
+    thème dégradé, ce qui casserait `fusion.comparer_dix_corps` si ce fondateur sert un
+    jour de parent (via `ReferenceParent`) dans un croisement normal. Pas de
+    `model_config = ConfigDict(extra="forbid")` — même convention que `Croisement` dans
+    ce fichier (le `forbid` n'est appliqué qu'aux fiches parent imbriquées, pas au corps
+    de route top-level)."""
+
+    monde_id: str
+    description: str
+    prenoms: str = ""
+    nom: str = ""
+    latitude: float
+    longitude: float
+    heure_naissance: str
+    utc_offset: float
+    annee: Optional[int] = Field(default=None, ge=1, le=9999)
+    sexe: Optional[Literal["F", "M"]] = None
+
+
+async def executer_fondation(body: FondationSolo, cle_api_val: str) -> dict:
+    """Dérive un signe plausible de `body.description` (via `personnages`, même
+    mécanisme que la mutation d'`executer_croisement`), obtient un thème complet réel
+    pour une date de naissance dérivée de ce signe, persiste et place directement
+    l'enfant fondateur sur `body.monde_id` — sans les 2 parents d'un croisement normal."""
+    if not stockage_spatial.monde_existe(cle_api_val, body.monde_id):
+        raise HTTPException(404, f"Monde '{body.monde_id}' introuvable.")
+
+    try:
+        rri = await personnages_client.recherche_inverse(body.description)
+    except personnages_client.PersonnagesIndisponible as e:
+        raise HTTPException(502, f"Brique personnages injoignable : {e}")
+    if rri.status_code != 200:
+        _propager_ou_502(rri, "Recherche inverse")
+    signes = rri.json().get("signes") or []
+    if not signes:
+        raise HTTPException(422, "Impossible de dériver un signe pour ce fondateur "
+                                  "à partir de cette description.")
+
+    annee = body.annee or date.today().year
+    date_naissance = fusion.date_pour_signe(signes[0]["signe"], annee)
+    fiche = {"prenoms": body.prenoms, "nom": body.nom, "date_naissance": date_naissance,
+             "heure_naissance": body.heure_naissance, "latitude": body.latitude,
+             "longitude": body.longitude, "utc_offset": body.utc_offset}
+    try:
+        rp = await personnages_client.portrait(fiche)
+    except personnages_client.PersonnagesIndisponible as e:
+        raise HTTPException(502, f"Brique personnages injoignable : {e}")
+    if rp.status_code != 200:
+        _propager_ou_502(rp, "Fondateur")
+    theme = rp.json()
+    _exiger_theme_complet(theme, "Fondateur")
+
+    eid = stockage.creer(cle_api_val, body.prenoms, body.nom, None, None, theme,
+                          description_genome=body.description, heredite={},
+                          mutation_survenue=False, sexe=body.sexe)
+
+    nb = stockage_spatial.nb_cellules_monde(body.monde_id)
+    if nb is None:
+        raise HTTPException(404, f"Monde '{body.monde_id}' introuvable.")
+    cellule_id = Random().randrange(nb)
+    horloge_etat = stockage_horloge.lire_horloge(body.monde_id)
+    ne_au_tick = horloge_etat["tick_actuel"] if horloge_etat else 0
+    stockage_spatial.placer(body.monde_id, eid, cellule_id, ne_au_tick=ne_au_tick)
+
+    return {"eid": eid, "cellule_id": cellule_id, "theme": theme}
+
+
 def _detail(resp) -> str:
     """Message d'erreur d'une réponse `personnages` non-200 — repli honnête sur le
     texte brut si le corps n'est pas du JSON valide OU n'est pas un objet (ne lève jamais)."""

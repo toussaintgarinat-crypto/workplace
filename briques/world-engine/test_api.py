@@ -987,3 +987,55 @@ def test_horloge_routes_cloisonnees_par_cle_api(monkeypatch):
     global client
     client = TestClient(main.app)  # resynchronise après reload, même motif que les autres
                                     # tests d'auth de ce fichier.
+
+
+# ── Fondateur solo (pont Studio↔world-engine, sans croisement à 2 parents) ──
+@respx.mock
+def test_genome_fonder_chemin_heureux():
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 100}).json()
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": [{"signe": "Lion", "score": 5}]}))
+    respx.post(f"{PERSONNAGES_URL}/holistique/portrait").mock(
+        return_value=httpx.Response(200, json=_portrait_factice("Soleil", "Lion", "Lion")))
+    r = client.post("/genome/fonder", json={
+        "monde_id": monde["id"], "description": "Une aventurière rusée et loyale.",
+        "prenoms": "Elara", "nom": "", "latitude": 48.85, "longitude": 2.35,
+        "heure_naissance": "12:00", "utc_offset": 1.0, "sexe": "F"})
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data["eid"], str) and data["eid"]
+    assert 0 <= data["cellule_id"] < 10
+    assert data["theme"]["theme_complet"]["dominantes"]["signe"]["dominant"] == "Lion"
+    stocke = stockage.lire("public", data["eid"])
+    assert stocke["prenoms"] == "Elara"
+    assert stocke["sexe"] == "F"
+    assert stockage_spatial.placement_cellule(monde["id"], data["eid"]) == data["cellule_id"]
+
+
+def test_genome_fonder_monde_introuvable_404():
+    r = client.post("/genome/fonder", json={
+        "monde_id": "id-inconnu", "description": "x", "latitude": 48.85, "longitude": 2.35,
+        "heure_naissance": "12:00", "utc_offset": 1.0})
+    assert r.status_code == 404
+
+
+@respx.mock
+def test_genome_fonder_personnages_injoignable_502():
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 101}).json()
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        side_effect=httpx.ConnectError("down"))
+    r = client.post("/genome/fonder", json={
+        "monde_id": monde["id"], "description": "x", "latitude": 48.85, "longitude": 2.35,
+        "heure_naissance": "12:00", "utc_offset": 1.0})
+    assert r.status_code == 502
+
+
+@respx.mock
+def test_genome_fonder_aucun_signe_derive_422():
+    monde = client.post("/spatial/mondes", json={"nb_cellules": 10, "seed": 102}).json()
+    respx.post(f"{PERSONNAGES_URL}/holistique/recherche-inverse").mock(
+        return_value=httpx.Response(200, json={"signes": []}))
+    r = client.post("/genome/fonder", json={
+        "monde_id": monde["id"], "description": "x", "latitude": 48.85, "longitude": 2.35,
+        "heure_naissance": "12:00", "utc_offset": 1.0})
+    assert r.status_code == 422
