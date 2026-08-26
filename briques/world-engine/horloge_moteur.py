@@ -91,12 +91,32 @@ async def _acquerir_verrou_destination(monde_id: str) -> asyncio.Lock | None:
     dans `avertissements`), sans attendre. `verrou.locked()` puis `acquire()`
     sans `await` entre les deux : dans le modèle coopératif d'asyncio, aucune
     tâche ne peut s'intercaler entre le test et l'acquisition, donc pas de
-    fenêtre de course."""
+    fenêtre de course.
+
+    Filet de sécurité (revue Task 5, Important) : `verrou.locked() == False` est
+    le chemin emprunté quasi systématiquement (validé par 3 tours de mesure
+    LIVE — les mondes concurrents du scheduler ne partagent jamais un verrou
+    destination de cette façon). Mais `asyncio.Lock` maintient en interne une
+    file FIFO d'attendeurs, et `locked()` ne reflète pas forcément un attendeur
+    déjà en file : si un tick MANUEL et le tick du scheduler se chevauchent sur
+    le MÊME pays destination (`executer_tick` documente déjà ce cas comme
+    supporté — « un second appelant simultané ATTEND la fin du premier »), il
+    existe une fenêtre étroite, juste après le `release()` du premier tenant et
+    avant la reprise de l'attendeur déjà en file, où `locked()` répond `False`
+    alors qu'un attendeur va prendre le verrou. Sans plafond, l'`acquire()`
+    suivant rejoindrait alors cette même file et bloquerait pour toute la durée
+    du tick de cet attendeur — potentiellement bien plus que les 1.0s retirés
+    par le correctif v3. Le timeout de 0.05s borne ce cas rare sans réintroduire
+    le coût de 1.0s que 3 tours de mesure ont montré payé sur quasi chaque
+    migration en contention ordinaire."""
     verrou = _verrou_tick(monde_id)
     if verrou.locked():
         return None
-    await verrou.acquire()
-    return verrou
+    try:
+        await asyncio.wait_for(verrou.acquire(), timeout=0.05)
+        return verrou
+    except asyncio.TimeoutError:
+        return None
 
 
 async def executer_tick(monde_id: str, cle_api_val: str) -> dict:
@@ -288,10 +308,11 @@ async def _executer_tick(monde_id: str, cle_api_val: str) -> dict:
     try:
         # ⚠️ La boucle d'ACQUISITION est à l'intérieur de ce `try` (correctif revue
         # finale, Minor) : quand elle le précédait, un verrou déjà obtenu fuyait
-        # définitivement si le tick était annulé (`CancelledError`, jamais capturée
-        # par `_acquerir_verrou_destination`, non-bloquante depuis le correctif v3 et
-        # qui ne traite donc plus aucune exception) au milieu de la boucle — le pays
-        # destination restait alors bloqué pour toujours.
+        # définitivement si le tick était annulé (`CancelledError`, une
+        # `BaseException` jamais capturée par `_acquerir_verrou_destination` — celle-ci
+        # ne traite que `asyncio.TimeoutError`, filet de sécurité v3.1, voir sa
+        # docstring) au milieu de la boucle — le pays destination restait alors
+        # bloqué pour toujours.
         for candidat in emigrations_a_appliquer:
             eid_c, dest_c = candidat[0], candidat[1]
             if dest_c not in verrous_destinations and dest_c not in destinations_indisponibles:
