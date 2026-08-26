@@ -25,6 +25,14 @@ services:
       - PORT=6230
       - PERSONNAGES_URL=http://host.docker.internal:5900
       - WORLD_ENGINE_DB=/data/world_engine.db
+      # Sonde toutes les 1s (défaut de code : 5s) : si plusieurs mondes partagent
+      # le même intervalle_secondes que la cadence de sondage, ils redeviennent
+      # TOUS dus au même passage pour toujours (jitter de démarrage inefficace,
+      # dérive de tick maximale) — cause racine identifiée en revue finale de
+      # branche Sprint E, voir
+      # docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md,
+      # section « Mise à jour n°4 ».
+      - HORLOGE_SCHEDULER_INTERVALLE_S=1
       # PERSONNAGES_KEY (clé d'intégration Cœur) vient du .env racine via env_file —
       # NE PAS la redéclarer en `PERSONNAGES_KEY=${PERSONNAGES_KEY:-}` (piège « env
       # shadow » : chaîne vide qui écraserait la vraie valeur).
