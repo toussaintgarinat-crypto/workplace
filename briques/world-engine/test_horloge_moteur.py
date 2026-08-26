@@ -645,6 +645,31 @@ async def test_acquerir_verrou_destination_deja_tenu_echoue_sans_attendre():
 
 
 @pytest.mark.asyncio
+async def test_acquerir_verrou_destination_filet_de_securite_borne_l_attente(monkeypatch):
+    """Simule la fenêtre de course (revue Task 5, Important) où `verrou.locked()`
+    rate un attendeur déjà en file : `.locked()` est monkeypatché pour mentir
+    (renvoyer `False` alors que le verrou est réellement tenu), forçant le code
+    sur le chemin lent `wait_for`. Le filet de sécurité de 0.05s doit borner
+    l'attente au lieu de bloquer pour toute la durée du tick qui tient
+    réellement le verrou."""
+    import time
+    monde_id = "monde-verrou-filet-securite-sprint-e-v3"
+    verrou = horloge_moteur._verrou_tick(monde_id)
+    await verrou.acquire()  # simule un tick concurrent qui tient déjà ce verrou
+    monkeypatch.setattr(verrou, "locked", lambda: False)  # simule la fenêtre de course où .locked() rate la contention
+    try:
+        debut = time.monotonic()
+        resultat = await horloge_moteur._acquerir_verrou_destination(monde_id)
+        duree = time.monotonic() - debut
+    finally:
+        verrou.release()
+    assert resultat is None
+    # Borné par le filet de sécurité (0.05s) au lieu de bloquer indéfiniment derrière
+    # le tick qui tient réellement le verrou.
+    assert duree < 0.2
+
+
+@pytest.mark.asyncio
 async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypatch):
     """Le pays destination a son verrou déjà tenu (simulé directement, sans passer
     par un vrai tick concurrent) : l'émigration doit échouer PROPREMENT (capturée
