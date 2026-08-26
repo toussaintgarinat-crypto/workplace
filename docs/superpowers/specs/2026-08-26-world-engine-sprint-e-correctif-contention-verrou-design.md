@@ -47,16 +47,20 @@ empiriquement que le jitter fonctionne bien (les 5 mondes démarrent
 désormais à des instants clairement étalés, pas simultanés) — mais ça ne
 change presque rien au résultat.
 
-Cause statistique, pas un bug : avec 5 mondes répartis aléatoirement sur un
-cycle de 5s, l'écart minimal attendu entre les deux mondes les plus proches
-en phase est de l'ordre de 5/(5×6) ≈ 0,17s — bien en dessous du temps qu'un
-tick contesté peut prendre (jusqu'à 1,0s, le timeout de verrou). À ce
-ratio (nombre de mondes / longueur de cycle / coût maximal d'une
-collision), une paire de mondes reste presque toujours assez proche en
-phase pour se percuter, quel que soit le tirage aléatoire. Le jitter ne
-peut pas résoudre un problème de RATIO, seulement de synchronisation
-permanente (ce qu'il a effectivement résolu : +94,6% → +40,4%, un
-plafond atteint dès le seul timeout réduit).
+⚠️ **Correctif post-revue finale de branche** : l'explication ci-dessous
+(« cause statistique », écart de phase minimal ≈0,17s) était **fausse** —
+gardée biffée pour l'honnêteté du journal de décision, corrigée en
+« Mise à jour n°4 ». <s>Cause statistique, pas un bug : avec 5 mondes
+répartis aléatoirement sur un cycle de 5s, l'écart minimal attendu entre
+les deux mondes les plus proches en phase est de l'ordre de 5/(5×6) ≈
+0,17s — bien en dessous du temps qu'un tick contesté peut prendre (jusqu'à
+1,0s, le timeout de verrou). À ce ratio (nombre de mondes / longueur de
+cycle / coût maximal d'une collision), une paire de mondes reste presque
+toujours assez proche en phase pour se percuter, quel que soit le tirage
+aléatoire.</s> Le jitter ne peut pas résoudre un problème de RATIO,
+seulement de synchronisation permanente (ce qu'il a effectivement résolu :
++94,6% → +40,4%, un plafond atteint dès le seul timeout réduit) — cette
+dernière phrase reste juste, seule la cause invoquée était fausse.
 
 Décision utilisateur : passer à une refonte du mécanisme de verrouillage
 lui-même plutôt que de continuer à chercher un meilleur timing.
@@ -245,3 +249,61 @@ automatique 5s, fenêtre de 12 min). Critères de succès :
 - Aucune régression : toujours 0 erreur de tick, toujours des migrations
   transfrontières appliquées avec succès sur la fenêtre (pas de blocage
   total du mécanisme de migration).
+
+## Mise à jour n°4 — revue finale de branche (2026-08-26)
+
+Le correctif v3 (verrou non-bloquant + filet 0,05s) a été validé en LIVE :
+6,22s/+24,4% (contre 7,02s/+40,7%), avertissements montés à 1700 (attendu :
+chaque échec coûte ~0 au lieu de jusqu'à 1s). Décision utilisateur initiale :
+s'arrêter là. La revue finale de branche (opus, tout le Sprint E) a trouvé
+des inexactitudes de documentation à corriger et une cause racine plus
+profonde, non encore traitée — voir tableau complet dans
+`docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md`.
+
+**Trouvaille infirmée par mesure directe** : la revue affirmait la
+migration transfrontière « effectivement morte » sous le scheduler
+parallèle. Vérifié en LIVE (5 rounds de ticks concurrents réels, même
+mécanisme que le scheduler) : **77 migrations réussies contre 68 échecs**
+(~53% de réussite), pas 0%. La fonctionnalité est dégradée par rapport au
+régime sériel d'origine (contention rare devenue fréquente), pas inerte —
+correction du récit, pas du code.
+
+**Trouvaille confirmée, cause racine véritable de la dérive résiduelle** :
+`_boucle_scheduler` fait `sleep(HORLOGE_SCHEDULER_INTERVALLE_S)` PUIS le
+travail, sans compenser le temps déjà écoulé — l'écart moyen mesuré est
+donc **structurellement** `HORLOGE_SCHEDULER_INTERVALLE_S + durée du
+passage`, vérifié exact sur les 4 mesures (5+0,698=5,698 ;
+5+2,02=7,02 ; 5+1,22=6,22). Conséquence : l'objectif « dérive proche de
+0% » du design du 25/08 était mathématiquement inatteignable avec cette
+forme de boucle, quelle que soit la rapidité du verrou — chaque correctif
+de ce document a bien réduit la dérive (en réduisant la durée du passage),
+mais ne pouvait jamais l'annuler.
+
+**Cause réelle de l'inertie du jitter** (remplace l'explication statistique
+biffée ci-dessus) : `HORLOGE_SCHEDULER_INTERVALLE_S` (cadence de sondage du
+scheduler) et `intervalle_secondes` (cadence propre à chaque monde) sont
+déjà deux réglages indépendants dans le code — mais le scénario de mesure
+les règle tous les deux à 5s. Le sondage se fait donc à la MÊME granularité
+que l'intervalle des mondes : dès que la durée du passage dépasse 0, TOUS
+les mondes redeviennent dus au passage suivant, pour toujours (démontré
+par simulation par le reviewer : `mondes dus par passage : [5, 5, 5, 5, …]`
+avec jitter actif). Le jitter ne peut décaler QUE le tout premier passage
+après démarrage — il n'a aucun effet sur le régime permanent, parce que le
+sondage n'est jamais assez fin pour que deux mondes jittés atterrissent
+dans des passages différents.
+
+**Décision utilisateur** : corriger les inexactitudes de documentation
+trouvées par la revue (Task 7 du plan), et tenter le correctif peu coûteux
+qu'elles révèlent — découpler la cadence de sondage du scheduler de
+l'intervalle des mondes (Task 8), en réduisant
+`HORLOGE_SCHEDULER_INTERVALLE_S` par défaut de la valeur configurée pour
+le déploiement (via `docker-compose.yml`, pas de changement de code Python
+nécessaire — la variable d'environnement existe déjà). Sonder plus
+finement que l'intervalle le plus court des mondes actifs permet
+simultanément : (1) de réduire la dérive résiduelle (moins de temps perdu
+entre l'échéance réelle et le sondage qui la détecte), (2) de rendre le
+jitter enfin effectif (des mondes jittés à des instants différents dans
+leur fenêtre de 5s peuvent désormais tomber dans des passages de sondage
+différents), et (3) probablement d'améliorer le taux de réussite des
+migrations (moins de mondes simultanément dus par passage = moins de
+verrous destination tenus en même temps).
