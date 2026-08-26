@@ -75,14 +75,18 @@ propagation d'une exception dédiée). Ce document conçoit le pont
   fiction) ou de l'ignorer — dans ce dernier cas, le personnage est détaché
   silencieusement de `habitants` : plus aucune proposition future pour ce
   nom, il redevient une fiche Studio ordinaire.
-- **Le lien personnage↔habitant vit dans une 3ᵉ table dédiée côté Studio**
-  (`stockage_pont.py`, nouveau, même motif que `stockage_federation.py`
-  côté world-engine : nouvelles tables dans la base SQLite déjà existante de
-  la brique, pas un nouveau service). Ni `serie.personnages` (Studio) ni la
-  fiche d'un enfant (world-engine) ne portent directement cette référence —
+- **Le lien personnage↔habitant vit dans un fichier dédié côté Studio**, pas
+  dans `serie.personnages` ni dans la fiche d'un enfant world-engine —
   décision utilisateur explicite, contre la proposition initiale (porter le
   lien directement sur la fiche personnage Studio), pour garder la
   responsabilité du lien isolée des deux modèles de données existants.
+  Concrètement : `stockage_pont.py` (nouveau), un fichier JSON par série
+  sous `ATELIERS_DIR/pont/{serie_id}.json`, même idiome que
+  `_profil_path`/`_journal_path` (`studio.py:91-137`) — **pas** de table
+  SQLite : Studio n'a aucune base SQL, toute sa persistance est en fichiers
+  JSON par concept (une série = un fichier, un profil = un fichier, etc.).
+  Contenu : `{"serie_id", "monde_id": str | null, "habitants":
+  {nom_cle: {"eid", "nom_affiche", "lie_le"}}}`.
 - **Studio est l'appelant HTTP, world-engine reste ignorant de Studio.**
   Respecte le sens de dépendance déjà en place
   (`studio → world-engine → personnages`, jamais l'inverse). Un
@@ -124,17 +128,18 @@ propagation d'une exception dédiée). Ce document conçoit le pont
 
 **`briques/studio` (nouveau code)**
 
-- `stockage_pont.py` : deux tables dans la base SQLite déjà existante de la
-  brique.
-  - `mondes_serie` : `serie_id → monde_id` — le monde world-engine d'une
-    série, créé une seule fois (au premier personnage fondé de cette
-    série), via l'endpoint `/spatial/mondes` déjà existant, avec un maillage
-    par défaut modeste (ex. 8 cellules génériques) — détail technique, pas
-    un choix narratif exposé à l'utilisateur.
-  - `habitants` : `(serie_id, nom_cle) → eid`, `lie_le` — le lien
-    personnage↔habitant. `nom_cle` = même normalisation que `_cle_perso`
-    (existant) pour rester cohérent avec le rapprochement script⇄fiche déjà
-    en place.
+- `stockage_pont.py` : un fichier JSON par série sous
+  `ATELIERS_DIR/pont/{serie_id}.json` (même idiome que `_profil_path`,
+  `studio.py:91`) : `{"serie_id", "monde_id": str | null, "habitants":
+  {nom_cle: {"eid", "nom_affiche", "lie_le"}}}`.
+  - `monde_id` : le monde world-engine de cette série, créé une seule fois
+    (au premier personnage fondé), via l'endpoint `/spatial/mondes` déjà
+    existant, avec un maillage par défaut modeste (10 cellules — le minimum
+    accepté par `CreerMonde.nb_cellules`) — détail technique, pas un choix
+    narratif exposé à l'utilisateur.
+  - `habitants[nom_cle]` : le lien personnage↔habitant. `nom_cle` = même
+    normalisation que `_cle_perso` (existant) pour rester cohérent avec le
+    rapprochement script⇄fiche déjà en place.
 - `world_engine_client.py` : appels HTTP vers world-engine (`/genome/fonder`,
   `/spatial/mondes`, `/horloge/{mid}/tick`, `GET /genome/enfants/{eid}` pour
   l'état simulé) — jamais d'import de code, exception dédiée
@@ -151,19 +156,19 @@ propagation d'une exception dédiée). Ce document conçoit le pont
 
 1. Après génération d'un chapitre, si un nom franchit le seuil (casté
    formellement dans `serie.personnages`, ou `canon.apparitions[nom_cle] ==
-   3`) et n'a pas déjà de ligne dans `habitants` → Studio l'ajoute à une
+   3`) et n'a pas déjà d'entrée dans `habitants` → Studio l'ajoute à une
    liste « éligibles, à proposer » retournée avec la réponse du chapitre.
 2. L'utilisateur valide l'entrée d'un personnage précis depuis le front
-   Studio → Studio crée le monde de la série s'il n'existe pas encore
-   (`mondes_serie`), appelle `/genome/fonder`, stocke `(serie_id, nom_cle) →
-   eid` dans `habitants`.
+   Studio → Studio crée le monde de la série si `monde_id` est encore nul
+   dans le fichier pont, appelle `/genome/fonder`, enregistre
+   `habitants[nom_cle] = {eid, nom_affiche, lie_le}`.
 
 **Cycle temporel**
 
-- Chaque nouveau chapitre généré pour une série qui a déjà un monde
-  (`mondes_serie` non vide pour cette série) déclenche un
-  `POST /horloge/{mid}/tick` juste après la génération du chapitre — un
-  tick par chapitre, indépendamment du nombre de personnages liés.
+- Chaque nouveau chapitre généré pour une série dont le fichier pont a un
+  `monde_id` non nul déclenche un `POST /horloge/{mid}/tick` juste après la
+  génération du chapitre — un tick par chapitre, indépendamment du nombre
+  de personnages liés.
 
 **Retour (réapparition)**
 
@@ -177,8 +182,8 @@ propagation d'une exception dédiée). Ce document conçoit le pont
 3. Faits acceptés → rejoignent `canon.acquis` normalement, influencent
    l'écriture comme n'importe quel fait acquis.
 4. Cas mort : proposition explicite (« X est mort dans le monde simulé, à
-   tel âge, tel lieu ») ; refusée → détachement silencieux de `habitants`,
-   plus aucune proposition future pour ce nom.
+   tel âge, tel lieu ») ; refusée → suppression silencieuse de
+   `habitants[nom_cle]`, plus aucune proposition future pour ce nom.
 
 **Gestion d'erreurs**
 
@@ -213,8 +218,8 @@ aucune exception qui casse l'écriture — même philosophie que
   `GET /genome/enfants/{eid}` — `null` sans placement, rempli et cohérent
   après fondation puis un ou plusieurs ticks (`vivant`/`mort_au_tick` selon
   l'issue de l'horloge).
-- **studio** : `test_stockage_pont.py` (CRUD des 2 tables, isolation par
-  `serie_id`) ; `test_pont_eligibilite.py` (le compteur `canon.apparitions`
+- **studio** : `test_stockage_pont.py` (lecture/écriture du fichier pont,
+  isolation par `serie_id` — un fichier par série) ; `test_pont_eligibilite.py` (le compteur `canon.apparitions`
   monte bien, seuil à 3, casting formel = éligible immédiatement) ;
   `test_pont_entree.py` (mock du client HTTP world-engine : fondation
   réussie, monde créé une seule fois pour la série, 2ᵉ personnage réutilise
