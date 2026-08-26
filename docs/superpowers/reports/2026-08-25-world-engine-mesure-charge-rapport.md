@@ -1,5 +1,39 @@
 # World Engine — Rapport de mesure de charge LIVE (préalable Sprint E)
 
+> **Correctifs Sprint E (2026-08-26)** : la dérive de +14,0% mesurée
+> ci-dessous (Résultat 1) a pour cause `_boucle_scheduler` en série —
+> corrigée en parallélisant l'exécution des mondes dus par passage
+> (`asyncio.gather`, commit `2676b4a`, voir
+> `docs/superpowers/specs/2026-08-25-world-engine-sprint-e-scheduler-parallele-design.md`).
+> La re-mesure LIVE a alors révélé un nouveau goulot — la contention de
+> verrou destination (Résultat 2 ci-dessous), rare sous le scheduler
+> sériel, devenue systématique sous le scheduler parallèle puisque les 5
+> mondes du scénario partagent le même intervalle. Quatre cycles
+> correctif→mesure LIVE (voir
+> `docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md`
+> pour le détail de chaque décision) :
+>
+> | Étape | Écart moyen | Dérive | Avertissements/12min | Commit |
+> |---|---|---|---|---|
+> | Scheduler sériel (ce rapport) | 5,698s | +14,0% | — | (avant `2676b4a`) |
+> | Scheduler parallélisé seul | 9,73s | +94,6% | 328 | `2676b4a` |
+> | + timeout verrou 5.0s→1.0s | 7,02s | +40,4% | 608 | `8449cb7`+`0d4cb38` |
+> | + jitter à chaque démarrage | 7,02s | +40,7% | 522 | `b84acf0` |
+> | + verrou destination non-bloquant | **6,22s** | **+24,4%** | 1700 | `12079d6`+`a59e395` |
+>
+> Décision utilisateur (2026-08-26) : s'arrêter à +24,4% — amélioration
+> réelle et substantielle (dérive divisée par ~4 par rapport au pire point
+> mesuré), zéro erreur de tick sur toutes les fenêtres. Le nombre
+> d'avertissements monte à chaque étape car chaque échec de verrou coûte
+> de moins en moins cher (jusqu'à 1s d'attente à l'origine, quasi 0 avec le
+> verrou non-bloquant) — plus d'échecs enregistrés, mais moins de temps
+> total perdu. Piste identifiée mais **non vérifiée** pour la dérive
+> résiduelle (+24,4%) : un tick isolé sans concurrence prend ~0,38s
+> (mesuré le 26/08, population ~1482) contre ~1,2s de coût observé par
+> passage — l'écart pourrait venir d'une contention sur le service
+> `personnages` partagé sous 5 appels HTTP concurrents (mécanisme différent
+> du verrou destination, pas encore investigué).
+
 **Date** : 2026-08-25
 **Contexte** : voir [spec](../specs/2026-08-25-world-engine-mesure-charge-design.md) et
 [plan](../plans/2026-08-25-world-engine-mesure-charge.md). Sprint E (mise à l'échelle)
