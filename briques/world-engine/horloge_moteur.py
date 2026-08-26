@@ -82,33 +82,42 @@ async def _acquerir_verrou_destination(monde_id: str) -> asyncio.Lock | None:
     Un ordre d'acquisition trié par `monde_id` ne suffirait PAS à éliminer
     l'interblocage ici : le verrou du pays D'ORIGINE est déjà tenu en entrée du
     tick (`executer_tick`), avant même de savoir qu'une migration transfrontière
-    aura lieu — l'ordre n'est donc jamais neutre. Sans objet avec une tentative
-    non-bloquante (aucune attente possible, donc aucun interblocage possible ici
-    non plus).
+    aura lieu — l'ordre n'est donc jamais neutre. Avec une tentative bornée à
+    0.05s maximum (voir filet de sécurité ci-dessous), un interblocage ne peut
+    plus être qu'un ralentissement borné, jamais un blocage indéfini.
 
     Renvoie le verrou ACQUIS (à libérer par l'appelant), ou `None` s'il est déjà
-    tenu — dans ce cas CETTE émigration précise échoue proprement (capturée
-    dans `avertissements`), sans attendre. `verrou.locked()` puis `acquire()`
-    sans `await` entre les deux : dans le modèle coopératif d'asyncio, aucune
-    tâche ne peut s'intercaler entre le test et l'acquisition, donc pas de
-    fenêtre de course.
+    tenu ou si le filet de sécurité expire — dans ce cas CETTE émigration
+    précise échoue proprement (capturée dans `avertissements`). `verrou.locked()`
+    puis `acquire()` sans `await` entre les deux : dans le modèle coopératif
+    d'asyncio, aucune tâche ne peut s'intercaler entre le test et l'acquisition,
+    donc pas de fenêtre de course À CETTE étape précise (voir filet de sécurité
+    pour la fenêtre qui subsiste ailleurs).
 
-    Filet de sécurité (revue Task 5, Important) : `verrou.locked() == False` est
-    le chemin emprunté quasi systématiquement (validé par 3 tours de mesure
-    LIVE — les mondes concurrents du scheduler ne partagent jamais un verrou
-    destination de cette façon). Mais `asyncio.Lock` maintient en interne une
-    file FIFO d'attendeurs, et `locked()` ne reflète pas forcément un attendeur
-    déjà en file : si un tick MANUEL et le tick du scheduler se chevauchent sur
-    le MÊME pays destination (`executer_tick` documente déjà ce cas comme
-    supporté — « un second appelant simultané ATTEND la fin du premier »), il
-    existe une fenêtre étroite, juste après le `release()` du premier tenant et
-    avant la reprise de l'attendeur déjà en file, où `locked()` répond `False`
-    alors qu'un attendeur va prendre le verrou. Sans plafond, l'`acquire()`
-    suivant rejoindrait alors cette même file et bloquerait pour toute la durée
-    du tick de cet attendeur — potentiellement bien plus que les 1.0s retirés
-    par le correctif v3. Le timeout de 0.05s borne ce cas rare sans réintroduire
-    le coût de 1.0s que 3 tours de mesure ont montré payé sur quasi chaque
-    migration en contention ordinaire."""
+    Filet de sécurité (revue Task 5, Important) : `asyncio.Lock` maintient en
+    interne une file FIFO d'attendeurs, et `locked()` ne reflète pas forcément
+    un attendeur déjà en file : si un tick MANUEL et le tick du scheduler se
+    chevauchent sur le MÊME pays destination (`executer_tick` documente déjà ce
+    cas comme supporté — « un second appelant simultané ATTEND la fin du
+    premier »), il existe une fenêtre étroite, juste après le `release()` du
+    premier tenant et avant la reprise de l'attendeur déjà en file, où
+    `locked()` répond `False` alors qu'un attendeur va prendre le verrou. Sans
+    plafond, l'`acquire()` suivant rejoindrait cette même file et bloquerait
+    pour toute la durée du tick de cet attendeur. Le timeout de 0.05s borne ce
+    cas.
+
+    ⚠️ Correctif post-revue finale de branche : la fréquence du chemin
+    `locked() == True` (échec instantané) dépend de la configuration du
+    déploiement, elle N'EST PAS universellement rare — l'affirmation initiale
+    du correctif v3 (« quasi systématiquement » libre) était fausse. Si le
+    scheduler et les mondes partagent le même intervalle
+    (`HORLOGE_SCHEDULER_INTERVALLE_S` ≈ `intervalle_secondes` d'un monde, voir
+    `main.py`), les mondes dus convergent vers le MÊME passage à chaque fois
+    (voir design, section « Mise à jour n°4 ») — dans cette configuration,
+    `locked() == True` domine largement (mesuré en LIVE : 68 échecs sur 145
+    tentatives en rafale concurrente sur cette config précise, ~47%, pas
+    « quasi jamais »). Ce n'est pas un défaut de cette fonction mais un effet
+    du réglage du scheduler par rapport aux intervalles des mondes."""
     verrou = _verrou_tick(monde_id)
     if verrou.locked():
         return None

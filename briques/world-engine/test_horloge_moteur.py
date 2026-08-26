@@ -670,7 +670,7 @@ async def test_acquerir_verrou_destination_filet_de_securite_borne_l_attente(mon
 
 
 @pytest.mark.asyncio
-async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypatch):
+async def test_emigration_verrou_destination_deja_tenu_echoue_proprement(monkeypatch):
     """Le pays destination a son verrou déjà tenu (simulé directement, sans passer
     par un vrai tick concurrent) : l'émigration doit échouer PROPREMENT (capturée
     dans avertissements), jamais planter le tick ni bloquer indéfiniment — voir
