@@ -87,7 +87,7 @@
     },
     {
       "nom": "genome_enfant_lire",
-      "description": "Lit la fiche complète d'un enfant stocké : thème astral, récit d'hérédité, description fusionnée, ids des parents.",
+      "description": "Lit la fiche complète d'un enfant stocké : thème astral, récit d'hérédité, description fusionnée, ids des parents, et son état de simulation courant (`simulation`, null si jamais placé sur un monde : monde_id, cellule_id, age_actuel_ticks, vivant, mort_au_tick).",
       "methode": "GET",
       "chemin": "/genome/enfants/{eid}",
       "params": {
@@ -123,6 +123,61 @@
           "type": "string",
           "description": "Id de l'enfant stocké à supprimer.",
           "requis": true
+        }
+      },
+      "action": true
+    },
+    {
+      "nom": "genome_fonder",
+      "description": "Crée un habitant fondateur SANS croisement à 2 parents (pont Studio↔world-engine) : dérive un signe plausible d'une simple description textuelle, obtient un thème complet réel pour une date de naissance dérivée de ce signe, place l'enfant sur une cellule aléatoire du monde donné. latitude/longitude/heure_naissance/utc_offset restent requis (jamais devinés) pour que le thème obtenu soit complet — sans eux, `personnages` renverrait un thème dégradé qui casserait un usage futur de ce fondateur comme parent d'un croisement normal.",
+      "methode": "POST",
+      "chemin": "/genome/fonder",
+      "params": {
+        "monde_id": {
+          "type": "string",
+          "description": "Id d'un monde spatial existant où placer le fondateur. Introuvable ou d'une autre clé API → 404.",
+          "requis": true
+        },
+        "description": {
+          "type": "string",
+          "description": "Description libre du personnage (traits, personnalité) — utilisée pour dériver un signe plausible via la brique personnages.",
+          "requis": true
+        },
+        "prenoms": {
+          "type": "string",
+          "description": "Prénom(s) du fondateur."
+        },
+        "nom": {
+          "type": "string",
+          "description": "Nom de famille du fondateur."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude de naissance du fondateur. Obligatoire : jamais deviné.",
+          "requis": true
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude EST-positive de naissance du fondateur. Obligatoire.",
+          "requis": true
+        },
+        "heure_naissance": {
+          "type": "string",
+          "description": "Heure de naissance 'HH:MM' du fondateur. Obligatoire : sans elle, thème dégradé.",
+          "requis": true
+        },
+        "utc_offset": {
+          "type": "number",
+          "description": "Décalage local→UTC au lieu de naissance du fondateur. Obligatoire.",
+          "requis": true
+        },
+        "annee": {
+          "type": "integer",
+          "description": "Année de naissance du fondateur (optionnel, défaut : année courante, bornée 1-9999)."
+        },
+        "sexe": {
+          "type": "string",
+          "description": "Sexe du fondateur ('F'/'M', optionnel) — nécessaire à l'horloge pour l'apparier en couple par la suite."
         }
       },
       "action": true
