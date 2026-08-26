@@ -79,35 +79,29 @@ def lire_horloge(monde_id: str) -> dict | None:
 
 def demarrer(monde_id: str, intervalle_secondes: int) -> None:
     """`lire_horloge` d'abord : garantit la ligne `horloges` (rattrapage paresseux)
-    pour que la transaction ci-dessous ne porte jamais sur zéro ligne en silence.
+    pour que l'UPDATE ci-dessous ne porte jamais sur zéro ligne en silence.
 
-    Jitter au tout premier démarrage (`derniere_execution` encore `NULL`) : évite
-    que plusieurs mondes démarrés ensemble avec le même intervalle restent
-    perpétuellement dus au même instant (mesuré en LIVE, Sprint E — voir
-    docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md).
-    Un monde déjà tické avant garde sa phase existante : `derniere_execution`
-    n'est pas modifié dans ce cas.
-
-    Lecture de `derniere_execution` et écriture dans LA MÊME transaction
-    (`BEGIN IMMEDIATE`, correctif revue) : lire puis écrire dans deux
-    connexions séparées laissait une fenêtre où un tick manuel concurrent sur
-    ce même monde (`marquer_execution`, autorisé même horloge inactive)
-    pouvait faire écraser sa `derniere_execution` fraîchement posée par la
-    valeur jitterée calculée avant lui."""
+    Jitter à CHAQUE démarrage, pas seulement le premier (correctif v2, Sprint
+    E — voir docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md,
+    section « Mise à jour post-validation LIVE ») : un monde déjà en lockstep
+    avec ses voisins (même intervalle, déjà tické ensemble par le passé) ne
+    se désynchronise jamais tout seul — mesuré en LIVE, un jitter limité au
+    tout premier démarrage ne s'est jamais déclenché sur des mondes déjà
+    actifs avant ce correctif (dérive encore +40,4% après ce correctif limité,
+    contre +94,6% avant). `derniere_execution` est donc recalculée à chaque
+    appel, premier démarrage ou redémarrage — seul `tick_actuel` (la
+    progression réelle) n'est jamais affecté par cette fonction. La
+    simplification élimine aussi la race TOCTOU fermée en revue de la Task 1 :
+    plus de lecture conditionnelle avant écriture, donc plus besoin de
+    `BEGIN IMMEDIATE`."""
     lire_horloge(monde_id)  # rattrapage paresseux uniquement, résultat non utilisé ici
+    derniere_execution_initiale = (
+        datetime.now(timezone.utc) - timedelta(seconds=random.uniform(0, intervalle_secondes))
+    ).isoformat()
     with _conn() as c:
-        c.execute("BEGIN IMMEDIATE")
-        r = c.execute("SELECT derniere_execution FROM horloges WHERE monde_id=?", (monde_id,)).fetchone()
-        if r is not None and r["derniere_execution"] is None:
-            derniere_execution_initiale = (
-                datetime.now(timezone.utc) - timedelta(seconds=random.uniform(0, intervalle_secondes))
-            ).isoformat()
-            c.execute(
-                "UPDATE horloges SET actif=1, intervalle_secondes=?, derniere_execution=? WHERE monde_id=?",
-                (intervalle_secondes, derniere_execution_initiale, monde_id))
-        else:
-            c.execute("UPDATE horloges SET actif=1, intervalle_secondes=? WHERE monde_id=?",
-                       (intervalle_secondes, monde_id))
+        c.execute(
+            "UPDATE horloges SET actif=1, intervalle_secondes=?, derniere_execution=? WHERE monde_id=?",
+            (intervalle_secondes, derniere_execution_initiale, monde_id))
 
 
 def arreter(monde_id: str) -> None:

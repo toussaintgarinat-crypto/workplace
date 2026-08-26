@@ -57,15 +57,20 @@ def test_demarrer_horloge_jamais_executee_initialise_derniere_execution_dans_les
     assert (avant - timedelta(seconds=60)) <= derniere_execution <= apres
 
 
-def test_demarrer_horloge_deja_tickee_garde_sa_phase():
+def test_demarrer_horloge_deja_tickee_est_rejitteree_au_redemarrage():
+    from datetime import datetime, timedelta, timezone
     monde = stockage_spatial.creer_monde("cle-h4d", _cellules_factices(), seed=1)
     stockage_horloge.initialiser_horloge(monde["id"])
     stockage_horloge.marquer_execution(monde["id"], 5)  # simule un tick manuel avant tout démarrage automatique
-    etat_avant = stockage_horloge.lire_horloge(monde["id"])
+    avant = datetime.now(timezone.utc)
     stockage_horloge.demarrer(monde["id"], 60)
+    apres = datetime.now(timezone.utc)
     etat_apres = stockage_horloge.lire_horloge(monde["id"])
-    assert etat_apres["derniere_execution"] == etat_avant["derniere_execution"]
-    assert etat_apres["tick_actuel"] == 5
+    derniere_execution = datetime.fromisoformat(etat_apres["derniere_execution"])
+    # Correctif v2 : un redémarrage rejitte toujours, il ne garde plus l'ancienne
+    # phase — mêmes bornes que le tout premier démarrage.
+    assert (avant - timedelta(seconds=60)) <= derniere_execution <= apres
+    assert etat_apres["tick_actuel"] == 5  # tick_actuel (la progression réelle) n'est jamais touché par demarrer
     assert etat_apres["actif"] is True
 
 
