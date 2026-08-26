@@ -57,6 +57,18 @@ def test_demarrer_horloge_jamais_executee_initialise_derniere_execution_dans_les
     assert (avant - timedelta(seconds=60)) <= derniere_execution <= apres
 
 
+def test_demarrer_horloge_deja_tickee_garde_sa_phase():
+    monde = stockage_spatial.creer_monde("cle-h4d", _cellules_factices(), seed=1)
+    stockage_horloge.initialiser_horloge(monde["id"])
+    stockage_horloge.marquer_execution(monde["id"], 5)  # simule un tick manuel avant tout démarrage automatique
+    etat_avant = stockage_horloge.lire_horloge(monde["id"])
+    stockage_horloge.demarrer(monde["id"], 60)
+    etat_apres = stockage_horloge.lire_horloge(monde["id"])
+    assert etat_apres["derniere_execution"] == etat_avant["derniere_execution"]
+    assert etat_apres["tick_actuel"] == 5
+    assert etat_apres["actif"] is True
+
+
 def test_horloges_actives_a_declencher_jamais_executee_est_due_au_plus_tard_apres_intervalle(monkeypatch):
     from datetime import datetime, timezone
     monkeypatch.setattr(stockage_horloge.random, "uniform", lambda a, b: b)  # pire cas : jitter maximal
