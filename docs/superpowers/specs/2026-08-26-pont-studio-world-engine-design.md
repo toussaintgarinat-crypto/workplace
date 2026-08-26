@@ -140,11 +140,15 @@ propagation d'une exception dédiée). Ce document conçoit le pont
   - `habitants[nom_cle]` : le lien personnage↔habitant. `nom_cle` = même
     normalisation que `_cle_perso` (existant) pour rester cohérent avec le
     rapprochement script⇄fiche déjà en place.
-- `world_engine_client.py` : appels HTTP vers world-engine (`/genome/fonder`,
-  `/spatial/mondes`, `/horloge/{mid}/tick`, `GET /genome/enfants/{eid}` pour
-  l'état simulé) — jamais d'import de code, exception dédiée
-  `WorldEngineIndisponible` en cas d'échec réseau, même motif que
-  `PersonnagesIndisponible`.
+- `_appeler_world_engine(...)` dans `studio.py` : appels HTTP vers
+  world-engine (`/genome/fonder`, `/spatial/mondes`, `/horloge/{mid}/tick`,
+  `GET /genome/enfants/{eid}` pour l'état simulé) — jamais d'import de code.
+  Suit l'idiome RÉEL déjà en place pour les autres briques sœurs
+  (`_appeler_images`/`_appeler_video`, `studio.py:791-817`) : repli `None`
+  silencieux sur toute exception, c'est l'appelant qui décide de renvoyer un
+  502 (action explicite de l'utilisateur, ex. fonder un personnage — même
+  motif que `couverture_episode`/`teaser_episode`, `main.py:1121`) ou de
+  rester silencieux (tick de fond, suggestions de retour).
 - `canon.apparitions : {nom_cle: n}` — nouveau compteur, incrémenté par
   `_fusion_canon` à chaque chapitre pour chaque nom déjà vu (en plus de la
   déduplication existante dans `canon.personnages`). C'est ce qui rend le
