@@ -307,3 +307,16 @@ leur fenêtre de 5s peuvent désormais tomber dans des passages de sondage
 différents), et (3) probablement d'améliorer le taux de réussite des
 migrations (moins de mondes simultanément dus par passage = moins de
 verrous destination tenus en même temps).
+
+## Résultat final (2026-08-26)
+
+`HORLOGE_SCHEDULER_INTERVALLE_S=1` déployé (commit `4ce4141`, aucun
+changement Python). Re-mesure LIVE : **5,55s d'écart moyen, +11,0% de
+dérive** (contre +14,0% pour le régime sériel de départ — meilleur, pas
+seulement comparable) et **59 avertissements de verrou sur 12 min**
+(contre 1700 avant ce correctif, ÷29). Zéro erreur de tick. Confirme
+l'hypothèse de la revue finale : le sondage à cadence fine était bien la
+cause dominante, pas un facteur secondaire — les 3 correctifs précédents
+sur le verrou lui-même (timeout, jitter, non-bloquant) n'avaient pu
+qu'atténuer un symptôme dont ce correctif traite la cause. Sprint E
+(scheduler + contention de verrou) clos ici.
