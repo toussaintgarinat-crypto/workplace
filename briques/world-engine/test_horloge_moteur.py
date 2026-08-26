@@ -616,6 +616,35 @@ async def test_ligne_origine_conservee_marquee_emigre_jamais_supprimee(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_acquerir_verrou_destination_libre_est_acquis_immediatement():
+    monde_id = "monde-verrou-libre-sprint-e-v3"
+    verrou = horloge_moteur._verrou_tick(monde_id)
+    resultat = await horloge_moteur._acquerir_verrou_destination(monde_id)
+    assert resultat is verrou
+    assert verrou.locked()
+    verrou.release()
+
+
+@pytest.mark.asyncio
+async def test_acquerir_verrou_destination_deja_tenu_echoue_sans_attendre():
+    import time
+    monde_id = "monde-verrou-tenu-sprint-e-v3"
+    verrou = horloge_moteur._verrou_tick(monde_id)
+    await verrou.acquire()
+    try:
+        debut = time.monotonic()
+        resultat = await horloge_moteur._acquerir_verrou_destination(monde_id)
+        duree = time.monotonic() - debut
+    finally:
+        verrou.release()
+    assert resultat is None
+    # Avant ce correctif, cet appel attendait jusqu'à VERROU_DESTINATION_TIMEOUT_S
+    # (1.0s) avant d'échouer. Seuil large pour absorber la latence de test sans
+    # rendre le test friable, tout en prouvant qu'il n'y a plus d'attente réelle.
+    assert duree < 0.1
+
+
+@pytest.mark.asyncio
 async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypatch):
     """Le pays destination a son verrou déjà tenu (simulé directement, sans passer
     par un vrai tick concurrent) : l'émigration doit échouer PROPREMENT (capturée
@@ -626,7 +655,6 @@ async def test_emigration_timeout_verrou_destination_echoue_proprement(monkeypat
     conjoint = _ajouter_habitant("cle-fed6", origine["id"], 0, "M", ne_au_tick=-30)
     couple_id = stockage_horloge.former_couple(origine["id"], 0, eid, conjoint, tick=0)
 
-    monkeypatch.setattr(horloge_moteur, "VERROU_DESTINATION_TIMEOUT_S", 0.05)
     monkeypatch.setattr(horloge_moteur.horloge, "meurt", lambda *a_, **k: False)
     monkeypatch.setattr(horloge_moteur.horloge, "dissout", lambda rng: False)
     monkeypatch.setattr(horloge_moteur.horloge, "cellule_saturee", lambda *a, **k: True)
@@ -704,11 +732,10 @@ async def test_verrou_destination_libere_avant_la_boucle_de_naissances(monkeypat
 async def test_auto_adjacence_ignoree_jamais_d_emigration_vers_soi_meme(monkeypatch):
     """Un pays déclaré adjacent à LUI-MÊME ne doit jamais être une destination de
     migration : sinon chaque émigrant viserait le pays dont le verrou de tick est
-    déjà tenu par ce tick même (verrou non réentrant) et attendrait le timeout
-    complet, un par un — N × VERROU_DESTINATION_TIMEOUT_S de blocage par tick
-    (correctif revue Task 4). Le timeout est volontairement laissé à sa valeur
-    NORMALE ici : si l'auto-adjacence n'était pas filtrée, le test durerait des
-    dizaines de secondes au lieu de terminer instantanément."""
+    déjà tenu par ce tick même (verrou non réentrant) — depuis le correctif v3
+    (acquisition non-bloquante), chaque tentative échouerait instantanément au
+    lieu d'attendre, donc ce filtre n'est plus qu'une question de correction
+    (un pays n'est pas sa propre destination), pas de performance."""
     monde = _monde_avec_habitants("cle-fed7", n_cellules=1)
     f = stockage_federation.creer_federation("cle-fed7", "F")
     stockage_federation.rattacher_pays(f["id"], monde["id"], "cle-fed7", None)
@@ -837,6 +864,3 @@ async def test_bout_en_bout_migration_transfrontiere_reelle_sur_plusieurs_ticks(
     assert illisibles == [], (
         f"habitants du pays destination inaccessibles à son propre tenant : {illisibles}")
 
-
-def test_verrou_destination_timeout_par_defaut_est_1_0s():
-    assert horloge_moteur.VERROU_DESTINATION_TIMEOUT_S == 1.0
