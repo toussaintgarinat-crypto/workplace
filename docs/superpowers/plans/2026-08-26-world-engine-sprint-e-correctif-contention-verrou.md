@@ -2,18 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Réduire la contention de verrou destination (Sprint D) qui a fait passer la dérive de tick de +14,0% à +94,6% après la parallélisation du scheduler — timeout de verrou 5.0s→1.0s, et jitter au premier démarrage d'une horloge pour désynchroniser les mondes partageant un intervalle.
+**Goal:** Réduire la contention de verrou destination (Sprint D) qui a fait passer la dérive de tick de +14,0% à +94,6% après la parallélisation du scheduler.
 
-**Architecture:** Deux changements indépendants, tous deux dans `briques/world-engine` : `horloge_moteur.VERROU_DESTINATION_TIMEOUT_S` passe de `5.0` à `1.0` (une constante) ; `stockage_horloge.demarrer()` initialise `derniere_execution` à une valeur jitterée (au lieu de `NULL`) lors du tout premier démarrage d'une horloge, laissant inchangé le cas d'un redémarrage après un arrêt.
+**État final (mis à jour après 3 rounds de mesure LIVE — voir Tasks 1/3/5 et le design, sections « Mise à jour n°1/2/3 ») :** le plan a évolué en cours de route, chaque round n'apportant pas l'amélioration espérée par le round précédent. Ordre réel : (1) timeout de verrou 5.0s→1.0s + jitter au TOUT PREMIER démarrage seulement — +40,4%, jitter jamais déclenché sur les mondes déjà actifs ; (2) jitter étendu à CHAQUE démarrage (pas seulement le premier) — aucune amélioration mesurable (+40,7%), le mécanisme JIFO du scheduler rend le jitter structurellement inerte (voir design « Mise à jour n°4 ») ; (3) `_acquerir_verrou_destination` rendu non-bloquant (`verrou.locked()` + `acquire()` immédiat, timeout retiré puis un filet de sécurité 0.05s réintroduit en revue) — +24,4%, retenu comme état final de CE plan. `VERROU_DESTINATION_TIMEOUT_S` n'existe plus dans le code final.
+
+**Architecture:** `briques/world-engine/horloge_moteur.py` (`_acquerir_verrou_destination`, non-bloquant avec filet de sécurité) et `briques/world-engine/stockage_horloge.py` (`demarrer()`, jitter inconditionnel à chaque appel).
 
 **Tech Stack:** Python 3.12, stdlib `random`/`datetime` (aucune nouvelle dépendance), pytest (motif `monkeypatch` déjà utilisé dans `test_stockage_horloge.py`/`test_horloge_moteur.py`).
 
 ## Global Constraints
 
 - Comportement de re-tentative de migration inchangé (« retentera au tick suivant », capturé dans `avertissements`) — seule la latence maximale d'attente de verrou change (spec, section « Décisions de conception »).
-- Le jitter ne s'applique QU'au tout premier démarrage d'une horloge (`derniere_execution IS NULL`) — un redémarrage après arrêt garde sa phase existante, `demarrer` ne touche pas `derniere_execution` dans ce cas (spec, section « Décisions de conception »).
+- **(État final, remplace la contrainte v1 ci-dessous, gardée barrée pour l'historique)** Le jitter s'applique à CHAQUE appel à `demarrer()`, premier démarrage ou redémarrage — voir design, section « Mise à jour n°2 ». ~~Le jitter ne s'applique QU'au tout premier démarrage d'une horloge (`derniere_execution IS NULL`) — un redémarrage après arrêt garde sa phase existante, `demarrer` ne touche pas `derniere_execution` dans ce cas.~~
 - Plafond du jitter = l'intervalle configuré lui-même (`random.uniform(0, intervalle_secondes)`), pas une valeur séparée — décision utilisateur explicite, pas un paramètre de configuration à exposer (spec, section « Hors périmètre »).
-- Pas de refonte de la granularité du verrou lui-même — hors périmètre de ce sprint (spec, section « Hors périmètre »).
+- Pas de refonte de la granularité du verrou lui-même — hors périmètre de ce sprint (spec, section « Hors périmètre »). Réalisé à la place : acquisition non-bloquante avec filet de sécurité 0.05s (design, section « Mise à jour n°2 »/Task 5).
 
 ---
 
@@ -776,10 +778,146 @@ qu'autre chose contribue à la dérive au-delà de la contention de verrou
 mesurée jusqu'ici — ne pas conclure au succès sans creuser, escalader
 plutôt que de re-tenter un ajustement de plus sans nouvelle hypothèse.
 
-## Self-Review
+## Self-Review (v1, historique — voir Self-Review final après Task 9)
 
-**Couverture de la spec** : timeout 5.0→1.0 (Task 1, Step 3) ; jitter au premier démarrage plafonné à l'intervalle configuré, comportement inchangé pour un redémarrage (Task 1, Step 3) ; test existant remplacé pour refléter le nouveau contrat (Task 1, Step 1, les deux tests min/max jitter remplacent l'ancien) ; validation LIVE avec comparaison chiffrée aux deux régimes précédents (avant tout correctif : 5,698s/+14,0% ; après scheduler seul : 9,73s/+94,6%) et consignation (Task 2) ; hors périmètre (granularité du verrou, paramètre de config pour le jitter) non touchés, conforme à la spec.
+**Cette section décrit l'état À L'ÉCRITURE de ce plan (Tasks 1-2 seulement, v1) — dépassée par les Tasks 3-9, gardée pour l'historique.**
 
-**Signatures** : `demarrer(monde_id: str, intervalle_secondes: int) -> None` inchangée ; `VERROU_DESTINATION_TIMEOUT_S` reste un `float` au niveau module, cohérent avec son usage existant dans `_acquerir_verrou_destination` (déjà lu dynamiquement, pas figé à l'import — les tests existants qui le monkeypatchent continuent de fonctionner sans changement).
+**Couverture de la spec (v1)** : timeout 5.0→1.0 (Task 1, Step 3) ; jitter au premier démarrage plafonné à l'intervalle configuré, comportement inchangé pour un redémarrage (Task 1, Step 3) ; test existant remplacé pour refléter le nouveau contrat (Task 1, Step 1, les deux tests min/max jitter remplacent l'ancien) ; validation LIVE avec comparaison chiffrée aux deux régimes précédents (avant tout correctif : 5,698s/+14,0% ; après scheduler seul : 9,73s/+94,6%) et consignation (Task 2) ; hors périmètre (granularité du verrou, paramètre de config pour le jitter) non touchés, conforme à la spec.
+
+**Signatures (v1, dépassé)** : ~~`VERROU_DESTINATION_TIMEOUT_S` reste un `float` au niveau module~~ — retiré entièrement par la Task 5, voir plus bas.
 
 **Aucun placeholder** : toutes les étapes contiennent du code ou des commandes complets ; la seule branche conditionnelle (Task 2, Step 3, fichier d'état absent) renvoie explicitement à la procédure déjà exécutée et documentée dans `.superpowers/sdd/task-2-report.md`, pas à une improvisation.
+
+---
+
+### Task 7 : Corrections de documentation (revue finale de branche)
+
+**Contexte** : la revue finale de branche (tout le Sprint E, `319ff12..66b8845`) a trouvé plusieurs inexactitudes de documentation accumulées au fil des 3 rounds de correctif — un docstring qui affirme l'inverse des mesures, un diagnostic erroné dans le design (déjà corrigé ci-dessus dans le fichier design, section « Mise à jour n°4 »), des références obsolètes à `VERROU_DESTINATION_TIMEOUT_S`, des noms de tests qui décrivent un contrat dépassé, un fichier de plan jamais committé. Aucun changement de comportement — uniquement de la prose (docstrings, `manifest.json`, noms de tests, rapport, ce plan).
+
+**Files:**
+- Modify: `briques/world-engine/horloge_moteur.py` (docstring de `_acquerir_verrou_destination`)
+- Modify: `briques/world-engine/manifest.json` (descriptions `horloge_demarrer`/`horloge_lire`)
+- Modify: `briques/world-engine/test_stockage_horloge.py` (renomme 2 tests dont le nom décrit un contrat dépassé)
+- Modify: `briques/world-engine/test_horloge_moteur.py` (renomme 1 test au nom obsolète, « timeout » n'existe plus)
+- Modify: `docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md` (référence obsolète à la constante retirée)
+- Modify: `docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md` (déjà fait : correction de la « Mise à jour n°2 », ajout « Mise à jour n°4 »)
+- Modify: ce fichier de plan (déjà fait : Goal/Architecture/Global Constraints/Self-Review v1 mis à jour)
+- Create (commit d'un fichier existant non versionné) : `docs/superpowers/plans/2026-08-25-world-engine-sprint-e-scheduler-parallele.md`
+
+**Statut : DÉJÀ FAIT par le contrôleur directement** (édits mécaniques de prose, sans risque, pas de cycle TDD applicable — pas de dispatch de sous-agent). Reste seulement à lancer la suite de tests pour confirmer qu'aucun renommage de test n'a cassé une référence croisée, committer, et pousser.
+
+- [ ] **Step 1 : Lancer toute la suite de la brique (confirmer qu'aucun renommage n'a cassé une référence)**
+
+Run: `cd briques/world-engine && python -m pytest -v` (ou `scripts/tests_briques.sh world-engine` depuis la racine si pytest natif indisponible).
+Expected : PASS, même nombre de tests qu'avant (les renommages ne changent pas le nombre de tests, seulement leurs noms).
+
+- [ ] **Step 2 : Commit**
+
+```bash
+git add briques/world-engine/horloge_moteur.py briques/world-engine/manifest.json \
+        briques/world-engine/test_stockage_horloge.py briques/world-engine/test_horloge_moteur.py \
+        docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md \
+        docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md \
+        docs/superpowers/plans/2026-08-26-world-engine-sprint-e-correctif-contention-verrou.md \
+        docs/superpowers/plans/2026-08-25-world-engine-sprint-e-scheduler-parallele.md
+git commit -m "$(cat <<'EOF'
+docs(world-engine): corrige les inexactitudes trouvées en revue finale
+
+Revue finale de branche (319ff12..66b8845) : docstring de
+_acquerir_verrou_destination affirmait l'inverse des mesures (« chemin
+libre quasi systématique » alors que 1700/12min montrent le contraire dans
+la config mesurée) ; diagnostic du jitter dans le design (explication
+statistique) était faux, corrigé ; manifest.json pas à jour sur le nouveau
+sens de derniere_execution et le premier tick désormais jitteré ; noms de
+tests décrivant un contrat dépassé ; référence obsolète à
+VERROU_DESTINATION_TIMEOUT_S dans le rapport ; plan du premier round jamais
+committé. Aucun changement de comportement.
+EOF
+)"
+git push origin main
+```
+
+---
+
+### Task 8 : Découpler la cadence de sondage du scheduler de l'intervalle des mondes
+
+**Contexte** : la revue finale a identifié la vraie cause de la dérive résiduelle (+24,4%) et de l'inertie du jitter — `_boucle_scheduler` sonde à la MÊME cadence (`HORLOGE_SCHEDULER_INTERVALLE_S`, 5s) que l'intervalle des mondes eux-mêmes (5s dans le scénario mesuré), donc tous les mondes redeviennent dus au même passage à chaque fois, pour toujours. Les deux réglages sont déjà indépendants dans le code (`main.py:370` lit `HORLOGE_SCHEDULER_INTERVALLE_S` séparément de `intervalle_secondes` par horloge) — aucun changement de code Python n'est nécessaire, seulement la configuration de déploiement. Voir design, section « Mise à jour n°4 ».
+
+**Files:**
+- Modify: `briques/world-engine/docker-compose.yml` (ajoute `HORLOGE_SCHEDULER_INTERVALLE_S=1` aux variables d'environnement)
+- Modify: `briques/world-engine/.env.example` (documente la variable, absente jusqu'ici)
+- Modify: `briques/world-engine/README.md` (si ce fichier documente déjà les variables d'environnement du scheduler — vérifier son contenu actuel avant d'éditer, l'ajout doit suivre le format existant)
+
+**Interfaces:** aucune — pur changement de configuration, `SCHEDULER_INTERVALLE_S = int(os.getenv("HORLOGE_SCHEDULER_INTERVALLE_S", "5"))` (`main.py:370`) lit déjà cette variable, le défaut de code (5) reste inchangé pour ne pas affecter d'autres déploiements qui ne fixent pas cette variable explicitement.
+
+- [ ] **Step 1 : Lire l'état actuel des fichiers à modifier**
+
+Lire `briques/world-engine/docker-compose.yml`, `briques/world-engine/.env.example`, et `briques/world-engine/README.md` en entier avant d'éditer — confirmer qu'aucun ne mentionne déjà `HORLOGE_SCHEDULER_INTERVALLE_S` (une recherche `grep -rn HORLOGE_SCHEDULER_INTERVALLE_S briques/world-engine/` avant ce plan n'a trouvé qu'une seule occurrence, dans `main.py`).
+
+- [ ] **Step 2 : Ajouter la variable au déploiement**
+
+Dans `briques/world-engine/docker-compose.yml`, dans le bloc `environment:` du service `world-engine`, ajouter une ligne (après les variables existantes, ex. après `WORLD_ENGINE_DB`) :
+
+```yaml
+      - HORLOGE_SCHEDULER_INTERVALLE_S=1
+```
+
+Avec un commentaire au-dessus expliquant pourquoi (référencer la découverte de la revue finale) :
+
+```yaml
+      # Sonde toutes les 1s (pas 5s, le défaut) : si plusieurs mondes partagent
+      # le même intervalle_secondes que la cadence de sondage, ils redeviennent
+      # TOUS dus au même passage pour toujours (jitter inefficace, dérive
+      # maximale) — voir docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md,
+      # section « Mise à jour n°4 ».
+      - HORLOGE_SCHEDULER_INTERVALLE_S=1
+```
+
+Dans `briques/world-engine/.env.example`, ajouter (adapter au format déjà utilisé par les autres variables de ce fichier, lu au Step 1) une entrée documentant `HORLOGE_SCHEDULER_INTERVALLE_S` avec sa valeur par défaut de code (5) et la valeur recommandée en production (1) si plusieurs mondes actifs partagent un intervalle court.
+
+- [ ] **Step 3 : Vérifier que la suite de tests reste verte (aucune régression attendue, changement de config pure)**
+
+Run: `cd briques/world-engine && python -m pytest -v`
+Expected : PASS, comportement identique (les tests utilisent `HORLOGE_SCHEDULER_DESACTIVE=1`, jamais la vraie boucle de fond, donc cette variable n'affecte aucun test existant).
+
+- [ ] **Step 4 : Commit**
+
+```bash
+git add briques/world-engine/docker-compose.yml briques/world-engine/.env.example briques/world-engine/README.md
+git commit -m "$(cat <<'EOF'
+fix(world-engine): découple la cadence de sondage du scheduler des intervalles
+
+Revue finale de branche : _boucle_scheduler sonde à la même cadence (5s)
+que l'intervalle des mondes du scénario mesuré, donc tous redeviennent dus
+au même passage pour toujours (jitter inefficace, dérive résiduelle
+maximale). HORLOGE_SCHEDULER_INTERVALLE_S=1 en déploiement (variable déjà
+lue par le code, aucun changement Python) — sonde 5x plus finement que
+l'intervalle des mondes actifs, ce qui devrait rendre le jitter enfin
+effectif et réduire la dérive résiduelle sans toucher au verrou.
+
+Voir docs/superpowers/specs/2026-08-26-world-engine-sprint-e-correctif-contention-verrou-design.md
+EOF
+)"
+git push origin main
+```
+
+---
+
+### Task 9 : Re-validation LIVE sur le HP
+
+**Files:** aucun — dépend de la Task 8 poussée sur `main`.
+
+Mêmes étapes que les Tasks 2/4/6 de ce plan : redéploiement (`docker compose build && up -d`, cette fois le changement est dans `docker-compose.yml` lui-même donc `up -d` doit bien recréer le conteneur avec la nouvelle variable d'environnement — vérifier via `docker inspect workplace_world_engine | grep HORLOGE_SCHEDULER_INTERVALLE_S` que la variable est bien appliquée avant de lancer la mesure), vérification santé, vérification/reconstruction de l'état de mesure si nécessaire (procédure déjà documentée), rejeu de la fenêtre scheduler 12 min, calcul de l'écart moyen, comptage des avertissements de verrou, et — nouveau pour cette task — comptage des migrations transfrontières réussies (via une rafale de ticks manuels concurrents comme celle utilisée pour la vérification empirique de la revue finale, PAS via les logs du scheduler qui ne les exposent pas) pour confirmer que le taux de réussite des migrations s'améliore par rapport aux ~53% mesurés avant ce correctif.
+
+Cible : écart moyen sensiblement inférieur aux 6,22s mesurés après la Task 6 — le mécanisme (sondage plus fin que l'intervalle) devrait aussi réduire le nombre de mondes simultanément dus par passage, donc réduire à la fois la durée de passage ET la contention de verrou. Consigner cette 5e mesure à la suite des 4 précédentes dans la note du rapport
+(`docs/superpowers/reports/2026-08-25-world-engine-mesure-charge-rapport.md`).
+
+Si le résultat ne s'améliore pas malgré ce correctif, c'est un signal qu'autre chose domine désormais (le coût de calcul du tick lui-même, ou une contention sur `personnages` sous charge concurrente — hypothèse nommée mais non vérifiée dans le rapport) — consigner honnêtement plutôt que de conclure au succès, et escalader à l'utilisateur pour décider de la suite plutôt que d'enchaîner un nouveau round sans validation.
+
+## Self-Review final (après Task 9)
+
+**Couverture** : timeout non-bloquant + filet de sécurité (Task 5, déjà revu et validé) ; jitter systématique (Task 3, déjà revu et validé, confirmé inerte à cette configuration par la Task 4 et le diagnostic corrigé en Task 7) ; corrections de documentation trouvées en revue finale (Task 7) ; découplage de la cadence de sondage, la véritable cause racine identifiée par la revue finale (Task 8) ; validation LIVE de ce dernier correctif avec mesure du taux de réussite des migrations en plus de la dérive (Task 9, nouveau critère par rapport aux rounds précédents qui ne mesuraient que la dérive et les avertissements).
+
+**Aucun placeholder** : Task 7 documente son propre statut (déjà fait, mécanique) plutôt que de prétendre à un cycle TDD qui ne s'applique pas à de la prose. Task 8 est un changement de configuration pur, ses steps le disent explicitement plutôt que de simuler un faux cycle RED/GREEN sur du YAML. Task 9 nomme la commande de vérification exacte (rafale manuelle, pas les logs du scheduler) pour le nouveau critère de réussite des migrations.
+
+**Cohérence avec la revue finale** : chaque finding Important de la revue (docstring inexact, diagnostic jitter faux, manifest non à jour, cause racine de la dérive, taux de migration à corriger dans le récit) a une tâche ou une modification directe qui l'adresse — sauf le Minor #12 (test manquant sur `_boucle_scheduler` lui-même), explicitement laissé de côté comme hors scope de ce round (pré-existant, pas introduit par ce sprint).
