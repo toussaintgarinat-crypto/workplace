@@ -77,3 +77,31 @@ def test_appeler_world_engine_aucun_header_sans_cle(monkeypatch):
     monkeypatch.setattr(A.httpx, "AsyncClient", _ClientCapture())
     asyncio.run(A._appeler_world_engine("GET", "/sante"))
     assert capture['headers'] == {}
+
+
+def test_pont_fonder_payload_satisfait_fondation_solo_requise(monkeypatch):
+    """Corrige un trou de la revue finale (Important #7) : rien ne garantissait que le
+    payload envoyé par _pont_fonder satisfait les champs requis de FondationSolo côté
+    world-engine — les deux briques évoluent séparément, un champ requis ajouté ou
+    renommé d'un côté sans mise à jour de l'autre romprait le pont silencieusement
+    (repli honnête = 502, jamais une erreur explicite pointant la vraie cause)."""
+    capture = {}
+
+    class _ClientCapture(_FauxClient):
+        async def request(self, methode, url, json=None, headers=None):
+            capture["methode"], capture["url"], capture["json"] = methode, url, json
+            return _FauxRep({"eid": "e1", "cellule_id": 0, "theme": {}})
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", _ClientCapture())
+    asyncio.run(A._pont_fonder("m1", "une description", "Elara"))
+
+    assert capture["methode"] == "POST"
+    assert capture["url"].endswith("/genome/fonder")
+    # Champs requis de FondationSolo (genome_moteur.py) : ceux sans valeur par défaut.
+    champs_requis = {"monde_id", "description", "latitude", "longitude",
+                      "heure_naissance", "utc_offset"}
+    assert champs_requis <= capture["json"].keys()
+    assert isinstance(capture["json"]["latitude"], float)
+    assert isinstance(capture["json"]["longitude"], float)
+    assert isinstance(capture["json"]["utc_offset"], float)
+    assert isinstance(capture["json"]["heure_naissance"], str)

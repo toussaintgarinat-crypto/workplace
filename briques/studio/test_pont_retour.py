@@ -133,3 +133,26 @@ def test_accepter_remplace_le_fait_precedent_pas_d_accumulation(monkeypatch):
     faits_elara = [f for f in r.json()["acquis"] if f.startswith("Elara (monde simulé) :")]
     assert len(faits_elara) == 1
     assert "2 an(s)" in faits_elara[0]
+
+
+def test_suggestions_cles_simulation_correspondent_a_world_engine(monkeypatch):
+    """Corrige un trou de la revue finale (Important #7) : documente et verrouille
+    l'ensemble exact des clés que world-engine émet pour `simulation`
+    (main.py::_simulation_enfant côté world-engine) — si ce contrat dérive d'un
+    côté sans l'autre, ce test doit casser plutôt que laisser le pont silencieusement
+    manquer une donnée que pont_accepter utilise pour construire ses faits."""
+    sid = _serie_avec_habitant_lie()
+    sim = {"monde_id": "m1", "cellule_id": 2, "ne_au_tick": 0, "age_actuel_ticks": 4,
+           "vivant": True, "mort_au_tick": None}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim}))
+    r = client.get(f"/series/{sid}/pont/suggestions")
+    (sug,) = r.json()["suggestions"]
+    # Ensemble exact émis par world-engine (main.py::_simulation_enfant), voir
+    # briques/world-engine/main.py — si ce test casse, un des deux côtés a dérivé.
+    cles_world_engine = {"monde_id", "cellule_id", "ne_au_tick", "age_actuel_ticks",
+                          "vivant", "mort_au_tick"}
+    assert cles_world_engine <= sug.keys()
+    # Sous-ensemble effectivement lu par pont_accepter pour construire ses faits —
+    # doit rester un sous-ensemble de ce que world-engine émet ci-dessus.
+    cles_lues_par_accepter = {"vivant", "age_actuel_ticks", "cellule_id"}
+    assert cles_lues_par_accepter <= cles_world_engine
