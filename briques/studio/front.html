@@ -204,6 +204,8 @@ document.addEventListener('click', e => {
     });
     return;
   }
+  const fonderBtn = t.closest('[data-fonder-nom]');
+  if (fonderBtn) { fonderPersonnage(fonderBtn.dataset.fonderNom); return; }
 });
 
 // confirmer / ouvrirMenu / fermerMenu / attacherMenu / attacherAppuiLong / sortable
@@ -597,6 +599,7 @@ async function vueChapitres(){
     <input id="ch-dir" placeholder="On suit l'antagoniste cette fois…">
     <button style="margin-top:10px" id="btn-ep" onclick="ecrireChapitre()">✍️ Écrire le chapitre ${eps.length+1}</button>
     <div class="err" id="ch-err"></div>
+    ${renderPontEligibles()}
     <div id="ch-liste" style="margin-top:14px">
       ${eps.slice().reverse().map(ep=>renderEpisode(ep)).join('') || '<p class="muted">Aucun chapitre. Lance le premier !</p>'}
     </div>
@@ -696,10 +699,42 @@ function appliquerDernierProfilLecture(){
   });
 }
 async function ecrireChapitre(){
+  try{
+    const { suggestions } = await api(`/series/${S().id}/pont/suggestions`);
+    if(suggestions.length){
+      const texte = suggestions.map(s => s.vivant
+        ? `${s.nom_affiche} : ${s.age_actuel_ticks} an(s), toujours vivant(e).`
+        : `${s.nom_affiche} : mort(e) à ${s.age_actuel_ticks} an(s).`).join('\n');
+      const accepter = confirm(`world-engine signale :\n\n${texte}\n\nIntégrer ces faits au canon avant d'écrire ?`);
+      if(accepter){
+        await api(`/series/${S().id}/pont/accepter`,'POST',{nom_cles: suggestions.map(s=>s.nom_cle)});
+      }
+    }
+  }catch(e){ /* repli honnête : pas de suggestion, on écrit quand même */ }
   const b=$('btn-ep'); b.disabled=true; b.textContent='✍️ Le Scénariste écrit…'; $('ch-err').textContent='';
-  try{ await api(`/series/${S().id}/episode`,'POST',{branche:$('ch-dir').value.trim()||null}); await refresh(); vue('Chapitres'); toast('Chapitre écrit ✍️'); }
+  try{
+    const ep = await api(`/series/${S().id}/episode`,'POST',{branche:$('ch-dir').value.trim()||null});
+    PONT_ELIGIBLES = ep.pont_eligibles || [];
+    await refresh(); vue('Chapitres'); toast('Chapitre écrit ✍️');
+  }
   catch(e){ $('ch-err').textContent='⚠ '+e.message; }
   finally{ b.disabled=false; }
+}
+let PONT_ELIGIBLES = [];
+async function fonderPersonnage(nom){
+  toast('🌍 Entrée dans world-engine…');
+  try{
+    await api(`/series/${S().id}/pont/fonder`,'POST',{nom});
+    PONT_ELIGIBLES = PONT_ELIGIBLES.filter(n=>n!==nom);
+    vue('Chapitres');
+    toast(`${nom} est maintenant suivi dans world-engine 🌍`);
+  }catch(e){ toast('⚠ '+e.message); }
+}
+function renderPontEligibles(){
+  if(!PONT_ELIGIBLES.length) return '';
+  return `<div class="hint" style="margin-top:10px">Personnages récurrents détectés :
+    ${PONT_ELIGIBLES.map(n=>`<button class="sm ghost" data-fonder-nom="${esc(n)}">🌍 Fonder ${esc(n)}</button>`).join(' ')}
+  </div>`;
 }
 async function produireAudio(n){
   const sortie=$('lang-'+n).value;
