@@ -563,6 +563,7 @@ def _distribution_texte(serie: dict) -> str:
 # ── Journal de continuité (S50) ──────────────────────────────────
 CANON_MAX_PERSOS = 40    # garde-fou taille du contexte
 CANON_MAX_ACQUIS = 30
+SEUIL_RECURRENCE_PONT = 3   # apparitions distinctes minimum pour un perso non casté (pont)
 
 
 def _personnages_connus(serie: dict) -> list:
@@ -631,6 +632,29 @@ def _fusion_canon(serie: dict, personnages, acquis) -> None:
             deja.add(f.lower())
             cac.append(f)
     canon["acquis"] = cac[-CANON_MAX_ACQUIS:]   # on garde les plus récents
+
+
+def _personnages_eligibles_pont(serie: dict, pont: dict) -> list:
+    """Noms (affichage) éligibles à une proposition d'entrée dans world-engine, pas
+    encore liés (pont Studio↔world-engine) : castés formellement (`serie.personnages`),
+    OU vus dans `SEUIL_RECURRENCE_PONT` chapitres distincts (`canon.apparitions`) sans
+    casting. Jamais les deux fois pour un même personnage."""
+    deja_lies = set((pont or {}).get("habitants") or {})
+    vus, eligibles = set(), []
+    for p in serie.get("personnages") or []:
+        nom = (p.get("nom") or "").strip()
+        cle = _cle_perso(nom)
+        if cle and cle not in deja_lies and cle not in vus:
+            vus.add(cle)
+            eligibles.append(nom)
+    apparitions = (serie.get("canon") or {}).get("apparitions") or {}
+    cps = (serie.get("canon") or {}).get("personnages") or []
+    nom_par_cle = {_cle_perso(n): n for n in cps}
+    for cle, n in apparitions.items():
+        if n >= SEUIL_RECURRENCE_PONT and cle not in deja_lies and cle not in vus:
+            vus.add(cle)
+            eligibles.append(nom_par_cle.get(cle, cle))
+    return eligibles
 
 
 async def _recolter_canon(serie: dict, script: str) -> None:
