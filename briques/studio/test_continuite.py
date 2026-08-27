@@ -14,7 +14,7 @@ import studio as A
 # ── Normalisation : le canon existe toujours (rétrocompat) ───────
 def test_normaliser_cree_le_canon_vide():
     s = A._normaliser({"titre": "T", "episodes": []})
-    assert s["canon"] == {"personnages": [], "acquis": []}
+    assert s["canon"] == {"personnages": [], "acquis": [], "apparitions": {}}
 
 
 def test_normaliser_preserve_un_canon_existant():
@@ -78,6 +78,29 @@ def test_fusion_canon_plafonne_les_acquis():
     A._fusion_canon(serie, [], [f"fait {i}" for i in range(A.CANON_MAX_ACQUIS + 10)])
     assert len(serie["canon"]["acquis"]) == A.CANON_MAX_ACQUIS
     assert serie["canon"]["acquis"][-1] == f"fait {A.CANON_MAX_ACQUIS + 9}"
+
+
+def test_fusion_canon_compte_les_apparitions():
+    serie = {"canon": {"personnages": [], "acquis": []}}
+    A._fusion_canon(serie, ["Elara"], [])
+    A._fusion_canon(serie, ["elara", "Kaël"], [])
+    A._fusion_canon(serie, ["ELARA"], [])
+    assert serie["canon"]["apparitions"] == {"ELARA": 3, "KAËL": 1}
+
+
+def test_fusion_canon_compte_une_seule_fois_par_chapitre():
+    """Une même personne mentionnée plusieurs fois DANS UN MÊME chapitre ne doit
+    compter que pour UNE apparition — sinon le seuil de récurrence du pont
+    world-engine (3 CHAPITRES distincts) serait faussé par le style d'écriture."""
+    serie = {"canon": {"personnages": [], "acquis": []}}
+    A._fusion_canon(serie, ["Elara", "Elara", "elara"], [])
+    assert serie["canon"]["apparitions"] == {"ELARA": 1}
+
+
+def test_fusion_canon_apparitions_ignore_narrateur():
+    serie = {"canon": {"personnages": [], "acquis": []}}
+    A._fusion_canon(serie, ["NARRATEUR"], [])
+    assert serie["canon"]["apparitions"] == {}
 
 
 # ── Récolte canon : Gateway mockée + repli honnête ───────────────
