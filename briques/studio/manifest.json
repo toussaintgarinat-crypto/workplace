@@ -161,7 +161,7 @@
     },
     {
       "nom": "studio_episode_produire",
-      "description": "Produit l'épisode SUIVANT d'une série (Scénariste + Script Doctor), à partir de la bible existante. Récupère l'id via studio_series_lister. ACTION.",
+      "description": "Produit l'épisode SUIVANT d'une série (Scénariste + Script Doctor), à partir de la bible existante. Récupère l'id via studio_series_lister. Avant d'appeler cet outil, appelle pont_suggestions pour cette série : s'il y a des suggestions, présente-les clairement à l'utilisateur et ATTENDS sa décision avant de continuer (intègre les faits acceptés via pont_accepter, avec nom_cles_refuses pour les refusés — jamais les deux listes vides si des suggestions existaient) ; si pont_suggestions ne renvoie rien ou échoue, continue directement sans redemander. La réponse de cet outil contient aussi pont_eligibles : si non vide, signale-le spontanément à l'utilisateur (« X apparaît pour la 3e fois, veux-tu le faire entrer dans world-engine ? ») sans qu'il ait besoin de demander. ACTION.",
       "methode": "POST",
       "chemin": "/series/{serie_id}/episode",
       "params": {
@@ -207,7 +207,7 @@
     },
     {
       "nom": "studio_express",
-      "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. ACTION.",
+      "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. Même règle que studio_episode_produire : appelle pont_suggestions pour cette série avant de produire l'épisode, présente les suggestions et attends la décision de l'utilisateur (pont_accepter avec nom_cles/nom_cles_refuses) avant de continuer si des suggestions existent ; sinon continue directement. Signale spontanément pont_eligibles s'il est non vide dans la réponse. ACTION.",
       "methode": "POST",
       "chemin": "/series/{serie_id}/express",
       "params": {
