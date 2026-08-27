@@ -174,6 +174,38 @@
       "action": true
     },
     {
+      "nom": "pont_fonder",
+      "description": "Fait entrer un personnage éligible (casté formellement, ou vu dans au moins 3 chapitres distincts) dans world-engine comme habitant persistant du monde dédié à cette série — geste explicite, jamais automatique. Crée le monde de la série au premier personnage fondé.",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/pont/fonder",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série.", "requis": true},
+        "nom": {"type": "string", "description": "Nom du personnage à fonder — doit être éligible (422 sinon).", "requis": true}
+      },
+      "action": true
+    },
+    {
+      "nom": "pont_suggestions",
+      "description": "Liste l'état simulé world-engine (âge, position, vivant/mort) des personnages castés déjà liés au pont — à présenter à l'utilisateur avant d'écrire un chapitre, jamais injecté seul. Vide si aucun personnage lié ou si world-engine est injoignable (repli honnête, pas une erreur).",
+      "methode": "GET",
+      "chemin": "/series/{serie_id}/pont/suggestions",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série.", "requis": true}
+      },
+      "action": false
+    },
+    {
+      "nom": "pont_accepter",
+      "description": "Intègre au canon de continuité les faits acceptés par l'utilisateur pour des personnages liés au pont (âge/position s'il est vivant, mort s'il est mort — auquel cas il est détaché du pont, plus jamais proposé).",
+      "methode": "POST",
+      "chemin": "/series/{serie_id}/pont/accepter",
+      "params": {
+        "serie_id": {"type": "string", "description": "Id de la série.", "requis": true},
+        "nom_cles": {"type": "array", "description": "Clés normalisées des personnages dont les faits proposés sont acceptés (voir pont_suggestions pour les obtenir).", "requis": true}
+      },
+      "action": true
+    },
+    {
       "nom": "studio_express",
       "description": "Mode express : le Showrunner complète lui-même les pièces manquantes de la bible puis produit un épisode — de l'idée à l'épisode en un coup. ACTION.",
       "methode": "POST",
