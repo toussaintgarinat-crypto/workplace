@@ -1335,6 +1335,59 @@ async def pont_fonder(serie_id: str, body: PontFonder, cle: str = Depends(cle_ap
                                         datetime.now(timezone.utc).isoformat())
 
 
+@app.get("/series/{serie_id}/pont/suggestions", tags=["pont"])
+async def pont_suggestions(serie_id: str, cle: str = Depends(cle_api)):
+    """État simulé world-engine des personnages castés déjà liés — à valider avant
+    d'écrire le prochain chapitre, jamais injecté seul."""
+    serie = charger(serie_id, cle)
+    pont = stockage_pont.lire_pont(serie_id)
+    suggestions = []
+    for p in serie.get("personnages") or []:
+        cle_nom = S._cle_perso(p.get("nom"))
+        habitant = pont["habitants"].get(cle_nom)
+        if not habitant:
+            continue
+        enfant = await S._pont_lire_enfant(habitant["eid"])
+        sim = (enfant or {}).get("simulation")
+        if sim is None:
+            continue
+        suggestions.append({"nom_cle": cle_nom, "nom_affiche": habitant["nom_affiche"], **sim})
+    return {"suggestions": suggestions}
+
+
+class PontAccepter(BaseModel):
+    nom_cles: list[str]
+
+
+@app.post("/series/{serie_id}/pont/accepter", tags=["pont"])
+async def pont_accepter(serie_id: str, body: PontAccepter, cle: str = Depends(cle_api)):
+    """Intègre au canon les faits acceptés par l'utilisateur pour des personnages liés —
+    jamais automatique (voir pont_suggestions). Un personnage mort accepté est détaché du
+    pont : plus jamais proposé (il redevient une fiche Studio ordinaire)."""
+    serie = charger(serie_id, cle)
+    pont = stockage_pont.lire_pont(serie_id)
+    canon = serie.setdefault("canon", {})
+    acquis = canon.setdefault("acquis", [])
+    for cle_nom in body.nom_cles:
+        habitant = pont["habitants"].get(cle_nom)
+        if not habitant:
+            continue
+        enfant = await S._pont_lire_enfant(habitant["eid"])
+        sim = (enfant or {}).get("simulation")
+        if sim is None:
+            continue
+        nom = habitant["nom_affiche"]
+        if sim["vivant"]:
+            fait = f"{nom} a {sim['age_actuel_ticks']} an(s) et vit à la cellule {sim['cellule_id']} du monde simulé."
+        else:
+            fait = f"{nom} est mort dans le monde simulé, à {sim['age_actuel_ticks']} an(s)."
+            stockage_pont.detacher_habitant(serie_id, cle_nom)
+        if fait not in acquis:
+            acquis.append(fait)
+    S._save(serie)
+    return {"acquis": canon["acquis"]}
+
+
 # ── Arbre des choix ──────────────────────────────────────────────
 @app.get("/series/{serie_id}/arbre/{noeud_id}/lire", tags=["arbre"])
 async def lire_noeud(serie_id: str, noeud_id: str, profil_id: str, cle: str = Depends(cle_api)):
