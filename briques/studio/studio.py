@@ -909,6 +909,17 @@ async def _pont_lire_enfant(eid: str) -> Optional[dict]:
     return await _appeler_world_engine("GET", f"/genome/enfants/{eid}")
 
 
+async def _pont_apres_chapitre(serie_id: str, serie: dict) -> list:
+    """Après un chapitre écrit (canon déjà mis à jour par `_recolter_canon`) : avance
+    d'un tick le monde de la série s'il existe déjà (best-effort, jamais bloquant), et
+    renvoie les personnages nouvellement éligibles à une entrée dans world-engine."""
+    import stockage_pont
+    pont = stockage_pont.lire_pont(serie_id)
+    if pont["monde_id"] is not None:
+        await _pont_tick(pont["monde_id"])
+    return _personnages_eligibles_pont(serie, pont)
+
+
 # ── Construction des tâches (prompts) ────────────────────────────
 
 def _recap_episodes(episodes: list) -> str:

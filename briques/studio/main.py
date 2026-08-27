@@ -27,6 +27,7 @@ from typing import Optional
 import agents
 import composition
 import studio as S
+import stockage_pont
 
 app = FastAPI(title="Studio — atelier d'audio-séries", version="0.4.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
@@ -1099,6 +1100,7 @@ async def faire_episode(serie_id: str, body: FaireEpisode, cle: str = Depends(cl
     episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
+    episode["pont_eligibles"] = await S._pont_apres_chapitre(serie_id, serie)
     S._save(serie)
     return episode
 
@@ -1296,8 +1298,41 @@ async def episode_express(serie_id: str, body: Express, cle: str = Depends(cle_a
     episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
+    episode["pont_eligibles"] = await S._pont_apres_chapitre(serie_id, serie)
     S._save(serie)
     return {"bible": serie["bible"], "episode": episode}
+
+
+# ── Pont vers world-engine (registre de personnages persistant) ──
+class PontFonder(BaseModel):
+    nom: str
+
+
+@app.post("/series/{serie_id}/pont/fonder", tags=["pont"])
+async def pont_fonder(serie_id: str, body: PontFonder, cle: str = Depends(cle_api)):
+    """Fait entrer un personnage éligible dans world-engine — geste explicite de
+    l'utilisateur, jamais automatique (voir design du pont Studio↔world-engine)."""
+    serie = charger(serie_id, cle)
+    pont = stockage_pont.lire_pont(serie_id)
+    cle_nom = S._cle_perso(body.nom)
+    eligibles = {S._cle_perso(n): n for n in S._personnages_eligibles_pont(serie, pont)}
+    if cle_nom not in eligibles:
+        raise HTTPException(422, f"'{body.nom}' n'est pas éligible pour l'instant (pas "
+                                  f"casté formellement et moins de {S.SEUIL_RECURRENCE_PONT} "
+                                  "apparitions).")
+    if pont["monde_id"] is None:
+        monde = await S._pont_creer_monde()
+        if monde is None:
+            raise HTTPException(502, f"Brique world-engine injoignable ({S.WORLD_ENGINE_URL}).")
+        pont = stockage_pont.fixer_monde(serie_id, monde["id"])
+    perso = next((p for p in serie.get("personnages") or []
+                  if S._cle_perso(p.get("nom")) == cle_nom), None)
+    description = ((perso or {}).get("description") or "").strip() or eligibles[cle_nom]
+    fondation = await S._pont_fonder(pont["monde_id"], description, eligibles[cle_nom])
+    if fondation is None:
+        raise HTTPException(502, f"Brique world-engine injoignable ({S.WORLD_ENGINE_URL}).")
+    return stockage_pont.lier_habitant(serie_id, cle_nom, fondation["eid"], eligibles[cle_nom],
+                                        datetime.now(timezone.utc).isoformat())
 
 
 # ── Arbre des choix ──────────────────────────────────────────────
