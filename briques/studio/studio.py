@@ -20,6 +20,8 @@ from typing import Optional
 
 import httpx
 
+import stockage_pont
+
 from agents import (  # noqa: F401  (réexportés pour les tests / endpoints)
     GATEWAY_URL,
     GATEWAY_MODEL,
@@ -57,6 +59,7 @@ VIDEO_PUBLIC = os.getenv("VIDEO_PUBLIC_URL", "http://localhost:5970")
 
 # Brique « world-engine » (6230) : registre de personnages persistant (pont, S26x).
 WORLD_ENGINE_URL = os.getenv("WORLD_ENGINE_URL", "http://host.docker.internal:6230")
+WORLD_ENGINE_KEY = os.getenv("WORLD_ENGINE_KEY", "")
 
 # Découpage en ÉPISODES d'écoute (~12 min) à partir des CHAPITRES.
 CIBLE_EPISODE_SECONDES = 12 * 60        # durée cible d'un épisode d'écoute
@@ -868,14 +871,21 @@ async def _appeler_video(route: str, payload: dict) -> Optional[dict]:
 
 # ── Pont vers la brique world-engine (6230) ──────────────────────────
 
-async def _appeler_world_engine(methode: str, route: str, payload: dict | None = None) -> Optional[dict]:
+async def _appeler_world_engine(methode: str, route: str, payload: dict | None = None,
+                                 timeout: float = 30) -> Optional[dict]:
     """Appelle world-engine ; renvoie son résultat ou None (repli honnête, même motif que
     `_appeler_images`/`_appeler_video`) — jamais d'exception, jamais de donnée inventée si
     world-engine est injoignable. C'est l'APPELANT qui décide si `None` doit devenir un 502
-    (geste explicite de l'utilisateur) ou rester silencieux (tick de fond, suggestions)."""
+    (geste explicite de l'utilisateur) ou rester silencieux (tick de fond, suggestions).
+
+    `WORLD_ENGINE_KEY` (correctif revue finale, Critical) : world-engine exige cette clé en
+    déploiement (voir `API_KEYS`/`WORLD_ENGINE_KEY` côté world-engine, main.py) — sans elle,
+    tout appel 401ait silencieusement (repli `None` masquant la vraie cause). Même motif que
+    `composition.PERSONNAGES_KEY`."""
+    entetes = {"X-API-Key": WORLD_ENGINE_KEY} if WORLD_ENGINE_KEY else {}
     try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.request(methode, f"{WORLD_ENGINE_URL}{route}", json=payload)
+        async with httpx.AsyncClient(timeout=timeout) as c:
+            r = await c.request(methode, f"{WORLD_ENGINE_URL}{route}", json=payload, headers=entetes)
             r.raise_for_status()
             return r.json()
     except Exception:  # noqa: BLE001
@@ -899,21 +909,25 @@ async def _pont_fonder(monde_id: str, description: str, prenoms: str) -> Optiona
 
 
 async def _pont_tick(monde_id: str) -> None:
-    """Avance d'un tick le monde d'une série — un par chapitre écrit, best-effort."""
-    await _appeler_world_engine("POST", f"/horloge/{monde_id}/tick")
+    """Avance d'un tick le monde d'une série — un par chapitre écrit, best-effort.
+    Timeout court (correctif revue finale, Minor) : appelé à chaque chapitre, jamais
+    ce que l'utilisateur attend explicitement — un world-engine injoignable ne doit
+    pas faire traîner l'écriture."""
+    await _appeler_world_engine("POST", f"/horloge/{monde_id}/tick", timeout=5)
 
 
 async def _pont_lire_enfant(eid: str) -> Optional[dict]:
     """Lit la fiche + l'état simulé courant d'un habitant world-engine (champ
-    `simulation`, voir docs/superpowers/plans/2026-08-26-world-engine-fondateur-solo.md)."""
-    return await _appeler_world_engine("GET", f"/genome/enfants/{eid}")
+    `simulation`, voir docs/superpowers/plans/2026-08-26-world-engine-fondateur-solo.md).
+    Timeout court (correctif revue finale, Minor) : appelé une fois par personnage lié
+    avant chaque chapitre, jamais un geste explicite unique de l'utilisateur."""
+    return await _appeler_world_engine("GET", f"/genome/enfants/{eid}", timeout=5)
 
 
 async def _pont_apres_chapitre(serie_id: str, serie: dict) -> list:
     """Après un chapitre écrit (canon déjà mis à jour par `_recolter_canon`) : avance
     d'un tick le monde de la série s'il existe déjà (best-effort, jamais bloquant), et
     renvoie les personnages nouvellement éligibles à une entrée dans world-engine."""
-    import stockage_pont
     pont = stockage_pont.lire_pont(serie_id)
     if pont["monde_id"] is not None:
         await _pont_tick(pont["monde_id"])

@@ -20,7 +20,7 @@ class _FauxClient:
     def __call__(self, *a, **k): return self
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
-    async def request(self, methode, url, json=None):
+    async def request(self, methode, url, json=None, headers=None):
         if self._leve:
             raise self._leve
         return _FauxRep(self._reponse)
@@ -33,6 +33,21 @@ def _serie_avec_habitant_lie(nom="Elara", eid="eid-1"):
     S._save(serie)
     P.lier_habitant(sid, S._cle_perso(nom), eid, nom, "2026-08-26T00:00:00+00:00")
     return sid
+
+
+def test_suggestions_voit_un_habitant_fonde_par_seuil_jamais_caste(monkeypatch):
+    sid = client.post("/series", json={"titre": "T"}).json()["id"]
+    # Aucun serie["personnages"] : simule un personnage fondé par seuil de récurrence,
+    # jamais formellement casté — pont_suggestions doit quand même le voir (Fix 5).
+    P.lier_habitant(sid, "ELARA", "eid-1", "Elara", "2026-08-26T00:00:00+00:00")
+    sim = {"monde_id": "m1", "cellule_id": 2, "ne_au_tick": 0, "age_actuel_ticks": 4,
+           "vivant": True, "mort_au_tick": None}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim}))
+    r = client.get(f"/series/{sid}/pont/suggestions")
+    assert r.status_code == 200
+    (sug,) = r.json()["suggestions"]
+    assert sug["nom_cle"] == "ELARA"
+    assert sug["nom_affiche"] == "Elara"
 
 
 def test_suggestions_vide_sans_personnage_lie():
@@ -82,3 +97,39 @@ def test_accepter_mort_detache_l_habitant(monkeypatch):
     r = client.post(f"/series/{sid}/pont/accepter", json={"nom_cles": ["ELARA"]})
     assert r.status_code == 200
     assert "ELARA" not in P.lire_pont(sid)["habitants"]
+
+
+def test_accepter_refus_mort_detache_aussi(monkeypatch):
+    sid = _serie_avec_habitant_lie()
+    sim = {"monde_id": "m1", "cellule_id": 2, "ne_au_tick": 0, "age_actuel_ticks": 9,
+           "vivant": False, "mort_au_tick": 9}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim}))
+    r = client.post(f"/series/{sid}/pont/accepter", json={"nom_cles": [], "nom_cles_refuses": ["ELARA"]})
+    assert r.status_code == 200
+    assert "ELARA" not in P.lire_pont(sid)["habitants"]
+    assert S._load(sid)["canon"]["acquis"] == []  # aucun fait ajouté pour un refus
+
+
+def test_accepter_refus_vivant_ne_detache_pas_et_n_ajoute_rien(monkeypatch):
+    sid = _serie_avec_habitant_lie()
+    sim = {"monde_id": "m1", "cellule_id": 2, "ne_au_tick": 0, "age_actuel_ticks": 4,
+           "vivant": True, "mort_au_tick": None}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim}))
+    r = client.post(f"/series/{sid}/pont/accepter", json={"nom_cles": [], "nom_cles_refuses": ["ELARA"]})
+    assert r.status_code == 200
+    assert "ELARA" in P.lire_pont(sid)["habitants"]  # vivant : rien à détacher
+    assert S._load(sid)["canon"]["acquis"] == []
+
+
+def test_accepter_remplace_le_fait_precedent_pas_d_accumulation(monkeypatch):
+    sid = _serie_avec_habitant_lie()
+    sim1 = {"monde_id": "m1", "cellule_id": 2, "ne_au_tick": 0, "age_actuel_ticks": 1,
+            "vivant": True, "mort_au_tick": None}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim1}))
+    client.post(f"/series/{sid}/pont/accepter", json={"nom_cles": ["ELARA"]})
+    sim2 = {**sim1, "age_actuel_ticks": 2}
+    monkeypatch.setattr(S.httpx, "AsyncClient", _FauxClient(reponse={"id": "eid-1", "simulation": sim2}))
+    r = client.post(f"/series/{sid}/pont/accepter", json={"nom_cles": ["ELARA"]})
+    faits_elara = [f for f in r.json()["acquis"] if f.startswith("Elara (monde simulé) :")]
+    assert len(faits_elara) == 1
+    assert "2 an(s)" in faits_elara[0]

@@ -392,6 +392,7 @@ async function creerSerie(){
 async function ouvrirSerie(id){
   try{ serieCourante = await api('/series/'+id); }
   catch(e){ toast('⚠ '+e.message); return; }
+  PONT_ELIGIBLES = [];
   chargerListe();
   renderSerie();
 }
@@ -703,12 +704,13 @@ async function ecrireChapitre(){
     const { suggestions } = await api(`/series/${S().id}/pont/suggestions`);
     if(suggestions.length){
       const texte = suggestions.map(s => s.vivant
-        ? `${s.nom_affiche} : ${s.age_actuel_ticks} an(s), toujours vivant(e).`
-        : `${s.nom_affiche} : mort(e) à ${s.age_actuel_ticks} an(s).`).join('\n');
+        ? `${s.nom_affiche} : ${s.age_actuel_ticks} an(s) de temps simulé, toujours vivant(e).`
+        : `${s.nom_affiche} : mort(e) après ${s.age_actuel_ticks} an(s) de temps simulé.`).join('\n');
       const accepter = confirm(`world-engine signale :\n\n${texte}\n\nIntégrer ces faits au canon avant d'écrire ?`);
-      if(accepter){
-        await api(`/series/${S().id}/pont/accepter`,'POST',{nom_cles: suggestions.map(s=>s.nom_cle)});
-      }
+      const toutesLesCles = suggestions.map(s=>s.nom_cle);
+      await api(`/series/${S().id}/pont/accepter`,'POST', accepter
+        ? {nom_cles: toutesLesCles, nom_cles_refuses: []}
+        : {nom_cles: [], nom_cles_refuses: toutesLesCles});
     }
   }catch(e){ /* repli honnête : pas de suggestion, on écrit quand même */ }
   const b=$('btn-ep'); b.disabled=true; b.textContent='✍️ Le Scénariste écrit…'; $('ch-err').textContent='';

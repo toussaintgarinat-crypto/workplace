@@ -21,7 +21,7 @@ class _FauxClient:
     def __call__(self, *a, **k): return self
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
-    async def request(self, methode, url, json=None):
+    async def request(self, methode, url, json=None, headers=None):
         if self._leve:
             raise self._leve
         return _FauxRep(self._reponses.pop(0))
@@ -71,6 +71,17 @@ def test_fonder_world_engine_injoignable_502(monkeypatch):
     assert r.status_code == 502
 
 
+def test_fonder_avertissement_monde_supprime_ne_lie_pas(monkeypatch):
+    sid = _serie_avec_personnage_caste("Elara")
+    P.fixer_monde(sid, "monde-existant")
+    monkeypatch.setattr(S.httpx, "AsyncClient",
+                         _FauxClient(reponses=[{"eid": "eid-1", "cellule_id": None,
+                                                 "avertissement": "Monde supprimé pendant la fondation."}]))
+    r = client.post(f"/series/{sid}/pont/fonder", json={"nom": "Elara"})
+    assert r.status_code == 502
+    assert P.lire_pont(sid)["habitants"] == {}
+
+
 def test_pont_apres_chapitre_liste_les_eligibles_sans_tick_si_pas_de_monde():
     sid = _serie_avec_personnage_caste()
     serie = S._load(sid)
@@ -85,7 +96,7 @@ def test_pont_apres_chapitre_tick_si_monde_existant(monkeypatch):
     appels = []
 
     class _ClientTraceur(_FauxClient):
-        async def request(self, methode, url, json=None):
+        async def request(self, methode, url, json=None, headers=None):
             appels.append((methode, url))
             return _FauxRep({})
     monkeypatch.setattr(S.httpx, "AsyncClient", _ClientTraceur())

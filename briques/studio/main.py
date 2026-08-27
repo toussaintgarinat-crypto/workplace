@@ -1100,8 +1100,9 @@ async def faire_episode(serie_id: str, body: FaireEpisode, cle: str = Depends(cl
     episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
-    episode["pont_eligibles"] = await S._pont_apres_chapitre(serie_id, serie)
+    pont_eligibles = await S._pont_apres_chapitre(serie_id, serie)
     S._save(serie)
+    episode["pont_eligibles"] = pont_eligibles
     return episode
 
 
@@ -1298,8 +1299,9 @@ async def episode_express(serie_id: str, body: Express, cle: str = Depends(cle_a
     episode["valeur"] = episode["valeur_suggeree"]
     serie["episodes"].append(episode)
     await S._recolter_canon(serie, script)
-    episode["pont_eligibles"] = await S._pont_apres_chapitre(serie_id, serie)
+    pont_eligibles = await S._pont_apres_chapitre(serie_id, serie)
     S._save(serie)
+    episode["pont_eligibles"] = pont_eligibles
     return {"bible": serie["bible"], "episode": episode}
 
 
@@ -1331,22 +1333,24 @@ async def pont_fonder(serie_id: str, body: PontFonder, cle: str = Depends(cle_ap
     fondation = await S._pont_fonder(pont["monde_id"], description, eligibles[cle_nom])
     if fondation is None:
         raise HTTPException(502, f"Brique world-engine injoignable ({S.WORLD_ENGINE_URL}).")
+    if fondation.get("cellule_id") is None:
+        raise HTTPException(502, "Fondation incomplète côté world-engine : "
+                                  f"{fondation.get('avertissement') or 'non placé sur le monde.'}")
     return stockage_pont.lier_habitant(serie_id, cle_nom, fondation["eid"], eligibles[cle_nom],
                                         datetime.now(timezone.utc).isoformat())
 
 
 @app.get("/series/{serie_id}/pont/suggestions", tags=["pont"])
 async def pont_suggestions(serie_id: str, cle: str = Depends(cle_api)):
-    """État simulé world-engine des personnages castés déjà liés — à valider avant
-    d'écrire le prochain chapitre, jamais injecté seul."""
-    serie = charger(serie_id, cle)
+    """État simulé world-engine de TOUS les personnages liés au pont (castés ou fondés
+    par seuil de récurrence, correctif revue finale — l'ancienne version ne voyait que
+    les personnages castés, rendant invisible pour toujours un personnage fondé sans
+    jamais avoir été casté) — à valider avant d'écrire le prochain chapitre, jamais
+    injecté seul."""
+    charger(serie_id, cle)
     pont = stockage_pont.lire_pont(serie_id)
     suggestions = []
-    for p in serie.get("personnages") or []:
-        cle_nom = S._cle_perso(p.get("nom"))
-        habitant = pont["habitants"].get(cle_nom)
-        if not habitant:
-            continue
+    for cle_nom, habitant in pont["habitants"].items():
         enfant = await S._pont_lire_enfant(habitant["eid"])
         sim = (enfant or {}).get("simulation")
         if sim is None:
@@ -1356,14 +1360,19 @@ async def pont_suggestions(serie_id: str, cle: str = Depends(cle_api)):
 
 
 class PontAccepter(BaseModel):
-    nom_cles: list[str]
+    nom_cles: list[str] = []
+    nom_cles_refuses: list[str] = []
 
 
 @app.post("/series/{serie_id}/pont/accepter", tags=["pont"])
 async def pont_accepter(serie_id: str, body: PontAccepter, cle: str = Depends(cle_api)):
     """Intègre au canon les faits acceptés par l'utilisateur pour des personnages liés —
-    jamais automatique (voir pont_suggestions). Un personnage mort accepté est détaché du
-    pont : plus jamais proposé (il redevient une fiche Studio ordinaire)."""
+    jamais automatique (voir pont_suggestions). Un personnage mort accepté OU REFUSÉ
+    (correctif revue finale, Important — le design prévoyait le refus silencieux, absent
+    du premier jet) est détaché du pont : plus jamais proposé (il redevient une fiche
+    Studio ordinaire). Un fait pont pour un personnage vivant REMPLACE le précédent
+    (jamais d'accumulation de faits contradictoires — correctif revue finale, Important)
+    et respecte le même plafond que `_fusion_canon` (`CANON_MAX_ACQUIS`)."""
     serie = charger(serie_id, cle)
     pont = stockage_pont.lire_pont(serie_id)
     canon = serie.setdefault("canon", {})
@@ -1377,13 +1386,25 @@ async def pont_accepter(serie_id: str, body: PontAccepter, cle: str = Depends(cl
         if sim is None:
             continue
         nom = habitant["nom_affiche"]
+        prefixe = f"{nom} (monde simulé) : "
+        acquis[:] = [f for f in acquis if not f.startswith(prefixe)]
         if sim["vivant"]:
-            fait = f"{nom} a {sim['age_actuel_ticks']} an(s) et vit à la cellule {sim['cellule_id']} du monde simulé."
+            fait = (f"{prefixe}{sim['age_actuel_ticks']} an(s) de temps simulé écoulés depuis "
+                    f"son entrée dans le monde, actuellement à la cellule {sim['cellule_id']}.")
         else:
-            fait = f"{nom} est mort dans le monde simulé, à {sim['age_actuel_ticks']} an(s)."
+            fait = (f"{prefixe}mort(e) dans le monde simulé, après {sim['age_actuel_ticks']} "
+                    "an(s) de temps simulé écoulé depuis son entrée dans le monde.")
             stockage_pont.detacher_habitant(serie_id, cle_nom)
-        if fait not in acquis:
-            acquis.append(fait)
+        acquis.append(fait)
+    canon["acquis"] = acquis[-S.CANON_MAX_ACQUIS:]
+    for cle_nom in body.nom_cles_refuses:
+        habitant = pont["habitants"].get(cle_nom)
+        if not habitant:
+            continue
+        enfant = await S._pont_lire_enfant(habitant["eid"])
+        sim = (enfant or {}).get("simulation")
+        if sim is not None and not sim["vivant"]:
+            stockage_pont.detacher_habitant(serie_id, cle_nom)
     S._save(serie)
     return {"acquis": canon["acquis"]}
 
