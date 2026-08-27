@@ -26,6 +26,11 @@ services:
       # PERSONNAGES_KEY hérité du .env racine via env_file (ne PAS redéclarer ici : une
       # valeur vide écraserait la clé et le Studio recevrait 401 en interrogeant /fiches).
       - PERSONNAGES_URL=http://host.docker.internal:5900
+      # World-engine (6230) : registre de personnages persistant (pont, S26x). Repli
+      # honnête (chapitre écrit quand même) si absente ou injoignable.
+      # WORLD_ENGINE_KEY hérité du .env racine via env_file (même motif que
+      # PERSONNAGES_KEY ci-dessus : ne PAS redéclarer ici).
+      - WORLD_ENGINE_URL=http://host.docker.internal:6230
       # Séries persistées en JSON dans un volume propre (plus de /app/uploads d'Oria).
       - STUDIO_DIR=/data/ateliers
       # Clés API acceptées (séparées par virgule). VIDE = mode ouvert (dev/démo) :

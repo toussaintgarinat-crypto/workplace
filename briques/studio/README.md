@@ -62,6 +62,7 @@ GATEWAY_KEY=… uvicorn main:app --port 6060
 | `VOIX_URL` | `…:5810` | service voix hôte (say + ffmpeg) |
 | `IMAGES_URL` / `IMAGES_PUBLIC_URL` | `…:5950` / `localhost:5950` | brique images |
 | `PERSONNAGES_URL` / `PERSONNAGES_KEY` | `…:5900` / — | brique personnages (casting/distribution) ; repli interne si absente |
+| `WORLD_ENGINE_URL` / `WORLD_ENGINE_KEY` | `…:6230` / — | brique world-engine (pont registre de personnages) ; repli honnête si absente |
 | `STUDIO_DIR` | `/data/ateliers` | volume des séries (JSON) |
 | `API_KEYS` | _(vide = ouvert)_ | clés acceptées pour vendre la brique seule |
 

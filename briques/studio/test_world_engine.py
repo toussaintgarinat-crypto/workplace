@@ -18,7 +18,7 @@ class _FauxClient:
     def __call__(self, *a, **k): return self
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
-    async def request(self, methode, url, json=None):
+    async def request(self, methode, url, json=None, headers=None):
         if self._leve:
             raise self._leve
         return _FauxRep(self._reponse)
@@ -53,3 +53,27 @@ def test_pont_tick_ne_leve_jamais(monkeypatch):
 def test_pont_lire_enfant_succes(monkeypatch):
     monkeypatch.setattr(A.httpx, "AsyncClient", _FauxClient(reponse={"id": "e1", "simulation": None}))
     assert asyncio.run(A._pont_lire_enfant("e1")) == {"id": "e1", "simulation": None}
+
+
+def test_appeler_world_engine_envoie_la_cle_si_configuree(monkeypatch):
+    capture = {}
+    class _ClientCapture(_FauxClient):
+        async def request(self, methode, url, json=None, headers=None):
+            capture['headers'] = headers
+            return _FauxRep({"ok": True})
+    monkeypatch.setattr(A, "WORLD_ENGINE_KEY", "cle-test")
+    monkeypatch.setattr(A.httpx, "AsyncClient", _ClientCapture())
+    asyncio.run(A._appeler_world_engine("GET", "/sante"))
+    assert capture['headers'] == {"X-API-Key": "cle-test"}
+
+
+def test_appeler_world_engine_aucun_header_sans_cle(monkeypatch):
+    capture = {}
+    class _ClientCapture(_FauxClient):
+        async def request(self, methode, url, json=None, headers=None):
+            capture['headers'] = headers
+            return _FauxRep({"ok": True})
+    monkeypatch.setattr(A, "WORLD_ENGINE_KEY", "")
+    monkeypatch.setattr(A.httpx, "AsyncClient", _ClientCapture())
+    asyncio.run(A._appeler_world_engine("GET", "/sante"))
+    assert capture['headers'] == {}
