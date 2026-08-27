@@ -241,6 +241,7 @@ def _normaliser(serie: dict) -> dict:
     canon = serie.setdefault("canon", {})
     canon.setdefault("personnages", [])
     canon.setdefault("acquis", [])
+    canon.setdefault("apparitions", {})
     for t in _tous_tomes(serie):
         t.setdefault("statut", "en_cours")
     return serie
@@ -598,16 +599,29 @@ def _consigne_acquis(serie: dict) -> str:
 
 
 def _fusion_canon(serie: dict, personnages, acquis) -> None:
-    """Fusionne (idempotent, dédoublonné, plafonné) des noms/faits dans le canon."""
+    """Fusionne (idempotent, dédoublonné, plafonné) des noms/faits dans le canon.
+
+    `canon.apparitions` (pont Studio↔world-engine) compte le nombre de CHAPITRES
+    DISTINCTS où chaque nom a été vu — jamais plus d'une fois par appel, même si le
+    script en mentionne le nom plusieurs fois : c'est ce qui rend le seuil de
+    récurrence (`SEUIL_RECURRENCE_PONT`) vérifiable objectivement."""
     canon = serie.setdefault("canon", {})
     cps = canon.setdefault("personnages", [])
+    apparitions = canon.setdefault("apparitions", {})
     vus = {_cle_perso(n) for n in cps}
+    cles_du_chapitre = set()
     for nom in personnages or []:
         cle = _cle_perso(nom)
-        if cle and cle != "NARRATEUR" and cle not in vus:
+        if not cle or cle == "NARRATEUR":
+            continue
+        cles_du_chapitre.add(cle)
+        if cle not in vus:
             vus.add(cle)
             cps.append(re.sub(r"\s+", " ", str(nom).strip()))
+    for cle in cles_du_chapitre:
+        apparitions[cle] = apparitions.get(cle, 0) + 1
     canon["personnages"] = cps[:CANON_MAX_PERSOS]
+    canon["apparitions"] = apparitions
 
     cac = canon.setdefault("acquis", [])
     deja = {re.sub(r"\s+", " ", f.strip().lower()) for f in cac}
