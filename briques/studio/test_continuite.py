@@ -241,3 +241,32 @@ def test_bilan_structurel_detecte_la_fin_sur_cliffhanger():
     assert b["nb_chapitres"] == 2
     assert b["a_un_arc"] is True
     assert b["finit_sur_cliffhanger"] is True
+
+
+# ── Éligibilité pont world-engine ─────────────────────────────────
+def test_eligibles_pont_personnage_caste_immediat():
+    serie = {"personnages": [{"nom": "Elara"}], "canon": {"apparitions": {}, "personnages": []}}
+    pont = {"habitants": {}}
+    assert A._personnages_eligibles_pont(serie, pont) == ["Elara"]
+
+
+def test_eligibles_pont_seuil_apparitions():
+    serie = {"personnages": [],
+             "canon": {"apparitions": {"KAEL": 2}, "personnages": ["Kael"]}}
+    pont = {"habitants": {}}
+    assert A._personnages_eligibles_pont(serie, pont) == []
+    serie["canon"]["apparitions"]["KAEL"] = A.SEUIL_RECURRENCE_PONT
+    assert A._personnages_eligibles_pont(serie, pont) == ["Kael"]
+
+
+def test_eligibles_pont_exclut_deja_lies():
+    serie = {"personnages": [{"nom": "Elara"}], "canon": {"apparitions": {}, "personnages": []}}
+    pont = {"habitants": {"ELARA": {"eid": "x"}}}
+    assert A._personnages_eligibles_pont(serie, pont) == []
+
+
+def test_eligibles_pont_pas_de_doublon_caste_et_apparitions():
+    serie = {"personnages": [{"nom": "Elara"}],
+             "canon": {"apparitions": {"ELARA": A.SEUIL_RECURRENCE_PONT}, "personnages": ["Elara"]}}
+    pont = {"habitants": {}}
+    assert A._personnages_eligibles_pont(serie, pont) == ["Elara"]
