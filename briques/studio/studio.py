@@ -55,6 +55,9 @@ IMAGES_PUBLIC = os.getenv("IMAGES_PUBLIC_URL", "http://localhost:5950")
 VIDEO_URL = os.getenv("VIDEO_URL", "http://host.docker.internal:5970")
 VIDEO_PUBLIC = os.getenv("VIDEO_PUBLIC_URL", "http://localhost:5970")
 
+# Brique « world-engine » (6230) : registre de personnages persistant (pont, S26x).
+WORLD_ENGINE_URL = os.getenv("WORLD_ENGINE_URL", "http://host.docker.internal:6230")
+
 # Découpage en ÉPISODES d'écoute (~12 min) à partir des CHAPITRES.
 CIBLE_EPISODE_SECONDES = 12 * 60        # durée cible d'un épisode d'écoute
 CHAPITRES_PAR_EPISODE_DEFAUT = 4        # repli tant qu'aucun chapitre n'est sonorisé
@@ -861,6 +864,49 @@ async def _appeler_video(route: str, payload: dict) -> Optional[dict]:
             return data
     except Exception:  # noqa: BLE001
         return None
+
+
+# ── Pont vers la brique world-engine (6230) ──────────────────────────
+
+async def _appeler_world_engine(methode: str, route: str, payload: dict | None = None) -> Optional[dict]:
+    """Appelle world-engine ; renvoie son résultat ou None (repli honnête, même motif que
+    `_appeler_images`/`_appeler_video`) — jamais d'exception, jamais de donnée inventée si
+    world-engine est injoignable. C'est l'APPELANT qui décide si `None` doit devenir un 502
+    (geste explicite de l'utilisateur) ou rester silencieux (tick de fond, suggestions)."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.request(methode, f"{WORLD_ENGINE_URL}{route}", json=payload)
+            r.raise_for_status()
+            return r.json()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _pont_creer_monde() -> Optional[dict]:
+    """Crée le monde world-engine d'une série (maillage minimal — détail technique, pas
+    un choix narratif : 10 est le minimum accepté par `CreerMonde.nb_cellules`)."""
+    return await _appeler_world_engine("POST", "/spatial/mondes", {"nb_cellules": 10})
+
+
+async def _pont_fonder(monde_id: str, description: str, prenoms: str) -> Optional[dict]:
+    """Fonde un habitant world-engine à partir de la description d'un personnage Studio —
+    lieu/heure de naissance fixes (choix technique sans signification narrative, comme
+    `annee_enfant` côté world-engine) : un personnage de fiction n'a pas de vraies
+    coordonnées de naissance à fournir."""
+    return await _appeler_world_engine("POST", "/genome/fonder", {
+        "monde_id": monde_id, "description": description, "prenoms": prenoms, "nom": "",
+        "latitude": 48.8566, "longitude": 2.3522, "heure_naissance": "12:00", "utc_offset": 1.0})
+
+
+async def _pont_tick(monde_id: str) -> None:
+    """Avance d'un tick le monde d'une série — un par chapitre écrit, best-effort."""
+    await _appeler_world_engine("POST", f"/horloge/{monde_id}/tick")
+
+
+async def _pont_lire_enfant(eid: str) -> Optional[dict]:
+    """Lit la fiche + l'état simulé courant d'un habitant world-engine (champ
+    `simulation`, voir docs/superpowers/plans/2026-08-26-world-engine-fondateur-solo.md)."""
+    return await _appeler_world_engine("GET", f"/genome/enfants/{eid}")
 
 
 # ── Construction des tâches (prompts) ────────────────────────────
