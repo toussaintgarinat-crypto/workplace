@@ -2,7 +2,7 @@
 
 Date : 2026-10-03. Implémentation préparée et testée ; réception complète en attente de la cohérence Gateway et d’une destination indépendante.
 
-Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Le support précis, son UUID et son montage restent à identifier ; aucune clé USB n’est actuellement visible dans la VM Debian du HP. Le timer est préparé, pas activé ; aucune copie indépendante n’est encore acquittée.
+Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Clé PHILIPS détectée sur Proxmox Yourown puis rattachée à chaud à la VM 103 sur usb1. Partition exFAT de 62 702 747 648 octets, UUID `6A01-B378`, désormais visible dans Debian. Profil privé et phrase AES préparés, avec copie privée de récupération sur le Mac hors Git. Montage et premier transfert encore en attente d’authentification administrateur confirmée. Le timer est préparé, pas activé ; aucune copie indépendante n’est encore acquittée.
 
 ## Périmètre implémenté
 
@@ -32,6 +32,6 @@ Résoudre l’incohérence de l’index Gateway, puis refaire sa restauration st
 
 La validation métier de toutes les briques et le RTO complet, incluant reconstruction de l’hôte et récupération distante, restent distincts de ces contrôles. Les ressources Docker des tests sont nettoyées ; les preuves et générations privées sont conservées.
 
-Choisir le support réel et son accès, conserver la phrase de chiffrement hors HP, puis vérifier un premier transfert et une récupération depuis cette destination avant activation du timer. Une clé débranchée ne garantit pas à elle seule une copie plus récente que 24 h.
+Monter la partition USB identifiée sans formatage, vérifier son espace libre, puis réaliser un premier transfert et une récupération depuis cette destination avant activation du timer. La phrase de chiffrement est conservée hors HP dans un fichier privé sur le Mac ; elle doit rester accessible après perte du HP. Une clé débranchée ne garantit pas à elle seule une copie plus récente que 24 h.
 
 Guides : [sauvegardes cohérentes](../../outils/sauvegarde/coherent/README.md), [Duplicati](../../outils/sauvegarde/duplicati/README.md), [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md).

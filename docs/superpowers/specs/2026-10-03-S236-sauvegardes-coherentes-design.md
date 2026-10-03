@@ -44,7 +44,7 @@ Prouver le chiffrement et un téléchargement/restauration depuis Duplicati dès
 
 ## Décisions attendues
 
-Conception validée par l’utilisateur. RPO retenu : 24 h ; RTO retenu : 8 h. Exigence complémentaire validée : disque dur externe ou clé USB, en plus d’un NAS ou serveur local/distant ; profils indépendants pour ces destinations. Destination retenue : clé USB. Support concret, UUID et montage encore non identifiés ; aucun transfert indépendant ni timer activé. Cadence préparée : 12 h pour conserver une marge sous le RPO. La disponibilité des images, outils natifs, accès aux volumes et corpus Qdrant sera vérifiée pendant le préflight ; toute limite sera documentée plutôt que déclarée comme preuve.
+Conception validée par l’utilisateur. RPO retenu : 24 h ; RTO retenu : 8 h. Exigence complémentaire validée : disque dur externe ou clé USB, en plus d’un NAS ou serveur local/distant ; profils indépendants pour ces destinations. Destination retenue : clé USB. Support identifié : PHILIPS, partition exFAT UUID 6A01-B378, rattachée à chaud à la VM 103 ; montage en attente d’authentification administrateur confirmée ; aucun transfert indépendant ni timer activé. Cadence préparée : 12 h pour conserver une marge sous le RPO. La disponibilité des images, outils natifs, accès aux volumes et corpus Qdrant sera vérifiée pendant le préflight ; toute limite sera documentée plutôt que déclarée comme preuve.
 
 ## Précisions issues du pilote
 
