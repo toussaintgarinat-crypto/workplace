@@ -1,8 +1,8 @@
 # S236 — Preuves et état de livraison
 
-Date : 2026-10-03. Implémentation préparée et testée ; réception complète en attente de la cohérence Gateway et d’une destination indépendante.
+Date : 2026-10-03. Implémentation préparée et testée ; réception complète en attente de la cohérence Gateway et des parcours métier complets ; première copie indépendante USB vérifiée.
 
-Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Clé PHILIPS détectée sur Proxmox Yourown puis rattachée à chaud à la VM 103 sur usb1. Partition exFAT de 62 702 747 648 octets, UUID `6A01-B378`, désormais visible dans Debian. Profil privé et phrase AES préparés, avec copie privée de récupération sur le Mac hors Git. Montage et premier transfert encore en attente d’authentification administrateur confirmée. Le timer est préparé, pas activé ; aucune copie indépendante n’est encore acquittée.
+Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Clé PHILIPS détectée sur Proxmox Yourown puis rattachée à chaud à la VM 103 sur usb1. Partition exFAT de 62 702 747 648 octets, UUID `6A01-B378`, désormais visible dans Debian. Profil privé et phrase AES préparés, avec copie privée de récupération sur le Mac hors Git. Montage réalisé sans formatage après autorisation explicite d’utiliser les identifiants sudo pour ce montage. Environ 56 Go libres avant copie ; 55,5 Go après copie. Première copie indépendante acquittée après vérification ; le timer reste préparé, pas activé.
 
 ## Périmètre implémenté
 
@@ -21,8 +21,10 @@ Les exports suspendent les producteurs, utilisent les API natives des moteurs et
 - Depuis cette récupération AES : 45 ensembles de fichiers/SQLite restaurés et contrôlés ; PostgreSQL Mémoire, Keycloak, Oria, PeerTube et Forge restaurés avec rôles/extensions/comptages ; etcd sain ; Qdrant restauré, une collection et une recherche sur un vecteur réel validées.
 - Cœur démarré sur les copies récupérées : `/health` 200 et `/dashboard` 303 vers `/auth/login`, comportement également constaté en production. La sonde ne suit pas le SSO hors du réseau isolé. Le dashboard authentifié et les parcours métier de toutes les briques ne sont pas validés.
 - Gateway : la restauration stricte échoue sur `public.LiteLLM_ToolTable_tool_name_key`. Lecture séquentielle de la source : 21 groupes de noms non nuls dupliqués, malgré un index déclaré unique/valide. Image identique pour la source et la cible. Aucun changement en production. En laboratoire distinct, seuls les éléments TOC de cet index sont exclus : les deux bases, 65 tables et 6 695 lignes sont récupérées, avec extensions et comptages exacts ; les quatre autres index de cette table sont conservés. Cette récupération dégradée ne vaut pas restauration complète du schéma.
+- Clé USB réelle : 15 archives AES stockées sous `workplace/usb-philips-6a01-b378/`. Transport et vérification complète réussis ; récupération depuis la clé dans un répertoire isolé avec une base Duplicati vierge : code 0, environ 9,4 s, 53 sources et toutes les empreintes contrôlées, manifeste original identique. Écritures synchronisées sur le support. Ce temps concerne la récupération des exports, pas le RTO complet. Les 71 services actifs restent sains ; aucun conteneur de test ne subsiste.
+- Phrase AES conservée aussi dans `~/Documents/Workplace-Recovery/usb-6A01-B378.env` sur le Mac : dossier 0700, fichier 0600, hors Git. Correspondance avec la phrase utilisée sur le HP vérifiée sans l’afficher.
 - Interface Duplicati temporaire : HTTP 200, API sans authentification refusée (401), base serveur persistante sous `/data`, port publié uniquement sur localhost. Instance de test supprimée.
-- Supervision : règles Prometheus contrôlées (13 au total) et collecteur node-exporter actif. Statut S236 reçu ; aucune copie indépendante vérifiée signalée correctement.
+- Supervision : règles Prometheus contrôlées (13 au total) et collecteur node-exporter actif. Statut S236 reçu ; le premier transfert indépendant vérifié est désormais acquitté.
 
 Les preuves privées contenant données ou paramètres de récupération restent sous `/home/debian/s236-tools/` et `/home/debian/.local/share/workplace-backups/`, hors du dépôt Git.
 
@@ -32,6 +34,6 @@ Résoudre l’incohérence de l’index Gateway, puis refaire sa restauration st
 
 La validation métier de toutes les briques et le RTO complet, incluant reconstruction de l’hôte et récupération distante, restent distincts de ces contrôles. Les ressources Docker des tests sont nettoyées ; les preuves et générations privées sont conservées.
 
-Monter la partition USB identifiée sans formatage, vérifier son espace libre, puis réaliser un premier transfert et une récupération depuis cette destination avant activation du timer. La phrase de chiffrement est conservée hors HP dans un fichier privé sur le Mac ; elle doit rester accessible après perte du HP. Une clé débranchée ne garantit pas à elle seule une copie plus récente que 24 h.
+La clé est actuellement montée sur `/mnt/workplace-backup`. Son rattachement Proxmox est configuré, mais aucun montage persistant ni timer automatique n’a été activé. La planification 12 h reste à mettre en service ; la destination devra être réellement montée avant chaque export. La phrase de chiffrement est conservée hors HP dans un fichier privé sur le Mac ; elle doit rester accessible après perte du HP. Une clé débranchée ne garantit pas à elle seule une copie plus récente que 24 h.
 
 Guides : [sauvegardes cohérentes](../../outils/sauvegarde/coherent/README.md), [Duplicati](../../outils/sauvegarde/duplicati/README.md), [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md).
