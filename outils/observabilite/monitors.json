@@ -1,0 +1,830 @@
+[
+  {
+    "name": "Processus — Cœur",
+    "url": "http://host.docker.internal:5100/health",
+    "description": "Processus du Cœur. Ne prouve pas les dépendances ni une opération métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — agenda",
+    "url": "http://host.docker.internal:8400/health",
+    "description": "Contrat briques/agenda/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — atelier-images-video",
+    "url": "http://host.docker.internal:6160/sante",
+    "description": "Contrat briques/atelier-images-video/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — atelier-veille",
+    "url": "http://host.docker.internal:6130/sante",
+    "description": "Contrat briques/atelier-veille/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — audit",
+    "url": "http://host.docker.internal:5300/sante",
+    "description": "Contrat briques/audit/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — audit-fichiers",
+    "url": "http://host.docker.internal:6170/sante",
+    "description": "Contrat briques/audit-fichiers/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — calcul",
+    "url": "http://host.docker.internal:5990/sante",
+    "description": "Contrat briques/calcul/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — connecteurs",
+    "url": "http://host.docker.internal:6200/sante",
+    "description": "Contrat briques/connecteurs/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — connexion",
+    "url": "http://host.docker.internal:5870/sante",
+    "description": "Contrat briques/connexion/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — dev",
+    "url": "http://host.docker.internal:5955/sante",
+    "description": "Contrat briques/dev/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — donnees",
+    "url": "http://host.docker.internal:5500/sante",
+    "description": "Contrat briques/donnees/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — ecoute",
+    "url": "http://host.docker.internal:5800/sante",
+    "description": "Contrat briques/ecoute/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — export",
+    "url": "http://host.docker.internal:6150/sante",
+    "description": "Contrat briques/export/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — forge",
+    "url": "http://host.docker.internal:5700/sante",
+    "description": "Contrat briques/forge/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — gateway",
+    "url": "http://host.docker.internal:4001/health/liveliness",
+    "description": "Contrat briques/gateway/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — gateway-sync",
+    "url": "http://host.docker.internal:4002/sante",
+    "description": "Contrat briques/gateway-sync/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — generateur",
+    "url": "http://host.docker.internal:5400/sante",
+    "description": "Contrat briques/generateur/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — geo",
+    "url": "http://host.docker.internal:6110/sante",
+    "description": "Contrat briques/geo/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — images",
+    "url": "http://host.docker.internal:5950/sante",
+    "description": "Contrat briques/images/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — ingestion",
+    "url": "http://host.docker.internal:5200/sante",
+    "description": "Contrat briques/ingestion/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — jeu-factions",
+    "url": "http://host.docker.internal:6210/sante",
+    "description": "Contrat briques/jeu-factions/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — mail",
+    "url": "http://host.docker.internal:6030/sante",
+    "description": "Contrat briques/mail/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — memoire",
+    "url": "http://host.docker.internal:5600/sante",
+    "description": "Contrat briques/memoire/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — oria",
+    "url": "http://host.docker.internal:6085/sante",
+    "description": "Contrat briques/oria/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — paiements",
+    "url": "http://host.docker.internal:6020/sante",
+    "description": "Contrat briques/paiements/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — peertube",
+    "url": "http://host.docker.internal:6100/sante",
+    "description": "Contrat briques/peertube/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — personnages",
+    "url": "http://host.docker.internal:5900/sante",
+    "description": "Contrat briques/personnages/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — recherche",
+    "url": "http://host.docker.internal:6040/sante",
+    "description": "Contrat briques/recherche/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — restaurant",
+    "url": "http://host.docker.internal:6010/sante",
+    "description": "Contrat briques/restaurant/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — standard-telephonique",
+    "url": "http://192.168.1.188:6190/sante",
+    "description": "Contrat briques/standard-telephonique/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — studio",
+    "url": "http://host.docker.internal:6060/sante",
+    "description": "Contrat briques/studio/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — synopsis",
+    "url": "http://host.docker.internal:6090/sante",
+    "description": "Contrat briques/synopsis/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — telephonie",
+    "url": "http://host.docker.internal:6050/sante",
+    "description": "Contrat briques/telephonie/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — transcription",
+    "url": "http://host.docker.internal:5980/sante",
+    "description": "Contrat briques/transcription/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — transferts",
+    "url": "http://host.docker.internal:6180/sante",
+    "description": "Contrat briques/transferts/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — veille-info",
+    "url": "http://host.docker.internal:6120/sante",
+    "description": "Contrat briques/veille-info/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — veille-prospection",
+    "url": "http://host.docker.internal:6140/sante",
+    "description": "Contrat briques/veille-prospection/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — video",
+    "url": "http://host.docker.internal:5970/sante",
+    "description": "Contrat briques/video/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — vision",
+    "url": "http://host.docker.internal:5960/sante",
+    "description": "Contrat briques/vision/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — voix",
+    "url": "http://host.docker.internal:5985/sante",
+    "description": "Contrat briques/voix/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Processus — world-engine",
+    "url": "http://host.docker.internal:6230/sante",
+    "description": "Contrat briques/world-engine/manifest.json ; santé déclarée, pas preuve métier.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Dépendance — Forge backend",
+    "url": "http://host.docker.internal:8600/api/health",
+    "description": "Backend Forge, distinct de son adaptateur.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Dépendance — Keycloak",
+    "url": "http://host.docker.internal:8080/realms/master/.well-known/openid-configuration",
+    "description": "Disponibilité du fournisseur identité.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Dépendance — Oria backend",
+    "url": "http://host.docker.internal:8000/health",
+    "description": "Backend réel Oria, indépendant de son adaptateur Workplace.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Supervision — Prometheus",
+    "url": "http://prometheus:9090/-/ready",
+    "description": "Disponibilité du stockage et moteur Prometheus.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
+    "name": "Supervision — Grafana",
+    "url": "http://grafana:3000/api/health",
+    "description": "Disponibilité Grafana et base interne.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  }
+]

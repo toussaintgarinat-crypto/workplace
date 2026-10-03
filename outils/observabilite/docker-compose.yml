@@ -29,7 +29,7 @@ services:
       - ./alertes.yml:/etc/prometheus/alertes.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "${SUPERVISION_BIND_IP:-127.0.0.1}:9090:9090"
     extra_hosts:
       # Le Cœur est joint par l'hôte, comme le reste du parc (cf. fix extra_hosts S186).
       - "host.docker.internal:host-gateway"
@@ -58,9 +58,55 @@ services:
       - ./grafana/tableaux:/var/lib/grafana/tableaux:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "3001:3000"   # 3000 est déjà pris ailleurs dans le parc
+      - "${SUPERVISION_BIND_IP:-127.0.0.1}:3001:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.5
+    container_name: workplace_uptime_kuma
+    restart: unless-stopped
+    environment:
+      UPTIME_KUMA_DB_TYPE: sqlite
+    volumes:
+      - kuma_data:/app/data
+      - ./kuma-bootstrap.cjs:/app/s235-bootstrap.cjs:ro
+      - ./kuma-notifications.cjs:/app/kuma-notifications.cjs:ro
+      - ./monitors.json:/app/s235-monitors.json:ro
+    ports:
+      - "${SUPERVISION_BIND_IP:-127.0.0.1}:3002:3001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: workplace_node_exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)
+    volumes:
+      - /:/host:ro,rslave
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Accessible uniquement sur le réseau Compose, pas de port hôte.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9100/metrics"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -68,3 +114,4 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
+  kuma_data:

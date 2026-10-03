@@ -94,3 +94,27 @@ groups:
             Regarder /validation/ecarts pour la ventilation par catégorie. Un pic sur
             `param_requis` ou `type` suit souvent une modification de manifeste ; un pic sur
             `outil_inconnu` trahit un catalogue désynchronisé du prompt.
+
+  - name: hote
+    rules:
+      - alert: DisqueHotePresquePlein
+        expr: (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) > 0.85
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Disque du HP utilisé à plus de 85 %"
+      - alert: MemoireHoteSaturee
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Mémoire du HP utilisée à plus de 90 %"
+      - alert: CPUHoteSature
+        expr: (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.90
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "CPU du HP utilisé à plus de 90 %"
