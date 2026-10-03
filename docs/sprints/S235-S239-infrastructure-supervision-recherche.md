@@ -26,7 +26,7 @@ Acceptation : indisponibilité simulée sur une cible isolée détectée ; notif
 
 ## S236 — Sauvegardes cohérentes et restauration complète
 
-Statut : conception validée, implémentation et preuves de restauration en cours. RPO retenu : 24 h ; RTO visé : 8 h. Destinations prises en charge : disque externe, clé USB, NAS ou serveur local/distant. La destination concrète reste à choisir ; aucune planification automatique activée. Voir les [preuves S236](S236-sauvegardes-resultats.md), la [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md) et le [guide opérationnel](../../outils/sauvegarde/coherent/README.md).
+Statut : conception validée, implémentation et preuves de restauration en cours. RPO retenu : 24 h ; RTO visé : 8 h. Destinations prises en charge : disque externe, clé USB, NAS ou serveur local/distant. Clé USB PHILIPS retenue, rattachée à la VM et première copie indépendante/récupération chiffrée vérifiées. Restauration stricte Gateway encore bloquée ; aucune planification automatique activée. Voir les [preuves S236](S236-sauvegardes-resultats.md), la [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md) et le [guide opérationnel](../../outils/sauvegarde/coherent/README.md).
 
 Objectif : pouvoir reconstruire Workplace avec ses données.
 

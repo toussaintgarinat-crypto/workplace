@@ -16,7 +16,7 @@
 - Aucun secret dans les sorties ; staging privé et chiffrement Duplicati obligatoire.
 - Suspendre les producteurs pendant l’export ; relancer exactement ceux qui étaient actifs, même après échec.
 - Support externe : montage réel et identité du support vérifiés ; refus si absent.
-- La destination finale n’est pas choisie ; ne pas activer de transfert ni de timer automatiquement.
+- Destination choisie et vérifiée : clé USB PHILIPS, UUID 6A01-B378. Premier transfert et récupération validés ; timer non activé.
 
 ## Task 1 — Artifacts cohérents et restauration de fichiers
 
@@ -62,4 +62,4 @@ Files: `docs/sprints/S236-sauvegardes-resultats.md`, backlog sprint, spec actual
 
 ## État de réception
 
-64 tests passent. Les preuves réelles et les deux conditions restantes (Gateway et destination indépendante) sont décrites dans [les résultats S236](../../sprints/S236-sauvegardes-resultats.md). Aucun transfert indépendant ni timer activé.
+64 tests passent. Les preuves réelles et les conditions restantes (restauration stricte Gateway et parcours métier complets) sont décrites dans [les résultats S236](../../sprints/S236-sauvegardes-resultats.md). Premier transfert indépendant USB et récupération vérifiés ; aucun timer activé.
