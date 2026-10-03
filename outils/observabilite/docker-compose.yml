@@ -94,11 +94,13 @@ services:
     pid: host
     command:
       - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)
     volumes:
       - /:/host:ro,rslave
+      - ./textfile:/textfile:ro
     read_only: true
     security_opt:
       - no-new-privileges:true

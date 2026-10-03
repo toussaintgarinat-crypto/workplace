@@ -1,4 +1,10 @@
-# Sauvegarde continue — outillage local
+# Sauvegardes Workplace
+
+S236 : [exports cohérents et restauration isolée](coherent/README.md), [transport chiffré Duplicati](duplicati/README.md). Cibles : disque externe/USB, NAS ou serveur local/distant ; activation après configuration de la destination.
+
+Le reste de ce document décrit le chantier historique Litestream/WAL-G et son MinIO de développement.
+
+## Sauvegarde continue — outillage local
 
 Cible S3-compatible (MinIO) pour développer/tester Litestream (SQLite) et WAL-G (Postgres)
 sans dépendre d'un vrai compte cloud. Voir le plan complet :

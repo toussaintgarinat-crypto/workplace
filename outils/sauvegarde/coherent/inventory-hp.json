@@ -1,0 +1,2308 @@
+{
+  "version": 1,
+  "rpo_seconds": 86400,
+  "rto_seconds": 28800,
+  "helper_image": "core-core",
+  "repository": {
+    "id": "repository",
+    "kind": "bind",
+    "source": "/home/debian/workplace",
+    "owners": [],
+    "exclude": [
+      ".git",
+      ".venv",
+      "node_modules",
+      "__pycache__",
+      ".pytest_cache",
+      ".superpowers",
+      "core.1"
+    ]
+  },
+  "postgres": [
+    {
+      "container": "memoire-memoire-db-1",
+      "image": "workplace/memoire-db-walg:0.1.0",
+      "restore_image": "workplace/memoire-db-walg:0.1.0"
+    },
+    {
+      "container": "gateway-db-1",
+      "image": "workplace/gateway-db-walg:0.1.0",
+      "restore_image": "workplace/gateway-db-walg:0.1.0"
+    },
+    {
+      "container": "keycloak-db",
+      "image": "postgres:16.14-alpine",
+      "restore_image": "postgres:16.14-alpine"
+    },
+    {
+      "container": "oria-db-1",
+      "image": "patroni-pg16:local",
+      "restore_image": "postgres:16.14"
+    },
+    {
+      "container": "peertube-db",
+      "image": "postgres:16.14-alpine",
+      "restore_image": "postgres:16.14-alpine"
+    },
+    {
+      "container": "forge-forge-db-1",
+      "image": "postgres:16.14",
+      "restore_image": "postgres:16.14"
+    }
+  ],
+  "qdrant": {
+    "container": "forge-qdrant-1",
+    "image": "qdrant/qdrant:v1.12.4"
+  },
+  "etcd": {
+    "container": "oria-etcd-1",
+    "image": "quay.io/coreos/etcd:v3.5.17"
+  },
+  "trees": [
+    {
+      "id": "4b74a2f0685862635e3158dbf84cf70f1388a6f450d4f34c263ffe4acc4b754c",
+      "kind": "volume",
+      "source": "4b74a2f0685862635e3158dbf84cf70f1388a6f450d4f34c263ffe4acc4b754c",
+      "owners": [
+        {
+          "container": "workplace_peertube",
+          "destination": "/config"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "65a6df70db6d02f2be33f74e1055c28e77b712e6a1a1c6f166c71e6169c3600c",
+      "kind": "volume",
+      "source": "65a6df70db6d02f2be33f74e1055c28e77b712e6a1a1c6f166c71e6169c3600c",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/etc/dendrite"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "agenda_agenda_data",
+      "kind": "volume",
+      "source": "agenda_agenda_data",
+      "owners": [
+        {
+          "container": "workplace_agenda_litestream",
+          "destination": "/data"
+        },
+        {
+          "container": "agenda",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "audit_audit_data",
+      "kind": "volume",
+      "source": "audit_audit_data",
+      "owners": [
+        {
+          "container": "workplace_audit",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "baba8ef42fb3256203bbe1f6649fa390f63d10bdf1093c5473b34cd38cb5ec6a",
+      "kind": "volume",
+      "source": "baba8ef42fb3256203bbe1f6649fa390f63d10bdf1093c5473b34cd38cb5ec6a",
+      "owners": [
+        {
+          "container": "oria-redis-1",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "calcul_calcul_data",
+      "kind": "volume",
+      "source": "calcul_calcul_data",
+      "owners": [
+        {
+          "container": "workplace_calcul",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "connecteurs_connecteurs_data",
+      "kind": "volume",
+      "source": "connecteurs_connecteurs_data",
+      "owners": [
+        {
+          "container": "workplace_connecteurs",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "connecteurs_connecteurs_travail",
+      "kind": "volume",
+      "source": "connecteurs_connecteurs_travail",
+      "owners": [
+        {
+          "container": "workplace_connecteurs",
+          "destination": "/travail"
+        }
+      ],
+      "exclude": [
+        ".venv-source-faker"
+      ],
+      "excluded_reason": "Environnement Python généré, contient des liens absolus vers interpréteur hôte ; sources et dépendances déclarées conservées."
+    },
+    {
+      "id": "connexion_connexion_data",
+      "kind": "volume",
+      "source": "connexion_connexion_data",
+      "owners": [
+        {
+          "container": "workplace_connexion",
+          "destination": "/data/connexion"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "core_core_data",
+      "kind": "volume",
+      "source": "core_core_data",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "dev_dev_data",
+      "kind": "volume",
+      "source": "dev_dev_data",
+      "owners": [
+        {
+          "container": "workplace_dev",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "dev_dev_ide_config",
+      "kind": "volume",
+      "source": "dev_dev_ide_config",
+      "owners": [
+        {
+          "container": "workplace_dev_ide",
+          "destination": "/home/coder/.config"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "donnees_donnees_data",
+      "kind": "volume",
+      "source": "donnees_donnees_data",
+      "owners": [
+        {
+          "container": "workplace_donnees_litestream",
+          "destination": "/data"
+        },
+        {
+          "container": "workplace_donnees",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "ecoute_ecoute_data",
+      "kind": "volume",
+      "source": "ecoute_ecoute_data",
+      "owners": [
+        {
+          "container": "workplace_ecoute",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "export_export_data",
+      "kind": "volume",
+      "source": "export_export_data",
+      "owners": [
+        {
+          "container": "workplace_export",
+          "destination": "/data/fichiers"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "generateur_generateur_data",
+      "kind": "volume",
+      "source": "generateur_generateur_data",
+      "owners": [
+        {
+          "container": "workplace_generateur",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "geo_geo_data",
+      "kind": "volume",
+      "source": "geo_geo_data",
+      "owners": [
+        {
+          "container": "workplace_geo",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "images_images_data",
+      "kind": "volume",
+      "source": "images_images_data",
+      "owners": [
+        {
+          "container": "workplace_images",
+          "destination": "/data/images"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "ingestion_ingestion_data",
+      "kind": "volume",
+      "source": "ingestion_ingestion_data",
+      "owners": [
+        {
+          "container": "workplace-ingestion",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "jeu-factions-public_jeu_factions_public_data",
+      "kind": "volume",
+      "source": "jeu-factions-public_jeu_factions_public_data",
+      "owners": [
+        {
+          "container": "workplace_jeu_factions_public",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "jeu-factions_jeu_factions_data",
+      "kind": "volume",
+      "source": "jeu-factions_jeu_factions_data",
+      "owners": [
+        {
+          "container": "workplace_jeu_factions",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "mail_mail_data",
+      "kind": "volume",
+      "source": "mail_mail_data",
+      "owners": [
+        {
+          "container": "workplace_mail",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "mesh-https_caddy_config",
+      "kind": "volume",
+      "source": "mesh-https_caddy_config",
+      "owners": [
+        {
+          "container": "mesh_caddy",
+          "destination": "/config"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "mesh-https_caddy_data",
+      "kind": "volume",
+      "source": "mesh-https_caddy_data",
+      "owners": [
+        {
+          "container": "mesh_caddy",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "observabilite_grafana_data",
+      "kind": "volume",
+      "source": "observabilite_grafana_data",
+      "owners": [
+        {
+          "container": "workplace_grafana",
+          "destination": "/var/lib/grafana"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "observabilite_kuma_data",
+      "kind": "volume",
+      "source": "observabilite_kuma_data",
+      "owners": [
+        {
+          "container": "workplace_uptime_kuma",
+          "destination": "/app/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "oria_dendrite_keys",
+      "kind": "volume",
+      "source": "oria_dendrite_keys",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/var/dendrite/keys"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "oria_dendrite_media",
+      "kind": "volume",
+      "source": "oria_dendrite_media",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/var/dendrite/media"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "oria_dendrite_nats",
+      "kind": "volume",
+      "source": "oria_dendrite_nats",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/var/dendrite/nats"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "oria_minio_data",
+      "kind": "volume",
+      "source": "oria_minio_data",
+      "owners": [
+        {
+          "container": "oria-minio-1",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "oria_uploads_data",
+      "kind": "volume",
+      "source": "oria_uploads_data",
+      "owners": [
+        {
+          "container": "oria-backend-1",
+          "destination": "/app/uploads"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paiements_paiements_data",
+      "kind": "volume",
+      "source": "paiements_paiements_data",
+      "owners": [
+        {
+          "container": "workplace_paiements",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "peertube_peertube_data",
+      "kind": "volume",
+      "source": "peertube_peertube_data",
+      "owners": [
+        {
+          "container": "workplace_peertube",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "peertube_peertube_redis",
+      "kind": "volume",
+      "source": "peertube_peertube_redis",
+      "owners": [
+        {
+          "container": "peertube-redis",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "personnages_personnages_data",
+      "kind": "volume",
+      "source": "personnages_personnages_data",
+      "owners": [
+        {
+          "container": "workplace_personnages",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "restaurant_restaurant_data",
+      "kind": "volume",
+      "source": "restaurant_restaurant_data",
+      "owners": [
+        {
+          "container": "workplace_restaurant",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "studio_studio_data",
+      "kind": "volume",
+      "source": "studio_studio_data",
+      "owners": [
+        {
+          "container": "workplace_studio",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "synopsis_synopsis_clips",
+      "kind": "volume",
+      "source": "synopsis_synopsis_clips",
+      "owners": [
+        {
+          "container": "workplace-synopsis",
+          "destination": "/clips"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "telephonie_telephonie_data",
+      "kind": "volume",
+      "source": "telephonie_telephonie_data",
+      "owners": [
+        {
+          "container": "workplace_telephonie",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "transferts_transferts_data",
+      "kind": "volume",
+      "source": "transferts_transferts_data",
+      "owners": [
+        {
+          "container": "workplace_transferts",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "veille-info_veille_info_data",
+      "kind": "volume",
+      "source": "veille-info_veille_info_data",
+      "owners": [
+        {
+          "container": "workplace_veille_info",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "veille-prospection_veille_prospection_data",
+      "kind": "volume",
+      "source": "veille-prospection_veille_prospection_data",
+      "owners": [
+        {
+          "container": "workplace_veille_prospection",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "video_videos_data",
+      "kind": "volume",
+      "source": "video_videos_data",
+      "owners": [
+        {
+          "container": "workplace_video",
+          "destination": "/data/videos"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "world-engine_world_engine_data",
+      "kind": "volume",
+      "source": "world-engine_world_engine_data",
+      "owners": [
+        {
+          "container": "workplace_world_engine",
+          "destination": "/data"
+        }
+      ],
+      "exclude": []
+    }
+  ],
+  "classified_mounts": [
+    {
+      "source": "/",
+      "owners": [
+        {
+          "container": "workplace_node_exporter",
+          "destination": "/host"
+        }
+      ],
+      "reason": "Montage hôte node-exporter ; n’est pas une source de données applicatives."
+    },
+    {
+      "source": "/home/debian/workplace",
+      "owners": [
+        {
+          "container": "workplace_dev",
+          "destination": "/repo"
+        },
+        {
+          "container": "workplace_dev_ide",
+          "destination": "/home/coder/project"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/.env",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/env-racine/.env"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/apps_exportees",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/export"
+        },
+        {
+          "container": "workplace_generateur",
+          "destination": "/export"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/briques"
+        },
+        {
+          "container": "workplace_generateur",
+          "destination": "/briques_src/briques"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/agenda/litestream.yml",
+      "owners": [
+        {
+          "container": "workplace_agenda_litestream",
+          "destination": "/etc/litestream.yml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/donnees",
+      "owners": [
+        {
+          "container": "workplace_generateur",
+          "destination": "/briques_src/donnees"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/donnees/litestream.yml",
+      "owners": [
+        {
+          "container": "workplace_donnees_litestream",
+          "destination": "/etc/litestream.yml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/gateway/.env",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/gateway/.env"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/gateway/litellm_config.yaml",
+      "owners": [
+        {
+          "container": "gateway-gateway-1",
+          "destination": "/app/config.yaml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/memoire/init-pgvector.sql",
+      "owners": [
+        {
+          "container": "memoire-memoire-db-1",
+          "destination": "/docker-entrypoint-initdb.d/init.sql"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/peertube/config/production.yaml",
+      "owners": [
+        {
+          "container": "workplace_peertube",
+          "destination": "/config/production.yaml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/recherche/searxng",
+      "owners": [
+        {
+          "container": "workplace_searxng",
+          "destination": "/etc/searxng"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/transcription/notes_export",
+      "owners": [
+        {
+          "container": "workplace_transcription",
+          "destination": "/notes"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/voix/data",
+      "owners": [
+        {
+          "container": "workplace_voix",
+          "destination": "/data/voix"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/briques/voix/voix-modeles",
+      "owners": [
+        {
+          "container": "workplace_voix",
+          "destination": "/voix-modeles"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/core",
+      "owners": [
+        {
+          "container": "workplace_generateur",
+          "destination": "/briques_src/core"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/infra/keycloak/realms",
+      "owners": [
+        {
+          "container": "keycloak",
+          "destination": "/opt/keycloak/data/import"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/infra/postgres-ha/oria/patroni.yml",
+      "owners": [
+        {
+          "container": "oria-db-1",
+          "destination": "/etc/patroni/patroni.yml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/backend",
+      "owners": [
+        {
+          "container": "oria-backend-1",
+          "destination": "/app"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/frontend",
+      "owners": [
+        {
+          "container": "oria-frontend-1",
+          "destination": "/workspace/oria/frontend"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/keycloak",
+      "owners": [
+        {
+          "container": "oria-keycloak-1",
+          "destination": "/opt/keycloak/data/import"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/livekit/livekit.yaml",
+      "owners": [
+        {
+          "container": "oria-livekit-1",
+          "destination": "/etc/livekit.yaml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/matrix/appservice.yaml.tpl",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/etc/dendrite/appservice.yaml.tpl"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/matrix/dendrite.yaml.tpl",
+      "owners": [
+        {
+          "container": "oria-dendrite-1",
+          "destination": "/etc/dendrite/dendrite.yaml.tpl"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/oria/postgres-init",
+      "owners": [
+        {
+          "container": "oria-db-1",
+          "destination": "/docker-entrypoint-initdb.d"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/oria-stack/shared-ui",
+      "owners": [
+        {
+          "container": "oria-frontend-1",
+          "destination": "/workspace/shared-ui"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/mesh-https/Caddyfile",
+      "owners": [
+        {
+          "container": "mesh_caddy",
+          "destination": "/etc/caddy/Caddyfile"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/mesh-https/Caddyfile.briques",
+      "owners": [
+        {
+          "container": "mesh_caddy",
+          "destination": "/etc/caddy/Caddyfile.briques"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/alertes.yml",
+      "owners": [
+        {
+          "container": "workplace_prometheus",
+          "destination": "/etc/prometheus/alertes.yml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/grafana/provisioning",
+      "owners": [
+        {
+          "container": "workplace_grafana",
+          "destination": "/etc/grafana/provisioning"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/grafana/tableaux",
+      "owners": [
+        {
+          "container": "workplace_grafana",
+          "destination": "/var/lib/grafana/tableaux"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/kuma-bootstrap.cjs",
+      "owners": [
+        {
+          "container": "workplace_uptime_kuma",
+          "destination": "/app/s235-bootstrap.cjs"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/kuma-notifications.cjs",
+      "owners": [
+        {
+          "container": "workplace_uptime_kuma",
+          "destination": "/app/kuma-notifications.cjs"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/monitors.json",
+      "owners": [
+        {
+          "container": "workplace_uptime_kuma",
+          "destination": "/app/s235-monitors.json"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/prometheus.yml",
+      "owners": [
+        {
+          "container": "workplace_prometheus",
+          "destination": "/etc/prometheus/prometheus.yml"
+        }
+      ],
+      "reason": "Couvert par repository et ses fichiers locaux, secrets et overrides."
+    },
+    {
+      "source": "/mnt/sauvegarde-usb",
+      "owners": [
+        {
+          "container": "core-core-1",
+          "destination": "/mnt/sauvegarde-usb"
+        }
+      ],
+      "reason": "Destination historique USB ; jamais incluse comme source."
+    },
+    {
+      "source": "/var/lib/docker/volumes/230d4431eb903b915607c4a77e7d7fe55e338828b421a115d3c76a55494f9620/_data",
+      "owners": [
+        {
+          "container": "workplace_searxng",
+          "destination": "/var/cache/searxng"
+        }
+      ],
+      "reason": "Cache SearxNG reproductible."
+    },
+    {
+      "source": "/var/lib/docker/volumes/aea2479c3f327e5c4839cfeb8502be0b46eb9058430c754b03ec44e0069ffb89/_data",
+      "owners": [
+        {
+          "container": "oria-frontend-1",
+          "destination": "/workspace/oria/frontend/node_modules"
+        }
+      ],
+      "reason": "Dépendances node_modules reproductibles depuis lockfiles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/audit-fichiers_audit_fichiers_clamav_data/_data",
+      "owners": [
+        {
+          "container": "workplace_audit_fichiers_clamav",
+          "destination": "/var/lib/clamav"
+        }
+      ],
+      "reason": "Signatures antivirus téléchargeables."
+    },
+    {
+      "source": "/var/lib/docker/volumes/forge_forge_pgdata/_data",
+      "owners": [
+        {
+          "container": "forge-forge-db-1",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/forge_forge_qdrant/_data",
+      "owners": [
+        {
+          "container": "forge-qdrant-1",
+          "destination": "/qdrant/storage"
+        }
+      ],
+      "reason": "Snapshots Qdrant natifs et alias."
+    },
+    {
+      "source": "/var/lib/docker/volumes/gateway_gateway_db/_data",
+      "owners": [
+        {
+          "container": "gateway-db-premiere-sauvegarde-1",
+          "destination": "/var/lib/postgresql/data"
+        },
+        {
+          "container": "gateway-db-1",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/keycloak_postgres_data/_data",
+      "owners": [
+        {
+          "container": "keycloak-db",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/memoire_memoire_pgdata/_data",
+      "owners": [
+        {
+          "container": "memoire-memoire-db-premiere-sauvegarde-1",
+          "destination": "/var/lib/postgresql/data"
+        },
+        {
+          "container": "memoire-memoire-db-1",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/observabilite_prometheus_data/_data",
+      "owners": [
+        {
+          "container": "workplace_prometheus",
+          "destination": "/prometheus"
+        }
+      ],
+      "reason": "Historique de métriques exclu de cette reprise applicative ; configurations couvertes par repository."
+    },
+    {
+      "source": "/var/lib/docker/volumes/oria_etcd_data/_data",
+      "owners": [
+        {
+          "container": "oria-etcd-1",
+          "destination": "/var/etcd"
+        }
+      ],
+      "reason": "Snapshot natif etcd ; aucune copie à chaud."
+    },
+    {
+      "source": "/var/lib/docker/volumes/oria_postgres_data/_data",
+      "owners": [
+        {
+          "container": "oria-db-1",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/lib/docker/volumes/oria_wal_archive/_data",
+      "owners": [
+        {
+          "container": "oria-db-1",
+          "destination": "/var/lib/postgresql/wal_archive"
+        }
+      ],
+      "reason": "Archive WAL Oria remplacée par export logique ; pas de PITR promis."
+    },
+    {
+      "source": "/var/lib/docker/volumes/peertube_peertube_db/_data",
+      "owners": [
+        {
+          "container": "peertube-db",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "reason": "PostgreSQL natif : toutes les bases logiques et rôles."
+    },
+    {
+      "source": "/var/run/docker.sock",
+      "owners": [
+        {
+          "container": "workplace_dev",
+          "destination": "/var/run/docker.sock"
+        },
+        {
+          "container": "core-core-1",
+          "destination": "/var/run/docker.sock"
+        }
+      ],
+      "reason": "Socket Docker ; non sauvegardable et recréé par Docker."
+    },
+    {
+      "source": "/home/debian/workplace/outils/observabilite/textfile",
+      "owners": [
+        {
+          "container": "workplace_node_exporter",
+          "destination": "/textfile"
+        }
+      ],
+      "reason": "Métriques S236 publiques ; couvertes par repository."
+    }
+  ],
+  "expected_mounts": [
+    {
+      "container": "oria-backend-1",
+      "running": true,
+      "image": "oria-backend",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/backend",
+          "destination": "/app",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_uploads_data/_data",
+          "destination": "/app/uploads",
+          "name": "oria_uploads_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_uptime_kuma",
+      "running": true,
+      "image": "louislam/uptime-kuma:2.5.5",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/kuma-notifications.cjs",
+          "destination": "/app/kuma-notifications.cjs",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/monitors.json",
+          "destination": "/app/s235-monitors.json",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/observabilite_kuma_data/_data",
+          "destination": "/app/data",
+          "name": "observabilite_kuma_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/kuma-bootstrap.cjs",
+          "destination": "/app/s235-bootstrap.cjs",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_node_exporter",
+      "running": true,
+      "image": "prom/node-exporter:v1.9.1",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/textfile",
+          "destination": "/textfile",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/",
+          "destination": "/host",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_grafana",
+      "running": true,
+      "image": "grafana/grafana:11.5.1",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/observabilite_grafana_data/_data",
+          "destination": "/var/lib/grafana",
+          "name": "observabilite_grafana_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/grafana/provisioning",
+          "destination": "/etc/grafana/provisioning",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/grafana/tableaux",
+          "destination": "/var/lib/grafana/tableaux",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_prometheus",
+      "running": true,
+      "image": "prom/prometheus:v3.1.0",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/prometheus.yml",
+          "destination": "/etc/prometheus/prometheus.yml",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/observabilite/alertes.yml",
+          "destination": "/etc/prometheus/alertes.yml",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/observabilite_prometheus_data/_data",
+          "destination": "/prometheus",
+          "name": "observabilite_prometheus_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_world_engine",
+      "running": true,
+      "image": "workplace/world-engine:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/world-engine_world_engine_data/_data",
+          "destination": "/data",
+          "name": "world-engine_world_engine_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_personnages",
+      "running": true,
+      "image": "workplace/personnages:0.10.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/personnages_personnages_data/_data",
+          "destination": "/data",
+          "name": "personnages_personnages_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_dev",
+      "running": true,
+      "image": "workplace/dev:0.7.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/dev_dev_data/_data",
+          "destination": "/data",
+          "name": "dev_dev_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace",
+          "destination": "/repo",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/var/run/docker.sock",
+          "destination": "/var/run/docker.sock",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "core-core-1",
+      "running": true,
+      "image": "core-core",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/core_core_data/_data",
+          "destination": "/data",
+          "name": "core_core_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/.env",
+          "destination": "/env-racine/.env",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/apps_exportees",
+          "destination": "/export",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/gateway/.env",
+          "destination": "/gateway/.env",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/mnt/sauvegarde-usb",
+          "destination": "/mnt/sauvegarde-usb",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/var/run/docker.sock",
+          "destination": "/var/run/docker.sock",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques",
+          "destination": "/briques",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_jeu_factions_public",
+      "running": true,
+      "image": "workplace/jeu-factions-public:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/jeu-factions-public_jeu_factions_public_data/_data",
+          "destination": "/data",
+          "name": "jeu-factions-public_jeu_factions_public_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_agenda_litestream",
+      "running": false,
+      "image": "litestream/litestream:0.5.15",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/agenda_agenda_data/_data",
+          "destination": "/data",
+          "name": "agenda_agenda_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/agenda/litestream.yml",
+          "destination": "/etc/litestream.yml",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "agenda",
+      "running": true,
+      "image": "agenda-agenda",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/agenda_agenda_data/_data",
+          "destination": "/data",
+          "name": "agenda_agenda_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_veille_prospection",
+      "running": true,
+      "image": "workplace/veille-prospection:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/veille-prospection_veille_prospection_data/_data",
+          "destination": "/data",
+          "name": "veille-prospection_veille_prospection_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_studio",
+      "running": true,
+      "image": "workplace/studio:0.6.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/studio_studio_data/_data",
+          "destination": "/data",
+          "name": "studio_studio_data"
+        }
+      ]
+    },
+    {
+      "container": "memoire-memoire-1",
+      "running": true,
+      "image": "memoire-memoire",
+      "mounts": []
+    },
+    {
+      "container": "memoire-memoire-db-premiere-sauvegarde-1",
+      "running": false,
+      "image": "workplace/memoire-db-walg:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/memoire_memoire_pgdata/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "memoire_memoire_pgdata"
+        }
+      ]
+    },
+    {
+      "container": "memoire-memoire-backend-1",
+      "running": true,
+      "image": "memoire-memoire-backend",
+      "mounts": []
+    },
+    {
+      "container": "memoire-memoire-db-1",
+      "running": true,
+      "image": "workplace/memoire-db-walg:0.1.0",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/memoire/init-pgvector.sql",
+          "destination": "/docker-entrypoint-initdb.d/init.sql",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/memoire_memoire_pgdata/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "memoire_memoire_pgdata"
+        }
+      ]
+    },
+    {
+      "container": "workplace_mail",
+      "running": true,
+      "image": "workplace/mail:0.6.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/mail_mail_data/_data",
+          "destination": "/data",
+          "name": "mail_mail_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_jeu_factions",
+      "running": true,
+      "image": "workplace/jeu-factions:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/jeu-factions_jeu_factions_data/_data",
+          "destination": "/data",
+          "name": "jeu-factions_jeu_factions_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace-ingestion",
+      "running": true,
+      "image": "workplace-ingestion:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/ingestion_ingestion_data/_data",
+          "destination": "/data",
+          "name": "ingestion_ingestion_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_geo",
+      "running": true,
+      "image": "workplace/geo:0.5.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/geo_geo_data/_data",
+          "destination": "/data",
+          "name": "geo_geo_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_generateur",
+      "running": true,
+      "image": "generateur-generateur",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques",
+          "destination": "/briques_src/briques",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/core",
+          "destination": "/briques_src/core",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/donnees",
+          "destination": "/briques_src/donnees",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/generateur_generateur_data/_data",
+          "destination": "/data",
+          "name": "generateur_generateur_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/apps_exportees",
+          "destination": "/export",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "forge-frontend-1",
+      "running": true,
+      "image": "workplace-forge-frontend:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "forge-forge-adapter-1",
+      "running": true,
+      "image": "forge-forge-adapter",
+      "mounts": []
+    },
+    {
+      "container": "forge-forge-1",
+      "running": true,
+      "image": "workplace-forge-core:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "forge-forge-migrate-1",
+      "running": false,
+      "image": "workplace-forge-core:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_donnees_litestream",
+      "running": false,
+      "image": "litestream/litestream:0.5.15",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/donnees_donnees_data/_data",
+          "destination": "/data",
+          "name": "donnees_donnees_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/donnees/litestream.yml",
+          "destination": "/etc/litestream.yml",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_donnees",
+      "running": true,
+      "image": "donnees-donnees",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/donnees_donnees_data/_data",
+          "destination": "/data",
+          "name": "donnees_donnees_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_connecteurs",
+      "running": true,
+      "image": "workplace/connecteurs:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/connecteurs_connecteurs_data/_data",
+          "destination": "/data",
+          "name": "connecteurs_connecteurs_data"
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/connecteurs_connecteurs_travail/_data",
+          "destination": "/travail",
+          "name": "connecteurs_connecteurs_travail"
+        }
+      ]
+    },
+    {
+      "container": "workplace_audit",
+      "running": true,
+      "image": "audit-audit",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/audit_audit_data/_data",
+          "destination": "/data",
+          "name": "audit_audit_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_atelier_veille",
+      "running": true,
+      "image": "workplace/atelier-veille:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "gateway-gateway-sync-1",
+      "running": true,
+      "image": "gateway-gateway-sync",
+      "mounts": []
+    },
+    {
+      "container": "gateway-gateway-1",
+      "running": true,
+      "image": "ghcr.io/berriai/litellm:v1.86.2",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/gateway/litellm_config.yaml",
+          "destination": "/app/config.yaml",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "gateway-db-premiere-sauvegarde-1",
+      "running": false,
+      "image": "workplace/gateway-db-walg:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/gateway_gateway_db/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "gateway_gateway_db"
+        }
+      ]
+    },
+    {
+      "container": "gateway-db-1",
+      "running": true,
+      "image": "workplace/gateway-db-walg:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/gateway_gateway_db/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "gateway_gateway_db"
+        }
+      ]
+    },
+    {
+      "container": "workplace_veille_info",
+      "running": true,
+      "image": "workplace/veille-info:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/veille-info_veille_info_data/_data",
+          "destination": "/data",
+          "name": "veille-info_veille_info_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_voix",
+      "running": true,
+      "image": "workplace/voix:0.7.0",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/voix/data",
+          "destination": "/data/voix",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/voix/voix-modeles",
+          "destination": "/voix-modeles",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace-synopsis",
+      "running": true,
+      "image": "workplace/synopsis:1.2.3",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/synopsis_synopsis_clips/_data",
+          "destination": "/clips",
+          "name": "synopsis_synopsis_clips"
+        }
+      ]
+    },
+    {
+      "container": "workplace_recherche",
+      "running": true,
+      "image": "workplace/recherche:1.0.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_telephonie",
+      "running": true,
+      "image": "workplace/telephonie:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/telephonie_telephonie_data/_data",
+          "destination": "/data",
+          "name": "telephonie_telephonie_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_atelier_images_video",
+      "running": true,
+      "image": "workplace/atelier-images-video:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_paiements",
+      "running": true,
+      "image": "workplace/paiements:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/paiements_paiements_data/_data",
+          "destination": "/data",
+          "name": "paiements_paiements_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_restaurant",
+      "running": true,
+      "image": "workplace/restaurant:0.13.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/restaurant_restaurant_data/_data",
+          "destination": "/data",
+          "name": "restaurant_restaurant_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_oria",
+      "running": true,
+      "image": "workplace/oria:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_peertube_wrapper",
+      "running": true,
+      "image": "workplace/peertube-wrapper:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_vision",
+      "running": true,
+      "image": "workplace/vision:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_transferts",
+      "running": true,
+      "image": "workplace/transferts:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/transferts_transferts_data/_data",
+          "destination": "/data",
+          "name": "transferts_transferts_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_export",
+      "running": true,
+      "image": "workplace/export:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/export_export_data/_data",
+          "destination": "/data/fichiers",
+          "name": "export_export_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_audit_fichiers",
+      "running": true,
+      "image": "workplace/audit-fichiers:0.1.0",
+      "mounts": []
+    },
+    {
+      "container": "workplace_searxng",
+      "running": true,
+      "image": "searxng/searxng:2026.6.22-952896d29",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/recherche/searxng",
+          "destination": "/etc/searxng",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/230d4431eb903b915607c4a77e7d7fe55e338828b421a115d3c76a55494f9620/_data",
+          "destination": "/var/cache/searxng",
+          "name": "230d4431eb903b915607c4a77e7d7fe55e338828b421a115d3c76a55494f9620"
+        }
+      ]
+    },
+    {
+      "container": "oria-frontend-1",
+      "running": true,
+      "image": "oria-frontend",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/frontend",
+          "destination": "/workspace/oria/frontend",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/aea2479c3f327e5c4839cfeb8502be0b46eb9058430c754b03ec44e0069ffb89/_data",
+          "destination": "/workspace/oria/frontend/node_modules",
+          "name": "aea2479c3f327e5c4839cfeb8502be0b46eb9058430c754b03ec44e0069ffb89"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/shared-ui",
+          "destination": "/workspace/shared-ui",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_audit_fichiers_clamav",
+      "running": true,
+      "image": "clamav/clamav:1.4",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/audit-fichiers_audit_fichiers_clamav_data/_data",
+          "destination": "/var/lib/clamav",
+          "name": "audit-fichiers_audit_fichiers_clamav_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_images",
+      "running": true,
+      "image": "workplace/images:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/images_images_data/_data",
+          "destination": "/data/images",
+          "name": "images_images_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_connexion",
+      "running": true,
+      "image": "workplace/connexion:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/connexion_connexion_data/_data",
+          "destination": "/data/connexion",
+          "name": "connexion_connexion_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_video",
+      "running": true,
+      "image": "workplace/video:0.1.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/video_videos_data/_data",
+          "destination": "/data/videos",
+          "name": "video_videos_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_transcription",
+      "running": true,
+      "image": "workplace/transcription:0.1.0",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/transcription/notes_export",
+          "destination": "/notes",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "mesh_caddy",
+      "running": true,
+      "image": "workplace/caddy-duckdns:2",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/mesh-https_caddy_config/_data",
+          "destination": "/config",
+          "name": "mesh-https_caddy_config"
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/mesh-https_caddy_data/_data",
+          "destination": "/data",
+          "name": "mesh-https_caddy_data"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/mesh-https/Caddyfile",
+          "destination": "/etc/caddy/Caddyfile",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/outils/mesh-https/Caddyfile.briques",
+          "destination": "/etc/caddy/Caddyfile.briques",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_peertube",
+      "running": true,
+      "image": "chocobozzz/peertube:v7.2.2-bookworm",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/4b74a2f0685862635e3158dbf84cf70f1388a6f450d4f34c263ffe4acc4b754c/_data",
+          "destination": "/config",
+          "name": "4b74a2f0685862635e3158dbf84cf70f1388a6f450d4f34c263ffe4acc4b754c"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/briques/peertube/config/production.yaml",
+          "destination": "/config/production.yaml",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/peertube_peertube_data/_data",
+          "destination": "/data",
+          "name": "peertube_peertube_data"
+        }
+      ]
+    },
+    {
+      "container": "workplace_ecoute",
+      "running": true,
+      "image": "workplace/ecoute:0.2.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/ecoute_ecoute_data/_data",
+          "destination": "/data",
+          "name": "ecoute_ecoute_data"
+        }
+      ]
+    },
+    {
+      "container": "keycloak",
+      "running": true,
+      "image": "quay.io/keycloak/keycloak:26.2.5",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/infra/keycloak/realms",
+          "destination": "/opt/keycloak/data/import",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "keycloak-db",
+      "running": true,
+      "image": "postgres:16.14-alpine",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/keycloak_postgres_data/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "keycloak_postgres_data"
+        }
+      ]
+    },
+    {
+      "container": "oria-keycloak-1",
+      "running": true,
+      "image": "quay.io/keycloak/keycloak:26.2.5",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/keycloak",
+          "destination": "/opt/keycloak/data/import",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "oria-pgbouncer-1",
+      "running": true,
+      "image": "edoburu/pgbouncer:v1.23.1-p1",
+      "mounts": []
+    },
+    {
+      "container": "oria-dendrite-1",
+      "running": true,
+      "image": "oria-dendrite",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/65a6df70db6d02f2be33f74e1055c28e77b712e6a1a1c6f166c71e6169c3600c/_data",
+          "destination": "/etc/dendrite",
+          "name": "65a6df70db6d02f2be33f74e1055c28e77b712e6a1a1c6f166c71e6169c3600c"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/matrix/appservice.yaml.tpl",
+          "destination": "/etc/dendrite/appservice.yaml.tpl",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/matrix/dendrite.yaml.tpl",
+          "destination": "/etc/dendrite/dendrite.yaml.tpl",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_dendrite_keys/_data",
+          "destination": "/var/dendrite/keys",
+          "name": "oria_dendrite_keys"
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_dendrite_media/_data",
+          "destination": "/var/dendrite/media",
+          "name": "oria_dendrite_media"
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_dendrite_nats/_data",
+          "destination": "/var/dendrite/nats",
+          "name": "oria_dendrite_nats"
+        }
+      ]
+    },
+    {
+      "container": "oria-db-1",
+      "running": true,
+      "image": "patroni-pg16:local",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/postgres-init",
+          "destination": "/docker-entrypoint-initdb.d",
+          "name": null
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/infra/postgres-ha/oria/patroni.yml",
+          "destination": "/etc/patroni/patroni.yml",
+          "name": null
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_postgres_data/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "oria_postgres_data"
+        },
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_wal_archive/_data",
+          "destination": "/var/lib/postgresql/wal_archive",
+          "name": "oria_wal_archive"
+        }
+      ]
+    },
+    {
+      "container": "oria-redis-1",
+      "running": true,
+      "image": "redis:7.4.9-alpine",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/baba8ef42fb3256203bbe1f6649fa390f63d10bdf1093c5473b34cd38cb5ec6a/_data",
+          "destination": "/data",
+          "name": "baba8ef42fb3256203bbe1f6649fa390f63d10bdf1093c5473b34cd38cb5ec6a"
+        }
+      ]
+    },
+    {
+      "container": "oria-etcd-1",
+      "running": true,
+      "image": "quay.io/coreos/etcd:v3.5.17",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_etcd_data/_data",
+          "destination": "/var/etcd",
+          "name": "oria_etcd_data"
+        }
+      ]
+    },
+    {
+      "container": "oria-minio-1",
+      "running": true,
+      "image": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/oria_minio_data/_data",
+          "destination": "/data",
+          "name": "oria_minio_data"
+        }
+      ]
+    },
+    {
+      "container": "oria-livekit-1",
+      "running": true,
+      "image": "livekit/livekit-server:v1.12.0",
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace/oria-stack/oria/livekit/livekit.yaml",
+          "destination": "/etc/livekit.yaml",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_dev_ide",
+      "running": true,
+      "image": "codercom/code-server:4.96.4",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/dev_dev_ide_config/_data",
+          "destination": "/home/coder/.config",
+          "name": "dev_dev_ide_config"
+        },
+        {
+          "type": "bind",
+          "source": "/home/debian/workplace",
+          "destination": "/home/coder/project",
+          "name": null
+        }
+      ]
+    },
+    {
+      "container": "workplace_calcul",
+      "running": true,
+      "image": "workplace/calcul:0.2.0",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/calcul_calcul_data/_data",
+          "destination": "/data",
+          "name": "calcul_calcul_data"
+        }
+      ]
+    },
+    {
+      "container": "peertube-db",
+      "running": true,
+      "image": "postgres:16.14-alpine",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/peertube_peertube_db/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "peertube_peertube_db"
+        }
+      ]
+    },
+    {
+      "container": "peertube-redis",
+      "running": true,
+      "image": "redis:7.4.9-alpine",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/peertube_peertube_redis/_data",
+          "destination": "/data",
+          "name": "peertube_peertube_redis"
+        }
+      ]
+    },
+    {
+      "container": "forge-forge-db-1",
+      "running": true,
+      "image": "postgres:16.14",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/forge_forge_pgdata/_data",
+          "destination": "/var/lib/postgresql/data",
+          "name": "forge_forge_pgdata"
+        }
+      ]
+    },
+    {
+      "container": "forge-qdrant-1",
+      "running": true,
+      "image": "qdrant/qdrant:v1.12.4",
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/forge_forge_qdrant/_data",
+          "destination": "/qdrant/storage",
+          "name": "forge_forge_qdrant"
+        }
+      ]
+    }
+  ],
+  "keep_running": [
+    "forge-forge-db-1",
+    "forge-qdrant-1",
+    "gateway-db-1",
+    "keycloak-db",
+    "memoire-memoire-db-1",
+    "oria-db-1",
+    "oria-etcd-1",
+    "peertube-db",
+    "workplace_node_exporter",
+    "workplace_prometheus"
+  ],
+  "never_stop": [
+    "workplace_prometheus",
+    "workplace_node_exporter"
+  ],
+  "note": "Inventaire du HP du 2026-10-03. Valeurs de secrets exclues. Mettre à jour explicitement en cas de dérive."
+}

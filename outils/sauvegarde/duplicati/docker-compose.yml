@@ -1,0 +1,25 @@
+services:
+  duplicati:
+    image: duplicati/duplicati:2.4.0.0-stable@sha256:eb0c1298a1974048332745b393897ae3cc1c20258e4fc26a796f2b5d75eb6218
+    profiles: [ui]
+    labels:
+      workplace.s236: "true"
+    user: "${DUPLICATI_UID:?Host UID required}:${DUPLICATI_GID:?Host GID required}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'test -n "$$SETTINGS_ENCRYPTION_KEY" && test -n "$$DUPLICATI__WEBSERVICE_PASSWORD" || exit 100; exec duplicati-server --webservice-interface=any --webservice-port=8200 --server-datafolder=/data'
+    ports: ['127.0.0.1:8200:8200']
+    env_file:
+      - ${DUPLICATI_UI_ENV:?Private UI encryption and authentication environment required}
+    volumes:
+      - type: bind
+        source: ${DUPLICATI_PRIVATE_DATA:?Private state directory required}
+        target: /data
+      - type: bind
+        source: ${WORKPLACE_COMPLETE:?Complete generations directory required}
+        target: /source
+        read_only: true
+    networks: [duplicati]
+    restart: 'no'
+networks:
+  duplicati: {}

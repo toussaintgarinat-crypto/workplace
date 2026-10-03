@@ -1,6 +1,6 @@
 # S235 → S239 — Infrastructure, supervision et recherche
 
-Date : 2026-10-03. Statut : S235 terminé et validé ; S236 à S239 restent au backlog.
+Date : 2026-10-03. Statut : S235 terminé et validé ; S236 en cours ; S237 à S239 restent au backlog.
 
 ## État de départ
 
@@ -25,6 +25,8 @@ Objectif : rendre visibles les pannes réelles et les dégradations métier.
 Acceptation : indisponibilité simulée sur une cible isolée détectée ; notification de panne et de rétablissement reçue ; métriques visibles dans Grafana ; redémarrage des services de supervision vérifié. Aucun envoi externe avant configuration et autorisation du canal.
 
 ## S236 — Sauvegardes cohérentes et restauration complète
+
+Statut : conception validée, implémentation et preuves de restauration en cours. RPO retenu : 24 h ; RTO visé : 8 h. Destinations prises en charge : disque externe, clé USB, NAS ou serveur local/distant. La destination concrète reste à choisir ; aucune planification automatique activée. Voir les [preuves S236](S236-sauvegardes-resultats.md), la [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md) et le [guide opérationnel](../../outils/sauvegarde/coherent/README.md).
 
 Objectif : pouvoir reconstruire Workplace avec ses données.
 

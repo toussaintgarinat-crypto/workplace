@@ -1,0 +1,13 @@
+[Unit]
+Description=Workplace coherent encrypted backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=debian
+UMask=0077
+Environment=SAUVEGARDE_METRICS_DIR=/home/debian/workplace/outils/observabilite/textfile
+WorkingDirectory=/home/debian/workplace
+ExecStart=/usr/bin/python3 /home/debian/workplace/outils/sauvegarde/duplicati/job.py --config /home/debian/.config/workplace-backups/job.json
+TimeoutStartSec=24h
