@@ -2,7 +2,7 @@
 
 Date : 2026-10-03. Implémentation préparée et testée ; réception complète en attente de la cohérence Gateway et d’une destination indépendante.
 
-Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. La destination réelle reste à fournir. Le timer est préparé, pas activé ; aucune copie indépendante n’est encore acquittée.
+Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Le support précis, son UUID et son montage restent à identifier ; aucune clé USB n’est actuellement visible dans la VM Debian du HP. Le timer est préparé, pas activé ; aucune copie indépendante n’est encore acquittée.
 
 ## Périmètre implémenté
 
