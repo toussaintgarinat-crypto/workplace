@@ -1,6 +1,6 @@
 # S235 — Résultats de supervision HP
 
-Date : 2026-10-03. Statut : supervision et canal Telegram déployés ; confirmation humaine de réception attendue.
+Date : 2026-10-03. Statut : S235 terminé et validé sur le HP.
 
 ## Déploiement
 
@@ -10,7 +10,7 @@ Interfaces LAN : Grafana http://192.168.1.89:3001, Kuma http://192.168.1.89:3002
 
 ## Preuves obtenues
 
-- Six tests unitaires Python et trois cas de notification JavaScript passent sur Mac et HP : inventaire, santé backend distincte, inclusion des briques `a_tester`, déduplication Cœur/noyau activation explicite de Telegram et nettoyage de la cible même si Kuma échoue.
+- Six tests unitaires Python et trois cas de notification JavaScript passent sur Mac et HP : inventaire, santé backend distincte, inclusion des briques `a_tester`, déduplication Cœur/noyau, activation explicite de Telegram et nettoyage de la cible même si Kuma échoue.
 - `docker compose config --quiet` valide ; `promtool` valide configuration et neuf règles.
 - Les trois scrapes Cœur, hôte et Prometheus sont `up` avant redémarrage.
 - Grafana provisionne deux tableaux : parc (7 panneaux) et ressources HP (3 panneaux). Les requêtes via son API de datasource rendent les valeurs CPU, mémoire, disque et 17 séries de fraîcheur des tâches. Les panneaux budget, taux d'échec et écarts d'arguments peuvent être vides faute de données/historique récent ; aucune donnée inventée.
@@ -29,7 +29,7 @@ L’utilisateur a autorisé le token existant, puis la destination privée et le
 
 Le test `probe-live.py --telegram` a de nouveau prouvé `[1, 2, 2, 0, 1]` avec le canal rattaché à sa cible, puis retiré cette cible et sa sonde. Kuma ne signale aucune erreur d’envoi. L’API authentifiée confirme 46 sondes rattachées au canal ; ces associations persistent après redémarrage de Kuma. Ces éléments vérifient le déclenchement côté superviseur ; ils ne prouvent pas à eux seuls la réception sur le téléphone.
 
-Confirmation de réception des deux messages Down et Up demandée à l’utilisateur. **S235 reste ouvert uniquement sur cette confirmation**, sans nouveaux envois de test inutiles.
+L’utilisateur a confirmé le 3 octobre 2026 la réception des deux messages de test Down puis Up dans son chat privé. Tous les critères d’acceptation S235 sont satisfaits : panne et rétablissement détectés et reçus, métriques Grafana disponibles, persistance après redémarrage vérifiée. **S235 est clôturé.**
 
 ## Limites
 

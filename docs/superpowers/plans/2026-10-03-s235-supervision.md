@@ -32,6 +32,6 @@ Aucun envoi externe avant accord et configuration. Secrets hors Git. Aucun arrê
 - [x] Redémarrer seulement la supervision ; vérifier données et sondes persistantes, règles et scrapes.
 - [x] Renseigner `docs/sprints/S235-supervision-resultats.md` avec preuves et critères ouverts. Telegram ne sera marqué validé qu'après configuration et réception des deux notifications.
 
-## Critère restant
+## Validation finale
 
-- [ ] Confirmation humaine de réception des notifications Telegram panne/rétablissement. Canal configuré et autorisé, test isolé exécuté ; confirmation attendue.
+- [x] Réception des deux notifications Telegram panne/rétablissement confirmée par l’utilisateur le 3 octobre 2026. S235 clôturé.
