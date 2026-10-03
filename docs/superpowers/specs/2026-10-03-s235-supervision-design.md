@@ -1,6 +1,6 @@
 # S235 — Supervision opérationnelle sur le HP
 
-Date : 2026-10-03. Statut : conception validée par l’utilisateur ; supervision implémentée, canal Telegram en attente.
+Date : 2026-10-03. Statut : conception validée par l’utilisateur ; supervision implémentée, canal Telegram activé, confirmation de réception en attente.
 Source : docs/sprints/S235-S239-infrastructure-supervision-recherche.md.
 
 ## État constaté

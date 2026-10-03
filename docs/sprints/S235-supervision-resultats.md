@@ -1,6 +1,6 @@
 # S235 — Résultats de supervision HP
 
-Date : 2026-10-03. Statut : supervision déployée ; validation Telegram en attente du canal.
+Date : 2026-10-03. Statut : supervision et canal Telegram déployés ; confirmation humaine de réception attendue.
 
 ## Déploiement
 
@@ -23,11 +23,13 @@ Revue de code indépendante : deux défauts corrigés et relus (désactivation e
 
 Les scripts `verify-live.py` et `probe-live.py` permettent de reproduire les contrôles sur le HP. Les sondes réelles utilisent 60 s entre deux mesures et deux retries. Kuma SQLite nécessite `UPTIME_KUMA_DB_TYPE=sqlite` ; les transferts macOS doivent exclure les fichiers `._*` et attributs étendus.
 
-## Telegram : préparé, non activé
+## Telegram : activé et testé
 
-Réutilisation du token existant autorisée par l'utilisateur. Le canal géré peut être désactivé par reprovisionnement sans supprimer les notifications manuelles. Le helper lit le token du `.env` racine sans le recopier dans Git. Il manque `TELEGRAM_CHAT_ID`, éventuellement `TELEGRAM_TOPIC_ID`, et l'autorisation des messages panne/rétablissement vers cette destination. `TELEGRAM_ENABLED=no` : aucun appel Telegram ni message externe effectué.
+L’utilisateur a autorisé le token existant, puis la destination privée et les messages de test. Le canal utilise le chat privé lié à Workplace ; aucun topic n’est nécessaire. `TELEGRAM_ENABLED=yes` est enregistré dans le fichier privé HP (600), avec lecture du token depuis le `.env` racine.
 
-Après réception des informations : remplir le fichier privé, activer le canal Kuma, rattacher les sondes et vérifier deux notifications de test avec confirmation de réception. Tant que ces preuves manquent, **S235 n'est pas clôturé** selon les critères du backlog.
+Le test `probe-live.py --telegram` a de nouveau prouvé `[1, 2, 2, 0, 1]` avec le canal rattaché à sa cible, puis retiré cette cible et sa sonde. Kuma ne signale aucune erreur d’envoi. L’API authentifiée confirme 46 sondes rattachées au canal ; ces associations persistent après redémarrage de Kuma. Ces éléments vérifient le déclenchement côté superviseur ; ils ne prouvent pas à eux seuls la réception sur le téléphone.
+
+Confirmation de réception des deux messages Down et Up demandée à l’utilisateur. **S235 reste ouvert uniquement sur cette confirmation**, sans nouveaux envois de test inutiles.
 
 ## Limites
 
@@ -35,4 +37,4 @@ Les règles métier et ressources sont visibles dans Prometheus/Grafana, sans é
 
 ## Mise à jour Oria — réparation demandée après le sprint
 
-Le backend Oria a ensuite été réparé le 3 octobre : suppression du superviseur `--reload` dans le runtime et réutilisation explicite du réseau HP existant. Voir `S235-oria-reparation.md` pour cause, changement et preuves. Le constat de panne ci-dessus décrit l’état initial du déploiement S235. Telegram reste non activé en attente de l’accord sur la destination.
+Le backend Oria a ensuite été réparé le 3 octobre : suppression du superviseur `--reload` dans le runtime et réutilisation explicite du réseau HP existant. Voir `S235-oria-reparation.md` pour cause, changement et preuves. Le constat de panne ci-dessus décrit l’état initial du déploiement S235. Telegram a ensuite été activé avec autorisation explicite, comme décrit ci-dessus.

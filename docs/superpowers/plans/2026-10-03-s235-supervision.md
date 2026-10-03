@@ -34,4 +34,4 @@ Aucun envoi externe avant accord et configuration. Secrets hors Git. Aucun arrê
 
 ## Critère restant
 
-- [ ] Configuration du chat/topic Telegram autorisé et réception des notifications panne/rétablissement. Informations utilisateur attendues ; aucun envoi effectué.
+- [ ] Confirmation humaine de réception des notifications Telegram panne/rétablissement. Canal configuré et autorisé, test isolé exécuté ; confirmation attendue.
