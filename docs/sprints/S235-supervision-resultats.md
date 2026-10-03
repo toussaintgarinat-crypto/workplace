@@ -32,3 +32,7 @@ Après réception des informations : remplir le fichier privé, activer le canal
 ## Limites
 
 Les règles métier et ressources sont visibles dans Prometheus/Grafana, sans émission Telegram dans ce sprint. Kuma émet uniquement les transitions de disponibilité ; déduplication des URL et absence de rappels périodiques, sans corrélation globale des pannes en cascade. Une sonde de processus ne prouve pas une opération métier. Une panne totale du HP ne peut pas être notifiée par sa propre supervision. Réparation Oria et sauvegarde des volumes/secrets (S236) hors périmètre.
+
+## Mise à jour Oria — réparation demandée après le sprint
+
+Le backend Oria a ensuite été réparé le 3 octobre : suppression du superviseur `--reload` dans le runtime et réutilisation explicite du réseau HP existant. Voir `S235-oria-reparation.md` pour cause, changement et preuves. Le constat de panne ci-dessus décrit l’état initial du déploiement S235. Telegram reste non activé en attente de l’accord sur la destination.

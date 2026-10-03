@@ -1,4 +1,9 @@
 services:
+  backend:
+    # Runtime Workplace/HP : sans superviseur de rechargement dev. Si l'import
+    # échoue (ex. PgBouncer pas encore prêt après reboot), Uvicorn sort et Docker
+    # applique restart: unless-stopped au lieu de garder un parent sans serveur.
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
   frontend:
     ports:
       - "3003:3000"
