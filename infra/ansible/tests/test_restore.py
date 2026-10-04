@@ -17,6 +17,7 @@ def load(name):
 
 restore = load('restore_data')
 recover = load('recover_generation')
+check = load('backup_check')
 
 
 class FilesPhaseTests(unittest.TestCase):
@@ -122,6 +123,26 @@ class RecoveryTests(unittest.TestCase):
             (root / 'state/recovery.json').write_text(json.dumps({'archive': 'other', 'version': '0', 'profile': 'p'}))
             with self.assertRaises(ValueError):
                 recover.recover(str(root), 'p', '0', 'image')
+
+
+class BackupCheckTests(unittest.TestCase):
+    def test_volume_sources_only_exercise_and_without_traversal(self):
+        good = {'expected_mounts': [{'container': 's237-a-b-1', 'mounts': [{'source': '/var/lib/docker/volumes/s237-a-x/_data'}]}]}
+        with patch.object(check, 'private_path', side_effect=ValueError('refused')):
+            for value, refused in [('/var/lib/docker/volumes/s237-a-x/_data', False), ('/var/lib/docker/volumes/prod_x/_data', True),
+                                   ('/var/lib/docker/volumes/s237-a/../../../etc', True)]:
+                inventory = {'expected_mounts': [{'container': 's237-a-b-1', 'mounts': [{'source': value}]}]}
+                with tempfile.TemporaryDirectory() as directory, patch.object(check, 'ROOT', pathlib.Path(directory)):
+                    job = pathlib.Path(directory) / 'job.json'
+                    inv = pathlib.Path(directory) / 'inv.json'
+                    inv.write_text(json.dumps(inventory))
+                    job.write_text(json.dumps({'root': directory, 'inventory': str(inv), 'profiles': []}))
+                    with patch.object(check, 'private_path', side_effect=lambda p: (_ for _ in ()).throw(ValueError()) if not str(p).startswith(directory) else pathlib.Path(p)):
+                        if refused:
+                            with self.assertRaises(ValueError):
+                                check.validate(str(job))
+                        else:
+                            check.validate(str(job))
 
 
 if __name__ == '__main__':

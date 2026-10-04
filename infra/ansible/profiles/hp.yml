@@ -1073,6 +1073,7 @@ s237_neutralize:
   verify: SELECT count(*) FROM notification WHERE active = 1
   expect: 0
   reason: 'Canal Telegram S235 restauré : aucune notification externe depuis l''exercice.'
+s237_backup_generation_manifest: /srv/workplace-rehearsal/backups/recovered/manifest.json
 s237_image_escrow:
 - image: minio/minio:RELEASE.2025-09-07T16-13-09Z
   id: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e

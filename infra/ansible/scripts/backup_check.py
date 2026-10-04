@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 
 ROOT=Path('/srv/workplace-rehearsal')
+# Mount sources of the exercise's own named volumes only.
+VOLUMES='/var/lib/docker/volumes/s237-'
 
 def private_path(value):
     path=Path(value)
@@ -23,7 +25,8 @@ def validate(path):
             for v in value: walk(v,key)
         elif isinstance(value,str):
             if key in ('container','owners') and not value.startswith('s237-'): raise ValueError('foreign producer')
-            if key=='source' and value.startswith('/'): private_path(value)
+            exercise_volume=value.startswith(VOLUMES) and '..' not in Path(value).parts
+            if key=='source' and value.startswith('/') and not exercise_volume: private_path(value)
     walk(inventory)
     for file in config['profiles']:
         profile=json.loads(private_path(file).read_text())

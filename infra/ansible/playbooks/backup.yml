@@ -1,4 +1,4 @@
-- name: S237 prepare on verified independent VM
+- name: S237 prepare the exercise backup job after deployment (timer stays disabled)
   hosts: rehearsal
   gather_facts: false
   become: false
@@ -11,8 +11,7 @@
     - name: Resolve private runtime inputs
       ansible.builtin.include_tasks: runtime.yml
   tasks:
-    - name: release
+    - name: backup
       ansible.builtin.import_role:
-        name: release
+        name: backup
       become: true
-      tags: [release]
