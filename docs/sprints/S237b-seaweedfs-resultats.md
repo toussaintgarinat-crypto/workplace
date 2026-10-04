@@ -71,3 +71,7 @@ Tests : Ansible 46, coherent 68, duplicati 17, observabilité 6, reconstruction 
 ## Nettoyage MinIO (2026-10-04, ~23:50, sur accord)
 
 Après contrôle (SeaweedFS sain, aucun conteneur sur le volume, preflight S236 passé sans MinIO), ont été supprimés : le volume `oria_minio_data` (132 Ko, métadonnées internes MinIO seulement), l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` (241 Mo) sur le HP, et l'archive du séquestre privé S237 sur le contrôleur (avec sa ligne de `SHA256SUMS`). Les générations S236 antérieures contiennent toujours l'ancien volume.
+
+## Première sauvegarde avec SeaweedFS
+
+Le timer S236 du 2026-10-05 à 00:08 a réussi en 5 min 11 s : génération `20261004T221336Z-be71c624`, 53 sources, dont `trees/oria_seaweedfs_data`. Après la reprise des producteurs, les 71 conteneurs sont sains et le S3 répond (`200` signé). C'est la génération à utiliser pour le rejeu sur la VM 106, qui est en attente.
