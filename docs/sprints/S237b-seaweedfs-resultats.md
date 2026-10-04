@@ -28,7 +28,7 @@ Mêmes changements pour la Forge autonome (`docker-compose.standalone.yml`) et p
 
 1. Les fichiers HP à remplacer étaient identiques à la version d'avant changement (empreintes comparées). Ils sont sauvegardés dans `~/s237b-deploy-backup/before.tgz`, puis remplacés **en place** (montages fichier de Kuma).
 2. Clés S3 générées sur le HP, jamais affichées ; le `.env` est resté en 600.
-3. `oria-minio-1` est arrêté et supprimé. **Le volume `oria_minio_data` et l'image sont conservés jusqu'à accord explicite.**
+3. `oria-minio-1` est arrêté et supprimé. Volume et image conservés à ce stade, supprimés ensuite sur accord (voir plus bas).
 4. `seaweedfs` est démarré seul (`--no-deps`) : sain en ~8 s, `Config.Image` identique à la chaîne de l'inventaire S236.
 5. Le backend Oria a été redémarré (alerte renommée `ObjectStorageDown`).
 6. Kuma : 47 sondes, dont « Dépendance — Oria S3 (SeaweedFS) », UP (200), avec Telegram rattaché.
@@ -67,4 +67,7 @@ Tests : Ansible 46, coherent 68, duplicati 17, observabilité 6, reconstruction 
 ## Reste
 
 - Rejeu de la reconstruction sur la VM 106 sans séquestre : **mis en attente** (décision utilisateur, pas pour tout de suite), l'hôte Proxmox est toujours à 32 Go et la VM 106 demande 12 Go en plus de 103 (24 Go) et 104 (4 Go).
-- Suppression du volume `oria_minio_data` et de l'image MinIO : sur accord.
+
+## Nettoyage MinIO (2026-10-04, ~23:50, sur accord)
+
+Après contrôle (SeaweedFS sain, aucun conteneur sur le volume, preflight S236 passé sans MinIO), ont été supprimés : le volume `oria_minio_data` (132 Ko, métadonnées internes MinIO seulement), l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` (241 Mo) sur le HP, et l'archive du séquestre privé S237 sur le contrôleur (avec sa ligne de `SHA256SUMS`). Les générations S236 antérieures contiennent toujours l'ancien volume.
