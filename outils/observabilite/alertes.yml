@@ -138,7 +138,7 @@ groups:
           resume: "Dernier transfert de sauvegarde indépendant en échec ou non configuré"
           detail: "Vérifier le montage USB/NAS, la destination distante et les journaux privés Duplicati."
       - alert: SauvegardeIndependanteAbsenteOuAncienne
-        expr: (workplace_backup_last_transfer_timestamp_seconds == 0) or (time() - workplace_backup_last_transfer_timestamp_seconds > 86400)
+        expr: (workplace_backup_rpo_ok == 0) or (workplace_backup_last_transferred_source_timestamp_seconds == 0) or (time() - workplace_backup_last_transferred_source_timestamp_seconds > 86400)
         for: 15m
         labels:
           severite: warning

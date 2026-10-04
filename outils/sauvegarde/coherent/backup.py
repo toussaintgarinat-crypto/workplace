@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import signal
@@ -21,6 +22,13 @@ import engines
 
 class BackupError(RuntimeError): pass
 
+class DockerError(BackupError):
+    def __init__(self,operation,returncode,stderr=b''):
+        self.operation=operation;self.returncode=returncode
+        matches=re.findall(rb'^(AssertionError|MemoryError|PermissionError|FileNotFoundError|ValueError|sqlite3\.OperationalError)(?::|\s*$)',stderr,re.MULTILINE)
+        self.diagnostic_type=matches[-1].decode() if matches else None
+        super().__init__('Docker operation '+operation+' failed (code '+str(returncode)+')')
+
 
 class Docker:
     def run(self,args,output=None,timeout=1800):
@@ -31,7 +39,7 @@ class Docker:
                     result=subprocess.run(['docker',*args],stdout=stream,stderr=subprocess.PIPE,timeout=timeout)
             else:
                 result=subprocess.run(['docker',*args],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
-            if result.returncode: raise BackupError('Docker operation '+args[0]+' failed (code '+str(result.returncode)+')')
+            if result.returncode: raise DockerError(args[0],result.returncode,result.stderr)
             return result.stdout or b''
         except (OSError,subprocess.TimeoutExpired) as e:
             raise BackupError('Docker operation '+args[0]+' unavailable or timed out') from None

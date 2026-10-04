@@ -1,39 +1,44 @@
 # S236 — Preuves et état de livraison
 
-Date : 2026-10-03. Implémentation préparée et testée ; réception complète en attente de la cohérence Gateway et des parcours métier complets ; première copie indépendante USB vérifiée.
+Date : 2026-10-04. **Terminé pour les sauvegardes et la restauration applicative isolée.** Sauvegarde USB chiffrée, restauration éprouvée et planification systemd active. RPO retenu : 24 h ; RTO visé : 8 h. La reconstruction d’un nouvel hôte reste à éprouver dans S237.
 
-Conception validée, RPO 24 h et RTO visé 8 h. Le stockage doit être indépendant du disque du HP : disque externe, clé USB, NAS ou serveur sur le LAN/hors site. Destination choisie par l’utilisateur : clé USB. Clé PHILIPS détectée sur Proxmox Yourown puis rattachée à chaud à la VM 103 sur usb1. Partition exFAT de 62 702 747 648 octets, UUID `6A01-B378`, désormais visible dans Debian. Profil privé et phrase AES préparés, avec copie privée de récupération sur le Mac hors Git. Montage réalisé sans formatage après autorisation explicite d’utiliser les identifiants sudo pour ce montage. Environ 56 Go libres avant copie ; 55,5 Go après copie. Première copie indépendante acquittée après vérification ; le timer reste préparé, pas activé.
+## Sauvegardes en service
 
-## Périmètre implémenté
+Destination choisie : clé USB PHILIPS, partition exFAT UUID `6A01-B378`, montée sur `/mnt/workplace-backup`. Elle est rattachée à chaud à la VM 103 sur Proxmox Yourown ; montage persistant par UUID, sans formatage ni suppression des fichiers existants. Les profils acceptent aussi disque externe, NAS monté et serveur local/distant via SFTP, S3 ou WebDAV HTTPS ; seule la destination USB est éprouvée ici.
 
-Inventaire de 76 conteneurs : 71 actifs au départ, cinq sidecars arrêtés conservés ainsi. Les sources couvrent 45 ensembles de fichiers, six serveurs PostgreSQL, Qdrant et etcd. Les configurations montées, le dépôt applicatif et les environnements Docker privés sont inclus. Les secrets restent dans le staging privé et ne peuvent être transportés que chiffrés.
+L’inventaire couvre 76 conteneurs, dont 71 actifs et cinq sidecars déjà arrêtés : 45 ensembles de fichiers/SQLite, six serveurs PostgreSQL, Qdrant et etcd, soit 53 sources. Les fichiers utilisateur, le dépôt applicatif, les configurations montées et les environnements Docker privés sont inclus. Les producteurs sont suspendus pendant les exports natifs, puis repris par identité avec journal durable. Une génération partielle n’est jamais publiée.
 
-Les exports suspendent les producteurs, utilisent les API natives des moteurs et reprennent les conteneurs par identité avec un journal durable. Une génération partielle n’est jamais publiée. La restauration impose des chemins et ressources Docker nouveaux, réseau interne et aucun port public. Le rapport distingue contrôle des données, démarrage du Cœur et reprise de toutes les briques.
+Duplicati stable 2.4.0.0 épinglé transporte les générations complètes avec chiffrement AES et vérification complète avant acquittement ; rétention USB de 30 versions. Le staging et les rapports contenant des données restent privés, hors Git. La phrase AES et les profils sont aussi conservés sur le Mac dans `~/Documents/Workplace-Recovery/`, dossier 0700 et fichiers 0600. Correspondance de la phrase vérifiée sans affichage.
 
-## Preuves obtenues
+Premier job systemd réel réussi : génération `20261004T115244Z-148a3bc4`, 53 sources, export et transfert vérifiés, `Result=success`, `ExecMainStatus=0`, aucun journal de reprise restant. Les 71 services sont tous sains et le Cœur répond HTTP 200 après reprise.
 
-- Tests automatisés : 64 réussis avec `python3 -m pytest -o asyncio_default_fixture_loop_scope=function outils/sauvegarde/coherent outils/sauvegarde/duplicati`.
-- Geo réelle : arrêt ciblé, export cohérent d’une base SQLite en mode WAL checkpointée sur montage RO, vérification, restauration et comparaison des empreintes. Source inchangée et conteneur relancé.
-- Un pilote a exporté les 45 ensembles de fichiers avant un échec PostgreSQL Oria. Les 71 conteneurs ont repris ; aucune génération partielle publiée. Cause identifiée : compte applicatif sans droits sur les rôles ; exporteur corrigé pour le compte administrateur Patroni.
-- Export Oria corrigé vérifié : trois bases, 186 tables et rôles. Droits administrateur vérifiés sur les six serveurs PostgreSQL. Exports natifs Qdrant et etcd vérifiés séparément avant la prochaine suspension complète ; le nettoyage etcd passe par un helper limité à son volume, sans dépendre des utilitaires absents de son image.
-- Génération complète `20261003T142222Z-rescued-0690bdb2` : 53 sources, 1 380 124 640 octets, exports en 183,9 s. Après correction du vérificateur qui rejetait son propre manifeste, la génération a été contrôlée contre son scellement original, sans recalcul des empreintes, puis publiée sous verrou. Les identités des 71 conteneurs initialement actifs étaient reprises ; journal de reprise absent. Audit séparé conservé hors génération.
-- Duplicati stable 2.4.0.0 : génération complète chiffrée AES (15 archives), vérification complète et récupération avec une base Duplicati vierge. Les trois opérations retournent 0 ; toutes les empreintes et sources de la génération récupérée sont vérifiées. Ce test utilise un répertoire de laboratoire sur le HP, pas une destination indépendante.
-- Depuis cette récupération AES : 45 ensembles de fichiers/SQLite restaurés et contrôlés ; PostgreSQL Mémoire, Keycloak, Oria, PeerTube et Forge restaurés avec rôles/extensions/comptages ; etcd sain ; Qdrant restauré, une collection et une recherche sur un vecteur réel validées.
-- Cœur démarré sur les copies récupérées : `/health` 200 et `/dashboard` 303 vers `/auth/login`, comportement également constaté en production. La sonde ne suit pas le SSO hors du réseau isolé. Le dashboard authentifié et les parcours métier de toutes les briques ne sont pas validés.
-- Gateway : la restauration stricte échoue sur `public.LiteLLM_ToolTable_tool_name_key`. Lecture séquentielle de la source : 21 groupes de noms non nuls dupliqués, malgré un index déclaré unique/valide. Image identique pour la source et la cible. Aucun changement en production. En laboratoire distinct, seuls les éléments TOC de cet index sont exclus : les deux bases, 65 tables et 6 695 lignes sont récupérées, avec extensions et comptages exacts ; les quatre autres index de cette table sont conservés. Cette récupération dégradée ne vaut pas restauration complète du schéma.
-- Clé USB réelle : 15 archives AES stockées sous `workplace/usb-philips-6a01-b378/`. Transport et vérification complète réussis ; récupération depuis la clé dans un répertoire isolé avec une base Duplicati vierge : code 0, environ 9,4 s, 53 sources et toutes les empreintes contrôlées, manifeste original identique. Écritures synchronisées sur le support. Ce temps concerne la récupération des exports, pas le RTO complet. Les 71 services actifs restent sains ; aucun conteneur de test ne subsiste.
-- Phrase AES conservée aussi dans `~/Documents/Workplace-Recovery/usb-6A01-B378.env` sur le Mac : dossier 0700, fichier 0600, hors Git. Correspondance avec la phrase utilisée sur le HP vérifiée sans l’afficher.
-- Interface Duplicati temporaire : HTTP 200, API sans authentification refusée (401), base serveur persistante sous `/data`, port publié uniquement sur localhost. Instance de test supprimée.
-- Supervision : règles Prometheus contrôlées (13 au total) et collecteur node-exporter actif. Statut S236 reçu ; le premier transfert indépendant vérifié est désormais acquitté.
+`workplace-backup.timer` est **enabled/active** : 00h00 et 12h00, heure locale Europe/Paris, avec décalage aléatoire maximal de 15 min et rattrapage après arrêt. Prochain passage observé à l’activation : 2026-10-05 00:08:45 CEST. La clé doit rester disponible pour tenir la cadence.
 
-Les preuves privées contenant données ou paramètres de récupération restent sous `/home/debian/s236-tools/` et `/home/debian/.local/share/workplace-backups/`, hors du dépôt Git.
+## Restauration réellement éprouvée
 
-## Acceptation restante
+La génération post-réparation `20261003T194537Z-4b4fddd5` a été récupérée depuis la clé avec une base Duplicati vierge en **10,44 s**. Les 53 sources, empreintes et manifeste original concordent ; aucune dépendance à la base Duplicati initiale.
 
-Résoudre l’incohérence de l’index Gateway, puis refaire sa restauration stricte. La suppression de lignes ou une modification du schéma de production ne fait pas partie des actions exécutées. La restauration normale reste stricte et n’ignore aucun index en échec.
+Répétition complète sur cible neuve `application-rehearsal-20261004-fresh5` : **493,64 s (8 min 13,64 s)**, dont 114,49 s de restauration native. Avec la récupération USB mesurée séparément, ces étapes représentent environ **8 min 24 s**.
 
-La validation métier de toutes les briques et le RTO complet, incluant reconstruction de l’hôte et récupération distante, restent distincts de ces contrôles. Les ressources Docker des tests sont nettoyées ; les preuves et générations privées sont conservées.
+- Les 45 ensembles de fichiers/SQLite sont restaurés et contrôlés ; les six serveurs PostgreSQL retrouvent toutes leurs bases, rôles, extensions et comptages, sans omission d’index.
+- Qdrant retrouve sa collection et une recherche sur un vecteur réel ; etcd est sain.
+- Sessions réelles des Keycloak restaurés : dashboard Cœur authentifié 200, accès sans session 303 ; CRUD Données complet avec JWT signé ; Oria authentifié 200 ; lecture authentifiée de deux résultats Mémoire.
+- Gateway retrouve 57 modèles et réalise un appel via sa véritable authentification, base et routage vers un fournisseur OpenAI factice local. Aucun appel payant ni inférence de modèle n’est attesté.
+- Les 57 services de base sont sains au contrôle final. Onze services supplémentaires démarrent, deviennent réellement sains puis sont arrêtés par phases : frontend Oria, Forge backend, Connexion, ClamAV, voix, écoute, Grafana, IDE, SearxNG, Kuma et PeerTube.
+- Nettoyage confirmé : zéro conteneur, volume ou réseau S236 restant, copies de données supprimées, aucun échec de nettoyage.
 
-La clé est actuellement montée sur `/mnt/workplace-backup`. Son rattachement Proxmox est configuré, mais aucun montage persistant ni timer automatique n’a été activé. La planification 12 h reste à mettre en service ; la destination devra être réellement montée avant chaque export. La phrase de chiffrement est conservée hors HP dans un fichier privé sur le Mac ; elle doit rester accessible après perte du HP. Une clé débranchée ne garantit pas à elle seule une copie plus récente que 24 h.
+Les cibles utilisent exclusivement leurs copies, des réseaux internes sans route hôte et aucun port publié/socket Docker de production. Des plafonds mémoire et une réserve de 3 Gio protègent la production. Le polling du frontend Oria et le dimensionnement mémoire sont adaptés uniquement dans le laboratoire.
 
-Guides : [sauvegardes cohérentes](../../outils/sauvegarde/coherent/README.md), [Duplicati](../../outils/sauvegarde/duplicati/README.md), [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md).
+## Corrections et contrôles
+
+La première restauration stricte a révélé un index unique Gateway incohérent : 21 groupes de noms dupliqués. Après essai isolé et dump privé, une transaction conserve les 367 enregistrements et tous leurs IDs/champs, archive les 42 originaux dans `s236_recovery.gateway_tool_original`, renomme les 21 inscriptions secondaires et recrée l’index unique. Le redump et la génération suivante se restaurent strictement. Cette réparation spécifique n’est pas exécutée automatiquement par le restaurateur.
+
+Le test réel de clé absente refuse le job avant toute suspension ; les identités de production restent inchangées. Montage rétabli immédiatement, sans modification des fichiers utilisateur. Le RPO utilise le début de la génération effectivement transférée, et non l’heure de transfert. Après le premier job systemd, Prometheus reçoit `workplace_backup_rpo_ok=1`, transfert réussi et zéro source en échec. Les 13 règles Prometheus ont été validées ; aucun nouveau canal externe de notification n’est ajouté.
+
+**85 tests automatisés passent**, ainsi que la compilation, la syntaxe de l’installateur et le contrôle du diff. Code et deltas de sécurité revus sans blocage.
+
+## Limites de la preuve
+
+L’exercice valide les données et les parcours applicatifs représentatifs sur le HP, avec ses images disponibles et des démarrages par phases. Il ne prouve ni fonctionnement simultané de tout le stack, ni reconstruction d’un nouvel hôte, ni haute disponibilité Patroni, ni inférence ou connecteurs externes. Le RTO global après perte du HP demeure à éprouver dans S237. L’historique Prometheus et les caches explicitement reproductibles sont exclus ; leurs configurations utiles sont couvertes.
+
+Les preuves privées sont conservées sous `/home/debian/s236-tools/application-rehearsal-20261004-fresh5/` et `/home/debian/.local/share/workplace-backups/`. Guides : [sauvegardes cohérentes](../../outils/sauvegarde/coherent/README.md), [Duplicati](../../outils/sauvegarde/duplicati/README.md), [planification USB](../../outils/sauvegarde/duplicati/USB-SCHEDULE.md), [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md).

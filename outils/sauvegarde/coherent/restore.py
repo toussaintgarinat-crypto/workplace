@@ -29,25 +29,26 @@ def validate_target(target,generation,inv,docker=None):
  return target
 
 class Session:
- def __init__(self,docker,target,helper):
+ def __init__(self,docker,target,helper,memory_limit='1g',helper_memory_limit='1g'):
   self.d=docker;self.target=target;self.helper=helper;self.prefix='s236-'+uuid.uuid4().hex;self.resources=[];self.network=None
+  self.memory_limit=memory_limit;self.helper_memory_limit=helper_memory_limit
  def create(self,kind,suffix):
   name=self.prefix+'-'+suffix
   if not re.fullmatch(r's236-[a-f0-9]{32}-[a-z0-9-]+',name): raise BackupError('Invalid generated name')
   # Inspect before create: Docker volume create otherwise silently reuses existing volumes.
   listing=self.d.run([kind,'ls','--format','{{.Name}}']).decode().splitlines() if kind!='container' else self.d.run(['ps','-a','--format','{{.Names}}']).decode().splitlines()
   if name in listing: raise BackupError('Resource already exists')
-  if kind=='network': self.d.run(['network','create','--internal','--label',LABEL,name]);self.network=name
+  if kind=='network': self.d.run(['network','create','--internal','--opt','com.docker.network.bridge.gateway_mode_ipv4=isolated','--label',LABEL,name]);self.network=name
   elif kind=='volume': self.d.run(['volume','create','--label',LABEL,name])
   if kind!='container':self.resources.append({'kind':kind,'name':name})
   return name
  def run(self,name,image,args=(),mounts=(),extra=()):
-  result=self.d.run(['create','--name',name,'--label',LABEL,'--network',self.network,*extra,*sum((['--mount',m] for m in mounts),[]),image,*args])
+  result=self.d.run(['create','--name',name,'--label',LABEL,'--network',self.network,'--memory',self.memory_limit,'--memory-swap',self.memory_limit,*extra,*sum((['--mount',m] for m in mounts),[]),image,*args])
   identity=result.decode().strip()
   if not re.fullmatch('[a-f0-9]{64}',identity):raise BackupError('Invalid created container identity')
   self.resources.append({'kind':'container','name':name,'id':identity});self.d.run(['start',identity]);return result
  def helper_run(self,script,mounts=(),network='none'):
-  return self.d.run(['run','--rm','--user','0','--label',LABEL,'--network',network,*sum((['--mount',m] for m in mounts),[]),'--entrypoint','python3',self.helper,'-c',script])
+  return self.d.run(['run','--rm','--user','0','--label',LABEL,'--network',network,'--memory',self.helper_memory_limit,'--memory-swap',self.helper_memory_limit,*sum((['--mount',m] for m in mounts),[]),'--entrypoint','python3',self.helper,'-c',script])
  def wait(self,callback):
   end=time.monotonic()+120
   while True:
@@ -117,13 +118,13 @@ def qdrant(s,path,spec):
  meta=json.loads((path/'meta.json').read_text());volume=s.create('volume','qdrant-data');name=s.create('container','qdrant')
  args=[]
  for c in meta['collections']:args+=['--snapshot','/snapshots/'+c['file']+':'+c['name']]
- s.run(name,spec['image'],args,[f'type=volume,src={volume},dst=/qdrant/storage',f'type=bind,src={path},dst=/snapshots,readonly'],['--entrypoint','/qdrant/qdrant'])
+ s.run(name,spec['image'],args,[f'type=volume,src={volume},dst=/qdrant/storage',f'type=bind,src={path},dst=/snapshots,readonly'],['--memory','512m','--memory-swap','512m','--entrypoint','/qdrant/qdrant'])
  return json.loads(s.wait(lambda:s.helper_run(QVERIFY,[f'type=bind,src={path},dst=/snapshots,readonly'],'container:'+name)))
 
 def etcd(s,path,spec):
  volume=s.create('volume','etcd-data');name=s.create('container','etcd');member='s236member'
  mounts=[f'type=volume,src={volume},dst=/restore',f'type=bind,src={path},dst=/snapshot,readonly']
- base=['run','--rm','--label',LABEL,'--network','none',*sum((['--mount',m] for m in mounts),[]),'--entrypoint','etcdctl',spec['image']]
+ base=['run','--rm','--label',LABEL,'--network','none','--memory','256m','--memory-swap','256m',*sum((['--mount',m] for m in mounts),[]),'--entrypoint','etcdctl',spec['image']]
  s.d.run([*base,'snapshot','status','/snapshot/snapshot.db','--write-out=json'])
  s.d.run([*base,'snapshot','restore','/snapshot/snapshot.db','--data-dir=/restore/data','--name='+member,'--initial-cluster='+member+'=http://localhost:2380','--initial-advertise-peer-urls=http://localhost:2380','--initial-cluster-token='+s.prefix])
  s.run(name,spec['image'],['--name='+member,'--data-dir=/restore/data','--listen-client-urls=http://0.0.0.0:2379','--advertise-client-urls=http://localhost:2379','--listen-peer-urls=http://localhost:2380','--initial-advertise-peer-urls=http://localhost:2380','--initial-cluster='+member+'=http://localhost:2380'],[mounts[0]],['--entrypoint','etcd'])
@@ -157,9 +158,9 @@ def smoke(s,generation,inv):
  s.run(name,core['image_id'],cmd,mounts,extra)
  result=json.loads(s.wait(lambda:s.helper_run(SMOKE_SCRIPT,network='container:'+name)));env.unlink();return result
 
-def restore(generation,target,docker=None,keep=False,smoke_core=True):
+def restore(generation,target,docker=None,keep=False,smoke_core=True,memory_limit='1g',helper_memory_limit='1g'):
  generation=Path(generation).absolute();manifest=verify_generation(generation);inv=manifest['inventory'];docker=docker or Docker();target=validate_target(target,generation,inv,docker)
- target.mkdir(mode=0o700,parents=True);target.chmod(0o700);s=Session(docker,target,inv['helper_image']);started=time.time();report={'success':False,'full_stack_restored':False,'scope':'Native data and isolated core startup; external connectors and full application flows excluded','trees':[],'postgres':[],'source_verified':True}
+ target.mkdir(mode=0o700,parents=True);target.chmod(0o700);s=Session(docker,target,inv['helper_image'],memory_limit,helper_memory_limit);started=time.time();report={'success':False,'full_stack_restored':False,'scope':'Native data and isolated core startup; external connectors and full application flows excluded','trees':[],'postgres':[],'source_verified':True}
  try:
   s.create('network','network')
   for source in manifest['sources']:
@@ -175,6 +176,12 @@ def restore(generation,target,docker=None,keep=False,smoke_core=True):
    elif kind=='etcd':report['etcd']=etcd(s,path,source['source'])
   if smoke_core:report['core']=smoke(s,generation,inv)
   report['success']=True;report['active_source']=None
+ except Exception as error:
+  report['failure']={'type':type(error).__name__}
+  if hasattr(error,'operation') and hasattr(error,'returncode'):
+   report['failure'].update(operation=error.operation,returncode=error.returncode)
+   if getattr(error,'diagnostic_type',None):report['failure']['diagnostic_type']=error.diagnostic_type
+  raise
  finally:
   report.update(duration=time.time()-started,resources=s.resources,kept=bool(keep and report['success']))
   report['cleanup_failed']=[] if report['kept'] else s.cleanup()

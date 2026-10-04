@@ -1,6 +1,6 @@
 # S236 — Exports cohérents et restauration isolée
 
-RPO choisi : 24 h. RTO choisi : 8 h. Un timer toutes les 12 h est préparé pour laisser une marge ; il reste désactivé tant qu’aucune destination n’est configurée et vérifiée.
+RPO choisi : 24 h. RTO choisi : 8 h. Le pilote HP utilise un timer actif toutes les 12 h sur la clé USB vérifiée. Pour une autre installation, activer la cadence après configuration, transfert vérifié et répétition de restauration. Le RTO après reconstruction complète d’un nouvel hôte reste à éprouver dans S237.
 
 ## Organisation
 
@@ -78,7 +78,19 @@ Le script nettoie ses seules ressources créées ; `--keep` conserve une restaur
 
 Pour restaurer depuis Duplicati sans sa base locale initiale, utiliser la destination et la phrase sauvegardées hors HP, `duplicati-cli restore` avec un nouveau `--dbpath` et un **nouveau** `--restore-path`. Vérifier ensuite la génération récupérée avant de lancer la restauration isolée. Ne jamais restaurer vers les chemins d’origine en production pour un test.
 
-Le pilote réel a révélé un index unique incohérent dans Gateway : sa restauration stricte échoue. L’outil ne supprime aucune ligne et n’ignore aucun index automatiquement. Les données ont été récupérées dans un laboratoire dégradé distinct ; la reprise complète reste à valider après traitement de cette incohérence. Voir les [preuves S236](../../../docs/sprints/S236-sauvegardes-resultats.md).
+Le pilote réel a révélé un index unique incohérent dans Gateway. Une correction spécifique, testée d’abord en laboratoire puis appliquée transactionnellement après dump privé, conserve tous les IDs et champs, archive les 42 originaux et renomme les 21 inscriptions secondaires. La génération suivante contient cette correction ; la restauration normale reste stricte et n’ignore aucun index automatiquement. Le script de réparation est lié aux compteurs constatés sur cette source et échoue si ces préconditions diffèrent ; il ne fait pas partie du restaurateur automatique. Voir les [preuves S236](../../../docs/sprints/S236-sauvegardes-resultats.md).
+
+## Répétition applicative
+
+Après récupération et vérification d’une génération, `rehearsal.py` restaure les moteurs et fichiers dans une cible neuve, recrée les réseaux internes du déploiement et branche les services sur leurs seules copies. Les accès aux ports de l’hôte sont remplacés par un relais interne. Aucun port n’est publié, aucun socket Docker n’est repris et aucun réseau externe n’est accessible.
+
+```sh
+python3 outils/sauvegarde/coherent/rehearsal.py \
+  --generation /chemin/de/la/generation-recuperée \
+  --target /chemin/neuf/repetition
+```
+
+Les plafonds mémoire sont vérifiés avant lancement, en gardant une réserve pour la production. Le rapport privé distingue les contrôles natifs, les services démarrés, les phases éventuelles, les sondes authentifiées et les limites de preuve. Un test de protocole Gateway avec fournisseur factice n’atteste pas une inférence réelle. Le nettoyage ne vise que les ressources créées par l’exercice ; `--keep` les conserve pour diagnostic dans cette cible privée.
 
 ## Supervision et limites
 

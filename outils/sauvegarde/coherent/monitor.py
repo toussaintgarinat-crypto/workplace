@@ -24,19 +24,21 @@ def publish(root: Path, output_dir: Path, now=None, rpo_seconds=86400):
             return value if math.isfinite(value) and value >= 0 else 0
         exported = number('last_export_timestamp')
         transferred = number('last_transfer_timestamp')
+        source_point = number('last_transferred_source_timestamp')
         failed = number('failed_sources_count')
         success = int(state.get('last_attempt_success') is True)
     except (OSError, ValueError, TypeError):
         state = {}
-        exported = transferred = success = 0
+        exported = transferred = source_point = success = 0
         failed = 1
     metrics = {
         'export_success': success,
         'last_export_timestamp_seconds': exported,
         'last_transfer_timestamp_seconds': transferred,
+        'last_transferred_source_timestamp_seconds': source_point,
         'failed_sources': failed,
         'transfer_success': int(state.get('last_transfer_success') is True),
-        'rpo_ok': int(0 < transferred <= now and now - transferred <= rpo_seconds),
+        'rpo_ok': int(0 < source_point <= transferred <= now and now - source_point <= rpo_seconds),
         'status_updated_timestamp_seconds': now,
     }
     text = ''.join('workplace_backup_' + k + ' ' + format(v, '.17g') + '\n' for k, v in metrics.items())

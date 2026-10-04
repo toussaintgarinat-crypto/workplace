@@ -1,5 +1,5 @@
 """Encrypted Duplicati transport of immutable, verified coherent generations."""
-import argparse,json,os,re,stat,subprocess,sys,time,uuid
+import argparse,json,math,os,re,stat,subprocess,sys,time,uuid
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qsl
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'coherent'))
@@ -55,6 +55,27 @@ def validate_profile(profile,root=None):
  if profile.get('expected_uuid') and fs.get('uuid')!=profile['expected_uuid']:raise BackupError('Unexpected mount UUID')
  return 'file:///target/workplace/'+profile['id']
 
+def verified_source_point(manifest):
+ try:
+  point=float(manifest['started']);ended=float(manifest['ended'])
+  if not math.isfinite(point) or not math.isfinite(ended) or not 0<point<=ended<=time.time():raise ValueError()
+  return point
+ except (KeyError,TypeError,ValueError):raise BackupError('Generation lacks valid source point timestamp') from None
+
+
+def aggregate_acknowledgments(acks,required,now=None):
+ now=time.time() if now is None else now
+ def timestamp(profile,key):
+  try:
+   value=float(acks.get(profile,{}).get(key,0))
+   return value if math.isfinite(value) and 0<value<=now else 0
+  except (TypeError,ValueError):return 0
+ return {
+  'last_transfer_timestamp':min((timestamp(p,'timestamp') for p in required),default=0),
+  'last_transferred_source_timestamp':min((timestamp(p,'source_point_timestamp') if timestamp(p,'source_point_timestamp')<=timestamp(p,'timestamp') else 0 for p in required),default=0),
+ }
+
+
 class Runner:
  def run(self,args,log):
   fd=os.open(log,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
@@ -65,7 +86,7 @@ class Runner:
 def _transfer(profile,generation,root,test_only=False,runner=None):
  root=Path(root).absolute();generation=Path(generation).absolute();runner=runner or Runner()
  # No state mutations before target and source validation.
- destination=validate_profile(profile,root);env=credentials(profile['credentials']);verify_generation(generation)
+ destination=validate_profile(profile,root);env=credentials(profile['credentials']);manifest=verify_generation(generation);source_point=verified_source_point(manifest)
  with lock(root):
   if (root/'recovery.json').exists():raise BackupError('Pending producer recovery')
   destination=validate_profile(profile,root)
@@ -89,12 +110,12 @@ def _transfer(profile,generation,root,test_only=False,runner=None):
   invoke(['test',destination,'all','--full-remote-verification=true'])
   if test_only:return {'tested':True,'acknowledged':False}
   timestamp=time.time();journal=root/'transfers.json';acks=json.loads(journal.read_text()) if journal.exists() else {}
-  acks[profile['id']]={'generation':generation.name,'timestamp':timestamp};atomic_json(journal,acks)
-  required=profile.get('required_profiles',[profile['id']]);latest=min((acks.get(k,{}).get('timestamp',0) for k in required),default=0)
-  status=root/'status.json';value=json.loads(status.read_text()) if status.exists() else {};value['last_transfer_timestamp']=latest;value['last_transfer_success']=True;atomic_json(status,value)
+  acks[profile['id']]={'generation':generation.name,'timestamp':timestamp,'source_point_timestamp':source_point};atomic_json(journal,acks)
+  required=profile.get('required_profiles',[profile['id']]);aggregate=aggregate_acknowledgments(acks,required,timestamp)
+  status=root/'status.json';value=json.loads(status.read_text()) if status.exists() else {};value.update(aggregate);value['last_transfer_success']=True;atomic_json(status,value)
   metrics=root/'metrics.prom'
   old=metrics.read_text().splitlines() if metrics.exists() else []
-  lines=[x for x in old if not x.startswith('workplace_backup_last_transfer_timestamp_seconds ')]+['workplace_backup_last_transfer_timestamp_seconds '+str(latest)]
+  lines=[x for x in old if not x.startswith(('workplace_backup_last_transfer_timestamp_seconds ','workplace_backup_last_transferred_source_timestamp_seconds '))]+['workplace_backup_'+key+'_seconds '+str(value) for key,value in aggregate.items()]
   temp=root/'metrics.prom.tmp';temp.write_text('\n'.join(lines)+'\n');temp.chmod(0o644);os.replace(temp,metrics)
   return {'transferred':True,'acknowledged':True}
 

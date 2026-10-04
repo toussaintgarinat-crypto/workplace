@@ -25,7 +25,7 @@ class TransferFailures(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d).resolve();env=root/'env';env.write_text('PASSPHRASE=example-test-secret\n');env.chmod(0o600)
    profile={'id':'remote','kind':'remote','destination':'webdavs://example.test/path','credentials':str(env)}
-   with patch.object(transport,'verify_generation',return_value={}),self.assertRaises(Exception):transport.transfer(profile,root/'generation',root,runner=Fake())
+   with patch.object(transport,'verify_generation',return_value={'started':100,'ended':101}),self.assertRaises(Exception):transport.transfer(profile,root/'generation',root,runner=Fake())
    self.assertFalse((root/'transfers.json').exists())
  def test_encryption_remote_verification_and_status(self):
   class Fake:
@@ -35,7 +35,7 @@ class TransferFailures(unittest.TestCase):
    root=Path(d).resolve();env=root/'env';env.write_text('PASSPHRASE=example-test-secret\n');env.chmod(0o600)
    profile={'id':'remote','kind':'remote','destination':'ssh://example.test/path','options':{'ssh-fingerprint':'ssh-ed25519 256 example-test-fingerprint'},'credentials':str(env)};fake=Fake()
    transport.atomic_json(root/'status.json',{'last_export_timestamp':123})
-   with patch.object(transport,'verify_generation',return_value={}):transport.transfer(profile,root/'generation',root,runner=fake)
+   with patch.object(transport,'verify_generation',return_value={'started':100,'ended':101}):transport.transfer(profile,root/'generation',root,runner=fake)
    self.assertEqual(len(fake.calls),2)
    self.assertIn('--encryption-module=aes',fake.calls[0]);self.assertIn('--full-remote-verification=true',fake.calls[1])
    self.assertNotIn('example-test-secret',' '.join(fake.calls[0]))
@@ -67,3 +67,28 @@ class StagingDiskGuard(unittest.TestCase):
    profile={'id':'disk','kind':'file','mount_path':str(target),'identity':'identity'}
    with patch('os.path.ismount',return_value=True),patch.object(Path,'stat',stat_device),patch.object(transport.subprocess,'run',return_value=result):
     with self.assertRaisesRegex(transport.BackupError,'staging'):transport.validate_profile(profile,staging)
+
+class SourcePointRPO(unittest.TestCase):
+ def test_ack_records_verified_source_point_and_oldest_required(self):
+  import json
+  class Fake:
+   def run(self,args,log):return 0
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d).resolve();env=root/'env';env.write_text('PASSPHRASE=example-test-secret\n');env.chmod(0o600)
+   profile={'id':'nas','kind':'remote','destination':'webdavs://example.test/path','credentials':str(env),'required_profiles':['usb','nas']}
+   transport.atomic_json(root/'transfers.json',{'usb':{'generation':'old','timestamp':990,'source_point_timestamp':700}})
+   with patch.object(transport,'verify_generation',return_value={'started':900,'ended':950}),patch.object(transport.time,'time',return_value=1000):transport.transfer(profile,root/'generation',root,runner=Fake())
+   status=json.loads((root/'status.json').read_text());acks=json.loads((root/'transfers.json').read_text())
+   self.assertEqual(status['last_transfer_timestamp'],990)
+   self.assertEqual(status['last_transferred_source_timestamp'],700)
+   self.assertEqual(acks['nas']['source_point_timestamp'],900)
+ def test_legacy_required_ack_cannot_imply_verified_freshness(self):
+  import json
+  class Fake:
+   def run(self,args,log):return 0
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d).resolve();env=root/'env';env.write_text('PASSPHRASE=example-test-secret\n');env.chmod(0o600)
+   profile={'id':'nas','kind':'remote','destination':'webdavs://example.test/path','credentials':str(env),'required_profiles':['usb','nas']}
+   transport.atomic_json(root/'transfers.json',{'usb':{'generation':'old','timestamp':990}})
+   with patch.object(transport,'verify_generation',return_value={'started':900,'ended':950}),patch.object(transport.time,'time',return_value=1000):transport.transfer(profile,root/'generation',root,runner=Fake())
+   self.assertEqual(json.loads((root/'status.json').read_text())['last_transferred_source_timestamp'],0)

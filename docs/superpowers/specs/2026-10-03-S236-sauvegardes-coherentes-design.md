@@ -1,6 +1,6 @@
 # S236 — Sauvegardes cohérentes et restauration isolée
 
-Date : 2026-10-03. Statut : conception validée par l’utilisateur ; implémentation et pilote en cours.
+Conception : 2026-10-03 ; mise à jour : 2026-10-04. Statut : conception validée, sauvegardes en service et restauration applicative isolée éprouvée. Reconstruction d’hôte à valider dans S237.
 
 ## Constats vérifiés
 
@@ -42,9 +42,9 @@ Créer des conteneurs, réseaux et volumes S236 distincts, sans proxy_net, sans 
 
 Prouver le chiffrement et un téléchargement/restauration depuis Duplicati dès que la destination est disponible. Rapporter séparément temps des exports, du transfert et de restauration ; le RTO complet inclut reconstruction du code, images et services, pas seulement import des bases. Une restauration de moteurs dans des conteneurs isolés est une preuve partielle ; clôture seulement après démarrage isolé de Workplace et contrôles métier représentatifs. Aucun test de restauration sur la production.
 
-## Décisions attendues
+## Décisions validées
 
-Conception validée par l’utilisateur. RPO retenu : 24 h ; RTO retenu : 8 h. Exigence complémentaire validée : disque dur externe ou clé USB, en plus d’un NAS ou serveur local/distant ; profils indépendants pour ces destinations. Destination retenue : clé USB. Support identifié : PHILIPS, partition exFAT UUID 6A01-B378, rattachée à chaud à la VM 103 ; montée sur /mnt/workplace-backup après authentification explicitement autorisée ; premier transfert indépendant et récupération AES depuis cette clé vérifiés. Timer non activé. Cadence préparée : 12 h pour conserver une marge sous le RPO. La disponibilité des images, outils natifs, accès aux volumes et corpus Qdrant sera vérifiée pendant le préflight ; toute limite sera documentée plutôt que déclarée comme preuve.
+Conception validée par l’utilisateur. RPO retenu : 24 h ; RTO retenu : 8 h. Exigence complémentaire validée : disque dur externe ou clé USB, en plus d’un NAS ou serveur local/distant ; profils indépendants pour ces destinations. Destination retenue : clé USB. Support identifié : PHILIPS, partition exFAT UUID 6A01-B378, rattachée à chaud à la VM 103 ; montée sur /mnt/workplace-backup après authentification explicitement autorisée ; premier transfert indépendant et récupération AES depuis cette clé vérifiés. Timer activé le 4 octobre après répétition applicative isolée réussie et premier job systemd réel vérifié. Cadence : 12 h pour conserver une marge sous le RPO. La disponibilité des images, outils natifs, accès aux volumes et corpus Qdrant sera vérifiée pendant le préflight ; toute limite sera documentée plutôt que déclarée comme preuve.
 
 ## Précisions issues du pilote
 

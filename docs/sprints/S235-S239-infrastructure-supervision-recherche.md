@@ -1,6 +1,6 @@
 # S235 → S239 — Infrastructure, supervision et recherche
 
-Date : 2026-10-03. Statut : S235 terminé et validé ; S236 en cours ; S237 à S239 restent au backlog.
+Date : 2026-10-04. Statut : S235 et S236 terminés et validés dans leurs périmètres ; S237 à S239 restent au backlog.
 
 ## État de départ
 
@@ -26,7 +26,7 @@ Acceptation : indisponibilité simulée sur une cible isolée détectée ; notif
 
 ## S236 — Sauvegardes cohérentes et restauration complète
 
-Statut : conception validée, implémentation et preuves de restauration en cours. RPO retenu : 24 h ; RTO visé : 8 h. Destinations prises en charge : disque externe, clé USB, NAS ou serveur local/distant. Clé USB PHILIPS retenue, rattachée à la VM et première copie indépendante/récupération chiffrée vérifiées. Restauration stricte Gateway encore bloquée ; aucune planification automatique activée. Voir les [preuves S236](S236-sauvegardes-resultats.md), la [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md) et le [guide opérationnel](../../outils/sauvegarde/coherent/README.md).
+Statut : terminé pour les sauvegardes et la restauration applicative isolée. RPO retenu : 24 h ; RTO visé : 8 h. Clé USB PHILIPS indépendante éprouvée, Duplicati AES et timer 12 h actifs ; premier job systemd réussi. Restauration depuis USB : 53 sources, parcours authentifiés et onze phases saines, environ 8 min 24 s pour récupération et exercice applicatif. 85 tests passent. Le fonctionnement simultané complet et le RTO après reconstruction d’un nouvel hôte restent à éprouver dans S237. Voir les [preuves S236](S236-sauvegardes-resultats.md), la [conception](../superpowers/specs/2026-10-03-S236-sauvegardes-coherentes-design.md) et le [guide opérationnel](../../outils/sauvegarde/coherent/README.md).
 
 Objectif : pouvoir reconstruire Workplace avec ses données.
 

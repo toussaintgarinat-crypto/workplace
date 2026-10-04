@@ -69,3 +69,32 @@ class Resources(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d).resolve()
    with self.assertRaises(restore.BackupError):restore.validate_target(root/'new',Path('/elsewhere'),{'trees':[{'kind':'bind','source':str(root)}]})
+
+class ResourceBudget(unittest.TestCase):
+ def test_native_and_helper_memory_are_bounded(self):
+  fake=unittest.mock.Mock();fake.run.return_value=('a'*64).encode()
+  session=restore.Session(fake,Path('/tmp/rehearsal'),'helper')
+  session.network='isolated';session.run('native','image')
+  command=fake.run.call_args_list[0].args[0]
+  self.assertEqual(command[command.index('--memory')+1],'1g')
+  self.assertEqual(command[command.index('--memory-swap')+1],'1g')
+  session.helper_run('pass')
+  command=fake.run.call_args.args[0]
+  self.assertEqual(command[command.index('--memory')+1],'1g')
+
+class PublicFailureClassification(unittest.TestCase):
+ def test_docker_error_retains_only_allowlisted_classification(self):
+  from backup import DockerError
+  error=DockerError('run',1,b'Traceback\nsqlite3.OperationalError: private database value\n')
+  self.assertEqual(error.diagnostic_type,'sqlite3.OperationalError')
+  self.assertNotIn('private database value',str(error))
+  self.assertIsNone(DockerError('run',1,b'secret payload\n').diagnostic_type)
+
+class NativeNetworkIsolation(unittest.TestCase):
+ def test_native_network_has_no_host_gateway(self):
+  fake=unittest.mock.Mock();fake.run.return_value=b''
+  session=restore.Session(fake,Path('/tmp/rehearsal'),'helper')
+  session.create('network','native')
+  args=fake.run.call_args.args[0]
+  self.assertIn('--internal',args)
+  self.assertIn('com.docker.network.bridge.gateway_mode_ipv4=isolated',args)

@@ -39,3 +39,30 @@ def test_optional_transfer_failure_does_not_override_required_success(tmp_path,m
  monkeypatch.setattr(transport,'transfer',transfer)
  assert job.main()==0
  assert json.loads((root/'status.json').read_text())['last_transfer_success'] is True
+
+def test_job_keeps_verified_source_point_after_export_replaces_status(tmp_path,monkeypatch):
+ root=setup_job(tmp_path,monkeypatch)
+ transport.atomic_json(root/'transfers.json',{'nas':{'generation':'prior','timestamp':900,'source_point_timestamp':800}})
+ monkeypatch.setattr(transport,'validate_profile',lambda *args:None)
+ def exporting(*args):
+  transport.atomic_json(root/'status.json',{'last_attempt_success':True,'last_export_timestamp':990,'last_transfer_timestamp':900})
+  return root/'generation'
+ monkeypatch.setattr(job,'backup',exporting)
+ monkeypatch.setattr(transport,'transfer',lambda *args:None)
+ assert job.main()==0
+ assert json.loads((root/'status.json').read_text())['last_transferred_source_timestamp']==800
+
+
+def test_timer_sigterm_unwinds_backup_and_restores_signal_handler(tmp_path,monkeypatch):
+ import signal
+ root=setup_job(tmp_path,monkeypatch);cleaned=[];observed=[];previous=signal.getsignal(signal.SIGTERM)
+ monkeypatch.setattr(transport,'validate_profile',lambda *args:None)
+ def exporting(*args):
+  try:
+   handler=signal.getsignal(signal.SIGTERM);observed.append(callable(handler));handler(signal.SIGTERM,None)
+  finally:cleaned.append(True)
+ monkeypatch.setattr(job,'backup',exporting)
+ assert job.main()==1
+ assert cleaned==[True]
+ assert observed==[True]
+ assert signal.getsignal(signal.SIGTERM)==previous

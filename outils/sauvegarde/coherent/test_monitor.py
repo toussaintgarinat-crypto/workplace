@@ -41,7 +41,7 @@ def test_missing_status_and_expired_transfer_fail_rpo(tmp_path):
 
 def test_recent_transfer_passes_and_symlink_output_is_refused(tmp_path):
     m=load(); root=tmp_path/'private'; root.mkdir(); out=tmp_path/'public'
-    (root/'status.json').write_text(json.dumps({'last_attempt_success':True,'last_export_timestamp':990,'last_transfer_timestamp':995,'failed_sources_count':0}))
+    (root/'status.json').write_text(json.dumps({'last_attempt_success':True,'last_export_timestamp':990,'last_transfer_timestamp':995,'last_transferred_source_timestamp':990,'failed_sources_count':0}))
     m.publish(root,out,now=1000)
     assert 'workplace_backup_rpo_ok 1' in (out/'workplace-backup.prom').read_text()
     alias=tmp_path/'alias'; alias.symlink_to(out,target_is_directory=True)
@@ -65,3 +65,26 @@ def test_public_collector_directory_survives_private_service_umask(tmp_path):
     finally:os.umask(old)
     assert stat.S_IMODE(out.stat().st_mode)==0o755
     assert stat.S_IMODE((out/'workplace-backup.prom').stat().st_mode)==0o644
+
+def test_recent_ack_cannot_refresh_old_source_point(tmp_path):
+    m=load();root=tmp_path/'private';root.mkdir()
+    (root/'status.json').write_text(json.dumps({'last_attempt_success':True,'last_export_timestamp':199990,'last_transfer_timestamp':199995,'last_transferred_source_timestamp':100,'last_transfer_success':True}))
+    values=m.publish(root,tmp_path/'public',now=200000)
+    assert values['last_transfer_timestamp_seconds']==199995
+    assert values['last_transferred_source_timestamp_seconds']==100
+    assert values['rpo_ok']==0
+
+
+def test_verified_fresh_source_point_passes(tmp_path):
+    m=load();root=tmp_path/'private';root.mkdir()
+    (root/'status.json').write_text(json.dumps({'last_transfer_timestamp':995,'last_transferred_source_timestamp':990,'last_transfer_success':True}))
+    assert m.publish(root,tmp_path/'public',now=1000)['rpo_ok']==1
+
+
+def test_legacy_ack_is_preserved_but_unproven_source_fails_closed(tmp_path):
+    m=load();root=tmp_path/'private';root.mkdir()
+    (root/'status.json').write_text(json.dumps({'last_export_timestamp':990,'last_transfer_timestamp':995}))
+    values=m.publish(root,tmp_path/'public',now=1000)
+    assert values['last_transfer_timestamp_seconds']==995
+    assert values['last_transferred_source_timestamp_seconds']==0
+    assert values['rpo_ok']==0

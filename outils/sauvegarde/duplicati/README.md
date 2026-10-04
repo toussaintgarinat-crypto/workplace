@@ -4,7 +4,7 @@ Le transport utilise l’image officielle stable 2.4.0.0, épinglée par digest.
 
 Trois exemples de profils sont fournis : `profile-removable.example.json` pour disque dur externe/clé USB, `profile-nas.example.json` pour NAS monté, `profile-remote.example.json` pour serveur SFTP/S3 compatible/WebDAV HTTPS. Les chemins et identités des exemples doivent être remplacés par ceux du support réellement choisi. Ils ne sont pas des destinations actives.
 
-Un profil file exige un montage réel et une sentinelle `.workplace-s236-target` contenant exactement l’identité du profil, sans retour à la ligne. Un montage sur le même filesystem que le staging ou le disque système est refusé. Une cible NAS peut être locale au LAN ; une clé/disque peut être débranché et emporté après vérification. Aucun formatage, partitionnement ou montage automatique n’est exécuté.
+Un profil file exige un montage réel et une sentinelle `.workplace-s236-target` contenant exactement l’identité du profil, sans retour à la ligne. Un montage sur le même filesystem que le staging ou le disque système est refusé. Une cible NAS peut être locale au LAN ; une clé/disque peut être débranché et emporté après vérification. Le transport ne formate, ne partitionne et ne monte aucun disque. Le montage USB persistant spécifique au HP est préparé séparément par le [runbook USB](USB-SCHEDULE.md).
 
 Un profil remote ne contient pas de mot de passe dans l’URL. Les options non secrètes acceptées sont limitées aux réglages de backend nécessaires : empreinte SSH et paramètres S3 compatible ; TLS ne peut pas être désactivé.
 
@@ -28,7 +28,7 @@ Pour le job hôte, créer un fichier JSON privé :
 }
 ```
 
-Les profils sont obligatoires par défaut (`required: true`). Une destination obligatoire indisponible bloque le job avant toute interruption applicative. La cadence préparée est toutes les 12 h ; les unités `workplace-backup.service` et `workplace-backup.timer` ne sont pas activées automatiquement. Le statut est publié dans `outils/observabilite/textfile` pour node-exporter.
+Les profils sont obligatoires par défaut (`required: true`). Une destination obligatoire indisponible bloque le job avant toute interruption applicative. La cadence préparée est toutes les 12 h ; les unités `workplace-backup.service` et `workplace-backup.timer` ne sont pas activées automatiquement. Le RPO se calcule à partir du début de la génération vérifiée, et non de l’heure du transfert. Une génération ancienne retransférée aujourd’hui reste ancienne ; pour plusieurs destinations obligatoires, le point source le plus ancien est retenu. Le statut est publié dans `outils/observabilite/textfile` pour node-exporter.
 
 L’UI optionnelle est liée à localhost et ne possède ni socket Docker ni accès aux données actives. Définir `DUPLICATI_UID` et `DUPLICATI_GID` (propriétaire des fichiers privés), `DUPLICATI_UI_ENV` (fichier privé contenant `SETTINGS_ENCRYPTION_KEY` et `DUPLICATI__WEBSERVICE_PASSWORD`), `DUPLICATI_PRIVATE_DATA` (0700) et `WORKPLACE_COMPLETE` (répertoire complete des exports). L’utilisateur du conteneur doit correspondre au propriétaire de la base privée. Vérifier avec `docker compose --profile ui config --quiet`, puis démarrer seulement si l’UI est souhaitée. Ne pas activer un second ordonnanceur UI en parallèle du timer.
 

@@ -8,6 +8,8 @@ Type=oneshot
 User=debian
 UMask=0077
 Environment=SAUVEGARDE_METRICS_DIR=/home/debian/workplace/outils/observabilite/textfile
-WorkingDirectory=/home/debian/workplace
-ExecStart=/usr/bin/python3 /home/debian/workplace/outils/sauvegarde/duplicati/job.py --config /home/debian/.config/workplace-backups/job.json
-TimeoutStartSec=24h
+WorkingDirectory=/home/debian/s236-tools
+ExecStart=/usr/bin/python3 /home/debian/s236-tools/duplicati/job.py --config /home/debian/.config/workplace-backups/usb-job.json
+TimeoutStartSec=2h
+TimeoutStopSec=10min
+KillMode=mixed

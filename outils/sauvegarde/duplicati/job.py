@@ -1,11 +1,16 @@
 """Host timer entrypoint: prevalidate every destination before exporting."""
-import argparse,json,sys,os
+import argparse,json,sys,os,signal
 from pathlib import Path
 import transport
 from backup import backup,load_inventory,Docker,BackupError
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--config',required=True,type=Path);a=p.parse_args()
+ previous={sig:signal.getsignal(sig) for sig in (signal.SIGTERM,signal.SIGINT)}
+ def interrupted(signum,frame):
+  for sig in previous:signal.signal(sig,signal.SIG_IGN)
+  raise BackupError('Backup job interrupted')
+ for sig in previous:signal.signal(sig,interrupted)
  try:
   config=json.loads(a.config.read_text());root=Path(config['root']);profiles=[json.loads(Path(p).read_text()) for p in config['profiles']]
   if not profiles:raise BackupError('No destinations configured')
@@ -36,6 +41,14 @@ def main():
   if 'root' in locals():transport.record_failure(root)
   print('Backup job failed; inspect private state');return 1
  finally:
+  if 'root' in locals() and 'required' in locals():
+   try:
+    with transport.lock(root):
+     journal=root/'transfers.json';acks=json.loads(journal.read_text()) if journal.exists() else {}
+     path=root/'status.json';status=json.loads(path.read_text()) if path.exists() else {}
+     status.update(transport.aggregate_acknowledgments(acks,required));transport.atomic_json(path,status)
+   except Exception:print('Backup source point status refresh failed')
+  for sig,handler in previous.items():signal.signal(sig,handler)
   output=os.environ.get('SAUVEGARDE_METRICS_DIR')
   if output and 'root' in locals():
    try:
