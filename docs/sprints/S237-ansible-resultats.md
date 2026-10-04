@@ -1,50 +1,86 @@
-# S237 — État d'exécution et preuves
+# S237 — Résultats de la reconstruction isolée
 
-Date : 2026-10-04. **En cours ; reconstruction complète non validée.** Production inspectée uniquement en lecture seule. Conception approuvée par l'utilisateur ; branche de travail `sprint/s237-ansible`.
+Date : 2026-10-04. Branche `s237/release-prod`. Elle part du commit `4ce4141` (code déployé sur le HP), auquel sont ajoutés les commits S235/S236/S237 cherry-pickés, puis l'outillage. Elle est identique à la production pour tout le code applicatif : 0 ligne de différence hors `infra/` et `docs/`, et le seul code applicatif modifié pendant l'exercice (`calcul`, pour la mise à jour test) a été annulé. Production inspectée en lecture seule uniquement. Guide opératoire : [infra/ansible/README.md](../../infra/ansible/README.md).
 
-## État réel observé
+## Passage chronométré sur VM vierge
 
-Le HP de production est la VM Debian 13.5, identité `f0490b65d4414f4fa4db80bdc3f75da6`, adresses LAN `192.168.1.89` et mesh `100.124.248.226`. Ces identités doivent être refusées par les gardes. `/health` du Cœur répond 200 ; 71 conteneurs actifs affichent healthy. Docker Engine 29.6.1 et Compose 5.2.0 sont installés sur cet hôte ; cela ne constitue pas un verrouillage des paquets d'une autre cible.
+Cible : VM Proxmox 106, créée depuis l'image cloud officielle Debian 13, dont la somme SHA512 est vérifiée. Configuration : 4 vCPU (`x86-64-v2-AES`, comme la production), 12 Go et 200 Go. Docker est absent au départ. Mesure par `outils/reconstruction/measure.py`, horloge monotone, révision `a215057`, génération `20261004T115244Z-148a3bc4` récupérée depuis la clé USB chiffrée.
 
-Les labels Compose de production ont permis d'enregistrer 43 projets et 71 services actifs dans `infra/ansible/catalogue.observed.json`, sans exporter les environnements. L'inventaire S236 couvre 76 conteneurs avec montages, incluant des services inactifs : les deux périmètres ne sont pas interchangeables.
+| Phase | Durée |
+|---|---|
+| Création de la VM jusqu'au SSH | 21 s |
+| Provisionnement Debian/Docker épinglés (`provision.yml`) | 77 s |
+| Copie du chiffré Duplicati depuis l'USB (354 Mo) | 10 s |
+| Déchiffrement avec base Duplicati neuve, vérification des 53 sources, extraction des entrées privées | 104 s |
+| Code (bundle → dépôt nu) | 1 s |
+| Release, artefacts privés, séquestre, fichiers, images de base, **builds sans cache des 44 projets** | 1 357 s |
+| Restauration : 42 arbres de volumes, 6 serveurs PostgreSQL, Qdrant, neutralisation Kuma | 101 s |
+| Isolation nftables et refus réels depuis l'hôte et chaque réseau | 403 s |
+| Activation des 44 projets, santé, sondes, vérification globale, supervision | 1 246 s |
+| Sondes métier authentifiées | 20 s |
+| **Total** | **3 340 s (55 min 40 s)** |
 
-Seize overrides effectifs sont absents du checkout Git : les `docker-compose.override.yml` des briques agenda, atelier-veille, audit, donnees, forge, gateway, generateur, geo, images, memoire, personnages, restaurant, studio, synopsis, transcription et video. Ils doivent être récupérés comme configurations privées et explicitement rattachés à la release. Un clone seul du SHA de production ne suffit donc pas à reproduire l'installation observée.
+**RTO observé : 55 min 40 s pour un objectif de 8 h.**
 
-La VM de production dispose d'environ 24 Go de RAM et 204 Go libres ; aucun outil `qm` ou `virsh` n'y a été trouvé. Le Mac dispose de 76 Gio libres. Aucun accès à une VM Debian de test ni à l'hyperviseur permettant d'en créer une n'a encore été établi. Les ressources disponibles sur la VM de production ne constituent pas une autorisation d'y lancer le stack de test.
+Ce chiffre a été obtenu dans les conditions suivantes :
+- hyperviseur déjà disponible, avec l'image cloud déjà téléchargée sur Proxmox ;
+- liaison Internet du LAN pour les images et les paquets ;
+- clé USB lue via la VM de production (lecture seule) plutôt que branchée sur l'hôte neuf ;
+- contrôleur Ansible déjà installé.
 
-## Outillage et vérifications locales
+L'obtention d'un nouveau matériel n'est pas mesurée. Les builds représentent 41 % du temps et l'isolation 12 %.
 
-Contrôleur de validation installé sous `/private/tmp/s237-controller`, Python 3.11.15, ansible-core 2.19.13 ; pas d'installation Ansible globale. Les répertoires temporaires Ansible sont placés sous `/private/tmp` pour respecter les permissions du contrôleur. La version et ses dépendances installées ont été relevées par `ansible --version` et `pip freeze`.
+## Résultat sur la cible
 
-Un véritable lancement local de `playbooks/provision.yml` avec l'identité de production a été refusé à la première assertion, avant connexion SSH ou élévation : `ok=0 changed=0 unreachable=0 failed=1`, code retour 2 attendu. Ce test de refus ne provisionne aucun hôte.
+- 44 projets et **70 conteneurs actifs simultanément, tous sains**. Ce sont les 71 conteneurs actifs de la production, moins node-exporter et Caddy (exclus), plus le relais de l'exercice.
+- Environnements reconstruits depuis la sauvegarde **identiques** à ceux de la production pour les 71 services. Les seuls écarts sont les neutralisations déclarées : jeton Telegram, NetBird, repli payant. La comparaison porte sur les noms de clés et les empreintes ; aucune valeur n'a été affichée.
+- PostgreSQL : rôles, extensions et comptages de lignes identiques à la génération, pour les 6 serveurs.
+- Qdrant : collections, alias, points et recherche vectorielle identiques.
+- 7 sondes métier réussies :
+  - sessions Keycloak réelles (Cœur et Oria) ;
+  - dashboard du Cœur authentifié (200), et 303 sans session ;
+  - CRUD complet dans Données ;
+  - Oria authentifié ;
+  - lecture Mémoire ;
+  - Gateway : 57 modèles restaurés, appel via un fournisseur factice local, 0 appel payant ;
+  - recherche Forge.
+- Supervision : Prometheus voit ses cibles `coeur` et `prometheus` en état up. La cible `hote` (node-exporter) est exclue et déclarée.
+- Notifications : l'unique canal actif restauré (Telegram dans Kuma) est désactivé sur la copie, et la vérification compte 0 notification active. Grafana n'a ni règle ni point de contact configuré, et Prometheus n'a pas d'Alertmanager.
+- Isolation : sorties vers Internet, la production et le mesh refusées depuis l'hôte (nftables) et depuis chaque réseau d'exercice ; aucun port publié.
+- Préparation de sauvegarde : inventaire S236 généré depuis les 70 conteneurs réels, accepté par le `preflight` S236 réel (aucune dérive) ; phrase de chiffrement propre à l'exercice ; timer `disabled` / `inactive`.
 
-`outils/reconstruction/measure.py` mesure des phases avec une horloge monotone, conserve les logs privés et arrête l'exécution au premier échec. Huit tests locaux passent : succès mesuré sans déclaration de reprise, arrêt avant phase suivante, timeout, commande absente, plans invalides sans mutation, cible existante et parents symlink refusés, arrêt des descendants sur échec/timeout, types de métadonnées validés. Le test initial échouait sur l'import du module absent avant implémentation. Une relecture indépendante a identifié le descendant survivant à un retour non nul ; régression reproduite puis corrigée et relue. Ce sont des tests de l'outil de mesure, pas une mesure du RTO de Workplace.
+## Second passage, mise à jour et rollback
 
-Les suites unittest existantes S236 restent vertes : 12 tests sous `outils/sauvegarde/coherent` et 27 sous `outils/sauvegarde/duplicati`. La suite pytest complète de ces deux répertoires a également été exécutée : 85 tests réussis. Ces tests ne remplacent pas une reconstruction.
+- **Second passage** (VM 105, puis rejoué sur la VM 106 avec l'outillage final) : zéro changement pour la récupération, la restauration des fichiers, la préparation, la restauration des moteurs et le déploiement. Les 70 conteneurs ont des ID, des dates de démarrage et des images inchangés.
+- **Mise à jour ciblée par Ansible** (`calcul`, 0.2.0 → 0.2.1, sans migration), puis **rollback** vers le SHA précédent en 35 s, sans aucune reconstruction. L'empreinte du volume de données de `calcul` reste identique à chaque étape, et tous les autres conteneurs sont inchangés.
+- La récupération d'une activation échouée par rollback vers le SHA encore actif a été éprouvée : journal effacé, release active intacte.
 
-## Socle Ansible implémenté et relu
+## Constats de reproductibilité
 
-`infra/ansible/` fournit six playbooks : provisionnement, préparation Git/configurations/builds, isolation, déploiement, vérification et rollback. Les rôles séparent gardes, prérequis, releases, réseaux, projets Compose, supervision et préparation S236. Le contrôleur et ses dépendances sont épinglés ; les versions des paquets Debian/Docker restent obligatoires dans le verrou privé à établir pour la cible. La clé publique officielle Docker a été téléchargée en HTTPS et contrôlée avec SHA256 et empreinte GPG, consignées dans `docker-key.lock.json`.
+1. **Docker 29 ne publie aucun port pour un conteneur attaché seulement à des réseaux `--internal`.** Les sondes initiales sur `127.0.0.1` ne pouvaient donc pas réussir. Désormais, aucun port n'est publié : les sondes visent l'IP du bridge, et un relais interne aliasé `host.docker.internal` porte les appels inter-projets d'origine.
+2. **`minio/minio:RELEASE.2025-09-07T16-13-09Z` (Oria) n'est plus téléchargeable**, ni sur Docker Hub ni sur Quay. L'exercice utilise un séquestre (`docker save` depuis le cache de la production, ID `14cea49…` vérifié). **À faire :** que S236 sauvegarde ces images, ou remplacer MinIO par une source maintenue. Sans cela, un hôte neuf ne peut plus démarrer Oria si la production est perdue.
+3. **`/etc/docker/daemon.json` de la production** (pools d'adresses, `userland-proxy: false`) n'était ni provisionné ni sauvegardé. Avec les pools par défaut, la création des réseaux échoue au 30ᵉ. Il est maintenant provisionné, sans le pool `192.168.0.0/16`, qui jouxte le LAN.
+4. **Avec le magasin containerd, les images non taguées sont supprimées.** Le premier rollback réel a échoué sans dommage. Chaque image préparée garde désormais un tag de rétention.
+5. **BuildKit résout les images de base sur le registre même sans `--pull`.** Une mise à jour après isolation échouait. Les images de base des `FROM` sont maintenant acquises comme images taguées pendant la fenêtre d'acquisition. Sur la VM 105, celle de `calcul` a été chargée depuis la production pour le test : l'étape n'existait pas encore.
+6. Le projet Compose `oria` de la production mélange deux répertoires (`oria-stack/oria` et `briques/oria`). Il est scindé en `oria` et `oria-adaptateur`.
+7. L'override Keycloak fige `postgres` sur l'IP `172.27.0.3` (avec `extra_hosts`). Les deux sont retirés de façon déclarée ; le DNS du réseau suffit.
+8. etcd ne contient que l'état DCS de Patroni (`/service/oria-pg/*`), lié à l'ancien identifiant système. Il n'est pas restauré, et Patroni adopte le cluster restauré par dump. Une configuration dynamique modifiée à chaud serait perdue.
+9. Le provisionnement exigeait les secrets applicatifs, inaccessibles avant la récupération. La garde d'identité est désormais séparée des entrées applicatives. `cache_valid_time` masquait aussi le dépôt Docker ajouté : le cache est maintenant forcé à changement.
 
-Les configurations résolues, images et manifestes sont privés et rattachés à chaque projet. La préparation refuse les overrides modifiés pour un SHA déjà installé ; les données et volumes gardent des noms stables. Le runtime réel est comparé aux images, réseaux, publications de ports, montages et privilèges attendus. Les références vers l'hôte de production et `host.docker.internal` non remplacées sont refusées. La table nft ne doit autoriser que loopback, réponses SSH et bridges internes inspectés de l'exercice ; cette politique doit encore être éprouvée sur une VM.
+## Limites restantes
 
-La mise à jour journalise sa tentative avant activation et ne publie qu'après sondes. Une activation échouée peut revenir au manifeste encore actif ; le rollback d'une activation réussie utilise le précédent. Aucun rollback automatique des données. La préparation S236 installe les véritables outils cohérents/Duplicati et un service de sauvegarde limité aux chemins et producteurs de l'exercice ; le timer reste arrêté et désactivé. Elle ne constitue pas un adaptateur de restauration.
+- node-exporter est exclu : les métriques hôte de la cible ne sont pas couvertes.
+- Les sockets Docker du Cœur et de l'atelier sont retirés : le pilotage de conteneurs depuis le Cœur n'est pas éprouvé.
+- Le mesh HTTPS est exclu.
+- La destination de sauvegarde de l'exercice n'est pas un système de fichiers indépendant : un export réel serait refusé tant qu'aucun support n'est monté. La préparation est prouvée ; la sauvegarde depuis l'hôte reconstruit ne l'est pas.
+- Le refus des adresses dans la configuration ne vise textuellement que l'IP de la production et celle du mesh. Les autres adresses du LAN ne sont bloquées que par l'isolation réseau.
+- La VM de test était sur-allouée (12 Go sur un hôte qui n'en avait que 5 de libres), avec une boucle de vidage de cache. La production est restée saine pendant tout l'exercice (71 healthy, Cœur 200), mais cela ne remplace pas un hôte dimensionné.
+- Pas de relecture indépendante par un autre agent dans cette session : relecture par l'auteur seulement.
 
-Une relecture indépendante a fait corriger : sondes bloquées par OUTPUT, réseaux/montages/ports supplémentaires non détectés, rollback après activation échouée, artefacts SHA écrasables, dérive réparée avant contrôle, téléchargement inutile d'une sonde déjà présente et disparition complète des conteneurs actifs. Les corrections ont été reproduites par tests puis relues. Verdict final : aucun défaut important supplémentaire identifié dans le socle examiné ; conservation comme implémentation partielle, pas validation du sprint.
+## Production
 
-Vérification finale locale : **114 tests pytest réussis** (21 gardes/état Ansible, 8 mesure, 85 S236). Les six playbooks passent `--syntax-check` avec Ansible 2.19.13 et imports statiques des rôles. L'inventaire d'exemple est volontairement vide : le contrôle syntaxique n'a exécuté aucun déploiement distant.
+Comparaison avant/après en lecture seule, couvrant l'exercice VM 105 : identifiants, états, dates de démarrage et images des conteneurs identiques ; volumes et 46 réseaux identiques. Les seules opérations sur la production ont été des lectures : `docker compose config`, `docker inspect`, `docker save` (MinIO et `python:3.12-slim`), et la lecture du chiffré sur la clé USB.
 
-Dernière inspection SSH en lecture seule : toujours 71 conteneurs actifs, 71 statuts healthy et `/health` du Cœur HTTP 200. Aucune commande de déploiement, arrêt, export ou restauration n'a été exécutée sur la production. Cette comparaison de disponibilité n'est pas un relevé exhaustif avant/après des identifiants de toutes les ressources.
+## Vérifications locales
 
-## Acceptation encore à prouver
-
-- Adaptateur de restauration native vers les montages Compose, routage privé interprojets, métriques hôte S235 compatibles avec l'isolation et acquisition des images pour une mise à jour après fermeture des sorties : intégrations encore à compléter.
-- Provisionnement d'une VM Debian vierge sans images applicatives préexistantes.
-- Récupération d'une génération depuis une destination indépendante sans export suspendant la production.
-- Raccordement des données restaurées aux projets Compose stables et démarrage simultané du périmètre déclaré.
-- Refus effectif des flux vers production et intégrations externes depuis l'hôte et les conteneurs.
-- Santé, intégrité des données et parcours métier authentifiés.
-- Second passage sans changement réel de provisionnement/déploiement.
-- Mise à jour ciblée et rollback avec conservation des données et des autres services.
-
-**Temps de reprise : non mesuré.** Objectif conservé : 8 h. Aucun résultat synthétique ou temps de test local ne sera présenté comme RTO complet. S237 reste ouvert jusqu'aux preuves ci-dessus.
+**135 tests passent** : 42 dans `infra/ansible/tests` (gardes, topologie, relais, sondes, restauration, récupération, inventaire de sauvegarde), 8 pour l'outil de mesure et 85 pour S236 (68 cohérents, 17 Duplicati).

@@ -1,6 +1,6 @@
 # S235 → S239 — Infrastructure, supervision et recherche
 
-Date : 2026-10-04. Statut : S235 et S236 terminés et validés dans leurs périmètres ; S237 en cours, S238 et S239 au backlog.
+Date : 2026-10-04. Statut : S235, S236 et S237 terminés et validés dans leurs périmètres ; S238 et S239 au backlog.
 
 ## État de départ
 
@@ -40,7 +40,7 @@ Acceptation : restauration sur une installation isolée, contrôles de bases et 
 
 ## S237 — Provisionnement et déploiement reproductibles avec Ansible
 
-Statut : en cours. [Conception validée](../superpowers/specs/2026-10-04-S237-ansible-reconstruction-design.md) et [plan d'exécution](../superpowers/plans/2026-10-04-S237-ansible.md). Inspection de production en lecture seule uniquement ; cible Debian vierge distincte non encore établie. Aucun RTO de reconstruction complète mesuré.
+Statut : reconstruction prouvée le 2026-10-04 sur VM Proxmox vierge : 44 projets, 70 conteneurs sains, 7 parcours métier authentifiés, **RTO observé 55 min 40 s** (objectif 8 h), second passage idempotent, mise à jour ciblée puis rollback éprouvés. Limites et constats (image MinIO plus publiée, daemon.json non sauvegardé, node-exporter exclu) : [résultats S237](S237-ansible-resultats.md). [Conception](../superpowers/specs/2026-10-04-S237-ansible-reconstruction-design.md), [plan](../superpowers/plans/2026-10-04-S237-ansible.md).
 
 Objectif : transformer les procédures existantes en installation répétable.
 
