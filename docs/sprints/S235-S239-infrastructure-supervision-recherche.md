@@ -54,7 +54,7 @@ Acceptation : installation sur une cible vierge, second passage idempotent, cont
 
 ## S237b — Remplacer MinIO par SeaweedFS dans Oria
 
-Statut : code, déploiement HP et relecture faits le 2026-10-04 ([résultats](S237b-seaweedfs-resultats.md)) ; reste le rejeu sur la VM 106, bloqué par la RAM de l'hôte Proxmox.
+Statut : code, déploiement HP et relecture faits le 2026-10-04 ([résultats](S237b-seaweedfs-resultats.md)) ; le rejeu sur la VM 106 est **mis en attente** (décision utilisateur du 2026-10-04) jusqu'à l'ajout de RAM sur l'hôte Proxmox.
 
 Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus publiée (Docker Hub et Quay refusent l'accès), donc un hôte neuf ne peut pas démarrer Oria sans séquestre. Le S3 est conservé volontairement (usage futur prévu) ; MinIO ne contient aujourd'hui aucun bucket (vérifié en lecture seule).
 

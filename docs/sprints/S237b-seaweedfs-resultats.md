@@ -66,5 +66,5 @@ Tests : Ansible 46, coherent 68, duplicati 17, observabilité 6, reconstruction 
 
 ## Reste
 
-- Rejeu de la reconstruction sur la VM 106 sans séquestre : **bloqué**, l'hôte Proxmox est toujours à 32 Go et la VM 106 demande 12 Go en plus de 103 (24 Go) et 104 (4 Go).
+- Rejeu de la reconstruction sur la VM 106 sans séquestre : **mis en attente** (décision utilisateur, pas pour tout de suite), l'hôte Proxmox est toujours à 32 Go et la VM 106 demande 12 Go en plus de 103 (24 Go) et 104 (4 Go).
 - Suppression du volume `oria_minio_data` et de l'image MinIO : sur accord.
