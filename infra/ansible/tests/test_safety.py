@@ -154,11 +154,11 @@ class PreparedCacheTests(unittest.TestCase):
                     return ''
                 if argv[:3]==['docker','image','inspect']:
                     if argv[3]==probe and not cached_probe[0]:raise subprocess.CalledProcessError(1,argv)
-                    return json.dumps([{'Id':'sha256:expected'}])
+                    return json.dumps([{'Id':'sha256:'+'e'*64}])
                 if argv[0]=='git':return sha
                 if argv[:3]==['docker','network','ls']:return 'netid'
                 if argv[:3]==['docker','network','inspect']:return json.dumps([{'Internal':True,'EnableIPv6':False,'Labels':{'s237.owner':'rehearsal'}}])
-                if 'config' in argv:return json.dumps({'services':{'x':{'image':'sha256:expected','volumes':[]}},'networks':{'default':{}}})
+                if 'config' in argv:return json.dumps({'services':{'x':{'image':'sha256:'+'e'*64,'volumes':[]}},'networks':{'default':{}}})
                 return ''
             config={'root':directory,'revision':sha,'probe_image':probe,'catalogue':{'x':{'directory':'.','files':['compose.yml'],'services':['x']}},'private_projects':{'x':{'env_file':'/private/env','bind_mappings':{},'environment':{'x':{}}}}}
             with patch.object(state,'run',side_effect=command):
@@ -257,3 +257,16 @@ class RelayTopologyTests(unittest.TestCase):
         with self.assertRaises(ValueError):state.topology(model,{},'keycloak',True)
         result=state.topology(model,{'drop_static_ips':{'postgres':'resolved by DNS'}},'keycloak',True)
         self.assertEqual(result['services']['postgres']['networks']['default'],{})
+
+    def test_dockerfile_bases_skip_stage_aliases_and_scratch(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            pathlib.Path(directory,'Dockerfile').write_text('FROM --platform=linux/amd64 node:22 AS build\nRUN x\nFROM build AS second\nFROM python:3.12-slim\nFROM scratch\n')
+            model={'services':{'a':{'build':{'context':directory}},'b':{'image':'x'}}}
+            self.assertEqual(state.dockerfile_bases(model),['node:22','python:3.12-slim'])
+            pathlib.Path(directory,'Dockerfile').write_text('ARG V\nFROM python:${V}\n')
+            with self.assertRaises(ValueError):state.dockerfile_bases(model)
+
+    def test_retention_tag_is_derived_from_image_identity(self):
+        self.assertEqual(state.retention_tag('calcul','calcul','sha256:'+'a'*64),'s237-retained/calcul-calcul:'+'a'*32)
+        with self.assertRaises(ValueError):state.retention_tag('calcul','calcul','sha256:short')

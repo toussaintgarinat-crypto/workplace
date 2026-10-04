@@ -385,6 +385,32 @@ for ip in sys.argv[1:]:
         run(['docker','run','--rm','--network',network,'--cap-drop','ALL','--security-opt','no-new-privileges',c['probe_image'],'python3','-c',script,*c['denied'],'1.1.1.1','2606:4700:4700::1111'])
 
 
+def retention_tag(project, service, image_id):
+    digest=image_id.split(':',1)[1]
+    if not re.fullmatch(r'[0-9a-f]{64}',digest): raise ValueError('image identifier expected')
+    return 's237-retained/'+project+'-'+service+':'+digest[:32]
+
+
+def dockerfile_bases(model):
+    """Base images named by FROM in each buildable service (stage aliases excluded)."""
+    bases=set()
+    for service in model['services'].values():
+        build=service.get('build')
+        if not build: continue
+        context=Path(build['context']); dockerfile=context/build.get('dockerfile','Dockerfile')
+        if not dockerfile.is_file(): raise ValueError('Dockerfile missing for base image inventory')
+        stages=set()
+        for line in dockerfile.read_text().splitlines():
+            words=line.split()
+            if len(words)<2 or words[0].upper()!='FROM': continue
+            words=[w for w in words[1:] if not w.startswith('--')]
+            image=words[0]
+            if '$' in image: raise ValueError('variable base image cannot be acquired explicitly')
+            if image.lower()!='scratch' and image not in stages: bases.add(image)
+            if len(words)>=3 and words[1].upper()=='AS': stages.add(words[2])
+    return sorted(bases)
+
+
 def prepare(c, plan=False):
     """plan=True validates every transformation without creating or building anything."""
     root=Path(c['root']); cat=catalogue(c['catalogue']); changed=0; problems=[]; planned={}
@@ -465,9 +491,15 @@ def prepare(c, plan=False):
         prepared=json.loads(prepared_path.read_text()) if prepared_path.exists() else {}
         if prepared.get('input_digest')==digest and Path(prepared['config']).exists():
             if hashlib.sha256(Path(prepared['config']).read_bytes()).hexdigest()!=prepared['digest']: raise ValueError('prepared private config drift')
-            for image in prepared['images'].values(): run(['docker','image','inspect',image])
+            for service,image in prepared['images'].items():
+                run(['docker','image','inspect',image])
+                run(['docker','image','tag',image,retention_tag(name,service,image)])
             continue
         write_private(draft_path,model)
+        for base in dockerfile_bases(model):
+            # Tagged local base images let later targeted updates build after isolation.
+            try: run(['docker','image','inspect',base])
+            except subprocess.CalledProcessError: run(['docker','pull',base]);changed+=1
         cmd=['docker','compose','--project-name','s237-'+name,'-f',str(draft_path)]
         # Base images are acquired once (pull of missing images); later builds,
         # including targeted updates after isolation, reuse the pinned local copies.
@@ -479,6 +511,9 @@ def prepare(c, plan=False):
         for service,settings in model['services'].items():
             image=settings.get('image','s237-'+name+'-'+service)
             image_id=json.loads(run(['docker','image','inspect',image]))[0]['Id']; images[service]=image_id
+            # The containerd image store deletes untagged images: keep every prepared
+            # image under a retention tag so a rollback never needs a rebuild.
+            run(['docker','image','tag',image_id,retention_tag(name,service,image_id)])
             settings['image']=image_id; settings.pop('build',None)
         image_digest=hashlib.sha256(json.dumps(model,sort_keys=True).encode()).hexdigest()
         config_path=root/'runtime'/name/(sha+'-'+digest+'-'+image_digest+'.json')
