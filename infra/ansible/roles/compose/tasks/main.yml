@@ -1,0 +1,9 @@
+- name: Activate selected projects and publish only after health and functional verification
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", "{{ s237_operation | default('deploy') }}"]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_deployed
+  changed_when: (s237_deployed.stdout | from_json).changed > 0
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true

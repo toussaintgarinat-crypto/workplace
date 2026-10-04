@@ -1,0 +1,17 @@
+- name: Construct private remote project inputs
+  ansible.builtin.set_fact:
+    s237_remote_projects: "{{ s237_remote_projects | default({}) | combine({item.key: item.value | combine({'env_file': s237_root + '/private/' + item.key + '.env'})}) }}"
+  loop: "{{ s237_private_projects | dict2items }}"
+  no_log: true
+- name: Construct runtime input without exposing resolved secrets
+  ansible.builtin.set_fact:
+    s237_runtime_config:
+      root: "{{ s237_root }}"
+      revision: "{{ s237_revision }}"
+      denied: "{{ s237_denied_addresses }}"
+      catalogue: "{{ s237_catalogue }}"
+      private_projects: "{{ s237_remote_projects }}"
+      projects: "{{ s237_projects | default([]) }}"
+      migration_compatible: "{{ s237_migration_compatible | default(false) }}"
+      probe_image: "{{ s237_probe_image }}"
+  no_log: true

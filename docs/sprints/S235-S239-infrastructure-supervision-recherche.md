@@ -1,6 +1,6 @@
 # S235 → S239 — Infrastructure, supervision et recherche
 
-Date : 2026-10-04. Statut : S235 et S236 terminés et validés dans leurs périmètres ; S237 à S239 restent au backlog.
+Date : 2026-10-04. Statut : S235 et S236 terminés et validés dans leurs périmètres ; S237 en cours, S238 et S239 au backlog.
 
 ## État de départ
 
@@ -39,6 +39,8 @@ Objectif : pouvoir reconstruire Workplace avec ses données.
 Acceptation : restauration sur une installation isolée, contrôles de bases et de fichiers, recherche Qdrant après restauration ; alerte en cas de destination absente ou de source manquante. Aucune restauration de test sur la production.
 
 ## S237 — Provisionnement et déploiement reproductibles avec Ansible
+
+Statut : en cours. [Conception validée](../superpowers/specs/2026-10-04-S237-ansible-reconstruction-design.md) et [plan d'exécution](../superpowers/plans/2026-10-04-S237-ansible.md). Inspection de production en lecture seule uniquement ; cible Debian vierge distincte non encore établie. Aucun RTO de reconstruction complète mesuré.
 
 Objectif : transformer les procédures existantes en installation répétable.
 

@@ -1,0 +1,439 @@
+{
+  "agenda": {
+    "directory": "briques/agenda",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "agenda"
+    ]
+  },
+  "atelier-images-video": {
+    "directory": "briques/atelier-images-video",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "atelier-images-video"
+    ]
+  },
+  "atelier-veille": {
+    "directory": "briques/atelier-veille",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "atelier-veille"
+    ]
+  },
+  "audit": {
+    "directory": "briques/audit",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "audit"
+    ]
+  },
+  "audit-fichiers": {
+    "directory": "briques/audit-fichiers",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "audit-fichiers",
+      "audit-fichiers-clamav"
+    ]
+  },
+  "calcul": {
+    "directory": "briques/calcul",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "calcul"
+    ]
+  },
+  "connecteurs": {
+    "directory": "briques/connecteurs",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "connecteurs"
+    ]
+  },
+  "connexion": {
+    "directory": "briques/connexion",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "connexion"
+    ]
+  },
+  "core": {
+    "directory": "core",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "core"
+    ]
+  },
+  "dev": {
+    "directory": "briques/dev",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "code-server",
+      "dev"
+    ]
+  },
+  "donnees": {
+    "directory": "briques/donnees",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "donnees"
+    ]
+  },
+  "ecoute": {
+    "directory": "briques/ecoute",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "ecoute"
+    ]
+  },
+  "export": {
+    "directory": "briques/export",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "export"
+    ]
+  },
+  "forge": {
+    "directory": "briques/forge",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "forge",
+      "forge-adapter",
+      "forge-db",
+      "frontend",
+      "qdrant"
+    ]
+  },
+  "gateway": {
+    "directory": "briques/gateway",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "db",
+      "gateway",
+      "gateway-sync"
+    ]
+  },
+  "generateur": {
+    "directory": "briques/generateur",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "generateur"
+    ]
+  },
+  "geo": {
+    "directory": "briques/geo",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "geo"
+    ]
+  },
+  "images": {
+    "directory": "briques/images",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "images"
+    ]
+  },
+  "ingestion": {
+    "directory": "briques/ingestion",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "ingestion"
+    ]
+  },
+  "jeu-factions": {
+    "directory": "briques/jeu-factions",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "jeu-factions"
+    ]
+  },
+  "jeu-factions-public": {
+    "directory": "briques/jeu-factions-public",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "jeu-factions-public"
+    ]
+  },
+  "keycloak": {
+    "directory": "oria-stack/infra/keycloak",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "keycloak",
+      "postgres"
+    ]
+  },
+  "mail": {
+    "directory": "briques/mail",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "mail"
+    ]
+  },
+  "memoire": {
+    "directory": "briques/memoire",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "memoire",
+      "memoire-backend",
+      "memoire-db"
+    ]
+  },
+  "mesh-https": {
+    "directory": "outils/mesh-https",
+    "files": [
+      "docker-compose.duckdns.yml"
+    ],
+    "services": [
+      "caddy"
+    ]
+  },
+  "observabilite": {
+    "directory": "outils/observabilite",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "grafana",
+      "node-exporter",
+      "prometheus",
+      "uptime-kuma"
+    ]
+  },
+  "oria": {
+    "directory": "oria-stack/oria",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml",
+      "docker-compose.hp.yml"
+    ],
+    "services": [
+      "backend",
+      "db",
+      "dendrite",
+      "etcd",
+      "frontend",
+      "keycloak",
+      "livekit",
+      "minio",
+      "oria",
+      "pgbouncer",
+      "redis"
+    ]
+  },
+  "paiements": {
+    "directory": "briques/paiements",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "paiements"
+    ]
+  },
+  "peertube": {
+    "directory": "briques/peertube",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "peertube",
+      "peertube-db",
+      "peertube-redis",
+      "peertube-wrapper"
+    ]
+  },
+  "personnages": {
+    "directory": "briques/personnages",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "personnages"
+    ]
+  },
+  "recherche": {
+    "directory": "briques/recherche",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "recherche",
+      "searxng"
+    ]
+  },
+  "restaurant": {
+    "directory": "briques/restaurant",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "restaurant"
+    ]
+  },
+  "studio": {
+    "directory": "briques/studio",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "studio"
+    ]
+  },
+  "synopsis": {
+    "directory": "briques/synopsis",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "synopsis"
+    ]
+  },
+  "telephonie": {
+    "directory": "briques/telephonie",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "telephonie"
+    ]
+  },
+  "transcription": {
+    "directory": "briques/transcription",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "transcription"
+    ]
+  },
+  "transferts": {
+    "directory": "briques/transferts",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "transferts"
+    ]
+  },
+  "veille-info": {
+    "directory": "briques/veille-info",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "veille-info"
+    ]
+  },
+  "veille-prospection": {
+    "directory": "briques/veille-prospection",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "veille-prospection"
+    ]
+  },
+  "video": {
+    "directory": "briques/video",
+    "files": [
+      "docker-compose.yml",
+      "docker-compose.override.yml"
+    ],
+    "services": [
+      "video"
+    ]
+  },
+  "vision": {
+    "directory": "briques/vision",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "vision"
+    ]
+  },
+  "voix": {
+    "directory": "briques/voix",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "voix"
+    ]
+  },
+  "world-engine": {
+    "directory": "briques/world-engine",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "world-engine"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+- name: S237 prepare on verified independent VM
+  hosts: rehearsal
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../group_vars/rehearsal.yml
+  pre_tasks:
+    - name: Guard before any privileged operation
+      ansible.builtin.import_role:
+        name: guard
+    - name: Resolve private runtime inputs
+      ansible.builtin.include_tasks: runtime.yml
+  tasks:
+    - name: release
+      ansible.builtin.import_role:
+        name: release
+      become: true
+    - name: backup
+      ansible.builtin.import_role:
+        name: backup
+      become: true

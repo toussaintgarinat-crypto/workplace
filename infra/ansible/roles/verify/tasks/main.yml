@@ -1,0 +1,8 @@
+- name: Inspect deployed services probes images and live isolation without changes
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", verify]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  changed_when: false
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true

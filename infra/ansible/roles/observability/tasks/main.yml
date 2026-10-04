@@ -1,0 +1,30 @@
+- name: Require explicit supervision and disabled notification state
+  ansible.builtin.assert:
+    that:
+      - s237_supervision_projects is defined
+      - s237_supervision_projects | length > 0
+      - s237_supervision_projects | difference(s237_catalogue.keys() | list) | length == 0
+      - s237_supervision_probes is defined
+      - s237_supervision_probes | length >= 4
+      - s237_notification_disabled_evidence is defined
+      - s237_notification_disabled_evidence | length > 0
+- name: Probe Prometheus target health and exercise dashboards
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    return_content: true
+    status_code: 200
+  loop: "{{ s237_supervision_probes }}"
+  register: s237_supervision_result
+  no_log: true
+- name: Require an actual Prometheus response
+  ansible.builtin.assert:
+    that:
+      - s237_supervision_result.results | selectattr('json','defined') | selectattr('json.data.activeTargets','defined') | list | length == 1
+  no_log: true
+- name: Require Prometheus active targets all healthy
+  ansible.builtin.assert:
+    that:
+      - item.json.data.activeTargets | length > 0
+      - item.json.data.activeTargets | rejectattr('health','equalto','up') | list | length == 0
+  loop: "{{ s237_supervision_result.results | selectattr('json','defined') | selectattr('json.data.activeTargets','defined') | list }}"
+  no_log: true

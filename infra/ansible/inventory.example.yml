@@ -1,0 +1,5 @@
+# Deliberately no executable host. Copy privately and add a verified Debian VM.
+all:
+  children:
+    rehearsal:
+      hosts: {}
