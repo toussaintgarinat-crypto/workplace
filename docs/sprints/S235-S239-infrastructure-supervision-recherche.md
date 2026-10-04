@@ -52,6 +52,20 @@ Objectif : transformer les procédures existantes en installation répétable.
 
 Acceptation : installation sur une cible vierge, second passage idempotent, contrôles de santé ; mise à jour ciblée et retour arrière éprouvés sur une cible isolée.
 
+## S237b — Remplacer MinIO par SeaweedFS dans Oria
+
+Statut : planifié (décision utilisateur du 2026-10-04), non commencé.
+
+Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus publiée (Docker Hub et Quay refusent l'accès), donc un hôte neuf ne peut pas démarrer Oria sans séquestre. Le S3 est conservé volontairement (usage futur prévu) ; MinIO ne contient aujourd'hui aucun bucket (vérifié en lecture seule).
+
+- Remplacer le service `minio` d'`oria-stack/oria/docker-compose.yml` par SeaweedFS (`chrislusf/seaweedfs`, version 4.x épinglée par digest, mode `server -s3` mono-conteneur, volume dédié, clés S3 dans `.env`).
+- Adapter sonde de santé, moniteurs Kuma, alerte `MinioDown` du backend Oria, bot Telegram de supervision, `.env.example`.
+- S236 : remplacer le volume MinIO par celui de SeaweedFS dans l'inventaire.
+- S237 : retirer le séquestre d'image MinIO du profil d'exercice.
+- Tests, puis déploiement HP : arrêt MinIO, démarrage SeaweedFS, bucket de test créé puis supprimé ; ancien volume MinIO conservé jusqu'à accord explicite.
+
+Acceptation : Oria démarre depuis des images publiées uniquement ; S3 fonctionnel (écriture/lecture/suppression d'un objet test) ; supervision et sauvegarde couvrent SeaweedFS ; aucune référence MinIO restante hors historique.
+
 ## S238 — Recherche Mémoire avec repli lexical indépendant
 
 Objectif : retrouver les références exactes même sans embeddings disponibles.
