@@ -298,7 +298,9 @@ def api(path,body=None):
  with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)['result']
 assert sorted(c['name'] for c in api('/collections')['collections'])==sorted(c['name'] for c in meta['collections'])
 a=meta['aliases'].get('aliases',[])
-if a:api('/collections/aliases',{'actions':[{'create_alias':x} for x in a]})
+present={x['alias_name'] for x in api('/aliases')['aliases']}
+missing=[x for x in a if x['alias_name'] not in present]  # retries must not recreate
+if missing:api('/collections/aliases',{'actions':[{'create_alias':x} for x in missing]})
 assert sorted(api('/aliases')['aliases'],key=lambda a:a['alias_name'])==sorted(meta['aliases']['aliases'],key=lambda a:a['alias_name'])
 for c in meta['collections']:
  p='/collections/'+urllib.parse.quote(c['name'],safe='');info=api(p)

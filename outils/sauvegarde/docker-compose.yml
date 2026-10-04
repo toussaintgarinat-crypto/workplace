@@ -12,8 +12,9 @@ services:
       -s3 -s3.ip.bind=0.0.0.0 -s3.iam=false -s3.port.iceberg=0 -s3.port.lance=0
       -volume.max=0 -master.volumeSizeLimitMB=1024
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      # Obligatoires : sans identité, SeaweedFS sert le S3 en ANONYME (vérifié S237b).
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID manquant (--env-file ../../.env)}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY manquant (--env-file ../../.env)}
     ports:
       # Port hôte 9000 déjà pris par workplace_peertube sur cette machine → 9002 côté hôte.
       # Depuis proxy_net (l'interface documentée pour les briques) : http://seaweedfs:8333.
@@ -50,10 +51,14 @@ services:
         condition: service_healthy
     networks:
       - default
+    # Identifiants par l'environnement (pas dans la ligne de commande visible par ps).
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID manquant (--env-file ../../.env)}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY manquant (--env-file ../../.env)}
     entrypoint: >
       sh -c "
       code=$$(curl -s -o /dev/null -w '%{http_code}' --aws-sigv4 aws:amz:${AWS_REGION:-us-east-1}:s3
-      --user ${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY} -X PUT http://seaweedfs:8333/${SAUVEGARDE_S3_BUCKET}) &&
+      --user $$AWS_ACCESS_KEY_ID:$$AWS_SECRET_ACCESS_KEY -X PUT http://seaweedfs:8333/${SAUVEGARDE_S3_BUCKET}) &&
       case $$code in 200|409) echo Bucket pret;; *) echo Echec creation bucket HTTP $$code; exit 1;; esac
       "
 

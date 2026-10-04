@@ -29,6 +29,10 @@
 - name: Gather target facts without sudo
   ansible.builtin.setup:
     gather_subset: [min, hardware, network]
+- name: Detect a Proxmox hypervisor (never a rehearsal target)
+  ansible.builtin.stat:
+    path: /etc/pve
+  register: s237_pve
 - name: Refuse wrong identity operating system and mounted production storage
   ansible.builtin.assert:
     that:
@@ -36,6 +40,7 @@
       - s237_machine.content | b64decode | trim != 'f0490b65d4414f4fa4db80bdc3f75da6'
       - ansible_facts.distribution == 'Debian'
       - ansible_facts.distribution_major_version == '13'
+      - not s237_pve.stat.exists
       - ansible_facts.mounts | selectattr('fstype', 'in', ['nfs', 'nfs4', 'cifs']) | list | length == 0
       - ansible_facts.mounts | selectattr('mount', 'match', '^/(mnt|media)(/|$)') | list | length == 0
       - (ansible_facts.mounts | selectattr('mount','equalto','/') | first).size_available >= s237_min_disk_bytes

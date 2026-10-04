@@ -3,6 +3,7 @@
 import argparse
 import base64
 import copy
+import errno
 import hashlib
 import ipaddress
 import json
@@ -31,7 +32,7 @@ def guard(c):
     if not re.fullmatch(r'[0-9a-f]{32}',c['expected_machine_id']) or c['expected_machine_id']=='f0490b65d4414f4fa4db80bdc3f75da6' or c['machine_id'] != c['expected_machine_id']:
         raise ValueError('machine identity mismatch')
     if not c['addresses']: raise ValueError('resolved address required')
-    denied = set(c['denied']) | {'192.168.1.89'}
+    denied = set(c['denied']) | {'192.168.1.89', '192.168.1.222'}  # HP, Proxmox hypervisor
     for address in c['addresses']:
         ip = ipaddress.ip_address(address)
         if ip.is_loopback or ip.is_unspecified or ip.is_multicast or address in denied or ip in ipaddress.ip_network('100.64.0.0/10'):
@@ -362,24 +363,36 @@ def install_firewall(c):
     run(['nft','-f',str(path)]);return 1
 
 
+def blocked(error):
+    """Outcomes of a dropped packet: local EPERM, timeout, or no route."""
+    return isinstance(error,(PermissionError,TimeoutError,socket.timeout)) or error.errno in (errno.ENETUNREACH,errno.EHOSTUNREACH,errno.EADDRNOTAVAIL)
+
+
 def isolation_check(networks, denied):
     bridge_policy(json.loads(run(['docker','network','inspect',*networks])))
     firewall_matches(json.loads(run(['nft','-j','list','table','inet','s237']))['nftables'],all_bridge_policy())
     for address in denied + ['1.1.1.1','2606:4700:4700::1111']:
-        try:
-            with socket.create_connection((address,443),timeout=2): raise ValueError('external connectivity remains')
-        except (OSError,TimeoutError): pass
+        for port in (443,22):
+            try:
+                with socket.create_connection((address,port),timeout=2): raise ValueError('external connectivity remains')
+            except OSError as error:
+                # A refusal or reset proves the packet reached the target.
+                if not blocked(error): raise ValueError('external host answered: '+address) from None
 
 
 def container_isolation(networks,c):
-    script="""import socket,sys
+    script="""import errno,socket,sys
 for ip in sys.argv[1:]:
- try:
-  s=socket.create_connection((ip,443),timeout=2)
- except OSError:
-  continue
- s.close()
- sys.exit(1)
+ for port in (443,22):
+  try:
+   s=socket.create_connection((ip,port),timeout=2)
+  except (TimeoutError,socket.timeout,PermissionError):
+   continue
+  except OSError as e:
+   if e.errno in (errno.ENETUNREACH,errno.EHOSTUNREACH,errno.EADDRNOTAVAIL):continue
+   sys.exit(1)
+  s.close()
+  sys.exit(1)
 """
     for network in networks:
         run(['docker','run','--rm','--network',network,'--cap-drop','ALL','--security-opt','no-new-privileges',c['probe_image'],'python3','-c',script,*c['denied'],'1.1.1.1','2606:4700:4700::1111'])
@@ -600,7 +613,9 @@ def deploy(c, rollback=False):
         candidate={'sha':sha,'config':str(config_path),'digest':digest}
         candidates=(attempt.get('candidates',[attempt]) if attempt else [])+[candidate]
         write_private(attempt_path,{**candidate,'candidates':candidates})
-        run(cmd+['up','-d','--no-build','--wait','--wait-timeout','180'])
+        # Existing containers were matched to the journal above; the s237- project only
+        # holds exercise containers, so services removed by the release are dropped.
+        run(cmd+['up','-d','--no-build','--remove-orphans','--wait','--wait-timeout','180'])
         containers=inspect_project(name); runtime_matches(containers,model); verify(containers,p['services'],private['probes'])
         entry={'sha':sha,'config':str(config_path),'digest':digest,'ids':[x['Id'] for x in containers], 'images':{x['Config']['Labels']['com.docker.compose.service']:x['Image'] for x in containers}}
         old=publish(old,name,entry,True); write_private(state_path,old); attempt_path.unlink();changed+=1

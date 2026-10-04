@@ -81,3 +81,5 @@ Un échec d'activation laisse la release active intacte. Pour récupérer, deman
 - La destination de sauvegarde de l'exercice est un répertoire local, et non un système de fichiers indépendant. Le job est prêt et son `preflight` S236 est accepté, mais un export réel serait refusé par la validation de destination tant qu'aucun support indépendant n'est monté.
 - Le contrôle d'isolation depuis chaque réseau est lent (environ 6 min pour 46 réseaux).
 - `business_probes.py` modifie le client Keycloak de l'exercice (grants directs) et crée des utilisateurs : ne pas l'exécuter pendant un contrôle d'idempotence.
+
+`catalogue.observed.json` est le relevé des projets Compose du HP. Il a été corrigé à la main en S237b (`minio` → `seaweedfs`) après la bascule, vérifiée sur le HP ; le régénérer depuis le HP à la prochaine observation.

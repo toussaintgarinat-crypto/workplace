@@ -54,7 +54,7 @@ Acceptation : installation sur une cible vierge, second passage idempotent, cont
 
 ## S237b — Remplacer MinIO par SeaweedFS dans Oria
 
-Statut : planifié (décision utilisateur du 2026-10-04), non commencé.
+Statut : code, déploiement HP et relecture faits le 2026-10-04 ([résultats](S237b-seaweedfs-resultats.md)) ; reste le rejeu sur la VM 106, bloqué par la RAM de l'hôte Proxmox.
 
 Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus publiée (Docker Hub et Quay refusent l'accès), donc un hôte neuf ne peut pas démarrer Oria sans séquestre. Le S3 est conservé volontairement (usage futur prévu) ; MinIO ne contient aujourd'hui aucun bucket (vérifié en lecture seule).
 
@@ -66,7 +66,7 @@ Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus pub
 
 - Relecture indépendante (autre agent) de tout l'outillage S237 ajouté le 2026-10-04 (relais, restauration, sondes, sauvegarde d'exercice, séquestre, rétention d'images) et du changement SeaweedFS ; corriger puis relire les défauts significatifs.
 - Fusionner `sprint/s237-ansible` dans `main` une fois la relecture close et les tests verts.
-- VM Proxmox 106 (arrêtée, conservée) : après ajout de RAM sur l'hôte par l'utilisateur, la relancer (`qm start 106`) et rejouer la reconstruction S237 **sans séquestre d'image** pour prouver qu'Oria démarre depuis des images publiées. Ne jamais supprimer la VM 106 sans accord explicite.
+- VM Proxmox 106 (arrêtée, conservée) : après ajout de RAM sur l'hôte par l'utilisateur, la relancer (`qm start 106`) et rejouer la reconstruction S237 **sans séquestre d'image** pour prouver qu'Oria démarre depuis des images publiées. Ne jamais supprimer la VM 106 sans accord explicite. Ordre imposé (relecture I2) : la génération S236 du 2026-10-04 13:52 contient encore `oria-minio-1` et ferait échouer la restauration ; utiliser une génération produite **après** la bascule HP, et purger `/srv/workplace-rehearsal` sur la VM 106 (la récupération refuse une seconde génération) ou partir d'une VM neuve.
 
 Acceptation : Oria démarre depuis des images publiées uniquement, prouvé par la reconstruction rejouée sur la VM 106 ; S3 fonctionnel (écriture/lecture/suppression d'un objet test) ; supervision et sauvegarde couvrent SeaweedFS ; aucune référence MinIO restante hors historique ; relecture indépendante close ; branche fusionnée dans `main`.
 

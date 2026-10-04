@@ -37,12 +37,21 @@
     dest: "{{ s237_root }}/bin/recover_generation.py"
     mode: '0700'
   become: true
-- name: Recover, verify and extract the generation without its original Duplicati database
-  ansible.builtin.command:
-    argv: [python3, "{{ s237_root }}/bin/recover_generation.py", --root, "{{ s237_root }}", --profile, "{{ s237_recovery_profile }}", --version, "{{ s237_recovery_version }}", --image, "{{ s237_duplicati_image }}"]
-  register: s237_recovered
-  changed_when: (s237_recovered.stdout | from_json).changed > 0
-  become: true
+- name: Recover the generation, then drop the production passphrase from the target
+  block:
+    - name: Recover, verify and extract the generation without its original Duplicati database
+      ansible.builtin.command:
+        argv: [python3, "{{ s237_root }}/bin/recover_generation.py", --root, "{{ s237_root }}", --profile, "{{ s237_recovery_profile }}", --version, "{{ s237_recovery_version }}", --image, "{{ s237_duplicati_image }}"]
+      register: s237_recovered
+      changed_when: (s237_recovered.stdout | from_json).changed > 0
+      become: true
+  always:
+    # Reinstalled by the task above on every run; never left on a kept VM.
+    - name: Remove private recovery credentials
+      ansible.builtin.file:
+        path: "{{ s237_root }}/private/recovery.env"
+        state: absent
+      become: true
 - name: Prepare private controller input directories
   ansible.builtin.file:
     path: "{{ item }}"

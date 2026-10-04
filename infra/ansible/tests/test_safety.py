@@ -138,6 +138,45 @@ class AttemptRecoveryTests(unittest.TestCase):
                 self.assertFalse((root/'state/x-attempt.json').exists())
                 result=json.loads((root/'state/active.json').read_text());self.assertEqual(result['projects']['x']['sha'],'a'*40);self.assertEqual(result['projects']['untouched'],{'sha':'c'*40})
 
+    def test_update_that_removes_a_service_converges(self):
+        # S237b: MinIO -> SeaweedFS removes a service; Compose must drop the orphan.
+        import copy,tempfile,json
+        from unittest.mock import patch
+        fixture=ReviewIntegrationTests(); model_a,container=fixture.fixture()
+        model_a['services']['old']=copy.deepcopy(model_a['services']['x']); model_b=copy.deepcopy(model_a); del model_b['services']['old']
+        orphan=copy.deepcopy(container); orphan['Config']['Labels']['com.docker.compose.service']='old'; orphan['Id']='orphan'; container['Id']='old-x'
+        live=[container,orphan]
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);(root/'state').mkdir();(root/'runtime').mkdir()
+            path_a=root/'runtime/a.json';path_b=root/'runtime/b.json';state.write_private(path_a,model_a);state.write_private(path_b,model_b)
+            digest=lambda path:state.hashlib.sha256(path.read_bytes()).hexdigest()
+            state.write_private(root/'state/active.json',{'projects':{'x':{'sha':'a'*40,'config':str(path_a),'digest':digest(path_a),'ids':['old-x','orphan'],'images':{'x':'sha256:expected','old':'sha256:expected'}}}})
+            state.write_private(root/'state/x-prepared.json',{'sha':'b'*40,'config':str(path_b),'digest':digest(path_b),'images':{'x':'sha256:expected'}})
+            c={'root':directory,'catalogue':{'x':{'directory':'.','files':['compose.yml'],'services':['x']}},'private_projects':{'x':{'probes':[]}},'revision':'b'*40,'migration_compatible':True,'denied':[],'probe_image':'unused'}
+            def command(argv):
+                if 'up' in argv and '--remove-orphans' in argv: live[:]=[x for x in live if x['Id']!='orphan']
+                return ''
+            with patch.object(state,'run',side_effect=command),patch.object(state,'inspect_project',side_effect=lambda name:copy.deepcopy(live)),patch.object(state,'isolation_check'),patch.object(state,'container_isolation'),patch.object(state,'verify'):
+                self.assertEqual(state.deploy(c),1)
+            self.assertEqual(json.loads((root/'state/active.json').read_text())['projects']['x']['sha'],'b'*40)
+
+class IsolationProofTests(unittest.TestCase):
+    """A refused or reset connection proves the packet reached the target."""
+    def check(self, error):
+        from unittest.mock import patch
+        with patch.object(state,'run',return_value='{"nftables":[]}'),patch.object(state,'bridge_policy'),patch.object(state,'firewall_matches'),patch.object(state,'all_bridge_policy'),patch.object(state.socket,'create_connection',side_effect=error):
+            state.isolation_check(['n'],['192.168.1.89'])
+    def test_blocked_outcomes_accepted(self):
+        import errno
+        for error in [PermissionError(errno.EPERM,'x'),TimeoutError(),OSError(errno.ENETUNREACH,'x'),OSError(errno.EHOSTUNREACH,'x'),OSError(errno.EADDRNOTAVAIL,'x')]:
+            with self.subTest(error=error): self.check(error)
+    def test_refused_or_reset_is_a_failure(self):
+        for error in [ConnectionRefusedError(),ConnectionResetError()]:
+            with self.subTest(error=error), self.assertRaises(ValueError): self.check(error)
+    def test_hypervisor_address_refused(self):
+        c=SafetyTests().config(); c['addresses']=['192.168.1.222']
+        with self.assertRaises(ValueError): state.guard(c)
+
 class PreparedCacheTests(unittest.TestCase):
     def test_cached_prepare_works_offline_without_any_pull(self):
         import tempfile,json,subprocess

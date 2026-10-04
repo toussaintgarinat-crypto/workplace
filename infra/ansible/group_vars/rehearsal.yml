@@ -1,6 +1,6 @@
 s237_root: /srv/workplace-rehearsal
 s237_production_machine_id: f0490b65d4414f4fa4db80bdc3f75da6
-s237_denied_addresses: [192.168.1.89, 100.124.248.226]
+s237_denied_addresses: [192.168.1.89, 192.168.1.222, 100.124.248.226]
 s237_min_disk_bytes: 107374182400
 s237_backup_timer_enabled: false
 # Required in private inventory: expected_machine_id, full revision, git URL,
