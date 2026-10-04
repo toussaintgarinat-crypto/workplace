@@ -4,16 +4,20 @@
       - "'rehearsal' in group_names"
       - group_names | difference(['rehearsal']) | length == 0
       - s237_expected_machine_id is defined
+      - s237_expected_machine_id != 'f0490b65d4414f4fa4db80bdc3f75da6'
+      - s237_root | default('/srv/workplace-rehearsal') == '/srv/workplace-rehearsal'
+- name: Require application inputs except for host-only provisioning
+  ansible.builtin.assert:
+    that:
       - s237_revision is defined
       - s237_private_projects is defined
       - s237_catalogue is defined
       - s237_exclusions is defined
-      - s237_expected_machine_id != 'f0490b65d4414f4fa4db80bdc3f75da6'
-      - s237_root | default('/srv/workplace-rehearsal') == '/srv/workplace-rehearsal'
+  when: s237_require_inputs | default(true)
 - name: Controller preflight resolves every address and checks private inputs
   ansible.builtin.command:
     argv: ["{{ ansible_playbook_python }}", "{{ playbook_dir }}/../scripts/workplace_state.py", preflight]
-    stdin: "{{ {'group': 'rehearsal', 'host': ansible_host | default(inventory_hostname), 'root': s237_root, 'machine_id': s237_expected_machine_id, 'expected_machine_id': s237_expected_machine_id, 'revision': s237_revision, 'denied': s237_denied_addresses, 'catalogue': s237_catalogue, 'private_projects': s237_private_projects, 'private_artifacts': s237_private_artifacts | default([])} | to_json }}"
+    stdin: "{{ ({'group': 'rehearsal', 'host': ansible_host | default(inventory_hostname), 'root': s237_root, 'machine_id': s237_expected_machine_id, 'expected_machine_id': s237_expected_machine_id, 'denied': s237_denied_addresses} | combine({'revision': s237_revision, 'catalogue': s237_catalogue, 'private_projects': s237_private_projects, 'private_artifacts': s237_private_artifacts | default([])} if s237_require_inputs | default(true) else {})) | to_json }}"
   delegate_to: localhost
   become: false
   changed_when: false
@@ -53,6 +57,7 @@
       - (lookup('file', playbook_dir + '/../catalogue.observed.json') | from_json).keys() | difference((s237_catalogue.keys() | list) + (s237_exclusions.keys() | list)) | length == 0
       - s237_catalogue.keys() | intersect(s237_exclusions.keys() | list) | length == 0
       - s237_catalogue.keys() | intersect(['mesh','mesh-https','notification','notifications']) | length == 0
+  when: s237_require_inputs | default(true)
 - name: Inspect dedicated root without following symlink
   ansible.builtin.stat:
     path: "{{ s237_root }}"

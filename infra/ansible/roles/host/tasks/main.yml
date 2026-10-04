@@ -25,6 +25,12 @@
       Components: stable
       Architectures: {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}
       Signed-By: /etc/apt/keyrings/s237-docker.asc
+  register: s237_docker_source
+- name: Refresh package indexes after the Docker source changes
+  # A recent cache must not hide a newly added repository.
+  ansible.builtin.apt:
+    update_cache: true
+  when: s237_docker_source.changed
 - name: Require exact versions available from target repositories
   ansible.builtin.assert:
     that:

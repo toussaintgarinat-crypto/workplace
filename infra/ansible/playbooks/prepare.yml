@@ -15,7 +15,9 @@
       ansible.builtin.import_role:
         name: release
       become: true
+      tags: [release]
     - name: backup
       ansible.builtin.import_role:
         name: backup
       become: true
+      tags: [backup]

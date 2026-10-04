@@ -26,7 +26,7 @@ def relative(value):
 
 def guard(c):
     if c['group'] != 'rehearsal': raise ValueError('explicit rehearsal group required')
-    if not re.fullmatch(r'[0-9a-f]{40}',c['revision']): raise ValueError('full Git SHA required')
+    if 'revision' in c and not re.fullmatch(r'[0-9a-f]{40}',c['revision']): raise ValueError('full Git SHA required')
     if c['root'] != '/srv/workplace-rehearsal': raise ValueError('dedicated root required')
     if not re.fullmatch(r'[0-9a-f]{32}',c['expected_machine_id']) or c['expected_machine_id']=='f0490b65d4414f4fa4db80bdc3f75da6' or c['machine_id'] != c['expected_machine_id']:
         raise ValueError('machine identity mismatch')
@@ -53,12 +53,72 @@ def catalogue(c):
     return c
 
 
-def overlay(model, mappings, root, project):
-    """Return a fully resolved private model; never merge with unsafe original options."""
-    encoded=json.dumps(model)
-    if any(endpoint in encoded for endpoint in ('host.docker.internal','host-gateway','192.168.1.89','100.124.248.226')):
-        raise ValueError('unmapped host gateway or production endpoint')
+RELAY_ALIAS='host.docker.internal'
+SHARED_NETWORK='workplace'
+
+
+def service_alias(project, service):
+    return 's237-'+project+'-'+service
+
+
+def published_routes(models):
+    """Map each originally published host port to its internal service endpoint."""
+    routes={}
+    for project, model in models.items():
+        for name, service in model['services'].items():
+            for port in service.get('ports',[]):
+                if isinstance(port,str):
+                    parts=port.split(':'); target=parts[-1]; published=parts[-2] if len(parts)>1 else None
+                    port={'target':int(target.split('/')[0]),'protocol':target.split('/')[1] if '/' in target else 'tcp','published':published}
+                if port.get('protocol','tcp')!='tcp' or not port.get('published'): continue
+                route=[service_alias(project,name),int(port['target'])]
+                key=str(port['published'])
+                if routes.get(key,route)!=route: raise ValueError('ambiguous published port: '+key)
+                routes[key]=route
+    return dict(sorted(routes.items(),key=lambda item:int(item[0])))
+
+
+def topology(model, private, project, relay):
+    """Explicit exercise adaptations, all declared in the reviewed profile."""
     result=copy.deepcopy(model)
+    for name, service in result['services'].items():
+        for target, reason in private.get('drop_mounts',{}).get(name,{}).items():
+            if not reason: raise ValueError('mount removal reason required')
+            kept=[v for v in service.get('volumes',[]) if v.get('target')!=target]
+            if len(kept)==len(service.get('volumes',[])): raise ValueError('declared mount removal not found: '+name+' '+target)
+            service['volumes']=kept
+        for target, key in private.get('add_volumes',{}).get(name,{}).items():
+            if any(v.get('target')==target for v in service.get('volumes',[])): raise ValueError('implicit volume already explicit: '+target)
+            service.setdefault('volumes',[]).append({'type':'volume','source':key,'target':target})
+            result.setdefault('volumes',{}).setdefault(key,{})
+        hosts=service.pop('extra_hosts',None) or {}
+        if isinstance(hosts,list): hosts=dict(item.replace('=',':',1).split(':',1) for item in hosts)
+        dropped=set(private.get('drop_extra_hosts',{}).get(name,[]))
+        remaining={h:v for h,v in hosts.items() if v!='host-gateway' and h not in dropped}
+        if remaining: raise ValueError('undeclared extra host: '+name)
+        if relay:
+            environment=service.get('environment') or {}
+            for key,value in environment.items():
+                if isinstance(value,str): environment[key]=value.replace('192.168.1.89',RELAY_ALIAS)
+            networks=service.get('networks') or {'default':None}
+            existing=networks.get(SHARED_NETWORK) or {}
+            networks[SHARED_NETWORK]={**existing,'aliases':sorted(set(existing.get('aliases') or [])|{service_alias(project,name)})}
+            service['networks']=networks
+    if relay: result.setdefault('networks',{}).setdefault(SHARED_NETWORK,{})
+    return result
+
+
+def overlay(model, mappings, root, project, relay=False):
+    """Return a fully resolved private model; never merge with unsafe original options."""
+    result=copy.deepcopy(model)
+    for service in result['services'].values():
+        # Docker never publishes ports of containers attached only to internal
+        # bridges: probes use bridge addresses, inter-project calls use the relay.
+        service.pop('ports',None)
+    forbidden=('host-gateway','192.168.1.89','100.124.248.226')+(() if relay else (RELAY_ALIAS,))
+    encoded=json.dumps(result)
+    if any(endpoint in encoded for endpoint in forbidden):
+        raise ValueError('unmapped host gateway or production endpoint')
     result.pop('name',None)
     networks=result.setdefault('networks',{})
     networks.setdefault('default',{})
@@ -73,14 +133,6 @@ def overlay(model, mappings, root, project):
         service.pop('restart',None)
         service['restart']='no'
         service.pop('profiles',None)
-        ports=[]
-        for port in service.get('ports',[]):
-            if isinstance(port,str):
-                parts=port.split(':'); target=parts[-1]; published=parts[-2] if len(parts)>1 else None
-                port={'target':int(target.split('/')[0]),'protocol':target.split('/')[1] if '/' in target else 'tcp'}
-                if published: port['published']=published
-            port['host_ip']='127.0.0.1'; ports.append(port)
-        service['ports']=ports
         for vol in service.get('volumes',[]):
             if not isinstance(vol,dict): raise ValueError('resolved Compose model required')
             if vol['type']=='bind':
@@ -136,15 +188,29 @@ def inspect_project(name):
     return json.loads(run(['docker','inspect',*ids])) if ids else []
 
 
+def probe_url(containers,probe):
+    """Resolve a probe to the service address on its dedicated internal bridge."""
+    matches=[c for c in containers if c['Config']['Labels'].get('com.docker.compose.service')==probe['service']]
+    if len(matches)!=1: raise ValueError('probe service not found')
+    networks=matches[0].get('NetworkSettings',{}).get('Networks',{})
+    addresses=[n['IPAddress'] for name,n in sorted(networks.items()) if name.startswith('s237-') and n.get('IPAddress')]
+    if not addresses: raise ValueError('probe service has no internal address')
+    ip=ipaddress.ip_address(addresses[0])
+    if not ip.is_private or ip in ipaddress.ip_network('192.168.1.0/24'): raise ValueError('probe address not internal')
+    path=probe.get('path','/')
+    if not path.startswith('/'): raise ValueError('probe path must be absolute')
+    return 'http://'+str(ip)+':'+str(int(probe['port']))+path
+
+
 def verify(containers,services,probes):
     actual={c['Config']['Labels'].get('com.docker.compose.service') for c in containers}
     if actual != set(services) or not all(c['State'].get('Running') and c['State'].get('Health',{}).get('Status','healthy')=='healthy' for c in containers):
         raise ValueError('service set or container health failed')
     if not probes: raise ValueError('explicit functional probes required')
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for probe in probes:
-        url=probe['url']
-        if urllib.parse.urlparse(url).hostname not in ('127.0.0.1','localhost'): raise ValueError('probe must be local')
-        with urllib.request.urlopen(url,timeout=10) as response:
+        url=probe_url(containers,probe)
+        with opener.open(url,timeout=10) as response:
             if response.status != probe.get('status',200): raise ValueError('API status failed')
             content=response.read()
             if probe.get('contains','').encode() not in content: raise ValueError('API response failed')
@@ -292,24 +358,52 @@ def prepare(c):
     except subprocess.CalledProcessError:
         run(['docker','pull',c['probe_image']]);changed+=1
     selected=c.get('projects') or list(cat)
-    for name in selected:
-        if name not in cat: raise ValueError('unknown selected project')
-        p=cat[name]; private=c['private_projects'][name]; sha=c['revision']
-        release=root/'releases'/sha
-        if run(['git','-C',str(release),'rev-parse','HEAD'])!=sha: raise ValueError('release SHA mismatch')
-        directory=release/p['directory']
-        command=['docker','compose','--project-name','s237-'+name,'--env-file',private['env_file']]
+    if any(name not in cat for name in selected): raise ValueError('unknown selected project')
+    sha=c['revision']; release=root/'releases'/sha
+    if run(['git','-C',str(release),'rev-parse','HEAD'])!=sha: raise ValueError('release SHA mismatch')
+    def resolved(name):
+        p=cat[name]; directory=release/p['directory']
+        command=['docker','compose','--project-name','s237-'+name,'--env-file',c['private_projects'][name]['env_file']]
         for file in p['files']: command+=['-f',str(directory/file)]
-        model=json.loads(run(command+['config','--format','json']))
+        return json.loads(run(command+['config','--format','json']))
+    relay=c.get('relay')
+    models={}
+    if relay:
+        if relay['project'] not in cat or list(cat)[0]!=relay['project']: raise ValueError('relay project must be first in catalogue')
+        # Routes cover the whole declared perimeter, even for a targeted update.
+        for name in cat:
+            if name==relay['project']: continue
+            model=resolved(name)
+            for service in cat[name].get('excluded_services',{}): model['services'].pop(service,None)
+            models[name]=model
+        routes=published_routes(models)
+        routes_path=root/'data'/relative(relay['routes'])
+        encoded=json.dumps(routes,sort_keys=True,indent=2)
+        if not routes_path.exists() or routes_path.read_text()!=encoded:
+            write_private(routes_path,routes); changed+=1
+        routes_digest=hashlib.sha256(routes_path.read_bytes()).hexdigest()
+    for name in selected:
+        p=cat[name]; private=c['private_projects'][name]
+        model=copy.deepcopy(models[name]) if name in models else resolved(name)
         excluded=p.get('excluded_services',{})
         if any(not reason for reason in excluded.values()): raise ValueError('service exclusion reason required')
-        if set(model['services'])!=set(p['services']) | set(excluded): raise ValueError('catalogue service mismatch')
-        for service in excluded: model['services'].pop(service)
+        if set(model['services'])!=set(p['services']) | (set() if name in models else set(excluded)): raise ValueError('catalogue service mismatch')
+        for service in excluded: model['services'].pop(service,None)
         for service in model['services'].values():
             if set(service.get('depends_on',{})) & set(excluded): raise ValueError('excluded dependency still required')
         if set(private['environment'])!=set(p['services']): raise ValueError('exercise environment review required per service')
         for service,env in private['environment'].items(): model['services'][service].setdefault('environment',{}).update(env)
-        model=overlay(model,private['bind_mappings'],str(root),name)
+        if relay and name==relay['project']:
+            for service in model['services'].values(): service.setdefault('environment',{})['S237_ROUTES_DIGEST']=routes_digest
+        model=topology(model,private,name,bool(relay))
+        mappings={}
+        for source,mapping in private['bind_mappings'].items():
+            # Profile keys are relative to the release unless absolute.
+            key=source if source.startswith('/') else str(release/relative(source))
+            if isinstance(mapping,dict) and mapping.get('kind')=='release' and 'path' not in mapping:
+                mapping={'kind':'release','path':sha+'/'+relative(source)}
+            mappings[key]=mapping
+        model=overlay(model,mappings,str(root),name,bool(relay))
         for service in model['services'].values():
             for mount in service.get('volumes',[]):
                 if mount['type']=='bind':
@@ -424,7 +518,12 @@ def main():
     parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['preflight','prepare','artifacts','firewall','isolation','verify','deploy','rollback']); args=parser.parse_args(); c=json.load(sys.stdin)
     if args.action=='preflight':
         c['addresses']=sorted({r[4][0] for r in socket.getaddrinfo(c['host'],None,type=socket.SOCK_STREAM)})
-        guard(c); catalogue(c['catalogue'])
+        guard(c)
+        if 'catalogue' not in c:
+            # Host-only provisioning: identity guard only, no application inputs.
+            print(json.dumps({'addresses':c['addresses']})); return
+        if 'revision' not in c: raise ValueError('full Git SHA required')
+        catalogue(c['catalogue'])
         for artifact in c.get('private_artifacts',[]):
             relative(artifact['destination'])
             path=Path(artifact['source'])

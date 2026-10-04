@@ -14,4 +14,5 @@
       projects: "{{ s237_projects | default([]) }}"
       migration_compatible: "{{ s237_migration_compatible | default(false) }}"
       probe_image: "{{ s237_probe_image }}"
+      relay: "{{ s237_relay | default(None) }}"
   no_log: true

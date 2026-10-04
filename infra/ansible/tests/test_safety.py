@@ -25,7 +25,8 @@ class SafetyTests(unittest.TestCase):
         result=state.overlay(model,{'/release/db':'db'},'/srv/workplace-rehearsal','db')
         self.assertTrue(result['networks']['default']['internal'])
         self.assertEqual(result['services']['db']['volumes'][0]['source'],'/srv/workplace-rehearsal/data/db')
-        self.assertEqual(result['services']['db']['ports'][0]['host_ip'],'127.0.0.1')
+        # Internal bridges never publish ports (measured on Docker 29.6.1): none kept.
+        self.assertNotIn('ports',result['services']['db'])
     def test_privileged_and_host_services_refused(self):
         for options in [{'privileged':True},{'network_mode':'host'},{'volumes':[{'type':'bind','source':'/var/run/docker.sock','target':'/sock'}]},{'pid':'host'}]:
             with self.assertRaises(ValueError): state.overlay({'services':{'bad':options}}, {},'/srv/workplace-rehearsal','x')
@@ -179,3 +180,63 @@ class MissingActiveContainersTests(unittest.TestCase):
             with patch.object(state,'run',side_effect=lambda args:calls.append(args) or ''),patch.object(state,'inspect_project',return_value=[]),patch.object(state,'isolation_check'),patch.object(state,'container_isolation'),patch.object(state,'verify'),patch.object(state,'runtime_matches'):
                 with self.assertRaises(ValueError):state.deploy(c)
                 self.assertFalse(any('up' in args for args in calls))
+
+class HostOnlyGuardTests(unittest.TestCase):
+    def test_identity_guard_without_application_revision(self):
+        c=dict(group='rehearsal',addresses=['192.0.2.44'],denied=['192.168.1.89'],machine_id='a'*32,expected_machine_id='a'*32,root='/srv/workplace-rehearsal')
+        state.guard(c)
+        for field,value in [('machine_id','b'*32),('addresses',['192.168.1.89'])]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                changed=dict(c);changed[field]=value;state.guard(changed)
+    def test_application_preflight_still_requires_full_revision(self):
+        import io,json,sys
+        from unittest.mock import patch
+        payload={'group':'rehearsal','host':'192.0.2.44','root':'/srv/workplace-rehearsal','machine_id':'a'*32,'expected_machine_id':'a'*32,'denied':[],'catalogue':{'x':{'directory':'.','files':['c.yml'],'services':['x']}},'private_projects':{}}
+        with patch.object(sys,'argv',['x','preflight']),patch.object(sys,'stdin',io.StringIO(json.dumps(payload))),patch.object(state.socket,'getaddrinfo',return_value=[(0,0,0,'',('192.0.2.44',0))]):
+            with self.assertRaises(ValueError):state.main()
+
+
+class RelayTopologyTests(unittest.TestCase):
+    def models(self):
+        return {'core':{'services':{'core':{'ports':[{'target':5000,'published':'5100','protocol':'tcp'}]}}},
+                'gateway':{'services':{'gateway':{'ports':['4001:4000']},'db':{}}}}
+    def test_routes_follow_published_ports_and_refuse_ambiguity(self):
+        routes=state.published_routes(self.models())
+        self.assertEqual(routes,{'4001':['s237-gateway-gateway',4000],'5100':['s237-core-core',5000]})
+        models=self.models();models['other']={'services':{'x':{'ports':['5100:80']}}}
+        with self.assertRaises(ValueError):state.published_routes(models)
+    def test_topology_rewrites_production_host_and_attaches_shared_alias(self):
+        model={'services':{'app':{'environment':{'URL':'http://192.168.1.89:5100','OTHER':'x'},'extra_hosts':['host.docker.internal=host-gateway'],'networks':{'default':None}}}}
+        result=state.topology(model,{},'core',True)
+        service=result['services']['app']
+        self.assertEqual(service['environment']['URL'],'http://host.docker.internal:5100')
+        self.assertNotIn('extra_hosts',service)
+        self.assertEqual(service['networks']['workplace'],{'aliases':['s237-core-app']})
+        self.assertIn('default',service['networks'])
+        resolved=state.overlay(result,{},'/srv/workplace-rehearsal','core',relay=True)
+        self.assertEqual(resolved['networks']['workplace']['name'],'s237-workplace')
+        # Without the relay, host gateway names remain refused.
+        with self.assertRaises(ValueError):state.overlay(result,{},'/srv/workplace-rehearsal','core',relay=False)
+    def test_relay_keeps_its_declared_aliases(self):
+        model={'services':{'relay':{'networks':{'workplace':{'aliases':['host.docker.internal']}}}}}
+        aliases=state.topology(model,{},'relais',True)['services']['relay']['networks']['workplace']['aliases']
+        self.assertEqual(aliases,['host.docker.internal','s237-relais-relay'])
+    def test_undeclared_extra_host_and_mount_removal_refused(self):
+        with self.assertRaises(ValueError):state.topology({'services':{'k':{'extra_hosts':['postgres=172.27.0.3']}}},{},'kc',True)
+        result=state.topology({'services':{'k':{'extra_hosts':['postgres=172.27.0.3']}}},{'drop_extra_hosts':{'k':['postgres']}},'kc',True)
+        self.assertNotIn('extra_hosts',result['services']['k'])
+        model={'services':{'core':{'volumes':[{'type':'bind','source':'/var/run/docker.sock','target':'/var/run/docker.sock'}]}}}
+        with self.assertRaises(ValueError):state.topology(model,{'drop_mounts':{'core':{'/var/run/docker.sock':''}}},'core',True)
+        with self.assertRaises(ValueError):state.topology(model,{'drop_mounts':{'core':{'/absent':'reason'}}},'core',True)
+        self.assertEqual(state.topology(model,{'drop_mounts':{'core':{'/var/run/docker.sock':'reason'}}},'core',True)['services']['core']['volumes'],[])
+    def test_implicit_volumes_become_explicit_named_volumes(self):
+        result=state.topology({'services':{'redis':{}}},{'add_volumes':{'redis':{'/data':'redis_data'}}},'oria',True)
+        self.assertEqual(result['services']['redis']['volumes'],[{'type':'volume','source':'redis_data','target':'/data'}])
+        self.assertIn('redis_data',result['volumes'])
+        with self.assertRaises(ValueError):state.topology({'services':{'redis':{'volumes':[{'type':'volume','source':'x','target':'/data'}]}}},{'add_volumes':{'redis':{'/data':'redis_data'}}},'oria',True)
+    def test_probe_targets_internal_bridge_address_only(self):
+        container={'Config':{'Labels':{'com.docker.compose.service':'core'}},'NetworkSettings':{'Networks':{'s237-core-default':{'IPAddress':'172.20.0.5'},'s237-workplace':{'IPAddress':'172.21.0.9'}}}}
+        self.assertEqual(state.probe_url([container],{'service':'core','port':5000,'path':'/health'}),'http://172.20.0.5:5000/health')
+        lan=dict(container,NetworkSettings={'Networks':{'s237-x':{'IPAddress':'192.168.1.50'}}})
+        with self.assertRaises(ValueError):state.probe_url([lan],{'service':'core','port':5000,'path':'/health'})
+        with self.assertRaises(ValueError):state.probe_url([container],{'service':'absent','port':1})
