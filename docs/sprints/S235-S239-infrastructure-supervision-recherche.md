@@ -64,7 +64,11 @@ Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus pub
 - S237 : retirer le séquestre d'image MinIO du profil d'exercice.
 - Tests, puis déploiement HP : arrêt MinIO, démarrage SeaweedFS, bucket de test créé puis supprimé ; ancien volume MinIO conservé jusqu'à accord explicite.
 
-Acceptation : Oria démarre depuis des images publiées uniquement ; S3 fonctionnel (écriture/lecture/suppression d'un objet test) ; supervision et sauvegarde couvrent SeaweedFS ; aucune référence MinIO restante hors historique.
+- Relecture indépendante (autre agent) de tout l'outillage S237 ajouté le 2026-10-04 (relais, restauration, sondes, sauvegarde d'exercice, séquestre, rétention d'images) et du changement SeaweedFS ; corriger puis relire les défauts significatifs.
+- Fusionner `sprint/s237-ansible` dans `main` une fois la relecture close et les tests verts.
+- VM Proxmox 106 (arrêtée, conservée) : après ajout de RAM sur l'hôte par l'utilisateur, la relancer (`qm start 106`) et rejouer la reconstruction S237 **sans séquestre d'image** pour prouver qu'Oria démarre depuis des images publiées. Ne jamais supprimer la VM 106 sans accord explicite.
+
+Acceptation : Oria démarre depuis des images publiées uniquement, prouvé par la reconstruction rejouée sur la VM 106 ; S3 fonctionnel (écriture/lecture/suppression d'un objet test) ; supervision et sauvegarde couvrent SeaweedFS ; aucune référence MinIO restante hors historique ; relecture indépendante close ; branche fusionnée dans `main`.
 
 ## S238 — Recherche Mémoire avec repli lexical indépendant
 
