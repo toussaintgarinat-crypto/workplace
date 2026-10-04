@@ -1,0 +1,18 @@
+- name: S237 provision on verified independent VM
+  hosts: rehearsal
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../group_vars/rehearsal.yml
+  vars:
+    # Host provisioning precedes generation recovery: no application secret is needed.
+    s237_require_inputs: false
+  pre_tasks:
+    - name: Guard before any privileged operation
+      ansible.builtin.import_role:
+        name: guard
+  tasks:
+    - name: host
+      ansible.builtin.import_role:
+        name: host
+      become: true

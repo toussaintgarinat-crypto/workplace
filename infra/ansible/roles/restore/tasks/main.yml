@@ -1,0 +1,14 @@
+- name: Install data restore helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/restore_data.py"
+    dest: "{{ s237_root }}/bin/restore_data.py"
+    mode: '0700'
+- name: Restore volume trees, PostgreSQL dumps and Qdrant snapshots into prepared volumes
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/restore_data.py", engines]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_engines_restored
+  changed_when: (s237_engines_restored.stdout | from_json).changed > 0
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true

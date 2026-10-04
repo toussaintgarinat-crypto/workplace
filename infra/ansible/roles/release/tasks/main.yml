@@ -1,0 +1,67 @@
+- name: Check out exact immutable release
+  ansible.builtin.git:
+    repo: "{{ s237_git_url }}"
+    dest: "{{ s237_root }}/releases/{{ s237_revision }}"
+    version: "{{ s237_revision }}"
+    update: false
+    force: false
+- name: Read private artifacts locally without logging content
+  ansible.builtin.slurp:
+    src: "{{ item.source }}"
+  loop: "{{ s237_private_artifacts | default([]) }}"
+  register: s237_artifacts_source
+  delegate_to: localhost
+  become: false
+  no_log: true
+- name: Assemble private artifact payload
+  ansible.builtin.set_fact:
+    s237_artifacts_payload: "{{ s237_artifacts_payload | default([]) + [{'destination': item.item.destination, 'content': item.content}] }}"
+  loop: "{{ s237_artifacts_source.results }}"
+  no_log: true
+- name: Refuse all changed same-SHA artifacts before writing any file
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", artifacts]
+    stdin: "{{ {'root': s237_root, 'revision': s237_revision, 'artifacts': s237_artifacts_payload | default([])} | to_json }}"
+  register: s237_artifacts_installed
+  changed_when: (s237_artifacts_installed.stdout | from_json).changed > 0
+  no_log: true
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+- name: Install private environment per project
+  ansible.builtin.copy:
+    src: "{{ item.value.env_file }}"
+    dest: "{{ s237_root }}/private/{{ item.key }}.env"
+    mode: '0600'
+  loop: "{{ s237_private_projects | dict2items }}"
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true
+  diff: false
+- name: Load escrowed images that registries no longer publish
+  # Each archive is private on the controller; the loaded image ID must match the
+  # production ID recorded in the profile, otherwise preparation stops.
+  ansible.builtin.include_tasks: escrow.yml
+  loop: "{{ s237_image_escrow | default([]) }}"
+  loop_control:
+    loop_var: s237_escrow
+- name: Install data restore helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/restore_data.py"
+    dest: "{{ s237_root }}/bin/restore_data.py"
+    mode: '0700'
+- name: Restore data binds from the recovered repository before builds
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/restore_data.py", files]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_files_restored
+  changed_when: (s237_files_restored.stdout | from_json).changed > 0
+  no_log: true
+- name: Prepare resolved runtime and images while acquisition is permitted
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", prepare]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_prepared
+  changed_when: (s237_prepared.stdout | from_json).changed > 0
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true

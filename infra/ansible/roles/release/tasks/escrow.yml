@@ -1,0 +1,29 @@
+- name: Inspect escrowed image
+  ansible.builtin.command:
+    argv: [docker, image, inspect, --format, "{{ '{{' }}.Id{{ '}}' }}", "{{ s237_escrow.image }}"]
+  register: s237_escrow_present
+  changed_when: false
+  failed_when: false
+- name: Transfer and load escrowed image archive
+  when: s237_escrow_present.rc != 0
+  block:
+    - name: Copy private image archive
+      ansible.builtin.copy:
+        src: "{{ s237_escrow.archive }}"
+        dest: "{{ s237_root }}/private/escrow.tar"
+        mode: '0600'
+        checksum: "{{ s237_escrow.archive_sha1 | default(omit) }}"
+    - name: Load image archive
+      ansible.builtin.command:
+        argv: [docker, image, load, -q, -i, "{{ s237_root }}/private/escrow.tar"]
+      changed_when: true
+    - name: Remove transferred archive
+      ansible.builtin.file:
+        path: "{{ s237_root }}/private/escrow.tar"
+        state: absent
+- name: Verify escrowed image identity
+  ansible.builtin.command:
+    argv: [docker, image, inspect, --format, "{{ '{{' }}.Id{{ '}}' }}", "{{ s237_escrow.image }}"]
+  register: s237_escrow_id
+  changed_when: false
+  failed_when: s237_escrow_id.stdout != s237_escrow.id

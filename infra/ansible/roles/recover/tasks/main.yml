@@ -1,0 +1,96 @@
+# Consumes an existing encrypted Duplicati destination already staged read-only
+# under backups/remote. Never triggers an export, never mounts production media.
+- name: Require explicit recovery inputs
+  ansible.builtin.assert:
+    that:
+      - s237_recovery_profile is match('^[a-z0-9-]+$')
+      - s237_recovery_credentials is defined
+      - s237_recovery_version is match('^[0-9]+$')
+      - s237_inputs is defined
+      - s237_inputs is match('^/')
+      - s237_duplicati_image is match('^duplicati/duplicati:[^@]+@sha256:[0-9a-f]{64}$')
+- name: Require staged encrypted destination
+  ansible.builtin.stat:
+    path: "{{ s237_root }}/backups/remote/{{ s237_recovery_profile }}"
+  register: s237_remote
+  become: true
+- name: Refuse missing destination
+  ansible.builtin.assert:
+    that: s237_remote.stat.isdir | default(false)
+- name: Install S236 coherent tooling used for verification
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../outils/sauvegarde/coherent/"
+    dest: "{{ s237_root }}/bin/coherent/"
+    mode: '0700'
+  become: true
+- name: Install recovery helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/recover_generation.py"
+    dest: "{{ s237_root }}/bin/recover_generation.py"
+    mode: '0700'
+  become: true
+- name: Recover the generation, then drop the production passphrase from the target
+  block:
+    - name: Install private recovery credentials
+      ansible.builtin.copy:
+        src: "{{ s237_recovery_credentials }}"
+        dest: "{{ s237_root }}/private/recovery.env"
+        mode: '0600'
+      become: true
+      no_log: true
+      diff: false
+    - name: Recover, verify and extract the generation without its original Duplicati database
+      ansible.builtin.command:
+        argv: [python3, "{{ s237_root }}/bin/recover_generation.py", --root, "{{ s237_root }}", --profile, "{{ s237_recovery_profile }}", --version, "{{ s237_recovery_version }}", --image, "{{ s237_duplicati_image }}"]
+      register: s237_recovered
+      changed_when: (s237_recovered.stdout | from_json).changed > 0
+      become: true
+  always:
+    # Reinstalled at the start of the block on every run; never left on a kept VM.
+    - name: Remove private recovery credentials
+      ansible.builtin.file:
+        path: "{{ s237_root }}/private/recovery.env"
+        state: absent
+      become: true
+- name: Prepare private controller input directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0700'
+  loop: ["{{ s237_inputs }}", "{{ s237_inputs }}/repo", "{{ s237_inputs }}/env"]
+  delegate_to: localhost
+- name: Fetch private release artifacts from the recovered repository
+  ansible.builtin.fetch:
+    src: "{{ s237_root }}/backups/repository/{{ item.destination }}"
+    dest: "{{ s237_inputs }}/repo/{{ item.destination }}"
+    flat: true
+  loop: "{{ s237_private_artifacts }}"
+  become: true
+  no_log: true
+- name: Find each project interpolation environment in the recovered repository
+  ansible.builtin.stat:
+    path: "{{ s237_root }}/backups/repository/{{ item.value.directory }}/.env"
+  loop: "{{ s237_catalogue | dict2items }}"
+  register: s237_project_envs
+  become: true
+- name: Fetch existing project interpolation environments
+  ansible.builtin.fetch:
+    src: "{{ item.stat.path }}"
+    dest: "{{ s237_inputs }}/env/{{ item.item.key }}.env"
+    flat: true
+  loop: "{{ s237_project_envs.results | selectattr('stat.exists') | list }}"
+  become: true
+  no_log: true
+- name: Create empty environments for projects without one
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ s237_inputs }}/env/{{ item }}.env"
+    mode: '0600'
+    force: false
+  loop: "{{ (s237_project_envs.results | rejectattr('stat.exists') | map(attribute='item.key') | list) + ['empty'] }}"
+  delegate_to: localhost
+- name: Restrict fetched private inputs
+  ansible.builtin.command:
+    argv: [chmod, -R, 'go-rwx', "{{ s237_inputs }}"]
+  delegate_to: localhost
+  changed_when: false

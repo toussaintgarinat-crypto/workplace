@@ -1,0 +1,1 @@
+{"id":"removable","kind":"file","mount_path":"/mnt/workplace-backup","identity":"workplace-removable-example","expected_uuid":"REPLACE-WITH-FILESYSTEM-UUID","credentials":"/home/debian/.config/workplace-backups/credentials.env","keep_versions":30,"required_profiles":["removable"]}

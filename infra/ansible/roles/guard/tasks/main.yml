@@ -1,0 +1,87 @@
+- name: Require explicit inventory and immutable identity before privilege escalation
+  ansible.builtin.assert:
+    that:
+      - "'rehearsal' in group_names"
+      - group_names | difference(['rehearsal']) | length == 0
+      - s237_expected_machine_id is defined
+      - s237_expected_machine_id != 'f0490b65d4414f4fa4db80bdc3f75da6'
+      - s237_root | default('/srv/workplace-rehearsal') == '/srv/workplace-rehearsal'
+- name: Require application inputs except for host-only provisioning
+  ansible.builtin.assert:
+    that:
+      - s237_revision is defined
+      - s237_private_projects is defined
+      - s237_catalogue is defined
+      - s237_exclusions is defined
+  when: s237_require_inputs | default(true)
+- name: Controller preflight resolves every address and checks private inputs
+  ansible.builtin.command:
+    argv: ["{{ ansible_playbook_python }}", "{{ playbook_dir }}/../scripts/workplace_state.py", preflight]
+    stdin: "{{ ({'group': 'rehearsal', 'host': ansible_host | default(inventory_hostname), 'root': s237_root, 'machine_id': s237_expected_machine_id, 'expected_machine_id': s237_expected_machine_id, 'denied': s237_denied_addresses} | combine({'revision': s237_revision, 'catalogue': s237_catalogue, 'private_projects': s237_private_projects, 'private_artifacts': s237_private_artifacts | default([])} if s237_require_inputs | default(true) else {})) | to_json }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+- name: Read actual machine identity without sudo
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: s237_machine
+- name: Gather target facts without sudo
+  ansible.builtin.setup:
+    gather_subset: [min, hardware, network]
+- name: Detect a Proxmox hypervisor (never a rehearsal target)
+  ansible.builtin.stat:
+    path: /etc/pve
+  register: s237_pve
+- name: Refuse wrong identity operating system and mounted production storage
+  ansible.builtin.assert:
+    that:
+      - s237_machine.content | b64decode | trim == s237_expected_machine_id
+      - s237_machine.content | b64decode | trim != 'f0490b65d4414f4fa4db80bdc3f75da6'
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version == '13'
+      - not s237_pve.stat.exists
+      - ansible_facts.mounts | selectattr('fstype', 'in', ['nfs', 'nfs4', 'cifs']) | list | length == 0
+      - ansible_facts.mounts | selectattr('mount', 'match', '^/(mnt|media)(/|$)') | list | length == 0
+      - (ansible_facts.mounts | selectattr('mount','equalto','/') | first).size_available >= s237_min_disk_bytes
+- name: Inspect existing Docker state without changing it
+  ansible.builtin.shell: |
+    if command -v docker >/dev/null; then
+      docker ps -aq | xargs -r docker inspect --format '{{ '{{' }}index .Config.Labels "com.docker.compose.project"{{ '}}' }}'
+    fi
+  become: true
+  changed_when: false
+  register: s237_existing
+- name: Refuse foreign containers or unavailable Docker access
+  ansible.builtin.assert:
+    that:
+      - s237_existing.stdout_lines | reject('match', '^s237-[a-z0-9_-]+$') | list | length == 0
+- name: Validate observed coverage including explicit exclusions
+  ansible.builtin.assert:
+    that:
+      - (lookup('file', playbook_dir + '/../catalogue.observed.json') | from_json).keys() | difference((s237_catalogue.keys() | list) + (s237_exclusions.keys() | list)) | length == 0
+      - s237_catalogue.keys() | intersect(s237_exclusions.keys() | list) | length == 0
+      - s237_catalogue.keys() | intersect(['mesh','mesh-https','notification','notifications']) | length == 0
+  when: s237_require_inputs | default(true)
+- name: Inspect dedicated root without following symlink
+  ansible.builtin.stat:
+    path: "{{ s237_root }}"
+    follow: false
+  register: s237_root_stat
+- name: Refuse symlink root
+  ansible.builtin.assert:
+    that:
+      - not s237_root_stat.stat.islnk | default(false)
+- name: Inspect unexplained images and volumes before first provisioning
+  ansible.builtin.shell: |
+    if command -v docker >/dev/null && ! test -d /srv/workplace-rehearsal/state; then
+      docker image ls -q
+      docker volume ls -q
+    fi
+  become: true
+  register: s237_nonvirgin
+  changed_when: false
+- name: Refuse non-virgin Docker daemon before first preparation
+  ansible.builtin.assert:
+    that:
+      - s237_nonvirgin.stdout | trim == ''

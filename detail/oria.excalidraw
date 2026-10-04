@@ -725,13 +725,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "MinIO  Port 9106",
+      "text": "SeaweedFS (S3)  Port 9106",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "MinIO  Port 9106",
+      "originalText": "SeaweedFS (S3)  Port 9106",
       "lineHeight": 1.35
     },
     {

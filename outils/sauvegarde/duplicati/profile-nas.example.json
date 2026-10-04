@@ -1,0 +1,1 @@
+{"id":"nas","kind":"file","mount_path":"/mnt/workplace-nas","identity":"workplace-nas-example","expected_source":"nas.example:/backups","credentials":"/home/debian/.config/workplace-backups/credentials.env","keep_versions":30,"required_profiles":["nas"]}

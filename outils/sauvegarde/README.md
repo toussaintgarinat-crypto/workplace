@@ -1,6 +1,12 @@
-# Sauvegarde continue — outillage local
+# Sauvegardes Workplace
 
-Cible S3-compatible (MinIO) pour développer/tester Litestream (SQLite) et WAL-G (Postgres)
+S236 : [exports cohérents et restauration isolée](coherent/README.md), [transport chiffré Duplicati](duplicati/README.md). Cibles : disque externe/USB, NAS ou serveur local/distant ; activation après configuration de la destination.
+
+Le reste de ce document décrit le chantier historique Litestream/WAL-G et sa cible S3 de développement (SeaweedFS depuis S237b ; MinIO auparavant, image plus publiée).
+
+## Sauvegarde continue — outillage local
+
+Cible S3-compatible (SeaweedFS) pour développer/tester Litestream (SQLite) et WAL-G (Postgres)
 sans dépendre d'un vrai compte cloud. Voir le plan complet :
 `docs/superpowers/plans/2026-08-04-sauvegarde-continue-rpo.md`.
 
@@ -14,24 +20,16 @@ directement (pas seulement `env_file:` dans un service). Or `docker compose` ne 
 automatiquement un `.env` que depuis le répertoire du projet (ici `outils/sauvegarde/`),
 jamais depuis la racine du dépôt où vit le vrai `.env`. Sans `--env-file ../../.env`,
 `docker compose config` résout ces variables en chaîne vide **silencieusement** (pas
-d'erreur), MinIO démarre avec un utilisateur/mot de passe root vides, et `minio-init`
-échoue à créer le bucket.
+d'erreur), le S3 démarre sans identité et `seaweedfs-init` échoue à créer le bucket.
 
-Console web MinIO : http://localhost:9001 (identifiants = AWS_ACCESS_KEY_ID /
-AWS_SECRET_ACCESS_KEY du `.env` racine).
+Pas de console web. Vérifier que le S3 répond, **sur cette machine de développement** :
 
-Vérifier que MinIO répond, **sur cette machine de développement** :
+    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9002/healthz
 
-    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9002/minio/health/live
-
-⚠️ Le port hôte est **9002**, pas 9000 : `docker-compose.yml` remappe l'API MinIO sur
-`9002:9000` côté hôte parce que le port hôte 9000 est déjà pris par le conteneur
-`workplace_peertube` sur cette machine (le port CONTENEUR reste 9000, donc
-`http://minio:9000` depuis `proxy_net` — l'interface utilisée par Litestream/WAL-G — est
-inchangé). **Piège vérifié** : `curl http://localhost:9000/minio/health/live` répond
-quand même `200` sur cette machine — pas une erreur de connexion, mais la réponse HTML de
-`workplace_peertube` (faux positif silencieux, ça n'est PAS MinIO). Toujours vérifier sur
-9002 ici ; sur une machine sans ce conflit de port, adapter le mapping et cette commande.
+⚠️ Le port hôte est **9002**, pas 9000 : le port hôte 9000 est déjà pris par le conteneur
+`workplace_peertube` sur cette machine. Depuis `proxy_net` (l'interface utilisée par
+Litestream/WAL-G), l'endpoint est `http://seaweedfs:8333`. Sur une machine sans ce conflit
+de port, adapter le mapping et cette commande.
 
 ## Arrêter
 

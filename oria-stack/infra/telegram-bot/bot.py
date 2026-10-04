@@ -53,7 +53,7 @@ SERVICES = [
     ("memoire", f"{MEMOIRE_URL}/sante"),
     ("oria", f"{ORIA_URL}:8200/health"),
     ("qdrant", "http://localhost:6334/"),
-    ("minio", "http://localhost:9100/minio/health/live"),
+    ("s3", "http://localhost:9106/healthz"),
 ]
 
 SILENCE_FILE = Path("/tmp/silence_until")

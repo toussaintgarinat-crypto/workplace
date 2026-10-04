@@ -173,7 +173,7 @@ Sur les 5 grandes briques du Jarvis (Cœur, Mémoire, LLM, Collaboration, Agents
       Lancement : `cd ~/Desktop/Workplace/core && make up`
 - [x] **5. Brancher Oria** — messagerie + collaboration ✅ (2026-06-02).
       10 services healthy : backend (8000), frontend (3003), keycloak (8081), dendrite/Matrix (8010),
-      livekit (7880), minio (9106), pgbouncer, redis, etcd, db.
+      livekit (7880), S3 (9106 — MinIO à l'époque, SeaweedFS depuis S237b), pgbouncer, redis, etcd, db.
       Cœur confirme Oria ok via `/sante-globale`. Lancement : `cd ~/Desktop/workspace/oria && docker compose up -d`
 - [x] **6. Brique Ingestion** (nommée `etl` jusqu'à S215) — premier vrai morceau de l'objectif 1. ✅ (2026-06-02).
       FastAPI sur port **5200**. Endpoints : `POST /ingerer`, `POST /ingerer/url`, `GET /documents`, `GET /documents/{id}`.

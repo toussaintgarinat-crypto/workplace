@@ -94,3 +94,61 @@ groups:
             Regarder /validation/ecarts pour la ventilation par catégorie. Un pic sur
             `param_requis` ou `type` suit souvent une modification de manifeste ; un pic sur
             `outil_inconnu` trahit un catalogue désynchronisé du prompt.
+
+  - name: hote
+    rules:
+      - alert: DisqueHotePresquePlein
+        expr: (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) > 0.85
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Disque du HP utilisé à plus de 85 %"
+      - alert: MemoireHoteSaturee
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Mémoire du HP utilisée à plus de 90 %"
+      - alert: CPUHoteSature
+        expr: (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.90
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "CPU du HP utilisé à plus de 90 %"
+
+  - name: sauvegardes
+    rules:
+      - alert: SauvegardeExportEnEchec
+        expr: workplace_backup_export_success == 0
+        for: 5m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Dernier export cohérent Workplace en échec"
+          detail: "Consulter le statut S236 et le journal privé ; une source obligatoire peut être absente."
+      - alert: SauvegardeTransfertEnEchec
+        expr: workplace_backup_transfer_success == 0
+        for: 5m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Dernier transfert de sauvegarde indépendant en échec ou non configuré"
+          detail: "Vérifier le montage USB/NAS, la destination distante et les journaux privés Duplicati."
+      - alert: SauvegardeIndependanteAbsenteOuAncienne
+        expr: (workplace_backup_rpo_ok == 0) or (workplace_backup_last_transferred_source_timestamp_seconds == 0) or (time() - workplace_backup_last_transferred_source_timestamp_seconds > 86400)
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Aucune sauvegarde indépendante vérifiée dans le RPO de 24 h"
+          detail: "Un export local ne suffit pas. Vérifier support USB/disque, NAS ou serveur et résultat Duplicati."
+      - alert: SauvegardeMetriquesAbsentes
+        expr: absent(workplace_backup_last_export_timestamp_seconds{job="hote"})
+        for: 15m
+        labels:
+          severite: warning
+        annotations:
+          resume: "Statut de sauvegarde S236 absent de la supervision"

@@ -1,0 +1,14 @@
+s237_root: /srv/workplace-rehearsal
+s237_production_machine_id: f0490b65d4414f4fa4db80bdc3f75da6
+s237_denied_addresses: [192.168.1.89, 192.168.1.222, 100.124.248.226]
+s237_min_disk_bytes: 107374182400
+s237_backup_timer_enabled: false
+# Required in private inventory: expected_machine_id, full revision, git URL,
+# pinned apt versions, private_projects, reviewed catalogue, exclusions.
+# Public official key verified 2026-10-04; provenance in docker-key.lock.json.
+s237_docker_key_sha256: 1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
+s237_docker_daemon:
+  default-address-pools:
+    - {base: 172.17.0.0/12, size: 20}
+    - {base: 10.0.0.0/8, size: 24}
+  userland-proxy: false

@@ -1,0 +1,22 @@
+# S237 exercise only: relay for original host-port calls between projects.
+services:
+  relay:
+    image: python:3.13.7-slim-trixie@sha256:5f55cdf0c5d9dc1a415637a5ccc4a9e18663ad203673173b8cda8f8dcacef689
+    command: ["python3", "-u", "/relay/relay.py"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "65534:65534"
+    volumes:
+      - ./relay.py:/relay/relay.py:ro
+      - ./routes:/routes:ro
+    networks:
+      workplace:
+        aliases: [host.docker.internal, s237-relay]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:9999/health',timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+networks:
+  workplace: {}

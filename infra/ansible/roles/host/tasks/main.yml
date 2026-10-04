@@ -1,0 +1,72 @@
+- name: Require pinned official Docker repository key digest
+  ansible.builtin.assert:
+    that:
+      - s237_docker_key_sha256 is defined
+      - s237_docker_key_sha256 is match('^[0-9a-f]{64}$')
+- name: Prepare apt keyring
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+- name: Install official Docker signing key with required checksum
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/s237-docker.asc
+    checksum: "sha256:{{ s237_docker_key_sha256 }}"
+    mode: '0644'
+- name: Configure official Docker Debian 13 repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/s237-docker.sources
+    mode: '0644'
+    content: |
+      Types: deb
+      URIs: https://download.docker.com/linux/debian
+      Suites: trixie
+      Components: stable
+      Architectures: {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}
+      Signed-By: /etc/apt/keyrings/s237-docker.asc
+  register: s237_docker_source
+- name: Refresh package indexes after the Docker source changes
+  # A recent cache must not hide a newly added repository.
+  ansible.builtin.apt:
+    update_cache: true
+  when: s237_docker_source.changed
+- name: Require exact versions available from target repositories
+  ansible.builtin.assert:
+    that:
+      - s237_apt_packages is defined
+      - s237_apt_packages | length > 0
+      - s237_apt_packages | reject('match', '^[a-z0-9.+-]+=[^*]+$') | list | length == 0
+      - s237_apt_packages | select('match','^docker-ce=') | list | length == 1
+      - s237_apt_packages | select('match','^docker-compose-plugin=') | list | length == 1
+      - s237_apt_packages | select('match','^nftables=') | list | length == 1
+- name: Install pinned prerequisites from verified Debian Docker repositories
+  ansible.builtin.apt:
+    name: "{{ s237_apt_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+- name: Configure Docker daemon like production (address pools, no userland proxy)
+  # Production /etc/docker/daemon.json observed 2026-10-04; its 192.168.0.0/16 pool
+  # is deliberately omitted here to stay clear of LAN ranges.
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+    content: "{{ s237_docker_daemon | to_nice_json }}\n"
+  register: s237_daemon
+- name: Start Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    state: "{{ 'restarted' if s237_daemon.changed else 'started' }}"
+    enabled: true
+- name: Prepare dedicated private directories
+  ansible.builtin.file:
+    path: "{{ s237_root }}/{{ item }}"
+    state: directory
+    mode: '0700'
+  loop: ['', data, releases, runtime, state, private, backups, bin]
+- name: Install state helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/workplace_state.py"
+    dest: "{{ s237_root }}/bin/workplace_state.py"
+    mode: '0700'

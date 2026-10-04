@@ -1,6 +1,6 @@
 # Forge — Plateforme agents IA
 
-Plateforme full-stack pour créer et orchestrer des agents IA avec RAG, gestion de projets, authentification SSO et stockage objet. Inclut Keycloak, PostgreSQL, Qdrant et MinIO.
+Plateforme full-stack pour créer et orchestrer des agents IA avec RAG, gestion de projets, authentification SSO et stockage objet. Inclut Keycloak, PostgreSQL, Qdrant et SeaweedFS (stockage objet S3).
 
 - **Frontend** : `http://localhost:3000`
 - **Core API** : `http://localhost:8600`
@@ -78,14 +78,14 @@ Nécessaire pour les notifications et invitations utilisateurs.
 **Gmail** : utilisez un [App Password](https://myaccount.google.com/apppasswords) (pas votre mot de passe principal) — nécessite la validation en 2 étapes activée.
 
 
-### Optionnelles — MinIO (stockage fichiers)
+### Optionnelles — SeaweedFS (stockage objet S3)
 
 Les valeurs par défaut fonctionnent en local. **À changer en production.**
 
 | Variable | Description | Défaut |
 |---|---|---|
-| `MINIO_ROOT_USER` | Utilisateur admin MinIO | `forge` |
-| `MINIO_ROOT_PASSWORD` | Mot de passe admin MinIO | `forge_secret` — **à changer** |
+| `S3_ACCESS_KEY_ID` | Clé d'accès S3 (port hôte 9101) | `forge` |
+| `S3_SECRET_ACCESS_KEY` | Secret S3 | `forge_secret` — **à changer** |
 
 
 ### Optionnelles — Mémoire (brique Workplace)

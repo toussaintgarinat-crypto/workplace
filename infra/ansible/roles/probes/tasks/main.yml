@@ -1,0 +1,15 @@
+- name: Install business probes
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/business_probes.py"
+    dest: "{{ s237_root }}/bin/business_probes.py"
+    mode: '0700'
+- name: Run authenticated business probes on restored data
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/business_probes.py"]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_business
+  changed_when: true  # creates exercise users and probe records
+  no_log: true
+- name: Show probe booleans only
+  ansible.builtin.debug:
+    msg: "{{ (s237_business.stdout | from_json).probes }}"

@@ -1,61 +1,69 @@
-# MinIO = cible S3-compatible LOCALE pour développement/test des chantiers de sauvegarde
+# SeaweedFS = cible S3-compatible LOCALE pour développement/test des chantiers de sauvegarde
 # continue (Litestream, WAL-G). En production (HP), un vrai stockage S3/B2 remplace ceci
 # — seules AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_ENDPOINT/AWS_REGION/
 # SAUVEGARDE_S3_BUCKET du .env racine changent, aucun code (source unique, cf. re-revue
 # finale whole-branch, .superpowers/sdd/progress.md).
 services:
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: workplace_minio
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: workplace_seaweedfs
+    command: >-
+      server -dir=/data -ip=127.0.0.1 -ip.bind=127.0.0.1
+      -s3 -s3.ip.bind=0.0.0.0 -s3.iam=false -s3.port.iceberg=0 -s3.port.lance=0
+      -volume.max=0 -master.volumeSizeLimitMB=1024
     environment:
-      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
-      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
-    command: server /data --console-address ":9001"
+      # Obligatoires : sans identité, SeaweedFS sert le S3 en ANONYME (vérifié S237b).
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID manquant (--env-file ../../.env)}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY manquant (--env-file ../../.env)}
     ports:
-      # Port hôte 9000 déjà pris par workplace_peertube sur cette machine → remappé sur
-      # 9002 côté hôte uniquement. Le port CONTENEUR reste 9000, donc http://minio:9000
-      # depuis proxy_net (l'interface documentée pour les briques) n'est pas affecté.
-      - "9002:9000"
-      - "9001:9001"
+      # Port hôte 9000 déjà pris par workplace_peertube sur cette machine → 9002 côté hôte.
+      # Depuis proxy_net (l'interface documentée pour les briques) : http://seaweedfs:8333.
+      - "9002:8333"
     volumes:
-      - minio_data:/data
+      - seaweedfs_data:/data
     networks:
       - default
       - proxy_net
       # memoire_default/gateway_default : réseaux SUPPLÉMENTAIRES (revue finale
       # whole-branch I6, .superpowers/sdd/progress.md) — memoire-db et gateway/db ont été
       # retirés de proxy_net (rayon d'exposition trop large), mais WAL-G doit encore
-      # joindre minio (AWS_ENDPOINT=http://minio:9000). Plutôt que de remettre Postgres
-      # sur le bus partagé, c'est minio qui rejoint leurs réseaux internes respectifs.
+      # joindre le S3 (AWS_ENDPOINT=http://seaweedfs:8333). Plutôt que de remettre Postgres
+      # sur le bus partagé, c'est le S3 qui rejoint leurs réseaux internes respectifs.
       # Réseaux externes créés par memoire/gateway docker-compose.yml (default: sans nom
       # explicite → <projet>_default), pas par ce fichier.
       - memoire_default
       - gateway_default
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8333/healthz >/dev/null || exit 1"]
+      interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   # Conteneur jetable : crée le bucket au premier démarrage puis s'arrête (exit 0 normal).
-  minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    container_name: workplace_minio_init
+  # 409 = bucket déjà présent (redémarrage), accepté.
+  seaweedfs-init:
+    image: curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+    container_name: workplace_seaweedfs_init
     depends_on:
-      minio:
+      seaweedfs:
         condition: service_healthy
     networks:
       - default
+    # Identifiants par l'environnement, pas dans l'entrypoint (restent visibles par docker inspect).
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID manquant (--env-file ../../.env)}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY manquant (--env-file ../../.env)}
     entrypoint: >
       sh -c "
-      mc alias set local http://minio:9000 ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} &&
-      mc mb -p local/${SAUVEGARDE_S3_BUCKET} &&
-      echo 'Bucket pret'
+      code=$$(curl -s -o /dev/null -w '%{http_code}' --aws-sigv4 aws:amz:${AWS_REGION:-us-east-1}:s3
+      --user $$AWS_ACCESS_KEY_ID:$$AWS_SECRET_ACCESS_KEY -X PUT http://seaweedfs:8333/${SAUVEGARDE_S3_BUCKET}) &&
+      case $$code in 200|409) echo Bucket pret;; *) echo Echec creation bucket HTTP $$code; exit 1;; esac
       "
 
 volumes:
-  minio_data:
+  seaweedfs_data:
 
 networks:
   # Sous-réseau fixé explicitement : les pools d'adresses par défaut de Docker

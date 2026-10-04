@@ -1,0 +1,1078 @@
+# S237 — profil d'exercice HP (sans secret), généré le 2026-10-04 depuis les modèles
+# Compose résolus en lecture seule puis relu. Les valeurs secrètes viennent de la
+# génération S236 récupérée (s237_inputs, privé, hors Git).
+s237_relay:
+  project: relais
+  routes: relais/routes/routes.json
+s237_catalogue:
+  relais:
+    directory: infra/ansible/relay
+    files:
+    - docker-compose.yml
+    services:
+    - relay
+    dependencies: []
+  keycloak:
+    directory: oria-stack/infra/keycloak
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - keycloak
+    - postgres
+    dependencies:
+    - relais
+  gateway:
+    directory: briques/gateway
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - db
+    - gateway
+    - gateway-sync
+    dependencies:
+    - relais
+    excluded_services:
+      db-premiere-sauvegarde: Tâche ponctuelle WAL-G de première sauvegarde, arrêtée en production.
+  memoire:
+    directory: briques/memoire
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - memoire
+    - memoire-backend
+    - memoire-db
+    dependencies:
+    - relais
+    excluded_services:
+      memoire-db-premiere-sauvegarde: Tâche ponctuelle WAL-G de première sauvegarde, arrêtée en production.
+  forge:
+    directory: briques/forge
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - forge
+    - forge-adapter
+    - forge-db
+    - frontend
+    - qdrant
+    dependencies:
+    - relais
+    excluded_services:
+      forge-migrate: Tâche ponctuelle de migration, terminée en production ; le schéma vient du dump restauré.
+  oria:
+    directory: oria-stack/oria
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    - docker-compose.hp.yml
+    services:
+    - backend
+    - db
+    - dendrite
+    - etcd
+    - frontend
+    - keycloak
+    - livekit
+    - pgbouncer
+    - redis
+    - seaweedfs
+    dependencies:
+    - relais
+  peertube:
+    directory: briques/peertube
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - peertube
+    - peertube-db
+    - peertube-redis
+    - peertube-wrapper
+    dependencies:
+    - relais
+  recherche:
+    directory: briques/recherche
+    files:
+    - docker-compose.yml
+    services:
+    - recherche
+    - searxng
+    dependencies:
+    - relais
+  agenda:
+    directory: briques/agenda
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - agenda
+    dependencies:
+    - relais
+    excluded_services:
+      litestream: Sidecar Litestream de réplication externe, arrêté en production (inventaire S236).
+  atelier-images-video:
+    directory: briques/atelier-images-video
+    files:
+    - docker-compose.yml
+    services:
+    - atelier-images-video
+    dependencies:
+    - relais
+  atelier-veille:
+    directory: briques/atelier-veille
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - atelier-veille
+    dependencies:
+    - relais
+  audit:
+    directory: briques/audit
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - audit
+    dependencies:
+    - relais
+  audit-fichiers:
+    directory: briques/audit-fichiers
+    files:
+    - docker-compose.yml
+    services:
+    - audit-fichiers
+    - audit-fichiers-clamav
+    dependencies:
+    - relais
+  calcul:
+    directory: briques/calcul
+    files:
+    - docker-compose.yml
+    services:
+    - calcul
+    dependencies:
+    - relais
+  connecteurs:
+    directory: briques/connecteurs
+    files:
+    - docker-compose.yml
+    services:
+    - connecteurs
+    dependencies:
+    - relais
+  connexion:
+    directory: briques/connexion
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - connexion
+    dependencies:
+    - relais
+  dev:
+    directory: briques/dev
+    files:
+    - docker-compose.yml
+    services:
+    - code-server
+    - dev
+    dependencies:
+    - relais
+  donnees:
+    directory: briques/donnees
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - donnees
+    dependencies:
+    - relais
+    excluded_services:
+      litestream: Sidecar Litestream de réplication externe, arrêté en production (inventaire S236).
+  ecoute:
+    directory: briques/ecoute
+    files:
+    - docker-compose.yml
+    services:
+    - ecoute
+    dependencies:
+    - relais
+  export:
+    directory: briques/export
+    files:
+    - docker-compose.yml
+    services:
+    - export
+    dependencies:
+    - relais
+  generateur:
+    directory: briques/generateur
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - generateur
+    dependencies:
+    - relais
+  geo:
+    directory: briques/geo
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - geo
+    dependencies:
+    - relais
+  images:
+    directory: briques/images
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - images
+    dependencies:
+    - relais
+  ingestion:
+    directory: briques/ingestion
+    files:
+    - docker-compose.yml
+    services:
+    - ingestion
+    dependencies:
+    - relais
+  jeu-factions:
+    directory: briques/jeu-factions
+    files:
+    - docker-compose.yml
+    services:
+    - jeu-factions
+    dependencies:
+    - relais
+  jeu-factions-public:
+    directory: briques/jeu-factions-public
+    files:
+    - docker-compose.yml
+    services:
+    - jeu-factions-public
+    dependencies:
+    - relais
+  mail:
+    directory: briques/mail
+    files:
+    - docker-compose.yml
+    services:
+    - mail
+    dependencies:
+    - relais
+  oria-adaptateur:
+    directory: briques/oria
+    files:
+    - docker-compose.yml
+    services:
+    - oria
+    dependencies:
+    - relais
+  paiements:
+    directory: briques/paiements
+    files:
+    - docker-compose.yml
+    services:
+    - paiements
+    dependencies:
+    - relais
+  personnages:
+    directory: briques/personnages
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - personnages
+    dependencies:
+    - relais
+  restaurant:
+    directory: briques/restaurant
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - restaurant
+    dependencies:
+    - relais
+  studio:
+    directory: briques/studio
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - studio
+    dependencies:
+    - relais
+  synopsis:
+    directory: briques/synopsis
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - synopsis
+    dependencies:
+    - relais
+  telephonie:
+    directory: briques/telephonie
+    files:
+    - docker-compose.yml
+    services:
+    - telephonie
+    dependencies:
+    - relais
+  transcription:
+    directory: briques/transcription
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - transcription
+    dependencies:
+    - relais
+  transferts:
+    directory: briques/transferts
+    files:
+    - docker-compose.yml
+    services:
+    - transferts
+    dependencies:
+    - relais
+  veille-info:
+    directory: briques/veille-info
+    files:
+    - docker-compose.yml
+    services:
+    - veille-info
+    dependencies:
+    - relais
+  veille-prospection:
+    directory: briques/veille-prospection
+    files:
+    - docker-compose.yml
+    services:
+    - veille-prospection
+    dependencies:
+    - relais
+  video:
+    directory: briques/video
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - video
+    dependencies:
+    - relais
+  vision:
+    directory: briques/vision
+    files:
+    - docker-compose.yml
+    services:
+    - vision
+    dependencies:
+    - relais
+  voix:
+    directory: briques/voix
+    files:
+    - docker-compose.yml
+    services:
+    - voix
+    dependencies:
+    - relais
+  world-engine:
+    directory: briques/world-engine
+    files:
+    - docker-compose.yml
+    services:
+    - world-engine
+    dependencies:
+    - relais
+  core:
+    directory: core
+    files:
+    - docker-compose.yml
+    - docker-compose.override.yml
+    services:
+    - core
+    dependencies:
+    - relais
+  observabilite:
+    directory: outils/observabilite
+    files:
+    - docker-compose.yml
+    services:
+    - grafana
+    - prometheus
+    - uptime-kuma
+    dependencies:
+    - relais
+    excluded_services:
+      node-exporter: 'Exige pid: host et le montage de / : refusé par la politique d''isolation ; métriques hôte de la VM non couvertes (écart ouvert).'
+s237_exclusions:
+  mesh-https: 'Caddy en réseau hôte exposant le mesh NetBird : effet de bord externe interdit dans l''exercice.'
+s237_private_artifacts:
+- source: '{{ s237_inputs }}/repo/.env'
+  destination: .env
+- source: '{{ s237_inputs }}/repo/apps_exportees/bistrot-d-mo-s99-bundle/.env'
+  destination: apps_exportees/bistrot-d-mo-s99-bundle/.env
+- source: '{{ s237_inputs }}/repo/apps_exportees/cabinet-kine-deploiement/.env'
+  destination: apps_exportees/cabinet-kine-deploiement/.env
+- source: '{{ s237_inputs }}/repo/apps_exportees/menuiserie-lef-vre-et-fils-deploiement/.env'
+  destination: apps_exportees/menuiserie-lef-vre-et-fils-deploiement/.env
+- source: '{{ s237_inputs }}/repo/apps_exportees/menuiserie-lef-vre-fils-deploiement/.env'
+  destination: apps_exportees/menuiserie-lef-vre-fils-deploiement/.env
+- source: '{{ s237_inputs }}/repo/briques/agenda/.env'
+  destination: briques/agenda/.env
+- source: '{{ s237_inputs }}/repo/briques/agenda/backend/.env'
+  destination: briques/agenda/backend/.env
+- source: '{{ s237_inputs }}/repo/briques/agenda/docker-compose.override.yml'
+  destination: briques/agenda/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/atelier-veille/docker-compose.override.yml'
+  destination: briques/atelier-veille/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/audit/docker-compose.override.yml'
+  destination: briques/audit/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/connexion/docker-compose.override.yml'
+  destination: briques/connexion/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/donnees/docker-compose.override.yml'
+  destination: briques/donnees/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/forge/.env'
+  destination: briques/forge/.env
+- source: '{{ s237_inputs }}/repo/briques/forge/docker-compose.override.yml'
+  destination: briques/forge/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/forge/forge/.env'
+  destination: briques/forge/forge/.env
+- source: '{{ s237_inputs }}/repo/briques/gateway/.env'
+  destination: briques/gateway/.env
+- source: '{{ s237_inputs }}/repo/briques/gateway/docker-compose.override.yml'
+  destination: briques/gateway/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/generateur/docker-compose.override.yml'
+  destination: briques/generateur/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/geo/docker-compose.override.yml'
+  destination: briques/geo/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/images/docker-compose.override.yml'
+  destination: briques/images/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/memoire/.env'
+  destination: briques/memoire/.env
+- source: '{{ s237_inputs }}/repo/briques/memoire/docker-compose.override.yml'
+  destination: briques/memoire/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/memoire/memory/.env'
+  destination: briques/memoire/memory/.env
+- source: '{{ s237_inputs }}/repo/briques/memoire/memory/backend/.env'
+  destination: briques/memoire/memory/backend/.env
+- source: '{{ s237_inputs }}/repo/briques/peertube/.env'
+  destination: briques/peertube/.env
+- source: '{{ s237_inputs }}/repo/briques/personnages/docker-compose.override.yml'
+  destination: briques/personnages/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/restaurant/docker-compose.override.yml'
+  destination: briques/restaurant/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/studio/docker-compose.override.yml'
+  destination: briques/studio/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/synopsis/docker-compose.override.yml'
+  destination: briques/synopsis/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/transcription/docker-compose.override.yml'
+  destination: briques/transcription/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/video/docker-compose.override.yml'
+  destination: briques/video/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/briques/world-engine/.env'
+  destination: briques/world-engine/.env
+- source: '{{ s237_inputs }}/repo/core/.env'
+  destination: core/.env
+- source: '{{ s237_inputs }}/repo/core/docker-compose.override.yml'
+  destination: core/docker-compose.override.yml
+- source: '{{ s237_inputs }}/repo/oria-stack/infra/keycloak/.env'
+  destination: oria-stack/infra/keycloak/.env
+- source: '{{ s237_inputs }}/repo/oria-stack/oria/.env'
+  destination: oria-stack/oria/.env
+- source: '{{ s237_inputs }}/repo/outils/observabilite/.env'
+  destination: outils/observabilite/.env
+s237_private_projects:
+  relais:
+    env_file: '{{ s237_inputs }}/env/empty.env'
+    bind_mappings:
+      infra/ansible/relay/relay.py:
+        kind: release
+      infra/ansible/relay/routes: relais/routes
+    environment:
+      relay: {}
+    probes:
+    - service: relay
+      port: 9999
+      path: /health
+  keycloak:
+    env_file: '{{ s237_inputs }}/env/keycloak.env'
+    bind_mappings:
+      oria-stack/infra/keycloak/realms: repo/oria-stack/infra/keycloak/realms
+    environment:
+      keycloak: {}
+      postgres: {}
+    probes:
+    - service: keycloak
+      port: 8080
+      path: /realms/master
+    drop_extra_hosts:
+      keycloak:
+      - postgres
+    drop_static_ips:
+      postgres: 'IP fixe 172.27.0.3 de l''override prod : le nom postgres est résolu par le DNS du réseau d''exercice.'
+  gateway:
+    env_file: '{{ s237_inputs }}/env/gateway.env'
+    bind_mappings:
+      briques/gateway/litellm_config.yaml:
+        kind: release
+    environment:
+      db:
+        TELEGRAM_BOT_TOKEN: ''
+      gateway:
+        TELEGRAM_BOT_TOKEN: ''
+      gateway-sync:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: gateway
+      port: 4000
+      path: /health/liveliness
+    - service: gateway-sync
+      port: 4002
+      path: /sante
+  memoire:
+    env_file: '{{ s237_inputs }}/env/memoire.env'
+    bind_mappings:
+      briques/memoire/init-pgvector.sql:
+        kind: release
+    environment:
+      memoire: {}
+      memoire-backend:
+        TELEGRAM_BOT_TOKEN: ''
+      memoire-db:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: memoire
+      port: 8000
+      path: /sante
+  forge:
+    env_file: '{{ s237_inputs }}/env/forge.env'
+    bind_mappings: {}
+    environment:
+      forge:
+        TELEGRAM_BOT_TOKEN: ''
+      forge-adapter:
+        TELEGRAM_BOT_TOKEN: ''
+      forge-db: {}
+      frontend: {}
+      qdrant: {}
+    probes:
+    - service: forge-adapter
+      port: 8000
+      path: /sante
+    drop_depends_on:
+      forge:
+        forge-migrate: 'Migration ponctuelle exclue : le schéma provient du dump PostgreSQL restauré.'
+  oria:
+    env_file: '{{ s237_inputs }}/env/oria.env'
+    bind_mappings:
+      oria-stack/oria/backend: repo/oria-stack/oria/backend
+      oria-stack/oria/postgres-init:
+        kind: release
+      oria-stack/infra/postgres-ha/oria/patroni.yml:
+        kind: release
+      oria-stack/oria/matrix/dendrite.yaml.tpl:
+        kind: release
+      oria-stack/oria/matrix/appservice.yaml.tpl:
+        kind: release
+      oria-stack/oria/frontend: repo/oria-stack/oria/frontend
+      oria-stack/shared-ui: repo/oria-stack/shared-ui
+      oria-stack/oria/keycloak: repo/oria-stack/oria/keycloak
+      oria-stack/oria/livekit/livekit.yaml: repo/oria-stack/oria/livekit/livekit.yaml
+    environment:
+      backend: {}
+      db: {}
+      dendrite: {}
+      etcd: {}
+      frontend: {}
+      keycloak: {}
+      livekit: {}
+      pgbouncer: {}
+      redis: {}
+      seaweedfs: {}
+    probes:
+    - service: backend
+      port: 8000
+      path: /health
+    - service: keycloak
+      port: 8080
+      path: /realms/master
+    add_volumes:
+      frontend:
+        /workspace/oria/frontend/node_modules: frontend_node_modules
+      dendrite:
+        /etc/dendrite: dendrite_config
+      redis:
+        /data: redis_data
+  peertube:
+    env_file: '{{ s237_inputs }}/env/peertube.env'
+    bind_mappings:
+      briques/peertube/config/production.yaml:
+        kind: release
+    environment:
+      peertube: {}
+      peertube-db: {}
+      peertube-redis: {}
+      peertube-wrapper: {}
+    probes:
+    - service: peertube-wrapper
+      port: 6100
+      path: /sante
+    add_volumes:
+      peertube:
+        /config: peertube_config
+  recherche:
+    env_file: '{{ s237_inputs }}/env/recherche.env'
+    bind_mappings:
+      briques/recherche/searxng: repo/briques/recherche/searxng
+    environment:
+      recherche:
+        TELEGRAM_BOT_TOKEN: ''
+      searxng: {}
+    probes:
+    - service: recherche
+      port: 6040
+      path: /sante
+    add_volumes:
+      searxng:
+        /var/cache/searxng: searxng_cache
+  agenda:
+    env_file: '{{ s237_inputs }}/env/agenda.env'
+    bind_mappings: {}
+    environment:
+      agenda:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: agenda
+      port: 8400
+      path: /health
+  atelier-images-video:
+    env_file: '{{ s237_inputs }}/env/atelier-images-video.env'
+    bind_mappings: {}
+    environment:
+      atelier-images-video:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: atelier-images-video
+      port: 6160
+      path: /sante
+  atelier-veille:
+    env_file: '{{ s237_inputs }}/env/atelier-veille.env'
+    bind_mappings: {}
+    environment:
+      atelier-veille:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: atelier-veille
+      port: 6130
+      path: /sante
+  audit:
+    env_file: '{{ s237_inputs }}/env/audit.env'
+    bind_mappings: {}
+    environment:
+      audit:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: audit
+      port: 5300
+      path: /sante
+  audit-fichiers:
+    env_file: '{{ s237_inputs }}/env/audit-fichiers.env'
+    bind_mappings: {}
+    environment:
+      audit-fichiers:
+        TELEGRAM_BOT_TOKEN: ''
+      audit-fichiers-clamav: {}
+    probes:
+    - service: audit-fichiers
+      port: 6170
+      path: /sante
+  calcul:
+    env_file: '{{ s237_inputs }}/env/calcul.env'
+    bind_mappings: {}
+    environment:
+      calcul:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: calcul
+      port: 5990
+      path: /sante
+  connecteurs:
+    env_file: '{{ s237_inputs }}/env/connecteurs.env'
+    bind_mappings: {}
+    environment:
+      connecteurs:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: connecteurs
+      port: 6200
+      path: /sante
+  connexion:
+    env_file: '{{ s237_inputs }}/env/connexion.env'
+    bind_mappings: {}
+    environment:
+      connexion:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: connexion
+      port: 5870
+      path: /sante
+  dev:
+    env_file: '{{ s237_inputs }}/env/dev.env'
+    bind_mappings:
+      .: workspace
+    environment:
+      code-server: {}
+      dev:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: dev
+      port: 5955
+      path: /sante
+    drop_mounts:
+      dev:
+        /var/run/docker.sock: 'Socket Docker refusé dans l''exercice : exécution de conteneurs par l''atelier non éprouvée.'
+  donnees:
+    env_file: '{{ s237_inputs }}/env/donnees.env'
+    bind_mappings: {}
+    environment:
+      donnees:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: donnees
+      port: 5500
+      path: /sante
+  ecoute:
+    env_file: '{{ s237_inputs }}/env/ecoute.env'
+    bind_mappings: {}
+    environment:
+      ecoute:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: ecoute
+      port: 5800
+      path: /sante
+  export:
+    env_file: '{{ s237_inputs }}/env/export.env'
+    bind_mappings: {}
+    environment:
+      export:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: export
+      port: 6150
+      path: /sante
+  generateur:
+    env_file: '{{ s237_inputs }}/env/generateur.env'
+    bind_mappings:
+      apps_exportees: repo/apps_exportees
+      briques/donnees:
+        kind: release
+      briques:
+        kind: release
+      core:
+        kind: release
+    environment:
+      generateur:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: generateur
+      port: 5400
+      path: /sante
+  geo:
+    env_file: '{{ s237_inputs }}/env/geo.env'
+    bind_mappings: {}
+    environment:
+      geo:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: geo
+      port: 6110
+      path: /sante
+  images:
+    env_file: '{{ s237_inputs }}/env/images.env'
+    bind_mappings: {}
+    environment:
+      images:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: images
+      port: 5950
+      path: /sante
+  ingestion:
+    env_file: '{{ s237_inputs }}/env/ingestion.env'
+    bind_mappings: {}
+    environment:
+      ingestion:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: ingestion
+      port: 5200
+      path: /sante
+  jeu-factions:
+    env_file: '{{ s237_inputs }}/env/jeu-factions.env'
+    bind_mappings: {}
+    environment:
+      jeu-factions:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: jeu-factions
+      port: 6210
+      path: /sante
+  jeu-factions-public:
+    env_file: '{{ s237_inputs }}/env/jeu-factions-public.env'
+    bind_mappings: {}
+    environment:
+      jeu-factions-public:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: jeu-factions-public
+      port: 6220
+      path: /sante
+  mail:
+    env_file: '{{ s237_inputs }}/env/mail.env'
+    bind_mappings: {}
+    environment:
+      mail:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: mail
+      port: 6030
+      path: /sante
+  oria-adaptateur:
+    env_file: '{{ s237_inputs }}/env/oria-adaptateur.env'
+    bind_mappings: {}
+    environment:
+      oria:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: oria
+      port: 6085
+      path: /sante
+  paiements:
+    env_file: '{{ s237_inputs }}/env/paiements.env'
+    bind_mappings: {}
+    environment:
+      paiements:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: paiements
+      port: 6020
+      path: /sante
+  personnages:
+    env_file: '{{ s237_inputs }}/env/personnages.env'
+    bind_mappings: {}
+    environment:
+      personnages:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: personnages
+      port: 5900
+      path: /sante
+  restaurant:
+    env_file: '{{ s237_inputs }}/env/restaurant.env'
+    bind_mappings: {}
+    environment:
+      restaurant:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: restaurant
+      port: 6010
+      path: /sante
+  studio:
+    env_file: '{{ s237_inputs }}/env/studio.env'
+    bind_mappings: {}
+    environment:
+      studio:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: studio
+      port: 6060
+      path: /sante
+  synopsis:
+    env_file: '{{ s237_inputs }}/env/synopsis.env'
+    bind_mappings: {}
+    environment:
+      synopsis:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: synopsis
+      port: 6090
+      path: /sante
+  telephonie:
+    env_file: '{{ s237_inputs }}/env/telephonie.env'
+    bind_mappings: {}
+    environment:
+      telephonie:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: telephonie
+      port: 6050
+      path: /sante
+  transcription:
+    env_file: '{{ s237_inputs }}/env/transcription.env'
+    bind_mappings:
+      briques/transcription/notes_export: repo/briques/transcription/notes_export
+    environment:
+      transcription:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: transcription
+      port: 5980
+      path: /sante
+  transferts:
+    env_file: '{{ s237_inputs }}/env/transferts.env'
+    bind_mappings: {}
+    environment:
+      transferts:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: transferts
+      port: 6180
+      path: /sante
+  veille-info:
+    env_file: '{{ s237_inputs }}/env/veille-info.env'
+    bind_mappings: {}
+    environment:
+      veille-info:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: veille-info
+      port: 6120
+      path: /sante
+  veille-prospection:
+    env_file: '{{ s237_inputs }}/env/veille-prospection.env'
+    bind_mappings: {}
+    environment:
+      veille-prospection:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: veille-prospection
+      port: 6140
+      path: /sante
+  video:
+    env_file: '{{ s237_inputs }}/env/video.env'
+    bind_mappings: {}
+    environment:
+      video:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: video
+      port: 5970
+      path: /sante
+  vision:
+    env_file: '{{ s237_inputs }}/env/vision.env'
+    bind_mappings: {}
+    environment:
+      vision:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: vision
+      port: 5960
+      path: /sante
+  voix:
+    env_file: '{{ s237_inputs }}/env/voix.env'
+    bind_mappings:
+      briques/voix/voix-modeles: repo/briques/voix/voix-modeles
+      briques/voix/data: repo/briques/voix/data
+    environment:
+      voix:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: voix
+      port: 5985
+      path: /sante
+  world-engine:
+    env_file: '{{ s237_inputs }}/env/world-engine.env'
+    bind_mappings: {}
+    environment:
+      world-engine:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: world-engine
+      port: 6230
+      path: /sante
+  core:
+    env_file: '{{ s237_inputs }}/env/core.env'
+    bind_mappings:
+      briques:
+        kind: release
+      apps_exportees: repo/apps_exportees
+      briques/gateway/.env: repo/briques/gateway/.env
+      .env: repo/.env
+    environment:
+      core:
+        TELEGRAM_BOT_TOKEN: ''
+        REPLI_PAYANT: 'false'
+        CASCADE_AUTO: 'false'
+        NETBIRD_API_TOKEN: ''
+        NETBIRD_API_URL: ''
+        NETBIRD_INVITE_GROUP_ID: ''
+        NETBIRD_SETUP_KEY_EXPIRES: ''
+    probes:
+    - service: core
+      port: 5000
+      path: /health
+    drop_mounts:
+      core:
+        /var/run/docker.sock: 'Socket Docker refusé dans l''exercice : pilotage des briques par le Cœur non éprouvé.'
+        /mnt/sauvegarde-usb: Clé USB de production jamais montée dans l'exercice.
+  observabilite:
+    env_file: '{{ s237_inputs }}/env/observabilite.env'
+    bind_mappings:
+      outils/observabilite/grafana/provisioning:
+        kind: release
+      outils/observabilite/grafana/tableaux:
+        kind: release
+      outils/observabilite/prometheus.yml:
+        kind: release
+      outils/observabilite/alertes.yml:
+        kind: release
+      outils/observabilite/kuma-bootstrap.cjs:
+        kind: release
+      outils/observabilite/kuma-notifications.cjs:
+        kind: release
+      outils/observabilite/monitors.json:
+        kind: release
+    environment:
+      grafana: {}
+      prometheus: {}
+      uptime-kuma: {}
+    probes:
+    - service: prometheus
+      port: 9090
+      path: /-/ready
+    - service: grafana
+      port: 3000
+      path: /api/health
+    - service: uptime-kuma
+      port: 3001
+      path: /
+s237_supervision:
+  project: observabilite
+  excluded_jobs:
+    hote: 'Cible node-exporter : service exclu (pid hôte et montage de /), métriques hôte non couvertes.'
+s237_neutralize:
+- name: kuma-notifications
+  project: observabilite
+  service: uptime-kuma
+  destination: /app/data
+  sqlite: kuma.db
+  statement: UPDATE notification SET active = 0
+  verify: SELECT count(*) FROM notification WHERE active = 1
+  expect: 0
+  reason: 'Canal Telegram S235 restauré : aucune notification externe depuis l''exercice.'
+s237_backup_generation_manifest: /srv/workplace-rehearsal/backups/recovered/manifest.json
+# S237b : plus aucune image hors registre (MinIO remplacé par SeaweedFS publié).
+s237_image_escrow: []

@@ -1,0 +1,1 @@
+{"id":"remote","kind":"remote","destination":"webdavs://backup.example/workplace","credentials":"/home/debian/.config/workplace-backups/credentials.env","keep_versions":30,"required_profiles":["remote"]}

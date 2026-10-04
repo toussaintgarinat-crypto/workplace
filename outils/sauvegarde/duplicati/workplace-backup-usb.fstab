@@ -1,0 +1,2 @@
+# S236: exFAT existant, aucun formatage; l'absence USB ne bloque pas le démarrage.
+UUID=6A01-B378 /mnt/workplace-backup exfat rw,nofail,x-systemd.automount,x-systemd.device-timeout=15s,x-systemd.mount-timeout=15s,nosuid,nodev,noexec,uid=1000,gid=1000,fmask=0177,dmask=0077 0 0

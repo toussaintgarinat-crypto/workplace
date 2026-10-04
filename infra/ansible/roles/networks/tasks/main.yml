@@ -1,0 +1,17 @@
+- name: Install exact host isolation permitting only verified internal Docker bridge destinations
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", firewall]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_firewall
+  changed_when: (s237_firewall.stdout | from_json).changed > 0
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true
+- name: Verify host and container egress refusal before activation
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", isolation]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  changed_when: false
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true

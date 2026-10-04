@@ -1,6 +1,6 @@
 # Oria — Plateforme collaboration temps réel
 
-Plateforme de collaboration avec agents IA résidents, communication temps réel (Matrix/Synapse), appels vidéo (LiveKit) et intégration Forge. Inclut PostgreSQL, MinIO, Synapse et LiveKit.
+Plateforme de collaboration avec agents IA résidents, communication temps réel (Matrix/Synapse), appels vidéo (LiveKit) et intégration Forge. Inclut PostgreSQL, SeaweedFS (S3), Synapse et LiveKit.
 
 - **Frontend** : `http://localhost:3002`
 - **Backend API** : `http://localhost:8000`
@@ -70,12 +70,14 @@ app_service_config_files:
 ```
 
 
-### Optionnelles — MinIO (stockage fichiers)
+### Obligatoires — SeaweedFS (stockage objet S3)
+
+API S3 sur le port hôte 9106 (`/healthz` pour la santé). Les API internes de SeaweedFS (master, volume, filer) n'écoutent que dans le conteneur.
 
 | Variable | Description | Défaut |
 |---|---|---|
-| `ORIA_MINIO_USER` | Utilisateur admin MinIO | `oria` |
-| `ORIA_MINIO_PASSWORD` | Mot de passe admin MinIO | `oria_secret` — **à changer** |
+| `S3_ACCESS_KEY_ID` | Clé d'accès S3 (identité administrateur) | aucun — **obligatoire** |
+| `S3_SECRET_ACCESS_KEY` | Secret S3 | aucun — **obligatoire** |
 
 
 ### Optionnelles — URLs publiques (frontend)

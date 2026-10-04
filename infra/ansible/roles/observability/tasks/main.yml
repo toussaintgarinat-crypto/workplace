@@ -1,0 +1,17 @@
+- name: Require explicit supervision scope
+  ansible.builtin.assert:
+    that:
+      - s237_supervision is defined
+      - s237_supervision.project in s237_catalogue
+- name: Require every Prometheus target up except reviewed exclusions
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/workplace_state.py", supervision]
+    stdin: "{{ s237_runtime_config | combine({'supervision': s237_supervision}) | to_json }}"
+  register: s237_supervision_result
+  changed_when: false
+  environment:
+    S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
+  no_log: true
+- name: Show supervision counts
+  ansible.builtin.debug:
+    msg: "{{ s237_supervision_result.stdout | from_json }}"

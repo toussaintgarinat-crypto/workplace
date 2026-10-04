@@ -1,0 +1,96 @@
+- name: Require stopped exercise timer and recovered generation manifest
+  ansible.builtin.assert:
+    that:
+      - not s237_backup_timer_enabled | default(false)
+      - s237_backup_generation_manifest is match('^/srv/workplace-rehearsal/backups/')
+- name: Prepare private backup configuration directory
+  ansible.builtin.file:
+    path: "{{ s237_root }}/private/backup"
+    state: directory
+    mode: '0700'
+- name: Install real S236 coherent and Duplicati tooling
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../outils/sauvegarde/{{ item }}/"
+    dest: "{{ s237_root }}/bin/{{ item }}/"
+    mode: '0700'
+  loop: [coherent, duplicati]
+- name: Install exercise configuration validator and inventory generator
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/{{ item }}"
+    dest: "{{ s237_root }}/bin/{{ item }}"
+    mode: '0700'
+  loop: [backup_check.py, backup_inventory.py]
+- name: Generate the exercise inventory from the running exercise containers
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/backup_inventory.py"]
+  register: s237_backup_inventory
+  changed_when: (s237_backup_inventory.stdout | from_json).changed > 0
+- name: Create an exercise-only encryption passphrase (never the production one)
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    test -s {{ s237_root }}/private/backup/credentials.env && exit 0
+    printf 'PASSPHRASE=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" > {{ s237_root }}/private/backup/credentials.env
+    echo created
+  register: s237_backup_credentials
+  changed_when: "'created' in s237_backup_credentials.stdout"
+  no_log: true
+- name: Write exercise destination profile (local directory, not production media)
+  ansible.builtin.copy:
+    dest: "{{ s237_root }}/private/backup/profile.json"
+    mode: '0600'
+    content: "{{ {'id': 's237-exercise', 'kind': 'file', 'mount_path': s237_root + '/backups/exercise-target', 'identity': 's237-exercise-target', 'credentials': s237_root + '/private/backup/credentials.env', 'keep_versions': 30, 'required': true} | to_nice_json }}"
+- name: Write exercise job
+  ansible.builtin.copy:
+    dest: "{{ s237_root }}/private/backup/job.json"
+    mode: '0600'
+    content: "{{ {'root': s237_root + '/backups/exercise', 'inventory': s237_root + '/private/backup/inventory-exercise.json', 'profiles': [s237_root + '/private/backup/profile.json']} | to_nice_json }}"
+- name: Validate exercise-only job paths and producer identities without exporting
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/backup_check.py", --config, "{{ s237_root }}/private/backup/job.json"]
+  changed_when: false
+- name: Run the real S236 read-only preflight on the exercise inventory
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/coherent/backup.py", preflight, --inventory, "{{ s237_root }}/private/backup/inventory-exercise.json", --root, "{{ s237_root }}/backups/exercise"]
+  changed_when: false
+- name: Check declared generation manifest exists (integrity verified by recover)
+  ansible.builtin.stat:
+    path: "{{ s237_backup_generation_manifest }}"
+  register: s237_generation
+- name: Refuse missing generation manifest
+  ansible.builtin.assert:
+    that: s237_generation.stat.isreg | default(false)
+- name: Install stopped exercise backup service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/s237-backup.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Workplace exercise coherent encrypted backup
+      After=docker.service
+      [Service]
+      Type=oneshot
+      UMask=0077
+      WorkingDirectory={{ s237_root }}/bin/duplicati
+      Environment=PYTHONPATH={{ s237_root }}/bin/coherent
+      ExecCondition=/usr/bin/python3 {{ s237_root }}/bin/backup_check.py --config {{ s237_root }}/private/backup/job.json
+      ExecStart=/usr/bin/python3 {{ s237_root }}/bin/duplicati/job.py --config {{ s237_root }}/private/backup/job.json
+      TimeoutStartSec=2h
+- name: Install disabled exercise timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/s237-backup.timer
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Disabled Workplace rehearsal timer
+      [Timer]
+      OnCalendar=daily
+      Unit=s237-backup.service
+      [Install]
+      WantedBy=timers.target
+- name: Ensure exercise timer remains stopped and disabled
+  ansible.builtin.systemd_service:
+    name: s237-backup.timer
+    state: stopped
+    enabled: false
+    daemon_reload: true

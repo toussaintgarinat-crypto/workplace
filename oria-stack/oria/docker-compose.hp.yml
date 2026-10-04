@@ -1,0 +1,7 @@
+# HP existant : préserver le réseau partagé par les services Oria déjà déployés.
+# Compose >= 2.24.4 pour !override. Utiliser après base + override Workplace.
+# Le réseau est explicitement externe : aucune tentative de recréation du subnet.
+networks:
+  default: !override
+    name: oria_default
+    external: true

@@ -1737,13 +1737,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "10 services Docker :\nKeycloak SSO :8081\nMatrix/Dendrite :8010\nLiveKit :7880\nMinIO / Redis / etcd",
+      "text": "10 services Docker :\nKeycloak SSO :8081\nMatrix/Dendrite :8010\nLiveKit :7880\nSeaweedFS / Redis / etcd",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "10 services Docker :\nKeycloak SSO :8081\nMatrix/Dendrite :8010\nLiveKit :7880\nMinIO / Redis / etcd",
+      "originalText": "10 services Docker :\nKeycloak SSO :8081\nMatrix/Dendrite :8010\nLiveKit :7880\nSeaweedFS / Redis / etcd",
       "lineHeight": 1.35
     },
     {
