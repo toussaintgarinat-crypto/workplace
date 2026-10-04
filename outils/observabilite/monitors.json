@@ -792,6 +792,24 @@
     "upsideDown": false
   },
   {
+    "name": "Dépendance — Oria S3 (SeaweedFS)",
+    "url": "http://host.docker.internal:9106/healthz",
+    "description": "Stockage objet S3 d'Oria. Santé du processus, pas une écriture d'objet.",
+    "type": "http",
+    "method": "GET",
+    "interval": 60,
+    "retryInterval": 60,
+    "maxretries": 2,
+    "timeout": 15,
+    "resendInterval": 0,
+    "accepted_statuscodes": [
+      "200-299"
+    ],
+    "notificationIDList": {},
+    "ignoreTls": false,
+    "upsideDown": false
+  },
+  {
     "name": "Supervision — Prometheus",
     "url": "http://prometheus:9090/-/ready",
     "description": "Disponibilité du stockage et moteur Prometheus.",

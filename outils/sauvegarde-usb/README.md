@@ -1,6 +1,6 @@
 # Sauvegarde portable — préparation de la clé + montage automatique sur le HP
 
-Sur le modèle de `outils/sauvegarde/` (MinIO local, pour Litestream/WAL-G — approche
+Sur le modèle de `outils/sauvegarde/` (S3 local SeaweedFS, pour Litestream/WAL-G — approche
 abandonnée pour cet usage, cf. `docs/superpowers/specs/2026-08-20-sauvegarde-usb-portable-design.md`),
 ce dossier prépare une sauvegarde **portable, à la demande, sans cloud**.
 

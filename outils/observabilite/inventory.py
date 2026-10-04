@@ -30,6 +30,8 @@ def build_inventory(root):
         monitor('Dépendance — Keycloak', 'http://host.docker.internal:8080/realms/master/.well-known/openid-configuration', 'Disponibilité du fournisseur identité.'),
         monitor('Dépendance — Oria backend', 'http://host.docker.internal:8000/health',
                 'Backend réel Oria, indépendant de son adaptateur Workplace.'),
+        monitor('Dépendance — Oria S3 (SeaweedFS)', 'http://host.docker.internal:9106/healthz',
+                'Stockage objet S3 d\'Oria. Santé du processus, pas une écriture d\'objet.'),
         monitor('Supervision — Prometheus', 'http://prometheus:9090/-/ready', 'Disponibilité du stockage et moteur Prometheus.'),
         monitor('Supervision — Grafana', 'http://grafana:3000/api/health', 'Disponibilité Grafana et base interne.'),
     ])

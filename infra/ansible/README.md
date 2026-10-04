@@ -64,7 +64,7 @@ Chaque conteneur de production est rattaché à son projet d'exercice par ses la
 - les images manquantes ;
 - les images de base des `FROM`, comme images taguées, pour qu'une mise à jour ultérieure se construise hors ligne.
 
-Les images que les registres ne publient plus sont chargées depuis le séquestre privé (`s237_image_escrow`), avec contrôle de leur ID. C'est le cas de `minio/minio:RELEASE.2025-09-07T16-13-09Z`.
+Les images que les registres ne publient plus peuvent être chargées depuis le séquestre privé (`s237_image_escrow`), avec contrôle de leur ID. Le profil HP n'en déclare plus aucune depuis S237b : MinIO, dont l'image n'était plus publiée, a été remplacé par SeaweedFS.
 
 Chaque image préparée garde un tag `s237-retained/…` : le magasin d'images containerd supprime les images non taguées, ce qui rendrait un rollback impossible sans reconstruction.
 

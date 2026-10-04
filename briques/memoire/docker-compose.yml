@@ -42,9 +42,9 @@ services:
     networks:
       # proxy_net RETIRÉ (revue finale whole-branch I6) : exposait Postgres en clair sur
       # le bus partagé à 9 autres conteneurs, avec un alias générique côté gateway
-      # ("db" — collision DNS différée). memoire-db doit encore joindre minio (WAL-G émet
-      # vers AWS_ENDPOINT=http://minio:9000) : au lieu d'exposer memoire-db sur proxy_net,
-      # c'est minio qui est désormais attaché EN PLUS à memoire_default (ce réseau
+      # ("db" — collision DNS différée). memoire-db doit encore joindre le S3 de dev (WAL-G émet
+      # vers AWS_ENDPOINT=http://seaweedfs:8333) : au lieu d'exposer memoire-db sur proxy_net,
+      # c'est le S3 qui est désormais attaché EN PLUS à memoire_default (ce réseau
       # `default`), cf. outils/sauvegarde/docker-compose.yml. Connexion sortante seule,
       # rayon d'exposition inchangé pour les 9 autres conteneurs de proxy_net.
       - default

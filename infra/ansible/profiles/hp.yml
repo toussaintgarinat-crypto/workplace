@@ -77,9 +77,9 @@ s237_catalogue:
     - frontend
     - keycloak
     - livekit
-    - minio
     - pgbouncer
     - redis
+    - seaweedfs
     dependencies:
     - relais
   peertube:
@@ -598,9 +598,9 @@ s237_private_projects:
       frontend: {}
       keycloak: {}
       livekit: {}
-      minio: {}
       pgbouncer: {}
       redis: {}
+      seaweedfs: {}
     probes:
     - service: backend
       port: 8000
@@ -1074,7 +1074,5 @@ s237_neutralize:
   expect: 0
   reason: 'Canal Telegram S235 restauré : aucune notification externe depuis l''exercice.'
 s237_backup_generation_manifest: /srv/workplace-rehearsal/backups/recovered/manifest.json
-s237_image_escrow:
-- image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-  id: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-  archive: '{{ s237_escrow_dir }}/minio-RELEASE.2025-09-07T16-13-09Z.tar'
+# S237b : plus aucune image hors registre (MinIO remplacé par SeaweedFS publié).
+s237_image_escrow: []

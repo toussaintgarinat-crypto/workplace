@@ -155,7 +155,7 @@ def create_isolated_network(s,suffix):
 
 def memory_limit(name):
     mib=1024**2
-    known={'workplace_connexion':128,'gateway-gateway-1':1536,'workplace_audit_fichiers_clamav':1280,'workplace_voix':512,'workplace_ecoute':640,'workplace_searxng':192,'workplace_uptime_kuma':256,'forge-qdrant-1':512,'oria-frontend-1':768,'agenda':128,'oria-backend-1':160,'oria-minio-1':160,'workplace_grafana':128,'workplace_world_engine':128,'workplace_dev_ide':128}
+    known={'workplace_connexion':128,'gateway-gateway-1':1536,'workplace_audit_fichiers_clamav':1280,'workplace_voix':512,'workplace_ecoute':640,'workplace_searxng':192,'workplace_uptime_kuma':256,'forge-qdrant-1':512,'oria-frontend-1':768,'agenda':128,'oria-backend-1':160,'oria-seaweedfs-1':192,'workplace_grafana':128,'workplace_world_engine':128,'workplace_dev_ide':128}
     if name in known:return known[name]*mib
     if name in {'memoire-memoire-db-1','gateway-db-1','keycloak-db','oria-db-1','peertube-db','forge-forge-db-1','oria-etcd-1'}:return 256*mib
     if 'keycloak' in name:return 512*mib
@@ -269,7 +269,7 @@ def rehearse(generation,target,docker=None,keep=False):
             for network,aliases in list(p['networks'].items())[1:]:_connect(docker,networks[network],name,aliases)
         result['stage']='start'
         # Infra dependency services start first; application processes can retry.
-        order=sorted(plan,key=lambda p:(0 if any(x in p['name'] for x in ('redis','keycloak','pgbouncer','minio','dendrite')) else 2 if p['name']=='core-core-1' else 1,p['name']))
+        order=sorted(plan,key=lambda p:(0 if any(x in p['name'] for x in ('redis','keycloak','pgbouncer','seaweedfs','dendrite')) else 2 if p['name']=='core-core-1' else 1,p['name']))
         for p in order:
             if p['name'] not in PHASED_NAMES:docker.run(['start',restored[p['name']]])
         deadline=time.monotonic()+180

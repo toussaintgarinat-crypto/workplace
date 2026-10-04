@@ -275,10 +275,10 @@
       "frontend",
       "keycloak",
       "livekit",
-      "minio",
       "oria",
       "pgbouncer",
-      "redis"
+      "redis",
+      "seaweedfs"
     ]
   },
   "paiements": {

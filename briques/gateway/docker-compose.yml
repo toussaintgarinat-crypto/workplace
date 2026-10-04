@@ -40,8 +40,8 @@ services:
     networks:
       # proxy_net RETIRÉ (revue finale whole-branch I6) : exposait Postgres en clair sur
       # le bus partagé, avec l'alias générique "db" (collision DNS différée avec d'autres
-      # briques). db doit encore joindre minio (WAL-G émet vers
-      # AWS_ENDPOINT=http://minio:9000) : au lieu d'exposer db sur proxy_net, c'est minio
+      # briques). db doit encore joindre le S3 de dev (WAL-G émet vers
+      # AWS_ENDPOINT=http://seaweedfs:8333) : au lieu d'exposer db sur proxy_net, c'est le S3
       # qui est désormais attaché EN PLUS à gateway_default (ce réseau `default`), cf.
       # outils/sauvegarde/docker-compose.yml. Connexion sortante seule.
       - default

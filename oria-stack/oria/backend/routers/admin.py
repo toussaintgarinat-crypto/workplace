@@ -99,7 +99,7 @@ class AlertmanagerWebhookBody(BaseModel):
 
 _COMPONENT_MAP = {
     "QdrantDown": "readonly",
-    "MinioDown": "files",
+    "ObjectStorageDown": "files",
     "RAGLatencyHigh": "search",
     "ServiceDown": None,
 }

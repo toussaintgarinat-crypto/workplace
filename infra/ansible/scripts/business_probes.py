@@ -166,6 +166,37 @@ print(json.dumps({'success':True,'collections':len(meta['collections']),'searche
 '''
 
 
+# S3 round trip (SigV4, stdlib only) inside the SeaweedFS network namespace:
+# bucket and object are created, read back, then removed.
+S3_ROUNDTRIP = r'''
+import datetime,hashlib,hmac,json,urllib.request,urllib.error,uuid
+cfg=json.load(open('/probe/probe-config.json'))['s3']
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def call(method,path,body=b''):
+ now=datetime.datetime.now(datetime.timezone.utc);stamp=now.strftime('%Y%m%dT%H%M%SZ');day=stamp[:8]
+ digest=hashlib.sha256(body).hexdigest();host='127.0.0.1:8333'
+ canonical='\n'.join([method,path,'','host:'+host,'x-amz-content-sha256:'+digest,'x-amz-date:'+stamp,'','host;x-amz-content-sha256;x-amz-date',digest])
+ scope=day+'/us-east-1/s3/aws4_request'
+ key=('AWS4'+cfg['secret']).encode()
+ for part in (day,'us-east-1','s3','aws4_request'):key=hmac.new(key,part.encode(),hashlib.sha256).digest()
+ signature=hmac.new(key,('AWS4-HMAC-SHA256\n'+stamp+'\n'+scope+'\n'+hashlib.sha256(canonical.encode()).hexdigest()).encode(),hashlib.sha256).hexdigest()
+ auth='AWS4-HMAC-SHA256 Credential='+cfg['key']+'/'+scope+', SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature='+signature
+ req=urllib.request.Request('http://'+host+path,data=body if method=='PUT' else None,method=method,headers={'x-amz-date':stamp,'x-amz-content-sha256':digest,'Authorization':auth})
+ with opener.open(req,timeout=30) as r:return r.status,r.read()
+bucket='s237-probe-'+uuid.uuid4().hex[:12];payload=('restored-s3-probe '+uuid.uuid4().hex).encode()
+try:
+ opener.open('http://127.0.0.1:8333/',timeout=10);raise AssertionError('anonymous S3 listing accepted')
+except urllib.error.HTTPError as e:assert e.code==403
+call('PUT','/'+bucket)
+try:
+ call('PUT','/'+bucket+'/probe.txt',payload)
+ status,body=call('GET','/'+bucket+'/probe.txt');assert status==200 and body==payload
+ call('DELETE','/'+bucket+'/probe.txt')
+finally:
+ call('DELETE','/'+bucket)
+print(json.dumps({'success':True,'s3_roundtrip':True,'anonymous_http':403}))
+'''
+
 def docker(*args, stdin=None, timeout=180):
     result = subprocess.run(['docker', *args], input=stdin, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
@@ -215,9 +246,11 @@ def probes(config):
                     'audience': values.get('KEYCLOAK_AUDIENCE') or values['KEYCLOAK_CLIENT_ID'],
                     'admin': {'username': admin.get('KC_BOOTSTRAP_ADMIN_USERNAME', admin.get('KEYCLOAK_ADMIN')),
                               'password': admin.get('KC_BOOTSTRAP_ADMIN_PASSWORD', admin.get('KEYCLOAK_ADMIN_PASSWORD'))}}
+        s3_env = environment(container('oria', 'seaweedfs'))
         probe_config = {'core': kc(core_env, 'keycloak', 'keycloak', 8080), 'oria': kc(oria_env, 'oria', 'keycloak', 8081),
                         'memory': {'key': core_env.get('MEMOIRE_KEY', '')},
-                        'gateway': {'key': environment(container('gateway', 'gateway'))['LITELLM_MASTER_KEY']}}
+                        'gateway': {'key': environment(container('gateway', 'gateway'))['LITELLM_MASTER_KEY']},
+                        's3': {'key': s3_env['AWS_ACCESS_KEY_ID'], 'secret': s3_env['AWS_SECRET_ACCESS_KEY']}}
         path = private / 'probe-config.json'
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as stream:
@@ -237,7 +270,8 @@ def probes(config):
         report['probes']['gateway_local'] = helper(image, GATEWAY_LOCAL, NETWORK, ro)
         snapshots = ROOT / 'backups/recovered/qdrant'
         report['probes']['forge_search'] = helper(image, QDRANT_SEARCH, 'container:' + container('forge', 'qdrant'), ['type=bind,src=' + str(snapshots) + ',dst=/snapshots,readonly'])
-        report['success'] = all(p.get('success') for p in report['probes'].values()) and len(report['probes']) == 7
+        report['probes']['oria_s3'] = helper(image, S3_ROUNDTRIP, 'container:' + container('oria', 'seaweedfs'), ro)
+        report['success'] = all(p.get('success') for p in report['probes'].values()) and len(report['probes']) == 8
     except Exception as error:
         report['failure'] = type(error).__name__ + ': ' + str(error)[:200]
         report['stage'] = list(report['probes'])[-1] if report['probes'] else 'setup'

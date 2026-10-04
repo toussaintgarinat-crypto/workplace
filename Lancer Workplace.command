@@ -50,17 +50,16 @@ ok "Docker est prêt"
 BRIQUES=(
   "gateway|$RACINE/briques/gateway|http://localhost:4001/health"
   "memoire|$RACINE/briques/memoire|http://localhost:5600/sante"
-  # MinIO (cible S3 locale pour Litestream/WAL-G) — APRÈS gateway/memoire, pas avant : depuis
-  # la revue finale (I6), MinIO rejoint DIRECTEMENT les réseaux memoire_default/gateway_default
+  # SeaweedFS (cible S3 locale pour Litestream/WAL-G) — APRÈS gateway/memoire, pas avant : depuis
+  # la revue finale (I6), le S3 rejoint DIRECTEMENT les réseaux memoire_default/gateway_default
   # (externes) au lieu qu'eux rejoignent proxy_net — ces réseaux n'existent qu'une fois
   # gateway/memoire démarrés une première fois. Sur un déploiement neuf (réseaux jamais créés),
   # placer sauvegarde avant échouerait à « network ... declared as external, but could not be
   # found » (reproduit et documenté pendant la correction de la revue finale). L'ordre inverse
   # n'est pas gênant pour l'archivage WAL : Postgres retente son archive_command indéfiniment
   # sans planter tant que le segment n'est pas confirmé expédié.
-  # Santé vide : MinIO a son propre healthcheck interne mais pas de route /sante
-  # compatible avec le motif du reste du parc (revue finale whole-branch I4).
-  "sauvegarde|$RACINE/outils/sauvegarde|"
+  # Santé : route /healthz du S3 SeaweedFS (port hôte 9002, cf. outils/sauvegarde/README.md).
+  "sauvegarde|$RACINE/outils/sauvegarde|http://localhost:9002/healthz"
   "forge|$RACINE/briques/forge|http://localhost:5700/sante"
   "ingestion|$RACINE/briques/ingestion|http://localhost:5200/sante"
   "donnees|$RACINE/briques/donnees|http://localhost:5500/sante"
@@ -153,7 +152,7 @@ for ligne in "${BRIQUES[@]}"; do
   # Compose quelle que soit l'invocation, avec ou sans --env-file — donc ça marche
   # identiquement sur le HP où la procédure fait des `docker compose up -d` nus). Ce
   # --env-file reste utile pour les composes qui interpolent encore ${...} directement
-  # (ex. MinIO, Task 1) et pour MEMOIRE_DB_PASSWORD/GATEWAY_DB_PASSWORD ci-dessus.
+  # (ex. le S3 de outils/sauvegarde) et pour MEMOIRE_DB_PASSWORD/GATEWAY_DB_PASSWORD ci-dessus.
   env_args=(--env-file "$RACINE/.env")
   [ -f "$dossier/.env" ] && env_args+=(--env-file "$dossier/.env")
   sortie=$( cd "$dossier" && docker compose "${env_args[@]}" up -d 2>&1 )

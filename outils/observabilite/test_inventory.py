@@ -26,6 +26,8 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(by_name['Processus — oria']['url'], 'http://host.docker.internal:6085/sante')
         self.assertEqual(by_name['Dépendance — Oria backend']['url'], 'http://host.docker.internal:8000/health')
         self.assertEqual(by_name['Processus — Cœur']['maxretries'], 2)
+        # S237b : le S3 d'Oria (SeaweedFS) a sa propre sonde, par sa route de santé.
+        self.assertEqual(by_name['Dépendance — Oria S3 (SeaweedFS)']['url'], 'http://host.docker.internal:9106/healthz')
 
     def test_core_url_is_not_monitored_twice(self):
         module = self.load()
