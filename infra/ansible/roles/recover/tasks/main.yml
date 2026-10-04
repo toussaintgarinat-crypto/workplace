@@ -17,14 +17,6 @@
 - name: Refuse missing destination
   ansible.builtin.assert:
     that: s237_remote.stat.isdir | default(false)
-- name: Install private recovery credentials
-  ansible.builtin.copy:
-    src: "{{ s237_recovery_credentials }}"
-    dest: "{{ s237_root }}/private/recovery.env"
-    mode: '0600'
-  become: true
-  no_log: true
-  diff: false
 - name: Install S236 coherent tooling used for verification
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../../outils/sauvegarde/coherent/"
@@ -39,6 +31,14 @@
   become: true
 - name: Recover the generation, then drop the production passphrase from the target
   block:
+    - name: Install private recovery credentials
+      ansible.builtin.copy:
+        src: "{{ s237_recovery_credentials }}"
+        dest: "{{ s237_root }}/private/recovery.env"
+        mode: '0600'
+      become: true
+      no_log: true
+      diff: false
     - name: Recover, verify and extract the generation without its original Duplicati database
       ansible.builtin.command:
         argv: [python3, "{{ s237_root }}/bin/recover_generation.py", --root, "{{ s237_root }}", --profile, "{{ s237_recovery_profile }}", --version, "{{ s237_recovery_version }}", --image, "{{ s237_duplicati_image }}"]
@@ -46,7 +46,7 @@
       changed_when: (s237_recovered.stdout | from_json).changed > 0
       become: true
   always:
-    # Reinstalled by the task above on every run; never left on a kept VM.
+    # Reinstalled at the start of the block on every run; never left on a kept VM.
     - name: Remove private recovery credentials
       ansible.builtin.file:
         path: "{{ s237_root }}/private/recovery.env"

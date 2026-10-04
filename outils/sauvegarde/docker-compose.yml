@@ -51,7 +51,7 @@ services:
         condition: service_healthy
     networks:
       - default
-    # Identifiants par l'environnement (pas dans la ligne de commande visible par ps).
+    # Identifiants par l'environnement, pas dans l'entrypoint (restent visibles par docker inspect).
     environment:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID manquant (--env-file ../../.env)}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY manquant (--env-file ../../.env)}

@@ -53,12 +53,14 @@ Un autre agent a relu en lecture seule l'outillage S237 du 2026-10-04 et ce chan
 | I4 | Le S3 de développement démarrait en anonyme si les clés étaient vides. | Confirmé sur l'image, puis corrigé (`:?`) |
 | I5 | La sauvegarde serait refusée pendant la bascule. | Pris en compte dans la procédure : conteneur supprimé, inventaire en service mis à jour, preflight vérifié |
 | m1 | L'hyperviseur Proxmox n'était pas refusé par la garde. | `192.168.1.222` est refusé, et l'existence de `/etc/pve` interdit la cible |
-| m6 | Les identifiants apparaissaient dans la commande du conteneur d'initialisation de développement. | Passés par l'environnement |
-| m10 | La phrase de passe de production restait sur la VM gardée. | `recovery.env` supprimé dans un `always` après la récupération |
+| m6 | Les identifiants apparaissaient dans la commande du conteneur d'initialisation de développement. | Passés par l'environnement plutôt que par l'entrypoint (ils restent visibles par `docker inspect`, comme pour tout service) |
+| m10 | La phrase de passe de production restait sur la VM gardée. | Installation et récupération dans un `block`, `recovery.env` supprimé dans son `always` |
 | m11 | La reprise Qdrant recréait des alias existants. | Seuls les alias manquants sont créés |
 | m13 | Le catalogue « observé » avait été édité à la main. | Mentionné dans le README Ansible |
 
 Différés : sondes HTTP sans contrôle de contenu (m2), relais qui ignore `host_ip` (m3), délais du relais pour WebSocket/SSE (m4), garde-fous de `stage_backup.sh` (m9), rôle `s237_bootstrap_*` laissé dans les PostgreSQL restaurés (m12), et le même schéma d'alias Qdrant dans `outils/sauvegarde/coherent/restore.py` (S236, hors périmètre). La sonde S3 prouve un aller-retour, pas la restauration de données S3 : il n'y a aucun bucket à restaurer aujourd'hui (m5).
+
+Seconde relecture des correctifs : 5/5 OK, aucun nouveau défaut Important ou Critical ; ses deux remarques mineures (identifiants installés hors du `block`, commentaire m6) sont corrigées. Elle signale que le contrôle d'isolation de l'hôte sonde maintenant 2 ports par adresse, ce qui peut allonger le passage d'isolation (403 s en S237) : à mesurer au rejeu.
 
 Tests : Ansible 46, coherent 68, duplicati 17, observabilité 6, reconstruction 8 — tous verts (pytest).
 
