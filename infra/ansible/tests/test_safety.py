@@ -240,3 +240,14 @@ class RelayTopologyTests(unittest.TestCase):
         lan=dict(container,NetworkSettings={'Networks':{'s237-x':{'IPAddress':'192.168.1.50'}}})
         with self.assertRaises(ValueError):state.probe_url([lan],{'service':'core','port':5000,'path':'/health'})
         with self.assertRaises(ValueError):state.probe_url([container],{'service':'absent','port':1})
+
+    def test_anonymous_volumes_named_or_refused(self):
+        model={'services':{'front':{'volumes':[{'type':'volume','target':'/app/node_modules'}]}}}
+        with self.assertRaises(ValueError):state.topology(model,{},'oria',True)
+        result=state.topology(model,{'add_volumes':{'front':{'/app/node_modules':'node_modules'}}},'oria',True)
+        self.assertEqual(result['services']['front']['volumes'][0]['source'],'node_modules')
+    def test_declared_dependency_removal_requires_reason(self):
+        model={'services':{'forge':{'depends_on':{'forge-migrate':{'condition':'service_completed_successfully'}}}}}
+        with self.assertRaises(ValueError):state.topology(model,{'drop_depends_on':{'forge':{'forge-migrate':''}}},'forge',True)
+        result=state.topology(model,{'drop_depends_on':{'forge':{'forge-migrate':'schema restored'}}},'forge',True)
+        self.assertEqual(result['services']['forge']['depends_on'],{})

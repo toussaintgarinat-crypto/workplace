@@ -410,7 +410,6 @@ s237_catalogue:
     - docker-compose.yml
     services:
     - grafana
-    - node-exporter
     - prometheus
     - uptime-kuma
     dependencies:
@@ -570,6 +569,9 @@ s237_private_projects:
     - service: forge-adapter
       port: 8000
       path: /sante
+    drop_depends_on:
+      forge:
+        forge-migrate: 'Migration ponctuelle exclue : le schéma provient du dump PostgreSQL restauré.'
   oria:
     env_file: '{{ s237_inputs }}/env/oria.env'
     bind_mappings:
@@ -727,7 +729,7 @@ s237_private_projects:
   dev:
     env_file: '{{ s237_inputs }}/env/dev.env'
     bind_mappings:
-      /srv/workplace-rehearsal/releases/ab916415632ed7e37b9786f11ce77f3b02bec79e: workspace
+      .: workspace
     environment:
       code-server: {}
       dev:
@@ -1043,7 +1045,6 @@ s237_private_projects:
         kind: release
     environment:
       grafana: {}
-      node-exporter: {}
       prometheus: {}
       uptime-kuma: {}
     probes:
@@ -1056,5 +1057,21 @@ s237_private_projects:
     - service: uptime-kuma
       port: 3001
       path: /
-s237_supervision_projects:
-- observabilite
+s237_supervision:
+  project: observabilite
+  excluded_jobs:
+    hote: 'Cible node-exporter : service exclu (pid hôte et montage de /), métriques hôte non couvertes.'
+s237_neutralize:
+- name: kuma-notifications
+  project: observabilite
+  service: uptime-kuma
+  destination: /app/data
+  sqlite: kuma.db
+  statement: UPDATE notification SET active = 0
+  verify: SELECT count(*) FROM notification WHERE active = 1
+  expect: 0
+  reason: 'Canal Telegram S235 restauré : aucune notification externe depuis l''exercice.'
+s237_image_escrow:
+- image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+  id: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+  archive: '{{ s237_escrow_dir }}/minio-RELEASE.2025-09-07T16-13-09Z.tar'

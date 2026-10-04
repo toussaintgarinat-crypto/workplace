@@ -7,3 +7,8 @@ s237_backup_timer_enabled: false
 # pinned apt versions, private_projects, reviewed catalogue, exclusions.
 # Public official key verified 2026-10-04; provenance in docker-key.lock.json.
 s237_docker_key_sha256: 1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
+s237_docker_daemon:
+  default-address-pools:
+    - {base: 172.17.0.0/12, size: 20}
+    - {base: 10.0.0.0/8, size: 24}
+  userland-proxy: false

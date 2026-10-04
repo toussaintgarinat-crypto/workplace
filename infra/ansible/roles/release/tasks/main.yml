@@ -37,6 +37,25 @@
     S237_DIAGNOSTIC_DIR: "{{ s237_root }}/state/diagnostics"
   no_log: true
   diff: false
+- name: Load escrowed images that registries no longer publish
+  # Each archive is private on the controller; the loaded image ID must match the
+  # production ID recorded in the profile, otherwise preparation stops.
+  ansible.builtin.include_tasks: escrow.yml
+  loop: "{{ s237_image_escrow | default([]) }}"
+  loop_control:
+    loop_var: s237_escrow
+- name: Install data restore helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/restore_data.py"
+    dest: "{{ s237_root }}/bin/restore_data.py"
+    mode: '0700'
+- name: Restore data binds from the recovered repository before builds
+  ansible.builtin.command:
+    argv: [python3, "{{ s237_root }}/bin/restore_data.py", files]
+    stdin: "{{ s237_runtime_config | to_json }}"
+  register: s237_files_restored
+  changed_when: (s237_files_restored.stdout | from_json).changed > 0
+  no_log: true
 - name: Prepare resolved runtime and images while acquisition is permitted
   ansible.builtin.command:
     argv: [python3, "{{ s237_root }}/bin/workplace_state.py", prepare]

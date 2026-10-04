@@ -15,4 +15,6 @@
       migration_compatible: "{{ s237_migration_compatible | default(false) }}"
       probe_image: "{{ s237_probe_image }}"
       relay: "{{ s237_relay | default(None) }}"
+      exclusions: "{{ s237_exclusions }}"
+      neutralize: "{{ s237_neutralize | default([]) }}"
   no_log: true

@@ -88,9 +88,16 @@ def topology(model, private, project, relay):
             if len(kept)==len(service.get('volumes',[])): raise ValueError('declared mount removal not found: '+name+' '+target)
             service['volumes']=kept
         for target, key in private.get('add_volumes',{}).get(name,{}).items():
-            if any(v.get('target')==target for v in service.get('volumes',[])): raise ValueError('implicit volume already explicit: '+target)
-            service.setdefault('volumes',[]).append({'type':'volume','source':key,'target':target})
+            existing=[v for v in service.get('volumes',[]) if v.get('target')==target]
+            if existing and (existing[0].get('type')!='volume' or existing[0].get('source')): raise ValueError('implicit volume already explicit: '+target)
+            if existing: existing[0]['source']=key  # anonymous Compose volume becomes named and restorable
+            else: service.setdefault('volumes',[]).append({'type':'volume','source':key,'target':target})
             result.setdefault('volumes',{}).setdefault(key,{})
+        for vol in service.get('volumes',[]):
+            if vol.get('type')=='volume' and not vol.get('source'): raise ValueError('anonymous volume must be named in the profile: '+name+' '+vol.get('target',''))
+        for dependency, reason in private.get('drop_depends_on',{}).get(name,{}).items():
+            if not reason or dependency not in (service.get('depends_on') or {}): raise ValueError('declared dependency removal invalid: '+name)
+            service['depends_on'].pop(dependency)
         hosts=service.pop('extra_hosts',None) or {}
         if isinstance(hosts,list): hosts=dict(item.replace('=',':',1).split(':',1) for item in hosts)
         dropped=set(private.get('drop_extra_hosts',{}).get(name,[]))
@@ -116,9 +123,15 @@ def overlay(model, mappings, root, project, relay=False):
         # bridges: probes use bridge addresses, inter-project calls use the relay.
         service.pop('ports',None)
     forbidden=('host-gateway','192.168.1.89','100.124.248.226')+(() if relay else (RELAY_ALIAS,))
-    encoded=json.dumps(result)
-    if any(endpoint in encoded for endpoint in forbidden):
-        raise ValueError('unmapped host gateway or production endpoint')
+    def locate(value,path):
+        # Report where an endpoint remains, never the surrounding value.
+        if isinstance(value,dict):
+            for k,v in value.items(): yield from locate(v,path+[str(k)])
+        elif isinstance(value,list):
+            for i,v in enumerate(value): yield from locate(v,path+[str(i)])
+        elif isinstance(value,str) and any(endpoint in value for endpoint in forbidden): yield '/'.join(path)
+    found=list(locate(result,[]))
+    if found: raise ValueError('unmapped host gateway or production endpoint in '+project+': '+', '.join(found[:12]))
     result.pop('name',None)
     networks=result.setdefault('networks',{})
     networks.setdefault('default',{})
@@ -214,6 +227,22 @@ def verify(containers,services,probes):
             if response.status != probe.get('status',200): raise ValueError('API status failed')
             content=response.read()
             if probe.get('contains','').encode() not in content: raise ValueError('API response failed')
+
+
+def supervision(c):
+    """Prometheus targets must all be up, except reviewed exclusions (host metrics)."""
+    project=c['supervision']['project']; excluded=c['supervision'].get('excluded_jobs',{})
+    if any(not reason for reason in excluded.values()): raise ValueError('supervision exclusion reason required')
+    containers=inspect_project(project)
+    url=probe_url(containers,{'service':'prometheus','port':9090,'path':'/api/v1/targets?state=active'})
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(url,timeout=10) as response: targets=json.load(response)['data']['activeTargets']
+    if not targets: raise ValueError('no Prometheus target')
+    jobs={t['labels']['job'] for t in targets}
+    if set(excluded)-jobs: raise ValueError('excluded supervision job absent')
+    down=sorted(t['labels']['job'] for t in targets if t['health']!='up' and t['labels']['job'] not in excluded)
+    if down: raise ValueError('Prometheus targets down: '+', '.join(down))
+    return {'targets':len(targets),'up':sum(t['health']=='up' for t in targets),'excluded_jobs':sorted(excluded)}
 
 
 def artifact_compatible(existing_digest, requested_digest):
@@ -351,12 +380,13 @@ for ip in sys.argv[1:]:
         run(['docker','run','--rm','--network',network,'--cap-drop','ALL','--security-opt','no-new-privileges',c['probe_image'],'python3','-c',script,*c['denied'],'1.1.1.1','2606:4700:4700::1111'])
 
 
-def prepare(c):
-    root=Path(c['root']); cat=catalogue(c['catalogue']); changed=0
+def prepare(c, plan=False):
+    """plan=True validates every transformation without creating or building anything."""
+    root=Path(c['root']); cat=catalogue(c['catalogue']); changed=0; problems=[]; planned={}
     if not re.fullmatch(r'[^ ]+@sha256:[0-9a-f]{64}',c['probe_image']): raise ValueError('digest-pinned Python probe image required')
     try: run(['docker','image','inspect',c['probe_image']])
     except subprocess.CalledProcessError:
-        run(['docker','pull',c['probe_image']]);changed+=1
+        if not plan: run(['docker','pull',c['probe_image']]);changed+=1
     selected=c.get('projects') or list(cat)
     if any(name not in cat for name in selected): raise ValueError('unknown selected project')
     sha=c['revision']; release=root/'releases'/sha
@@ -379,18 +409,20 @@ def prepare(c):
         routes=published_routes(models)
         routes_path=root/'data'/relative(relay['routes'])
         encoded=json.dumps(routes,sort_keys=True,indent=2)
-        if not routes_path.exists() or routes_path.read_text()!=encoded:
+        if not plan and (not routes_path.exists() or routes_path.read_text()!=encoded):
             write_private(routes_path,routes); changed+=1
-        routes_digest=hashlib.sha256(routes_path.read_bytes()).hexdigest()
+        routes_digest=hashlib.sha256(encoded.encode()).hexdigest()
     for name in selected:
+      try:
         p=cat[name]; private=c['private_projects'][name]
         model=copy.deepcopy(models[name]) if name in models else resolved(name)
         excluded=p.get('excluded_services',{})
         if any(not reason for reason in excluded.values()): raise ValueError('service exclusion reason required')
         if set(model['services'])!=set(p['services']) | (set() if name in models else set(excluded)): raise ValueError('catalogue service mismatch')
         for service in excluded: model['services'].pop(service,None)
-        for service in model['services'].values():
-            if set(service.get('depends_on',{})) & set(excluded): raise ValueError('excluded dependency still required')
+        for service_name,service in model['services'].items():
+            declared=set(private.get('drop_depends_on',{}).get(service_name,{}))
+            if (set(service.get('depends_on') or {})-declared) & set(excluded): raise ValueError('excluded dependency still required')
         if set(private['environment'])!=set(p['services']): raise ValueError('exercise environment review required per service')
         for service,env in private['environment'].items(): model['services'][service].setdefault('environment',{}).update(env)
         if relay and name==relay['project']:
@@ -408,7 +440,9 @@ def prepare(c):
             for mount in service.get('volumes',[]):
                 if mount['type']=='bind':
                     target=Path(mount['source'])
-                    if not target.exists() or str(target.resolve())!=str(target): raise ValueError('private bind data/config missing or symlinked')
+                    if not plan and (not target.exists() or str(target.resolve())!=str(target)): raise ValueError('private bind data/config missing or symlinked')
+        if plan:
+            planned[name]=model; continue
         for network,n in model['networks'].items():
             network_name=n['name']; n.pop('internal',None)
             existing=run(['docker','network','ls','--filter','name=^'+network_name+'$','-q'])
@@ -428,7 +462,9 @@ def prepare(c):
         write_private(draft_path,model)
         cmd=['docker','compose','--project-name','s237-'+name,'-f',str(draft_path)]
         run(cmd+['build','--pull'])
-        run(cmd+['pull','--ignore-buildable'])
+        # Present images are kept: escrowed images (no longer published) and
+        # digest-verified pulls are never replaced by a later registry state.
+        run(cmd+['pull','--ignore-buildable','--policy','missing'])
         images={}
         for service,settings in model['services'].items():
             image=settings.get('image','s237-'+name+'-'+service)
@@ -441,6 +477,12 @@ def prepare(c):
         else: write_private(config_path,model)
         write_private(prepared_path,{'sha':sha,'input_digest':digest,'config':str(config_path),'images':images,'digest':hashlib.sha256(config_path.read_bytes()).hexdigest()})
         changed+=1
+      except (ValueError,KeyError,subprocess.CalledProcessError) as error:
+        if not plan: raise
+        problems.append(name+': '+type(error).__name__+' '+str(error)[:300])
+    if plan:
+        write_private(root/'state/plan-models.json',planned)  # private review copy, 0600
+        return {'problems':problems,'projects':len(selected)}
     return changed
 
 
@@ -515,7 +557,7 @@ def deploy(c, rollback=False):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['preflight','prepare','artifacts','firewall','isolation','verify','deploy','rollback']); args=parser.parse_args(); c=json.load(sys.stdin)
+    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['preflight','plan','prepare','supervision','artifacts','firewall','isolation','verify','deploy','rollback']); args=parser.parse_args(); c=json.load(sys.stdin)
     if args.action=='preflight':
         c['addresses']=sorted({r[4][0] for r in socket.getaddrinfo(c['host'],None,type=socket.SOCK_STREAM)})
         guard(c)
@@ -535,6 +577,8 @@ def main():
     elif args.action=='artifacts': print(json.dumps({'changed':install_artifacts(c['root'],c['revision'],c['artifacts'])}))
     elif args.action=='firewall': print(json.dumps({'changed':install_firewall(c)}))
     elif args.action=='prepare': print(json.dumps({'changed':prepare(c)}))
+    elif args.action=='supervision': print(json.dumps(supervision(c)))
+    elif args.action=='plan': print(json.dumps(prepare(c,plan=True),indent=1,ensure_ascii=False))
     elif args.action in ('isolation','verify'):
         for name in c.get('projects') or list(c['catalogue']):
             if args.action=='verify':

@@ -46,10 +46,18 @@
     state: present
     update_cache: true
     cache_valid_time: 86400
+- name: Configure Docker daemon like production (address pools, no userland proxy)
+  # Production /etc/docker/daemon.json observed 2026-10-04; its 192.168.0.0/16 pool
+  # is deliberately omitted here to stay clear of LAN ranges.
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+    content: "{{ s237_docker_daemon | to_nice_json }}\n"
+  register: s237_daemon
 - name: Start Docker
   ansible.builtin.systemd_service:
     name: docker
-    state: started
+    state: "{{ 'restarted' if s237_daemon.changed else 'started' }}"
     enabled: true
 - name: Prepare dedicated private directories
   ansible.builtin.file:
