@@ -70,6 +70,7 @@ class LocateTests(unittest.TestCase):
                                    'agenda': {'directory': 'briques/agenda', 'excluded_services': {'litestream': 'r'}}}}
         ex.models = {'oria': {'services': {'db': {}}}, 'oria-adaptateur': {'services': {'oria': {}}}, 'agenda': {'services': {'agenda': {}}}}
         ex.excluded_directories = {'/home/debian/workplace/outils/mesh-https'}
+        ex.stopped = {'workplace_agenda_litestream': True, 'workplace_x': False}
         def labelled(directory, service):
             return {'Config': {'Labels': {'com.docker.compose.project.working_dir': '/home/debian/workplace/' + directory, 'com.docker.compose.service': service}}}
         ex.deployment = {'oria-db-1': labelled('oria-stack/oria', 'db'), 'workplace_oria': labelled('briques/oria', 'oria'),
@@ -90,6 +91,9 @@ class LocateTests(unittest.TestCase):
             ex.locate('unknown')
         with self.assertRaises(ValueError):
             ex.locate('absent')
+        self.assertIsNone(ex.locate('workplace_agenda_litestream'))
+        with self.assertRaises(ValueError):
+            ex.locate('workplace_x')
 
 
 class RecoveryTests(unittest.TestCase):

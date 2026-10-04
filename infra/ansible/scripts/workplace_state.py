@@ -98,6 +98,11 @@ def topology(model, private, project, relay):
         for dependency, reason in private.get('drop_depends_on',{}).get(name,{}).items():
             if not reason or dependency not in (service.get('depends_on') or {}): raise ValueError('declared dependency removal invalid: '+name)
             service['depends_on'].pop(dependency)
+        reason=private.get('drop_static_ips',{}).get(name)
+        static=[n for n,v in (service.get('networks') or {}).items() if v and (v.get('ipv4_address') or v.get('ipv6_address'))]
+        if static and not reason: raise ValueError('undeclared static address: '+name)
+        for network in static:
+            service['networks'][network].pop('ipv4_address',None); service['networks'][network].pop('ipv6_address',None)
         hosts=service.pop('extra_hosts',None) or {}
         if isinstance(hosts,list): hosts=dict(item.replace('=',':',1).split(':',1) for item in hosts)
         dropped=set(private.get('drop_extra_hosts',{}).get(name,[]))
@@ -411,6 +416,9 @@ def prepare(c, plan=False):
         encoded=json.dumps(routes,sort_keys=True,indent=2)
         if not plan and (not routes_path.exists() or routes_path.read_text()!=encoded):
             write_private(routes_path,routes); changed+=1
+        if not plan and routes_path.exists():
+            # Routes hold no secret; the relay reads them as an unprivileged user.
+            routes_path.parent.chmod(0o755); routes_path.chmod(0o644)
         routes_digest=hashlib.sha256(encoded.encode()).hexdigest()
     for name in selected:
       try:
@@ -461,7 +469,9 @@ def prepare(c, plan=False):
             continue
         write_private(draft_path,model)
         cmd=['docker','compose','--project-name','s237-'+name,'-f',str(draft_path)]
-        run(cmd+['build','--pull'])
+        # Base images are acquired once (pull of missing images); later builds,
+        # including targeted updates after isolation, reuse the pinned local copies.
+        run(cmd+['build'])
         # Present images are kept: escrowed images (no longer published) and
         # digest-verified pulls are never replaced by a later registry state.
         run(cmd+['pull','--ignore-buildable','--policy','missing'])
@@ -519,6 +529,12 @@ def deploy(c, rollback=False):
         isolation_check(networks,c['denied'])
         container_isolation(networks,c)
         containers=inspect_project(name)
+        if attempt and not prior and not rollback:
+            # Failed first activation: nothing active to protect. Remove only the
+            # journaled attempt's containers (volumes and external networks stay).
+            for candidate_entry in attempt.get('candidates',[attempt]):
+                run(['docker','compose','--project-name','s237-'+name,'-f',candidate_entry['config'],'down','--remove-orphans'])
+            attempt_path.unlink(); attempt=None; containers=inspect_project(name)
         if prior and not containers and not (rollback and attempt): raise ValueError('active containers absent without journaled recovery')
         if prior and containers:
             prior_path=Path(prior['config'])

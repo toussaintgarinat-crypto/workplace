@@ -520,6 +520,8 @@ s237_private_projects:
     drop_extra_hosts:
       keycloak:
       - postgres
+    drop_static_ips:
+      postgres: 'IP fixe 172.27.0.3 de l''override prod : le nom postgres est résolu par le DNS du réseau d''exercice.'
   gateway:
     env_file: '{{ s237_inputs }}/env/gateway.env'
     bind_mappings:

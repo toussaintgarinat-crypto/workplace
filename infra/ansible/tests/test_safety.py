@@ -251,3 +251,9 @@ class RelayTopologyTests(unittest.TestCase):
         with self.assertRaises(ValueError):state.topology(model,{'drop_depends_on':{'forge':{'forge-migrate':''}}},'forge',True)
         result=state.topology(model,{'drop_depends_on':{'forge':{'forge-migrate':'schema restored'}}},'forge',True)
         self.assertEqual(result['services']['forge']['depends_on'],{})
+
+    def test_static_addresses_require_declared_removal(self):
+        model={'services':{'postgres':{'networks':{'default':{'ipv4_address':'172.27.0.3'}}}}}
+        with self.assertRaises(ValueError):state.topology(model,{},'keycloak',True)
+        result=state.topology(model,{'drop_static_ips':{'postgres':'resolved by DNS'}},'keycloak',True)
+        self.assertEqual(result['services']['postgres']['networks']['default'],{})

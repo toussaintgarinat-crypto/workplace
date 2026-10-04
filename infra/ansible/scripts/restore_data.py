@@ -125,6 +125,7 @@ class Exercise:
         self.manifest = json.loads((self.generation / 'manifest.json').read_text())
         self.deployment = {c['name']: c for c in json.loads((self.generation / 'deployment.json').read_text())}
         self.inventory = self.manifest['inventory']
+        self.stopped = {e['container']: not e.get('running', True) for e in self.inventory.get('expected_mounts', [])}
         self.diagnostics = private_dir(self.root / 'state/diagnostics')
         observed = json.loads((self.root / 'releases' / config['revision'] / 'infra/ansible/catalogue.observed.json').read_text())
         # Whole projects excluded by the reviewed profile (for example mesh-https).
@@ -138,6 +139,9 @@ class Exercise:
         """Production container -> (exercise project, service) via Compose labels."""
         source = self.deployment.get(container)
         if source is None:
+            # Only sidecars recorded as stopped in the S236 inventory may be absent.
+            if self.stopped.get(container) is True:
+                return None
             raise ValueError('container absent from generation deployment: ' + container)
         labels = source['Config']['Labels']
         directory = labels['com.docker.compose.project.working_dir']
