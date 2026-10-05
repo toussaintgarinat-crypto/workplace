@@ -2246,7 +2246,8 @@ async function chargerCerveau(force) {
     const liste = dispo.length ? dispo : (c.model ? [c.model] : []);
     // Option « cascade pure » (aucune tête) en haut, puis les modèles servis.
     const optCascade = `<option value=""${!c.model?' selected':''}>⚡ Cascade auto (gratuits → repli payant)</option>`;
-    sel.innerHTML = optCascade + liste.map(m => `<option value="${m}"${m===c.model?' selected':''}>${m}</option>`).join('');
+    // Noms échappés (revue S240, M6) : `free/*`/`kilo/*` viennent de catalogues externes.
+    sel.innerHTML = optCascade + liste.map(m => `<option value="${escAttr(m)}"${m===c.model?' selected':''}>${escHtml(m)}</option>`).join('');
     // Case cascade + description de la chaîne réellement essayée.
     const cb = document.getElementById('cerveau-cascade');
     if (cb) cb.checked = !!c.cascade_auto;
@@ -2448,7 +2449,13 @@ async function chargerModeles() {
   const selForge = document.getElementById('cerveau-forge');
   selForge.innerHTML = `<option value="">Mistral small — défaut (${escHtml(forge.defaut)})</option>`
     + perso.map(m => `<option value="${escAttr(m.nom)}"${m.nom === forge.choix ? ' selected' : ''}>${escHtml(m.nom)}</option>`).join('');
-  pill(document.getElementById('forge-statut'), forge.choix ? null : true, forge.choix || 'défaut');
+  // Sans clé pour son fournisseur, forge/defaut échoue à chaque appel et la Gateway sert la
+  // Forge par les gratuits (revue S240, I4) : on le dit en rouge plutôt qu'un « défaut » vert.
+  if (forge.cle_definie === false)
+    pill(document.getElementById('forge-statut'), false,
+         'Forge servie par les gratuits (clé ' + (forge.fournisseur_label || forge.fournisseur) + ' absente)');
+  else
+    pill(document.getElementById('forge-statut'), forge.choix ? null : true, forge.choix || 'défaut');
   // Liste groupée par origine ; seuls les « perso » ont un bouton Retirer.
   zone.innerHTML = ORIGINES_MODELES.map(([cle, titre]) => {
     const ms = modeles.filter(m => m.origine === cle);
@@ -2492,7 +2499,7 @@ async function enregistrerForge() {
   try {
     const r = await envoyerCerveau('/assistant/forge-modele', { modele });
     if (r.ok) cerveauMsg('✔ La Forge utilise « ' + r.model + ' » : ' + r.detail, 'ok');
-    else cerveauMsg('⚠ Forge basculée sur « ' + r.model + ' », mais il ne répond pas (la Gateway servira les gratuits) : ' + r.detail, 'ko');
+    else cerveauMsg('⚠ « ' + (r.essaye || modele) + ' » ne répond pas : la Forge reste sur « ' + r.model + ' ». ' + r.detail, 'ko');
     await chargerModeles();
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
