@@ -14,7 +14,8 @@ des clients externes, qui partage seulement le registre.
 Transport : Streamable HTTP — un POST JSON-RPC sur `/mcp`. Méthodes : `initialize`,
 `tools/list`, `tools/call`, `ping`. Le co-agent planificateur exécutif est exposé comme un
 outil ordinaire (`coagent_lancer`) : un client MCP peut donc déléguer une tâche multi-briques
-autonome. Sécurité : clé `MCP_KEY` (header) si définie, kill-switch `MCP_ACTIF`.
+autonome. Sécurité : clé `MCP_KEY` (header), exigée dès que AUTH_ENABLED=true (vide = refus,
+S240), kill-switch `MCP_ACTIF`.
 
 ⚠ Le gate d'action structurel (S222, `accord_action.REGISTRE`) NE COUVRE PAS ce chemin :
 `tools/call` appelle `outils.executer` directement, sans jamais passer par `converser` ni
@@ -41,9 +42,14 @@ def actif() -> bool:
 
 
 def cle_ok(presentee: str | None) -> bool:
-    """Auth optionnelle : si `MCP_KEY` est définie, on l'exige (header) ; sinon mode ouvert."""
+    """`MCP_KEY` définie → exigée (header). Vide : ouvert SEULEMENT si l'auth du Cœur est
+    coupée (dev local) ; avec AUTH_ENABLED=true on ferme (revue S240) — sinon tout appareil
+    du LAN/mesh pilotait tous les outils de l'assistant sans la moindre session."""
+    import auth  # import tardif : AUTH_ENABLED est relu à chaque appel (tests, bascule)
     attendue = os.getenv("MCP_KEY")
-    return True if not attendue else presentee == attendue
+    if not attendue:
+        return not auth.AUTH_ENABLED
+    return presentee == attendue
 
 
 def _outil_mcp(spec: dict, est_action) -> dict:

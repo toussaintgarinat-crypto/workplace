@@ -44,6 +44,7 @@ ROUTES_GARDEES = {
     ("POST", "/assistant/modeles"),
     ("DELETE", "/assistant/modeles/{nom:path}"),
     ("POST", "/assistant/forge-modele"),
+    ("GET", "/sauvegarde-usb/env"),
 }
 
 

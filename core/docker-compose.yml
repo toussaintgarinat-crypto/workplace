@@ -70,7 +70,8 @@ services:
       - ASSISTANT_CONFIG_PATH=/data/assistant_config.json
       # Gateway MCP (POST /mcp) : point d'entrée unique pour des clients/agents tiers, mêmes
       # outils que l'assistant (statiques + découverts par manifest) + co-agent planificateur.
-      # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — recommandé hors local
+      # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — OBLIGATOIRE dès que
+      # AUTH_ENABLED=true (sinon /mcp refuse tout, S240) ; sans auth (dev local) /mcp reste ouvert,
       # car /mcp peut déclencher des ACTIONS (confirme=true reste néanmoins exigé par outil).
       - MCP_ACTIF=${MCP_ACTIF:-1}
       # NB : RESTAURANT_KEY (clé envoyée à la brique restaurant en X-API-Key pour piloter la

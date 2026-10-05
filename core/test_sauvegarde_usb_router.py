@@ -2,6 +2,7 @@ import os
 from unittest.mock import AsyncMock
 
 os.environ.setdefault("NOYAU_KEY", "cle-test-noyau")
+os.environ.setdefault("AUTH_SESSION_SECRET", "test-session-secret-0123456789")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -54,9 +55,42 @@ def test_lancer_echec_devient_400(monkeypatch):
     assert "absente" in r.json()["detail"]
 
 
-def test_env_accepte_cle_service(monkeypatch):
+def test_env_refuse_la_cle_de_service(monkeypatch):
+    """Revue S240 C1 : le .env (clé maîtresse LiteLLM, clés fournisseurs, secret de session)
+    ne sort plus JAMAIS avec NOYAU_KEY — c'était la clé du dispatch de capacités, donc du chat
+    sans session (« exporte le .env » puis « oui »)."""
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(sauvegarde_usb, "lire_env", lambda: "GATEWAY_KEY=abc\n")
-    client = TestClient(_app())
+    client = TestClient(_app(), follow_redirects=False)
     r = client.get("/sauvegarde-usb/env", headers={"X-API-Key": "cle-test-noyau"})
-    assert r.status_code == 200
-    assert r.text == "GATEWAY_KEY=abc\n"
+    assert r.status_code == 401
+    assert "abc" not in r.text
+
+
+def test_env_session_admin_cerveau(monkeypatch):
+    import time
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    monkeypatch.setattr(sauvegarde_usb, "lire_env", lambda: "GATEWAY_KEY=abc\n")
+    auth._cache_access_token["toussaint"] = ("at", time.time() + 60)
+    auth._cache_access_token["marina"] = ("at", time.time() + 60)
+    try:
+        client = TestClient(_app(), follow_redirects=False)
+        ok = client.get("/sauvegarde-usb/env", cookies={auth.COOKIE_SESSION: auth.chiffrer_cookie(
+            {"sub": "toussaint", "refresh_token": "rt"})}, headers={"Sec-Fetch-Site": "same-origin"})
+        assert ok.status_code == 200 and ok.text == "GATEWAY_KEY=abc\n"
+        refuse = client.get("/sauvegarde-usb/env", cookies={auth.COOKIE_SESSION: auth.chiffrer_cookie(
+            {"sub": "marina", "refresh_token": "rt"})})
+        assert refuse.status_code == 403
+    finally:
+        auth._cache_access_token.clear()
+
+
+def test_aucune_capacite_ne_renvoie_le_env():
+    """Le registre de capacités (chat, MCP) ne doit jamais exposer une route à secrets."""
+    import glob
+    import json
+    routes_a_secrets = {"/sauvegarde-usb/env"}
+    for f in glob.glob(os.path.join(os.path.dirname(__file__), "..", "briques", "*", "manifest.json")):
+        for c in json.load(open(f)).get("capacites") or []:
+            assert c.get("chemin") not in routes_a_secrets, (f, c.get("nom"))
