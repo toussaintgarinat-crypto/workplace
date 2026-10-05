@@ -266,3 +266,48 @@ def sub_session_optionnel(request: Request) -> str | None:
     if _session_perimee(session, sub):
         return None
     return sub
+
+
+def _admins_cerveau() -> set[str]:
+    """Subs Keycloak autorisés à modifier le cerveau (`CERVEAU_ADMINS`, séparés par des
+    virgules). Relu à chaque appel : se règle dans l'env sans toucher au code, et les tests
+    le font varier sans recharger le module."""
+    return {s.strip() for s in os.environ.get("CERVEAU_ADMINS", "").split(",") if s.strip()}
+
+
+async def exiger_admin_cerveau(request: Request) -> dict:
+    """Dépendance des routes qui MODIFIENT le cerveau (S240) : clés fournisseur, modèle,
+    cascade, persona, langue, voix, modèles servis, modèle de la Forge.
+
+    Avant S240, ces routes n'avaient que `lire_contexte_tenant` (non bloquant) : n'importe
+    quel appareil du LAN/mesh pouvait poser une clé et la faire servir. Règles :
+    - session Cœur exigée (`exiger_session`) ; son 303 vers /auth/login devient ici un 401,
+      car ces routes sont appelées en `fetch` (une redirection vers Keycloak y serait suivie
+      en silence et finirait en erreur CORS illisible) ;
+    - `CERVEAU_ADMINS` vide = toute session valide suffit (foyer mono-compte) ; non vide =
+      seuls ces subs passent (403 sinon) ;
+    - `AUTH_ENABLED=false` + `CERVEAU_ADMINS` vide : identité factice, comportement historique
+      (dev/tests). `AUTH_ENABLED=false` + `CERVEAU_ADMINS` posé : 403 — sans auth, il n'y a
+      aucune identité vérifiable, et laisser passer « anonymous » ferait croire à une
+      protection qui n'existe pas.
+
+    Les lectures (`GET /assistant/config`…) et le chat (`/assistant/chat`, utilisé par
+    Telegram/Mini App/S2S sans session) ne portent PAS cette garde."""
+    try:
+        identite = await exiger_session(request)
+    except HTTPException as e:
+        if e.status_code == 303:
+            raise HTTPException(status_code=401,
+                                detail="Session requise pour modifier le cerveau.") from None
+        raise
+    admins = _admins_cerveau()
+    if not admins:
+        return identite
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail=(
+            "CERVEAU_ADMINS est défini mais AUTH_ENABLED=false : aucune identité "
+            "vérifiable, modification du cerveau refusée."))
+    if identite.get("sub") not in admins:
+        raise HTTPException(status_code=403,
+                            detail="Ce compte n'est pas autorisé à modifier le cerveau.")
+    return identite

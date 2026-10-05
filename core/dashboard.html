@@ -2351,10 +2351,7 @@ async function enregistrerVoix() {
   const voix_silence_ms = isNaN(sSil) ? 5000 : Math.round(sSil * 1000);
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/voix', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ voix_provider: provider, unmute_url, wakeword_url, voix_fin_mode, voix_silence_ms })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/voix', { voix_provider: provider, unmute_url, wakeword_url, voix_fin_mode, voix_silence_ms });
     VOIX_FIN_MODE = r.voix_fin_mode || 'silence';
     VOIX_SILENCE_MS = r.voix_silence_ms || 5000;
     construireVoix(r.voix_provider, r.unmute_url, r.wakeword_url);
@@ -2372,6 +2369,20 @@ async function enregistrerVoix() {
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
 }
+// Écritures du cerveau (S240) : ces routes exigent une session, et `CERVEAU_ADMINS` peut
+// restreindre à certains comptes. Une réponse 401/403 renvoie `{detail}` et non l'objet
+// attendu : sans ce contrôle, le panneau affichait « ✔ » avec des champs `undefined`.
+async function envoyerCerveau(url, corps, methode) {
+  const r = await fetch(url, { method: methode || 'POST', headers: {'Content-Type':'application/json'},
+                               body: corps === undefined ? undefined : JSON.stringify(corps) });
+  let d = {};
+  try { d = await r.json(); } catch(_) {}
+  if (!r.ok) {
+    const det = typeof d.detail === 'string' ? d.detail : (d.detail ? JSON.stringify(d.detail) : 'HTTP ' + r.status);
+    throw new Error(r.status === 401 ? 'session expirée — recharge la page pour te reconnecter.' : det);
+  }
+  return d;
+}
 function majDescPersona(ps) {
   const sel = document.getElementById('cerveau-persona');
   const p = (ps || []).find(x => x.cle === sel.value);
@@ -2382,10 +2393,7 @@ async function enregistrerPersona() {
   const persona = document.getElementById('cerveau-persona').value;
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/persona', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ persona })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/persona', { persona });
     pill(document.getElementById('persona-statut'), r.persona !== 'default' ? null : true, r.persona);
     cerveauMsg('✔ Personnalité « ' + r.persona + ' » active dès le prochain message.', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
@@ -2396,10 +2404,7 @@ async function enregistrerLangue() {
   const langue = document.getElementById('cerveau-langue').value;
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/langue', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ langue })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/langue', { langue });
     VOIX_LOCALE = r.locale_voix || 'fr-FR';  // la voix suit immédiatement (sans recharger)
     const opt = document.querySelector('#cerveau-langue option[value="' + r.langue + '"]');
     pill(document.getElementById('langue-statut'), r.langue !== 'fr' ? null : true,
@@ -2414,10 +2419,7 @@ async function enregistrerModele() {
   const label = model || 'cascade auto';
   btn.classList.add('loading'); cerveauMsg('Test de « ' + label + ' »…', 'info');
   try {
-    const r = await fetch('/assistant/config', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/config', { model });
     await chargerCerveau(true);
     if (r.ok) cerveauMsg('✔ Tête « ' + (r.tete||label) + ' » active : ' + r.detail, 'ok');
     else cerveauMsg('⚠ Enregistré mais la tête ne répond pas : ' + r.detail, 'ko');
@@ -2428,10 +2430,7 @@ async function enregistrerCascade() {
   const actif = document.getElementById('cerveau-cascade').checked;
   cerveauMsg('Mise à jour de la cascade…', 'info');
   try {
-    const r = await fetch('/assistant/config', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cascade_auto: actif })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/config', { cascade_auto: actif });
     await chargerCerveau(true);
     cerveauMsg(actif ? '✔ Cascade auto activée (gratuits d\'abord).' : '✔ Cascade désactivée (modèle + repli manuel).', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
@@ -2453,10 +2452,7 @@ async function enregistrerMuscle() {
   const actif = document.getElementById('cerveau-muscle').checked;
   cerveauMsg('Mise à jour du muscle déporté…', 'info');
   try {
-    const r = await fetch('/assistant/muscle', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ actif })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/muscle', { actif });
     await majMuscleNoeuds();
     cerveauMsg(r.muscle_actif ? '✔ Muscle déporté activé : un nœud prêt passe en tête de cascade.'
                               : '✔ Muscle déporté désactivé (cascade habituelle).', 'ok');
@@ -2469,10 +2465,7 @@ async function enregistrerCle() {
   btn.classList.add('loading');
   cerveauMsg('Enregistrement, redémarrage de la Gateway puis test… (~15 s)', 'info');
   try {
-    const r = await fetch('/assistant/cle-openrouter', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cle })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/cle-openrouter', { cle });
     pill(document.getElementById('cle-statut'),
          r.cle_openrouter_definie ? true : false,
          r.cle_openrouter_definie ? '● définie' : '● absente');
@@ -2489,10 +2482,7 @@ async function enregistrerCleFournisseur(id) {
   if (!cle) { cerveauMsg('Saisis une clé pour ' + id + '.', 'ko'); return; }
   cerveauMsg('Enregistrement de la clé « ' + id + ' », redémarrage de la Gateway… (~15 s)', 'info');
   try {
-    const r = await fetch('/assistant/cle-fournisseur', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ fournisseur: id, cle })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/cle-fournisseur', { fournisseur: id, cle });
     if (r.ok) { cerveauMsg('✔ Clé « ' + id + ' » enregistrée, la Gateway a redémarré. Choisis son modèle dans « Modèle LLM ».', 'ok'); if (inp) inp.value = ''; }
     else cerveauMsg('⚠ Échec (' + (r.etape || '?') + ') : ' + (r.detail || ''), 'ko');
     await chargerCerveau(true);

@@ -5,7 +5,7 @@ Assistant : chat, conversations, projets, config, briefing, pouls, rappels.
 import os
 import json
 import httpx
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from etat import registre
 import accord_action
@@ -34,6 +34,14 @@ import proprioception
 import shadow
 
 router = APIRouter()
+
+# Garde des routes qui MODIFIENT le cerveau (S240) : session + liste blanche optionnelle
+# `CERVEAU_ADMINS`, cf. `auth.exiger_admin_cerveau`. Posée route par route et non sur tout
+# le router : `/assistant/chat` et `/assistant/historique_utilisateur` sont appelés sans
+# session par Telegram/Mini App (brique connexion) et doivent le rester. Les lectures
+# (`GET /assistant/config`…) restent ouvertes : elles ne renvoient aucun secret (l'état des
+# clés est un booléen « définie »).
+_ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
 
 
 @router.post("/briefing/executer", tags=["assistant"])
@@ -423,14 +431,14 @@ async def assistant_muscle_get():
     return {"muscle_actif": conf["muscle_actif"], **await muscle.etat()}
 
 
-@router.post("/assistant/muscle", tags=["assistant"])
+@router.post("/assistant/muscle", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_muscle_post(corps: dict):
     """Active/désactive le recours au muscle déporté. Corps : {"actif": bool}."""
     conf = config_assistant.definir_muscle(corps.get("actif"))
     return {"muscle_actif": conf["muscle_actif"]}
 
 
-@router.post("/assistant/routage", tags=["assistant"])
+@router.post("/assistant/routage", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_routage_post(corps: dict):
     """Active/désactive le routage dynamique (S138) et fixe le modèle économe.
 
@@ -439,7 +447,7 @@ async def assistant_routage_post(corps: dict):
     return {"routage_actif": conf["routage_actif"], "modele_econome": conf["modele_econome"]}
 
 
-@router.post("/assistant/config", tags=["assistant"])
+@router.post("/assistant/config", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_post(corps: dict):
     """Règle le cerveau de l'assistant (effet immédiat).
 
@@ -494,7 +502,7 @@ async def assistant_config_organisation_get():
     return await config_tenant.lire_couche_organisation(ctx.org_id)
 
 
-@router.put("/assistant/config/organisation", tags=["assistant"])
+@router.put("/assistant/config/organisation", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_organisation_put(corps: dict):
     """Patch (partiel) la couche organisation. Corps : clés du schéma config_assistant
     (model, persona, langue, voix_provider…). Clé hors schéma → 400."""
@@ -509,7 +517,7 @@ async def assistant_config_utilisateur_get():
     return await config_tenant.lire_couche_utilisateur(ctx.org_id, ctx.utilisateur)
 
 
-@router.put("/assistant/config/utilisateur", tags=["assistant"])
+@router.put("/assistant/config/utilisateur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_utilisateur_put(corps: dict):
     """Patch (partiel) la couche utilisateur. Clé hors schéma connu → 400."""
     ctx = contexte_tenant.contexte_actuel()
@@ -517,7 +525,7 @@ async def assistant_config_utilisateur_put(corps: dict):
         config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps))
 
 
-@router.delete("/assistant/config/organisation", tags=["assistant"])
+@router.delete("/assistant/config/organisation", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_organisation_delete():
     """Supprime la couche organisation (retour au global). No-op si absente — seul
     recours pour retirer un patch devenu indésirable ou invalide."""
@@ -526,7 +534,7 @@ async def assistant_config_organisation_delete():
     return {"ok": True}
 
 
-@router.delete("/assistant/config/utilisateur", tags=["assistant"])
+@router.delete("/assistant/config/utilisateur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_utilisateur_delete():
     """Supprime la couche utilisateur (retour à ce que voit l'organisation, ou le
     global). No-op si absente."""
@@ -565,14 +573,14 @@ async def assistant_shadow_get():
     return shadow.rapport()
 
 
-@router.post("/assistant/persona", tags=["assistant"])
+@router.post("/assistant/persona", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_persona_post(corps: dict):
     """Change la personnalité de l'assistant (effet immédiat au prochain message)."""
     conf = config_assistant.definir_persona(corps.get("persona"))
     return {"ok": True, "persona": conf["persona"]}
 
 
-@router.post("/assistant/langue", tags=["assistant"])
+@router.post("/assistant/langue", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_langue_post(corps: dict):
     """Change la langue du Jarvis — réponses ET voix (effet immédiat, S39).
 
@@ -582,7 +590,7 @@ async def assistant_langue_post(corps: dict):
             "locale_voix": langue_mod.locale_voix(conf["langue"])}
 
 
-@router.post("/assistant/voix", tags=["assistant"])
+@router.post("/assistant/voix", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_voix_post(corps: dict):
     """Règle le fournisseur de voix et les URLs (effet au prochain chargement du front).
 
@@ -597,7 +605,7 @@ async def assistant_voix_post(corps: dict):
             "voix_fin_mode": conf["voix_fin_mode"], "voix_silence_ms": conf["voix_silence_ms"]}
 
 
-@router.post("/assistant/cle-openrouter", tags=["assistant"])
+@router.post("/assistant/cle-openrouter", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_cle_openrouter(corps: dict):
     """Enregistre une clé OpenRouter, recrée la Gateway, puis valide par une complétion.
 
@@ -618,7 +626,7 @@ async def assistant_cle_openrouter(corps: dict):
             "cle_openrouter_definie": config_assistant.cle_openrouter_definie()}
 
 
-@router.post("/assistant/cle-fournisseur", tags=["assistant"])
+@router.post("/assistant/cle-fournisseur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_cle_fournisseur(corps: dict):
     """Enregistre la clé d'un fournisseur LLM (Anthropic, Groq, OpenCode Go…) puis
     recrée la Gateway pour qu'elle la prenne en compte.
