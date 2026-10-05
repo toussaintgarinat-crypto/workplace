@@ -61,7 +61,8 @@ def test_cibles_de_drop_declarees():
     assert 'data-cible-brique="agenda"' in html
     assert 'data-cible-brique="mail"' in html
     assert 'data-cible-brique="geo"' in html
-    assert 'data-cible-brique="${b.nom}"' in html   # cartes du Registre (rendu JS)
+    # cartes du Registre (rendu JS) — nom échappé depuis S240 (C-A)
+    assert 'data-cible-brique="${escAttr(b.nom)}"' in html
 
 
 def test_cible_envoyee_au_coeur():
