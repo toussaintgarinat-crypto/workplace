@@ -614,7 +614,10 @@ async def assistant_cle_openrouter(corps: dict):
     cle = (corps.get("cle") or "").strip()
     if not cle:
         raise HTTPException(status_code=400, detail="La clé est vide.")
-    config_assistant._ecrire_cle(cle)
+    try:
+        config_assistant._ecrire_cle(cle)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not await config_assistant.recreer_gateway():
         return {"ok": False, "etape": "recreation",
                 "detail": "Conteneur de la Gateway introuvable (le Cœur a-t-il accès au socket Docker ?)."}
@@ -644,7 +647,10 @@ async def assistant_cle_fournisseur(corps: dict):
         raise HTTPException(status_code=400, detail=f"Fournisseur inconnu : {fid!r}.")
     if not cle:
         raise HTTPException(status_code=400, detail="La clé est vide.")
-    config_assistant._ecrire_cle_env(nom_env, cle)
+    try:
+        config_assistant._ecrire_cle_env(nom_env, cle)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not await config_assistant.recreer_gateway():
         return {"ok": False, "etape": "recreation",
                 "detail": "Conteneur de la Gateway introuvable (accès au socket Docker ?).",

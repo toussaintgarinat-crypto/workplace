@@ -17,6 +17,7 @@ fichier ni lancer de commande à la main.
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -406,8 +407,24 @@ def _cle_definie(val: str) -> bool:
     return bool(val) and "change" not in val.lower() and val not in _CLES_FACTICES
 
 
+# Caractères des clés réelles (sk-or-…, sk-ant-…, sk-proj-…, gsk_…, AIza…, Mistral
+# alphanumérique). Tout le reste est refusé : un `\n` ou `\r` injecterait une ligne de plus
+# dans le .env (ex. une autre variable de la Gateway), un `=`, un espace ou un guillemet
+# changerait la façon dont Docker le relit (revue S240, I2).
+_RE_CLE = re.compile(r"[A-Za-z0-9._\-]+", re.ASCII)
+
+
+def cle_valide(cle: str) -> bool:
+    return isinstance(cle, str) and bool(_RE_CLE.fullmatch(cle))
+
+
 def _ecrire_cle_env(nom: str, cle: str) -> None:
-    """Réécrit (ou ajoute) la ligne `{nom}=…` dans le .env de la Gateway."""
+    """Réécrit (ou ajoute) la ligne `{nom}=…` dans le .env de la Gateway.
+
+    Lève ValueError, SANS rien écrire, si la clé contient un caractère hors format."""
+    if not cle_valide(cle):
+        raise ValueError("Clé refusée : seuls lettres, chiffres, « . », « _ » et « - » sont "
+                         "acceptés (pas d'espace ni de retour à la ligne).")
     lignes: list[str] = []
     trouve = False
     if GATEWAY_ENV_PATH.exists():
