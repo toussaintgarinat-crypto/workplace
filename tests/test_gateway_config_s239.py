@@ -93,3 +93,48 @@ def test_en_tetes_client_relayes_aux_seuls_go(conf):
         .get("forward_client_headers_to_llm_api")
     assert groupes == ["go/*"]
     assert not conf["general_settings"].get("forward_client_headers_to_llm_api")
+
+
+# ── Revue S239, I4 : la politique de mise au frigo doit faire ce que ses commentaires disent ──
+# Lu dans LiteLLM v1.86.2 (router_utils/cooldown_handlers.py) : le seuil effectif vaut
+# `get_allowed_fails_from_policy(e) or allowed_fails` → une valeur 0 retombe sur
+# `allowed_fails` (3) ; et le frigo se déclenche quand le N-ième échec DÉPASSE le seuil.
+# `AllowedFailsPolicy` ne connaît que ces six clés — toute autre est ignorée en silence.
+CLES_POLITIQUE_LITELLM = {
+    "BadRequestErrorAllowedFails", "AuthenticationErrorAllowedFails",
+    "TimeoutErrorAllowedFails", "RateLimitErrorAllowedFails",
+    "ContentPolicyViolationErrorAllowedFails", "InternalServerErrorAllowedFails",
+}
+
+
+def _politique(conf):
+    return conf["router_settings"].get("allowed_fails_policy") or {}
+
+
+def test_politique_seulement_des_cles_connues_de_litellm(conf):
+    inconnues = set(_politique(conf)) - CLES_POLITIQUE_LITELLM
+    assert inconnues == set(), f"clés ignorées par LiteLLM v1.86.2 : {inconnues}"
+
+
+def test_politique_aucun_zero_qui_retomberait_sur_allowed_fails(conf):
+    zeros = [k for k, v in _politique(conf).items() if v == 0]
+    assert zeros == [], f"0 vaut `allowed_fails` ({conf['router_settings'].get('allowed_fails')})"
+
+
+def test_cle_invalide_au_frigo_des_le_deuxieme_refus(conf):
+    """Seuil 1 = le plus strict exprimable (0 retomberait sur 3)."""
+    assert _politique(conf)["AuthenticationErrorAllowedFails"] == 1
+
+
+def test_gratuits_jamais_au_frigo_pour_lenteur_ou_quota(conf):
+    p = _politique(conf)
+    assert p["RateLimitErrorAllowedFails"] >= 100
+    assert p["TimeoutErrorAllowedFails"] >= 100
+
+
+def test_alias_gratuits_frigo_court_par_deploiement(conf):
+    """`cooldown_time` de déploiement prime sur celui du routeur (router.py:6739) : un gratuit
+    saturé une minute ne doit pas disparaître une heure."""
+    for nom, p in _modeles(conf).items():
+        if nom.startswith("gratuit/"):
+            assert p.get("cooldown_time") == 60, nom

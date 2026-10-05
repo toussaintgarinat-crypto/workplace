@@ -26,18 +26,29 @@ litellm_settings:
 # Le sync quotidien (brique `gateway-sync`) finit par le supprimer, mais entre deux passages
 # il faut que la cascade cesse de le tenter tout de suite — d'où ce complément, volontairement
 # indépendant du sync (cf. ADR docs/decisions/2026-07-27-sync-modeles-gratuits-gateway.md).
+#
+# Comment LiteLLM v1.86.2 décide (router_utils/cooldown_handlers.py, relu en revue S239) :
+# un déploiement part au frigo quand son N-ième échec (compté sur `cooldown_time`) DÉPASSE
+# le seuil `allowed_fails_policy[<type d'erreur>] or allowed_fails`. Deux conséquences que
+# la version précédente de ce bloc ignorait :
+#   • une valeur 0 est « fausse » en Python → elle retombe sur `allowed_fails` (3) ;
+#   • `AllowedFailsPolicy` ne connaît que BadRequest/Authentication/Timeout/RateLimit/
+#     ContentPolicyViolation/InternalServer — `NotFoundErrorAllowedFails` était ignorée.
+#     Un 404 (modèle retiré) relève donc de `allowed_fails` : frigo au 4e échec.
 router_settings:
-  # 1 h : un modèle disparu du catalogue ne réapparaît pas dans la minute.
+  # 1 h par défaut : un modèle disparu ou une clé morte ne revient pas dans la minute.
+  # Les gratuits (`gratuit/*` ici, `kilo/*` et `free/*` créés par gateway-sync) portent leur
+  # propre `cooldown_time: 60`, qui prime sur celui-ci (router.py:6739).
   cooldown_time: 3600
   allowed_fails: 3
   allowed_fails_policy:
-    # Le modèle n'existe pas / plus : rien à réessayer, on l'écarte au premier refus.
-    NotFoundErrorAllowedFails: 0
-    # Clé invalide : réessayer ne fera que répéter l'erreur.
-    AuthenticationErrorAllowedFails: 0
-    # À l'inverse, les gratuits rate-limitent BEAUCOUP et restent parfaitement utilisables :
-    # les écarter pour ça viderait la cascade de ses modèles sains.
+    # Clé invalide : réessayer ne fera que répéter l'erreur → frigo dès le 2e refus (1 est
+    # le seuil le plus strict exprimable, 0 retomberait sur 3).
+    AuthenticationErrorAllowedFails: 1
+    # À l'inverse, les gratuits rate-limitent et ralentissent BEAUCOUP tout en restant
+    # utilisables : les écarter pour ça viderait la cascade de ses modèles sains.
     RateLimitErrorAllowedFails: 100
+    TimeoutErrorAllowedFails: 100
   # S239 — option B pour la Forge : elle n'a PAS de cascade (un seul DEFAULT_LLM_MODEL),
   # c'est donc la Gateway qui lui donne son filet. `forge/defaut` (Mistral) → `gratuit/auto`
   # (routeur gratuit de Kilo) si Mistral échoue (clé absente/expirée, quota, panne).
@@ -124,6 +135,7 @@ model_list:
       api_base: https://api.kilo.ai/api/gateway
       timeout: 60
       num_retries: 1
+      cooldown_time: 60
   # Second méta-routeur gratuit servi par Kilo (même conditions, même absence de clé), repli
   # de `gratuit/auto` — cf. router_settings.fallbacks.
   - model_name: gratuit/secours
@@ -133,6 +145,7 @@ model_list:
       api_base: https://api.kilo.ai/api/gateway
       timeout: 60
       num_retries: 1
+      cooldown_time: 60
 
   # --- OpenCode Go ------------------------------------------------------------
   # Abonnement « Go » (forfait en $-équivalent, distinct du crédit « Zen balance »).

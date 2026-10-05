@@ -172,6 +172,9 @@ def test_kilo_ajoute_ses_gratuits_sous_son_prefixe_avec_cle_anonyme(monkeypatch)
     # produirait un client OpenAI sans clé.
     assert p["api_key"] == "anonymous"
     assert p["num_retries"] == 0 and p["timeout"] <= 10
+    # Frigo court PAR DÉPLOIEMENT (prime sur le cooldown_time global d'une heure du routeur,
+    # router.py:6739 de LiteLLM v1.86.2) : un gratuit saturé une minute ne disparaît pas 1 h.
+    assert p["cooldown_time"] == 60
     assert sorted(r["sources"]["kilo"]["ajoutes"]) == sorted(faux.ajouts)
 
 

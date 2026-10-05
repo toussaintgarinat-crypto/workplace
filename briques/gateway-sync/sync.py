@@ -150,6 +150,10 @@ def _params(source: Source, m: dict) -> dict:
     req/h/IP) et peuvent PENDRE au lieu de renvoyer un 429 rapide — mieux vaut rendre la main
     vite pour que la cascade du Cœur bascule sur le gratuit suivant, puis sur le repli payant
     (motif hérité de l'ancien script, cf. Workplace S17).
+
+    `cooldown_time: 60` (S239) : quand LiteLLM met CE déploiement au frigo, c'est pour une
+    minute et non l'heure du réglage global — la valeur de déploiement prime (router.py:6739
+    de LiteLLM v1.86.2). Un gratuit saturé une minute ne doit pas sortir de la cascade 1 h.
     """
     return {
         "model": f"{source.modele_litellm}{m['id']}",
@@ -157,6 +161,7 @@ def _params(source: Source, m: dict) -> dict:
         "api_base": source.api_base,
         "timeout": 10,
         "num_retries": 0,
+        "cooldown_time": 60,
     }
 
 
