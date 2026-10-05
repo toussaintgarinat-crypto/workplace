@@ -3,16 +3,23 @@
 Profil & identité de l'opérateur, auto-amélioration et curateur.
 """
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from etat import registre
 import amelioration
 import assistant
+import auth
 import curateur
 import horloge
 import identite
 import proprioception
 
 router = APIRouter()
+
+# Gates humains de l'auto-amélioration (addendum de prompt = cerveau) et du curateur : session
+# admin du cerveau + anti-CSRF (revue S240, I7). Le chat les pilote en INTERNE (outils_domaines/
+# amelioration.py) et l'horloge appelle `/curateur/cycle` (qui ne fait que proposer, laissé
+# ouvert) : aucun appelant HTTP légitime sans session.
+_ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
 
 # Le refactor S114 a déplacé ces routes ici mais laissé `_lire_profil`/`profil_get`/`profil_post`
 # référencer PROFIL_PATH/PROFIL_DEFAUT_PATH sans les définir → NameError, /profil en 500. On les
@@ -27,38 +34,38 @@ async def amelioration_lister():
     return amelioration.lister()
 
 
-@router.post("/amelioration/proposer", tags=["assistant"])
+@router.post("/amelioration/proposer", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_proposer():
     """Propose un addendum de prompt à partir d'un point faible de la proprioception
     (réflexion façon GEPA, repli template honnête). INACTIF tant que non validé."""
     return await amelioration.proposer()
 
 
-@router.post("/amelioration/{id_}/evaluer", tags=["assistant"])
+@router.post("/amelioration/{id_}/evaluer", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_evaluer(id_: str):
     """A/B honnête : rejoue des questions sous prompt actuel vs + addendum, note les deux."""
     return await amelioration.evaluer(id_)
 
 
-@router.post("/amelioration/{id_}/valider", tags=["assistant"])
+@router.post("/amelioration/{id_}/valider", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_valider(id_: str):
     """Gate humain — étape 1 : valide la proposition (ne l'active pas encore)."""
     return amelioration.valider(id_)
 
 
-@router.post("/amelioration/{id_}/appliquer", tags=["assistant"])
+@router.post("/amelioration/{id_}/appliquer", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_appliquer(id_: str):
     """Gate humain — étape 2 : active l'addendum (refusé si non validé). Réversible."""
     return amelioration.appliquer(id_)
 
 
-@router.post("/amelioration/{id_}/rejeter", tags=["assistant"])
+@router.post("/amelioration/{id_}/rejeter", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_rejeter(id_: str):
     """Écarte une proposition ; la désactive si elle était active."""
     return amelioration.rejeter(id_)
 
 
-@router.post("/amelioration/desactiver", tags=["assistant"])
+@router.post("/amelioration/desactiver", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def amelioration_desactiver():
     """Revient au prompt fondateur : aucun addendum actif (historique conservé)."""
     return amelioration.desactiver()
@@ -79,13 +86,13 @@ async def curateur_capacites():
     return curateur.lister_capacites()
 
 
-@router.post("/curateur/capacites/{id_}/retenir", tags=["assistant"])
+@router.post("/curateur/capacites/{id_}/retenir", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def curateur_retenir(id_: str):
     """Gate humain : retient un brouillon comme spéc à implémenter (n'active rien)."""
     return curateur.retenir_capacite(id_)
 
 
-@router.post("/curateur/capacites/{id_}/rejeter", tags=["assistant"])
+@router.post("/curateur/capacites/{id_}/rejeter", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def curateur_rejeter(id_: str):
     """Écarte un brouillon de capacité."""
     return curateur.rejeter_capacite(id_)

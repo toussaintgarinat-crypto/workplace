@@ -6,10 +6,11 @@ import logging
 import os
 import json
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from etat import registre
 import assistant
+import auth
 import catalogue
 import familles as familles_mod
 import horloge
@@ -18,6 +19,11 @@ import outils
 import routage_outils
 
 router = APIRouter()
+
+# `/briques/reload` et `/horloge/executer` : actions d'opérateur, sans appelant serveur-à-
+# serveur (l'horloge tourne dans le processus, `horloge.boucle`). Gardées comme le cerveau
+# (revue S240, I7) ; `make reload` (core/Makefile) ne passe donc qu'avec AUTH_ENABLED=false.
+_ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
 
 
 @router.get("/health", tags=["système"])
@@ -54,7 +60,7 @@ def detail_brique(nom: str):
     return brique
 
 
-@router.post("/briques/reload", tags=["briques"])
+@router.post("/briques/reload", tags=["briques"], dependencies=_ADMIN_CERVEAU)
 async def recharger_briques():
     """Recharge tous les manifests sans redémarrer le cœur.
 
@@ -164,7 +170,7 @@ def horloge_taches():
     return {"total": len(taches), "taches": taches}
 
 
-@router.post("/horloge/executer", tags=["horloge"])
+@router.post("/horloge/executer", tags=["horloge"], dependencies=_ADMIN_CERVEAU)
 async def horloge_executer(forcer: bool = False, brique: str | None = None,
                            tache: str | None = None):
     """Déclenche les tâches dues maintenant. `forcer=true` ignore la cadence ;

@@ -45,6 +45,71 @@ ROUTES_GARDEES = {
     ("DELETE", "/assistant/modeles/{nom:path}"),
     ("POST", "/assistant/forge-modele"),
     ("GET", "/sauvegarde-usb/env"),
+    # Revue S240, I7 : auto-amélioration du prompt et curateur (gates humains), rechargement
+    # des manifests, déclenchement manuel de l'horloge. Aucun appelant HTTP sans session
+    # (le chat appelle `amelioration`/`curateur` en interne, l'horloge tourne dans le
+    # processus) ; `make reload` (core/Makefile) ne marche plus qu'avec AUTH_ENABLED=false.
+    ("POST", "/amelioration/proposer"),
+    ("POST", "/amelioration/{id_}/evaluer"),
+    ("POST", "/amelioration/{id_}/valider"),
+    ("POST", "/amelioration/{id_}/appliquer"),
+    ("POST", "/amelioration/{id_}/rejeter"),
+    ("POST", "/amelioration/desactiver"),
+    ("POST", "/curateur/capacites/{id_}/retenir"),
+    ("POST", "/curateur/capacites/{id_}/rejeter"),
+    ("POST", "/briques/reload"),
+    ("POST", "/horloge/executer"),
+}
+
+# Routes d'ÉCRITURE volontairement SANS `exiger_admin_cerveau` — chaque entrée dit pourquoi.
+# Ajouter une route POST/PUT/PATCH/DELETE au Cœur sans la garder NI l'inscrire ici fait
+# échouer `test_toute_route_d_ecriture_est_gardee_ou_listee` (revue S240, I6).
+_CHAT = ("appelée sans session par Telegram/Mini App (brique connexion) — même exposition "
+         "que /assistant/chat, à fermer avec lui (décision utilisateur à part)")
+_DONNEES = ("données de la personne (dashboard), pas le cerveau ; même exposition que "
+            "/assistant/chat, à fermer avec lui")
+_SESSION = "session obligatoire (exiger_session) : proxy de brique isolé par personne"
+LISTE_BLANCHE = {
+    ("POST", "/assistant/chat"): _CHAT,
+    ("POST", "/mcp"): "clé MCP_KEY propre ; refus si vide avec AUTH_ENABLED=true (mcp.cle_ok)",
+    ("POST", "/briefing/executer"): "tâche d'horloge (manifest noyau), appel interne sans session",
+    ("POST", "/pouls/battre"): "tâche d'horloge (manifest noyau), appel interne sans session",
+    ("POST", "/curateur/cycle"): "tâche d'horloge `curation-hebdo` ; PROPOSE seulement, n'applique rien",
+    ("POST", "/sauvegarde-usb/lancer"): "session OU NOYAU_KEY (capacité de l'assistant) ; n'expose aucun secret",
+    ("POST", "/sauvegarde-usb/restaurer"): "session OU NOYAU_KEY (capacité de l'assistant) ; n'expose aucun secret",
+    ("POST", "/admin/inviter-proche"): "session obligatoire (exiger_session), S181",
+    ("POST", "/usine/livrer"): _DONNEES,
+    ("DELETE", "/usine/livraisons/{livraison_id}"): _DONNEES,
+    ("POST", "/usine/livraisons/{livraison_id}/decrocher"): _DONNEES,
+    ("POST", "/usine/livraisons/{livraison_id}/reprendre"): _DONNEES,
+    ("POST", "/assistant/conversations/reordonner"): _DONNEES,
+    ("PATCH", "/assistant/conversations/{fil:path}"): _DONNEES,
+    ("DELETE", "/assistant/conversations/{fil:path}"): _DONNEES,
+    ("POST", "/assistant/projets"): _DONNEES,
+    ("PATCH", "/assistant/projets/{projet_id}"): _DONNEES,
+    ("DELETE", "/assistant/projets/{projet_id}"): _DONNEES,
+    ("POST", "/assistant/document"): _DONNEES,
+    ("POST", "/assistant/rappels/check"): _DONNEES,
+    ("POST", "/assistant/rappels/{rappel_id}/vu"): _DONNEES,
+    # Profil d'amorçage : il entre dans le prompt système, donc touche au cerveau —
+    # candidat à la garde, laissé hors périmètre S240 (signalé dans le rapport).
+    ("POST", "/profil"): _DONNEES,
+    ("PATCH", "/profil/identite"): _DONNEES,
+    **{(m, c): _DONNEES for m, c in [
+        ("PATCH", "/agenda/evenements/{event_id}/rappels"), ("POST", "/agenda/timetree/connect"),
+        ("POST", "/agenda/timetree/select"), ("POST", "/agenda/timetree/sync"),
+        ("DELETE", "/agenda/timetree/disconnect"), ("POST", "/agenda/google/sync"),
+        ("DELETE", "/agenda/google/disconnect"), ("POST", "/agenda/calendriers"),
+        ("POST", "/agenda/calendriers/{calendar_id}/invitations"), ("POST", "/agenda/evenements"),
+        ("PATCH", "/agenda/evenements/{event_id}"), ("DELETE", "/agenda/evenements/{event_id}"),
+        ("POST", "/agenda/evenements/{event_id}/documents"), ("DELETE", "/agenda/documents/{att_id}"),
+        ("POST", "/agenda/evenements/{event_id}/commentaires"),
+        ("DELETE", "/agenda/commentaires/{comment_id}"),
+        ("POST", "/agenda/calendriers/{calendar_id}/etiquettes"),
+        ("PATCH", "/agenda/etiquettes/{label_id}"), ("DELETE", "/agenda/etiquettes/{label_id}")]},
+    **{(m, f"/{p}/{{chemin:path}}"): _SESSION
+       for p in ("mail-app", "studio-app", "atelier-images-video-app", "atelier-veille-app")
+       for m in ("POST", "PUT", "PATCH", "DELETE")},
 }
 
 
@@ -83,6 +148,19 @@ def _cookie(sub: str) -> dict:
 
 def test_routes_gardees_exactement():
     assert _routes_avec_garde() == ROUTES_GARDEES
+
+
+def _routes_d_ecriture() -> set[tuple[str, str]]:
+    return {(m, r.path) for r in main.app.routes
+            for m in (getattr(r, "methods", None) or set()) & {"POST", "PUT", "PATCH", "DELETE"}}
+
+
+def test_toute_route_d_ecriture_est_gardee_ou_listee():
+    ecriture = _routes_d_ecriture()
+    non_couvertes = ecriture - ROUTES_GARDEES - set(LISTE_BLANCHE)
+    assert not non_couvertes, f"route(s) d'écriture ni gardée(s) ni listée(s) : {sorted(non_couvertes)}"
+    assert not (ROUTES_GARDEES & set(LISTE_BLANCHE)), "une route ne peut être à la fois gardée et listée"
+    assert set(LISTE_BLANCHE) <= ecriture, f"entrées obsolètes : {sorted(set(LISTE_BLANCHE) - ecriture)}"
 
 
 def test_chat_et_lectures_restent_ouverts():
