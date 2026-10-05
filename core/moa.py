@@ -16,6 +16,8 @@ from typing import NamedTuple
 
 import httpx
 
+import llm_pipeline
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,8 +70,12 @@ def _hash_contexte(messages: list) -> str:
 
 
 async def _appeler_reference(modele: str, messages: list, config: ConfigMOA,
-                              client: httpx.AsyncClient) -> str:
-    """Appelle le Gateway pour un seul modèle référence. Retourne le texte brut."""
+                              client: httpx.AsyncClient, session: str | None = None) -> str:
+    """Appelle le Gateway pour un seul modèle référence. Retourne le texte brut.
+
+    En-têtes via `llm_pipeline.entetes_gateway` (S239) : un modèle de référence `go/*` exige
+    `x-opencode-session` (400 sinon). `session` est celle de la conversation (cf. consulter).
+    """
     system_ref = (
         "Tu es un conseiller analytique dans un processus Mixture of Agents. "
         "Analyse la situation et donne un avis synthétique, factuel, sans exécuter d'actions."
@@ -82,12 +88,12 @@ async def _appeler_reference(modele: str, messages: list, config: ConfigMOA,
         "temperature": config.temperature_ref,
     }
     gateway_url = os.getenv("GATEWAY_URL", "http://gateway:4000")
-    gateway_key = os.getenv("GATEWAY_KEY", "")
     try:
         r = await client.post(
             f"{gateway_url}/v1/chat/completions",
             json=payload,
-            headers={"Authorization": f"Bearer {gateway_key}"},
+            headers=llm_pipeline.entetes_gateway(
+                modele, session or llm_pipeline.session_opencode(None)),
             timeout=30.0,
         )
         r.raise_for_status()
@@ -98,14 +104,19 @@ async def _appeler_reference(modele: str, messages: list, config: ConfigMOA,
 
 
 async def consulter(messages: list, config: ConfigMOA,
-                    client: httpx.AsyncClient) -> str:
-    """Lance les références en parallèle, synthétise. Retourne la guidance."""
+                    client: httpx.AsyncClient, fil: str | None = None) -> str:
+    """Lance les références en parallèle, synthétise. Retourne la guidance.
+
+    `fil` : fil de conversation, d'où une session OpenCode Go commune à tous les appels de
+    cette consultation (références + agrégateur) — S239.
+    """
+    session = llm_pipeline.session_opencode(fil)
     h = _hash_contexte(messages)
     if h in _cache_guidance:
         return _cache_guidance[h]
 
     taches = [
-        _appeler_reference(m, messages, config, client)
+        _appeler_reference(m, messages, config, client, session)
         for m in config.modeles_reference
     ]
     avis = await asyncio.gather(*taches)
@@ -125,6 +136,7 @@ async def consulter(messages: list, config: ConfigMOA,
         messages + [{"role": "user", "content": prompt_agregation}],
         config,
         client,
+        session,
     )
     _cache_guidance[h] = guidance
     _cache_guidance.move_to_end(h)

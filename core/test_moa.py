@@ -42,7 +42,7 @@ class _FakeRef:
         self._reponse = reponse
         self._lever = lever
 
-    async def __call__(self, modele, messages, config, client):
+    async def __call__(self, modele, messages, config, client, session=None):
         self.appels.append((modele, messages))
         if self._lever:
             raise self._lever
@@ -138,7 +138,7 @@ def test_8_guidance_contient_noms_references():
     captured: list[tuple[str, list]] = []
     orig = moa._appeler_reference
 
-    async def tracking_ref(modele, messages, config, client):
+    async def tracking_ref(modele, messages, config, client, session=None):
         captured.append((modele, messages))
         return "Analyse concise."
 

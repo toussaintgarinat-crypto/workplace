@@ -264,6 +264,9 @@ def definir_voix(provider: str | None, unmute_url: str | None = None,
     return conf
 
 
+ALIAS_RESERVES_FORGE = ("forge/", "gratuit/")
+
+
 async def lister_modeles() -> list[str]:
     """Modèles exposés par la Gateway (pour peupler le menu déroulant du front)."""
     try:
@@ -271,7 +274,11 @@ async def lister_modeles() -> list[str]:
             r = await c.get(f"{GATEWAY_URL}/v1/models",
                             headers={"Authorization": f"Bearer {GATEWAY_KEY}"})
             r.raise_for_status()
-            return [m["id"] for m in r.json().get("data", [])]
+            # `forge/defaut` et `gratuit/*` (S239) : alias Gateway à repli CACHÉ, réservés à
+            # la Forge. En tête du Cœur, ils feraient journaliser un modèle qui n'a pas
+            # répondu — on ne les propose donc ni dans ⚙ Cerveau ni à la cascade.
+            return [m["id"] for m in r.json().get("data", [])
+                    if not m["id"].startswith(ALIAS_RESERVES_FORGE)]
     except Exception:
         return []
 

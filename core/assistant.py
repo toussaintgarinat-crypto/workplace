@@ -14,6 +14,7 @@ d'outil, fin. La boucle s'arrête dès que le modèle répond sans demander d'ou
 import json
 import logging
 import os
+import uuid
 from datetime import datetime
 from typing import AsyncIterator
 from zoneinfo import ZoneInfo
@@ -139,7 +140,11 @@ async def converser(messages: list[dict], registre,
     `confirme=true` sont refusées. C'est le sens sûr — un appelant qui n'a pas de tour de
     parole humain n'a pas à pouvoir déclencher d'action confirmée.
     """
-    fil_accord = fil or f"sans-fil:{id(messages)}"
+    # Fil de secours UNIQUE par appel (S239, revue M4) : l'ancien `sans-fil:{id(messages)}`
+    # était une adresse mémoire, que Python réutilise après ramasse-miettes — deux appels
+    # sans fil pouvaient alors partager une clé du registre d'accords. Stable le temps de
+    # l'appel (il ne change pas d'un tour d'outil à l'autre), jamais partagé.
+    fil_accord = fil or f"sans-fil:{uuid.uuid4().hex}"
     # Date/heure courante (Europe/Paris) injectée pour interpréter « demain », « lundi »…
     try:
         maintenant = datetime.now(ZoneInfo("Europe/Paris"))
@@ -275,7 +280,7 @@ async def converser(messages: list[dict], registre,
         config_moa = moa._depuis_env()
         if config_moa and moa.est_complexe(question):
             try:
-                guidance = await moa.consulter(historique, config_moa, client)
+                guidance = await moa.consulter(historique, config_moa, client, fil=fil_accord)
                 historique = historique + [{"role": "system", "content": f"[Conseil MOA]\n{guidance}"}]
             except Exception:  # noqa: BLE001 — MOA jamais bloquant
                 pass

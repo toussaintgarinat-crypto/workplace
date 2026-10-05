@@ -89,7 +89,7 @@ def _sans_cout_marginal(modele: str) -> bool:
     return modele.startswith(("free/", "kilo/", "ollama/", "go/"))
 
 
-def _session_opencode(fil: str | None) -> str:
+def session_opencode(fil: str | None) -> str:
     """Identifiant de session OpenCode Go pour cette conversation (S239).
 
     Go exige `x-opencode-session`, stable PAR CONVERSATION (400 « missing
@@ -105,8 +105,9 @@ def _session_opencode(fil: str | None) -> str:
     return "wp-" + hmac.new(GATEWAY_KEY.encode(), fil.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def _entetes(modele: str, session: str) -> dict:
-    """En-têtes vers la Gateway. `x-opencode-session` pour les seuls `go/*` : la Gateway ne
+def entetes_gateway(modele: str, session: str) -> dict:
+    """En-têtes vers la Gateway — à utiliser par TOUT appel de chat du Cœur à la Gateway, y
+    compris hors de ce pipeline (moa.py). `x-opencode-session` pour les seuls `go/*` : la Gateway ne
     relaie les en-têtes `x-*` du client qu'à ce groupe de modèles
     (`model_group_settings.forward_client_headers_to_llm_api` dans litellm_config.yaml) ;
     aucun autre fournisseur n'a à recevoir un identifiant de conversation."""
@@ -253,7 +254,7 @@ async def completer(
                                              erreur=msg)
             return Resultat(erreur=msg, trimmed_tokens=trimmed)
 
-        session = _session_opencode(fil)
+        session = session_opencode(fil)
         for modele in modeles_effectifs:
             essayes.append(modele)
             try:
@@ -263,7 +264,7 @@ async def completer(
                 payload["messages"] = cache_prefixe.appliquer(messages, modele)
                 r = await client.post(
                     f"{GATEWAY_URL}/v1/chat/completions",
-                    headers=_entetes(modele, session),
+                    headers=entetes_gateway(modele, session),
                     json=payload,
                 )
                 if r.status_code >= 400:
@@ -378,7 +379,7 @@ async def completer_flux(
             yield {"type": "erreur", "erreur": msg}
             return
 
-        session = _session_opencode(fil)
+        session = session_opencode(fil)
         for modele in modeles_effectifs:
             essayes.append(modele)
             payload["model"] = modele
@@ -390,7 +391,7 @@ async def completer_flux(
             try:
                 async with client.stream(
                     "POST", f"{GATEWAY_URL}/v1/chat/completions",
-                    headers=_entetes(modele, session), json=payload,
+                    headers=entetes_gateway(modele, session), json=payload,
                 ) as r:
                     if r.status_code >= 400:
                         derniere_erreur = f"HTTP {r.status_code}"
