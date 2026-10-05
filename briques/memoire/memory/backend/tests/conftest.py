@@ -26,6 +26,7 @@ app.database.async_session_factory = async_sessionmaker(test_engine, class_=Asyn
 
 from app import database as db_module
 from app.database import Base
+from app.migrations_demarrage import appliquer_migrations
 from app.main import app as fastapi_app
 from app.models.user import User
 from passlib.hash import bcrypt
@@ -40,6 +41,7 @@ async def setup_db():
     async with test_engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        await appliquer_migrations(conn)
     yield
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
