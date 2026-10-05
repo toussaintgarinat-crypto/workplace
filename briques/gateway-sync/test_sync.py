@@ -242,6 +242,39 @@ def test_catalogue_vide_ne_vide_pas_la_source(monkeypatch):
     assert r["statut"] == "ok", "l'autre source a tourné"
 
 
+def test_catalogue_inexploitable_ne_vide_pas_la_source(monkeypatch):
+    """Catalogue non vide mais AUCUN modèle gratuit à outils (format changé, prix en "-1"…) :
+    même anomalie qu'un catalogue vide — on ne retire rien."""
+    payant = _modele("a/payant")
+    payant["pricing"] = {"prompt": "0.001", "completion": "0.002"}
+    faux = _preparer(monkeypatch, catalogue=[], actuels={"kilo/vieux/modele": "id-vieux"},
+                     kilo=[payant, _modele("b/sans-outils:free", tools=False)])
+    r = sync.synchroniser()
+    assert faux.suppressions == []
+    assert r["sources"]["kilo"]["statut"] == "erreur"
+
+
+def test_top_n_zero_retire_volontairement_la_source(monkeypatch):
+    """2e relecture S239 (M6) : KILO_TOP_N=0 est un choix (confidentialité), pas une panne —
+    les `kilo/*` en place doivent bien être retirés."""
+    monkeypatch.setattr(sync, "KILO_TOP_N", 0)
+    faux = _preparer(monkeypatch, catalogue=[], actuels={"kilo/c/bon": "id-bon"},
+                     kilo=[_modele("c/bon:free")])
+    r = sync.synchroniser()
+    assert faux.suppressions == ["id-bon"]
+    assert r["sources"]["kilo"]["statut"] == "ok"
+
+
+def test_exclusion_totale_retire_volontairement_la_source(monkeypatch):
+    monkeypatch.setattr(sync, "KILO_EXCLURE", "c, d")
+    faux = _preparer(monkeypatch, catalogue=[],
+                     actuels={"kilo/c/bon": "id-bon", "kilo/d/autre": "id-autre"},
+                     kilo=[_modele("c/bon:free"), _modele("d/autre:free")])
+    r = sync.synchroniser()
+    assert sorted(faux.suppressions) == ["id-autre", "id-bon"]
+    assert r["sources"]["kilo"]["statut"] == "ok"
+
+
 def test_catalogue_vide_sans_modele_en_place_nest_pas_une_erreur(monkeypatch):
     _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")], actuels={},
               kilo=[])

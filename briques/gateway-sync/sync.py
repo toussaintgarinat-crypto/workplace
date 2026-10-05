@@ -87,11 +87,12 @@ def _catalogue_brut(source: Source) -> list[dict]:
     return r.json()["data"]
 
 
-def catalogue_gratuits(source: Source) -> list[dict]:
-    """Modèles gratuits de la source utilisables par l'assistant, les `top_n` plus gros.
+def _exploitables(brut: list[dict]) -> list[dict]:
+    """Modèles du catalogue brut qu'on POURRAIT servir : gratuits, à outils, texte, hors
+    méta-routeurs — avant les choix de l'opérateur (`KILO_EXCLURE`, `top_n`).
 
-    Les deux filtres viennent de l'ancien script et restent indispensables : l'assistant du
-    Cœur EXIGE le function-calling (`tools`) et du texte — un modèle gratuit d'image ou sans
+    Les deux premiers filtres viennent de l'ancien script et restent indispensables : l'assistant
+    du Cœur EXIGE le function-calling (`tools`) et du texte — un modèle gratuit d'image ou sans
     outils casserait la cascade au lieu de la dépanner.
 
     Les méta-routeurs (`kilo-auto/free`, `openrouter/free`) sont écartés : ils choisissent
@@ -111,15 +112,25 @@ def catalogue_gratuits(source: Source) -> list[dict]:
         # images — le test d'avant S239 laissait passer un générateur d'images à outils.
         return "tools" in sp and "text" in modality.split("->")[-1]
 
-    def admis(m: dict) -> bool:
-        mid = m.get("id", "")
-        base = mid.split(":")[0]  # sans la variante (`:free`)
-        exclu = any(base == e or base.startswith(e + "/") for e in source.exclure)
-        return not mid.endswith("/free") and not exclu
+    return [m for m in brut
+            if gratuit(m) and utile(m) and not m.get("id", "").endswith("/free")]
 
-    retenus = [m for m in _catalogue_brut(source) if gratuit(m) and utile(m) and admis(m)]
+
+def _selection(source: Source, exploitables: list[dict]) -> list[dict]:
+    """Choix de l'opérateur appliqués aux modèles exploitables : exclusions puis `top_n` plus
+    gros contextes. Une sélection VIDE est ici légitime (retrait volontaire d'un fournisseur)."""
+    def admis(m: dict) -> bool:
+        base = m.get("id", "").split(":")[0]  # sans la variante (`:free`)
+        return not any(base == e or base.startswith(e + "/") for e in source.exclure)
+
+    retenus = [m for m in exploitables if admis(m)]
     retenus.sort(key=lambda m: m.get("context_length", 0), reverse=True)
     return retenus[:source.top_n]
+
+
+def catalogue_gratuits(source: Source) -> list[dict]:
+    """Modèles gratuits de la source retenus pour LiteLLM (catalogue → exploitables → sélection)."""
+    return _selection(source, _exploitables(_catalogue_brut(source)))
 
 
 def nom_workplace(id_amont: str, prefixe: str = PREFIXE) -> str:
@@ -185,13 +196,17 @@ def _synchroniser_source(client: httpx.Client, source: Source, actuels_tous: lis
         return {"statut": "ignore", "raison": f"clé absente pour {source.nom}"}
     # Catalogue injoignable ≠ catalogue vide : on s'arrête AVANT tout retrait, sinon une
     # panne passagère de l'amont viderait la cascade de cette source.
-    voulus = {nom_workplace(m["id"], source.prefixe): m for m in catalogue_gratuits(source)}
+    exploitables = _exploitables(_catalogue_brut(source))
+    voulus = {nom_workplace(m["id"], source.prefixe): m
+              for m in _selection(source, exploitables)}
     actuels = {a["nom"]: a["id"] for a in actuels_tous if a["nom"].startswith(source.prefixe)}
-    # 0 modèle retenu alors que la source en sert déjà : anomalie (filtre devenu trop strict,
-    # catalogue tronqué, format changé) bien plus probable qu'une disparition de TOUS ses
-    # gratuits. On ne vide pas la cascade sur un soupçon — on le signale (revue S239, M1).
-    if not voulus and actuels:
-        raise RuntimeError(f"catalogue vide après filtrage — {len(actuels)} modèle(s) "
+    # Catalogue vide OU inexploitable (aucun gratuit à outils) alors que la source sert déjà
+    # des modèles : anomalie (catalogue tronqué, format changé) bien plus probable qu'une
+    # disparition de TOUS ses gratuits → on ne vide pas la cascade, on le signale (revue S239,
+    # M1). Mais une SÉLECTION vide (KILO_TOP_N=0, KILO_EXCLURE qui écarte tout) est un choix
+    # de l'opérateur — retirer un fournisseur pour confidentialité — et doit s'appliquer (M6).
+    if not exploitables and actuels:
+        raise RuntimeError(f"catalogue vide ou inexploitable — {len(actuels)} modèle(s) "
                            f"{source.prefixe}* en place conservé(s)")
 
     a_ajouter = [n for n in voulus if n not in actuels]

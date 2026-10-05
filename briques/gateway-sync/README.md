@@ -11,9 +11,11 @@ Deux **sources** (S239), chacune ne gérant QUE son préfixe :
 | `free/*` | OpenRouter | `OPENROUTER_API_KEY` requise (sinon source ignorée) |
 | `kilo/*` | Kilo Code (`https://api.kilo.ai/api/gateway`) | aucune (`api_key: anonymous`) |
 
-Une source en panne (catalogue injoignable, clé absente, ou vide après filtrage alors que
-des modèles de son préfixe sont en place) n'efface rien et n'empêche pas
-l'autre de se synchroniser. Les méta-routeurs (`kilo-auto/free`, `openrouter/free`) sont
+Une source en panne (catalogue injoignable, clé absente, ou catalogue vide / sans aucun
+gratuit à outils alors que des modèles de son préfixe sont en place) n'efface rien et
+n'empêche pas l'autre de se synchroniser. À l'inverse, une sélection vidée VOLONTAIREMENT
+(`KILO_TOP_N=0`, ou `KILO_EXCLURE` qui écarte tout) retire bien les `kilo/*` en place :
+c'est le moyen de couper un fournisseur pour raison de confidentialité. Les méta-routeurs (`kilo-auto/free`, `openrouter/free`) sont
 écartés : ils choisissent eux-mêmes le modèle, le journal du Cœur ne saurait plus lequel a
 répondu. ⚠ Les gratuits Kilo peuvent journaliser les requêtes : ils sont le **filet** de la
 cascade du Cœur, jamais sa tête.
