@@ -35,20 +35,30 @@ litellm_settings:
 #   • `AllowedFailsPolicy` ne connaît que BadRequest/Authentication/Timeout/RateLimit/
 #     ContentPolicyViolation/InternalServer — `NotFoundErrorAllowedFails` était ignorée.
 #     Un 404 (modèle retiré) relève donc de `allowed_fails` : frigo au 4e échec.
+#   • le compteur d'échecs est COMMUN à tous les types d'erreur, n'est JAMAIS remis à zéro
+#     par un succès, et vit `cooldown_time` du ROUTEUR (3600 s) — le `cooldown_time` d'un
+#     déploiement ne règle que la DURÉE du frigo, pas la vie de ce compteur. Conséquence :
+#     un déploiement sorti du frigo y retourne au premier échec suivant tant que l'heure
+#     n'est pas écoulée. Les frigos courts ci-dessous en limitent le coût, sans l'annuler.
 router_settings:
   # 1 h par défaut : un modèle disparu ou une clé morte ne revient pas dans la minute.
-  # Les gratuits (`gratuit/*` ici, `kilo/*` et `free/*` créés par gateway-sync) portent leur
-  # propre `cooldown_time: 60`, qui prime sur celui-ci (router.py:6739).
+  # Frigos courts PAR DÉPLOIEMENT, qui priment sur celui-ci (router.py:6739) :
+  #   • 60 s pour les gratuits (`gratuit/*` ici, `kilo/*` et `free/*` créés par gateway-sync) ;
+  #   • 120 s pour `mistral/*` et `forge/defaut` : quelques timeouts + une 503 passagère ne
+  #     doivent pas livrer la Forge à Kilo pendant une heure (option B : Mistral en tête).
   cooldown_time: 3600
   allowed_fails: 3
   allowed_fails_policy:
     # Clé invalide : réessayer ne fera que répéter l'erreur → frigo dès le 2e refus (1 est
     # le seuil le plus strict exprimable, 0 retomberait sur 3).
     AuthenticationErrorAllowedFails: 1
-    # À l'inverse, les gratuits rate-limitent et ralentissent BEAUCOUP tout en restant
-    # utilisables : les écarter pour ça viderait la cascade de ses modèles sains.
+    # À l'inverse, les gratuits rate-limitent BEAUCOUP tout en restant utilisables : les
+    # écarter pour ça viderait la cascade de ses modèles sains.
     RateLimitErrorAllowedFails: 100
-    TimeoutErrorAllowedFails: 100
+    # PAS de seuil Timeout élevé (2e relecture S239) : un gratuit qui PEND resterait
+    # « disponible » et le Cœur attendrait son timeout (10 s) à chaque tour, gratuit après
+    # gratuit. Seuil par défaut (`allowed_fails`) : peu coûteux, le frigo des gratuits ne
+    # dure qu'une minute.
   # S239 — option B pour la Forge : elle n'a PAS de cascade (un seul DEFAULT_LLM_MODEL),
   # c'est donc la Gateway qui lui donne son filet. `forge/defaut` (Mistral) → `gratuit/auto`
   # (routeur gratuit de Kilo) si Mistral échoue (clé absente/expirée, quota, panne).
@@ -315,10 +325,12 @@ model_list:
     litellm_params:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
+      cooldown_time: 120  # frigo court, cf. router_settings
   - model_name: mistral/small
     litellm_params:
       model: mistral/mistral-small-latest
       api_key: os.environ/MISTRAL_API_KEY
+      cooldown_time: 120  # frigo court, cf. router_settings
   # Modèle par défaut de la Forge (S239, DEFAULT_LLM_MODEL=forge/defaut) : même déploiement
   # que `mistral/small`, mais sous un nom à part pour porter SEUL le repli vers
   # `gratuit/auto` (cf. router_settings.fallbacks). Changer de modèle Forge = changer cette
@@ -327,6 +339,7 @@ model_list:
     litellm_params:
       model: mistral/mistral-small-latest
       api_key: os.environ/MISTRAL_API_KEY
+      cooldown_time: 120  # frigo court, cf. router_settings
 
   # Google Gemini en direct (AI Studio, clé distincte d'OpenRouter). Clé: GEMINI_API_KEY.
   - model_name: gemini-direct/2.5-flash

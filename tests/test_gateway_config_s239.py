@@ -126,10 +126,27 @@ def test_cle_invalide_au_frigo_des_le_deuxieme_refus(conf):
     assert _politique(conf)["AuthenticationErrorAllowedFails"] == 1
 
 
-def test_gratuits_jamais_au_frigo_pour_lenteur_ou_quota(conf):
-    p = _politique(conf)
-    assert p["RateLimitErrorAllowedFails"] >= 100
-    assert p["TimeoutErrorAllowedFails"] >= 100
+def test_gratuits_jamais_au_frigo_pour_quota(conf):
+    assert _politique(conf)["RateLimitErrorAllowedFails"] >= 100
+
+
+def test_un_gratuit_qui_pend_part_au_frigo(conf):
+    """2e relecture S239 : un seuil Timeout élevé gardait « disponible » un gratuit qui PEND,
+    et le Cœur attendait son timeout (10 s) à chaque tour, gratuit après gratuit. Seuil par
+    défaut (`allowed_fails`) : peu coûteux, puisque le frigo des gratuits ne dure qu'une
+    minute (cooldown_time de déploiement)."""
+    assert "TimeoutErrorAllowedFails" not in _politique(conf)
+
+
+def test_mistral_et_forge_defaut_frigo_court_par_deploiement(conf):
+    """2e relecture S239 : quelques timeouts + une 503 passagère suffisent à mettre Mistral au
+    frigo ; avec l'heure globale, la Forge aurait été servie par Kilo pendant 1 h — contraire
+    à l'option B (Mistral en tête, Kilo en secours)."""
+    m = _modeles(conf)
+    visés = [n for n in m if n == "forge/defaut" or n.startswith("mistral/")]
+    assert set(visés) >= {"forge/defaut", "mistral/small", "mistral/large"}
+    for nom in visés:
+        assert m[nom].get("cooldown_time") == 120, nom
 
 
 def test_alias_gratuits_frigo_court_par_deploiement(conf):
