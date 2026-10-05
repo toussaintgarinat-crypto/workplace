@@ -4,7 +4,7 @@ Hors-ligne : on lit `briques/gateway/litellm_config.yaml`, aucun LiteLLM ni rés
 de bout en bout (chargement réel, repli effectif) se fait sur une LiteLLM v1.86.2 locale ;
 ce filet verrouille seulement les invariants qu'une retouche du YAML pourrait casser sans
 bruit :
-  1. la Forge (`forge/defaut`) a un repli Gateway vers `gratuit/auto` puis `gratuit/secours`,
+  1. la Forge (`forge/defaut`, en base depuis S240) a un repli Gateway vers `gratuit/auto` puis `gratuit/secours`,
      le Cœur (`mistral/small`) n'en a AUCUN — sa cascade et son journal de modèles font foi ;
   2. `gratuit/auto` vise le routeur de Kilo sans clé (`anonymous`, jamais vide), doublé de
      `gratuit/secours` (l'autre méta-routeur servi par Kilo) ;
@@ -36,11 +36,18 @@ def _replis(conf):
     return replis
 
 
-def test_forge_defaut_mistral_avec_repli_gratuit(conf):
-    m = _modeles(conf)
-    assert m["forge/defaut"]["model"] == m["mistral/small"]["model"]
-    assert m["forge/defaut"]["api_key"] == "os.environ/MISTRAL_API_KEY"
+def test_forge_defaut_hors_yaml_mais_repli_gratuit_conserve(conf):
+    """S240 : `forge/defaut` vit EN BASE (piloté par le Cœur depuis ⚙ Cerveau). Le déclarer
+    aussi ici le doublerait ; son repli, lui, reste dans router_settings (prouvé sur LiteLLM
+    v1.86.2 : il s'applique au groupe créé en base)."""
+    assert "forge/defaut" not in _modeles(conf)
     assert _replis(conf).get("forge/defaut") == ["gratuit/auto", "gratuit/secours"]
+
+
+def test_aucun_modele_perso_dans_le_yaml(conf):
+    """`perso/*` = modèles ajoutés depuis ⚙ Cerveau (S240), retirables par le Cœur : aucun
+    modèle du YAML ne doit porter ce préfixe."""
+    assert not [n for n in _modeles(conf) if n.startswith("perso/")]
 
 
 def test_le_coeur_na_aucun_repli_gateway(conf):
@@ -138,13 +145,15 @@ def test_un_gratuit_qui_pend_part_au_frigo(conf):
     assert "TimeoutErrorAllowedFails" not in _politique(conf)
 
 
-def test_mistral_et_forge_defaut_frigo_court_par_deploiement(conf):
+def test_mistral_frigo_court_par_deploiement(conf):
     """2e relecture S239 : quelques timeouts + une 503 passagère suffisent à mettre Mistral au
     frigo ; avec l'heure globale, la Forge aurait été servie par Kilo pendant 1 h — contraire
     à l'option B (Mistral en tête, Kilo en secours)."""
     m = _modeles(conf)
-    visés = [n for n in m if n == "forge/defaut" or n.startswith("mistral/")]
-    assert set(visés) >= {"forge/defaut", "mistral/small", "mistral/large"}
+    # `forge/defaut` en base depuis S240 : son frigo de 120 s est posé par le Cœur
+    # (modeles_gateway.COOLDOWN_FORGE_S, test_forge_modele.py).
+    visés = [n for n in m if n.startswith("mistral/")]
+    assert set(visés) >= {"mistral/small", "mistral/large"}
     for nom in visés:
         assert m[nom].get("cooldown_time") == 120, nom
 

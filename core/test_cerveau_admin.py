@@ -43,6 +43,7 @@ ROUTES_GARDEES = {
     ("POST", "/assistant/cle-fournisseur"),
     ("POST", "/assistant/modeles"),
     ("DELETE", "/assistant/modeles/{nom:path}"),
+    ("POST", "/assistant/forge-modele"),
 }
 
 

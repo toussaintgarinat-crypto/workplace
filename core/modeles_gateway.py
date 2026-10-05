@@ -21,11 +21,16 @@ Règles de sécurité (le pourquoi) :
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import re
 
 import httpx
 
 import config_assistant
+
+logger = logging.getLogger(__name__)
 
 PREFIXE_PERSO = "perso/"
 # Délai du test de complétion : court, pour ne pas figer le panneau sur un fournisseur qui
@@ -159,7 +164,10 @@ async def tester(nom: str) -> tuple[bool, str]:
     `llm_pipeline`, dont le cache sémantique pourrait renvoyer un « pong » d'un autre
     modèle et faire passer un modèle cassé pour sain)."""
     corps = {"model": nom, "messages": [{"role": "user", "content": "ping"}],
-             "max_tokens": 5, "timeout": DELAI_TEST_S - 2, "num_retries": 0}
+             "max_tokens": 5, "timeout": DELAI_TEST_S - 2, "num_retries": 0,
+             # Sans repli : pour `forge/defaut`, un modèle en panne passerait sinon pour sain
+             # en étant servi par `gratuit/*` (router.py de LiteLLM lit ce champ).
+             "disable_fallbacks": True}
     try:
         async with httpx.AsyncClient(timeout=DELAI_TEST_S) as c:
             r = await c.post(f"{config_assistant.GATEWAY_URL}/v1/chat/completions",
@@ -233,9 +241,113 @@ async def retirer(nom: str) -> dict:
                          ("repli_souverain", "repli souverain")):
         if (conf.get(cle) or "").strip() == nom:
             raise Conflit(f"« {nom} » est la {libelle} : choisis-en d'abord un autre.")
+    if (conf.get("forge_modele") or "").strip() == nom:
+        raise Conflit(f"« {nom} » est le modèle de la Forge : choisis-en d'abord un autre.")
     ids = [d["id"] for d in await deploiements() if d["nom"] == nom and d["db"] and d["id"]]
     if not ids:
         raise Introuvable(f"Aucun modèle « {nom} » ajouté depuis ⚙ Cerveau.")
     for i in ids:
         await supprimer(i)
     return {"ok": True, "nom": nom, "retires": len(ids)}
+
+
+# ── Modèle de la Forge (`forge/defaut` en base) ──────────────────────────────
+# Avant S240, `forge/defaut` était câblé dans le YAML (Mistral small). Il vit désormais en
+# base, recréé par le Cœur d'après `forge_modele` (config persistée). Le repli
+# `forge/defaut → [gratuit/auto, gratuit/secours]` reste déclaré dans
+# `router_settings.fallbacks` du YAML : LiteLLM l'applique au GROUPE `forge/defaut`, qu'il
+# vienne du YAML ou de la base (prouvé sur une v1.86.2 locale, cf. message du commit S240 T3).
+
+NOM_FORGE = "forge/defaut"
+FORGE_DEFAUT = ("mistral", "mistral-small-latest")
+# Frigo court, comme `mistral/*` dans le YAML (S239) : l'heure globale ferait servir la
+# Forge par les gratuits pendant 1 h après quelques erreurs passagères.
+COOLDOWN_FORGE_S = 120
+VEILLE_FORGE_S = int(os.getenv("FORGE_VEILLE_S", "600"))
+
+_verrou_forge = asyncio.Lock()
+
+
+def params_forge(choix: str) -> dict:
+    """`litellm_params` de `forge/defaut` pour un choix ("" = défaut, sinon `perso/*`)."""
+    if not choix:
+        fournisseur, ident = FORGE_DEFAUT
+    else:
+        analyse = analyser_nom_perso(choix)
+        if analyse is None:
+            raise ValeurInvalide("La Forge accepte le modèle par défaut ou un modèle que tu as "
+                                 "ajouté (perso/…).")
+        fournisseur, ident = analyse
+    return {**params_litellm(fournisseur, ident), "cooldown_time": COOLDOWN_FORGE_S}
+
+
+async def assurer_forge(choix: str | None = None) -> dict:
+    """Aligne `forge/defaut` en base sur `choix` (défaut : le choix persisté). Idempotent.
+
+    Ordre : on CRÉE le nouveau avant de retirer l'ancien — LiteLLM accepte deux
+    déploiements du même nom (il répartit la charge entre eux), la Forge n'est donc jamais
+    sans `forge/defaut`, au pire servie un instant par l'un ou l'autre.
+
+    Si un `forge/defaut` vient encore du YAML (déploiement par étapes : Cœur à jour, YAML
+    pas encore), on ne fait RIEN : en ajouter un en base le doublerait, et le YAML n'est
+    jamais touché d'ici."""
+    async with _verrou_forge:
+        if choix is None:
+            choix = config_assistant.charger().get("forge_modele") or ""
+        voulu = params_forge(choix)
+        actuels = [d for d in await deploiements() if d["nom"] == NOM_FORGE]
+        if any(not d["db"] for d in actuels):
+            return {"statut": "yaml", "detail": "forge/defaut est encore déclaré dans le YAML "
+                    "de la Gateway : retire-le pour le piloter depuis ⚙ Cerveau."}
+        bons = [d for d in actuels if d["model"] == voulu["model"]]
+        garde = bons[0] if bons else None
+        statut = "ok"
+        if garde is None:
+            await creer(NOM_FORGE, voulu)
+            statut = "repointe" if actuels else "cree"
+        for d in actuels:
+            if d is not garde and d["id"]:
+                await supprimer(d["id"])
+        if statut != "ok":
+            logger.info("Forge : forge/defaut %s → %s", statut, voulu["model"])
+        return {"statut": statut, "model": voulu["model"]}
+
+
+async def definir_forge(choix: str) -> dict:
+    """Change le modèle de la Forge : valide, recrée `forge/defaut`, PUIS persiste.
+
+    Persister seulement après succès : si la Gateway est muette, la veille ne réappliquera
+    pas un choix que personne n'a vu fonctionner."""
+    choix = (choix or "").strip()
+    params_forge(choix)  # valide la forme avant tout appel réseau
+    if choix and not any(d["nom"] == choix and d["db"] for d in await deploiements()):
+        raise Introuvable(f"« {choix} » n'est pas servi : ajoute-le d'abord.")
+    r = await assurer_forge(choix)
+    if r["statut"] == "yaml":
+        raise Conflit(r["detail"])
+    config_assistant.definir_forge_modele(choix)
+    ok, detail = await tester(NOM_FORGE)
+    return {"ok": ok, "choix": choix, "model": r["model"], "detail": detail}
+
+
+def etat_forge() -> dict:
+    return {"choix": config_assistant.charger().get("forge_modele") or "",
+            "defaut": "/".join(FORGE_DEFAUT)}
+
+
+async def veiller_forge(intervalle: int = VEILLE_FORGE_S, reessai: int = 30) -> None:
+    """Tâche de fond du Cœur : `forge/defaut` doit toujours exister.
+
+    Au démarrage la Gateway peut ne pas être prête (ou sa base vide après réinstallation) :
+    on réessaie toutes les `reessai` s, puis on revérifie toutes les `intervalle` s — une base
+    LiteLLM réinitialisée en cours de route retrouve ainsi son `forge/defaut` sans
+    redémarrer le Cœur."""
+    while True:
+        try:
+            await assurer_forge()
+            attente = intervalle
+        except Exception as e:  # noqa: BLE001 — la veille ne doit jamais mourir
+            logger.warning("Forge : forge/defaut non vérifié (%s), nouvel essai dans %d s",
+                           e, reessai)
+            attente = reessai
+        await asyncio.sleep(attente)

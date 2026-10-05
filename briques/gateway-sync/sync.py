@@ -11,7 +11,8 @@ raisons de changer, détaillées dans l'ADR
 
 Le sync est **différentiel** et organisé par **source** (S239) : chaque source ne touche QUE
 les modèles de son préfixe, et tout ce qui est déclaré dans le YAML (payants, `go/*`, locaux,
-alias `gratuit/auto` / `forge/defaut`) reste strictement tranquille.
+alias `gratuit/auto`) reste strictement tranquille — de même que les modèles EN BASE posés
+par le Cœur depuis ⚙ Cerveau (S240 : `forge/defaut`, `perso/*`), hors de ses préfixes.
 
 - `free/*` ← OpenRouter (clé requise). Le 2026-10-05, la clé du HP renvoyait 401 « User not
   found » : toute la cascade gratuite était morte d'un coup — d'où une deuxième source.

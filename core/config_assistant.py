@@ -124,6 +124,10 @@ def charger() -> dict:
         "muscle_actif": DEFAUT_MUSCLE_ACTIF,
         "repli_souverain": DEFAUT_REPLI_SOUVERAIN,
         "repli_souverain_avant_payant": DEFAUT_REPLI_SOUVERAIN_AVANT_PAYANT,
+        # Modèle de la Forge (S240) : "" = défaut (Mistral small), sinon un `perso/*`. Le
+        # Cœur recrée `forge/defaut` en base LiteLLM d'après ce choix (modeles_gateway.py),
+        # y compris si la base de la Gateway est réinitialisée.
+        "forge_modele": "",
     }
     if CONFIG_PATH.exists():
         try:
@@ -167,6 +171,8 @@ def charger() -> dict:
                 base["repli_souverain"] = d.get("repli_souverain")
             if d.get("repli_souverain_avant_payant") is not None:
                 base["repli_souverain_avant_payant"] = bool(d.get("repli_souverain_avant_payant"))
+            if isinstance(d.get("forge_modele"), str):
+                base["forge_modele"] = d.get("forge_modele")
         except Exception:
             pass
     return base
@@ -213,6 +219,15 @@ def definir_modele(model: str | None, fallbacks: list[str] | None = None) -> dic
         conf["model"] = model.strip()
     if fallbacks is not None:
         conf["fallback_models"] = [m.strip() for m in fallbacks if m and m.strip()]
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
+
+
+def definir_forge_modele(choix: str) -> dict:
+    """Persiste le modèle de la Forge (validé par `modeles_gateway.definir_forge`)."""
+    conf = charger()
+    conf["forge_modele"] = (choix or "").strip()
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf

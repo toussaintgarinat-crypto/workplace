@@ -675,7 +675,8 @@ async def assistant_modeles_get():
     """Modèles servis par la Gateway avec leur origine (yaml / gratuit / perso / forge) et
     les fournisseurs dont on peut ajouter un modèle (S240). Aucun paramètre ni clé renvoyé."""
     modeles = await _traduire_erreurs_modeles(modeles_gateway.lister())
-    return {"modeles": modeles, "fournisseurs": modeles_gateway.fournisseurs()}
+    return {"modeles": modeles, "fournisseurs": modeles_gateway.fournisseurs(),
+            "forge": modeles_gateway.etat_forge()}
 
 
 @router.post("/assistant/modeles", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
@@ -691,6 +692,13 @@ async def assistant_modeles_post(corps: dict):
 async def assistant_modeles_delete(nom: str):
     """Retire un modèle ajouté depuis ⚙ Cerveau (`perso/*` en base uniquement)."""
     return await _traduire_erreurs_modeles(modeles_gateway.retirer(nom))
+
+
+@router.post("/assistant/forge-modele", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_forge_modele_post(corps: dict):
+    """Choisit le modèle de la Forge : recrée `forge/defaut` en base LiteLLM puis le teste
+    sans repli. Corps : {"modele": ""} (défaut Mistral small) ou {"modele": "perso/…"}."""
+    return await _traduire_erreurs_modeles(modeles_gateway.definir_forge(corps.get("modele") or ""))
 
 
 @router.post("/assistant/document", tags=["assistant"])
