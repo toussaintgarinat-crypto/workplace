@@ -38,8 +38,9 @@ AVAILABLE_PROVIDERS = [
     {"id": "openrouter", "label": "OpenRouter",
      "models": ["openai/gpt-4.1", "openai/gpt-4o", "anthropic/claude-sonnet-4-6",
                 "meta-llama/llama-4-maverick", "google/gemini-2.5-pro", "deepseek/deepseek-r1", "qwen/qwq-32b"]},
+    # `forge/defaut` en tête (S239) : alias Gateway Mistral + repli gratuit, défaut de la Forge.
     {"id": "gateway", "label": "LiteLLM Gateway",
-     "models": ["openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4-6",
+     "models": ["forge/defaut", "openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4-6",
                 "google/gemini-2.5-flash-preview", "ollama/llama3.2", "ollama/llama3.3"]},
     # OpenCode Go — forfait « Go » via la Gateway (endpoint dédié /zen/go/v1, préfixe
     # `go/` ; cf. briques/gateway/litellm_config.yaml). Modèles vérifiés le 2026-06-14.
@@ -63,6 +64,21 @@ def gateway_model(provider: str | None, model: str | None) -> str:
     if p in ("gateway", "openrouter", "opencode") or "/" in (m or ""):
         return m
     return f"{p}/{m}"
+
+
+def preset_pole_defaut(*, scope_id: str, venture_id, updated_by: str | None) -> LlmPresets:
+    """Preset LLM d'un pôle neuf, avec provider/modèle EXPLICITES (S239).
+
+    Avant, les routeurs laissaient la base remplir provider/model par le défaut SERVEUR de
+    la colonne. Or `create_all` n'altère jamais une table existante : une base déjà créée
+    garde `go/deepseek-v4-flash` en défaut, et chaque nouveau pôle serait reparti sur Go
+    (abonnement en pause) quoi qu'on change dans le code. On prend donc les réglages.
+    """
+    from app.config import settings
+
+    return LlmPresets(scope_type="pole", scope_id=scope_id, venture_id=venture_id,
+                      updated_by=updated_by, provider=settings.DEFAULT_LLM_PROVIDER,
+                      model=settings.DEFAULT_LLM_MODEL)
 
 
 async def generate_text(
