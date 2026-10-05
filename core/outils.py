@@ -26,6 +26,7 @@ import agenda
 import catalogue
 import conscience
 import cycle_de_vie
+import droits
 import orchestrateur
 
 
@@ -509,8 +510,14 @@ async def executer(nom: str, args: dict, registre) -> str:
     On ouvre un client HTTP partagé, puis on interroge chaque dispatcher de domaine
     dans l'ordre ; le premier qui reconnaît `nom` renvoie une chaîne. À défaut, on
     tente une capacité dynamique (découverte par manifest, S64). Le filet d'erreurs
-    (try/except) reste ici, centralisé, inchangé."""
-    resultat = await _executer(nom, args, registre)
+    (try/except) reste ici, centralisé, inchangé.
+
+    Point de passage UNIQUE du chat, du co-agent et de /mcp : c'est donc ici que les outils
+    réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py)."""
+    if droits.est_reserve_admin(nom) and not droits.ADMIN_CERVEAU.get():
+        resultat = droits.refus(nom)
+    else:
+        resultat = await _executer(nom, args, registre)
     _APPELS[nom] = _APPELS.get(nom, 0) + 1
     if est_erreur(resultat):
         _ECHECS[nom] = _ECHECS.get(nom, 0) + 1

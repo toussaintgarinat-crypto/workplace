@@ -289,7 +289,10 @@ def _origine_autorisee(origine: str, request: Request) -> bool:
     NetBird via Caddy en HTTPS) et par domaine. On compare donc l'hôte[:port] de l'origine à
     celui de la REQUÊTE (`Host`, ou `X-Forwarded-Host` posé par un proxy), sans le schéma :
     Caddy termine le TLS, le Cœur voit du http alors que le navigateur annonce https.
-    S'y ajoutent localhost (dev) et les origines explicites de `CORS_ORIGINS` (hors « * »)."""
+    S'y ajoute localhost (dev). Pas de liste d'origines tierces (`CORS_ORIGINS` n'est PAS
+    consulté, revue S240 M1) : un front servi ailleurs que par le Cœur ne doit pas écrire
+    dans le cerveau, et la politique CORS actuelle (sans `allow_credentials`) l'en
+    empêcherait de toute façon."""
     hote = _netloc(origine)
     if not hote:
         return False  # « null » (iframe sandbox, fichier local…) ou valeur illisible
@@ -297,11 +300,7 @@ def _origine_autorisee(origine: str, request: Request) -> bool:
         return True
     hotes_requete = {(request.headers.get("host") or "").lower(),
                      (request.headers.get("x-forwarded-host") or "").split(",")[0].strip().lower()}
-    if hote in hotes_requete - {""}:
-        return True
-    cors = {_netloc(o.strip()) for o in os.environ.get("CORS_ORIGINS", "").split(",")
-            if o.strip() and o.strip() != "*"}
-    return hote in cors
+    return hote in hotes_requete - {""}
 
 
 def verifier_anti_csrf(request: Request) -> None:
@@ -317,7 +316,13 @@ def verifier_anti_csrf(request: Request) -> None:
       text/plain, urlencoded ou multipart, et un `fetch` JSON cross-origin exige un preflight
       CORS. Une requête SANS corps (DELETE, route sans paramètre) n'est pas concernée.
     Les clients hors navigateur (curl, scripts) n'envoient aucun de ces en-têtes : ils passent
-    cette garde et restent soumis à la session."""
+    cette garde et restent soumis à la session.
+
+    ⚠ Garde fondée sur l'ORIGINE (revue S240, I-A) : tout ce qui est servi par le Cœur
+    lui-même est « same-origin » — y compris les fronts de briques proxifiés sous son
+    origine (`/studio-app/`, `/mail-app/`, `/atelier-images-video-app/`,
+    `/atelier-veille-app/`). Une XSS dans l'un d'eux contourne donc cette garde comme une
+    XSS du dashboard : leur échappement fait partie du même périmètre de sécurité."""
     site = request.headers.get("sec-fetch-site")
     if site is not None and site != "same-origin":
         raise HTTPException(status_code=403, detail=f"Requête d'une autre origine refusée ({site}).")
@@ -357,8 +362,9 @@ async def exiger_admin_cerveau(request: Request) -> dict:
         identite = await exiger_session(request)
     except HTTPException as e:
         if e.status_code == 303:
-            raise HTTPException(status_code=401,
-                                detail="Session requise pour modifier le cerveau.") from None
+            quoi = ("lire cette donnée sensible" if request.method in ("GET", "HEAD")
+                    else "modifier le cerveau")
+            raise HTTPException(status_code=401, detail=f"Session requise pour {quoi}.") from None
         raise
     admins = _admins_cerveau()
     if not admins:
@@ -371,3 +377,13 @@ async def exiger_admin_cerveau(request: Request) -> dict:
         raise HTTPException(status_code=403,
                             detail="Ce compte n'est pas autorisé à modifier le cerveau.")
     return identite
+
+
+async def admin_cerveau_ou_none(request: Request) -> dict | None:
+    """Même règle qu'`exiger_admin_cerveau` (anti-CSRF compris), sans lever : l'identité
+    admin, ou None. Sert au chat (route ouverte) pour savoir si le TOUR peut utiliser les
+    outils réservés (droits.py, revue S240 C-B)."""
+    try:
+        return await exiger_admin_cerveau(request)
+    except HTTPException:
+        return None

@@ -19,6 +19,7 @@ import classer
 import config_assistant
 import config_tenant
 import contexte_tenant
+import droits
 import entretien_routage
 import horloge
 import journal_conversations
@@ -170,6 +171,9 @@ async def assistant_chat(corps: dict, request: Request):
     if utilisateur:
         contexte_tenant.definir_contexte(utilisateur=utilisateur)
     fil = journal_conversations.fil(surface, interlocuteur)
+    # Outils réservés (droits.py, revue S240 C-B) : seulement si CE tour porte une session
+    # admin du cerveau. Résolu ici, dans la route ; posé dans le flux SSE ci-dessous.
+    admin_tour = await auth.admin_cerveau_ou_none(request) is not None
 
     # Projet de la conversation (façon Claude Projects) : on prend le `projet_id` du corps
     # si fourni, sinon celui déjà rattaché au fil ; ses instructions nourrissent le prompt.
@@ -266,6 +270,7 @@ async def assistant_chat(corps: dict, request: Request):
 
     async def flux():
         final = ""
+        droits.ADMIN_CERVEAU.set(admin_tour)  # contexte propre au flux : pas de reset à faire
         try:
             async for evt in assistant.converser(messages, registre,
                                                   instructions_projet=instructions_projet,
@@ -352,17 +357,23 @@ async def assistant_projets():
 @router.post("/assistant/projets", tags=["assistant"])
 async def assistant_projet_creer(corps: dict):
     """Crée un projet : `nom` (requis), `instructions` (contexte propre), `documents` (refs)."""
-    p = projets_mod.creer(nom=corps.get("nom") or "", instructions=corps.get("instructions") or "",
-                          documents=corps.get("documents") or [], couleur=corps.get("couleur"))
+    try:
+        p = projets_mod.creer(nom=corps.get("nom") or "", instructions=corps.get("instructions") or "",
+                              documents=corps.get("documents") or [], couleur=corps.get("couleur"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "projet": p}
 
 
 @router.patch("/assistant/projets/{projet_id}", tags=["assistant"])
 async def assistant_projet_modifier(projet_id: str, corps: dict):
     """Met à jour un projet (nom, instructions, documents, couleur)."""
-    p = projets_mod.modifier(projet_id, nom=corps.get("nom"),
-                             instructions=corps.get("instructions"),
-                             documents=corps.get("documents"), couleur=corps.get("couleur"))
+    try:
+        p = projets_mod.modifier(projet_id, nom=corps.get("nom"),
+                                 instructions=corps.get("instructions"),
+                                 documents=corps.get("documents"), couleur=corps.get("couleur"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not p:
         raise HTTPException(status_code=404, detail="Projet introuvable")
     return {"ok": True, "projet": p}

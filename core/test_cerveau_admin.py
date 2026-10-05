@@ -248,11 +248,12 @@ def test_origin_du_coeur_ou_localhost_acceptee():
         assert r.status_code == 200, origine
 
 
-def test_origin_listee_dans_cors_origins_acceptee(monkeypatch):
+def test_cors_origins_n_autorise_aucune_origine_tierce(monkeypatch):
+    """Revue S240, M1 : `CORS_ORIGINS` n'ouvre PAS l'écriture du cerveau à une autre origine."""
     monkeypatch.setenv("CORS_ORIGINS", "https://app.exemple.net")
     r = client.post("/assistant/persona", json={"persona": "default"},
                     headers={"Origin": "https://app.exemple.net"})
-    assert r.status_code == 200
+    assert r.status_code == 403
 
 
 def test_corps_non_json_refuse_415():
