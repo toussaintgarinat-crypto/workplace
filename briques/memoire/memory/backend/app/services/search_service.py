@@ -4,6 +4,7 @@ L'embedder peut être en panne : la recherche reste alors lexicale (mode « lexi
 de renvoyer du bruit ou rien. Les classements sont fusionnés par rangs (RRF), jamais en
 additionnant des scores de natures différentes ; les références exactes passent devant.
 """
+import logging
 from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
@@ -22,6 +23,8 @@ from app.services.recherche_lexicale import (
 from app.services.recherche_vectorielle import classement_vectoriel
 
 CANDIDATS_MIN = 50
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,7 +64,8 @@ class SearchService:
         mode, vectoriel = "hybride", []
         try:
             vecteur = await self.embedder.embed_text(query)
-        except EmbeddingIndisponible:
+        except EmbeddingIndisponible as exc:
+            logger.warning("Recherche en mode lexical : embedder indisponible (%s)", exc)
             mode = "lexical"
         else:
             if vecteur:

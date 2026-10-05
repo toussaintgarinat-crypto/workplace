@@ -5,12 +5,15 @@ from sqlalchemy import select
 from sqlalchemy import text as text_sql
 
 from app import database as db_module
+from app.llm.client import LLMClient as _LLMClient
 from app.llm.embedder import Embedder, EmbeddingIndisponible
 from app.models.node import Node
 from app.services.embed_service import EmbedService
 from tests.outils_embedder import activer_embedder_factice, couper_embedder, vecteur_factice
 
 pytestmark = pytest.mark.asyncio
+
+_EMBED_ORIGINAL = _LLMClient.embed  # capturé à l'import, avant le monkeypatch autouse
 
 
 async def _embedding(node_id: str):
@@ -154,3 +157,34 @@ async def test_client_openai_se_construit():
         assert client is not None
     finally:
         settings.llm_provider, settings.llm_api_key, settings.llm_base_url = ancien
+
+
+
+async def test_embed_delai_court_sans_reessai():
+    """embed_node est sur le chemin des requêtes : un Gateway qui pend ne doit pas bloquer
+    écritures et recherches 600 s (défaut openai) ni être réessayé 2 fois."""
+    from types import SimpleNamespace
+
+    from app.llm import client as module_client
+
+    options = {}
+
+    class _Embeddings:
+        async def create(self, **kwargs):
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.5])])
+
+    class _Client:
+        def with_options(self, **kwargs):
+            options.update(kwargs)
+            return SimpleNamespace(embeddings=_Embeddings())
+
+        @property
+        def embeddings(self):
+            raise AssertionError("embeddings appelé sans with_options")
+
+    llm = module_client.LLMClient()
+    llm._client = _Client()
+    assert await _EMBED_ORIGINAL(llm, "bonjour") == [0.5]
+    assert options == {"timeout": module_client.DELAI_EMBEDDING_S, "max_retries": 0}
+    assert module_client.DELAI_EMBEDDING_S <= 15
+

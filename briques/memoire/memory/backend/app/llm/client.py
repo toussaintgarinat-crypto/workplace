@@ -1,6 +1,12 @@
 
 from app.config import settings
 
+# Les embeddings sont calculés sur le chemin des requêtes (écriture d'un souvenir,
+# recherche) : un Gateway qui pend doit faire basculer vite en mode dégradé (embedding
+# différé, recherche lexicale), pas bloquer 600 s ni être réessayé (défauts du client
+# openai). Le chat du Gardien, en tâche de fond, garde les défauts.
+DELAI_EMBEDDING_S = 10.0
+
 
 class LLMClient:
     def __init__(self):
@@ -45,7 +51,7 @@ class LLMClient:
     async def embed(self, text: str) -> list[float]:
         client = await self._get_client()
         embed_model = settings.embedding_model
-        response = await client.embeddings.create(
+        response = await client.with_options(timeout=DELAI_EMBEDDING_S, max_retries=0).embeddings.create(
             model=embed_model,
             input=text,
         )

@@ -90,6 +90,12 @@ class TestRecherche:
         _, res = await _chercher(client, auth_headers, sid, "S1…")
         assert res[0]["id"] == s1 and res[0]["correspondance"] == "exacte"
 
+    async def test_bascule_lexicale_journalisee(self, client, auth_headers, test_space, caplog):
+        with caplog.at_level("WARNING", logger="app.services.search_service"):
+            mode, _ = await _chercher(client, auth_headers, test_space["id"], "bonjour")
+        assert mode == "lexical"
+        assert any("lexical" in r.getMessage() for r in caplog.records)
+
     async def test_limite_zero_refusee(self, client, auth_headers, test_space):
         r = await client.get(f"/api/v1/spaces/{test_space['id']}/search",
                              params={"q": "x", "limit": 0}, headers=auth_headers)
