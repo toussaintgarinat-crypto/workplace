@@ -27,6 +27,18 @@ router_settings:
     # À l'inverse, les gratuits rate-limitent BEAUCOUP et restent parfaitement utilisables :
     # les écarter pour ça viderait la cascade de ses modèles sains.
     RateLimitErrorAllowedFails: 100
+  # S239 — option B pour la Forge : elle n'a PAS de cascade (un seul DEFAULT_LLM_MODEL),
+  # c'est donc la Gateway qui lui donne son filet. `forge/defaut` (Mistral) → `gratuit/auto`
+  # (routeur gratuit de Kilo) si Mistral échoue (clé absente/expirée, quota, panne).
+  # Le Cœur, lui, appelle `mistral/small` SANS repli Gateway : sa propre cascade et son
+  # journal de modèles (`journal_modele`) font foi — un repli caché ici lui ferait journaliser
+  # « mistral/small » pour une réponse venue d'ailleurs.
+  # `gratuit/secours` derrière `gratuit/auto` : le 2026-10-05, `kilo-auto/free` renvoyait 429
+  # en série (fournisseur amont saturé) pendant que `openrouter/free` répondait — un seul
+  # méta-routeur aurait été un point de panne unique pour la Forge.
+  fallbacks:
+    - forge/defaut: ["gratuit/auto", "gratuit/secours"]
+    - gratuit/auto: ["gratuit/secours"]
 
 model_list:
   - model_name: openai/gpt-4o
@@ -85,6 +97,31 @@ model_list:
   # Les laisser dans ce fichier ferait cohabiter deux sources de vérité — LiteLLM recharge son
   # YAML au démarrage et réintroduirait les modèles morts par-dessus l'état de la base.
   # Cf. ADR docs/decisions/2026-07-27-sync-modeles-gratuits-gateway.md.
+  # Idem pour les `kilo/*` (S239, Kilo Code sans clé), gérés par la même brique.
+
+  # Alias STABLE du routeur gratuit de Kilo Code (S239) — filet de la Forge via
+  # `router_settings.fallbacks` ci-dessus. `kilo-auto/free` choisit lui-même le modèle
+  # gratuit qui répond : très bien pour la Forge, mais JAMAIS dans la cascade du Cœur, dont
+  # le journal doit nommer le modèle réellement utilisé. Préfixe `gratuit/` et non `kilo/` :
+  # `gateway-sync` gère seul le préfixe `kilo/` (en base) et ne doit pas le voir.
+  # Aucune clé : `anonymous` (et non vide — Kilo refuse `Bearer None` en 401). 200 req/h/IP.
+  # ⚠ Les gratuits de Kilo peuvent journaliser les requêtes : rang de SECOURS uniquement.
+  - model_name: gratuit/auto
+    litellm_params:
+      model: openai/kilo-auto/free
+      api_key: anonymous
+      api_base: https://api.kilo.ai/api/gateway
+      timeout: 60
+      num_retries: 1
+  # Second méta-routeur gratuit servi par Kilo (même conditions, même absence de clé), repli
+  # de `gratuit/auto` — cf. router_settings.fallbacks.
+  - model_name: gratuit/secours
+    litellm_params:
+      model: openai/openrouter/free
+      api_key: anonymous
+      api_base: https://api.kilo.ai/api/gateway
+      timeout: 60
+      num_retries: 1
 
   # --- OpenCode Go ------------------------------------------------------------
   # Abonnement « Go » (forfait en $-équivalent, distinct du crédit « Zen balance »).
@@ -92,86 +129,107 @@ model_list:
   # vide. Préfixe `go/` (et NON `free/`) : ces modèles consomment le forfait, donc le
   # routeur économe (routage.py) ne les choisit pas automatiquement. Clé dans .env
   # (OPENCODE_ZEN_API_KEY). Liste vérifiée via /zen/go/v1/models le 2026-06-14.
+  # S239 : Go exige aussi un User-Agent PROPRE au client (pas celui d'un SDK générique) —
+  # posé ici, statique — et un `x-opencode-session` stable PAR CONVERSATION, qui ne peut donc
+  # pas vivre dans ce fichier : c'est le Cœur qui l'envoie à chaque requête `go/*` (cf.
+  # core/llm_pipeline.py). Sans lui, Go répond 400 « missing x-opencode-session ».
+  # Go reste HORS de la cascade (abonnement en pause, décision 2026-10-05).
   - model_name: go/deepseek-v4-flash
     litellm_params:
       model: openai/deepseek-v4-flash
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/deepseek-v4-pro
     litellm_params:
       model: openai/deepseek-v4-pro
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/glm-5.1
     litellm_params:
       model: openai/glm-5.1
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/glm-5
     litellm_params:
       model: openai/glm-5
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/kimi-k2.7-code
     litellm_params:
       model: openai/kimi-k2.7-code
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/kimi-k2.6
     litellm_params:
       model: openai/kimi-k2.6
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/kimi-k2.5
     litellm_params:
       model: openai/kimi-k2.5
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/qwen3.7-plus
     litellm_params:
       model: openai/qwen3.7-plus
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/qwen3.6-plus
     litellm_params:
       model: openai/qwen3.6-plus
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/qwen3.5-plus
     litellm_params:
       model: openai/qwen3.5-plus
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/minimax-m3
     litellm_params:
       model: openai/minimax-m3
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/minimax-m2.7
     litellm_params:
       model: openai/minimax-m2.7
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/minimax-m2.5
     litellm_params:
       model: openai/minimax-m2.5
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/mimo-v2.5-pro
     litellm_params:
       model: openai/mimo-v2.5-pro
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/mimo-v2.5
     litellm_params:
       model: openai/mimo-v2.5
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
   - model_name: go/hy3-preview
     litellm_params:
       model: openai/hy3-preview
       api_key: os.environ/OPENCODE_ZEN_API_KEY
       api_base: https://opencode.ai/zen/go/v1
+      extra_headers: {"User-Agent": "workplace-coeur/1.0"}
 
   # ── FOURNISSEURS DIRECTS (alternatives à OpenRouter) ────────────────────────
   # Même motif que les blocs ci-dessus : chaque entrée est ACTIVÉE par sa propre
@@ -234,6 +292,14 @@ model_list:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
   - model_name: mistral/small
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+  # Modèle par défaut de la Forge (S239, DEFAULT_LLM_MODEL=forge/defaut) : même déploiement
+  # que `mistral/small`, mais sous un nom à part pour porter SEUL le repli vers
+  # `gratuit/auto` (cf. router_settings.fallbacks). Changer de modèle Forge = changer cette
+  # entrée, sans toucher à la Forge.
+  - model_name: forge/defaut
     litellm_params:
       model: mistral/mistral-small-latest
       api_key: os.environ/MISTRAL_API_KEY
