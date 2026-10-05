@@ -208,6 +208,14 @@ async def lister() -> list[dict]:
     return sorted(vus.values(), key=lambda m: m["nom"])
 
 
+# Verrou UNIQUE des écritures de modèles en base (revue S240, M5/M6) : ajouter, retirer,
+# re-pointer la Forge et la veille. Sans lui, deux ajouts simultanés passaient tous deux le
+# contrôle de doublon, et un retrait pouvait s'intercaler pendant qu'on basculait la Forge
+# sur le modèle retiré. Un ajout tient le verrou pendant son test (≤ 20 s) : acceptable,
+# ces opérations sont humaines et rares.
+_verrou_forge = asyncio.Lock()
+
+
 async def _retirer_par_nom(nom: str) -> bool:
     """Retire tout déploiement EN BASE portant `nom` ; best-effort, True si plus rien ne reste.
 
@@ -227,6 +235,11 @@ async def ajouter(fournisseur: str, ident: str) -> dict:
     ident = (ident or "").strip()
     params = params_litellm((fournisseur or "").strip(), ident)
     nom = nom_perso(fournisseur.strip(), ident)
+    async with _verrou_forge:
+        return await _ajouter(nom, params)
+
+
+async def _ajouter(nom: str, params: dict) -> dict:
     if any(d["nom"] == nom for d in await deploiements()):
         raise Conflit(f"« {nom} » est déjà servi par la Gateway.")
     try:
@@ -250,6 +263,11 @@ async def retirer(nom: str) -> dict:
     """Retire tous les déploiements `perso/*` EN BASE portant ce nom."""
     if analyser_nom_perso(nom or "") is None:
         raise ValeurInvalide("Seuls les modèles que tu as ajoutés (perso/…) peuvent être retirés.")
+    async with _verrou_forge:
+        return await _retirer(nom)
+
+
+async def _retirer(nom: str) -> dict:
     conf = config_assistant.charger()
     # Un modèle en service dans la cascade du Cœur ne disparaît pas sous ses pieds : on
     # demande d'abord d'en choisir un autre (la cascade survivrait, mais en silence).
@@ -281,7 +299,7 @@ FORGE_DEFAUT = ("mistral", "mistral-small-latest")
 COOLDOWN_FORGE_S = 120
 VEILLE_FORGE_S = int(os.getenv("FORGE_VEILLE_S", "600"))
 
-_verrou_forge = asyncio.Lock()
+# `_verrou_forge` : défini plus haut (partagé avec ajouter/retirer).
 
 
 def params_forge(choix: str) -> dict:
@@ -365,10 +383,18 @@ async def definir_forge(choix: str) -> dict:
             return {"ok": True, "choix": choix, "model": r["model"], "detail": detail,
                     "restaure": False}
         try:
+            modele_ancien = params_forge(ancien)["model"]
             await _assurer_forge(ancien)
         except (GatewayInjoignable, ValeurInvalide) as e:
-            detail += f" ⚠ Restauration de l'ancien modèle impossible ({e}) ; la veille réessaiera."
-        return {"ok": False, "choix": ancien, "model": params_forge(ancien)["model"],
+            # Réponse HONNÊTE (revue S240, M4) : la Forge pointe encore sur le modèle essayé,
+            # qui ne répond pas (donc servie par les gratuits). Le choix persisté reste
+            # l'ancien : la veille le réappliquera dès que la Gateway le permettra.
+            return {"ok": False, "choix": ancien, "model": r["model"], "restaure": False,
+                    "essaye": r["model"],
+                    "detail": detail + f" ⚠ Restauration de l'ancien modèle impossible ({e}) : "
+                              "la Forge reste pour l'instant sur le modèle essayé ; la veille "
+                              "la remettra sur l'ancien automatiquement."}
+        return {"ok": False, "choix": ancien, "model": modele_ancien,
                 "detail": detail, "restaure": True, "essaye": r["model"]}
 
 

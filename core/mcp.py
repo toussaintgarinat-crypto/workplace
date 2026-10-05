@@ -28,6 +28,7 @@ s'appliquent, et elles ne protègent qu'un LLM qui ignore encore qu'il doit pass
 appelant autonome sans tour de parole humain à intercaler. Ne pas lire cette absence comme
 un oubli.
 """
+import hmac
 import os
 
 import outils
@@ -49,7 +50,8 @@ def cle_ok(presentee: str | None) -> bool:
     attendue = os.getenv("MCP_KEY")
     if not attendue:
         return not auth.AUTH_ENABLED
-    return presentee == attendue
+    # Comparaison à temps constant (revue S240, M7).
+    return hmac.compare_digest((presentee or "").encode(), attendue.encode())
 
 
 def _outil_mcp(spec: dict, est_action) -> dict:

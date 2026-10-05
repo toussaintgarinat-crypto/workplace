@@ -28,6 +28,11 @@ import modeles_gateway as mg  # noqa: E402
 GW = config_assistant.GATEWAY_URL
 
 
+@pytest.fixture(autouse=True)
+def _verrou_neuf():
+    mg._verrou_forge = asyncio.Lock()  # lié à la boucle de chaque asyncio.run
+
+
 def _info(*modeles):
     """Réponse /model/info : (nom, db_model, id, model litellm)."""
     return {"data": [{"model_name": n, "litellm_params": {"model": lm, "api_key": "sk-secret"},

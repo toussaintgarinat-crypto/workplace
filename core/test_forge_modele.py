@@ -30,6 +30,13 @@ def _info(*modeles):
 
 
 @pytest.fixture(autouse=True)
+def _verrou_neuf():
+    """Un asyncio.Lock se lie à la boucle qui l'a attendu la première fois ; chaque test a la
+    sienne (asyncio.run). En production : une seule boucle, un seul verrou."""
+    mg._verrou_forge = asyncio.Lock()
+
+
+@pytest.fixture(autouse=True)
 def _choix_par_defaut():
     config_assistant.definir_forge_modele("")
     yield
@@ -233,3 +240,69 @@ def test_i4_etat_forge_signale_la_cle_absente(monkeypatch):
     config_assistant.definir_forge_modele("perso/groq/x")
     e = mg.etat_forge()
     assert e["fournisseur"] == "groq" and e["cle_definie"] is True
+
+
+@respx.mock
+def test_m4_restauration_en_echec_reponse_honnete():
+    gw = FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                       ("perso/groq/x", True, "p", "groq/x"),
+                       chat=lambda corps: httpx.Response(401, json={"error": {"message": "clé absente"}}))
+    origine_new = gw._new
+
+    def new_puis_panne(req):
+        if gw.n >= 1:  # la création de restauration échoue
+            raise httpx.ConnectError("Gateway tombée")
+        return origine_new(req)
+    respx.post(f"{GW}/model/new").mock(side_effect=new_puis_panne)
+    r = asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert r["ok"] is False and r["restaure"] is False
+    assert r["model"] == "groq/x"  # ce qui est réellement servi, pas l'ancien
+    assert "veille" in r["detail"]
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_m5_m6_ajouts_concurrents_un_seul_cree(monkeypatch):
+    gw = FausseGateway()
+    vrai = mg.deploiements
+
+    async def lent():
+        d = await vrai()
+        await asyncio.sleep(0.02)  # laisse l'autre tâche lire le même état (fenêtre de course)
+        return d
+    monkeypatch.setattr(mg, "deploiements", lent)
+
+    async def deux():
+        return await asyncio.gather(mg.ajouter("groq", "x"), mg.ajouter("groq", "x"),
+                                    return_exceptions=True)
+    res = asyncio.run(deux())
+    assert sum(isinstance(x, mg.Conflit) for x in res) == 1
+    assert [d["nom"] for d in gw.deps] == ["perso/groq/x"]
+
+
+@respx.mock
+def test_m6_retrait_attend_un_re_pointage_en_cours(monkeypatch):
+    """retirer() prend le même verrou que definir_forge : il ne peut pas retirer le modèle
+    pendant qu'on est en train d'y basculer la Forge."""
+    FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                  ("perso/groq/x", True, "p", "groq/x"))
+    ordre = []
+    vrai_tester = mg.tester
+
+    async def tester_lent(nom):
+        ordre.append("test-debut")
+        await asyncio.sleep(0.05)
+        ordre.append("test-fin")
+        return await vrai_tester(nom)
+    monkeypatch.setattr(mg, "tester", tester_lent)
+
+    async def scenario():
+        t1 = asyncio.create_task(mg.definir_forge("perso/groq/x"))
+        await asyncio.sleep(0.01)
+        try:
+            await mg.retirer("perso/groq/x")
+        except mg.Conflit:
+            ordre.append("retrait-refuse")
+        await t1
+    asyncio.run(scenario())
+    assert ordre == ["test-debut", "test-fin", "retrait-refuse"]
