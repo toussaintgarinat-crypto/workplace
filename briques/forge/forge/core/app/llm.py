@@ -11,12 +11,15 @@ OpenAI async cible la gateway. Cela supprime la dépendance aux SDK providers.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import and_, select
 
 from app.db import SessionLocal
 from app.models import AgentDefinitions, LlmPresets, Poles, PoleTools
+
+logger = logging.getLogger(__name__)
 
 # Identique à AVAILABLE_PROVIDERS du Bun (llm/index.ts).
 AVAILABLE_PROVIDERS = [
@@ -66,6 +69,23 @@ def gateway_model(provider: str | None, model: str | None) -> str:
     return f"{p}/{m}"
 
 
+def modele_servi(demande: str, entetes, modele_reponse: str | None) -> tuple[str, bool]:
+    """(modèle réellement servi, repli Gateway ?) d'une réponse de la Gateway (S239).
+
+    `forge/defaut` se replie CÔTÉ GATEWAY (Mistral → gratuits Kilo) : la Forge reçoit un 200
+    et croirait avoir été servie par le modèle demandé. LiteLLM le dit dans ses en-têtes —
+    `x-litellm-attempted-fallbacks` > 0 et `x-litellm-model-group` = le groupe qui a
+    répondu (ex. `gratuit/secours`). À défaut d'en-tête de groupe, le `model` de la réponse.
+    """
+    try:
+        replis = int((entetes or {}).get("x-litellm-attempted-fallbacks") or 0)
+    except (TypeError, ValueError):
+        replis = 0
+    if replis <= 0:
+        return demande, False
+    return (entetes.get("x-litellm-model-group") or modele_reponse or demande), True
+
+
 def preset_pole_defaut(*, scope_id: str, venture_id, updated_by: str | None) -> LlmPresets:
     """Preset LLM d'un pôle neuf, avec provider/modèle EXPLICITES (S239).
 
@@ -104,7 +124,13 @@ async def generate_text(
     kwargs: dict = {"model": gateway_model(provider, model), "messages": messages}
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
-    resp = await client.chat.completions.create(**kwargs)
+    brut = await client.chat.completions.with_raw_response.create(**kwargs)
+    resp = brut.parse()
+    servi, repli = modele_servi(kwargs["model"], brut.headers, getattr(resp, "model", None))
+    if repli:
+        # Pas de journal d'usage sur ce chemin (texte seul renvoyé à l'appelant) : on trace
+        # au moins le repli, pour qu'il ne passe pas inaperçu.
+        logger.warning("generate_text : %s servi par repli Gateway → %s", kwargs["model"], servi)
     return resp.choices[0].message.content or ""
 
 
