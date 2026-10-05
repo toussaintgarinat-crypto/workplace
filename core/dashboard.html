@@ -358,8 +358,13 @@
   .cerveau { margin-bottom: 16px; }
   .cerveau h3 { display: flex; align-items: center; gap: 10px; }
   .cerveau-row { display: flex; gap: 14px; align-items: flex-end; }
-  .cerveau-row select, .cerveau-row input[type=password] { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 9px 12px; color: #e2e8f0; font-size: 0.88rem; }
+  .cerveau-row select, .cerveau-row input[type=password], .cerveau-row input[type=text] { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 9px 12px; color: #e2e8f0; font-size: 0.88rem; }
   .cerveau-row select:focus, .cerveau-row input:focus { outline: none; border-color: #7c83ff; }
+  .modeles-groupe { margin-top: 8px; }
+  .modeles-groupe summary { cursor: pointer; font-size: 0.8rem; color: #94a3b8; }
+  .modele-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #1e2235; font-size: 0.82rem; color: #cbd5e1; }
+  .modele-ligne code { font-size: 0.8rem; word-break: break-all; }
+  .modele-ligne .btn { padding: 4px 10px; font-size: 0.75rem; }
   .cerveau-pill { font-size: 0.68rem; font-weight: 600; padding: 2px 10px; border-radius: 20px; background: #1e293b; color: #475569; border: 1px solid #2d3748; }
   .cerveau-pill.ok { background: #14532d55; color: #4ade80; border-color: #16653155; }
   .cerveau-pill.ko { background: #7f1d1d55; color: #f87171; border-color: #991b1b55; }
@@ -563,6 +568,32 @@
           <label>Clés des autres fournisseurs</label>
           <div class="liv-sub" style="margin-top:2px;margin-bottom:8px">Active un fournisseur direct (Anthropic, Groq, Mistral, OpenAI, DeepSeek, Gemini) ou OpenCode Go. Enregistrer redémarre la Gateway (~15&nbsp;s). Choisis ensuite son modèle dans « Modèle LLM » ci-dessus.</div>
           <div id="cerveau-cles-fournisseurs"><div class="liv-sub">Chargement…</div></div>
+        </div>
+      </div>
+      <!-- Modèles servis par la Gateway + modèle de la Forge (S240), sans passer par le YAML. -->
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Modèle de la Forge <span id="forge-statut" class="cerveau-pill">—</span></label>
+          <select id="cerveau-forge"><option>Chargement…</option></select>
+          <div class="liv-sub" style="margin-top:4px">Le modèle de la Forge (<code>forge/defaut</code>). En cas d'échec, la Gateway bascule sur les gratuits (Kilo). Ajoute d'abord un modèle ci-dessous pour pouvoir le choisir ici.</div>
+        </div>
+        <button class="btn" id="btn-forge" onclick="enregistrerForge()">Choisir pour la Forge</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Ajouter un modèle</label>
+          <div class="cerveau-row" style="gap:8px">
+            <select id="modele-fournisseur" style="flex:0 0 38%"><option>Chargement…</option></select>
+            <input type="text" id="modele-id" placeholder="identifiant, ex. llama-3.1-8b-instant" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="liv-sub" style="margin-top:4px">Identifiant exact chez le fournisseur. Le modèle est testé (une courte réponse) avant d'être gardé ; s'il ne répond pas, il est retiré. Il utilise la clé du fournisseur posée ci-dessus.</div>
+        </div>
+        <button class="btn" id="btn-modele-ajouter" onclick="ajouterModele()">Ajouter et tester</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:10px">
+        <div class="field" style="flex:1">
+          <label>Modèles servis <span id="modeles-statut" class="cerveau-pill">—</span></label>
+          <div id="cerveau-modeles"><div class="liv-sub">Chargement…</div></div>
         </div>
       </div>
       <div class="cerveau-row" style="margin-top:14px">
@@ -2194,7 +2225,7 @@ let CERVEAU_CHARGE = false;
 function toggleCerveau() {
   const p = document.getElementById('panel-cerveau');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
-  if (p.style.display === 'block') { chargerCerveau(true); chargerBudget(); }
+  if (p.style.display === 'block') { chargerCerveau(true); chargerBudget(); chargerModeles(); }
 }
 function pill(el, ok, texte) {
   el.textContent = texte;
@@ -2382,6 +2413,89 @@ async function envoyerCerveau(url, corps, methode) {
     throw new Error(r.status === 401 ? 'session expirée — recharge la page pour te reconnecter.' : det);
   }
   return d;
+}
+// ── Modèles servis + Forge (S240) ──
+const ORIGINES_MODELES = [
+  ['perso', 'Ajoutés par toi'],
+  ['yaml', 'Déclarés dans la configuration de la Gateway'],
+  ['gratuit', 'Gratuits synchronisés (OpenRouter, Kilo)'],
+  ['forge', 'Alias réservés à la Forge'],
+  ['base', 'Autres modèles en base'],
+];
+async function chargerModeles() {
+  const zone = document.getElementById('cerveau-modeles');
+  let d;
+  try {
+    const r = await fetch('/assistant/modeles');
+    d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+  } catch(e) {
+    zone.innerHTML = '<div class="liv-sub">Gateway injoignable : ' + escHtml(e.message) + '</div>';
+    pill(document.getElementById('modeles-statut'), false, '● indisponible');
+    return;
+  }
+  const modeles = d.modeles || [];
+  pill(document.getElementById('modeles-statut'), true, modeles.length + ' servis');
+  // Fournisseurs du catalogue serveur (clé définie ou non).
+  const selF = document.getElementById('modele-fournisseur');
+  const avant = selF.value;
+  selF.innerHTML = (d.fournisseurs || []).map(f =>
+    `<option value="${escAttr(f.id)}">${escHtml(f.label)}${f.cle_definie ? '' : ' (clé absente)'}</option>`).join('');
+  if (avant && [...selF.options].some(o => o.value === avant)) selF.value = avant;
+  // Sélecteur de la Forge : défaut + modèles ajoutés.
+  const forge = d.forge || {choix: '', defaut: ''};
+  const perso = modeles.filter(m => m.origine === 'perso');
+  const selForge = document.getElementById('cerveau-forge');
+  selForge.innerHTML = `<option value="">Mistral small — défaut (${escHtml(forge.defaut)})</option>`
+    + perso.map(m => `<option value="${escAttr(m.nom)}"${m.nom === forge.choix ? ' selected' : ''}>${escHtml(m.nom)}</option>`).join('');
+  pill(document.getElementById('forge-statut'), forge.choix ? null : true, forge.choix || 'défaut');
+  // Liste groupée par origine ; seuls les « perso » ont un bouton Retirer.
+  zone.innerHTML = ORIGINES_MODELES.map(([cle, titre]) => {
+    const ms = modeles.filter(m => m.origine === cle);
+    if (!ms.length) return cle === 'perso'
+      ? '<div class="liv-sub" style="margin:4px 0 8px">Aucun modèle ajouté pour l\'instant.</div>' : '';
+    const lignes = ms.map(m => `<div class="modele-ligne"><code>${escHtml(m.nom)}</code>`
+      + (m.retirable ? `<button class="btn ghost" data-nom="${escAttr(m.nom)}" onclick="retirerModele(this.dataset.nom)">Retirer</button>` : '')
+      + '</div>').join('');
+    return `<details class="modeles-groupe"${cle === 'perso' ? ' open' : ''}><summary>${titre} (${ms.length})</summary>${lignes}</details>`;
+  }).join('');
+}
+async function ajouterModele() {
+  const btn = document.getElementById('btn-modele-ajouter');
+  const fournisseur = document.getElementById('modele-fournisseur').value;
+  const modele = document.getElementById('modele-id').value.trim();
+  if (!modele) { cerveauMsg('Saisis l\'identifiant du modèle chez le fournisseur.', 'ko'); return; }
+  btn.classList.add('loading');
+  cerveauMsg('Ajout de « ' + modele + ' » puis test (jusqu\'à 20 s)…', 'info');
+  try {
+    const r = await envoyerCerveau('/assistant/modeles', { fournisseur, modele });
+    if (r.ok) { cerveauMsg('✔ « ' + r.nom + ' » ajouté : ' + r.detail + ' Il est aussi proposé dans « Modèle LLM ».', 'ok');
+                document.getElementById('modele-id').value = ''; }
+    else cerveauMsg('⚠ « ' + r.nom + ' » ne répond pas, il n\'a pas été gardé : ' + r.detail, 'ko');
+    await chargerModeles(); await chargerCerveau(true);
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
+async function retirerModele(nom) {
+  if (!confirm('Retirer « ' + nom + ' » de la Gateway ?')) return;
+  try {
+    await envoyerCerveau('/assistant/modeles/' + nom.split('/').map(encodeURIComponent).join('/'), undefined, 'DELETE');
+    cerveauMsg('✔ « ' + nom + ' » retiré.', 'ok');
+    await chargerModeles(); await chargerCerveau(true);
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+}
+async function enregistrerForge() {
+  const btn = document.getElementById('btn-forge');
+  const modele = document.getElementById('cerveau-forge').value;
+  btn.classList.add('loading');
+  cerveauMsg('Bascule de la Forge sur « ' + (modele || 'Mistral small') + ' » puis test…', 'info');
+  try {
+    const r = await envoyerCerveau('/assistant/forge-modele', { modele });
+    if (r.ok) cerveauMsg('✔ La Forge utilise « ' + r.model + ' » : ' + r.detail, 'ok');
+    else cerveauMsg('⚠ Forge basculée sur « ' + r.model + ' », mais il ne répond pas (la Gateway servira les gratuits) : ' + r.detail, 'ko');
+    await chargerModeles();
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
 }
 function majDescPersona(ps) {
   const sel = document.getElementById('cerveau-persona');
