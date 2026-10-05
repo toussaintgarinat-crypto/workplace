@@ -1,7 +1,7 @@
 {
   "nom": "memoire",
   "famille": "ia",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Mémoire de la solution — souvenirs en graphe (projet Memory : nœuds/arêtes, stages IPCRa, tiers, recherche hybride). Brique adaptatrice exposant un contrat simple retenir/rappeler/taxonomy/supprimer (rangements wing/room natifs). Consommée par le Cœur, Forge et Oria.",
   "role": "memoire",
   "couche": "backend",
@@ -21,7 +21,7 @@
   "capacites": [
     {
       "nom": "memoire_rappeler",
-      "description": "Cherche dans la mémoire de la solution (recherche hybride). 'espace' = 'solution' (usine, entreprises, projets), 'perso' (préférences/faits sur l'utilisateur), ou 'veille' (résumés de la famille de briques veille, isolé par personne). Lecture seule.",
+      "description": "Cherche dans la mémoire de la solution (références exactes en tête — codes, numéros, e-mails, expressions entre guillemets —, puis mots et sens). 'espace' = 'solution' (usine, entreprises, projets), 'perso' (préférences/faits sur l'utilisateur), ou 'veille' (résumés de la famille de briques veille, isolé par personne). La réponse indique 'mode' : 'lexical' signifie que la recherche par le sens est momentanément indisponible (seuls les mots ont été cherchés). Lecture seule.",
       "socle": true,
       "methode": "GET",
       "chemin": "/rappeler",
@@ -33,7 +33,7 @@
         },
         "limite": {
           "type": "integer",
-          "description": "Nombre max de souvenirs (défaut 8)."
+          "description": "Nombre max de souvenirs (défaut 8, maximum 100)."
         },
         "espace": {
           "type": "string",

@@ -49,7 +49,7 @@ ESPACE = os.environ.get("MEMOIRE_ESPACE", "Workplace")
 # Absent en test/dev local : tout le service du front est alors gracieusement inerte.
 UI_DIR = Path(os.environ.get("UI_DIR", "/app/ui"))
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 app = FastAPI(title="Mémoire Workplace", version=VERSION)
 
 # Session résolue paresseusement, protégée par un verrou. Le token de service est partagé ;
@@ -476,6 +476,8 @@ async def retenir(s: Souvenir, utilisateur: str = Depends(_identite_service)):
 async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
                    espace: str | None = None,
                    utilisateur: str = Depends(_identite_service)):
+    # Le backend refuse limit hors 1..100 (422 → 502 ici) : on borne avant de transmettre.
+    limite = min(max(limite, 1), 100)
     params: dict = {"q": q, "limit": limite}
     if type:
         params["type"] = type
@@ -490,6 +492,8 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
         if r.status_code >= 400:
             raise HTTPException(502, f"Memory: {r.text}")
         resultats = r.json()
+        # S238 : « lexical » = embedder du backend injoignable, résultats par les mots seuls.
+        mode = r.headers.get("X-Memoire-Mode", "hybride")
     souvenirs = [
         {
             "id": x.get("id"),
@@ -497,10 +501,11 @@ async def rappeler(q: str = "", limite: int = 8, type: str | None = None,
             "extrait": (x.get("content_md") or "")[:280],
             "type": x.get("type"),
             "score": x.get("score", 0),
+            "correspondance": x.get("correspondance"),
         }
         for x in resultats
     ]
-    return {"requete": q, "total": len(souvenirs), "souvenirs": souvenirs}
+    return {"requete": q, "mode": mode, "total": len(souvenirs), "souvenirs": souvenirs}
 
 
 @app.get("/souvenirs", summary="Lister les souvenirs récents")

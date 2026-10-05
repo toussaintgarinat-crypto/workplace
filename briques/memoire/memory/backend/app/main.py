@@ -3,9 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-
 from app.database import engine, Base
+from app.migrations_demarrage import appliquer_migrations
 from app.dependencies import check_space_access
 from app.routers import nodes, search, palace, graph, gardien, temporal, spaces, auth, export, import_router, stats, templates, collections
 from app.scheduler import start_scheduler, stop_scheduler
@@ -15,24 +14,8 @@ from app.scheduler import start_scheduler, stop_scheduler
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # create_all n'altère pas les tables existantes : on ajoute les colonnes
-        # récentes de façon idempotente (pas d'Alembic dans ce projet). S109.
-        await conn.execute(
-            text("ALTER TABLE nodes ADD COLUMN IF NOT EXISTS canvas_pos JSONB")
-        )
-        # S110 : drapeau d'historique opt-in (la table node_revisions, elle, est
-        # créée par create_all puisqu'elle est nouvelle).
-        await conn.execute(
-            text("ALTER TABLE nodes ADD COLUMN IF NOT EXISTS track_history BOOLEAN NOT NULL DEFAULT FALSE")
-        )
-        # S112 : journal temporel du GRAPHE. Opt-in au niveau de l'espace + soft-delete
-        # des liens. La table node_stage_events (neuve) est créée par create_all.
-        await conn.execute(
-            text("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS track_history BOOLEAN NOT NULL DEFAULT FALSE")
-        )
-        await conn.execute(
-            text("ALTER TABLE edges ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
-        )
+        # Colonnes, extensions et index ajoutés après coup (S109→S112, S238) : idempotent.
+        await appliquer_migrations(conn)
     start_scheduler()
     yield
     stop_scheduler()

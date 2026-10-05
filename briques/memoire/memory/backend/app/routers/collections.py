@@ -11,7 +11,7 @@ from app.models.collection import Collection, CollectionNode
 from app.models.node import Node, NodeStatus, NodeType, IpCraStage, StorageTier
 from app.schemas.collection import CollectionCreate, CollectionUpdate, CollectionResponse
 from app.schemas.search import SearchResult
-from app.llm.embedder import Embedder
+from app.llm.embedder import Embedder, EmbeddingIndisponible
 
 router = APIRouter()
 
@@ -274,7 +274,10 @@ async def search_collection(
         raise HTTPException(status_code=404, detail="Collection not found")
 
     embedder = Embedder()
-    query_embedding = await embedder.embed_text(q)
+    try:
+        query_embedding = await embedder.embed_text(q)
+    except EmbeddingIndisponible:
+        raise HTTPException(status_code=503, detail="Recherche sémantique indisponible (embedder injoignable).")
     if not query_embedding:
         return []
 

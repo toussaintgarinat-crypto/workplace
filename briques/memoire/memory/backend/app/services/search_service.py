@@ -1,12 +1,40 @@
+"""Recherche Mémoire (S238) : références exactes, branche lexicale, branche vectorielle.
+
+L'embedder peut être en panne : la recherche reste alors lexicale (mode « lexical ») au lieu
+de renvoyer du bruit ou rien. Les classements sont fusionnés par rangs (RRF), jamais en
+additionnant des scores de natures différentes ; les références exactes passent devant.
+"""
+import logging
+from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.node import Node, NodeStatus, NodeType, IpCraStage, StorageTier
+from app.llm.embedder import Embedder, EmbeddingIndisponible
+from app.models.node import Node
 from app.schemas.search import SearchResult
-from app.llm.embedder import Embedder
+from app.services.recherche_conditions import Filtres
+from app.services.recherche_fusion import extraire_references, ordonner
+from app.services.recherche_lexicale import (
+    classement_plein_texte, classement_trigramme, correspondances_exactes,
+)
+from app.services.recherche_vectorielle import classement_vectoriel
+
+CANDIDATS_MIN = 50
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ResultatRecherche:
+    mode: str  # hybride | lexical
+    resultats: list[SearchResult]
+
+
+def _valeur(v, defaut=None):
+    return v.value if hasattr(v, "value") else (v if v is not None else defaut)
 
 
 class SearchService:
@@ -22,72 +50,51 @@ class SearchService:
         stage_filter: Optional[str] = None,
         tier_filter: Optional[str] = None,
         limit: int = 20,
-    ) -> list[SearchResult]:
-        if not query:
+    ) -> ResultatRecherche:
+        if not query or not query.strip():
+            return ResultatRecherche("hybride", [])
+        filtres = Filtres(space_id, type_filter, stage_filter, tier_filter)
+        candidats = max(limit, CANDIDATS_MIN)
+
+        exacts = await correspondances_exactes(self.db, extraire_references(query), filtres, candidats)
+        lexical = await classement_plein_texte(self.db, query, filtres, candidats)
+        if not lexical:
+            lexical = await classement_trigramme(self.db, query, filtres, candidats)
+
+        mode, vectoriel = "hybride", []
+        try:
+            vecteur = await self.embedder.embed_text(query)
+        except EmbeddingIndisponible as exc:
+            logger.warning("Recherche en mode lexical : embedder indisponible (%s)", exc)
+            mode = "lexical"
+        else:
+            if vecteur:
+                vectoriel = await classement_vectoriel(self.db, vecteur, filtres, candidats)
+
+        classes = ordonner(exacts, lexical, vectoriel, limit)
+        return ResultatRecherche(mode, await self._hydrater(space_id, classes))
+
+    async def _hydrater(self, space_id: UUID, classes) -> list[SearchResult]:
+        if not classes:
             return []
-
-        query_embedding = await self.embedder.embed_text(query)
-        if not query_embedding:
-            return []
-
-        from sqlalchemy import text
-        embedding_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
-
-        conditions = [
-            "n.space_id = :space_id",
-            "n.status IN ('active', 'archived')",
-            "n.embedding IS NOT NULL",
-        ]
-        params = {"space_id": space_id, "limit": limit, "embedding": embedding_literal}
-
-        if type_filter:
-            conditions.append("n.type = :type_filter")
-            params["type_filter"] = type_filter
-        if stage_filter:
-            conditions.append("n.ipcra_stage = :stage_filter")
-            params["stage_filter"] = stage_filter
-        if tier_filter:
-            conditions.append("n.storage_tier = :tier_filter")
-            params["tier_filter"] = tier_filter
-
-        where_clause = " AND ".join(conditions)
-
-        search_words = query.strip().split()
-        text_rank = ""
-        if search_words:
-            word_conditions = " OR ".join(
-                f"(n.title ILIKE :w{i} OR n.content_md ILIKE :w{i})"
-                for i in range(len(search_words))
-            )
-            for i, w in enumerate(search_words):
-                params[f"w{i}"] = f"%{w}%"
-            text_rank = f"""
-                + CASE WHEN {word_conditions} THEN 0.3 ELSE 0 END
-            """
-
-        sql = text(f"""
-            SELECT n.id, n.title, n.content_md, n.type, n.storage_tier, n.happened_at,
-                   (1 - (n.embedding <=> CAST(:embedding AS vector))) {text_rank} AS score
-            FROM nodes n
-            WHERE {where_clause}
-            ORDER BY score DESC
-            LIMIT :limit
-        """)
-
-        result = await self.db.execute(sql, params)
-        rows = result.all()
-
+        rows = await self.db.execute(
+            select(Node.id, Node.title, Node.content_md, Node.type, Node.storage_tier, Node.happened_at)
+            .where(Node.space_id == space_id, Node.id.in_([c.id for c in classes]))
+        )
+        par_id = {r[0]: r for r in rows.all()}
         return [
             SearchResult(
-                id=row[0],
-                title=row[1],
-                content_md=(row[2] or "")[:300],
-                type=row[3].value if hasattr(row[3], 'value') else row[3],
-                storage_tier=row[4].value if hasattr(row[4], 'value') else (row[4] or "hot"),
-                happened_at=row[5],
-                score=float(row[6]) if row[6] else 0.0,
+                id=c.id,
+                title=par_id[c.id][1],
+                content_md=(par_id[c.id][2] or "")[:300],
+                type=_valeur(par_id[c.id][3]),
+                storage_tier=_valeur(par_id[c.id][4], "hot"),
+                happened_at=par_id[c.id][5],
+                score=c.score,
+                correspondance=c.correspondance,
             )
-            for row in rows
+            for c in classes
+            if c.id in par_id
         ]
 
     async def vector_search(
@@ -98,19 +105,14 @@ class SearchService:
         stage_filter: Optional[str] = None,
         type_filter: Optional[str] = None,
     ) -> list[SearchResult]:
+        """Recherche purement sémantique (/semantic). Lève EmbeddingIndisponible en panne."""
         query_embedding = await self.embedder.embed_text(query)
         if not query_embedding:
             return []
 
-        from sqlalchemy import text
         embedding_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
-
-        conditions = [
-            "n.space_id = :space_id",
-            "n.status IN ('active', 'archived')",
-        ]
+        conditions = ["n.space_id = :space_id", "n.status IN ('active', 'archived')"]
         params = {"space_id": space_id, "limit": limit, "embedding": embedding_literal}
-
         if type_filter:
             conditions.append("n.type = :type_filter")
             params["type_filter"] = type_filter
@@ -118,29 +120,26 @@ class SearchService:
             conditions.append("n.ipcra_stage = :stage_filter")
             params["stage_filter"] = stage_filter
 
-        where_clause = " AND ".join(conditions)
         sql = text(f"""
             SELECT n.id, n.title, n.content_md, n.type, n.storage_tier, n.happened_at,
                    1 - (n.embedding <=> CAST(:embedding AS vector)) AS score
             FROM nodes n
-            WHERE {where_clause}
+            WHERE {" AND ".join(conditions)}
               AND n.embedding IS NOT NULL
             ORDER BY n.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
         """)
-
-        result = await self.db.execute(sql, params)
-        rows = result.all()
-
+        rows = (await self.db.execute(sql, params)).all()
         return [
             SearchResult(
                 id=row[0],
                 title=row[1],
                 content_md=(row[2] or "")[:300],
-                type=row[3].value if hasattr(row[3], 'value') else row[3],
-                storage_tier=row[4].value if hasattr(row[4], 'value') else (row[4] or "hot"),
+                type=_valeur(row[3]),
+                storage_tier=_valeur(row[4], "hot"),
                 happened_at=row[5],
                 score=float(row[6]) if row[6] else 0.0,
+                correspondance="vectorielle",
             )
             for row in rows
         ]

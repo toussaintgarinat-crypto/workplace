@@ -22,6 +22,8 @@ class SearchResult(BaseModel):
     storage_tier: str
     happened_at: Optional[datetime] = None
     score: float
+    # S238 : pourquoi ce souvenir est sorti — exacte | lexicale | vectorielle | les_deux.
+    correspondance: Optional[str] = None
 
 
 class SemanticSearchRequest(BaseModel):
