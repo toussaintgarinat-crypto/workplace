@@ -183,6 +183,45 @@ async def test_rappeler_remonte_le_score():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_rappeler_propage_mode_et_correspondance():
+    _mock_auth_et_espace(respx.mock)
+    respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/search").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"X-Memoire-Mode": "lexical"},
+            json=[{"id": "a", "title": "S237b", "content_md": "", "type": "input",
+                   "score": 2.5, "correspondance": "exacte"}],
+        )
+    )
+    body = (await _appel("GET", "/rappeler", params={"q": "S237b"})).json()
+    assert body["mode"] == "lexical"
+    assert body["souvenirs"][0]["correspondance"] == "exacte"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rappeler_mode_par_defaut_sans_en_tete():
+    _mock_auth_et_espace(respx.mock)
+    respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/search").mock(return_value=httpx.Response(200, json=[]))
+    body = (await _appel("GET", "/rappeler", params={"q": "x"})).json()
+    assert body["mode"] == "hybride"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rappeler_borne_la_limite_a_1_100():
+    _mock_auth_et_espace(respx.mock)
+    route = respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/search").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await _appel("GET", "/rappeler", params={"q": "x", "limite": 500})
+    assert route.calls.last.request.url.params["limit"] == "100"
+    await _appel("GET", "/rappeler", params={"q": "x", "limite": 0})
+    assert route.calls.last.request.url.params["limit"] == "1"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_rappeler_filtre_par_type():
     _mock_auth_et_espace(respx.mock)
     route = respx.get(f"{API}/api/v1/spaces/{ESPACE_ID}/search").mock(
