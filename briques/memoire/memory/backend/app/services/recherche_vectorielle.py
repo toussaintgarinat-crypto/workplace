@@ -22,6 +22,8 @@ async def classement_vectoriel(db: AsyncSession, vecteur: list[float], filtres: 
         SELECT n.id FROM nodes n
         WHERE {where} AND n.embedding IS NOT NULL
           AND (n.embedding <=> CAST(:embedding AS vector)) <= :distance_max
+        -- Garder le départage « n.id » : sans lui, le planificateur peut choisir l'index ivfflat
+        -- (lists=100, construit sur une table presque vide, probes=1) et perdre des résultats en silence.
         ORDER BY n.embedding <=> CAST(:embedding AS vector), n.id
         LIMIT :limite
     """)
