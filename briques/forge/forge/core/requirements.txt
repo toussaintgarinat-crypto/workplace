@@ -12,7 +12,11 @@ asyncpg==0.31.0
 prometheus-fastapi-instrumentator==7.0.0
 python-jose[cryptography]==3.3.0   # vérif JWT Keycloak (via agent_personnel_shared.keycloak_auth)
 cryptography==44.0.0               # AES-256-GCM api-keys — compat schéma Bun (config/crypto.ts)
-openai==1.54.0                     # client LLM/embeddings via LiteLLM Gateway (S128/S129, remplace Vercel AI SDK)
+openai==1.55.3                     # client LLM/embeddings via LiteLLM Gateway (S128/S129, remplace Vercel AI SDK)
+# S238b — openai ≥ 1.55.3 OBLIGATOIRE avec httpx 0.28 : les versions antérieures passent encore
+# `proxies=` à httpx.AsyncClient (argument retiré en 0.28) → TypeError à CHAQUE construction
+# d'AsyncOpenAI, donc tout le LLM de la Forge cassé (2026-07-27 → 2026-10-05). Aligné sur la
+# Mémoire ; filet : tests/test_couple_openai_httpx.py (racine).
 qdrant-client==1.12.1              # RAG forge — recherche/ingestion sémantique (S129, memory/*.ts)
 python-multipart==0.0.20           # upload form multipart — STT /voice/transcribe (S134, remplace c.req.formData)
 websockets==13.1                   # client WS sortant — proxy OpenAI Realtime /voice/realtime (S134)
