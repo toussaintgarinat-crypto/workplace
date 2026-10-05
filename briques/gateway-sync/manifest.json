@@ -1,8 +1,8 @@
 {
   "nom": "gateway-sync",
   "famille": "ia",
-  "version": "0.1.0",
-  "description": "Entretien des modèles gratuits de la Gateway — sync OpenRouter → LiteLLM",
+  "version": "0.2.0",
+  "description": "Entretien des modèles gratuits de la Gateway — sync OpenRouter (free/*) et Kilo Code sans clé (kilo/*) → LiteLLM",
   "role": "maintenance",
   "couche": "backend",
   "statut": "actif",
@@ -19,7 +19,7 @@
   "taches": [
     {
       "nom": "sync-modeles-gratuits",
-      "description": "Aligne les modèles free/* de LiteLLM sur le catalogue OpenRouter (un modèle gratuit peut passer payant ou disparaître sans préavis).",
+      "description": "Aligne les modèles free/* (OpenRouter) et kilo/* (Kilo Code) de LiteLLM sur leurs catalogues (un modèle gratuit peut passer payant ou disparaître sans préavis).",
       "methode": "POST",
       "chemin": "/sync",
       "cadence_heures": 24,

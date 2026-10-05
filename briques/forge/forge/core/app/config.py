@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     FORGE_SERVICE_CLIENT_ID: str = "forge-service"
 
     # ── LLM (S128) — tout passe par la LiteLLM Gateway (OpenAI-compatible) ─
-    DEFAULT_LLM_PROVIDER: str = "opencode"
-    DEFAULT_LLM_MODEL: str = "go/deepseek-v4-flash"
+    # S239 : alias Gateway `forge/defaut` (Mistral + repli gratuit Kilo côté Gateway).
+    DEFAULT_LLM_PROVIDER: str = "gateway"
+    DEFAULT_LLM_MODEL: str = "forge/defaut"
     GATEWAY_BASE_URL: str = "http://gateway:4000"
     GATEWAY_API_KEY: str = "sk-forge"
     OLLAMA_BASE_URL: str = ""  # http://host:11434/api — pour /llm-config/ollama/*

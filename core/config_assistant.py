@@ -264,6 +264,9 @@ def definir_voix(provider: str | None, unmute_url: str | None = None,
     return conf
 
 
+ALIAS_RESERVES_FORGE = ("forge/", "gratuit/")
+
+
 async def lister_modeles() -> list[str]:
     """Modèles exposés par la Gateway (pour peupler le menu déroulant du front)."""
     try:
@@ -271,7 +274,11 @@ async def lister_modeles() -> list[str]:
             r = await c.get(f"{GATEWAY_URL}/v1/models",
                             headers={"Authorization": f"Bearer {GATEWAY_KEY}"})
             r.raise_for_status()
-            return [m["id"] for m in r.json().get("data", [])]
+            # `forge/defaut` et `gratuit/*` (S239) : alias Gateway à repli CACHÉ, réservés à
+            # la Forge. En tête du Cœur, ils feraient journaliser un modèle qui n'a pas
+            # répondu — on ne les propose donc ni dans ⚙ Cerveau ni à la cascade.
+            return [m["id"] for m in r.json().get("data", [])
+                    if not m["id"].startswith(ALIAS_RESERVES_FORGE)]
     except Exception:
         return []
 
@@ -295,7 +302,8 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
     """Ordre effectif des modèles essayés par l'assistant (dédupliqué, ordre conservé).
 
     Mode **cascade auto** (défaut) : [modèle choisi s'il y en a un] → meilleurs GRATUITS
-    servis par la Gateway (top N, function-calling, bornés) → repli payant fiable. Choisir
+    servis par la Gateway (top N `free/*`, puis top N `kilo/*` ; function-calling, bornés)
+    → repli payant fiable. Choisir
     un modèle dans ⚙ Cerveau le met EN TÊTE (ex. IA locale d'abord ; ou le payant pour
     inverser). Si aucun gratuit n'est servi, on tombe directement sur le repli payant.
 
@@ -314,7 +322,13 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
             + ([souverain] if souverain else [])
     else:
         dispo = await lister_modeles()
-        gratuits = [m for m in dispo if m.startswith("free/")][: conf.get("cascade_free_n", 3)]
+        n = conf.get("cascade_free_n", 3)
+        # `kilo/*` (S239, Kilo Code sans clé) APRÈS les `free/*` : c'est le filet de secours,
+        # pas la tête — ses fournisseurs amont peuvent journaliser les requêtes. Même N que
+        # les `free/*` (un réglage de plus dans ⚙ Cerveau n'apporterait rien aujourd'hui).
+        # Le jour où OpenRouter tombe (401 le 2026-10-05), la cascade garde ainsi des gratuits.
+        gratuits = [m for m in dispo if m.startswith("free/")][:n] \
+            + [m for m in dispo if m.startswith("kilo/")][:n]
         repli = (conf.get("repli_payant") or DEFAUT_REPLI_PAYANT).strip()
         queue = []
         if souverain and souverain_avant:

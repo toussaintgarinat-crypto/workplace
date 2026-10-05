@@ -16,6 +16,7 @@ from sqlalchemy import delete as sa_delete
 from app.auth import UserContext, get_current_user
 from app.db import SessionLocal
 from app.models import LlmPresets, PoleMembers, Poles
+from app.llm import preset_pole_defaut
 from app.serde import llm_preset, pole, pole_member
 
 router = APIRouter()
@@ -89,8 +90,8 @@ async def create_pole(body: CreatePole, response: Response, user: UserContext = 
         await s.flush()
         s.add(PoleMembers(pole_id=p.id, user_id=user.sub, nom=user.nom,
                           avatar_emoji=user.avatar_emoji, role="owner"))
-        s.add(LlmPresets(scope_type="pole", scope_id=str(p.id),
-                         venture_id=_uuid(body.ventureId), updated_by=user.sub))
+        s.add(preset_pole_defaut(scope_id=str(p.id), venture_id=_uuid(body.ventureId),
+                                 updated_by=user.sub))
         await s.commit()
         await s.refresh(p)
     response.status_code = 201

@@ -18,9 +18,12 @@ toucher aux call-sites :
   * `# [S138-4]` shadow routing dans le governor (chantier 4)
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
+import uuid
 from dataclasses import dataclass, field
 
 import httpx
@@ -78,12 +81,40 @@ def _sans_cout_marginal(modele: str) -> bool:
     """Vrai si un appel à ce modèle ne coûte rien « au call ».
 
     - `free/*` et `ollama/*` : gratuits (cloud free ou local).
+    - `kilo/*` : gratuits de Kilo Code, sans clé ni compte (S239).
     - `go/*` : forfait OpenCode Go déjà payé (limite en $-équivalent, pas de
       facturation par appel) → à coût marginal nul, donc jamais bloqué par le
       garde-fou budget (qui ne vise que le payant au call) ni « shadowé ».
     """
-    return (modele.startswith("free/") or modele.startswith("ollama/")
-            or modele.startswith("go/"))
+    return modele.startswith(("free/", "kilo/", "ollama/", "go/"))
+
+
+def session_opencode(fil: str | None) -> str:
+    """Identifiant de session OpenCode Go pour cette conversation (S239).
+
+    Go exige `x-opencode-session`, stable PAR CONVERSATION (400 « missing
+    x-opencode-session » sinon). Le `fil` du Cœur est la bonne granularité, mais il embarque
+    l'identité de la personne (`accord_action.cle` : « surface\x00utilisateur ») : on n'en
+    envoie qu'une empreinte HMAC, à clé secrète (GATEWAY_KEY) pour qu'on ne puisse pas la
+    retrouver en hachant des identités candidates. Sans fil (appels ponctuels : classement,
+    briefing…), chaque appel est sa propre conversation — un identifiant aléatoire, calculé
+    UNE fois par appel pour rester stable à travers la bascule de modèles.
+    """
+    if not fil:
+        return f"wp-{uuid.uuid4().hex}"
+    return "wp-" + hmac.new(GATEWAY_KEY.encode(), fil.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def entetes_gateway(modele: str, session: str) -> dict:
+    """En-têtes vers la Gateway — à utiliser par TOUT appel de chat du Cœur à la Gateway, y
+    compris hors de ce pipeline (moa.py). `x-opencode-session` pour les seuls `go/*` : la Gateway ne
+    relaie les en-têtes `x-*` du client qu'à ce groupe de modèles
+    (`model_group_settings.forward_client_headers_to_llm_api` dans litellm_config.yaml) ;
+    aucun autre fournisseur n'a à recevoir un identifiant de conversation."""
+    entetes = {"Authorization": f"Bearer {GATEWAY_KEY}"}
+    if modele.startswith("go/"):
+        entetes["x-opencode-session"] = session
+    return entetes
 
 
 def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None) -> float:
@@ -223,6 +254,7 @@ async def completer(
                                              erreur=msg)
             return Resultat(erreur=msg, trimmed_tokens=trimmed)
 
+        session = session_opencode(fil)
         for modele in modeles_effectifs:
             essayes.append(modele)
             try:
@@ -232,7 +264,7 @@ async def completer(
                 payload["messages"] = cache_prefixe.appliquer(messages, modele)
                 r = await client.post(
                     f"{GATEWAY_URL}/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {GATEWAY_KEY}"},
+                    headers=entetes_gateway(modele, session),
                     json=payload,
                 )
                 if r.status_code >= 400:
@@ -347,6 +379,7 @@ async def completer_flux(
             yield {"type": "erreur", "erreur": msg}
             return
 
+        session = session_opencode(fil)
         for modele in modeles_effectifs:
             essayes.append(modele)
             payload["model"] = modele
@@ -358,7 +391,7 @@ async def completer_flux(
             try:
                 async with client.stream(
                     "POST", f"{GATEWAY_URL}/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {GATEWAY_KEY}"}, json=payload,
+                    headers=entetes_gateway(modele, session), json=payload,
                 ) as r:
                     if r.status_code >= 400:
                         derniere_erreur = f"HTTP {r.status_code}"

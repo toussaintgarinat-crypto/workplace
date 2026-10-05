@@ -1124,8 +1124,10 @@ class LlmPresets(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, server_default=text('gen_random_uuid()'))
     scope_type: Mapped[str] = mapped_column(Text, nullable=False)
     scope_id: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'opencode'::text"))
-    model: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'go/deepseek-v4-flash'::text"))
+    # S239 : défauts des bases NEUVES (create_all). Une base existante garde l'ancien défaut de
+    # colonne — cf. scripts/s239_presets_forge_defaut.sql et llm.preset_pole_defaut.
+    provider: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'gateway'::text"))
+    model: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'forge/defaut'::text"))
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=text('now()'))
     venture_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid)
     base_url: Mapped[Optional[str]] = mapped_column(Text, server_default=text("''::text"))

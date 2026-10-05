@@ -28,7 +28,7 @@ from sqlalchemy import update
 
 from app.config import settings
 from app.db import SessionLocal
-from app.llm import gateway_model
+from app.llm import gateway_model, modele_servi
 from app.models import AgentExecutions, GovernorUsage
 
 logger = logging.getLogger(__name__)
@@ -189,15 +189,25 @@ async def run_react(
     actual_model = model or settings.DEFAULT_LLM_MODEL
     last_error: Exception | None = None
     success = False
+    # S239 : repli effectué CÔTÉ GATEWAY (ex. forge/defaut → gratuit/secours), invisible
+    # sans les en-têtes LiteLLM — d'où `with_raw_response`.
+    repli_gateway = False
+    servi_gateway = ""
 
     for attempt in providers_to_try:
         steps_emitted = len(steps)
+        repli_gateway = False  # propre à CETTE tentative (une tentative ratée ne compte pas)
         try:
             client = _client()
             gmodel = gateway_model(attempt.get("provider"), attempt.get("model"))
             msgs: list[dict] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": input_text}]
             for _ in range(MAX_STEPS):
-                resp = await client.chat.completions.create(model=gmodel, messages=msgs, tools=tools)
+                brut = await client.chat.completions.with_raw_response.create(
+                    model=gmodel, messages=msgs, tools=tools)
+                resp = brut.parse()
+                servi, repli = modele_servi(gmodel, brut.headers, getattr(resp, "model", None))
+                if repli:
+                    repli_gateway, servi_gateway = True, servi
                 tin += resp.usage.prompt_tokens if resp.usage else 0
                 tout += resp.usage.completion_tokens if resp.usage else 0
                 msg = resp.choices[0].message
@@ -215,6 +225,8 @@ async def run_react(
                     msgs.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             actual_provider = attempt.get("provider") or settings.DEFAULT_LLM_PROVIDER
             actual_model = attempt.get("model") or settings.DEFAULT_LLM_MODEL
+            if repli_gateway:
+                actual_provider, actual_model = "gateway", servi_gateway
             success = True
             break
         except Exception as e:
@@ -250,7 +262,8 @@ async def run_react(
 
     first_provider = provider or settings.DEFAULT_LLM_PROVIDER
     first_model = model or settings.DEFAULT_LLM_MODEL
-    used_fallback = actual_provider != first_provider or actual_model != first_model
+    used_fallback = (repli_gateway or actual_provider != first_provider
+                     or actual_model != first_model)
 
     return ReactResult(
         steps=steps, answer=answer, tokensIn=tin, tokensOut=tout,

@@ -24,9 +24,10 @@ from app.config import settings
 from app.db import SessionLocal
 from app.email import send_venture_deletion_code
 from app.models import (
-    AuditMissions, LlmPresets, OrganizationMembers, PoleMembers, Poles, Users,
+    AuditMissions, OrganizationMembers, PoleMembers, Poles, Users,
     VentureDeleteTokens, VentureMembers, Ventures,
 )
+from app.llm import preset_pole_defaut
 from app.serde import audit_mission, pole, venture, venture_member
 
 router = APIRouter()
@@ -117,7 +118,7 @@ async def create_venture(body: CreateVenture, response: Response, request: Reque
             s.add(PoleMembers(pole_id=po.id, user_id=user.sub,
                               nom=user.nom or "Utilisateur", avatar_emoji=user.avatar_emoji or "👤",
                               role="owner"))
-            s.add(LlmPresets(scope_type="pole", scope_id=str(po.id), venture_id=v.id, updated_by=user.sub))
+            s.add(preset_pole_defaut(scope_id=str(po.id), venture_id=v.id, updated_by=user.sub))
         await s.commit()
         await s.refresh(v)
     response.status_code = 201
@@ -269,7 +270,7 @@ async def create_venture_pole(vid: str, body: CreatePoleInVenture, response: Res
         await s.flush()
         s.add(PoleMembers(pole_id=po.id, user_id=user.sub,
                           nom=user.nom or "Utilisateur", avatar_emoji=user.avatar_emoji or "👤", role="owner"))
-        s.add(LlmPresets(scope_type="pole", scope_id=str(po.id), venture_id=_uuid(vid), updated_by=user.sub))
+        s.add(preset_pole_defaut(scope_id=str(po.id), venture_id=_uuid(vid), updated_by=user.sub))
         await s.commit()
         await s.refresh(po)
     response.status_code = 201
