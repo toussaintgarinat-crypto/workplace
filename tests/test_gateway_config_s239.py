@@ -82,3 +82,14 @@ def test_go_envoie_un_user_agent_propre(conf):
     sans_ua = [n for n, p in go.items()
                if (p.get("extra_headers") or {}).get("User-Agent") != "workplace-coeur/1.0"]
     assert sans_ua == []
+
+
+def test_en_tetes_client_relayes_aux_seuls_go(conf):
+    """`x-opencode-session` vient du Cœur, par requête (S239 T4). LiteLLM ne relaie les
+    en-têtes `x-*` du client que pour les groupes listés ici — à ne PAS élargir : Kilo,
+    Mistral, etc. n'ont pas à recevoir un identifiant de conversation. Le réglage global
+    `general_settings.forward_client_headers_to_llm_api` relaierait à TOUS les modèles."""
+    groupes = (conf["litellm_settings"].get("model_group_settings") or {}) \
+        .get("forward_client_headers_to_llm_api")
+    assert groupes == ["go/*"]
+    assert not conf["general_settings"].get("forward_client_headers_to_llm_api")

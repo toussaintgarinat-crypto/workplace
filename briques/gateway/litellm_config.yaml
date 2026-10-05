@@ -8,6 +8,17 @@ litellm_settings:
   # Ignore les paramètres non supportés par le provider (ex. encoding_format=base64
   # envoyé par le client OpenAI sur les embeddings Ollama) au lieu d'échouer en 400.
   drop_params: true
+  # S239 — OpenCode Go exige `x-opencode-session`, stable PAR CONVERSATION : il ne peut pas
+  # vivre ici (statique) ; le Cœur l'envoie à chaque requête `go/*` (core/llm_pipeline.py).
+  # LiteLLM ne relaie les en-têtes `x-*` du client à l'amont que pour les groupes listés
+  # ci-dessous (prouvé sur v1.86.2 contre un faux amont : relayé pour go/*, rien pour Kilo,
+  # et le User-Agent statique des go/* est conservé). Écarté : `extra_headers` dans le
+  # corps de la requête — il REMPLACE celui du YAML (le User-Agent repassait à
+  # « AsyncOpenAI/Python ») ; et le réglage global `general_settings.
+  # forward_client_headers_to_llm_api`, qui relaierait à TOUS les fournisseurs.
+  model_group_settings:
+    forward_client_headers_to_llm_api:
+      - go/*
 
 # S202 — mise au frigo des modèles morts. Sans ces réglages (aucun `router_settings`
 # n'existait), un modèle gratuit retiré du catalogue OpenRouter était retenté à CHAQUE
