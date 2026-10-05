@@ -26,3 +26,11 @@ Critères d'acceptation : (1) rappel@5 >= 0,7 en mode coupé sur `reference`, `n
 
 - Backend : 105 passed, via `cd briques/memoire/memory/backend && scripts/en_docker.sh python -m pytest -p no:cacheprovider -q`.
 - Adaptateur : 62 passed, via `scripts/tests_briques.sh memoire`.
+
+## Constat : embedder de production cassé depuis le 2026-07-27
+
+- `briques/memoire/memory/backend/requirements.txt` épinglait `openai==1.51.0` avec `httpx==0.28.1` (httpx 0.28.1 posé par le commit 9b9b63b, S205/S206, 2026-07-27).
+- httpx 0.28 a supprimé l'argument `proxies` que openai < 1.55.3 transmet : `AsyncOpenAI(...)` lève `TypeError: AsyncClient.__init__() got an unexpected keyword argument 'proxies'`.
+- Les embeddings de production échouent donc depuis la reconstruction S205/S206 (commit 9b9b63b). Avant S238, l'embedder masquait l'erreur en renvoyant un vecteur constant (graine 42) : 11 noeuds portent ce vecteur sur le HP, créés entre le 2026-06-05 et le 2026-07-30 (les plus anciens datent d'une panne antérieure de la Gateway). Depuis S238 il lèverait `EmbeddingIndisponible` en permanence : recherche durablement lexicale, aucun vecteur jamais stocké.
+- La mesure ci-dessus a tourné avec httpx 0.27.2 dans une copie jetable, d'où l'absence du symptôme.
+- Correctif : `openai==1.55.3` (première version compatible httpx 0.28), httpx 0.28.1 conservé ; test de non-régression `test_client_openai_se_construit`. Commit de ce correctif : "fix(memoire): openai 1.55.3 — embeddings broken by httpx 0.28 since S205".

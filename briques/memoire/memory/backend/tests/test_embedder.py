@@ -138,3 +138,19 @@ class TestSemantique503:
         )
         assert r.status_code == 503
         assert "indisponible" in r.json()["detail"]
+
+
+async def test_client_openai_se_construit():
+    """Regression : openai < 1.55.3 + httpx 0.28 -> TypeError 'proxies' a la construction."""
+    from app.config import settings
+    from app.llm.client import LLMClient
+
+    ancien = (settings.llm_provider, settings.llm_api_key, settings.llm_base_url)
+    settings.llm_provider = "openai"
+    settings.llm_api_key = "cle-factice"
+    settings.llm_base_url = "http://127.0.0.1:9/v1"
+    try:
+        client = await LLMClient()._get_client()
+        assert client is not None
+    finally:
+        settings.llm_provider, settings.llm_api_key, settings.llm_base_url = ancien
