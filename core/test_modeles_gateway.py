@@ -99,25 +99,21 @@ def test_ajout_ok_teste_puis_garde():
 
 @respx.mock
 def test_ajout_echec_du_test_retire_le_modele():
-    respx.get(f"{GW}/model/info").respond(json=_info())
-    respx.post(f"{GW}/model/new").respond(json={"model_id": "id-2"})
-    respx.post(f"{GW}/v1/chat/completions").respond(
-        status_code=401, json={"error": {"message": "AuthenticationError: clé absente"}})
-    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    gw = FausseGateway(chat=lambda corps: httpx.Response(
+        401, json={"error": {"message": "AuthenticationError: clé absente"}}))
     r = asyncio.run(mg.ajouter("mistral", "mistral-medium-latest"))
     assert r["ok"] is False and "clé absente" in r["detail"]
-    assert json.loads(suppr.calls[0].request.content) == {"id": "id-2"}
+    assert ("del", "n1") in gw.journal and gw.noms() == []
 
 
 @respx.mock
 def test_ajout_delai_depasse_retire_le_modele():
-    respx.get(f"{GW}/model/info").respond(json=_info())
-    respx.post(f"{GW}/model/new").respond(json={"model_id": "id-3"})
-    respx.post(f"{GW}/v1/chat/completions").mock(side_effect=httpx.ReadTimeout("trop long"))
-    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    def pend(corps):
+        raise httpx.ReadTimeout("trop long")
+    gw = FausseGateway(chat=pend)
     r = asyncio.run(mg.ajouter("gemini", "gemini-2.5-flash"))
     assert r["ok"] is False and "délai" in r["detail"].lower()
-    assert suppr.called
+    assert gw.noms() == []
 
 
 @respx.mock
@@ -184,6 +180,7 @@ def test_liste_origines_sans_secret():
 
 @respx.mock
 def test_retrait_refuse_si_tete_du_coeur():
+    precedent = config_assistant.charger()["model"]  # restauré tel quel (revue S240, M9)
     config_assistant.definir_modele("perso/groq/x")
     try:
         respx.get(f"{GW}/model/info").respond(json=_info(("perso/groq/x", True, "a", "groq/x")))
@@ -192,7 +189,7 @@ def test_retrait_refuse_si_tete_du_coeur():
             asyncio.run(mg.retirer("perso/groq/x"))
         assert not suppr.called
     finally:
-        config_assistant.definir_modele(config_assistant.DEFAUT_MODEL)
+        config_assistant.definir_modele(precedent)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -239,3 +236,60 @@ def test_route_liste():
 def test_route_liste_gateway_injoignable_502():
     respx.get(f"{GW}/model/info").mock(side_effect=httpx.ConnectError("refusé"))
     assert _client().get("/assistant/modeles").status_code == 502
+
+
+
+# ── Fausse Gateway à état (revue S240) : /model/info reflète les créations/retraits ──
+
+class FausseGateway:
+    def __init__(self, *modeles, new_echoue=None, chat=None):
+        self.deps = [{"nom": n, "db": db, "id": i, "model": lm} for n, db, i, lm in modeles]
+        self.journal, self.n = [], 0
+        self.new_echoue, self.chat = new_echoue, chat or (lambda corps: httpx.Response(200, json={}))
+        respx.get(f"{GW}/model/info").mock(side_effect=self._info)
+        respx.post(f"{GW}/model/new").mock(side_effect=self._new)
+        respx.post(f"{GW}/model/delete").mock(side_effect=self._delete)
+        respx.post(f"{GW}/v1/chat/completions").mock(
+            side_effect=lambda req: self.chat(json.loads(req.content)))
+
+    def _info(self, req):
+        return httpx.Response(200, json=_info(*[(d["nom"], d["db"], d["id"], d["model"]) for d in self.deps]))
+
+    def _new(self, req):
+        c = json.loads(req.content)
+        self.n += 1
+        d = {"nom": c["model_name"], "db": True, "id": f"n{self.n}", "model": c["litellm_params"]["model"]}
+        self.deps.append(d)  # créé côté LiteLLM même si la réponse se perd ensuite
+        self.journal.append(("new", d["nom"], d["model"]))
+        if self.new_echoue:
+            raise self.new_echoue
+        return httpx.Response(200, json={"model_id": d["id"]})
+
+    def _delete(self, req):
+        i = json.loads(req.content)["id"]
+        self.deps = [d for d in self.deps if d["id"] != i]
+        self.journal.append(("del", i))
+        return httpx.Response(200, json={})
+
+    def noms(self):
+        return sorted(d["nom"] for d in self.deps)
+
+
+@respx.mock
+def test_m1_new_en_timeout_mais_cree_retire_par_nom():
+    gw = FausseGateway(new_echoue=httpx.ReadTimeout("perdu"))
+    with pytest.raises(mg.GatewayInjoignable):
+        asyncio.run(mg.ajouter("groq", "llama-3.1-8b-instant"))
+    assert gw.noms() == []
+
+
+@respx.mock
+def test_m1_exception_pendant_le_test_retire_par_nom(monkeypatch):
+    gw = FausseGateway()
+
+    async def test_qui_plante(nom):
+        raise RuntimeError("inattendu")
+    monkeypatch.setattr(mg, "tester", test_qui_plante)
+    with pytest.raises(RuntimeError):
+        asyncio.run(mg.ajouter("groq", "llama-3.1-8b-instant"))
+    assert gw.noms() == []

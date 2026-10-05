@@ -185,7 +185,7 @@ def test_route_forge_et_liste():
     r = c.post("/assistant/forge-modele", json={"modele": "perso/groq/x"})
     assert r.status_code == 200 and r.json()["choix"] == "perso/groq/x"
     forge = c.get("/assistant/modeles").json()["forge"]
-    assert forge == {"choix": "perso/groq/x", "defaut": "mistral/mistral-small-latest"}
+    assert forge["choix"] == "perso/groq/x" and forge["defaut"] == "mistral/mistral-small-latest"
 
 
 def test_forge_modele_non_surchargeable_par_tenant():
@@ -193,3 +193,43 @@ def test_forge_modele_non_surchargeable_par_tenant():
     import config_tenant
     with pytest.raises(config_tenant.ValeurInvalide):
         config_tenant.valider_patch({"forge_modele": "perso/groq/x"})
+
+
+
+from test_modeles_gateway import FausseGateway  # noqa: E402
+
+
+@respx.mock
+def test_i3_echec_du_test_restaure_l_ancien_pointage_sans_persister():
+    gw = FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                       ("perso/groq/x", True, "p", "groq/x"),
+                       chat=lambda corps: httpx.Response(401, json={"error": {"message": "clé absente"}}))
+    r = asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert r["ok"] is False and r["restaure"] is True
+    assert r["choix"] == "" and "clé absente" in r["detail"]
+    forges = [d["model"] for d in gw.deps if d["nom"] == "forge/defaut"]
+    assert forges == ["mistral/mistral-small-latest"]
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_i5_yaml_present_retire_les_copies_en_base():
+    """Retour arrière (forge/defaut remis dans le YAML) : la copie en base doublerait le
+    déploiement du YAML (LiteLLM répartirait la charge) — le Cœur la retire."""
+    gw = FausseGateway(("forge/defaut", False, "yaml", "mistral/mistral-small-latest"),
+                       ("forge/defaut", True, "copie", "groq/x"))
+    r = asyncio.run(mg.assurer_forge())
+    assert r["statut"] == "yaml"
+    assert [d["id"] for d in gw.deps if d["nom"] == "forge/defaut"] == ["yaml"]
+
+
+def test_i4_etat_forge_signale_la_cle_absente(monkeypatch):
+    monkeypatch.setattr(config_assistant, "cles_fournisseurs_etat", lambda: [
+        {"id": "mistral", "label": "Mistral", "placeholder": "", "definie": False},
+        {"id": "groq", "label": "Groq", "placeholder": "", "definie": True}])
+    e = mg.etat_forge()
+    assert e["fournisseur"] == "mistral" and e["fournisseur_label"] == "Mistral"
+    assert e["cle_definie"] is False
+    config_assistant.definir_forge_modele("perso/groq/x")
+    e = mg.etat_forge()
+    assert e["fournisseur"] == "groq" and e["cle_definie"] is True

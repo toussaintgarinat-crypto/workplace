@@ -208,6 +208,20 @@ async def lister() -> list[dict]:
     return sorted(vus.values(), key=lambda m: m["nom"])
 
 
+async def _retirer_par_nom(nom: str) -> bool:
+    """Retire tout déploiement EN BASE portant `nom` ; best-effort, True si plus rien ne reste.
+
+    Sert après un `/model/new` en échec ou en délai dépassé : LiteLLM a pu créer le modèle
+    alors que sa réponse s'est perdue (revue S240, M1) — l'id est alors inconnu, le nom non."""
+    try:
+        for d in await deploiements():
+            if d["nom"] == nom and d["db"] and d["id"]:
+                await supprimer(d["id"])
+        return True
+    except GatewayInjoignable:
+        return False
+
+
 async def ajouter(fournisseur: str, ident: str) -> dict:
     """Crée `perso/<fournisseur>/<id>` en base, le teste, le retire si le test échoue."""
     ident = (ident or "").strip()
@@ -215,18 +229,20 @@ async def ajouter(fournisseur: str, ident: str) -> dict:
     nom = nom_perso(fournisseur.strip(), ident)
     if any(d["nom"] == nom for d in await deploiements()):
         raise Conflit(f"« {nom} » est déjà servi par la Gateway.")
-    id_dep = await creer(nom, params)
+    try:
+        await creer(nom, params)
+    except GatewayInjoignable:
+        await _retirer_par_nom(nom)
+        raise
     ok, detail = False, "Test interrompu."
     try:
         ok, detail = await tester(nom)
     finally:
         # `finally` : même une exception inattendue pendant le test ne laisse pas en base un
-        # modèle jamais validé.
-        if not ok and id_dep:
-            try:
-                await supprimer(id_dep)
-            except GatewayInjoignable:
-                detail += f" ⚠ Le retrait a échoué : « {nom} » reste en base, retire-le à la main."
+        # modèle jamais validé. Retrait PAR NOM (pas par l'id renvoyé) : couvre aussi un
+        # doublon créé par une requête rejouée.
+        if not ok and not await _retirer_par_nom(nom):
+            detail += f" ⚠ Le retrait a échoué : « {nom} » reste en base, retire-le à la main."
     return {"ok": ok, "nom": nom, "detail": detail}
 
 
@@ -281,6 +297,33 @@ def params_forge(choix: str) -> dict:
     return {**params_litellm(fournisseur, ident), "cooldown_time": COOLDOWN_FORGE_S}
 
 
+async def _assurer_forge(choix: str) -> dict:
+    """Corps d'`assurer_forge`, à appeler verrou tenu."""
+    voulu = params_forge(choix)
+    actuels = [d for d in await deploiements() if d["nom"] == NOM_FORGE]
+    if any(not d["db"] for d in actuels):
+        # Retour arrière (forge/defaut remis dans le YAML) ou déploiement par étapes : le YAML
+        # fait foi. Une copie en base le DOUBLERAIT (LiteLLM répartit la charge entre les
+        # deux) : on la retire (revue S240, I5). Le YAML lui-même n'est jamais touché d'ici.
+        for d in actuels:
+            if d["db"] and d["id"]:
+                await supprimer(d["id"])
+        return {"statut": "yaml", "detail": "forge/defaut est déclaré dans le YAML de la "
+                "Gateway : retire-le pour le piloter depuis ⚙ Cerveau."}
+    bons = [d for d in actuels if d["model"] == voulu["model"]]
+    garde = bons[0] if bons else None
+    statut = "ok"
+    if garde is None:
+        await creer(NOM_FORGE, voulu)
+        statut = "repointe" if actuels else "cree"
+    for d in actuels:
+        if d is not garde and d["id"]:
+            await supprimer(d["id"])
+    if statut != "ok":
+        logger.info("Forge : forge/defaut %s → %s", statut, voulu["model"])
+    return {"statut": statut, "model": voulu["model"]}
+
+
 async def assurer_forge(choix: str | None = None) -> dict:
     """Aligne `forge/defaut` en base sur `choix` (défaut : le choix persisté). Idempotent.
 
@@ -288,51 +331,57 @@ async def assurer_forge(choix: str | None = None) -> dict:
     déploiements du même nom (il répartit la charge entre eux), la Forge n'est donc jamais
     sans `forge/defaut`, au pire servie un instant par l'un ou l'autre.
 
-    Si un `forge/defaut` vient encore du YAML (déploiement par étapes : Cœur à jour, YAML
-    pas encore), on ne fait RIEN : en ajouter un en base le doublerait, et le YAML n'est
-    jamais touché d'ici."""
+    `forge/defaut` présent dans le YAML : on retire les copies en base et on s'arrête.
+    RETOUR ARRIÈRE vers le YAML : remettre le bloc `forge/defaut` dans litellm_config.yaml et
+    recréer la Gateway ; au plus tard à la veille suivante (FORGE_VEILLE_S, 10 min), le Cœur
+    retire sa copie en base. Pour un effet immédiat : recréer aussi le Cœur, ou appeler
+    `/model/delete` sur l'id `forge/defaut` en base (`/model/info`, `db_model: true`)."""
     async with _verrou_forge:
         if choix is None:
             choix = config_assistant.charger().get("forge_modele") or ""
-        voulu = params_forge(choix)
-        actuels = [d for d in await deploiements() if d["nom"] == NOM_FORGE]
-        if any(not d["db"] for d in actuels):
-            return {"statut": "yaml", "detail": "forge/defaut est encore déclaré dans le YAML "
-                    "de la Gateway : retire-le pour le piloter depuis ⚙ Cerveau."}
-        bons = [d for d in actuels if d["model"] == voulu["model"]]
-        garde = bons[0] if bons else None
-        statut = "ok"
-        if garde is None:
-            await creer(NOM_FORGE, voulu)
-            statut = "repointe" if actuels else "cree"
-        for d in actuels:
-            if d is not garde and d["id"]:
-                await supprimer(d["id"])
-        if statut != "ok":
-            logger.info("Forge : forge/defaut %s → %s", statut, voulu["model"])
-        return {"statut": statut, "model": voulu["model"]}
+        return await _assurer_forge(choix)
 
 
 async def definir_forge(choix: str) -> dict:
-    """Change le modèle de la Forge : valide, recrée `forge/defaut`, PUIS persiste.
+    """Change le modèle de la Forge : valide, re-pointe `forge/defaut`, le TESTE (sans repli),
+    et ne persiste qu'en cas de succès.
 
-    Persister seulement après succès : si la Gateway est muette, la veille ne réappliquera
-    pas un choix que personne n'a vu fonctionner."""
+    Test en échec (revue S240, I3) : on remet l'ancien pointage et on ne persiste rien — sinon
+    la Forge serait servie en silence par les gratuits, et la veille réappliquerait ce choix
+    cassé toutes les 10 min. Verrou tenu de bout en bout pour que la veille ne s'intercale
+    pas entre le re-pointage, le test et la restauration."""
     choix = (choix or "").strip()
     params_forge(choix)  # valide la forme avant tout appel réseau
-    if choix and not any(d["nom"] == choix and d["db"] for d in await deploiements()):
-        raise Introuvable(f"« {choix} » n'est pas servi : ajoute-le d'abord.")
-    r = await assurer_forge(choix)
-    if r["statut"] == "yaml":
-        raise Conflit(r["detail"])
-    config_assistant.definir_forge_modele(choix)
-    ok, detail = await tester(NOM_FORGE)
-    return {"ok": ok, "choix": choix, "model": r["model"], "detail": detail}
+    async with _verrou_forge:
+        if choix and not any(d["nom"] == choix and d["db"] for d in await deploiements()):
+            raise Introuvable(f"« {choix} » n'est pas servi : ajoute-le d'abord.")
+        ancien = config_assistant.charger().get("forge_modele") or ""
+        r = await _assurer_forge(choix)
+        if r["statut"] == "yaml":
+            raise Conflit(r["detail"])
+        ok, detail = await tester(NOM_FORGE)
+        if ok:
+            config_assistant.definir_forge_modele(choix)
+            return {"ok": True, "choix": choix, "model": r["model"], "detail": detail,
+                    "restaure": False}
+        try:
+            await _assurer_forge(ancien)
+        except (GatewayInjoignable, ValeurInvalide) as e:
+            detail += f" ⚠ Restauration de l'ancien modèle impossible ({e}) ; la veille réessaiera."
+        return {"ok": False, "choix": ancien, "model": params_forge(ancien)["model"],
+                "detail": detail, "restaure": True, "essaye": r["model"]}
 
 
 def etat_forge() -> dict:
-    return {"choix": config_assistant.charger().get("forge_modele") or "",
-            "defaut": "/".join(FORGE_DEFAUT)}
+    """Choix de la Forge + état de la clé de SON fournisseur : sans clé, `forge/defaut` échoue
+    à chaque appel et la Forge est servie par les gratuits (revue S240, I4)."""
+    choix = config_assistant.charger().get("forge_modele") or ""
+    analyse = analyser_nom_perso(choix) if choix else None
+    fournisseur = analyse[0] if analyse else FORGE_DEFAUT[0]
+    cle = next((f for f in config_assistant.cles_fournisseurs_etat() if f["id"] == fournisseur), {})
+    return {"choix": choix, "defaut": "/".join(FORGE_DEFAUT), "fournisseur": fournisseur,
+            "fournisseur_label": cle.get("label", fournisseur),
+            "cle_definie": bool(cle.get("definie"))}
 
 
 async def veiller_forge(intervalle: int = VEILLE_FORGE_S, reessai: int = 30) -> None:
