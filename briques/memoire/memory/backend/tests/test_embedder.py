@@ -188,3 +188,23 @@ async def test_embed_delai_court_sans_reessai():
     assert options == {"timeout": module_client.DELAI_EMBEDDING_S, "max_retries": 0}
     assert module_client.DELAI_EMBEDDING_S <= 15
 
+
+async def test_revectorisation_lancee_au_demarrage(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app import scheduler as module_scheduler
+
+    taches = {}
+
+    class _Planificateur:
+        def add_job(self, fonction, declencheur, id, **kwargs):
+            taches[id] = kwargs
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(module_scheduler, "scheduler", _Planificateur())
+    module_scheduler.start_scheduler()
+    depart = taches["revectorisation"].get("next_run_time")
+    assert depart is not None
+    assert abs(depart - datetime.now(timezone.utc)) < timedelta(seconds=30)

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
@@ -58,6 +60,9 @@ def start_scheduler():
         IntervalTrigger(minutes=10),
         id="revectorisation",
         replace_existing=True,
+        # Aussi tout de suite au démarrage : les souvenirs nettoyés par la migration (graine
+        # 42) ou écrits pendant une panne n'attendent pas 10 minutes.
+        next_run_time=datetime.now(timezone.utc),
     )
     scheduler.start()
 

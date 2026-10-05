@@ -31,7 +31,9 @@ docker run -d --name "$BASE" --network "$RESEAU" \
 
 pret=0
 for _ in $(seq 1 60); do
-  if docker exec "$BASE" pg_isready -U memory -d memory_test >/dev/null 2>&1; then pret=1; break; fi
+  # Par TCP : pendant l'initialisation, l'image démarre un serveur provisoire qui n'écoute
+  # que sur la socket Unix, puis le redémarre — le tester par la socket donnerait un faux prêt.
+  if docker exec "$BASE" pg_isready -h 127.0.0.1 -U memory -d memory_test >/dev/null 2>&1; then pret=1; break; fi
   sleep 1
 done
 [ "$pret" = 1 ] || { echo "✗ Postgres de test jamais prêt" >&2; exit 1; }
