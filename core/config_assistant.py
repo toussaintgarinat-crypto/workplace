@@ -295,7 +295,8 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
     """Ordre effectif des modèles essayés par l'assistant (dédupliqué, ordre conservé).
 
     Mode **cascade auto** (défaut) : [modèle choisi s'il y en a un] → meilleurs GRATUITS
-    servis par la Gateway (top N, function-calling, bornés) → repli payant fiable. Choisir
+    servis par la Gateway (top N `free/*`, puis top N `kilo/*` ; function-calling, bornés)
+    → repli payant fiable. Choisir
     un modèle dans ⚙ Cerveau le met EN TÊTE (ex. IA locale d'abord ; ou le payant pour
     inverser). Si aucun gratuit n'est servi, on tombe directement sur le repli payant.
 
@@ -314,7 +315,13 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
             + ([souverain] if souverain else [])
     else:
         dispo = await lister_modeles()
-        gratuits = [m for m in dispo if m.startswith("free/")][: conf.get("cascade_free_n", 3)]
+        n = conf.get("cascade_free_n", 3)
+        # `kilo/*` (S239, Kilo Code sans clé) APRÈS les `free/*` : c'est le filet de secours,
+        # pas la tête — ses fournisseurs amont peuvent journaliser les requêtes. Même N que
+        # les `free/*` (un réglage de plus dans ⚙ Cerveau n'apporterait rien aujourd'hui).
+        # Le jour où OpenRouter tombe (401 le 2026-10-05), la cascade garde ainsi des gratuits.
+        gratuits = [m for m in dispo if m.startswith("free/")][:n] \
+            + [m for m in dispo if m.startswith("kilo/")][:n]
         repli = (conf.get("repli_payant") or DEFAUT_REPLI_PAYANT).strip()
         queue = []
         if souverain and souverain_avant:

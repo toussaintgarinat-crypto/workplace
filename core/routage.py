@@ -89,8 +89,10 @@ def router(messages: list[dict], modeles: list[str], conf: dict,
 
 
 def _premier_gratuit(modeles: list[str], conf: dict) -> str | None:
-    """À défaut de modèle économe configuré, prend un `free/*` parmi les fallbacks."""
+    """À défaut de modèle économe configuré, prend un gratuit (`free/*`, `kilo/*` depuis S239,
+    ou local) parmi les fallbacks — le premier dans l'ordre de la cascade, où les `free/*`
+    précèdent les `kilo/*`."""
     for m in modeles + conf.get("fallback_models", []):
-        if m.startswith("free/") or m.startswith("ollama/"):
+        if m.startswith(("free/", "kilo/", "ollama/")):
             return m
     return None

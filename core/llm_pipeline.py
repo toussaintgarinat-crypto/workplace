@@ -78,12 +78,12 @@ def _sans_cout_marginal(modele: str) -> bool:
     """Vrai si un appel à ce modèle ne coûte rien « au call ».
 
     - `free/*` et `ollama/*` : gratuits (cloud free ou local).
+    - `kilo/*` : gratuits de Kilo Code, sans clé ni compte (S239).
     - `go/*` : forfait OpenCode Go déjà payé (limite en $-équivalent, pas de
       facturation par appel) → à coût marginal nul, donc jamais bloqué par le
       garde-fou budget (qui ne vise que le payant au call) ni « shadowé ».
     """
-    return (modele.startswith("free/") or modele.startswith("ollama/")
-            or modele.startswith("go/"))
+    return modele.startswith(("free/", "kilo/", "ollama/", "go/"))
 
 
 def _cout(modele: str, tokens_in: int, tokens_out: int, entete_cost: str | None) -> float:
