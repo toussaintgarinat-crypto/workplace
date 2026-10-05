@@ -44,6 +44,10 @@ router = APIRouter()
 # (`GET /assistant/config`…) restent ouvertes : elles ne renvoient aucun secret (l'état des
 # clés est un booléen « définie »).
 _ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
+# Session (sans exiger l'admin) pour ce qui nourrit le prompt (projets : `instructions`) ou le
+# RAG (document déposé) — revue S240, I-B. Seul appelant : le dashboard.
+_SESSION = [Depends(auth.exiger_session_api)]
+_SESSION_FICHIER = [Depends(auth.exiger_session_api_fichier)]
 
 
 @router.post("/briefing/executer", tags=["assistant"])
@@ -354,7 +358,7 @@ async def assistant_projets():
     return {"projets": projets}
 
 
-@router.post("/assistant/projets", tags=["assistant"])
+@router.post("/assistant/projets", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_creer(corps: dict):
     """Crée un projet : `nom` (requis), `instructions` (contexte propre), `documents` (refs)."""
     try:
@@ -365,7 +369,7 @@ async def assistant_projet_creer(corps: dict):
     return {"ok": True, "projet": p}
 
 
-@router.patch("/assistant/projets/{projet_id}", tags=["assistant"])
+@router.patch("/assistant/projets/{projet_id}", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_modifier(projet_id: str, corps: dict):
     """Met à jour un projet (nom, instructions, documents, couleur)."""
     try:
@@ -379,7 +383,7 @@ async def assistant_projet_modifier(projet_id: str, corps: dict):
     return {"ok": True, "projet": p}
 
 
-@router.delete("/assistant/projets/{projet_id}", tags=["assistant"])
+@router.delete("/assistant/projets/{projet_id}", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_supprimer(projet_id: str):
     """Supprime un projet ; ses conversations sont DÉTACHÉES (elles ne sont pas effacées)."""
     detachees = journal_conversations.detacher_projet(projet_id)
@@ -718,7 +722,7 @@ async def assistant_forge_modele_post(corps: dict):
     return await _traduire_erreurs_modeles(modeles_gateway.definir_forge(corps.get("modele") or ""))
 
 
-@router.post("/assistant/document", tags=["assistant"])
+@router.post("/assistant/document", tags=["assistant"], dependencies=_SESSION_FICHIER)
 async def assistant_document(fichier: UploadFile = File(...)):
     """Dépose un document : l'ingère (brique `ingestion`), le fait CLASSER par le LLM, puis range
     le classement dans ses métadonnées. Renvoie le classement au front.

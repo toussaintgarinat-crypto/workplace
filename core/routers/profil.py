@@ -20,6 +20,9 @@ router = APIRouter()
 # amelioration.py) et l'horloge appelle `/curateur/cycle` (qui ne fait que proposer, laissé
 # ouvert) : aucun appelant HTTP légitime sans session.
 _ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
+# Profil d'amorçage et fiche d'identité : ils entrent dans le prompt système → session +
+# anti-CSRF (revue S240, I-B), sans exiger l'admin. Seul appelant : le dashboard.
+_SESSION = [Depends(auth.exiger_session_api)]
 
 # Le refactor S114 a déplacé ces routes ici mais laissé `_lire_profil`/`profil_get`/`profil_post`
 # référencer PROFIL_PATH/PROFIL_DEFAUT_PATH sans les définir → NameError, /profil en 500. On les
@@ -115,7 +118,7 @@ async def profil_get():
     return {"contenu": _lire_profil(), "modifie": os.path.exists(PROFIL_PATH)}
 
 
-@router.post("/profil", tags=["profil"])
+@router.post("/profil", tags=["profil"], dependencies=_SESSION)
 async def profil_post(corps: dict):
     """Enregistre le profil dans le volume du Cœur (persistant)."""
     contenu = corps.get("contenu", "")
@@ -137,7 +140,7 @@ async def identite_get():
             "modifie": identite.FICHE_PATH.exists()}
 
 
-@router.patch("/profil/identite", tags=["profil"])
+@router.patch("/profil/identite", tags=["profil"], dependencies=_SESSION)
 async def identite_patch(corps: dict):
     """Met à jour la fiche (champs connus fusionnés) et renvoie les dérivations à jour."""
     fiche = identite.enregistrer_fiche(corps or {})

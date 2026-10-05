@@ -61,13 +61,24 @@ ROUTES_GARDEES = {
     ("POST", "/horloge/executer"),
 }
 
+# Routes d'écriture sous SESSION (+ anti-CSRF d'origine), sans exiger l'admin (revue S240, I-B) :
+# elles nourrissent le prompt système (projets : `instructions` ; profil d'amorçage) ou le RAG
+# (document déposé). Seul appelant : le dashboard (vérifié — ni connexion ni Mini App).
+ROUTES_SESSION = {
+    ("POST", "/assistant/projets"), ("PATCH", "/assistant/projets/{projet_id}"),
+    ("DELETE", "/assistant/projets/{projet_id}"), ("POST", "/assistant/document"),
+    ("POST", "/profil"), ("PATCH", "/profil/identite"),
+}
+
 # Routes d'ÉCRITURE volontairement SANS `exiger_admin_cerveau` — chaque entrée dit pourquoi.
 # Ajouter une route POST/PUT/PATCH/DELETE au Cœur sans la garder NI l'inscrire ici fait
 # échouer `test_toute_route_d_ecriture_est_gardee_ou_listee` (revue S240, I6).
 _CHAT = ("appelée sans session par Telegram/Mini App (brique connexion) — même exposition "
          "que /assistant/chat, à fermer avec lui (décision utilisateur à part)")
-_DONNEES = ("données de la personne (dashboard), pas le cerveau ; même exposition que "
-            "/assistant/chat, à fermer avec lui")
+_DONNEES = ("données de la personne (conversations, rappels, agenda) — n'entrent pas dans le "
+            "prompt système ; même exposition que /assistant/chat, à fermer avec lui")
+_USINE = ("pilotage de l'usine (génération d'apps, coût LLM) — même exposition que "
+          "/assistant/chat, à fermer avec lui")
 _SESSION = "session obligatoire (exiger_session) : proxy de brique isolé par personne"
 LISTE_BLANCHE = {
     ("POST", "/assistant/chat"): _CHAT,
@@ -75,26 +86,20 @@ LISTE_BLANCHE = {
     ("POST", "/briefing/executer"): "tâche d'horloge (manifest noyau), appel interne sans session",
     ("POST", "/pouls/battre"): "tâche d'horloge (manifest noyau), appel interne sans session",
     ("POST", "/curateur/cycle"): "tâche d'horloge `curation-hebdo` ; PROPOSE seulement, n'applique rien",
-    ("POST", "/sauvegarde-usb/lancer"): "session OU NOYAU_KEY (capacité de l'assistant) ; n'expose aucun secret",
-    ("POST", "/sauvegarde-usb/restaurer"): "session OU NOYAU_KEY (capacité de l'assistant) ; n'expose aucun secret",
+    ("POST", "/sauvegarde-usb/lancer"): "session OU NOYAU_KEY (secret de service) ; via le chat, outil "
+                                        "réservé à l'admin du cerveau (droits.py)",
+    ("POST", "/sauvegarde-usb/restaurer"): "session OU NOYAU_KEY (secret de service) ; via le chat, outil "
+                                           "réservé à l'admin du cerveau (droits.py)",
     ("POST", "/admin/inviter-proche"): "session obligatoire (exiger_session), S181",
-    ("POST", "/usine/livrer"): _DONNEES,
-    ("DELETE", "/usine/livraisons/{livraison_id}"): _DONNEES,
-    ("POST", "/usine/livraisons/{livraison_id}/decrocher"): _DONNEES,
-    ("POST", "/usine/livraisons/{livraison_id}/reprendre"): _DONNEES,
+    ("POST", "/usine/livrer"): _USINE,
+    ("DELETE", "/usine/livraisons/{livraison_id}"): _USINE,
+    ("POST", "/usine/livraisons/{livraison_id}/decrocher"): _USINE,
+    ("POST", "/usine/livraisons/{livraison_id}/reprendre"): _USINE,
     ("POST", "/assistant/conversations/reordonner"): _DONNEES,
     ("PATCH", "/assistant/conversations/{fil:path}"): _DONNEES,
     ("DELETE", "/assistant/conversations/{fil:path}"): _DONNEES,
-    ("POST", "/assistant/projets"): _DONNEES,
-    ("PATCH", "/assistant/projets/{projet_id}"): _DONNEES,
-    ("DELETE", "/assistant/projets/{projet_id}"): _DONNEES,
-    ("POST", "/assistant/document"): _DONNEES,
     ("POST", "/assistant/rappels/check"): _DONNEES,
     ("POST", "/assistant/rappels/{rappel_id}/vu"): _DONNEES,
-    # Profil d'amorçage : il entre dans le prompt système, donc touche au cerveau —
-    # candidat à la garde, laissé hors périmètre S240 (signalé dans le rapport).
-    ("POST", "/profil"): _DONNEES,
-    ("PATCH", "/profil/identite"): _DONNEES,
     **{(m, c): _DONNEES for m, c in [
         ("PATCH", "/agenda/evenements/{event_id}/rappels"), ("POST", "/agenda/timetree/connect"),
         ("POST", "/agenda/timetree/select"), ("POST", "/agenda/timetree/sync"),
@@ -155,11 +160,44 @@ def _routes_d_ecriture() -> set[tuple[str, str]]:
             for m in (getattr(r, "methods", None) or set()) & {"POST", "PUT", "PATCH", "DELETE"}}
 
 
+def _routes_avec(dep) -> set[tuple[str, str]]:
+    return {(m, r.path) for r in main.app.routes if getattr(r, "dependant", None)
+            and dep in {d.call for d in r.dependant.dependencies} for m in r.methods}
+
+
+def test_routes_session_exactement():
+    assert _routes_avec(auth.exiger_session_api) | _routes_avec(auth.exiger_session_api_fichier) \
+        == ROUTES_SESSION
+
+
+def test_routes_session_refusent_sans_session(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    for methode, chemin in sorted(ROUTES_SESSION):
+        r = client.request(methode, chemin.replace("{projet_id}", "x"), json={}, follow_redirects=False)
+        assert r.status_code == 401, (methode, chemin, r.status_code)
+
+
+def test_routes_session_n_exigent_pas_l_admin(monkeypatch):
+    """Une session hors CERVEAU_ADMINS peut gérer ses projets (pas le cerveau)."""
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    r = client.post("/assistant/projets", json={"nom": "p"}, cookies=_cookie("marina"))
+    assert r.status_code == 200, r.text
+
+
+def test_routes_session_anti_csrf():
+    r = client.post("/assistant/projets", json={"nom": "p"}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403
+    r = client.post("/profil", content=b'{"contenu":"x"}', headers={"Content-Type": "text/plain"})
+    assert r.status_code == 415
+
+
 def test_toute_route_d_ecriture_est_gardee_ou_listee():
     ecriture = _routes_d_ecriture()
-    non_couvertes = ecriture - ROUTES_GARDEES - set(LISTE_BLANCHE)
+    non_couvertes = ecriture - ROUTES_GARDEES - ROUTES_SESSION - set(LISTE_BLANCHE)
     assert not non_couvertes, f"route(s) d'écriture ni gardée(s) ni listée(s) : {sorted(non_couvertes)}"
     assert not (ROUTES_GARDEES & set(LISTE_BLANCHE)), "une route ne peut être à la fois gardée et listée"
+    assert not (ROUTES_SESSION & (ROUTES_GARDEES | set(LISTE_BLANCHE)))
     assert set(LISTE_BLANCHE) <= ecriture, f"entrées obsolètes : {sorted(set(LISTE_BLANCHE) - ecriture)}"
 
 
@@ -264,7 +302,15 @@ def test_corps_non_json_refuse_415():
         assert r.status_code == 415, ctype
 
 
-def test_post_sans_corps_reste_accepte_si_route_sans_corps():
-    """Garde sans effet sur une route gardée qui ne prend pas de corps (ex. DELETE)."""
+def test_post_sans_corps_reste_accepte_si_route_sans_corps(monkeypatch):
+    """Garde sans effet sur une route gardée qui ne prend pas de corps (ex. DELETE) : la
+    route s'exécute et répond 200 (revue S240, M2 : statut exact, brique données simulée)."""
+    import config_tenant
+    appels = []
+
+    async def faux_supprimer(org_id, utilisateur, client=None):
+        appels.append((org_id, utilisateur))
+    monkeypatch.setattr(config_tenant, "supprimer_couche_utilisateur", faux_supprimer)
     r = client.delete("/assistant/config/utilisateur")
-    assert r.status_code != 415
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert len(appels) == 1

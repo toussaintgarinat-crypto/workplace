@@ -303,7 +303,7 @@ def _origine_autorisee(origine: str, request: Request) -> bool:
     return hote in hotes_requete - {""}
 
 
-def verifier_anti_csrf(request: Request) -> None:
+def verifier_anti_csrf(request: Request, corps_json: bool = True) -> None:
     """Refuse une écriture déclenchée depuis une autre origine (revue S240, I1).
 
     Le cookie de session part avec toute requête vers le Cœur, y compris celle qu'une page
@@ -329,7 +329,7 @@ def verifier_anti_csrf(request: Request) -> None:
     origine = request.headers.get("origin")
     if origine is not None and not _origine_autorisee(origine, request):
         raise HTTPException(status_code=403, detail="Origine non autorisée.")
-    if request.method in ("POST", "PUT", "PATCH"):
+    if corps_json and request.method in ("POST", "PUT", "PATCH"):
         a_un_corps = (request.headers.get("content-length", "0") not in ("", "0")
                       or "transfer-encoding" in request.headers)
         ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
@@ -387,3 +387,30 @@ async def admin_cerveau_ou_none(request: Request) -> dict | None:
         return await exiger_admin_cerveau(request)
     except HTTPException:
         return None
+
+
+async def _session_api(request: Request) -> dict:
+    try:
+        return await exiger_session(request)
+    except HTTPException as e:
+        if e.status_code == 303:
+            raise HTTPException(status_code=401, detail="Session requise.") from None
+        raise
+
+
+async def exiger_session_api(request: Request) -> dict:
+    """Session + anti-CSRF (origine et corps JSON), SANS exiger l'admin du cerveau.
+
+    Routes qui nourrissent le prompt système ou le RAG sans être « le cerveau » : projets
+    (`instructions`), profil d'amorçage, identité (revue S240, I-B). 401 plutôt que 303 :
+    appelées en `fetch`."""
+    verifier_anti_csrf(request)
+    return await _session_api(request)
+
+
+async def exiger_session_api_fichier(request: Request) -> dict:
+    """Comme `exiger_session_api`, pour un envoi de fichier (multipart) : contrôle d'origine
+    seulement — un <form> tiers sans en-tête Origin ni Sec-Fetch-Site n'existe plus dans les
+    navigateurs actuels, et la session reste exigée (`/assistant/document`)."""
+    verifier_anti_csrf(request, corps_json=False)
+    return await _session_api(request)

@@ -90,7 +90,18 @@ def test_aucune_capacite_ne_renvoie_le_env():
     """Le registre de capacités (chat, MCP) ne doit jamais exposer une route à secrets."""
     import glob
     import json
-    routes_a_secrets = {"/sauvegarde-usb/env"}
+    import posixpath
+    import re
+    import urllib.parse
+    prefixes_a_secrets = ("/sauvegarde-usb/env",)
+
+    def normaliser(chemin: str) -> str:
+        # Revue S240, M2 : « /sauvegarde-usb//env/ », « /SAUVEGARDE-USB/env?x » ou
+        # « /sauvegarde-usb/./env » visent la même route — comparaison sur la forme normalisée.
+        c = urllib.parse.unquote(urllib.parse.urlsplit(chemin or "").path).lower()
+        c = posixpath.normpath(re.sub(r"/+", "/", "/" + c))
+        return c.rstrip("/") or "/"
+    assert normaliser("/SAUVEGARDE-USB//./env/?x=1") == "/sauvegarde-usb/env"
     for f in glob.glob(os.path.join(os.path.dirname(__file__), "..", "briques", "*", "manifest.json")):
         for c in json.load(open(f)).get("capacites") or []:
-            assert c.get("chemin") not in routes_a_secrets, (f, c.get("nom"))
+            assert not normaliser(c.get("chemin")).startswith(prefixes_a_secrets), (f, c.get("nom"))
