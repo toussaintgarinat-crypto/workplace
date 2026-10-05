@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Gateway Sync", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Gateway Sync", version="0.2.0", lifespan=lifespan)
 
 
 @app.get("/sante", tags=["système"])
@@ -83,7 +83,7 @@ def sante():
 
 @app.post("/sync", tags=["modeles"], dependencies=[Depends(_identite_service)])
 def sync_route():
-    """Aligne les modèles `free/*` de LiteLLM sur le catalogue OpenRouter du moment.
+    """Aligne les `free/*` (OpenRouter) et `kilo/*` (Kilo Code) de LiteLLM sur leurs catalogues.
 
     Idempotent : le sync est différentiel (il compare puis n'applique que l'écart), donc
     deux appels rapprochés ne produisent aucun effet supplémentaire.

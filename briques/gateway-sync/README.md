@@ -1,8 +1,21 @@
 # Brique `gateway-sync` — entretien des modèles gratuits de la Gateway
 
-Aligne les modèles `free/*` servis par LiteLLM sur le catalogue OpenRouter du moment : un
-modèle gratuit peut passer payant ou disparaître sans préavis, et LiteLLM remonte alors des
+Aligne les modèles gratuits servis par LiteLLM sur les catalogues du moment : un modèle
+gratuit peut passer payant ou disparaître sans préavis, et LiteLLM remonte alors des
 `NotFoundError` en boucle sur un slug qui n'existe plus.
+
+Deux **sources** (S239), chacune ne gérant QUE son préfixe :
+
+| Préfixe | Source | Clé |
+|---|---|---|
+| `free/*` | OpenRouter | `OPENROUTER_API_KEY` requise (sinon source ignorée) |
+| `kilo/*` | Kilo Code (`https://api.kilo.ai/api/gateway`) | aucune (`api_key: anonymous`) |
+
+Une source en panne (catalogue injoignable, clé absente) n'efface rien et n'empêche pas
+l'autre de se synchroniser. Les méta-routeurs (`kilo-auto/free`, `openrouter/free`) sont
+écartés : ils choisissent eux-mêmes le modèle, le journal du Cœur ne saurait plus lequel a
+répondu. ⚠ Les gratuits Kilo peuvent journaliser les requêtes : ils sont le **filet** de la
+cascade du Cœur, jamais sa tête.
 
 ## ⚠️ Pas de `docker-compose.yml` ici
 
@@ -27,8 +40,11 @@ Le code et le `manifest.json` vivent bien ici : le registre du Cœur scanne
 3. **À la demande** : `make sync` depuis `briques/gateway`, ou `POST /sync` sur le port 4002.
 
 Le sync est **différentiel et idempotent** : il compare, puis n'applique que l'écart. Il ne
-touche jamais un modèle qui n'est pas préfixé `free/` — les payants, `go/*` et locaux
-viennent du YAML et restent le repli de toute la cascade.
+touche jamais un modèle hors de `free/` et `kilo/`, ni un modèle déclaré dans le YAML
+(`model_info.db_model` faux) — les payants, `go/*`, locaux et alias (`gratuit/auto`,
+`forge/defaut`) restent le repli de toute la cascade. `POST /sync` renvoie l'agrégat
+habituel plus le détail par source (`sources.openrouter`, `sources.kilo`) ; il répond 502
+seulement si AUCUNE source n'a pu tourner.
 
 ## Variables
 
@@ -36,8 +52,10 @@ viennent du YAML et restent le repli de toute la cascade.
 |---|---|
 | `LITELLM_URL` | base de LiteLLM (défaut `http://gateway:4000`) |
 | `LITELLM_MASTER_KEY` | clé maîtresse LiteLLM — sans elle, no-op |
-| `OPENROUTER_API_KEY` | lecture du catalogue — sans elle, no-op |
-| `FREE_MODELS_TOP_N` | nombre de gratuits retenus (défaut 12), triés par contexte |
+| `OPENROUTER_API_KEY` | source OpenRouter — sans elle, cette source seule est ignorée |
+| `FREE_MODELS_TOP_N` | nombre de `free/*` retenus (défaut 12), triés par contexte |
+| `KILO_TOP_N` | nombre de `kilo/*` retenus (défaut 6), triés par contexte |
+| `KILO_EXCLURE` | préfixes d'ids Kilo à écarter, séparés par des virgules (ex. `nvidia/,poolside/`) |
 | `GATEWAY_SYNC_KEY` | protège `POST /sync` si définie ; sinon ouvert |
 
 ## Pourquoi ce service existe

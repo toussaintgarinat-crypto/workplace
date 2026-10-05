@@ -170,6 +170,9 @@ services:
       - LITELLM_URL=http://gateway:4000
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - FREE_MODELS_TOP_N=${FREE_MODELS_TOP_N:-12}
+      # KILO_TOP_N / KILO_EXCLURE (S239) : volontairement PAS ici — une ligne
+      # `VAR=${VAR:-}` écraserait la valeur du `.env` racine lu par `env_file` (piège déjà
+      # rencontré). Défauts dans sync.py ; surcharge éventuelle dans le `.env`.
       - GATEWAY_SYNC_KEY=${GATEWAY_SYNC_KEY:-}
     depends_on:
       gateway:
