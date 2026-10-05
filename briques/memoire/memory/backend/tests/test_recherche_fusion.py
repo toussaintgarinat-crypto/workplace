@@ -1,7 +1,7 @@
 import uuid
 
 from app.services.recherche_fusion import (
-    CorrespondanceExacte, extraire_references, fusion_rrf, motif_reference, ordonner,
+    LONGUEUR_REFERENCE_MAX, REFERENCES_MAX, CorrespondanceExacte, extraire_references, fusion_rrf, motif_reference, ordonner,
 )
 
 A, B, C, D = (uuid.UUID(int=i) for i in range(1, 5))
@@ -28,7 +28,25 @@ class TestReferences:
         assert extraire_references("a -- b") == []
 
 
+    def test_guillemets_typographiques(self):
+        assert extraire_references('“plan B” et x “S1” y') == ["plan B", "S1"]
+
+    def test_reference_trop_longue_ignoree(self):
+        longue = "a" * (LONGUEUR_REFERENCE_MAX + 1)
+        assert extraire_references(f'"{longue}" {longue}1 ok-1') == ["ok-1"]
+
+    def test_references_plafonnees(self):
+        requete = " ".join(f"ref-{i}" for i in range(REFERENCES_MAX + 5))
+        assert extraire_references(requete) == [f"ref-{i}" for i in range(REFERENCES_MAX)]
+
+
 class TestMotif:
+    def test_tiret_non_echappe(self):
+        assert motif_reference("INV-2026-042") == "(^|[^[:alnum:]])INV-2026-042($|[^[:alnum:]])"
+
+    def test_metacaracteres_seuls_echappes(self):
+        assert motif_reference("a(b)™") == r"(^|[^[:alnum:]])a\(b\)™($|[^[:alnum:]])"
+
     def test_echappe_et_borne(self):
         assert motif_reference("v1.2") == r"(^|[^[:alnum:]])v1\.2($|[^[:alnum:]])"
 
@@ -63,3 +81,8 @@ class TestFusion:
         r = ordonner({D: CorrespondanceExacte(1, False)}, [A, B, C], [C, B], limite=10)
         scores = [c.score for c in r]
         assert all(x > y for x, y in zip(scores, scores[1:]))
+
+
+def test_ordonner_limite_inferieure_a_un():
+    assert ordonner({}, [A, B], [B], limite=0) == []
+    assert ordonner({}, [A, B], [B], limite=-1) == []

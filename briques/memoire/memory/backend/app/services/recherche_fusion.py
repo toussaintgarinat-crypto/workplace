@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from uuid import UUID
 
 K_RRF = 60
+LONGUEUR_REFERENCE_MAX = 100
+REFERENCES_MAX = 10
 
-_GUILLEMETS = re.compile(r'"([^"]+)"|«\s*([^»]+?)\s*»|"([^"]+)"')
+_GUILLEMETS = re.compile(r'"([^"]+)"|«\s*([^»]+?)\s*»|“([^”]+)”')
 _CARACTERES_REFERENCE = set("-_./@#")
-_BORDS = ".,;:!?()[]{}'\"«»"""
+_BORDS = ".,;:!?()[]{}'\"«»“”"
 
 
 def _est_reference(jeton: str) -> bool:
@@ -28,27 +30,28 @@ def extraire_references(requete: str) -> list[str]:
     candidates = []
     for m in _GUILLEMETS.finditer(requete):
         expression = " ".join(next(g for g in m.groups() if g).split())
-        if expression:
+        if expression and len(expression) <= LONGUEUR_REFERENCE_MAX:
             candidates.append(expression)
     for jeton in _GUILLEMETS.sub(" ", requete).split():
         jeton = jeton.strip(_BORDS)
-        if _est_reference(jeton):
+        if _est_reference(jeton) and len(jeton) <= LONGUEUR_REFERENCE_MAX:
             candidates.append(jeton)
     vues, references = set(), []
     for c in candidates:
         if c.casefold() not in vues:
             vues.add(c.casefold())
             references.append(c)
-    return references
+    return references[:REFERENCES_MAX]
 
 
 def motif_reference(reference: str) -> str:
-    """Motif ARE PostgreSQL trouvant `reference` comme mot entier. Les caractères non
-    alphanumériques sont échappés ; les espaces d'une expression acceptent tout blanc. Le SQL
-    applique memoire_unaccent(lower(…)) au motif comme au texte (seuls des caractères non
-    alphanumériques sont précédés d'une barre oblique : la normalisation ne change rien au
-    sens du motif)."""
-    morceaux = [re.sub(r"([^\w])", r"\\\1", m) for m in reference.split()]
+    """Motif ARE PostgreSQL trouvant `reference` comme mot entier. Seuls les métacaractères
+    ARE ASCII (\\ ^ $ . | ? * + ( ) [ ] { }) sont échappés ; tout autre caractère reste tel
+    quel (littéral en ARE hors crochets). On n'échappe surtout pas les non-alphanumériques en
+    bloc : le SQL applique memoire_unaccent(lower(...)) au motif, et unaccent développe
+    certains symboles en lettres (™ devient TM), ce qui transformerait `\\™` en `\\TM`, un
+    échappement ARE invalide (erreur SQL). Les espaces d'une expression acceptent tout blanc."""
+    morceaux = [re.sub(r"([\\^$.|?*+()\[\]{}])", r"\\\1", m) for m in reference.split()]
     return "(^|[^[:alnum:]])" + "[[:space:]]+".join(morceaux) + "($|[^[:alnum:]])"
 
 
@@ -85,6 +88,8 @@ def ordonner(
     Un score de fusion vaut au plus 2/(K_RRF+1) < 0,04 : le palier exact
     (1 + nombre de références + 0,5 si dans le titre) reste toujours au-dessus, et l'ordre
     par score décroissant reproduit exactement l'ordre voulu."""
+    if limite < 1:
+        return []
     fusion = fusion_rrf([lexical, vectoriel])
     ens_lex, ens_vec = set(lexical), set(vectoriel)
 
