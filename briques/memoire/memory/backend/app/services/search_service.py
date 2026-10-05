@@ -26,7 +26,11 @@ class SearchService:
         if not query:
             return []
 
-        query_embedding = await self.embedder.embed_text(query)
+        from app.llm.embedder import EmbeddingIndisponible
+        try:
+            query_embedding = await self.embedder.embed_text(query)
+        except EmbeddingIndisponible:
+            return []  # temporaire : la Task 6 remplace par la recherche lexicale
         if not query_embedding:
             return []
 

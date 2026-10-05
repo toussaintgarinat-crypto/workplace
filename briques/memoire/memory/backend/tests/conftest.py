@@ -29,6 +29,7 @@ from app.database import Base
 from app.main import app as fastapi_app
 from app.models.user import User
 from passlib.hash import bcrypt
+from tests.outils_embedder import activer_embedder_factice, couper_embedder
 
 get_db = db_module.get_db
 
@@ -82,6 +83,18 @@ async def auth_headers(client):
 
 
 @pytest_asyncio.fixture
+async def autres_headers(client):
+    uid = uuid.uuid4().hex[:8]
+    email = f"autre_{uid}@example.com"
+    async with db_module.async_session_factory() as db:
+        db.add(User(email=email, display_name="Autre", password_hash=bcrypt.hash("password123")))
+        await db.commit()
+    r = await client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+
+@pytest_asyncio.fixture
 async def test_space(client, auth_headers):
     response = await client.post(
         "/api/v1/spaces",
@@ -104,3 +117,15 @@ async def test_node(client, auth_headers, test_space):
         headers=auth_headers,
     )
     return response.json()
+
+
+# ── Embedder (S238) : en panne par défaut, aucun test ne joint un vrai Gateway ──
+@pytest.fixture(autouse=True)
+def embedder_en_panne(monkeypatch):
+    couper_embedder(monkeypatch)
+
+
+@pytest.fixture
+def embedder_factice(monkeypatch, embedder_en_panne):
+    activer_embedder_factice(monkeypatch)
+

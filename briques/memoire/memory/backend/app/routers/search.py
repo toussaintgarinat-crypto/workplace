@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.database import get_db
+from app.llm.embedder import EmbeddingIndisponible
 from app.schemas.search import SearchResult, SemanticSearchRequest
 from app.services.search_service import SearchService
 
@@ -25,4 +26,7 @@ async def search(
 @router.post("/semantic", response_model=list[SearchResult])
 async def semantic_search(space_id: UUID, req: SemanticSearchRequest, db: AsyncSession = Depends(get_db)):
     svc = SearchService(db)
-    return await svc.vector_search(space_id, req.query, limit=req.limit, stage_filter=req.stage_filter, type_filter=req.type_filter)
+    try:
+        return await svc.vector_search(space_id, req.query, limit=req.limit, stage_filter=req.stage_filter, type_filter=req.type_filter)
+    except EmbeddingIndisponible:
+        raise HTTPException(status_code=503, detail="Recherche sémantique indisponible (embedder injoignable).")

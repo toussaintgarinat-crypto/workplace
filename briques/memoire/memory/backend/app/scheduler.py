@@ -7,6 +7,7 @@ from app.models.node import Node
 from app.models.gardien import GardienConfigModel
 from app.services.tier_service import TierService
 from app.services.gardien_service import GardienService
+from app.services.embed_service import EmbedService
 
 scheduler = AsyncIOScheduler()
 
@@ -33,6 +34,12 @@ async def run_gardien_for_all():
                 await svc.run(sid)
 
 
+async def run_revectorisation():
+    """S238 : les souvenirs écrits pendant une panne de l'embedder sont vectorisés ensuite."""
+    async with async_session_factory() as session:
+        await EmbedService(session).revectoriser_manquants()
+
+
 def start_scheduler():
     scheduler.add_job(
         run_tier_demotion,
@@ -44,6 +51,12 @@ def start_scheduler():
         run_gardien_for_all,
         IntervalTrigger(hours=1),
         id="gardien_auto",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_revectorisation,
+        IntervalTrigger(minutes=10),
+        id="revectorisation",
         replace_existing=True,
     )
     scheduler.start()
