@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.embedder import Embedder, EmbeddingIndisponible
@@ -38,10 +38,13 @@ class EmbedService:
         return embedding
 
     async def revectoriser_manquants(self, limite: int = 50) -> int:
-        """Vectorise jusqu'à `limite` souvenirs sans vecteur (tous espaces). S'arrête au
-        premier échec de l'embedder : inutile d'insister pendant une panne."""
+        """Vectorise jusqu'à `limite` souvenirs sans vecteur (tous espaces). Si l'embedder
+        échoue sur un souvenir, une sonde (texte anodin) départage : sonde en échec = vraie
+        panne, on s'arrête ; sonde réussie = ce souvenir seul pose problème, on le saute.
+        Chaque vecteur est écrit par un UPDATE conditionnel (toujours sans vecteur et
+        `updated_at` inchangé) : une modification concurrente n'est jamais écrasée."""
         result = await self.db.execute(
-            select(Node)
+            select(Node.id, Node.title, Node.content_md, Node.updated_at)
             .where(
                 Node.embedding.is_(None),
                 Node.status.in_([NodeStatus.active, NodeStatus.archived]),
@@ -53,15 +56,30 @@ class EmbedService:
             .order_by(Node.updated_at.desc())
             .limit(limite)
         )
+        candidats = result.all()
+        await self.db.rollback()  # ne garde aucune transaction ouverte pendant les appels réseau
         faits = 0
-        for node in result.scalars().all():
+        for node_id, titre, contenu, vu in candidats:
             try:
-                embedding = await self.embedder.embed_text(_texte(node))
+                embedding = await self.embedder.embed_text(f"{titre}\n{contenu or ''}")
             except EmbeddingIndisponible as exc:
-                journal.warning("Revectorisation interrompue (embedder indisponible) : %s", exc)
-                break
-            if embedding is not None:
-                node.embedding = embedding
+                try:
+                    await self.embedder.embed_text("sonde")
+                except EmbeddingIndisponible:
+                    journal.warning("Revectorisation interrompue (embedder indisponible) : %s", exc)
+                    break
+                journal.warning("Souvenir %s ignoré (embedding impossible, embedder disponible) : %s", node_id, exc)
+                continue
+            if embedding is None:
+                continue
+            res = await self.db.execute(
+                text(
+                    "UPDATE nodes SET embedding = CAST(:e AS vector) "
+                    "WHERE id = :id AND embedding IS NULL AND updated_at = :vu"
+                ),
+                {"e": "[" + ",".join(repr(float(x)) for x in embedding) + "]", "id": node_id, "vu": vu},
+            )
+            await self.db.commit()
+            if res.rowcount == 1:
                 faits += 1
-        await self.db.commit()
         return faits

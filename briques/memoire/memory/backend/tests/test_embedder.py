@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy import text as text_sql
 
 from app import database as db_module
 from app.llm.embedder import Embedder, EmbeddingIndisponible
@@ -88,7 +89,44 @@ class TestRevectorisation:
         async with db_module.async_session_factory() as db:
             faits = await EmbedService(db).revectoriser_manquants(limite=500)
         assert faits == 1
-        assert appels["n"] == 2
+        assert appels["n"] == 3  # 1 réussite, 1 échec, 1 sonde en échec
+
+    async def test_saute_un_souvenir_empoisonne(self, client, auth_headers, test_space, monkeypatch):
+        pid = await _creer(client, auth_headers, test_space["id"], "POISON", "x")
+        nid = await _creer(client, auth_headers, test_space["id"], "Normal", "sain")
+
+        async def _embed(self, text):
+            if "POISON" in text:
+                raise ConnectionError("texte rejeté")
+            return vecteur_factice(text)
+
+        from app.llm.client import LLMClient
+        monkeypatch.setattr(LLMClient, "embed", _embed)
+        async with db_module.async_session_factory() as db:
+            await EmbedService(db).revectoriser_manquants(limite=500)
+        assert await _embedding(pid) is None
+        assert await _embedding(nid) is not None
+
+    async def test_ne_ecrase_pas_une_modification_concurrente(self, client, auth_headers, test_space, monkeypatch):
+        nid = await _creer(client, auth_headers, test_space["id"], "Course", "ancien texte")
+        concurrent = vecteur_factice("texte concurrent")
+
+        async def _embed(self, text):
+            if "ancien texte" in text:
+                async with db_module.async_session_factory() as autre:
+                    await autre.execute(
+                        text_sql("UPDATE nodes SET embedding = CAST(:e AS vector), updated_at = now() WHERE id = :id"),
+                        {"e": "[" + ",".join(repr(x) for x in concurrent) + "]", "id": uuid.UUID(nid)},
+                    )
+                    await autre.commit()
+            return vecteur_factice(text)
+
+        from app.llm.client import LLMClient
+        monkeypatch.setattr(LLMClient, "embed", _embed)
+        async with db_module.async_session_factory() as db:
+            await EmbedService(db).revectoriser_manquants(limite=500)
+        final = await _embedding(nid)
+        assert list(final) == pytest.approx(concurrent, abs=1e-5)
 
 
 class TestSemantique503:
