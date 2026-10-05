@@ -1,6 +1,6 @@
 # S235 → S239 — Infrastructure, supervision et recherche
 
-Date : 2026-10-04. Statut : S235, S236 et S237 terminés et validés dans leurs périmètres ; S238 et S239 au backlog.
+Date : 2026-10-04. Statut : S235, S236, S237 et S238 terminés et validés dans leurs périmètres ; S239 au backlog.
 
 ## État de départ
 
@@ -71,6 +71,8 @@ Constat S237 : l'image `minio/minio:RELEASE.2025-09-07T16-13-09Z` n'est plus pub
 Acceptation : Oria démarre depuis des images publiées uniquement, prouvé par la reconstruction rejouée sur la VM 106 ; S3 fonctionnel (écriture/lecture/suppression d'un objet test) ; supervision et sauvegarde couvrent SeaweedFS ; aucune référence MinIO restante hors historique ; relecture indépendante close ; branche fusionnée dans `main`.
 
 ## S238 — Recherche Mémoire avec repli lexical indépendant
+
+Statut : terminé le 2026-10-05, fusionné dans `main` et déployé sur le HP. Recherche lexicale indépendante de l'embedder (références exactes en tête, fusion RRF), sans fuite entre espaces ; mesure : rappel@5 0,96 embedder coupé (ancien 0,72) ; preuve LIVE en mode lexical et hybride. Constat : embeddings de production cassés depuis le 2026-07-27 (openai/httpx), corrigé. Voir les [résultats S238](S238-memoire-repli-lexical-resultats.md).
 
 Objectif : retrouver les références exactes même sans embeddings disponibles.
 

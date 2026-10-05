@@ -24,7 +24,7 @@ Critères d'acceptation : (1) rappel@5 >= 0,7 en mode coupé sur `reference`, `n
 
 ## Tests
 
-- Backend : 106 passed, via `cd briques/memoire/memory/backend && scripts/en_docker.sh python -m pytest -p no:cacheprovider -q`.
+- Backend : 112 passed (après les correctifs de la revue finale, deux exécutions isolées), via `cd briques/memoire/memory/backend && scripts/en_docker.sh python -m pytest -p no:cacheprovider -q`.
 - Adaptateur : 62 passed, via `scripts/tests_briques.sh memoire`.
 
 ## Constat : embedder de production cassé depuis le 2026-07-27
@@ -34,3 +34,17 @@ Critères d'acceptation : (1) rappel@5 >= 0,7 en mode coupé sur `reference`, `n
 - Les embeddings de production échouent donc depuis la reconstruction S205/S206 (commit 9b9b63b). Avant S238, l'embedder masquait l'erreur en renvoyant un vecteur constant (graine 42) : 11 noeuds portent ce vecteur sur le HP, créés entre le 2026-06-05 et le 2026-07-30 (ceux antérieurs au 2026-07-27 relèvent d'une autre cause d'échec, non établie — par exemple une indisponibilité de la Gateway). Depuis S238 il lèverait `EmbeddingIndisponible` en permanence : recherche durablement lexicale, aucun vecteur jamais stocké.
 - La mesure ci-dessus a tourné avec httpx 0.27.2 dans une copie jetable, d'où l'absence du symptôme.
 - Correctif : `openai==1.55.3` (première version compatible httpx 0.28), httpx 0.28.1 conservé ; test de non-régression `test_client_openai_se_construit`. Commit de ce correctif : "fix(memoire): openai 1.55.3 — embeddings broken by httpx 0.28 since S205".
+
+## Correctifs de la revue finale
+
+Plafond de 200 000 caractères sur le texte indexé (`to_tsvector` échoue au-delà de 1 Mo) ; références normalisées (`memoire_unaccent(lower())`) avant d'être échappées, car `unaccent` transforme certains symboles en métacaractères (`⁇` → `??`, erreur 500 sinon) ; embeddings avec délai de 10 s et sans nouvel essai, bascule lexicale journalisée ; `pg_isready` en TCP ; revectorisation lancée aussi au démarrage. Limite connue, différée : un titre gigantesque peut encore dépasser 1 Mo de `tsvector`.
+
+## Preuve LIVE HP (2026-10-05)
+
+Déploiement : fusion dans `main` (3c92749), dossier `briques/memoire` copié sur le HP (dépôt resté sur 4ce4141 + fichiers copiés, comme S237b). Les images ont été construites sur le Mac puis chargées sur le HP : le HP ne résout pas `files.pythonhosted.org` (résolveur NetBird), donc `docker compose build` y échoue. Sauvegarde préalable `~/s238-memoire-avant.dump` ; anciennes images conservées sous l'étiquette `avant-s238`.
+
+- Migrations : extensions `vector`, `unaccent`, `pg_trgm` présentes, colonne `recherche_tsv` créée, démarrage sain.
+- Vecteurs : avant 69 souvenirs / 66 vecteurs dont 11 graine 42 ; après démarrage 69 / 69, aucun vecteur graine 42. Les 3 groupes de vecteurs identiques restants correspondent à des souvenirs au texte identique.
+- Gateway coupé pour le seul backend (`LLM_BASE_URL` invalide, surcharge compose temporaire) : `/rappeler` répond `mode: "lexical"` avec des résultats (mot exact : 2, mot avec faute de frappe : 3 lettres permutées, 5) ; bascule journalisée.
+- Gateway rétabli : `mode: "hybride"`, correspondance `les_deux` ; embedding direct depuis le conteneur : vecteur de 384 dimensions.
+- Latence `/rappeler` (20 requêtes, Gateway actif) : p50 69 ms, p95 173 ms, max 223 ms.
