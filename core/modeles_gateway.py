@@ -1,0 +1,241 @@
+"""Modèles LLM ajoutés depuis ⚙ Cerveau, servis EN BASE par LiteLLM (S240).
+
+Avant S240, ajouter un modèle (ex. un 2e modèle Groq) imposait d'éditer
+`briques/gateway/litellm_config.yaml` puis de recréer la Gateway. LiteLLM v1.86.2 gère des
+modèles en base à chaud (`/model/new`, `/model/delete`, `model_info.db_model`), déjà utilisé
+par gateway-sync pour `free/*` et `kilo/*` : on s'en sert ici pour un troisième préfixe,
+`perso/<fournisseur>/<id>`, qui ne collisionne ni avec le YAML ni avec gateway-sync.
+
+Règles de sécurité (le pourquoi) :
+- **catalogue serveur** : l'appelant ne fournit que `fournisseur` + identifiant. Jamais
+  d'`api_base` ni de clé libres — sinon on pourrait faire envoyer une clé existante de la
+  Gateway vers un serveur arbitraire ;
+- **aucun `api_key` envoyé à LiteLLM** : pour un modèle EN BASE, LiteLLM v1.86.2 ne résout
+  PAS `os.environ/XXX` (prouvé : la chaîne littérale partait en `Authorization: Bearer
+  os.environ/MISTRAL_API_KEY`). Sans `api_key`, chaque préfixe de fournisseur lit sa
+  variable par défaut dans l'environnement de la Gateway (prouvé aussi) — celle que
+  ⚙ Cerveau écrit déjà. Bonus : une clé changée est prise en compte sans toucher la base ;
+- **testé avant d'être gardé** : une complétion courte ; échec ou délai → le modèle est
+  retiré aussitôt, jamais laissé cassé en base ;
+- **on ne retire que les siens** : préfixe `perso/` ET `db_model` vrai.
+"""
+from __future__ import annotations
+
+import re
+
+import httpx
+
+import config_assistant
+
+PREFIXE_PERSO = "perso/"
+# Délai du test de complétion : court, pour ne pas figer le panneau sur un fournisseur qui
+# pend. Côté LiteLLM (`timeout` de la requête) un peu sous celui du client httpx, pour que
+# ce soit LiteLLM qui coupe et renvoie une erreur lisible.
+DELAI_TEST_S = 20
+_TIMEOUT_API = 15.0
+
+# Segments séparés par « / », chacun commence par un alphanumérique ASCII (exclut `..`,
+# `//`, `/` en tête ou en fin, espaces, schémas d'URL `http:` + `//`).
+_RE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@-]*(/[A-Za-z0-9][A-Za-z0-9._:@-]*)*", re.ASCII)
+_LONGUEUR_MAX = 120
+
+
+class ValeurInvalide(ValueError):
+    """Entrée refusée (→ 400)."""
+
+
+class Conflit(Exception):
+    """Le modèle existe déjà / est utilisé (→ 409)."""
+
+
+class Introuvable(Exception):
+    """Aucun modèle retirable sous ce nom (→ 404)."""
+
+
+class GatewayInjoignable(Exception):
+    """La Gateway (API d'administration LiteLLM) ne répond pas (→ 502)."""
+
+
+def _catalogue() -> dict[str, dict]:
+    return {f["id"]: f for f in config_assistant.FOURNISSEURS_CLES if f.get("prefixe_litellm")}
+
+
+def fournisseurs() -> list[dict]:
+    """Fournisseurs dont on peut ajouter un modèle — pour le front (ni env ni api_base)."""
+    etat = {f["id"]: f["definie"] for f in config_assistant.cles_fournisseurs_etat()}
+    return [{"id": f["id"], "label": f["label"], "cle_definie": etat.get(f["id"], False)}
+            for f in _catalogue().values()]
+
+
+def valider_identifiant(ident: str) -> str:
+    if not isinstance(ident, str) or len(ident) > _LONGUEUR_MAX or not _RE_ID.fullmatch(ident):
+        raise ValeurInvalide(
+            "Identifiant de modèle invalide (lettres, chiffres, « . _ : @ - », segments "
+            f"séparés par « / », {_LONGUEUR_MAX} caractères au plus).")
+    return ident
+
+
+def params_litellm(fournisseur: str, ident: str) -> dict:
+    """`litellm_params` d'un modèle du catalogue : le seul champ est `model`, à dessein
+    (pas de clé, pas d'`api_base` — cf. docstring du module)."""
+    f = _catalogue().get(fournisseur)
+    if not f:
+        raise ValeurInvalide(f"Fournisseur inconnu ou non ajoutable : {fournisseur!r}.")
+    return {"model": f["prefixe_litellm"] + valider_identifiant(ident)}
+
+
+def nom_perso(fournisseur: str, ident: str) -> str:
+    return f"{PREFIXE_PERSO}{fournisseur}/{ident}"
+
+
+def analyser_nom_perso(nom: str) -> tuple[str, str] | None:
+    """`perso/groq/x/y` → ("groq", "x/y") ; None si ce n'est pas un nom `perso/` valide."""
+    if not nom.startswith(PREFIXE_PERSO):
+        return None
+    reste = nom[len(PREFIXE_PERSO):]
+    fournisseur, _, ident = reste.partition("/")
+    if fournisseur not in _catalogue() or not ident:
+        return None
+    try:
+        valider_identifiant(ident)
+    except ValeurInvalide:
+        return None
+    return fournisseur, ident
+
+
+# ── API d'administration LiteLLM ─────────────────────────────────────────────
+
+def _entetes() -> dict:
+    # GATEWAY_KEY du Cœur = LITELLM_MASTER_KEY (vérifié sur le HP) : seule la clé maîtresse
+    # ouvre /model/new et /model/delete.
+    return {"Authorization": f"Bearer {config_assistant.GATEWAY_KEY}"}
+
+
+async def deploiements() -> list[dict]:
+    """[{nom, id, db, model}] de tous les déploiements servis (YAML + base).
+
+    `model` (préfixe LiteLLM + id amont) sert à la Forge pour savoir si `forge/defaut` pointe
+    déjà sur le bon modèle ; les autres `litellm_params` (clés…) ne sortent jamais d'ici."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_API) as c:
+            r = await c.get(f"{config_assistant.GATEWAY_URL}/model/info", headers=_entetes())
+            r.raise_for_status()
+            donnees = r.json().get("data", [])
+    except httpx.HTTPError as e:
+        raise GatewayInjoignable(f"Gateway injoignable ({type(e).__name__}).") from e
+    sortie = []
+    for m in donnees:
+        info = m.get("model_info") or {}
+        sortie.append({"nom": m.get("model_name", ""), "id": info.get("id", ""),
+                       "db": info.get("db_model") is True,
+                       "model": (m.get("litellm_params") or {}).get("model", "")})
+    return sortie
+
+
+async def creer(nom: str, params: dict) -> str:
+    """Crée un déploiement en base ; renvoie son id LiteLLM."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_API) as c:
+            r = await c.post(f"{config_assistant.GATEWAY_URL}/model/new", headers=_entetes(),
+                             json={"model_name": nom, "litellm_params": params})
+            r.raise_for_status()
+            return r.json().get("model_id") or (r.json().get("model_info") or {}).get("id", "")
+    except httpx.HTTPError as e:
+        raise GatewayInjoignable(f"Création de {nom} refusée par la Gateway ({type(e).__name__}).") from e
+
+
+async def supprimer(id_deploiement: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_API) as c:
+            r = await c.post(f"{config_assistant.GATEWAY_URL}/model/delete", headers=_entetes(),
+                             json={"id": id_deploiement})
+            r.raise_for_status()
+    except httpx.HTTPError as e:
+        raise GatewayInjoignable(f"Retrait refusé par la Gateway ({type(e).__name__}).") from e
+
+
+async def tester(nom: str) -> tuple[bool, str]:
+    """Complétion réelle, courte, SANS cache ni repli : appel direct à la Gateway (pas
+    `llm_pipeline`, dont le cache sémantique pourrait renvoyer un « pong » d'un autre
+    modèle et faire passer un modèle cassé pour sain)."""
+    corps = {"model": nom, "messages": [{"role": "user", "content": "ping"}],
+             "max_tokens": 5, "timeout": DELAI_TEST_S - 2, "num_retries": 0}
+    try:
+        async with httpx.AsyncClient(timeout=DELAI_TEST_S) as c:
+            r = await c.post(f"{config_assistant.GATEWAY_URL}/v1/chat/completions",
+                             headers=_entetes(), json=corps)
+    except httpx.TimeoutException:
+        return False, f"Délai dépassé ({DELAI_TEST_S} s) : le fournisseur ne répond pas."
+    except httpx.HTTPError as e:
+        return False, f"Gateway injoignable ({type(e).__name__})."
+    if r.status_code == 200:
+        return True, "Le modèle répond."
+    try:
+        msg = (r.json().get("error") or {}).get("message") or r.text
+    except ValueError:
+        msg = r.text
+    return False, f"HTTP {r.status_code} : {str(msg)[:300]}"
+
+
+# ── Opérations exposées au router ────────────────────────────────────────────
+
+def _origine(nom: str, db: bool) -> str:
+    if nom.startswith(config_assistant.ALIAS_RESERVES_FORGE):
+        return "forge"
+    if nom.startswith(PREFIXE_PERSO) and db:
+        return "perso"
+    if nom.startswith(("free/", "kilo/")):
+        return "gratuit"
+    return "yaml" if not db else "base"
+
+
+async def lister() -> list[dict]:
+    """Modèles servis, dédupliqués par nom, avec leur origine — sans aucun paramètre."""
+    vus: dict[str, dict] = {}
+    for d in await deploiements():
+        if d["nom"] in vus:
+            continue
+        origine = _origine(d["nom"], d["db"])
+        vus[d["nom"]] = {"nom": d["nom"], "origine": origine, "retirable": origine == "perso"}
+    return sorted(vus.values(), key=lambda m: m["nom"])
+
+
+async def ajouter(fournisseur: str, ident: str) -> dict:
+    """Crée `perso/<fournisseur>/<id>` en base, le teste, le retire si le test échoue."""
+    ident = (ident or "").strip()
+    params = params_litellm((fournisseur or "").strip(), ident)
+    nom = nom_perso(fournisseur.strip(), ident)
+    if any(d["nom"] == nom for d in await deploiements()):
+        raise Conflit(f"« {nom} » est déjà servi par la Gateway.")
+    id_dep = await creer(nom, params)
+    ok, detail = False, "Test interrompu."
+    try:
+        ok, detail = await tester(nom)
+    finally:
+        # `finally` : même une exception inattendue pendant le test ne laisse pas en base un
+        # modèle jamais validé.
+        if not ok and id_dep:
+            try:
+                await supprimer(id_dep)
+            except GatewayInjoignable:
+                detail += f" ⚠ Le retrait a échoué : « {nom} » reste en base, retire-le à la main."
+    return {"ok": ok, "nom": nom, "detail": detail}
+
+
+async def retirer(nom: str) -> dict:
+    """Retire tous les déploiements `perso/*` EN BASE portant ce nom."""
+    if analyser_nom_perso(nom or "") is None:
+        raise ValeurInvalide("Seuls les modèles que tu as ajoutés (perso/…) peuvent être retirés.")
+    conf = config_assistant.charger()
+    # Un modèle en service dans la cascade du Cœur ne disparaît pas sous ses pieds : on
+    # demande d'abord d'en choisir un autre (la cascade survivrait, mais en silence).
+    for cle, libelle in (("model", "tête de l'assistant"), ("repli_payant", "repli payant"),
+                         ("repli_souverain", "repli souverain")):
+        if (conf.get(cle) or "").strip() == nom:
+            raise Conflit(f"« {nom} » est la {libelle} : choisis-en d'abord un autre.")
+    ids = [d["id"] for d in await deploiements() if d["nom"] == nom and d["db"] and d["id"]]
+    if not ids:
+        raise Introuvable(f"Aucun modèle « {nom} » ajouté depuis ⚙ Cerveau.")
+    for i in ids:
+        await supprimer(i)
+    return {"ok": True, "nom": nom, "retires": len(ids)}

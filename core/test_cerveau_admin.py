@@ -41,6 +41,8 @@ ROUTES_GARDEES = {
     ("POST", "/assistant/voix"),
     ("POST", "/assistant/cle-openrouter"),
     ("POST", "/assistant/cle-fournisseur"),
+    ("POST", "/assistant/modeles"),
+    ("DELETE", "/assistant/modeles/{nom:path}"),
 }
 
 

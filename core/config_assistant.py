@@ -354,15 +354,24 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
 # dans le .env de la Gateway puis réinjectée à la recréation du conteneur. Pour
 # exposer un nouveau fournisseur dans le dashboard : ajouter une entrée ici + le
 # bloc modèle dans litellm_config.yaml. Aucun autre code à toucher.
+#
+# `prefixe_litellm` (S240) : préfixe de fournisseur LiteLLM v1.86.2 pour les modèles AJOUTÉS
+# depuis ⚙ Cerveau (`modeles_gateway.py`). Chaque préfixe lit, si aucun `api_key` n'est
+# passé, la variable `env` ci-contre dans l'environnement de la Gateway (vérifié dans le code
+# de LiteLLM : mistral/chat/transformation.py, groq, gemini/common_utils, anthropic/
+# common_utils, deepseek, main.py pour openai/openrouter). Absent = fournisseur dont on ne
+# peut PAS ajouter de modèle : OpenCode Go passe par `openai/` + `api_base` et exigerait sa
+# clé en clair dans la base (LiteLLM ne résout pas `os.environ/` pour un modèle en base) —
+# sans elle, LiteLLM lui enverrait OPENAI_API_KEY.
 FOURNISSEURS_CLES = [
-    {"id": "openrouter", "env": "OPENROUTER_API_KEY",   "label": "OpenRouter",             "placeholder": "sk-or-..."},
+    {"id": "openrouter", "env": "OPENROUTER_API_KEY",   "label": "OpenRouter",             "placeholder": "sk-or-...", "prefixe_litellm": "openrouter/"},
     {"id": "opencode",   "env": "OPENCODE_ZEN_API_KEY", "label": "OpenCode Go",            "placeholder": "sk-..."},
-    {"id": "anthropic",  "env": "ANTHROPIC_API_KEY",    "label": "Anthropic (direct)",     "placeholder": "sk-ant-..."},
-    {"id": "openai",     "env": "OPENAI_API_KEY",       "label": "OpenAI (direct)",        "placeholder": "sk-..."},
-    {"id": "groq",       "env": "GROQ_API_KEY",         "label": "Groq",                   "placeholder": "gsk_..."},
-    {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-..."},
-    {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "..."},
-    {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza..."},
+    {"id": "anthropic",  "env": "ANTHROPIC_API_KEY",    "label": "Anthropic (direct)",     "placeholder": "sk-ant-...", "prefixe_litellm": "anthropic/"},
+    {"id": "openai",     "env": "OPENAI_API_KEY",       "label": "OpenAI (direct)",        "placeholder": "sk-...", "prefixe_litellm": "openai/"},
+    {"id": "groq",       "env": "GROQ_API_KEY",         "label": "Groq",                   "placeholder": "gsk_...", "prefixe_litellm": "groq/"},
+    {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-...", "prefixe_litellm": "deepseek/"},
+    {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "...", "prefixe_litellm": "mistral/"},
+    {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza...", "prefixe_litellm": "gemini/"},
 ]
 _ENV_PAR_ID = {f["id"]: f["env"] for f in FOURNISSEURS_CLES}
 # Valeurs à NE PAS compter comme une vraie clé (placeholders d'amorçage).

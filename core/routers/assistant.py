@@ -24,6 +24,7 @@ import horloge
 import journal_conversations
 import journal_usage
 import langue as langue_mod
+import modeles_gateway
 import orchestrateur
 import outils_communs
 import personas
@@ -652,6 +653,44 @@ async def assistant_cle_fournisseur(corps: dict):
     return {"ok": joignable, "etape": "fini" if joignable else "attente",
             "detail": "Gateway redémarrée." if joignable else "Gateway injoignable après recréation.",
             "cles_fournisseurs": config_assistant.cles_fournisseurs_etat()}
+
+
+async def _traduire_erreurs_modeles(coro):
+    """Erreurs de `modeles_gateway` → HTTP : entrée refusée 400, inconnu 404, conflit 409,
+    Gateway muette 502."""
+    try:
+        return await coro
+    except modeles_gateway.ValeurInvalide as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except modeles_gateway.Introuvable as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except modeles_gateway.Conflit as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except modeles_gateway.GatewayInjoignable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/assistant/modeles", tags=["assistant"])
+async def assistant_modeles_get():
+    """Modèles servis par la Gateway avec leur origine (yaml / gratuit / perso / forge) et
+    les fournisseurs dont on peut ajouter un modèle (S240). Aucun paramètre ni clé renvoyé."""
+    modeles = await _traduire_erreurs_modeles(modeles_gateway.lister())
+    return {"modeles": modeles, "fournisseurs": modeles_gateway.fournisseurs()}
+
+
+@router.post("/assistant/modeles", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_modeles_post(corps: dict):
+    """Ajoute `perso/<fournisseur>/<modele>` en base LiteLLM, le teste, le retire si le test
+    échoue. Corps : {"fournisseur": "groq", "modele": "llama-3.1-8b-instant"} — tout autre
+    champ (api_base, clé…) est ignoré : les paramètres viennent du catalogue serveur."""
+    return await _traduire_erreurs_modeles(
+        modeles_gateway.ajouter(corps.get("fournisseur") or "", corps.get("modele") or ""))
+
+
+@router.delete("/assistant/modeles/{nom:path}", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_modeles_delete(nom: str):
+    """Retire un modèle ajouté depuis ⚙ Cerveau (`perso/*` en base uniquement)."""
+    return await _traduire_erreurs_modeles(modeles_gateway.retirer(nom))
 
 
 @router.post("/assistant/document", tags=["assistant"])
