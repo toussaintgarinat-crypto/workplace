@@ -6,7 +6,8 @@ Ce qui doit être verrouillé :
      journaliser les requêtes, ils ne passent jamais devant un modèle choisi ni devant
      OpenRouter ;
   2. un `kilo/*` est à coût marginal nul (le garde-fou budget ne doit pas le jeter) ;
-  3. le routage dynamique peut descendre vers un `kilo/*` à défaut de `free/*`.
+  3. le routage économe ne PRÉPOSE JAMAIS un `kilo/*` devant la tête (revue S239, I1) :
+     Kilo = secours seulement, ses prompts peuvent être journalisés.
 """
 import asyncio
 import os
@@ -69,7 +70,8 @@ def test_kilo_sans_cout_marginal():
     assert llm_pipeline._sans_cout_marginal("deepseek/deepseek-v4-flash") is False
 
 
-def test_routage_descend_vers_kilo_a_defaut_de_free():
-    assert routage._premier_gratuit(["mistral/small", "kilo/k1"], {}) == "kilo/k1"
-    # Un `free/*` reste préféré dans l'ordre de la chaîne (il vient avant dans la cascade).
-    assert routage._premier_gratuit(["mistral/small", "free/a", "kilo/k1"], {}) == "free/a"
+def test_routage_econome_ne_prepose_jamais_kilo():
+    """Le routage économe met son choix EN TÊTE de chaîne pour les requêtes triviales : un
+    `kilo/*` passerait alors devant Mistral, ce que l'option B interdit."""
+    assert routage._premier_gratuit(["mistral/small", "kilo/k1"], {}) is None
+    assert routage._premier_gratuit(["mistral/small", "kilo/k1", "free/a"], {}) == "free/a"
