@@ -214,17 +214,38 @@ def test_kilo_top_n_et_exclusion_configurable(monkeypatch):
 
 
 def test_chaque_source_ne_gere_que_son_prefixe(monkeypatch):
-    """Kilo vide ne doit pas balayer les `free/*`, et inversement — et les alias du YAML
+    """Les retraits d'une source ne visent que SON préfixe — et les alias du YAML
     (`gratuit/auto`, `forge/defaut`) ne sont à AUCUNE source."""
     faux = _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")],
                      actuels={"free/google/gemma-4-31b-it": "id-gemma",
-                              "kilo/vieux/modele": "id-vieux",
+                              "free/vieux/modele": "id-vieux-free",
+                              "kilo/en/place": "id-kilo",
                               "gratuit/auto": "id-alias", "forge/defaut": "id-forge"},
-                     kilo=[])
+                     kilo=[_modele("en/place:free")])
     r = sync.synchroniser()
-    assert faux.suppressions == ["id-vieux"]
+    assert faux.suppressions == ["id-vieux-free"]
     assert r["sources"]["openrouter"]["inchanges"] == 1
-    assert r["sources"]["kilo"]["retires"] == ["kilo/vieux/modele"]
+    assert r["sources"]["kilo"]["inchanges"] == 1 and r["sources"]["kilo"]["retires"] == []
+
+
+def test_catalogue_vide_ne_vide_pas_la_source(monkeypatch):
+    """Revue S239, M1 : 0 modèle retenu alors que la source en sert déjà = anomalie (filtre
+    devenu trop strict, catalogue tronqué, format changé), pas une vraie disparition de
+    TOUS ses gratuits. On ne retire rien et on le signale."""
+    faux = _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")],
+                     actuels={"kilo/vieux/modele": "id-vieux"}, kilo=[])
+    r = sync.synchroniser()
+    assert faux.suppressions == []
+    assert r["sources"]["kilo"]["statut"] == "erreur"
+    assert "vide" in r["sources"]["kilo"]["raison"]
+    assert any("kilo" in e for e in r["erreurs"])
+    assert r["statut"] == "ok", "l'autre source a tourné"
+
+
+def test_catalogue_vide_sans_modele_en_place_nest_pas_une_erreur(monkeypatch):
+    _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")], actuels={},
+              kilo=[])
+    assert sync.synchroniser()["sources"]["kilo"]["statut"] == "ok"
 
 
 def test_une_source_en_panne_nefface_rien_et_nempeche_pas_lautre(monkeypatch):
@@ -268,3 +289,23 @@ def test_nom_workplace_normalise_le_slug():
         "free/nvidia/nemotron-3-nano-30b-a3b"
     assert sync.nom_workplace("poolside/laguna-s-2.1:free", "kilo/") == \
         "kilo/poolside/laguna-s-2.1"
+
+
+def test_nom_workplace_garde_les_segments_du_milieu():
+    """Revue S239, M3 : `a/x/m` et `a/y/m` donnaient tous deux `a/m` — collision, un des deux
+    modèles écrasait l'autre en silence."""
+    assert sync.nom_workplace("a/x/m:free", "kilo/") == "kilo/a/x/m"
+    assert sync.nom_workplace("a/y/m:free", "kilo/") == "kilo/a/y/m"
+    assert sync.nom_workplace("seul:free", "kilo/") == "kilo/inconnu/seul"
+
+
+def test_kilo_exclure_compare_par_segment(monkeypatch):
+    """Revue S239, M3 : `nvidia` exclut `nvidia/…` mais PAS `nvidia-autre/…` ; le `/` final
+    est facultatif ; un chemin plus long n'exclut que ce sous-arbre."""
+    monkeypatch.setattr(sync, "KILO_EXCLURE", "nvidia, poolside/laguna-s")
+    faux = _preparer(monkeypatch, catalogue=[], actuels={},
+                     kilo=[_modele("nvidia/gros:free"), _modele("nvidia-autre/m:free"),
+                           _modele("poolside/laguna-s:free"),
+                           _modele("poolside/laguna-s-2.1:free")])
+    sync.synchroniser()
+    assert sorted(faux.ajouts) == ["kilo/nvidia-autre/m", "kilo/poolside/laguna-s-2.1"]

@@ -11,7 +11,8 @@ Deux **sources** (S239), chacune ne gérant QUE son préfixe :
 | `free/*` | OpenRouter | `OPENROUTER_API_KEY` requise (sinon source ignorée) |
 | `kilo/*` | Kilo Code (`https://api.kilo.ai/api/gateway`) | aucune (`api_key: anonymous`) |
 
-Une source en panne (catalogue injoignable, clé absente) n'efface rien et n'empêche pas
+Une source en panne (catalogue injoignable, clé absente, ou vide après filtrage alors que
+des modèles de son préfixe sont en place) n'efface rien et n'empêche pas
 l'autre de se synchroniser. Les méta-routeurs (`kilo-auto/free`, `openrouter/free`) sont
 écartés : ils choisissent eux-mêmes le modèle, le journal du Cœur ne saurait plus lequel a
 répondu. ⚠ Les gratuits Kilo peuvent journaliser les requêtes : ils sont le **filet** de la
@@ -55,7 +56,7 @@ seulement si AUCUNE source n'a pu tourner.
 | `OPENROUTER_API_KEY` | source OpenRouter — sans elle, cette source seule est ignorée |
 | `FREE_MODELS_TOP_N` | nombre de `free/*` retenus (défaut 12), triés par contexte |
 | `KILO_TOP_N` | nombre de `kilo/*` retenus (défaut 6), triés par contexte |
-| `KILO_EXCLURE` | préfixes d'ids Kilo à écarter, séparés par des virgules (ex. `nvidia/,poolside/`) |
+| `KILO_EXCLURE` | ids Kilo à écarter, séparés par des virgules, comparés par segment sans la variante `:free` (ex. `nvidia` écarte `nvidia/…` mais pas `nvidia-autre/…`) |
 | `GATEWAY_SYNC_KEY` | protège `POST /sync` si définie ; sinon ouvert |
 
 ## Pourquoi ce service existe

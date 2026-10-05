@@ -33,8 +33,11 @@ LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 TOP_N = int(os.getenv("FREE_MODELS_TOP_N", "12"))
 KILO_TOP_N = int(os.getenv("KILO_TOP_N", "6"))
-# Préfixes d'ids Kilo à écarter (« nvidia/,poolside/ ») : retirer un fournisseur amont dont les
-# conditions déplaisent, sans toucher au code ni reconstruire l'image.
+# Ids Kilo à écarter, séparés par des virgules (« nvidia,poolside/laguna-s ») : retirer un
+# fournisseur amont dont les conditions déplaisent, sans toucher au code ni reconstruire
+# l'image. Comparaison PAR SEGMENT de chemin, sur l'id sans sa variante (`:free`) : `nvidia`
+# (ou `nvidia/`) écarte `nvidia/…` mais pas `nvidia-autre/…` ; `poolside/laguna-s` écarte
+# ce modèle et son sous-arbre, pas `poolside/laguna-s-2.1`.
 KILO_EXCLURE = os.getenv("KILO_EXCLURE", "")
 
 PREFIXE = "free/"
@@ -65,7 +68,7 @@ def sources() -> list[Source]:
                "https://openrouter.ai/api/v1", "openrouter/", OPENROUTER_API_KEY, TOP_N),
         Source("kilo", "kilo/", "https://api.kilo.ai/api/gateway/models",
                "https://api.kilo.ai/api/gateway", "openai/", "anonymous", KILO_TOP_N,
-               tuple(p.strip() for p in KILO_EXCLURE.split(",") if p.strip())),
+               tuple(p.strip().strip("/") for p in KILO_EXCLURE.split(",") if p.strip().strip("/"))),
     ]
 
 
@@ -110,7 +113,9 @@ def catalogue_gratuits(source: Source) -> list[dict]:
 
     def admis(m: dict) -> bool:
         mid = m.get("id", "")
-        return not mid.endswith("/free") and not mid.startswith(source.exclure)
+        base = mid.split(":")[0]  # sans la variante (`:free`)
+        exclu = any(base == e or base.startswith(e + "/") for e in source.exclure)
+        return not mid.endswith("/free") and not exclu
 
     retenus = [m for m in _catalogue_brut(source) if gratuit(m) and utile(m) and admis(m)]
     retenus.sort(key=lambda m: m.get("context_length", 0), reverse=True)
@@ -118,11 +123,15 @@ def catalogue_gratuits(source: Source) -> list[dict]:
 
 
 def nom_workplace(id_amont: str, prefixe: str = PREFIXE) -> str:
-    """`qwen/qwen3-coder:free` → `free/qwen/qwen3-coder` (nom vu par le Cœur)."""
+    """`qwen/qwen3-coder:free` → `free/qwen/qwen3-coder` (nom vu par le Cœur).
+
+    Les segments du milieu sont conservés (`a/x/m` → `a/x/m`) : les jeter faisait collisionner
+    `a/x/m` et `a/y/m`, l'un écrasant l'autre en silence (revue S239, M3).
+    """
     parts = id_amont.split("/")
-    fournisseur = parts[0] if len(parts) > 1 else "inconnu"
+    chemin = "/".join(parts[:-1]) if len(parts) > 1 else "inconnu"
     slug = parts[-1].replace(":free", "").replace(":", "-")
-    return f"{prefixe}{fournisseur}/{slug}"
+    return f"{prefixe}{chemin}/{slug}"
 
 
 def modeles_actuels(client: httpx.Client) -> list[dict]:
@@ -178,6 +187,12 @@ def _synchroniser_source(client: httpx.Client, source: Source, actuels_tous: lis
     # panne passagère de l'amont viderait la cascade de cette source.
     voulus = {nom_workplace(m["id"], source.prefixe): m for m in catalogue_gratuits(source)}
     actuels = {a["nom"]: a["id"] for a in actuels_tous if a["nom"].startswith(source.prefixe)}
+    # 0 modèle retenu alors que la source en sert déjà : anomalie (filtre devenu trop strict,
+    # catalogue tronqué, format changé) bien plus probable qu'une disparition de TOUS ses
+    # gratuits. On ne vide pas la cascade sur un soupçon — on le signale (revue S239, M1).
+    if not voulus and actuels:
+        raise RuntimeError(f"catalogue vide après filtrage — {len(actuels)} modèle(s) "
+                           f"{source.prefixe}* en place conservé(s)")
 
     a_ajouter = [n for n in voulus if n not in actuels]
     a_retirer = [n for n in actuels if n not in voulus]
