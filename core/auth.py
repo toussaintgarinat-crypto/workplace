@@ -275,6 +275,63 @@ def _admins_cerveau() -> set[str]:
     return {s.strip() for s in os.environ.get("CERVEAU_ADMINS", "").split(",") if s.strip()}
 
 
+_HOTES_LOCAUX = {"localhost", "127.0.0.1", "[::1]"}
+
+
+def _netloc(url: str) -> str:
+    return urllib.parse.urlsplit(url).netloc.lower()
+
+
+def _origine_autorisee(origine: str, request: Request) -> bool:
+    """L'en-tête `Origin` désigne-t-il le Cœur lui-même ?
+
+    Le Cœur n'a pas d'URL publique fixe : il est servi en LAN (IP:5100), sur le mesh (IP
+    NetBird via Caddy en HTTPS) et par domaine. On compare donc l'hôte[:port] de l'origine à
+    celui de la REQUÊTE (`Host`, ou `X-Forwarded-Host` posé par un proxy), sans le schéma :
+    Caddy termine le TLS, le Cœur voit du http alors que le navigateur annonce https.
+    S'y ajoutent localhost (dev) et les origines explicites de `CORS_ORIGINS` (hors « * »)."""
+    hote = _netloc(origine)
+    if not hote:
+        return False  # « null » (iframe sandbox, fichier local…) ou valeur illisible
+    if hote.rsplit(":", 1)[0] in _HOTES_LOCAUX or hote in _HOTES_LOCAUX:
+        return True
+    hotes_requete = {(request.headers.get("host") or "").lower(),
+                     (request.headers.get("x-forwarded-host") or "").split(",")[0].strip().lower()}
+    if hote in hotes_requete - {""}:
+        return True
+    cors = {_netloc(o.strip()) for o in os.environ.get("CORS_ORIGINS", "").split(",")
+            if o.strip() and o.strip() != "*"}
+    return hote in cors
+
+
+def verifier_anti_csrf(request: Request) -> None:
+    """Refuse une écriture déclenchée depuis une autre origine (revue S240, I1).
+
+    Le cookie de session part avec toute requête vers le Cœur, y compris celle qu'une page
+    tierce ouverte dans le navigateur de l'admin forgerait. Trois verrous, du plus fiable au
+    plus large :
+    - `Sec-Fetch-Site` (posé par le navigateur, non falsifiable par une page) présent et
+      différent de `same-origin` → 403 ;
+    - `Origin` présent et étranger au Cœur → 403 ;
+    - corps non JSON sur POST/PUT/PATCH → 415 : un <form> tiers ne sait envoyer que
+      text/plain, urlencoded ou multipart, et un `fetch` JSON cross-origin exige un preflight
+      CORS. Une requête SANS corps (DELETE, route sans paramètre) n'est pas concernée.
+    Les clients hors navigateur (curl, scripts) n'envoient aucun de ces en-têtes : ils passent
+    cette garde et restent soumis à la session."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site != "same-origin":
+        raise HTTPException(status_code=403, detail=f"Requête d'une autre origine refusée ({site}).")
+    origine = request.headers.get("origin")
+    if origine is not None and not _origine_autorisee(origine, request):
+        raise HTTPException(status_code=403, detail="Origine non autorisée.")
+    if request.method in ("POST", "PUT", "PATCH"):
+        a_un_corps = (request.headers.get("content-length", "0") not in ("", "0")
+                      or "transfer-encoding" in request.headers)
+        ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if a_un_corps and ctype != "application/json":
+            raise HTTPException(status_code=415, detail="Corps attendu en application/json.")
+
+
 async def exiger_admin_cerveau(request: Request) -> dict:
     """Dépendance des routes qui MODIFIENT le cerveau (S240) : clés fournisseur, modèle,
     cascade, persona, langue, voix, modèles servis, modèle de la Forge.
@@ -292,7 +349,10 @@ async def exiger_admin_cerveau(request: Request) -> dict:
       protection qui n'existe pas.
 
     Les lectures (`GET /assistant/config`…) et le chat (`/assistant/chat`, utilisé par
-    Telegram/Mini App/S2S sans session) ne portent PAS cette garde."""
+    Telegram/Mini App/S2S sans session) ne portent PAS cette garde.
+
+    Anti-CSRF d'abord (`verifier_anti_csrf`) : refusée avant même de lire la session."""
+    verifier_anti_csrf(request)
     try:
         identite = await exiger_session(request)
     except HTTPException as e:

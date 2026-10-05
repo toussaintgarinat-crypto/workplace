@@ -134,3 +134,58 @@ def test_auth_desactivee_avec_liste_blanche_refuse(monkeypatch):
     r = client.post("/assistant/persona", json={"persona": "default"})
     assert r.status_code == 403
     assert "AUTH_ENABLED" in r.json()["detail"]
+
+
+# ── Anti-CSRF (revue S240, I1) ───────────────────────────────────────────────
+# Une page tierce ouverte dans le navigateur d'un admin connecté ne doit pas pouvoir
+# déclencher une écriture du cerveau avec son cookie.
+
+def test_sec_fetch_site_autre_que_same_origin_refuse():
+    for valeur in ("cross-site", "same-site", "none"):
+        r = client.post("/assistant/persona", json={"persona": "default"},
+                        headers={"Sec-Fetch-Site": valeur})
+        assert r.status_code == 403, valeur
+
+
+def test_sec_fetch_site_same_origin_accepte():
+    r = client.post("/assistant/persona", json={"persona": "default"},
+                    headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 200
+
+
+def test_origin_etrangere_refusee():
+    for origine in ("https://evil.example", "null", "http://testserver.evil.example"):
+        r = client.post("/assistant/persona", json={"persona": "default"},
+                        headers={"Origin": origine})
+        assert r.status_code == 403, origine
+
+
+def test_origin_du_coeur_ou_localhost_acceptee():
+    # TestClient envoie Host: testserver → l'origine du Cœur lui-même est acceptée, quel que
+    # soit le schéma (Caddy termine le TLS devant le Cœur : Origin https, requête http).
+    for origine in ("http://testserver", "https://testserver", "http://localhost:5100",
+                    "http://127.0.0.1:5100"):
+        r = client.post("/assistant/persona", json={"persona": "default"},
+                        headers={"Origin": origine})
+        assert r.status_code == 200, origine
+
+
+def test_origin_listee_dans_cors_origins_acceptee(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.exemple.net")
+    r = client.post("/assistant/persona", json={"persona": "default"},
+                    headers={"Origin": "https://app.exemple.net"})
+    assert r.status_code == 200
+
+
+def test_corps_non_json_refuse_415():
+    """Un <form> tiers ne peut envoyer que text/plain, urlencoded ou multipart."""
+    for ctype in ("text/plain", "application/x-www-form-urlencoded"):
+        r = client.post("/assistant/persona", content=b'{"persona":"default"}',
+                        headers={"Content-Type": ctype})
+        assert r.status_code == 415, ctype
+
+
+def test_post_sans_corps_reste_accepte_si_route_sans_corps():
+    """Garde sans effet sur une route gardée qui ne prend pas de corps (ex. DELETE)."""
+    r = client.delete("/assistant/config/utilisateur")
+    assert r.status_code != 415
