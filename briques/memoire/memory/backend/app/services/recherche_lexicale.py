@@ -62,20 +62,37 @@ async def classement_trigramme(db: AsyncSession, requete: str, filtres: Filtres,
     return [r[0] for r in (await db.execute(sql, params)).all()]
 
 
+async def references_normalisees(db: AsyncSession, references: list[str]) -> list[str]:
+    """Références passées par la MÊME normalisation que le texte (memoire_unaccent(lower)),
+    dans l'ordre d'origine."""
+    sql = text("""
+        SELECT memoire_unaccent(lower(r)) FROM unnest(CAST(:refs AS text[])) WITH ORDINALITY AS t(r, i)
+        ORDER BY i
+    """)
+    return [r[0] for r in (await db.execute(sql, {"refs": references})).all()]
+
+
 async def correspondances_exactes(
     db: AsyncSession, references: list[str], filtres: Filtres, limite: int
 ) -> dict[UUID, CorrespondanceExacte]:
     """Souvenirs contenant littéralement au moins une référence (mot entier, sans casse ni
-    accents), avec le nombre de références trouvées et la présence dans le titre."""
+    accents), avec le nombre de références trouvées et la présence dans le titre.
+
+    Chaque référence est d'abord normalisée en SQL, puis le motif est construit en Python
+    sur le texte normalisé et comparé tel quel : unaccent appliqué APRÈS l'échappement
+    développerait certains symboles en métacaractères (⁇ en ??) et rendrait l'expression
+    régulière invalide."""
     if not references:
+        return {}
+    normalisees = [r for r in await references_normalisees(db, references) if r and r.strip()]
+    if not normalisees:
         return {}
     where, params = conditions_sql(filtres)
     comptes, titres = [], []
-    for i, reference in enumerate(references):
+    for i, reference in enumerate(normalisees):
         params[f"r{i}"] = motif_reference(reference)
-        motif = f"memoire_unaccent(lower(:r{i}))"
-        comptes.append(f"(CASE WHEN {TEXTE_NORMALISE} ~ {motif} THEN 1 ELSE 0 END)")
-        titres.append(f"{_TITRE_NORMALISE} ~ {motif}")
+        comptes.append(f"(CASE WHEN {TEXTE_NORMALISE} ~ :r{i} THEN 1 ELSE 0 END)")
+        titres.append(f"{_TITRE_NORMALISE} ~ :r{i}")
     params["limite"] = limite
     sql = text(f"""
         SELECT id, trouvees, dans_titre FROM (

@@ -31,6 +31,9 @@ class TestReferences:
     def test_guillemets_typographiques(self):
         assert extraire_references('“plan B” et x “S1” y') == ["plan B", "S1"]
 
+    def test_points_de_suspension_retires(self):
+        assert extraire_references("le S1… et S2") == ["S1", "S2"]
+
     def test_reference_trop_longue_ignoree(self):
         longue = "a" * (LONGUEUR_REFERENCE_MAX + 1)
         assert extraire_references(f'"{longue}" {longue}1 ok-1') == ["ok-1"]

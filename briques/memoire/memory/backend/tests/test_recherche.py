@@ -77,6 +77,19 @@ class TestRecherche:
         scores = [r["score"] for r in res]
         assert scores == sorted(scores, reverse=True) and len(set(scores)) == len(scores)
 
+    async def test_symboles_developpes_par_unaccent(self, client, auth_headers, test_space):
+        """unaccent développe ⁇ en ??, … en ..., © en (C) : le motif ne doit pas devenir
+        une expression régulière invalide (500)."""
+        sid = test_space["id"]
+        copyright_ = await _creer(client, auth_headers, sid, "Mentions", "Tous droits réservés ©2024")
+        s1 = await _creer(client, auth_headers, sid, "Sprint S1 fini")
+        for q in ("a1⁇⁇", "x⑴y2"):
+            await _chercher(client, auth_headers, sid, q)
+        _, res = await _chercher(client, auth_headers, sid, "©2024")
+        assert res[0]["id"] == copyright_ and res[0]["correspondance"] == "exacte"
+        _, res = await _chercher(client, auth_headers, sid, "S1…")
+        assert res[0]["id"] == s1 and res[0]["correspondance"] == "exacte"
+
     async def test_limite_zero_refusee(self, client, auth_headers, test_space):
         r = await client.get(f"/api/v1/spaces/{test_space['id']}/search",
                              params={"q": "x", "limit": 0}, headers=auth_headers)

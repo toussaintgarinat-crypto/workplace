@@ -13,7 +13,7 @@ REFERENCES_MAX = 10
 
 _GUILLEMETS = re.compile(r'"([^"]+)"|«\s*([^»]+?)\s*»|“([^”]+)”')
 _CARACTERES_REFERENCE = set("-_./@#")
-_BORDS = ".,;:!?()[]{}'\"«»“”"
+_BORDS = ".,;:!?()[]{}'\"«»“”…"
 
 
 def _est_reference(jeton: str) -> bool:
@@ -45,12 +45,14 @@ def extraire_references(requete: str) -> list[str]:
 
 
 def motif_reference(reference: str) -> str:
-    """Motif ARE PostgreSQL trouvant `reference` comme mot entier. Seuls les métacaractères
-    ARE ASCII (\\ ^ $ . | ? * + ( ) [ ] { }) sont échappés ; tout autre caractère reste tel
-    quel (littéral en ARE hors crochets). On n'échappe surtout pas les non-alphanumériques en
-    bloc : le SQL applique memoire_unaccent(lower(...)) au motif, et unaccent développe
-    certains symboles en lettres (™ devient TM), ce qui transformerait `\\™` en `\\TM`, un
-    échappement ARE invalide (erreur SQL). Les espaces d'une expression acceptent tout blanc."""
+    """Motif ARE PostgreSQL trouvant `reference` comme mot entier. `reference` doit être
+    DÉJÀ normalisée (memoire_unaccent(lower(...)) côté SQL, voir correspondances_exactes) :
+    le motif est comparé tel quel, sans retraitement. Normaliser après avoir construit le
+    motif casserait l'échappement, car unaccent développe certains symboles en
+    métacaractères (⁇ devient ??, … devient ..., © devient (C)) ou en lettres (™ devient TM,
+    et `\\™` deviendrait `\\TM`, échappement invalide). Seuls les métacaractères ARE ASCII
+    (\\ ^ $ . | ? * + ( ) [ ] { }) sont échappés ; tout autre caractère est littéral en ARE
+    hors crochets. Les espaces d'une expression acceptent tout blanc."""
     morceaux = [re.sub(r"([\\^$.|?*+()\[\]{}])", r"\\\1", m) for m in reference.split()]
     return "(^|[^[:alnum:]])" + "[[:space:]]+".join(morceaux) + "($|[^[:alnum:]])"
 
