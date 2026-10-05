@@ -25,6 +25,7 @@ class _SansReessai(openai.AsyncOpenAI):
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("max_retries", 0)
+        kwargs.setdefault("timeout", 5)  # si le port 9 était ouvert : échouer vite, pas 600 s
         super().__init__(*args, **kwargs)
 
 
@@ -34,6 +35,7 @@ def gateway_fermee(monkeypatch):
     # llm.generate_text importe AsyncOpenAI dans la fonction ; memory l'importe au module.
     monkeypatch.setattr(openai, "AsyncOpenAI", _SansReessai)
     monkeypatch.setattr("app.memory.AsyncOpenAI", _SansReessai)
+    monkeypatch.setattr("app.react_executor.AsyncOpenAI", _SansReessai)
 
 
 def test_client_openai_se_construit_avec_les_reglages_reels():
@@ -56,3 +58,12 @@ async def test_embed_local_atteint_le_reseau(gateway_fermee):
 
     with pytest.raises(openai.APIConnectionError):
         await memory._embed_local(["bonjour"])
+
+
+async def test_client_react_atteint_le_reseau(gateway_fermee):
+    """Fabrique du mode ReAct — même construction que chat.py, ws.py, pipeline_templates.py."""
+    from app.react_executor import _client
+
+    with pytest.raises(openai.APIConnectionError):
+        await _client().chat.completions.create(
+            model="openai/gpt-4o-mini", messages=[{"role": "user", "content": "bonjour"}])

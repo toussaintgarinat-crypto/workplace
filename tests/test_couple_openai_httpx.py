@@ -31,6 +31,7 @@ Limites assumées :
 
 `packaging` est une dépendance de pytest : disponible partout où ce filet tourne.
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -69,12 +70,15 @@ def _lignes_logiques(texte: str):
     """Lignes d'un requirements, continuations `\\` recollées, commentaires retirés."""
     tampon = ""
     for brute in texte.splitlines():
-        if brute.rstrip().endswith("\\"):
-            tampon += brute.rstrip()[:-1] + " "
+        # Règle de pip : `#` en début de ligne ou précédé d'un blanc (espace OU tabulation)
+        # ouvre un commentaire ; une ligne de commentaire terminée par `\` n'est pas recollée.
+        sans_commentaire = re.split(r"(?:^|\s+)#", brute, maxsplit=1)[0].rstrip()
+        if sans_commentaire.endswith("\\"):
+            tampon += sans_commentaire[:-1] + " "
             continue
-        ligne = (tampon + brute).split(" #", 1)[0].strip()
+        ligne = (tampon + sans_commentaire).strip()
         tampon = ""
-        if ligne and not ligne.startswith("#"):
+        if ligne:
             yield ligne
 
 
@@ -99,7 +103,16 @@ def _contraintes(chemin: Path, vus: frozenset = frozenset()) -> dict[str, list[R
         try:
             req = Requirement(ligne.split(" --", 1)[0])  # retire `--hash=…` éventuels
         except InvalidRequirement:
-            continue  # URL directe, chemin local… : ni openai ni httpx dans le parc
+            # URL directe, chemin local… : sans danger tant qu'ils ne visent ni openai ni
+            # httpx — sinon le filet ne saurait pas les juger, il refuse plutôt que de taire.
+            assert not re.search(r"openai|httpx", ligne, re.I), (
+                f"{chemin.relative_to(RACINE)} : ligne illisible pour le filet : {ligne!r}")
+            continue
+        # `openai @ https://…` : référence directe, la version n'est pas lisible ici.
+        assert not (req.url and canonicalize_name(req.name) in ("openai", "httpx")), (
+            f"{chemin.relative_to(RACINE)} : ligne illisible pour le filet : {ligne!r}")
+        if req.marker is not None and not req.marker.evaluate():
+            continue  # marqueur d'environnement : pip ne l'installerait pas
         resultat.setdefault(canonicalize_name(req.name), []).append(req)
     return resultat
 
@@ -230,6 +243,8 @@ def test_mord_a_travers_un_moins_r(faux_parc):
     "openai==1.54.*\nhttpx==0.28.1\n",                  # joker
     "openai[datalib]==1.40.0 ; python_version >= '3.8'\nhttpx==0.28.1\n",
     "openai==1.55.2 \\\n    --hash=sha256:abc\nHTTPX==0.28.1\n",
+    "openai==1.54.0\t# commentaire après tabulation\nhttpx==0.28.1\n",
+    "# commentaire terminé par une barre \\\nopenai==1.54.0\nhttpx==0.28.1\n",
 ])
 def test_mord_sur_les_formes_d_ecriture(faux_parc, contenu):
     assert _diagnostic(_ecrire(faux_parc, "requirements.txt", contenu)), contenu
@@ -244,6 +259,17 @@ def test_mord_sur_les_formes_d_ecriture(faux_parc, contenu):
     "openai\n",
     "httpx==0.28.1\n",                                  # pas d'openai du tout
     "# openai==1.54.0\nhttpx==0.28.1\n",                # commentaire
+    "openai==1.54.0 ; python_version < '3'\nhttpx==0.28.1\n",  # marqueur jamais vrai
 ])
 def test_ne_mord_pas_sur_un_couple_sain(faux_parc, contenu):
     assert _diagnostic(_ecrire(faux_parc, "requirements.txt", contenu)) is None, contenu
+
+
+@pytest.mark.parametrize("contenu", [
+    "openai @ https://exemple.invalid/openai-1.54.0.tar.gz\nhttpx==0.28.1\n",
+    "git+https://github.com/openai/openai-python@v1.54.0#egg=openai\n",
+])
+def test_refuse_une_ligne_openai_illisible(faux_parc, contenu):
+    """Une forme que le filet ne sait pas juger ne doit pas passer en silence."""
+    with pytest.raises(AssertionError, match="illisible"):
+        _diagnostic(_ecrire(faux_parc, "requirements.txt", contenu))

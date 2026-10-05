@@ -6,3 +6,4 @@ venv/
 htmlcov/
 .coverage
 *.egg-info/
+.venv*/
