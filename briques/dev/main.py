@@ -68,6 +68,7 @@ Nouveau en v0.8.0 (S93 — seam `EspaceTravail`, refactor interne sans nouvelle 
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import uuid
@@ -77,7 +78,7 @@ import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import agents
@@ -124,6 +125,32 @@ app.include_router(spearcode.router, prefix="/ide", tags=["IDE SpearCode"])
 def garde(x_api_key: Optional[str] = Header(None)) -> None:
     if DEV_KEY and x_api_key != DEV_KEY:
         raise HTTPException(status_code=401, detail="clé requise (X-API-Key)")
+
+
+# ── Garde GLOBALE (revue S240, C-B) ────────────────────────────────────────────
+# Cette brique monte le dépôt (donc le .env) en écriture et le socket Docker : un appel non
+# authentifié = exécution arbitraire sur l'hôte. Deux trous avant S240 : `DEV_KEY` vide
+# laissait tout ouvert (y compris sur le HP, port publié sur 0.0.0.0), et l'IDE SpearCode
+# (`/ide/*` : écrire, exécuter des fichiers) n'avait AUCUNE garde, même avec une clé.
+# Middleware = toutes les routes, présentes et futures, sauf la sonde `/sante`.
+# Env relu à chaque requête : réglable sans reconstruire, testable sans recharger.
+_LIBRES = {"/sante"}
+
+
+@app.middleware("http")
+async def garde_globale(request, call_next):
+    if request.url.path in _LIBRES or request.method == "OPTIONS":
+        return await call_next(request)
+    cle = os.environ.get("DEV_KEY", "")
+    if not cle:
+        if os.environ.get("AUTH_ENABLED", "false").lower() == "true":
+            # Stack Workplace authentifiée mais atelier sans clé : on ferme (fail closed).
+            return JSONResponse(status_code=503, content={
+                "detail": "DEV_KEY absente alors que AUTH_ENABLED=true : atelier fermé."})
+        return await call_next(request)  # atelier local, sans auth (dev, tests)
+    if not hmac.compare_digest(request.headers.get("x-api-key", ""), cle):
+        return JSONResponse(status_code=401, content={"detail": "clé requise (X-API-Key)"})
+    return await call_next(request)
 
 
 # ── Stockage JSON simple (un seul utilisateur, un seul dépôt) ───────────────────
