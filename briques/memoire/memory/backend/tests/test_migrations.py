@@ -54,3 +54,17 @@ class TestMigrations:
             vecs = dict((await db.execute(select(Node.id, Node.embedding).where(Node.id.in_(ids)))).all())
         assert vecs[ids[0]] is None
         assert vecs[ids[1]] is not None
+
+    async def test_souvenir_geant_inserable_et_trouve(self, client, auth_headers, test_space):
+        """to_tsvector échoue au-delà de 1 Mo : sans plafond, la colonne générée ferait
+        échouer tout INSERT d'une note géante."""
+        contenu = "zorglub " + " ".join(f"mot{i}" for i in range(170_000))
+        assert len(contenu) > 1_400_000
+        r = await client.post(f"/api/v1/spaces/{test_space['id']}/nodes",
+                              json={"type": "input", "title": "Note géante", "content_md": contenu},
+                              headers=auth_headers)
+        assert r.status_code == 201, r.text[:300]
+        r = await client.get(f"/api/v1/spaces/{test_space['id']}/search", params={"q": "zorglub"},
+                             headers=auth_headers)
+        assert r.status_code == 200, r.text[:300]
+        assert r.json()[0]["title"] == "Note géante"

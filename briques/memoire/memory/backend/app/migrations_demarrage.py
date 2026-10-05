@@ -8,10 +8,22 @@ import numpy as np
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-# Texte normalisé d'un souvenir (alias `n`) : minuscules, sans accents. Partagé par l'index
-# trigramme ci-dessous et par les requêtes lexicales — ils doivent rester identiques pour
-# que l'index serve.
-TEXTE_NORMALISE = "memoire_unaccent(lower(coalesce(n.title, '') || ' ' || coalesce(n.content_md, '')))"
+# Plafond (en caractères) du texte indexé : to_tsvector refuse au-delà de 1 Mo de lexèmes
+# (« string is too long for tsvector »), et la colonne générée ferait alors échouer tout
+# INSERT/UPDATE d'une note géante. Au-delà du plafond, le texte reste stocké mais n'est plus
+# trouvable par la recherche lexicale (la branche vectorielle tronque déjà à 8000).
+PLAFOND_TEXTE_INDEXE = 200_000
+
+
+def _texte_normalise(alias: str) -> str:
+    return (f"memoire_unaccent(lower(left(coalesce({alias}title, ''), {PLAFOND_TEXTE_INDEXE}) || ' ' || "
+            f"left(coalesce({alias}content_md, ''), {PLAFOND_TEXTE_INDEXE})))")
+
+
+# Texte normalisé d'un souvenir (alias `n`) : minuscules, sans accents. L'index trigramme
+# ci-dessous est construit sur la MÊME expression (sans l'alias) : sinon le planificateur ne
+# reconnaît pas l'index et ne s'en sert pas.
+TEXTE_NORMALISE = _texte_normalise("n.")
 
 _INSTRUCTIONS = [
     # S109 : position libre sur le canvas graphe.
@@ -31,13 +43,14 @@ _INSTRUCTIONS = [
        AS $$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $$""",
     # Titre en `simple` (noms propres et codes intacts, poids A) + titre et contenu en
     # `french` (pluriels, conjugaisons, poids B), le tout sans accents.
-    """ALTER TABLE nodes ADD COLUMN IF NOT EXISTS recherche_tsv tsvector GENERATED ALWAYS AS (
-         setweight(to_tsvector('simple', memoire_unaccent(coalesce(title, ''))), 'A') ||
-         setweight(to_tsvector('french', memoire_unaccent(coalesce(title, '') || ' ' || coalesce(content_md, ''))), 'B')
+    f"""ALTER TABLE nodes ADD COLUMN IF NOT EXISTS recherche_tsv tsvector GENERATED ALWAYS AS (
+         setweight(to_tsvector('simple', memoire_unaccent(left(coalesce(title, ''), {PLAFOND_TEXTE_INDEXE}))), 'A') ||
+         setweight(to_tsvector('french', memoire_unaccent(
+           left(coalesce(title, ''), {PLAFOND_TEXTE_INDEXE}) || ' ' ||
+           left(coalesce(content_md, ''), {PLAFOND_TEXTE_INDEXE}))), 'B')
        ) STORED""",
     "CREATE INDEX IF NOT EXISTS idx_nodes_recherche_tsv ON nodes USING gin (recherche_tsv)",
-    "CREATE INDEX IF NOT EXISTS idx_nodes_texte_trgm ON nodes USING gin "
-    "((memoire_unaccent(lower(coalesce(title, '') || ' ' || coalesce(content_md, '')))) gin_trgm_ops)",
+    f"CREATE INDEX IF NOT EXISTS idx_nodes_texte_trgm ON nodes USING gin (({_texte_normalise('')}) gin_trgm_ops)",
 ]
 
 
