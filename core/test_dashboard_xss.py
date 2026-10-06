@@ -11,9 +11,22 @@ contient du balisage / ouvre un attribut ou un appel inline — passe par un fil
 (`escHtml`, `escAttr`, `escJs`, `escCouleur`, `escUrl`), est manifestement sûre (nombre,
 ternaire de littéraux…), ou figure dans `SURES` avec sa raison.
 
-Limite assumée (heuristique, pas un analyseur JS) : un opérande entouré de deux littéraux
-SANS balisage (`' · ' + x + ' · '`) n'est pas vu. Le test de rendu en navigateur avec des
-valeurs piégées (rapport S240) complète ce filet. Pas de CSP dans S240 : chantier séparé.
+Vérifié aussi (revue S240, M1) : chaque opérande d'une concaténation ou d'un ternaire DANS
+un `${…}` ; l'argument de `insertAdjacentHTML` ; toute affectation `.href =` / `.src =`
+(filtrée par `urlSure`/`escUrl`, littérale, ou listée).
+
+ANGLES MORTS CONNUS (heuristique, pas un analyseur JS) :
+- un opérande entouré de deux littéraux SANS balisage (`' · ' + x + ' · '`) ;
+- un gabarit `…` imbriqué dans un `${…}` (le découpage par accents graves s'y perd) ;
+- une valeur construite plus haut dans une variable intermédiaire puis insérée (`html`,
+  `lignes`…) : seule la variable est vue — d'où `SURES`, qui dit pour chacune comment elle
+  est construite ;
+- `setAttribute('href'|'src'|'on…', x)`, `outerHTML`, `document.write`, `srcdoc` (aucun
+  aujourd'hui, non détectés s'ils apparaissent) ;
+- les fronts de briques proxifiés sur l'origine du Cœur (studio-app, mail-app, ateliers) :
+  hors de ce fichier, même périmètre de sécurité (cf. auth.verifier_anti_csrf).
+Le test de rendu en navigateur avec des valeurs piégées (rapport S240) complète ce filet.
+Pas de CSP dans S240 : chantier séparé.
 
 $ cd core && python3 -m pytest test_dashboard_xss.py -v
 """
@@ -63,6 +76,19 @@ SURES = {
     "cards.join('')": "cartes construites par carte() avec escHtml (rendreDerive)",
     "ms.length": "nombre",
     "b.port ?": "sous-gabarit dont le ${} est filtré (escHtml(b.port))",
+    "dis": "constante locale 'disabled' ou ''",
+    "ro": "booléen local (lecture seule)",
+}
+
+# Affectations d'URL (`.href =` / `.src =`) sûres par construction.
+URLS_SURES = {
+    "'/auth/logout'": "littéral",
+    "url + (url.includes('?') ? '&' : '?') + '_=' + Date.now()":
+        "ouvrirCreation(url) : URL de tuile injectée par le Cœur (urls_ui, env), jamais une saisie",
+    "url": "ouvrirCreation(url) : idem",
+    "FORGE_UI_URL": "injectée par le Cœur (routers/dashboard.py, env/hôte de la requête)",
+    "GEO_UI_URL": "idem", "DEV_IDE_URL": "idem", "GATEWAY_UI_URL": "idem",
+    "URL.createObjectURL(new Blob([texte], { type: 'text/plain' }))": "blob: local (export .env)",
 }
 
 SURES_RE = [
@@ -70,8 +96,6 @@ SURES_RE = [
     r"^[^?]*\?\s*''\s*:?$",                          # cond ? '' :
     r"^[^?]*\?\s*'[^']*'\s*:\s*''$",
     r"^ro\?''$",
-    r"^dis$|^ro$",                                    # 'disabled' ou ''
-    r"^(i|j|m|n|c|d)$",                               # index/constantes de boucle sur des listes constantes (vérifiés ci-dessous)
     r"^ymd\(d\)$|^d\.getDate\(\)$|^JOURS_COURT\[i\]$|^jevts\.length-max$",
     r"^ev\?escJs\(ev\.id\):'null'$",
     r"^(ev|ro|ev&&!ro)\?`",                           # sous-gabarit (ses ${} sont contrôlés à part)
@@ -109,15 +133,90 @@ def _interpolations():
     return trouvees
 
 
+def _decouper(expr: str, seps: str) -> list[str]:
+    """Découpe `expr` sur les séparateurs de PREMIER niveau (hors parenthèses, crochets,
+    accolades et chaînes)."""
+    morceaux, prof, cour, guill = [], 0, "", None
+    for ch in expr:
+        if guill:
+            cour += ch
+            if ch == guill:
+                guill = None
+            continue
+        if ch in "'\"`":
+            guill = ch
+        elif ch in "([{":
+            prof += 1
+        elif ch in ")]}":
+            prof -= 1
+        elif ch in seps and prof == 0:
+            morceaux.append(cour.strip())
+            cour = ""
+            continue
+        cour += ch
+    morceaux.append(cour.strip())
+    return morceaux
+
+
+_LITTERAL = re.compile(r"^('[^']*'|\"[^\"]*\"|`[^`]*`|-?\d+(\.\d+)?)$")
+
+
+def _atome_sur(a: str) -> bool:
+    return (not a or bool(_LITTERAL.match(a)) or a.startswith(FILTRES) or a in SURES
+            or any(re.search(r, a) for r in SURES_RE))
+
+
 def _sure(expr: str) -> bool:
-    return (expr.startswith(FILTRES) or expr in SURES
-            or any(re.search(r, expr) for r in SURES_RE))
+    if expr.startswith(FILTRES) and _decouper(expr, "+") == [expr]:
+        return True
+    if expr in SURES or any(re.search(r, expr) for r in SURES_RE):
+        return True
+    # Revue S240, M1 : on descend dans l'expression — ternaire (la CONDITION n'est pas
+    # affichée, seules les branches le sont) puis chaque opérande d'une concaténation.
+    if "?" in expr:
+        tete = _decouper(expr, "?")
+        if len(tete) >= 2:
+            branches = _decouper("?".join(tete[1:]), ":")
+            return all(_sure(b) for b in branches)
+    operandes = _decouper(expr, "+")
+    if len(operandes) > 1:
+        return all(_atome_sur(o) for o in operandes)
+    return _atome_sur(expr)
 
 
 def test_toute_interpolation_html_est_filtree():
     fautives = sorted({(l, e) for l, e in _interpolations() if not _sure(e)})
     assert not fautives, "valeurs insérées dans du HTML sans filtre :\n" + "\n".join(
         f"  ligne {l} : {e}" for l, e in fautives)
+
+
+def test_insert_adjacent_html_filtre():
+    for m in re.finditer(r"insertAdjacentHTML\(\s*'[^']*'\s*,\s*", SOURCE):
+        suite = SOURCE[m.end():m.end() + 1]
+        # Seul un gabarit `…` est admis : ses ${} passent par test_toute_interpolation…
+        assert suite == "`", SOURCE[m.start():m.start() + 120]
+
+
+def test_affectations_href_src_filtrees():
+    fautives = []
+    for m in re.finditer(r"\.(href|src)\s*=\s*([^;\n]+?)\s*;", SOURCE):
+        val = m.group(2).strip()
+        if val.startswith(("urlSure(", "escUrl(")) or val in URLS_SURES or _LITTERAL.match(val):
+            continue
+        fautives.append((SOURCE.count("\n", 0, m.start()) + 1, val))
+    assert not fautives, f"href/src non filtrés : {fautives}"
+
+
+def test_url_sure_refuse_protocoles_et_chemins_ambigus():
+    """Revue S240, M2 : `/\\evil` est lu `//evil` par les navigateurs (autre hôte)."""
+    corps = SOURCE[SOURCE.index("function urlSure("):].split("\n", 1)[0]
+    motif = re.search(r"/(\^.*?)/i\.test", corps).group(1)
+    rx = re.compile(motif, re.I)
+    for ok in ("/brique-fichiers/x.png", "https://exemple.fr/a", "http://192.168.1.89:5100/"):
+        assert rx.search(ok), ok
+    for ko in ("//evil.example/x", "/\\evil.example/x", "javascript:alert(1)",
+               "data:text/html,x", " /x", "JaVaScRiPt:x"):
+        assert not rx.search(ko), ko
 
 
 def test_plus_de_onclick_avec_guillemet_simple_autour_d_une_donnee():

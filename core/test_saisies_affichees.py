@@ -46,7 +46,7 @@ def test_fil_assaini():
     f = journal_conversations.fil("web'\"<x>", "a');alert(1);// b")
     surface, _, interlocuteur = f.partition(":")
     for partie in (surface, interlocuteur):
-        assert partie and all(c.isalnum() or c in "_.@-" for c in partie), f
+        assert partie and all(c.isalnum() or c in "_.@+-" for c in partie), f
     assert len(journal_conversations.fil("w" * 500, "i" * 500)) <= 64 + 1 + 128
 
 
@@ -55,3 +55,6 @@ def test_fil_inchange_pour_les_valeurs_reelles():
     assert journal_conversations.fil("telegram", "telegram-perso") == "telegram:telegram-perso"
     assert journal_conversations.fil("", "") == "web:inconnu"
     assert journal_conversations.fil("web", "marina@exemple.fr") == "web:marina@exemple.fr"
+    # Revue S240, M8 : les numéros WhatsApp/SMS gardent leur « + » (sinon l'historique se
+    # scinde entre l'ancien fil « +33… » et un nouveau « _33… »).
+    assert journal_conversations.fil("whatsapp", "+33612345678") == "whatsapp:+33612345678"

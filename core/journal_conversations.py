@@ -37,7 +37,9 @@ def _max() -> int:
         return 5000
 
 
-_HORS_FIL = re.compile(r"[^A-Za-z0-9_.@-]")
+# « + » gardé (revue S240, M8) : numéros WhatsApp/SMS « +33… » — sans lui l'historique se
+# scindait. Sans danger : le fil n'est plus jamais injecté dans un gestionnaire inline.
+_HORS_FIL = re.compile(r"[^A-Za-z0-9_.@+-]")
 
 
 def _assainir(valeur, defaut: str, longueur: int) -> str:
@@ -48,7 +50,7 @@ def fil(surface: str, interlocuteur: str) -> str:
     """`surface:interlocuteur`, assaini (revue S240, C-A).
 
     Les deux parties viennent du corps de /assistant/chat (appelé sans session) et le fil est
-    réaffiché par le dashboard : tout caractère hors `[A-Za-z0-9_.@-]` devient `_`, longueurs
+    réaffiché par le dashboard : tout caractère hors `[A-Za-z0-9_.@+-]` devient `_`, longueurs
     bornées. Les valeurs réelles (`web:conv-…`, `telegram:telegram-perso`) sont inchangées."""
     return f"{_assainir(surface, 'web', 64)}:{_assainir(interlocuteur, 'inconnu', 128)}"
 

@@ -1610,7 +1610,7 @@ function chipEvent(e){
 function rendreMois(debut,evts){
   const today=new Date();
   let h='<div class="cal-grid">';
-  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${j}</div>`;
+  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${escHtml(j)}</div>`;
   for(let i=0;i<42;i++){
     const d=new Date(debut); d.setDate(d.getDate()+i);
     const autre=d.getMonth()!==calRef.getMonth();
@@ -3501,7 +3501,7 @@ function escHtml(s) {
 function escAttr(s) { return escHtml(s); }
 function escJs(s) { return escHtml(JSON.stringify(s == null ? '' : String(s))); }
 function escCouleur(c, defaut) { return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? String(c) : (defaut || '#5865F2'); }
-function urlSure(u) { const x = String(u || ''); return /^(https?:\/\/|\/(?!\/))/i.test(x) ? x : '#'; }
+function urlSure(u) { const x = String(u || ''); return /^(https?:\/\/|\/(?![\/\\]))/i.test(x) ? x : '#'; }  // « /\hôte » = « //hôte » pour un navigateur (S240, M2)
 function escUrl(u) { return escAttr(urlSure(u)); }
 
 function afficherClassement(data) {
