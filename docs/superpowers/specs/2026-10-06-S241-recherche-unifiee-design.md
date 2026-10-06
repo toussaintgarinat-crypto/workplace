@@ -131,7 +131,7 @@ Jeu fixe committé (documents et requêtes) : requêtes exactes, sémantiques (r
 
 ### 3.3 Déploiement HP
 
-Images (Cœur, Forge core, adaptateur Forge, ingestion) construites sur le Mac, `docker save | ssh docker load`. Étiquettes `avant-s241`, sauvegarde `~/s241-avant/` (dump base Forge, instantané Qdrant, copie de `ingestion.db`). Migrations de démarrage idempotentes ; la réconciliation indexe l'existant. Aucun nouveau service : supervision S235, sauvegardes S236, Ansible S237 inchangés, sauf la sonde métier qui interroge `/recherche`.
+Images (Cœur, Forge core, adaptateur Forge, ingestion) construites sur le Mac, `docker save | ssh docker load`. Étiquettes `avant-s241`, sauvegarde `~/s241-avant/` (dump base Forge, instantané Qdrant, copie de `ingestion.db`). Migrations de démarrage idempotentes ; la réconciliation indexe l'existant. Aucun nouveau service : supervision S235, sauvegardes S236, Ansible S237 inchangés (le volume `ingestion_data` et la base Forge sont déjà sauvegardés ; l'index FTS5 vit dans `ingestion.db` et se reconstruit seul). Pas de nouvelle sonde métier Ansible en S241 : la preuve LIVE couvre `/recherche`.
 
 ### 3.4 Preuve LIVE
 
