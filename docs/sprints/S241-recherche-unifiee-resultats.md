@@ -116,3 +116,18 @@ réconciliation a revectorisé 1 document dont l'indexation en tâche de fond av
   l'embedding, réindexation qui perd `pole_id`, doublons possibles si une ingestion et la
   réconciliation indexent la même source en même temps, coût du filet trigramme sur de très
   longs documents.
+
+## Complément : mots vides corrigés dans la Mémoire (2026-10-06)
+Même défaut que la Forge dans la recherche S238 de la brique Mémoire
+(`briques/memoire/memory/backend/app/services/recherche_lexicale.py`) : partie `simple` ajoutée
+pour les mots vides, repli trigramme sur la requête brute. Corrigé de la même façon (commit
+`56e50b1`), 2 tests prouvés rouges puis verts ; backend Mémoire 114 passed.
+Mesure S238 rejouée avec l'embedder réel : rappel@5 0,92 (actif comme coupé ; S238 annonçait
+0,96). L'écart est une requête de paraphrase, « dessert aux fruits », qui n'était trouvée que par
+le mot vide « aux » du titre attendu (« Recette de la tarte aux pommes ») : c'était le défaut.
+Déployé sur le HP (étiquette `memoire-memoire-backend:avant-s241b`), souvenirs intacts.
+
+Reste observé en LIVE (non corrigé, décision à prendre) : la branche par le sens renvoie toujours
+des voisins, même pour une requête vide de sens (pas de similarité minimale), et la fusion du
+Cœur donne le même poids au premier résultat de chaque espace ou brique, quelle que soit sa
+pertinence (« commande hetre » : un souvenir perso sans rapport sort devant « Commande hêtre »).
