@@ -26,8 +26,8 @@ def test_lancer_refuse_sans_auth(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     client = TestClient(_app(), follow_redirects=False)
     r = client.post("/sauvegarde-usb/lancer")
-    assert r.status_code == 303
-    assert r.headers["location"] == "/auth/login"
+    # Revue S240, I2 : branche session = exiger_admin_cerveau → 401 (appel en fetch).
+    assert r.status_code == 401
 
 
 def test_lancer_accepte_cle_service(monkeypatch):
@@ -43,7 +43,7 @@ def test_lancer_refuse_mauvaise_cle_service(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     client = TestClient(_app(), follow_redirects=False)
     r = client.post("/sauvegarde-usb/lancer", headers={"X-API-Key": "mauvaise-cle"})
-    assert r.status_code == 303
+    assert r.status_code == 401
 
 
 def test_lancer_echec_devient_400(monkeypatch):
@@ -105,3 +105,32 @@ def test_aucune_capacite_ne_renvoie_le_env():
     for f in glob.glob(os.path.join(os.path.dirname(__file__), "..", "briques", "*", "manifest.json")):
         for c in json.load(open(f)).get("capacites") or []:
             assert not normaliser(c.get("chemin")).startswith(prefixes_a_secrets), (f, c.get("nom"))
+
+
+
+def test_lancer_et_restaurer_session_hors_admins_refusee(monkeypatch):
+    """Revue S240, I2 : une session quelconque ne suffit plus — admin du cerveau requis."""
+    import time
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    monkeypatch.setattr(sauvegarde_usb, "sauvegarder", AsyncMock(return_value={"sources": []}))
+    monkeypatch.setattr(sauvegarde_usb, "restaurer", AsyncMock(return_value={"sources": []}))
+    auth._cache_access_token["marina"] = ("at", time.time() + 60)
+    auth._cache_access_token["toussaint"] = ("at", time.time() + 60)
+    try:
+        client = TestClient(_app(), follow_redirects=False)
+        marina = {auth.COOKIE_SESSION: auth.chiffrer_cookie({"sub": "marina", "refresh_token": "r"})}
+        admin = {auth.COOKIE_SESSION: auth.chiffrer_cookie({"sub": "toussaint", "refresh_token": "r"})}
+        for chemin in ("/sauvegarde-usb/lancer", "/sauvegarde-usb/restaurer"):
+            assert client.post(chemin, cookies=marina).status_code == 403
+            assert client.post(chemin, cookies=admin, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+            # Anti-CSRF : même avec la session admin, une autre origine est refusée.
+            assert client.post(chemin, cookies=admin, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    finally:
+        auth._cache_access_token.clear()
+
+
+def test_cle_noyau_comparee_a_temps_constant():
+    import inspect
+    from routers import sauvegarde_usb as r
+    assert "compare_digest" in inspect.getsource(r._exiger_session_ou_cle_noyau)

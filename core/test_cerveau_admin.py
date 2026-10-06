@@ -86,10 +86,10 @@ LISTE_BLANCHE = {
     ("POST", "/briefing/executer"): "tâche d'horloge (manifest noyau), appel interne sans session",
     ("POST", "/pouls/battre"): "tâche d'horloge (manifest noyau), appel interne sans session",
     ("POST", "/curateur/cycle"): "tâche d'horloge `curation-hebdo` ; PROPOSE seulement, n'applique rien",
-    ("POST", "/sauvegarde-usb/lancer"): "session OU NOYAU_KEY (secret de service) ; via le chat, outil "
-                                        "réservé à l'admin du cerveau (droits.py)",
-    ("POST", "/sauvegarde-usb/restaurer"): "session OU NOYAU_KEY (secret de service) ; via le chat, outil "
-                                           "réservé à l'admin du cerveau (droits.py)",
+    ("POST", "/sauvegarde-usb/lancer"): "NOYAU_KEY (temps constant) OU session admin du cerveau "
+        "(exiger_admin_cerveau, anti-CSRF) ; via le chat, outil réservé (droits.py)",
+    ("POST", "/sauvegarde-usb/restaurer"): "NOYAU_KEY (temps constant) OU session admin du cerveau "
+        "(exiger_admin_cerveau, anti-CSRF) ; via le chat, outil réservé (droits.py)",
     ("POST", "/admin/inviter-proche"): "session obligatoire (exiger_session), S181",
     ("POST", "/usine/livrer"): _USINE,
     ("DELETE", "/usine/livraisons/{livraison_id}"): _USINE,
