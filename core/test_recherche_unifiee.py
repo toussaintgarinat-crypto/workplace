@@ -147,3 +147,34 @@ def test_identite_transmise(monkeypatch):
     assert forge.headers["X-Forge-User-Token"] == "Bearer JWT-M"
     assert {r.headers["X-User-Id"] for r in memoire} == {"marina"}
     assert {r.url.params["espace"] for r in memoire} == {"perso", "solution", "veille"}
+
+
+def _liste(nom, *elements):
+    """elements : (id, correspondance) dans l'ordre du classement de la sous-source."""
+    return ru._Liste(nom, "hybride", [
+        {"source": nom, "id": i, "titre": i, "extrait": "", "partage": False,
+         "exact": c == "exacte", "correspondance": c} for i, c in elements])
+
+
+def test_fusion_par_niveaux_mots_avant_sens_seul():
+    """S242 : le premier d'un espace trouvé seulement par le sens ne passe plus devant un
+    résultat de mots d'un autre espace (constat LIVE « commande hetre »)."""
+    perso = _liste("memoire-perso", ("chef", "vectorielle"))
+    solution = _liste("memoire-solution", ("hetre", "lexicale"), ("autre", "vectorielle"))
+    assert [r["id"] for r in ru.fusionner([perso, solution], 10)] == ["hetre", "chef", "autre"]
+
+
+def test_fusion_par_niveaux_exacte_puis_mots_puis_sens():
+    a = _liste("forge-document", ("sens", "vectorielle"), ("deux", "les_deux"))
+    b = _liste("ingestion", ("mot", "lexicale"), ("ref", "exacte"))
+    # Même niveau « mots » pour lexicale et les_deux : départagés par leur rang (RRF).
+    assert [r["id"] for r in ru.fusionner([a, b], 10)] == ["ref", "mot", "deux", "sens"]
+
+
+def test_fusion_correspondance_absente_comptee_comme_mots():
+    """Une brique pas encore à jour (sans `correspondance`) n'est pas reléguée."""
+    vieux = ru._Liste("forge", "hybride", [ru._resultat("forge-document", {"id": "v", "titre": "v"}, True, False)])
+    sens = _liste("memoire-perso", ("s", "vectorielle"))
+    res = ru.fusionner([sens, vieux], 10)
+    assert [r["id"] for r in res] == ["v", "s"]
+    assert res[0]["correspondance"] == "lexicale"

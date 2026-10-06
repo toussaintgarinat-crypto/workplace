@@ -59,8 +59,12 @@ class _Liste:
 
 
 def _resultat(source: str, x: dict, partage: bool, exact: bool) -> dict:
+    # Une brique qui ne dit pas la nature de la correspondance est comptée « par les mots » :
+    # la reléguer derrière le sens seul serait pire que ne pas la distinguer.
+    correspondance = "exacte" if exact else (x.get("correspondance") or "lexicale")
     return {"source": source, "id": str(x.get("id") or ""), "titre": x.get("titre") or "",
-            "extrait": x.get("extrait") or "", "partage": partage, "exact": exact}
+            "extrait": x.get("extrait") or "", "partage": partage, "exact": exact,
+            "correspondance": correspondance}
 
 
 async def _forge(client: httpx.AsyncClient, registre, q: str, n: int) -> _Liste:
@@ -102,15 +106,25 @@ def _replier_memoire(indisponibles: list[str]) -> list[str]:
     return indisponibles
 
 
+def _niveau(x: dict) -> int:
+    """Niveau de la correspondance : référence exacte (2), mots (1), sens seul (0)."""
+    if x["exact"]:
+        return 2
+    return 0 if x.get("correspondance") == "vectorielle" else 1
+
+
 def fusionner(listes: list[_Liste], limite: int) -> list[dict]:
-    """RRF sur les classements de chaque sous-source ; +1 pour une référence exacte (un score
-    RRF vaut au plus 1/(K+1) par liste, donc un exact passe toujours devant)."""
+    """Par niveau d'abord (référence exacte, puis mots, puis sens seul), RRF ensuite.
+
+    S242 : chaque espace ou brique a son propre premier ; à RRF seul, le premier d'un espace
+    trouvé seulement par le sens pesait autant que le premier d'un autre trouvé par ses mots.
+    Un score RRF vaut au plus 1/(K+1) < 1 par liste : le niveau domine toujours."""
     scores: dict[tuple[str, str], float] = {}
     fiches: dict[tuple[str, str], dict] = {}
     for liste in listes:
         for rang, x in enumerate(liste.resultats, start=1):
             cle = (x["source"], x["id"])
-            scores[cle] = scores.get(cle, 0.0) + 1.0 / (K_RRF + rang) + (1.0 if x["exact"] else 0.0)
+            scores[cle] = scores.get(cle, 0.0) + 1.0 / (K_RRF + rang) + (_niveau(x) if cle not in fiches else 0)
             fiches.setdefault(cle, x)
     ordre = sorted(scores, key=lambda c: (-scores[c], c[0], c[1]))[:limite]
     return [fiches[c] for c in ordre]
