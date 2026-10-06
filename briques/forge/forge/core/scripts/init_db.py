@@ -22,6 +22,7 @@ dans ce projet).
 Périmètre : 77 / 87 tables. Les 10 manquantes (mcp_servers, skills, hitl_requests…)
 sont des features hors-scope agents+RAG (frontière dure S17) ; aucune n'est cible
 d'une FK des 77, donc leur absence ne casse pas la création.
+S241 : extensions unaccent/pg_trgm, colonnes générées recherche_tsv et index de recherche (app/recherche_schema.py).
 
 Usage (one-shot, via le service `forge-migrate` du compose) :
     python -m scripts.init_db
@@ -36,6 +37,7 @@ from sqlalchemy import text
 
 from app.db import engine
 from app.models import Base
+from app.recherche_schema import MIGRATIONS_S241
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("forge.init_db")
@@ -51,12 +53,20 @@ MIGRATIONS_S227: tuple[str, ...] = (
 )
 
 
+async def appliquer_schema(conn) -> None:
+    """Schéma complet et idempotent : tables absentes, colonnes S227, recherche S241.
+
+    Appelée par `main()` (service `forge-migrate`) ET par les tests d'intégration : le
+    schéma testé est celui de la production."""
+    await conn.run_sync(Base.metadata.create_all)  # checkfirst=True par défaut
+    for statement in (*MIGRATIONS_S227, *MIGRATIONS_S241):
+        await conn.execute(text(statement))
+
+
 async def main() -> None:
     log.info("→ init_db : création du schéma Forge (%d tables) si absent…", len(Base.metadata.tables))
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)  # checkfirst=True par défaut
-        for statement in MIGRATIONS_S227:
-            await conn.execute(text(statement))
+        await appliquer_schema(conn)
     await engine.dispose()
     log.info("✓ init_db : schéma présent (%d tables mappées).", len(Base.metadata.tables))
 
