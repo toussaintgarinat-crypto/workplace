@@ -98,3 +98,19 @@ def test_mots_vides_de_la_requete_ne_remontent_pas_de_hors_sujet(client):
 def test_requete_composee_de_mots_vides_ne_renvoie_rien(client):
     _importer(client, "Recrutement d'un conducteur", "Le poste de la société, des équipes.")
     assert _ids(client, "le de des") == []
+
+
+def test_reconstruction_saute_un_document_a_metadonnees_corrompues(tmp_path, monkeypatch):
+    """G1 : un document illisible ne doit pas empêcher la brique de démarrer."""
+    import stockage
+    monkeypatch.setattr(stockage, "DB_CHEMIN", tmp_path / "ingestion.db")
+    stockage.initialiser()
+    con = sqlite3.connect(tmp_path / "ingestion.db")
+    con.execute("INSERT INTO documents (id, nom, source, texte_extrait, metadonnees, date_ingestion) "
+                "VALUES ('mauvais', 'Cassé', 'test', 'texte', '{oops', '2026-01-01')")
+    con.execute("INSERT INTO documents (id, nom, source, texte_extrait, metadonnees, date_ingestion) "
+                "VALUES ('bon', 'Devis toiture', 'test', 'réfection complète', '{}', '2026-01-01')")
+    con.commit()
+    con.close()
+    stockage.initialiser()  # ne doit pas lever
+    assert [x["id"] for x in stockage.chercher("toiture", 10)] == ["bon"]

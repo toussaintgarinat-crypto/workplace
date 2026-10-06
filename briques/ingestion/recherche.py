@@ -11,6 +11,7 @@ puis plein texte (bm25), puis — seulement si le plein texte ne trouve rien —
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import unicodedata
@@ -26,6 +27,8 @@ LIMITE_MAX = 50
 _GUILLEMETS = re.compile('"([^"]+)"|«\\s*([^»]+?)\\s*»|\u201c([^\u201d]+)\u201d')
 _CARACTERES_REFERENCE = set("-_./@#")
 _BORDS = ".,;:!?()[]{}'\"«»\u201c\u201d…"
+
+logger = logging.getLogger(__name__)
 
 
 def normaliser(texte: str) -> str:
@@ -65,12 +68,26 @@ def indexer(con: sqlite3.Connection, doc_id: str) -> None:
 
 
 def reconstruire_index(con: sqlite3.Connection) -> int:
+    """Reconstruit tout l'index ; renvoie le nombre de documents indexés.
+
+    Un document dont l'indexation lève (ex. `metadonnees` JSON corrompu) est journalisé et SAUTÉ :
+    il resterait sinon un seul document illisible pour empêcher la brique de démarrer. Il n'est
+    simplement pas cherchable (et l'index reste « désynchronisé » : la reconstruction sera
+    retentée au prochain démarrage, avec le même avertissement). À l'inverse `indexer`, appelé
+    par les écritures, laisse remonter l'erreur : une écriture ne doit jamais réussir en
+    laissant l'index silencieusement faux."""
     con.execute("DELETE FROM documents_recherche")
     con.execute("DELETE FROM documents_trigrammes")
     ids = [r[0] for r in con.execute("SELECT id FROM documents").fetchall()]
+    indexes = 0
     for doc_id in ids:
-        indexer(con, doc_id)
-    return len(ids)
+        try:
+            indexer(con, doc_id)
+            indexes += 1
+        except Exception as e:  # noqa: BLE001
+            desindexer(con, doc_id)
+            logger.warning("[recherche] document %s non indexé (ignoré) : %s", doc_id, str(e)[:160])
+    return indexes
 
 
 def index_desynchronise(con: sqlite3.Connection) -> bool:
