@@ -1180,7 +1180,7 @@ async function lancerRecherche() {
   const avis = [];
   const pannes = (d.sources_indisponibles || []).map(s => RECHERCHE_LIBELLES_PANNE[s] || s);
   if (pannes.length) avis.push('Injoignable : ' + pannes.join(', ') + '.');
-  if (Object.values(d.modes || {}).includes('lexical')) avis.push('Recherche par le sens indisponible pour une partie des sources : seuls les mots ont été cherchés.');
+  if ((d.recherche_par_le_sens_indisponible || []).length) avis.push('Recherche par le sens indisponible pour une partie des sources : seuls les mots ont été cherchés.');
   if (avis.length) { bandeau.textContent = avis.join(' '); bandeau.style.display = 'block'; }
   liste.replaceChildren();
   if (!(d.resultats || []).length) { attente.textContent = 'Aucun résultat.'; liste.append(attente); return; }

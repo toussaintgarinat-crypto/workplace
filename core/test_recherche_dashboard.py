@@ -49,3 +49,9 @@ def test_detail_non_chaine_traite():
     corps = _fonction("lancerRecherche")
     assert "typeof d.detail" in corps
     assert "Requête invalide." in corps
+
+
+def test_avertissement_sens_base_sur_le_champ_du_coeur_pas_sur_les_modes():
+    corps = _fonction("lancerRecherche")
+    assert "recherche_par_le_sens_indisponible" in corps
+    assert "'lexical'" not in corps

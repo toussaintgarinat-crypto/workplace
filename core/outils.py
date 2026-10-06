@@ -88,7 +88,7 @@ OUTILS: list[dict] = [
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "chercher_documents",
-        "description": "Cherche dans TOUS les documents : Forge (documents et base de connaissances), documents ingérés et mémoire. Avec q : références exactes (numéros, codes, expressions entre guillemets) en tête, puis mots et sens ; les fautes de frappe sont tolérées ; la réponse signale les sources indisponibles et le mode « lexical » (recherche par le sens momentanément coupée). Sans q : liste les documents ingérés, filtrables par catégorie, projet ou entreprise. Lecture seule.",
+        "description": "Cherche dans TOUS les documents : Forge (documents et base de connaissances), documents ingérés et mémoire. Avec q : références exactes (numéros, codes, expressions entre guillemets) en tête, puis mots et sens ; les fautes de frappe sont tolérées ; la réponse signale les sources indisponibles et, dans `recherche_par_le_sens_indisponible`, les sources dont la recherche par le sens est momentanément coupée (seuls les mots ont été cherchés) ; Ingestion, qui ne fait que du plein texte, n'en fait pas partie. Sans q : liste les documents ingérés, filtrables par catégorie, projet ou entreprise. Lecture seule.",
         "parameters": _p({
             "q": {"type": "string", "description": "Termes recherchés (optionnel ; sans q, listage filtré)."},
             "limite": {"type": "integer", "description": "Nombre maximum de résultats avec q (défaut 10, maximum 50)."},

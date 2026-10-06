@@ -22,7 +22,7 @@ def _importer(client, nom, texte):
 def _ids(client, q):
     r = client.get("/recherche", params={"q": q})
     assert r.status_code == 200, r.text
-    assert r.json()["mode"] == "lexical"
+    assert r.json()["mode"] == "plein_texte"
     return [x["id"] for x in r.json()["resultats"]]
 
 

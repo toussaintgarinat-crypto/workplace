@@ -209,7 +209,7 @@ def rechercher(q: str = "", limite: int = 10, _cle: str = Depends(cle_api)):
     q = (q or "").strip()
     if not q:
         raise HTTPException(422, "Paramètre requis : 'q' (les termes recherchés).")
-    return {"mode": "lexical", "resultats": stockage.chercher(q, limite)}
+    return {"mode": "plein_texte", "resultats": stockage.chercher(q, limite)}
 
 
 class Classement(BaseModel):

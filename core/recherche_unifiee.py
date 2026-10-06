@@ -9,6 +9,12 @@ indispensable : une source en panne ou trop lente est signalée dans
 `partage` : vrai pour Ingestion (une seule clé de service, aucune isolation par personne) et
 pour la Forge quand elle a cherché sous son identité de service (pas de jeton utilisateur).
 
+Modes : `hybride` (sens + mots), `lexical` (le sens est coupé, repli sur les mots) et
+`plein_texte` (Ingestion, qui n'a QUE les mots : ce n'est pas une panne). La réponse porte
+`recherche_par_le_sens_indisponible` : noms des sources qui ont normalement la recherche par le
+sens (Forge, espaces Mémoire) et qui ont répondu en `lexical` — l'onglet et l'outil s'appuient
+dessus, jamais sur la valeur brute des `modes`.
+
 Vocabulaire des sources indisponibles (réponse ET exception) : un espace Mémoire en panne seul
 garde son nom `memoire-<espace>` ; si les trois espaces sont en panne, ils deviennent `memoire`.
 """
@@ -30,6 +36,13 @@ DELAI_SOURCE = 8.0
 LIMITE_MAX = 50
 SOURCES = ("forge", "ingestion", "memoire")
 ESPACES_MEMOIRE = ("perso", "solution", "veille")
+
+
+def degradees(modes: dict[str, str]) -> list[str]:
+    """Sources dont la recherche par le sens est coupée : celles qui l'ont normalement
+    (Forge, Mémoire) et répondent en `lexical`. Ingestion (`plein_texte`) n'en fait jamais partie."""
+    return [nom for nom, mode in modes.items()
+            if mode == "lexical" and (nom == "forge" or nom.startswith("memoire-"))]
 
 
 class ToutesSourcesIndisponibles(Exception):
@@ -66,7 +79,7 @@ async def _ingestion(client: httpx.AsyncClient, registre, q: str, n: int) -> _Li
                          headers=_entetes_brique("ingestion"))
     r.raise_for_status()
     d = r.json()
-    return _Liste("ingestion", d.get("mode", "lexical"), [
+    return _Liste("ingestion", d.get("mode", "plein_texte"), [
         _resultat("ingestion", x, True, bool(x.get("exact"))) for x in d.get("resultats", [])])
 
 
@@ -105,7 +118,8 @@ async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | Non
                      transport=None) -> dict:
     q = (q or "").strip()
     if not q:
-        return {"resultats": [], "modes": {}, "sources_indisponibles": []}
+        return {"resultats": [], "modes": {}, "sources_indisponibles": [],
+                "recherche_par_le_sens_indisponible": []}
     limite = min(max(int(limite), 1), LIMITE_MAX)
     inconnues = sorted(set(sources or ()) - set(SOURCES))
     if inconnues:
@@ -132,5 +146,7 @@ async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | Non
     indisponibles = _replier_memoire(indisponibles)
     if appels and not listes:
         raise ToutesSourcesIndisponibles(indisponibles)
-    return {"resultats": fusionner(listes, limite), "modes": {l.nom: l.mode for l in listes},
-            "sources_indisponibles": indisponibles}
+    modes = {l.nom: l.mode for l in listes}
+    return {"resultats": fusionner(listes, limite), "modes": modes,
+            "sources_indisponibles": indisponibles,
+            "recherche_par_le_sens_indisponible": degradees(modes)}

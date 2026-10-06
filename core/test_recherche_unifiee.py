@@ -20,7 +20,7 @@ def _bases(monkeypatch):
     monkeypatch.setattr(ru.orchestrateur, "_brique_base", lambda registre, nom: f"http://{nom}")
 
 
-def _reponses(pannes=(), lents=(), forge_identite="service", espaces_en_panne=()):
+def _reponses(pannes=(), lents=(), forge_identite="service", espaces_en_panne=(), forge_mode="hybride"):
     vus = []
 
     async def gerer(requete: httpx.Request):
@@ -31,11 +31,11 @@ def _reponses(pannes=(), lents=(), forge_identite="service", espaces_en_panne=()
         if hote in pannes:
             raise httpx.ConnectError("hors ligne", request=requete)
         if hote == "forge":
-            return httpx.Response(200, json={"mode": "hybride", "identite": forge_identite, "resultats": [
+            return httpx.Response(200, json={"mode": forge_mode, "identite": forge_identite, "resultats": [
                 {"id": "f1", "source": "document", "titre": "Devis toiture", "extrait": "…", "exact": False},
                 {"id": "k1", "source": "kb", "titre": "Procédure", "extrait": "…", "exact": False}]})
         if hote == "ingestion":
-            return httpx.Response(200, json={"mode": "lexical", "resultats": [
+            return httpx.Response(200, json={"mode": "plein_texte", "resultats": [
                 {"id": "i1", "source": "ingestion", "titre": "FAC-1", "extrait": "…", "exact": True}]})
         espace = requete.url.params["espace"]
         if espace in espaces_en_panne:
@@ -57,7 +57,24 @@ def test_fusion_exacts_devant_et_toutes_les_sources():
     assert {r["source"] for r in rep["resultats"]} == {
         "forge-document", "forge-kb", "ingestion", "memoire-perso", "memoire-solution", "memoire-veille"}
     assert rep["sources_indisponibles"] == []
-    assert rep["modes"]["ingestion"] == "lexical" and rep["modes"]["forge"] == "hybride"
+    assert rep["modes"]["ingestion"] == "plein_texte" and rep["modes"]["forge"] == "hybride"
+
+
+def test_ingestion_plein_texte_et_forge_hybride_aucune_source_degradee():
+    transport, _ = _reponses()
+    rep = _lancer(transport)
+    assert rep["recherche_par_le_sens_indisponible"] == []
+
+
+def test_forge_lexical_signalee_ingestion_jamais():
+    transport, _ = _reponses(forge_mode="lexical")
+    rep = _lancer(transport)
+    assert rep["recherche_par_le_sens_indisponible"] == ["forge"]
+
+
+def test_memoire_lexical_signalee_par_espace():
+    assert ru.degradees({"forge": "hybride", "ingestion": "plein_texte",
+                         "memoire-perso": "lexical", "memoire-veille": "hybride"}) == ["memoire-perso"]
 
 
 def test_partage_signale():
@@ -111,7 +128,8 @@ def test_filtre_sources_et_requete_vide():
     assert {r.url.host for r in vus} == {"memoire"}
     assert all(r["source"].startswith("memoire") for r in rep["resultats"])
     assert asyncio.run(ru.rechercher("  ", registre=None, transport=transport)) == {
-        "resultats": [], "modes": {}, "sources_indisponibles": []}
+        "resultats": [], "modes": {}, "sources_indisponibles": [],
+        "recherche_par_le_sens_indisponible": []}
 
 
 def test_identite_transmise(monkeypatch):
