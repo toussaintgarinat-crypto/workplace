@@ -38,7 +38,9 @@ def _fichiers_de_test():
         if not base.is_dir():
             continue
         for chemin in base.rglob("test_*.py"):
-            if EXCLUS & set(chemin.parts):
+            # `.venv*` : un venv local nommé autrement (ex. `.venv_s227` de la Forge) embarque
+            # les `test_*.py` de ses paquets tiers — faux fantômes, pas du code du parc.
+            if EXCLUS & set(chemin.parts) or any(p.startswith(".venv") for p in chemin.parts):
                 continue
             trouves.append(chemin)
     return sorted(trouves)
