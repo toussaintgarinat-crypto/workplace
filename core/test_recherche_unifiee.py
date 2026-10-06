@@ -178,3 +178,32 @@ def test_fusion_correspondance_absente_comptee_comme_mots():
     res = ru.fusionner([sens, vieux], 10)
     assert [r["id"] for r in res] == ["v", "s"]
     assert res[0]["correspondance"] == "lexicale"
+
+
+def _element(source, i, titre, extrait, correspondance):
+    return ru._Liste(source, "hybride", [{"source": source, "id": i, "titre": titre, "extrait": extrait,
+                                          "partage": False, "exact": False, "correspondance": correspondance}])
+
+
+def test_couverture_departage_le_meme_niveau():
+    """S242, constat LIVE « commande hetre » : à niveau égal, le résultat qui contient tous
+    les mots de la requête (fautes et accents tolérés) passe devant celui qui n'en a qu'un ou
+    aucun visible, quelle que soit la brique qui l'a classé premier."""
+    listes = [
+        _element("forge-document", "mollick", "Interview Ethan Mollick", "L'IA est un catalyseur", "les_deux"),
+        _element("ingestion", "finances", "02_finances_2025.txt", "Carnet de commandes au 31/12", "lexicale"),
+        _element("memoire-solution", "hetre", "Commande hêtre", "Penser à commander des planches", "les_deux"),
+    ]
+    assert [r["id"] for r in ru.fusionner(listes, 10, "commande hetre")] == ["hetre", "finances", "mollick"]
+
+
+def test_couverture_ne_passe_pas_devant_le_niveau():
+    listes = [_element("memoire-perso", "sens", "Commande hêtre", "", "vectorielle"),
+              _element("ingestion", "mot", "Divers", "une commande", "lexicale")]
+    assert [r["id"] for r in ru.fusionner(listes, 10, "commande hetre")] == ["mot", "sens"]
+
+
+def test_couverture_ignore_les_mots_vides_et_tolere_les_fautes():
+    assert ru.couverture("la politque des conges", "politique-conges.txt", "") == 1.0
+    assert ru.couverture("commande hetre", "Interview Ethan Mollick", "catalyseur") == 0.0
+    assert ru.couverture("le de des", "Le titre", "") == 0.0
