@@ -421,6 +421,7 @@
       <button class="tab" data-vue="mail" data-cible-brique="mail" onclick="switchVue('mail')" title="Ta boîte mail : lire, trier, préparer des réponses avec l'aide de l'assistant.">Mail</button>
       <button class="tab" data-vue="geo" data-cible-brique="geo" onclick="switchVue('geo')" title="La carte de veille : entreprises récentes et objets géolocalisés sur tes zones surveillées, avec pastilles de fraîcheur.">Carte</button>
       <button class="tab" data-vue="profil" onclick="switchVue('profil')" title="Ce que l'assistant sait de toi (prénom, préférences…) pour te répondre de façon personnalisée.">Profil</button>
+      <button class="tab" data-vue="recherche" onclick="switchVue('recherche')" title="Chercher dans tous tes documents (Forge, documents déposés) et dans ta mémoire, même avec une faute de frappe.">🔎 Recherche</button>
       <button class="tab" data-vue="cercle" onclick="switchVue('cercle')" title="Inviter un proche au mesh privé">🔑 Cercle</button>
     </div>
     <div class="badge">v0.2.0 &nbsp;·&nbsp; <b id="nb-briques">—</b> briques</div>
@@ -432,6 +433,20 @@
      la brique en cible ; ça donne du contexte, jamais un pouvoir (gates inchangés). -->
 <div class="jeton-assistant" id="jeton-assistant" title="Glisse-moi sur une brique (onglet ou carte du Registre) pour cibler l'assistant dessus.">🎯</div>
 <main>
+  <!-- VUE RECHERCHE (S241) — recherche unifiée Forge + documents déposés + Mémoire -->
+  <div class="view" id="vue-recherche">
+    <div class="topbar">
+      <h2>Recherche</h2>
+    </div>
+    <form onsubmit="event.preventDefault(); lancerRecherche();" style="display:flex;gap:8px;margin:12px 0">
+      <input id="recherche-q" type="search" placeholder="Un numéro, un nom, une idée…" autocomplete="off"
+             style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--bord, #444);background:transparent;color:inherit">
+      <button class="btn" type="submit">Chercher</button>
+    </form>
+    <div id="recherche-bandeau" style="display:none;margin:8px 0;padding:8px 12px;border-radius:8px;background:rgba(214,158,46,.15)"></div>
+    <div id="recherche-resultats"></div>
+  </div>
+
   <!-- VUE BRIQUES -->
   <div class="view active" id="vue-briques">
     <div class="topbar">
@@ -1119,6 +1134,62 @@ function switchVue(v) {
   if (v === 'gateway') chargerGateway();
   if (v === 'profil') chargerProfil();
   if (v === 'forge') chargerForge();
+  if (v === 'recherche') setTimeout(() => document.getElementById('recherche-q').focus(), 50);
+}
+
+// S241 — recherche unifiée. Rendu par création d'éléments et textContent UNIQUEMENT : les
+// titres et extraits viennent de documents déposés par n'importe qui (filet XSS S240).
+const RECHERCHE_LIBELLES = {
+  'forge-document': 'Forge · document', 'forge-kb': 'Forge · connaissance', 'ingestion': 'Document déposé',
+  'memoire-perso': 'Mémoire · perso', 'memoire-solution': 'Mémoire · travail', 'memoire-veille': 'Mémoire · veille',
+};
+// Sources en panne : un nom de brique entière ou un seul espace de la Mémoire.
+const RECHERCHE_LIBELLES_PANNE = Object.assign({}, RECHERCHE_LIBELLES, {
+  'forge': 'Forge', 'memoire': 'Mémoire',
+});
+async function lancerRecherche() {
+  const q = document.getElementById('recherche-q').value.trim();
+  const bandeau = document.getElementById('recherche-bandeau');
+  const liste = document.getElementById('recherche-resultats');
+  liste.replaceChildren();
+  bandeau.style.display = 'none';
+  if (!q) return;
+  const attente = document.createElement('p');
+  attente.textContent = 'Recherche…';
+  liste.append(attente);
+  let d;
+  try {
+    const r = await fetch('/recherche?' + new URLSearchParams({q, limite: '20'}), {credentials: 'same-origin'});
+    d = await r.json().catch(() => ({}));
+    if (!r.ok) { attente.textContent = d.detail || ('Erreur ' + r.status); return; }
+  } catch (e) { attente.textContent = 'Erreur réseau : ' + e; return; }
+  const avis = [];
+  const pannes = (d.sources_indisponibles || []).map(s => RECHERCHE_LIBELLES_PANNE[s] || s);
+  if (pannes.length) avis.push('Injoignable : ' + pannes.join(', ') + '.');
+  if (Object.values(d.modes || {}).includes('lexical')) avis.push('Recherche par le sens indisponible pour une partie des sources : seuls les mots ont été cherchés.');
+  if (avis.length) { bandeau.textContent = avis.join(' '); bandeau.style.display = 'block'; }
+  liste.replaceChildren();
+  if (!(d.resultats || []).length) { attente.textContent = 'Aucun résultat.'; liste.append(attente); return; }
+  for (const x of d.resultats) {
+    const carte = document.createElement('div');
+    carte.className = 'card';
+    carte.style.margin = '8px 0';
+    const tete = document.createElement('div');
+    tete.style.cssText = 'display:flex;gap:8px;align-items:center;font-size:.85em;opacity:.8';
+    const badge = document.createElement('span');
+    badge.textContent = RECHERCHE_LIBELLES[x.source] || x.source;
+    tete.append(badge);
+    if (x.exact) { const e = document.createElement('span'); e.textContent = '· référence exacte'; tete.append(e); }
+    if (x.partage) { const p = document.createElement('span'); p.textContent = '· partagé'; p.title = 'Visible par tous les comptes du cercle'; tete.append(p); }
+    const titre = document.createElement('div');
+    titre.style.cssText = 'font-weight:600;margin:4px 0';
+    titre.textContent = x.titre || '(sans titre)';
+    const extrait = document.createElement('div');
+    extrait.style.opacity = '.85';
+    extrait.textContent = x.extrait || '';
+    carte.append(tete, titre, extrait);
+    liste.append(carte);
+  }
 }
 
 // ── Cercle privé (S181) : inviter un proche au mesh via NetBird ─────────────────────
