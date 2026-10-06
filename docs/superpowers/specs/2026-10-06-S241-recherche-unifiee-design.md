@@ -58,7 +58,7 @@ Assistant (chercher_documents) ─┴─► Cœur GET /recherche  (session oblig
 
 ### 1.2 Adaptateur Forge (`briques/forge/main.py`)
 
-- `GET /documents/chercher?q=&limite=` → `GET /api/recherche/hybride` via `_appel_protege` (jeton utilisateur propagé). Capacité `forge_documents_chercher` déclarée au manifeste, lecture seule.
+- `GET /documents/chercher?q=&limite=&sources=` → `GET /api/recherche/hybride` via `_appel_protege` (jeton utilisateur propagé). Renvoie aussi `identite` (`utilisateur` ou `service`) pour que le Cœur marque les résultats partagés. **Non déclarée au manifeste**, raison nommée : l'assistant a déjà `forge_rag_chercher` (Forge seule) et `chercher_documents` (toutes sources) ; une troisième capacité jumelle brouillerait son choix d'outil.
 
 ### 1.3 Mémoire
 
