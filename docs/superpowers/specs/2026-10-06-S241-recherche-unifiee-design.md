@@ -14,11 +14,13 @@ Branche : `sprint/s241-recherche-unifiee`.
 - Mémoire : recherche hybride depuis S238 (exacts en tête, plein texte + trigrammes, pgvector, RRF), isolée par personne (S186), exposée par `GET /rappeler` (un espace par appel : `perso`, `solution`, `veille`).
 - Identité : le Cœur transmet le JWT de l'utilisateur à l'adaptateur Forge par `X-Forge-User-Token` (`core/contexte_tenant.py`), propagé au core Forge.
 - Base Forge : `postgres:16.14` (contrib `unaccent`, `pg_trgm` disponibles).
+- **Brique `ingestion`** (constat pendant la rédaction du plan) : le vrai stock de documents (25 sur le HP, SQLite `/data/ingestion.db`, texte extrait + classement). Une seule clé de service, **pas d'isolation par personne** : tout utilisateur du Cœur voit déjà ces documents. Le Cœur a déjà un outil câblé `chercher_documents` qui charge 200 documents et cherche une sous-chaîne dans leur JSON.
+- **Identité Forge depuis le Cœur** : une session web du Cœur ne porte pas de JWT utilisateur (`lire_contexte_tenant` ne lit le jeton que dans les en-têtes). Depuis le Cœur, l'adaptateur Forge agit donc sous son **identité de service unique** (modèle mono-propriétaire S20), comme tous les outils `forge_*`. Le filtre `user_id` reste indispensable dans la Forge (accès direct au front Forge, chat, ReAct).
 
 ## Décisions
 
-1. **Corpus** : documents + base de connaissances de la Forge **et** souvenirs de la Mémoire, dans une seule recherche (option B).
-2. **Usages** : outil de l'assistant **et** barre de recherche du tableau de bord du Cœur (option B). Les recherches internes de la Forge (`/api/search`) ne sont pas basculées.
+1. **Corpus** : documents + base de connaissances de la Forge, souvenirs de la Mémoire **et documents de la brique `ingestion`** (décision du 2026-10-06, option A : source ajoutée telle qu'elle est, partagée et signalée comme telle, sans élargir aucun accès).
+2. **Usages** : outil de l'assistant **et** onglet de recherche du tableau de bord du Cœur (option B). L'outil câblé existant `chercher_documents` est réutilisé (pas de second outil) : avec `q`, il passe par la recherche unifiée ; sans `q`, il garde son listage filtré (catégorie, projet, entreprise) dont dépend `projets.py`. Les recherches internes de la Forge (`/api/search`) ne sont pas basculées.
 3. **Fédération sans nouveau moteur** (approche 1) : chaque brique cherche dans sa propre base, qui fait foi ; le Cœur fusionne. Meilisearch écarté : aucun gain mesurable sur 6 documents, et la synchronisation d'un index tiers est la principale source de fuites et de suppressions non propagées. Réévaluable sans changer le contrat du Cœur.
 4. **PostgreSQL fait foi, Qdrant est un index reconstructible.**
 
@@ -31,6 +33,7 @@ Assistant (chercher_documents) ─┴─► Cœur GET /recherche  (session oblig
                     ▼                                ▼
    Adaptateur Forge GET /documents/chercher   Mémoire GET /rappeler × {perso, solution, veille}
    (X-Forge-User-Token)                       (par personne)
+                                              Ingestion GET /recherche (partagée, clé de service)
                     ▼
    Forge core GET /api/recherche/hybride
      exacts │ lexical (tsvector + trigrammes) │ vectoriel (Qdrant, filtré user_id)
@@ -59,19 +62,27 @@ Assistant (chercher_documents) ─┴─► Cœur GET /recherche  (session oblig
 
 ### 1.3 Mémoire
 
-Aucun changement de code.
+Aucun changement de code. NB : `ingest` de la Forge retient aussi chaque document comme souvenir « ressource » dans l'espace partagé de la Mémoire ; un même document peut donc sortir deux fois (Forge et Mémoire). Pas de dédoublonnage en S241.
+
+### 1.3 bis Ingestion
+
+- Table FTS5 `documents_recherche(doc_id UNINDEXED, nom, texte)` (tokeniseur `unicode61 remove_diacritics 2`) et table FTS5 `documents_trigrammes(doc_id UNINDEXED, texte)` (tokeniseur `trigram`), alimentées **dans la même transaction** que chaque écriture de `stockage.py` (`sauvegarder`, `importer`, `classer`, `supprimer`). Le texte y est normalisé en Python (minuscules, sans accents, NFKD) ; `nom` + `texte_extrait` + catégorie/tags/projet/résumé du classement ; plafond 200 000 caractères.
+- `reconstruire_index()` : vide et reremplit les deux tables depuis `documents`. Appelée par `initialiser()` si le nombre de lignes indexées diffère du nombre de documents (rattrape une base antérieure à S241 ou une écriture hors `stockage.py`).
+- `chercher(q, limite)` : références exactes d'abord (fonction SQL `regexp` enregistrée sur la connexion, mêmes règles que S238), puis plein texte (`bm25`), puis, si le plein texte ne trouve rien, trigrammes (OU des trigrammes des mots de la requête, `bm25`) — filet pour les fautes de frappe.
+- Route `GET /recherche?q=&limite=` (clé de service, comme les autres routes). Réponse au même format que la Forge, `mode: "lexical"`, `source: "ingestion"`. Capacité non exposée au LLM (le Cœur l'appelle en câblé).
 
 ### 1.4 Cœur
 
-- `core/recherche_unifiee.py` : interroge en parallèle Forge (`/documents/chercher`) et Mémoire (`/rappeler` pour `perso`, `solution`, `veille`) avec les en-têtes d'identité existants (`entetes_forge()`, en-têtes par personne de `memoire`). Délai maximal par source : 8 s. Fusion RRF (k=60) des classements par source ; les résultats `exact` de chaque source passent devant. Réponse :
+- `core/recherche_unifiee.py` : interroge en parallèle Forge (`/documents/chercher`, en-têtes `entetes_forge_sortants()`), Ingestion (`/recherche`, `_entetes_brique("ingestion")`) et Mémoire (`/rappeler` pour `perso`, `solution`, `veille`, `_entetes_brique("memoire")`). Délai maximal par source : 8 s. Fusion RRF (k=60) des classements par source ; les résultats `exact` de chaque source passent devant. Réponse :
   ```json
-  {"resultats": [{"source": "forge-document" | "forge-kb" | "memoire-perso" | ..., "id", "titre", "extrait", "lien"}],
+  {"resultats": [{"source": "forge-document" | "forge-kb" | "ingestion" | "memoire-perso" | ..., "id", "titre", "extrait", "partage": bool}],
    "modes": {"forge": "hybride", "memoire-perso": "lexical", ...},
    "sources_indisponibles": ["forge"]}
   ```
-- Route `GET /recherche?q=&limite=&sources=` : **session obligatoire** (401 sinon : garde de session API de `core/auth.py`, motif S240 ; pas d'admin requis). `sources` filtre (`forge`, `memoire`).
-- Outil assistant `chercher_documents` (manifeste du Cœur, lecture seule) appelant le même service.
-- Tableau de bord : barre de recherche, liste de résultats (badge source, titre, extrait), lien vers le document Forge ou le souvenir Mémoire, bandeau si `modes` contient `lexical` ou si `sources_indisponibles` est non vide. Rendu par `textContent` / échappement (filet XSS S240).
+- `partage` vaut vrai pour `ingestion` et pour la Forge appelée sans jeton utilisateur (identité de service) : l'interface l'affiche.
+- Route `GET /recherche?q=&limite=&sources=` : **session obligatoire** (401 sinon : garde de session API de `core/auth.py`, motif S240 ; pas d'admin requis). `sources` filtre (`forge`, `ingestion`, `memoire`).
+- Outil câblé existant `chercher_documents` (`core/outils.py`, `core/outils_domaines/documents.py`) : avec `q` → même service ; sans `q` → listage d'origine.
+- Tableau de bord : onglet « 🔎 Recherche » (champ, liste de résultats : badge source, mention « partagé », titre, extrait), bandeau si `modes` contient `lexical` ou si `sources_indisponibles` est non vide. Rendu par création d'éléments et `textContent` uniquement (filet XSS S240). Pas de lien profond vers les fronts de briques en S241 (aucun ne sait ouvrir un document par identifiant).
 
 ## 2. Flux, droits, mode réduit
 
@@ -100,7 +111,7 @@ Aucun changement de code.
 |---|---|
 | Embedder ou Qdrant | Forge renvoie exacts + lexical, `mode: "lexical"` |
 | Forge injoignable / délai | Cœur renvoie la Mémoire, `sources_indisponibles: ["forge"]` |
-| Un espace Mémoire | Idem, espace signalé |
+| Un espace Mémoire, ou Ingestion | Idem, source signalée |
 | Toutes les sources | 503 avec message explicite |
 
 Jamais de liste vide présentée comme un succès quand une source a échoué.
@@ -111,6 +122,7 @@ Jamais de liste vide présentée comme un succès quand une source a échoué.
 
 - Forge (PostgreSQL réel en conteneur) : fonctions pures ; exact, plein texte, trigramme ; **isolation** deux utilisateurs dans chaque branche, y compris un point Qdrant de A volontairement étiqueté `user_id` B ; document supprimé absent malgré un point Qdrant restant ; mode lexical sur embedder en échec ; `reconcilier_index` (rattrapage, orphelins, arrêt au premier échec) ; régression : `/api/rag/search` et `get_context` ne renvoient plus les passages d'un autre utilisateur.
 - Adaptateur : propagation du jeton, forme de la réponse.
+- Ingestion : index tenu à jour par chaque écriture (y compris suppression et classement), reconstruction, exact/plein texte/trigramme, accents et casse.
 - Cœur : fusion multi-sources ; délai et `sources_indisponibles` ; 503 si tout échoue ; 401 sans session ; en-têtes d'identité vers Forge et Mémoire ; contrat manifeste ↔ route (filet S210) ; filet XSS statique S240 sur le rendu.
 
 ### 3.2 Mesure
@@ -119,7 +131,7 @@ Jeu fixe committé (documents et requêtes) : requêtes exactes, sémantiques (r
 
 ### 3.3 Déploiement HP
 
-Images construites sur le Mac, `docker save | ssh docker load`. Étiquettes `avant-s241`, sauvegarde `~/s241-avant/` (dump base Forge, instantané Qdrant). Migrations de démarrage idempotentes ; la réconciliation indexe l'existant. Aucun nouveau service : supervision S235, sauvegardes S236, Ansible S237 inchangés, sauf la sonde métier qui interroge `/recherche`.
+Images (Cœur, Forge core, adaptateur Forge, ingestion) construites sur le Mac, `docker save | ssh docker load`. Étiquettes `avant-s241`, sauvegarde `~/s241-avant/` (dump base Forge, instantané Qdrant, copie de `ingestion.db`). Migrations de démarrage idempotentes ; la réconciliation indexe l'existant. Aucun nouveau service : supervision S235, sauvegardes S236, Ansible S237 inchangés, sauf la sonde métier qui interroge `/recherche`.
 
 ### 3.4 Preuve LIVE
 
