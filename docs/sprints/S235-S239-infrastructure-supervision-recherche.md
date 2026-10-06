@@ -85,6 +85,8 @@ Acceptation : références, noms et termes métier retrouvés ; panne de l'embed
 
 ## S239 — Recherche documentaire hybride Meilisearch + Qdrant
 
+Statut : réalisé sous le numéro S241 (2026-10-06), sans Meilisearch (fédération Forge + Ingestion + Mémoire) — voir [résultats S241](S241-recherche-unifiee-resultats.md). Le numéro S239 a servi à la panne LLM.
+
 Objectif : une recherche interne rapide sur les documents, avant extension aux messages.
 
 - Ajouter Meilisearch comme service autonome, avec contrat Workplace et version d'image épinglée.
