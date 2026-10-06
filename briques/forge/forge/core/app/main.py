@@ -30,7 +30,9 @@ Portés à ce stade :
   de bord agrégé), sentinel-rgpd (checklist + audit LLM).
 """
 
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, Request
@@ -136,7 +138,13 @@ async def lifespan(app: FastAPI):
         "[forge:core] up — backend forge UNIQUE (Bun supprimé S136), port=%s",
         settings.CORE_PY_PORT,
     )
+    # S241 — réconciliation PostgreSQL → Qdrant (désactivable : FORGE_RECONCILIATION=0).
+    from app.reconciliation import boucle_reconciliation
+    tache = (asyncio.create_task(boucle_reconciliation())
+             if os.environ.get("FORGE_RECONCILIATION", "1") != "0" else None)
     yield
+    if tache is not None:
+        tache.cancel()
     await db_dispose()
 
 
