@@ -53,3 +53,17 @@ async def test_indexer_source_remplace_les_anciens_fragments(base, embedder_fact
 
 async def _vide():
     return []
+
+
+@integration
+async def test_ingest_ne_copie_plus_le_document_dans_la_memoire_commune(base, embedder_factice, monkeypatch):
+    appels = []
+
+    async def espion(*args, **kwargs):
+        appels.append((args, kwargs))
+
+    monkeypatch.setattr(memory, "mem_retenir", espion)
+    sid = "33333333-3333-3333-3333-333333333333"
+    await memory.ingest(TEXTE, sid, "document", "alice", title="Contrat")
+    assert appels == []
+    assert [f.source_id for f in await memory.chercher_fragments(TEXTE, "alice")] == [sid]

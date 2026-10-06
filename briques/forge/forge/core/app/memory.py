@@ -220,10 +220,10 @@ async def ingest(
         except Exception as e:  # noqa: BLE001 — un provider qui échoue n'arrête pas les autres
             logger.warning("[forge:ingestor] %s embedding/upsert failed: %s", provider, str(e)[:120])
 
-    # Écriture mémoire Workplace (opt-in, best-effort) : le RAG chunké reste dans
-    # Qdrant, mais le document est aussi retenu comme un souvenir « ressource »
-    # consultable par tout Workplace via la brique Mémoire.
-    await mem_retenir(text, titre=title or source_type, type_="ressource")
+    # S241 : plus de copie du document dans la brique Mémoire. La recherche unifiée du
+    # Cœur interroge la Forge directement ; la copie, rangée dans l'espace commun, ne
+    # suivait ni la suppression du document ni son propriétaire (décision utilisateur
+    # du 2026-10-06 ; les copies déjà faites restent dans la Mémoire).
     return counts
 
 
