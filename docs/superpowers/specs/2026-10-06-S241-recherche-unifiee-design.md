@@ -69,20 +69,21 @@ Aucun changement de code. NB : `ingest` de la Forge retient aussi chaque documen
 - Table FTS5 `documents_recherche(doc_id UNINDEXED, nom, texte)` (tokeniseur `unicode61 remove_diacritics 2`) et table FTS5 `documents_trigrammes(doc_id UNINDEXED, texte)` (tokeniseur `trigram`), alimentées **dans la même transaction** que chaque écriture de `stockage.py` (`sauvegarder`, `importer`, `classer`, `supprimer`). Le texte y est normalisé en Python (minuscules, sans accents, NFKD) ; `nom` + `texte_extrait` + catégorie/tags/projet/résumé du classement ; plafond 200 000 caractères.
 - `reconstruire_index()` : vide et reremplit les deux tables depuis `documents`. Appelée par `initialiser()` si le nombre de lignes indexées diffère du nombre de documents (rattrape une base antérieure à S241 ou une écriture hors `stockage.py`).
 - `chercher(q, limite)` : références exactes d'abord (fonction SQL `regexp` enregistrée sur la connexion, mêmes règles que S238), puis plein texte (`bm25`), puis, si le plein texte ne trouve rien, trigrammes (OU des trigrammes des mots de la requête, `bm25`) — filet pour les fautes de frappe.
-- Route `GET /recherche?q=&limite=` (clé de service, comme les autres routes). Réponse au même format que la Forge, `mode: "lexical"`, `source: "ingestion"`. Capacité non exposée au LLM (le Cœur l'appelle en câblé).
+- Route `GET /recherche?q=&limite=` (clé de service, comme les autres routes). Réponse au même format que la Forge, `mode: "plein_texte"` (son seul mode : jamais signalé comme dégradé), `source: "ingestion"`. Capacité non exposée au LLM (le Cœur l'appelle en câblé).
 
 ### 1.4 Cœur
 
 - `core/recherche_unifiee.py` : interroge en parallèle Forge (`/documents/chercher`, en-têtes `entetes_forge_sortants()`), Ingestion (`/recherche`, `_entetes_brique("ingestion")`) et Mémoire (`/rappeler` pour `perso`, `solution`, `veille`, `_entetes_brique("memoire")`). Délai maximal par source : 8 s. Fusion RRF (k=60) des classements par source ; les résultats `exact` de chaque source passent devant. Réponse :
   ```json
   {"resultats": [{"source": "forge-document" | "forge-kb" | "ingestion" | "memoire-perso" | ..., "id", "titre", "extrait", "partage": bool}],
-   "modes": {"forge": "hybride", "memoire-perso": "lexical", ...},
+   "modes": {"forge": "hybride", "ingestion": "plein_texte", "memoire-perso": "lexical", ...},
+   "recherche_par_le_sens_indisponible": ["memoire-perso"],
    "sources_indisponibles": ["forge"]}
   ```
 - `partage` vaut vrai pour `ingestion` et pour la Forge appelée sans jeton utilisateur (identité de service) : l'interface l'affiche.
 - Route `GET /recherche?q=&limite=&sources=` : **session obligatoire** (401 sinon : garde de session API de `core/auth.py`, motif S240 ; pas d'admin requis). `sources` filtre (`forge`, `ingestion`, `memoire`).
 - Outil câblé existant `chercher_documents` (`core/outils.py`, `core/outils_domaines/documents.py`) : avec `q` → même service ; sans `q` → listage d'origine.
-- Tableau de bord : onglet « 🔎 Recherche » (champ, liste de résultats : badge source, mention « partagé », titre, extrait), bandeau si `modes` contient `lexical` ou si `sources_indisponibles` est non vide. Rendu par création d'éléments et `textContent` uniquement (filet XSS S240). Pas de lien profond vers les fronts de briques en S241 (aucun ne sait ouvrir un document par identifiant).
+- Tableau de bord : onglet « 🔎 Recherche » (champ, liste de résultats : badge source, mention « partagé », titre, extrait), bandeau si `recherche_par_le_sens_indisponible` (Forge et espaces Mémoire répondant en `lexical`, jamais Ingestion) ou si `sources_indisponibles` est non vide. Rendu par création d'éléments et `textContent` uniquement (filet XSS S240). Pas de lien profond vers les fronts de briques en S241 (aucun ne sait ouvrir un document par identifiant).
 
 ## 2. Flux, droits, mode réduit
 
@@ -136,6 +137,14 @@ Images (Cœur, Forge core, adaptateur Forge, ingestion) construites sur le Mac, 
 ### 3.4 Preuve LIVE
 
 Faute de frappe qui retrouve un vrai document ; embedder coupé → `lexical` ; Forge arrêtée → résultats Mémoire et Forge signalée ; document supprimé introuvable ; 401 sans session.
+
+## Écarts décidés pendant l'exécution
+
+- Recherche trigramme Forge par l'opérateur `<%` + `SET LOCAL pg_trgm.word_similarity_threshold = 0.3` (index utilisable) ; mots vides français écartés (partie `simple` seulement pour les termes gardés par `french`, repli trigramme sur les termes significatifs) ; Ingestion : liste `MOTS_VIDES`.
+- Embedding de la requête borné à 3 s (`DELAI_EMBEDDING_RECHERCHE`) → mode lexical plutôt que Forge déclarée injoignable.
+- Mémoire `solution` = espace commun du cercle → `partage: true`.
+- Source inconnue → 422 ; vocabulaire des pannes : `memoire-<espace>` pour un espace, `memoire` si les trois.
+- Réconciliation : bilan avec `perimes_supprimes` (sources devenues trop courtes).
 
 ## Hors périmètre
 
