@@ -1,0 +1,42 @@
+{
+  "documents": [
+    {"cle": "devis_toiture", "nom": "Devis DEV-2026-114 toiture Martin", "contenu": "Devis pour la réfection complète de la toiture de la maison Martin : dépose des tuiles, remplacement des liteaux, pose de tuiles mécaniques. Montant 18 400 euros TTC, validité trois mois."},
+    {"cle": "facture_chaudiere", "nom": "Facture FAC-2026-0042", "contenu": "Facture d'entretien annuel de la chaudière gaz du client Durand. Ramonage, contrôle de combustion, remplacement du joint de brûleur. 240 euros payés par virement."},
+    {"cle": "contrat_maintenance", "nom": "Contrat de maintenance ascenseur", "contenu": "Contrat de maintenance préventive de l'ascenseur de la résidence Les Tilleuls. Deux visites par an, dépannage sous quatre heures, pièces d'usure comprises."},
+    {"cle": "pv_reception", "nom": "Procès-verbal de réception", "contenu": "Procès-verbal de réception des travaux d'isolation des combles, signé sans réserve le 12 mars. Garantie décennale de l'entreprise Isolpro jointe."},
+    {"cle": "planning_chantier", "nom": "Planning chantier école", "contenu": "Planning du chantier de rénovation de l'école primaire : désamiantage en juillet, gros œuvre en août, livraison avant la rentrée de septembre."},
+    {"cle": "note_recrutement", "nom": "Recrutement d'un conducteur de travaux", "contenu": "Nous cherchons un conducteur de travaux expérimenté pour encadrer les équipes sur les chantiers de logements collectifs. Permis B exigé, poste basé à Lyon."},
+    {"cle": "rgpd", "nom": "Registre des traitements RGPD", "contenu": "Registre des traitements de données personnelles : fichier clients, paie des salariés, vidéosurveillance du dépôt. Durées de conservation et responsables désignés."},
+    {"cle": "assurance", "nom": "Attestation d'assurance décennale", "contenu": "Attestation d'assurance responsabilité civile décennale valable pour l'année en cours, couvrant les activités de couverture, charpente et zinguerie."},
+    {"cle": "relance_impaye", "nom": "Relance client Petit", "contenu": "Deuxième relance pour la facture FAC-2026-0057 restée impayée depuis soixante jours. Sans règlement sous huit jours, mise en demeure."},
+    {"cle": "fiche_securite", "nom": "Consignes de sécurité échafaudage", "contenu": "Consignes de montage et de vérification des échafaudages : garde-corps obligatoires, vérification journalière, port du harnais au-delà de trois mètres."},
+    {"cle": "commande_materiaux", "nom": "Bon de commande BC-7781", "contenu": "Commande de plaques de plâtre hydrofuges, rails et montants métalliques pour l'aménagement des salles de bain du lot B."},
+    {"cle": "compte_rendu_reunion", "nom": "Compte rendu réunion de chantier n°7", "contenu": "Réunion de chantier : retard du plombier sur les colonnes d'eau, décision de décaler le carrelage d'une semaine, prochain rendez-vous jeudi."}
+  ],
+  "requetes": [
+    {"type": "exacte", "q": "DEV-2026-114", "attendu": "devis_toiture"},
+    {"type": "exacte", "q": "FAC-2026-0042", "attendu": "facture_chaudiere"},
+    {"type": "exacte", "q": "FAC-2026-0057", "attendu": "relance_impaye"},
+    {"type": "exacte", "q": "BC-7781", "attendu": "commande_materiaux"},
+    {"type": "exacte", "q": "\"sans réserve\"", "attendu": "pv_reception"},
+    {"type": "exacte", "q": "réunion de chantier n°7", "attendu": "compte_rendu_reunion"},
+    {"type": "exacte", "q": "Isolpro", "attendu": "pv_reception"},
+    {"type": "exacte", "q": "résidence Les Tilleuls", "attendu": "contrat_maintenance"},
+    {"type": "semantique", "q": "combien coûte refaire le toit", "attendu": "devis_toiture"},
+    {"type": "semantique", "q": "révision du chauffage au gaz", "attendu": "facture_chaudiere"},
+    {"type": "semantique", "q": "entretien régulier de l'élévateur", "attendu": "contrat_maintenance"},
+    {"type": "semantique", "q": "fin des travaux acceptée par le client", "attendu": "pv_reception"},
+    {"type": "semantique", "q": "calendrier des travaux du bâtiment scolaire", "attendu": "planning_chantier"},
+    {"type": "semantique", "q": "offre d'emploi chef de chantier", "attendu": "note_recrutement"},
+    {"type": "semantique", "q": "protection des données personnelles", "attendu": "rgpd"},
+    {"type": "semantique", "q": "client qui ne paie pas", "attendu": "relance_impaye"},
+    {"type": "faute", "q": "toiturre", "attendu": "devis_toiture"},
+    {"type": "faute", "q": "chaudierre", "attendu": "facture_chaudiere"},
+    {"type": "faute", "q": "ascensseur", "attendu": "contrat_maintenance"},
+    {"type": "faute", "q": "receptoin des travaux", "attendu": "pv_reception"},
+    {"type": "faute", "q": "desamiantage", "attendu": "planning_chantier"},
+    {"type": "faute", "q": "conducteur de travau", "attendu": "note_recrutement"},
+    {"type": "faute", "q": "echaffaudage", "attendu": "fiche_securite"},
+    {"type": "faute", "q": "decenale", "attendu": "assurance"}
+  ]
+}

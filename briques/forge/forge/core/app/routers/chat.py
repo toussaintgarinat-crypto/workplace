@@ -90,8 +90,8 @@ def _build_system_prompt(context: str, pole_ctx, venture_ctx) -> str:
     return "\n".join(parts)
 
 
-async def _save_and_prepare(body: Message):
-    context = await get_context(body.content, body.sessionId)
+async def _save_and_prepare(body: Message, user_id: str):
+    context = await get_context(body.content, body.sessionId, user_id)
     rp, rm, pole_ctx, venture_ctx = await _resolve_session_context(body.sessionId, body.provider, body.model)
     su = _uuid(body.sessionId)
     async with SessionLocal() as s:
@@ -111,7 +111,7 @@ async def _persist_assistant(su, text: str):
 
 @router.post("")
 async def chat(body: Message, user=Depends(get_current_user)):
-    context, rp, rm, pole_ctx, venture_ctx, su = await _save_and_prepare(body)
+    context, rp, rm, pole_ctx, venture_ctx, su = await _save_and_prepare(body, user.sub)
     client = AsyncOpenAI(base_url=settings.GATEWAY_BASE_URL, api_key=settings.GATEWAY_API_KEY)
     text = ""
     try:
@@ -129,7 +129,7 @@ async def chat(body: Message, user=Depends(get_current_user)):
 
 @router.post("/stream")
 async def chat_stream(body: Message, user=Depends(get_current_user)):
-    context, rp, rm, pole_ctx, venture_ctx, su = await _save_and_prepare(body)
+    context, rp, rm, pole_ctx, venture_ctx, su = await _save_and_prepare(body, user.sub)
     client = AsyncOpenAI(base_url=settings.GATEWAY_BASE_URL, api_key=settings.GATEWAY_API_KEY)
 
     async def gen():

@@ -67,11 +67,11 @@ def _client() -> AsyncOpenAI:
     return AsyncOpenAI(base_url=settings.GATEWAY_BASE_URL, api_key=settings.GATEWAY_API_KEY)
 
 
-async def get_context(query: str, session_id: str) -> str:
-    """RAG best-effort via le module mémoire (S129). Retourne "" si indisponible."""
+async def get_context(query: str, session_id: str, user_id: str) -> str:
+    """RAG best-effort via le module mémoire (S129), limité aux documents de `user_id` (S241). Retourne "" si indisponible."""
     from app.memory import get_context as _mem_get_context
 
-    return await _mem_get_context(query, session_id)
+    return await _mem_get_context(query, session_id, user_id=user_id)
 
 
 # ── Tools de base (function-calling OpenAI) ─────────────────────────
@@ -91,7 +91,7 @@ def _base_tool_specs() -> list[dict]:
 
 async def _exec_tool(name: str, args: dict, session_id: str, user_id: str) -> str:
     if name == "query_knowledge_base":
-        return (await get_context(args.get("query", ""), session_id)) or "Nothing found."
+        return (await get_context(args.get("query", ""), session_id, user_id)) or "Nothing found."
     if name == "search_web":
         key = os.getenv("BRAVE_SEARCH_API_KEY")
         if not key:
@@ -160,7 +160,7 @@ async def run_react(
             await s.rollback()
 
     steps: list[dict] = []
-    rag = await get_context(input_text, session_id)
+    rag = await get_context(input_text, session_id, user_id)
 
     async def push(step: ReactStep):
         step.agentName = current_agent

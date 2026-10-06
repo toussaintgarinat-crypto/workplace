@@ -42,6 +42,6 @@ async def rag_search(request: Request, user: UserContext = Depends(get_current_u
         limite = 5
 
     passages = await get_context(
-        q, _session_id=f"rag-search:{user.sub}", limit=limite, min_score=seuil
+        q, _session_id=f"rag-search:{user.sub}", user_id=user.sub, limit=limite, min_score=seuil
     )
     return {"query": q, "passages": passages, "found": bool(passages.strip())}

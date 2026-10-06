@@ -345,6 +345,30 @@ async def rag_chercher(q: str = "", seuil: float | None = None, limite: int | No
     }
 
 
+@app.get("/documents/chercher", summary="Recherche hybride dans les documents et la base de connaissances (S241)")
+async def documents_chercher(q: str = "", limite: int = 10, sources: str | None = None):
+    """Proxy authentifié → `GET /api/recherche/hybride`. Lecture seule.
+
+    Volontairement ABSENT du manifeste : l'assistant a déjà `forge_rag_chercher` (Forge seule)
+    et `chercher_documents` (toutes sources, via le Cœur) — une troisième capacité jumelle
+    brouillerait son choix. `identite` dit au Cœur si la Forge a cherché pour l'utilisateur
+    réel (jeton propagé) ou sous l'identité de service unique (résultats partagés)."""
+    q = (q or "").strip()
+    if not q:
+        raise HTTPException(422, "Paramètre requis : 'q' (les termes recherchés).")
+    params: dict = {"q": q, "limite": min(max(limite, 1), 50)}
+    if sources:
+        params["sources"] = sources
+    async with await _client(timeout=20) as client:
+        r = await _appel_protege(client, "GET", "/api/recherche/hybride", params=params)
+    data = _json_ou_erreur(r)
+    return {
+        "mode": data.get("mode", "hybride"),
+        "resultats": data.get("resultats", []),
+        "identite": "utilisateur" if _JETON_UTILISATEUR.get() else "service",
+    }
+
+
 @app.post("/agent/lancer", summary="Lancer un agent IA Forge sur une tâche")
 async def agent_lancer(corps: dict = Body(...)):
     """Proxy authentifié → `POST /api/agents/run`. ACTION (l'agent raisonne via la Gateway 4001).

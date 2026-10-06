@@ -202,6 +202,16 @@ def lister_dossiers(_cle: str = Depends(cle_api)):
     return stockage.dossiers()
 
 
+@app.get("/recherche", summary="Rechercher dans les documents ingérés (références exactes, mots, fautes de frappe)")
+def rechercher(q: str = "", limite: int = 10, _cle: str = Depends(cle_api)):
+    """S241 — appelée par la recherche unifiée du Cœur (outil `chercher_documents`, onglet
+    Recherche). Pas de capacité au manifeste : le Cœur la câble lui-même."""
+    q = (q or "").strip()
+    if not q:
+        raise HTTPException(422, "Paramètre requis : 'q' (les termes recherchés).")
+    return {"mode": "plein_texte", "resultats": stockage.chercher(q, limite)}
+
+
 class Classement(BaseModel):
     categorie: str | None = None
     tags: list[str] | None = None

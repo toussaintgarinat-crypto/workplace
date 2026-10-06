@@ -55,6 +55,17 @@ class TestPleinTexte:
         async with db_module.async_session_factory() as db:
             assert await classement_plein_texte(db, "kubernetes", Filtres(a), 10) == [titre, contenu]
 
+    async def test_mots_vides_ne_font_pas_remonter_un_titre(self, client, auth_headers):
+        """Le titre est indexé en `simple` (mots vides compris) : « le », « de » de la requête
+        ne doivent pas faire remonter un souvenir hors sujet dont le titre les contient."""
+        a, _ = await _deux_espaces(client, auth_headers)
+        hors_sujet, toit = await _souvenirs(
+            a, ("Recrutement d'un conducteur de travaux", "Poste basé à Lyon.", {}),
+            ("Devis toiture", "Refaire le toit de la maison Martin.", {}))
+        async with db_module.async_session_factory() as db:
+            assert await classement_plein_texte(db, "refaire le toit", Filtres(a), 10) == [toit]
+            assert await classement_plein_texte(db, "le de des", Filtres(a), 10) == []
+
     async def test_operateurs_tsquery_ignores(self, client, auth_headers):
         a, _ = await _deux_espaces(client, auth_headers)
         await _souvenirs(a, ("Le", "de la", {}))
@@ -70,6 +81,15 @@ class TestTrigramme:
             assert await classement_plein_texte(db, "facutre", Filtres(a), 10) == []
             assert await classement_trigramme(db, "facutre", Filtres(a), 10) == [factures]
             assert await classement_trigramme(db, "automobile", Filtres(a), 10) == []
+
+    async def test_mots_vides_ignores_par_le_filet(self, client, auth_headers):
+        a, _ = await _deux_espaces(client, auth_headers)
+        hors_sujet, factures = await _souvenirs(
+            a, ("Le recrutement de la société des équipes", "", {}),
+            ("Fournisseurs", "Les factures du trimestre", {}))
+        async with db_module.async_session_factory() as db:
+            assert await classement_trigramme(db, "le de des", Filtres(a), 10) == []
+            assert await classement_trigramme(db, "les facutre", Filtres(a), 10) == [factures]
 
 
 class TestExactes:
