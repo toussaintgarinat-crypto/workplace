@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import recherche
+
 DB_CHEMIN = Path("/data/ingestion.db")
 
 # Nom d'avant S215, quand la brique s'appelait `etl`. Dérivé de `DB_CHEMIN` (et non
@@ -70,6 +72,11 @@ def initialiser():
             )
         """)
         _migrer_colonne_venture_id(con)
+        # S241 — index de recherche FTS5. Reconstruit s'il ne correspond plus aux documents
+        # (base antérieure à S241, ou écriture faite hors de ce module).
+        recherche.creer_tables(con)
+        if recherche.index_desynchronise(con):
+            recherche.reconstruire_index(con)
 
 
 def sauvegarder(
@@ -99,6 +106,7 @@ def sauvegarder(
                 venture_id,
             ),
         )
+        recherche.indexer(con, doc_id)
     return doc_id
 
 
@@ -125,6 +133,7 @@ def importer(doc: dict) -> str:
                 doc.get("date_ingestion") or datetime.utcnow().isoformat(),
             ),
         )
+        recherche.indexer(con, doc_id)
     return doc_id
 
 
@@ -191,6 +200,7 @@ def classer(doc_id: str, classement: dict) -> bool:
             "UPDATE documents SET metadonnees = ? WHERE id = ?",
             (json.dumps(meta, ensure_ascii=False), doc_id),
         )
+        recherche.indexer(con, doc_id)
     return True
 
 
@@ -221,6 +231,7 @@ def lire(doc_id: str) -> dict | None:
 
 def supprimer(doc_id: str) -> bool:
     with _conn() as con:
+        recherche.desindexer(con, doc_id)
         nb = con.execute("DELETE FROM documents WHERE id = ?", (doc_id,)).rowcount
     return nb > 0
 
@@ -228,3 +239,9 @@ def supprimer(doc_id: str) -> bool:
 def compter() -> int:
     with _conn() as con:
         return con.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+
+
+def chercher(requete: str, limite: int = 10) -> list[dict]:
+    """Recherche plein texte (S241) : références exactes, mots, fautes de frappe."""
+    with _conn() as con:
+        return recherche.chercher(con, requete, limite)
