@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import auth
 import graphe_apprentissage
 import horloge
 import modeles_gateway
@@ -31,6 +32,8 @@ from routers import auth as routeur_auth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registre.charger()
+    # ⚙ Cerveau fermé par défaut (S240) : le dire dans les journaux plutôt qu'en 403 muets.
+    auth.avertir_si_cerveau_ferme()
     orchestrateur.init_db()
     proactif.init_db()
     horloge.init_db()

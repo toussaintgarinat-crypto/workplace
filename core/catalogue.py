@@ -91,6 +91,8 @@ def collecter_capacites(registre) -> list[dict]:
                 # S134 — socle:true = toujours inclus dans le routage par embeddings
                 "socle": bool(decl.get("socle", False)),
                 "async": bool(decl.get("async", False)),
+                # S240 — réservée à l'admin du cerveau (outils.est_reserve_admin)
+                "reserve_admin": bool(decl.get("reserve_admin", False)),
                 "poll_chemin": decl.get("poll_chemin"),
             })
     return capacites

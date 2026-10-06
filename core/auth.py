@@ -337,6 +337,26 @@ def verifier_anti_csrf(request: Request, corps_json: bool = True) -> None:
             raise HTTPException(status_code=415, detail="Corps attendu en application/json.")
 
 
+def _ouvert_sans_auth() -> bool:
+    """Opt-in du DEV LOCAL (revue S240, I3) : sans Keycloak, ouvrir le cerveau à
+    l'identité factice. Ignoré dès que AUTH_ENABLED=true. Jamais sur le HP."""
+    return os.environ.get("CERVEAU_OUVERT_SANS_AUTH", "").strip().lower() in ("1", "true", "oui")
+
+
+def avertir_si_cerveau_ferme() -> None:
+    """Au démarrage : dire POURQUOI ⚙ Cerveau refusera tout, plutôt qu'un 403 muet."""
+    import logging
+    log = logging.getLogger(__name__)
+    if AUTH_ENABLED and not _admins_cerveau():
+        log.warning("Cerveau fermé : AUTH_ENABLED=true mais CERVEAU_ADMINS est vide — aucune "
+                    "modification du cerveau ni outil réservé (dev, sauvegarde…) ne sera accepté.")
+    elif not AUTH_ENABLED and not _ouvert_sans_auth():
+        log.warning("Cerveau fermé : AUTH_ENABLED=false sans CERVEAU_OUVERT_SANS_AUTH=1 — "
+                    "définir CERVEAU_ADMINS avec l'auth, ou l'opt-in en dev local seulement.")
+    elif not AUTH_ENABLED and _admins_cerveau():
+        log.warning("Cerveau fermé : CERVEAU_ADMINS est défini mais AUTH_ENABLED=false.")
+
+
 async def exiger_admin_cerveau(request: Request) -> dict:
     """Dépendance des routes qui MODIFIENT le cerveau (S240) : clés fournisseur, modèle,
     cascade, persona, langue, voix, modèles servis, modèle de la Forge.
@@ -346,12 +366,12 @@ async def exiger_admin_cerveau(request: Request) -> dict:
     - session Cœur exigée (`exiger_session`) ; son 303 vers /auth/login devient ici un 401,
       car ces routes sont appelées en `fetch` (une redirection vers Keycloak y serait suivie
       en silence et finirait en erreur CORS illisible) ;
-    - `CERVEAU_ADMINS` vide = toute session valide suffit (foyer mono-compte) ; non vide =
-      seuls ces subs passent (403 sinon) ;
-    - `AUTH_ENABLED=false` + `CERVEAU_ADMINS` vide : identité factice, comportement historique
-      (dev/tests). `AUTH_ENABLED=false` + `CERVEAU_ADMINS` posé : 403 — sans auth, il n'y a
-      aucune identité vérifiable, et laisser passer « anonymous » ferait croire à une
-      protection qui n'existe pas.
+    - FERMÉ PAR DÉFAUT (revue S240, I3) : accordé seulement si `AUTH_ENABLED=true` ET le sub
+      de la session figure dans `CERVEAU_ADMINS` (non vide). Liste vide = personne (403) ;
+    - `AUTH_ENABLED=false` : 403, sauf opt-in explicite du dev local
+      `CERVEAU_OUVERT_SANS_AUTH=1` (identité factice) ; `CERVEAU_ADMINS` posé sans auth : 403
+      — aucune identité vérifiable, la liste ne protégerait rien ;
+    - `avertir_si_cerveau_ferme()` le journalise au démarrage du Cœur.
 
     Les lectures (`GET /assistant/config`…) et le chat (`/assistant/chat`, utilisé par
     Telegram/Mini App/S2S sans session) ne portent PAS cette garde.
@@ -367,12 +387,21 @@ async def exiger_admin_cerveau(request: Request) -> dict:
             raise HTTPException(status_code=401, detail=f"Session requise pour {quoi}.") from None
         raise
     admins = _admins_cerveau()
-    if not admins:
-        return identite
     if not AUTH_ENABLED:
+        if admins:
+            raise HTTPException(status_code=403, detail=(
+                "CERVEAU_ADMINS est défini mais AUTH_ENABLED=false : aucune identité "
+                "vérifiable, modification du cerveau refusée."))
+        if _ouvert_sans_auth():
+            return identite  # dev local, opt-in explicite
         raise HTTPException(status_code=403, detail=(
-            "CERVEAU_ADMINS est défini mais AUTH_ENABLED=false : aucune identité "
-            "vérifiable, modification du cerveau refusée."))
+            "Cerveau fermé : AUTH_ENABLED=false sans opt-in. En dev local seulement, poser "
+            "CERVEAU_OUVERT_SANS_AUTH=1 ; sinon activer l'auth et définir CERVEAU_ADMINS."))
+    if not admins:
+        # Fermé par défaut (revue S240, I3) : auth active mais personne de désigné.
+        raise HTTPException(status_code=403, detail=(
+            "Cerveau fermé : CERVEAU_ADMINS est vide — désigne au moins un compte admin "
+            "(sub Keycloak) dans le .env."))
     if identite.get("sub") not in admins:
         raise HTTPException(status_code=403,
                             detail="Ce compte n'est pas autorisé à modifier le cerveau.")

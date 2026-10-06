@@ -7,7 +7,8 @@ n'avait AUCUNE garde. Désormais :
 - `DEV_KEY` posée → exigée sur toute route sauf `/sante` (sonde Docker) ;
 - `DEV_KEY` vide + `AUTH_ENABLED=true` (stack Workplace authentifiée) → tout est refusé
   (503, fail closed) sauf `/sante` ;
-- `DEV_KEY` vide + auth coupée → atelier local ouvert (comportement historique, tests).
+- `DEV_KEY` vide → fermé quel que soit `AUTH_ENABLED` (revue S240, I3), sauf opt-in local
+  explicite `DEV_OUVERT_SANS_CLE=1` (tests, poste de dev).
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -50,7 +51,24 @@ def test_sans_cle_avec_auth_workplace_fail_closed(monkeypatch, methode, chemin):
     assert client.get("/sante").status_code == 200
 
 
-def test_sans_cle_sans_auth_atelier_local_ouvert(monkeypatch):
+@pytest.mark.parametrize("methode,chemin", ROUTES)
+def test_sans_cle_ferme_meme_sans_auth(monkeypatch, methode, chemin):
+    """Revue S240, I3 : DEV_KEY vide → fermé quel que soit AUTH_ENABLED (sur le HP, la brique
+    ne voit pas forcément AUTH_ENABLED)."""
     monkeypatch.delenv("DEV_KEY", raising=False)
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
+    monkeypatch.delenv("DEV_OUVERT_SANS_CLE", raising=False)
+    assert client.request(methode, chemin, json={}).status_code == 503
+    assert client.get("/sante").status_code == 200
+
+
+def test_sans_cle_avec_opt_in_local_ouvert(monkeypatch):
+    monkeypatch.delenv("DEV_KEY", raising=False)
+    monkeypatch.setenv("DEV_OUVERT_SANS_CLE", "1")
     assert client.get("/ide/health").status_code == 200
+
+
+def test_cle_comparee_en_octets(monkeypatch):
+    """Revue S240, M4 : compare_digest sur des octets (une clé non ASCII ne lève pas)."""
+    monkeypatch.setenv("DEV_KEY", "clé-é")
+    assert client.get("/ide/health", headers={"X-API-Key": "x"}).status_code == 401

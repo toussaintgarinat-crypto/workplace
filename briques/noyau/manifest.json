@@ -49,7 +49,8 @@
       "chemin": "/sauvegarde-usb/lancer",
       "action": true,
       "niveau": 1,
-      "socle": false
+      "socle": false,
+      "reserve_admin": true
     },
     {
       "nom": "sauvegarde_usb_restaurer",
@@ -58,7 +59,8 @@
       "chemin": "/sauvegarde-usb/restaurer",
       "action": true,
       "niveau": 1,
-      "socle": false
+      "socle": false,
+      "reserve_admin": true
     }
   ]
 }

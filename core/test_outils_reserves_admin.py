@@ -119,11 +119,16 @@ def test_route_chat_pose_le_droit_pour_le_tour(monkeypatch):
         yield {"type": "fin"}
     monkeypatch.setattr(assistant, "converser", faux_converser)
     c = TestClient(main.app)
+    # 1) dev local avec opt-in explicite (conftest) : admin.
     c.post("/assistant/chat", json={"messages": [{"role": "user", "content": "x"}]})
-    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    # 2) sans opt-in ni auth : fermé par défaut (revue S240, I3).
+    monkeypatch.delenv("CERVEAU_OUVERT_SANS_AUTH", raising=False)
     c.post("/assistant/chat", json={"messages": [{"role": "user", "content": "y"}]})
-    # Dev (auth coupée, pas de liste) : admin, comportement historique ; HP sans cookie : non.
-    assert vus == [True, False]
+    # 3) HP : auth active, CERVEAU_ADMINS posé, sans cookie (Telegram) : non.
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    c.post("/assistant/chat", json={"messages": [{"role": "user", "content": "z"}]})
+    assert vus == [True, False, False]
 
 
 def test_mcp_jamais_admin(monkeypatch):
@@ -136,3 +141,47 @@ def test_mcp_jamais_admin(monkeypatch):
                                    "params": {"name": "sauvegarde_usb_restaurer", "arguments": {}}},
                                   registre))
     assert "exécuté" not in json.dumps(rep)
+
+
+# ── Revue S240, M3 : réservation aussi par BRIQUE et par drapeau de manifest ─────
+
+def _registre_reel():
+    from registre import Registre
+    r = Registre()
+    r.charger()
+    return r
+
+
+def test_toutes_les_capacites_de_la_brique_dev_sont_reservees():
+    reg = _registre_reel()
+    manifeste = json.load(open(os.path.join(os.path.dirname(__file__), "..", "briques", "dev", "manifest.json")))
+    noms = [c["nom"] for c in manifeste.get("capacites") or []]
+    assert noms
+    for nom in noms:
+        assert outils.est_reserve_admin(nom, reg), nom
+
+
+def test_capacites_noyau_sensibles_reservees_par_drapeau():
+    reg = _registre_reel()
+    manifeste = json.load(open(os.path.join(os.path.dirname(__file__), "..", "briques", "noyau", "manifest.json")))
+    drapees = {c["nom"] for c in manifeste["capacites"] if c.get("reserve_admin")}
+    assert {"sauvegarde_usb_lancer", "sauvegarde_usb_restaurer"} <= drapees
+    for nom in drapees:
+        assert outils.est_reserve_admin(nom, reg), nom
+
+
+def test_capacite_dev_au_nom_quelconque_reservee_par_sa_brique(monkeypatch):
+    """Une future capacité de la brique dev qui ne commencerait pas par `dev_`."""
+    monkeypatch.setattr(outils, "_capacites_dynamiques",
+                        lambda reg: {"executer_script": {"brique": "dev"},
+                                     "lire_meteo": {"brique": "geo"},
+                                     "purger_tout": {"brique": "x", "reserve_admin": True}})
+    assert outils.est_reserve_admin("executer_script", object())
+    assert outils.est_reserve_admin("purger_tout", object())
+    assert not outils.est_reserve_admin("lire_meteo", object())
+
+    async def faux(nom, args, reg):
+        return "exécuté"
+    monkeypatch.setattr(outils, "_executer", faux)
+    r = asyncio.run(outils.executer("executer_script", {}, object()))
+    assert json.loads(r)["ok"] is False

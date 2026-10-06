@@ -217,10 +217,20 @@ def test_sans_session_refuse_401_quand_auth_activee(monkeypatch):
         assert r.status_code == 401, (methode, chemin, r.status_code)
 
 
-def test_session_valide_sans_liste_blanche_autorisee(monkeypatch):
+def test_session_valide_sans_liste_blanche_refusee(monkeypatch):
+    """Revue S240, I3 — fermé par défaut : auth active mais CERVEAU_ADMINS vide = personne
+    n'est admin du cerveau (une session quelconque ne suffit pas)."""
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     r = client.post("/assistant/persona", json={"persona": "default"}, cookies=_cookie("marina"))
-    assert r.status_code == 200, r.text
+    assert r.status_code == 403
+    assert "CERVEAU_ADMINS" in r.json()["detail"]
+
+
+def test_opt_in_dev_ignore_quand_auth_activee(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_OUVERT_SANS_AUTH", "1")
+    r = client.post("/assistant/persona", json={"persona": "default"}, cookies=_cookie("marina"))
+    assert r.status_code == 403
 
 
 def test_session_hors_liste_blanche_refusee_403(monkeypatch):
@@ -237,8 +247,18 @@ def test_session_dans_liste_blanche_autorisee(monkeypatch):
     assert r.status_code == 200, r.text
 
 
-def test_auth_desactivee_sans_liste_blanche_comportement_historique():
+def test_auth_desactivee_sans_opt_in_fermee(monkeypatch):
+    """Revue S240, I3 : sans auth ni opt-in explicite, le cerveau est fermé."""
     assert auth.AUTH_ENABLED is False
+    monkeypatch.delenv("CERVEAU_OUVERT_SANS_AUTH", raising=False)
+    r = client.post("/assistant/persona", json={"persona": "default"})
+    assert r.status_code == 403
+    assert "CERVEAU_OUVERT_SANS_AUTH" in r.json()["detail"]
+
+
+def test_auth_desactivee_avec_opt_in_dev_ouverte(monkeypatch):
+    """Dev local (pas de Keycloak) : opt-in explicite CERVEAU_OUVERT_SANS_AUTH=1."""
+    monkeypatch.setenv("CERVEAU_OUVERT_SANS_AUTH", "1")
     r = client.post("/assistant/persona", json={"persona": "default"})
     assert r.status_code == 200
 
@@ -250,6 +270,20 @@ def test_auth_desactivee_avec_liste_blanche_refuse(monkeypatch):
     r = client.post("/assistant/persona", json={"persona": "default"})
     assert r.status_code == 403
     assert "AUTH_ENABLED" in r.json()["detail"]
+
+
+def test_avertissement_au_demarrage_si_ferme(monkeypatch, caplog):
+    import logging
+    monkeypatch.delenv("CERVEAU_OUVERT_SANS_AUTH", raising=False)
+    with caplog.at_level(logging.WARNING):
+        auth.avertir_si_cerveau_ferme()
+    assert "cerveau" in caplog.text.lower() and "CERVEAU_ADMINS" in caplog.text
+    caplog.clear()
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    with caplog.at_level(logging.WARNING):
+        auth.avertir_si_cerveau_ferme()
+    assert caplog.text == ""
 
 
 # ── Anti-CSRF (revue S240, I1) ───────────────────────────────────────────────

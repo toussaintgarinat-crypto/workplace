@@ -430,6 +430,21 @@ def est_action(nom: str, registre) -> bool:
     return bool(cap and cap.get("action"))
 
 
+# Briques dont TOUTES les capacités sont réservées à l'admin du cerveau (revue S240, M3) :
+# la brique dev monte le dépôt (donc le .env) en écriture et le socket Docker. Une future
+# capacité qui ne commencerait pas par `dev_` reste ainsi couverte.
+BRIQUES_RESERVEES_ADMIN = frozenset({"dev"})
+
+
+def est_reserve_admin(nom: str, registre) -> bool:
+    """Outil réservé à l'admin du cerveau : liste et préfixes de `droits.py`, OU capacité
+    d'une brique réservée, OU capacité déclarée `"reserve_admin": true` dans son manifest."""
+    if droits.est_reserve_admin(nom):
+        return True
+    cap = _capacites_dynamiques(registre).get(nom)
+    return bool(cap and (cap.get("brique") in BRIQUES_RESERVEES_ADMIN or cap.get("reserve_admin")))
+
+
 def brique_de(nom: str, registre) -> str:
     """Brique d'origine d'un outil, pour le fil d'activité (S165).
 
@@ -514,7 +529,7 @@ async def executer(nom: str, args: dict, registre) -> str:
 
     Point de passage UNIQUE du chat, du co-agent et de /mcp : c'est donc ici que les outils
     réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py)."""
-    if droits.est_reserve_admin(nom) and not droits.ADMIN_CERVEAU.get():
+    if est_reserve_admin(nom, registre) and not droits.ADMIN_CERVEAU.get():
         resultat = droits.refus(nom)
     else:
         resultat = await _executer(nom, args, registre)
