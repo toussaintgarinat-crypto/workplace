@@ -171,6 +171,19 @@ def _plein_texte(con, mots: list[str], limite: int) -> list[str]:
         (_expression_fts(mots), limite)).fetchall()]
 
 
+def similarite_mot(a: str, b: str) -> float:
+    """Similarité de Jaccard entre les trigrammes de deux mots (sans remplissage)."""
+    ta, tb = _trigrammes_de(a), _trigrammes_de(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def meilleure_similarite(mot: str, vocabulaire) -> float:
+    """Meilleure similarité entre `mot` et un mot du vocabulaire dont la longueur diffère d'au plus 3."""
+    return max((similarite_mot(mot, v) for v in vocabulaire if abs(len(v) - len(mot)) <= 3), default=0.0)
+
+
 def _par_trigrammes(con, mots: list[str], limite: int) -> list[str]:
     longs = [m for m in mots if len(m) >= 3]
     if not longs:
@@ -181,10 +194,12 @@ def _par_trigrammes(con, mots: list[str], limite: int) -> list[str]:
         "ORDER BY bm25(documents_trigrammes) LIMIT ?", (_expression_fts(tous), limite * 4)).fetchall()
     gardes = []
     for doc_id, texte in candidats:
-        # Part des trigrammes du mot le mieux retrouvé (proche de word_similarity, S238).
-        part = max(sum(1 for t in _trigrammes_de(m) if t in texte) / len(_trigrammes_de(m)) for m in longs)
-        if part >= SEUIL_TRIGRAMMES:
-            gardes.append((part, doc_id))
+        # Chaque mot de la requête est comparé au VOCABULAIRE du document, mot à mot (proche de
+        # word_similarity) : comparer aux trigrammes du texte entier laissait passer les longues pages.
+        vocabulaire = set(re.findall(r"[^\W_]+", texte))
+        score = max(meilleure_similarite(m, vocabulaire) for m in longs)
+        if score >= SEUIL_TRIGRAMMES:
+            gardes.append((score, doc_id))
     gardes.sort(key=lambda x: (-x[0], x[1]))
     return [d for _, d in gardes][:limite]
 

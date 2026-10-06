@@ -114,3 +114,36 @@ def test_reconstruction_saute_un_document_a_metadonnees_corrompues(tmp_path, mon
     con.close()
     stockage.initialiser()  # ne doit pas lever
     assert [x["id"] for x in stockage.chercher("toiture", 10)] == ["bon"]
+
+
+# --- Fautes de frappe : comparaison mot à mot au vocabulaire (correctif trouvé en preuve LIVE) ---
+
+@pytest.mark.parametrize("faute,juste", [
+    ("legislaton", "legislation"), ("toiturre", "toiture"),
+    ("mollik", "mollick"), ("politque", "politique"),
+])
+def test_similarite_mot_tolere_une_faute(faute, juste):
+    from recherche import similarite_mot
+    assert similarite_mot(faute, juste) >= 0.4
+
+
+def test_similarite_mot_sans_rapport():
+    from recherche import similarite_mot, meilleure_similarite
+    assert similarite_mot("mollik", "molecule") < 0.4
+    assert meilleure_similarite("mollik", {"molecule", "collectif"}) < 0.4
+    assert meilleure_similarite("mollik", {"molecule", "mollick"}) == 0.5
+    # Un mot dont la longueur diffère de plus de 3 caractères n'est pas comparé.
+    assert meilleure_similarite("mollik", {"mollickkkkkk"}) == 0.0
+
+
+def test_long_document_ne_remonte_pas_pour_une_faute_de_frappe(client):
+    court = _importer(client, "Interview Ethan Mollick", "Entretien avec Ethan Mollick sur l'IA.")
+    base = ("Le règlement collectif impose aux milliers d'exploitants de déclarer chaque molécule "
+            "chimique, la responsabilité civile, l'assurance obligatoire et les obligations de "
+            "conformité ; il est probable (likelihood) que les contrôles soient renforcés. ")
+    long = " ".join(base + f"Article {i} : les installations classées doivent justifier des "
+                    f"mesures de prévention numéro {i * 7} et des délais de mise en conformité."
+                    for i in range(40))
+    assert len(long) >= 5000
+    _importer(client, "Réglementation", long)
+    assert _ids(client, "Mollik") == [court]
