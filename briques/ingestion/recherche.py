@@ -235,5 +235,7 @@ def chercher(con: sqlite3.Connection, requete: str, limite: int = 10) -> list[di
             continue
         resultats.append({"id": doc_id, "source": "ingestion", "titre": ligne["nom"],
                           "extrait": _extrait(ligne["texte_extrait"] or "", mots),
-                          "rang": len(resultats) + 1, "exact": doc_id in exacts})
+                          "rang": len(resultats) + 1, "exact": doc_id in exacts,
+                          # S242 : pas de recherche par le sens ici, donc exacte ou lexicale.
+                          "correspondance": "exacte" if doc_id in exacts else "lexicale"})
     return resultats
