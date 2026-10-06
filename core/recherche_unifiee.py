@@ -7,7 +7,9 @@ indispensable : une source en panne ou trop lente est signalée dans
 `ToutesSourcesIndisponibles` — jamais une liste vide présentée comme un succès.
 
 `partage` : vrai pour Ingestion (une seule clé de service, aucune isolation par personne) et
-pour la Forge quand elle a cherché sous son identité de service (pas de jeton utilisateur).
+pour la Forge quand elle a cherché sous son identité de service (pas de jeton utilisateur), et
+pour l'espace Mémoire `solution` (l'espace commun « Workplace » du cercle) ; `perso` et `veille`
+restent privés.
 
 Modes : `hybride` (sens + mots), `lexical` (le sens est coupé, repli sur les mots) et
 `plein_texte` (Ingestion, qui n'a QUE les mots : ce n'est pas une panne). La réponse porte
@@ -90,7 +92,7 @@ async def _memoire(client: httpx.AsyncClient, registre, q: str, n: int, espace: 
     r.raise_for_status()
     d = r.json()
     return _Liste(f"memoire-{espace}", d.get("mode", "hybride"), [
-        _resultat(f"memoire-{espace}", x, False, x.get("correspondance") == "exacte")
+        _resultat(f"memoire-{espace}", x, espace == "solution", x.get("correspondance") == "exacte")
         for x in d.get("souvenirs", [])])
 
 

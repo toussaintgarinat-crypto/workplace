@@ -82,7 +82,8 @@ def test_partage_signale():
     rep = _lancer(transport)
     par_source = {r["source"]: r["partage"] for r in rep["resultats"]}
     assert par_source["forge-document"] is True and par_source["ingestion"] is True
-    assert par_source["memoire-perso"] is False
+    assert par_source["memoire-perso"] is False and par_source["memoire-veille"] is False
+    assert par_source["memoire-solution"] is True
     transport, _ = _reponses(forge_identite="utilisateur")
     assert {r["partage"] for r in _lancer(transport)["resultats"] if r["source"].startswith("forge")} == {False}
 
