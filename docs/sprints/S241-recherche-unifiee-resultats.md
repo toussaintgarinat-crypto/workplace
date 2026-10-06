@@ -131,3 +131,24 @@ Reste observé en LIVE (non corrigé, décision à prendre) : la branche par le 
 des voisins, même pour une requête vide de sens (pas de similarité minimale), et la fusion du
 Cœur donne le même poids au premier résultat de chaque espace ou brique, quelle que soit sa
 pertinence (« commande hetre » : un souvenir perso sans rapport sort devant « Commande hêtre »).
+
+## S242 — Pertinence de la recherche unifiée (2026-10-06)
+Suite directe des constats LIVE ci-dessus. Branche `sprint/s242-pertinence-recherche`.
+- **Seuil de similarité écarté par la mesure** : avec `all-minilm` (anglais), les bonnes réponses
+  par le sens descendent à 0,21–0,25 de cosinus, les hors-sujet montent à 0,59–0,61 et « le de des »
+  à 0,44–0,48 (jeux de mesure Forge et Mémoire). Aucun seuil ne sépare le bruit sans perdre les
+  bonnes réponses.
+- **Requête sans référence ni mot significatif** (configuration `french` de PostgreSQL) : la Forge
+  et la Mémoire ne cherchent pas, pas même par le sens. Limite (revue) : la liste `french` est
+  plus large que celle du Cœur (« été », « être », « fait », « tout », « mon ») ; une requête faite
+  seulement de ces mots ne renvoie rien. Si cela gêne : laisser passer la seule branche lexicale.
+- **Forge et Ingestion exposent `correspondance`** (exacte, lexicale, vectorielle, les_deux).
+- **Fusion du Cœur** : niveau (référence exacte > mots > sens seul), puis couverture des mots
+  significatifs de la requête dans le titre et l'extrait (fautes tolérées), puis RRF. Une brique
+  qui n'envoie pas `correspondance` compte au niveau « mots ».
+- Tests : Cœur 988, Forge 343, Ingestion 75, Mémoire 115. Revue : prêt à fusionner (mineurs :
+  faux positifs rares de couverture sur des mots de 3 lettres, `MOTS_VIDES` copié de la brique
+  Ingestion, normalisation Unicode du Cœur différente de `unaccent` pour « œ » et « ß »).
+- LIVE HP (étiquettes `*:avant-s242`) : « le de des » → aucun résultat ; « commande hetre » →
+  « Commande hêtre » en tête ; « politque conges », « Mollik », « legislaton » toujours trouvés ;
+  0,1–0,4 s à chaud.
