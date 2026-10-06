@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime
 import logging
 import uuid as uuidlib
+from dataclasses import dataclass
 
 import httpx
 from openai import AsyncOpenAI
@@ -57,6 +58,23 @@ _PROVIDER_KEYS = {
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
 
+# Types de sources vectorisées par la Forge (routers documents et kb) — rien d'autre n'écrit
+# dans Qdrant. La réconciliation S241 ne touche qu'à ces types.
+SOURCES_INDEXEES = ("document", "kb_article")
+
+
+class RechercheVectorielleIndisponible(Exception):
+    """Embedder ou Qdrant injoignable : la recherche par le sens n'a pas pu être faite (S241).
+    Jamais remplacée par une liste vide silencieuse : l'appelant passe en mode lexical et le dit."""
+
+
+@dataclass(frozen=True)
+class Fragment:
+    source_type: str
+    source_id: str
+    texte: str
+    score: float
+
 _qdrant: AsyncQdrantClient | None = None
 
 
@@ -89,6 +107,19 @@ def resolve_provider(preferred: str | None = None) -> str:
         if _is_available(p):
             return p
     return "local"
+
+
+def collection_active() -> tuple[str, str]:
+    """(provider, collection) utilisés par la recherche et la réconciliation S241."""
+    provider = resolve_provider(None)
+    return provider, COLLECTIONS[provider]["name"]
+
+
+def _filtre_utilisateur(user_id: str, pole_id: str | None = None) -> qm.Filter:
+    conditions = [qm.FieldCondition(key="user_id", match=qm.MatchValue(value=user_id))]
+    if pole_id:
+        conditions.append(qm.FieldCondition(key="pole_id", match=qm.MatchValue(value=pole_id)))
+    return qm.Filter(must=conditions)
 
 
 # ── Embeddings ──────────────────────────────────────────────────────────
@@ -204,6 +235,65 @@ async def delete_by_source(source_id: str) -> None:
             pass
 
 
+async def indexer_source(texte: str, source_id: str, source_type: str, user_id: str, titre: str) -> int:
+    """(Re)vectorise UNE source dans la collection active (réconciliation S241).
+
+    Contrairement à `ingest` (best-effort, tous providers, écrit aussi dans la brique
+    Mémoire), lève `RechercheVectorielleIndisponible` sur toute panne et n'écrit QUE dans
+    Qdrant. Les anciens fragments de la source sont supprimés d'abord."""
+    provider, nom = collection_active()
+    morceaux = chunk_text(texte)
+    try:
+        client = _client()
+        await _ensure_collection(nom, COLLECTIONS[provider]["size"])
+        await client.delete(nom, points_selector=qm.FilterSelector(filter=qm.Filter(
+            must=[qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))]
+        )))
+        if not morceaux:
+            return 0
+        vecteurs = await _embed_batch(morceaux, provider)
+        horodatage = datetime.datetime.utcnow().isoformat() + "Z"
+        await client.upsert(nom, points=[
+            qm.PointStruct(
+                id=str(uuidlib.uuid4()),
+                vector=vecteurs[i],
+                payload={
+                    "text": morceau, "source_id": source_id, "source_type": source_type,
+                    "user_id": user_id, "pole_id": None, "title": titre or "",
+                    "timestamp": horodatage, "provider": provider,
+                },
+            )
+            for i, morceau in enumerate(morceaux)
+        ])
+    except Exception as e:  # noqa: BLE001 — toute panne embedder/Qdrant est signalée
+        raise RechercheVectorielleIndisponible(str(e)[:200]) from e
+    return len(morceaux)
+
+
+async def chercher_fragments(question: str, user_id: str, limite: int = 30) -> list[Fragment]:
+    """Fragments les plus proches de `question`, de CET utilisateur seulement (S241)."""
+    if not user_id:
+        raise ValueError("user_id requis : jamais de recherche vectorielle sans propriétaire")
+    provider, nom = collection_active()
+    try:
+        vecteur, _ = await embed_one(question, provider)
+        client = _client()
+        if not await client.collection_exists(nom):
+            return []
+        resultats = await client.search(
+            nom, query_vector=vecteur, limit=limite, with_payload=True,
+            query_filter=_filtre_utilisateur(user_id),
+        )
+    except Exception as e:  # noqa: BLE001
+        raise RechercheVectorielleIndisponible(str(e)[:200]) from e
+    fragments = []
+    for r in resultats:
+        p = r.payload or {}
+        fragments.append(Fragment(str(p.get("source_type") or ""), str(p.get("source_id") or ""),
+                                  str(p.get("text") or ""), float(r.score)))
+    return fragments
+
+
 async def delete_by_user(user_id: str) -> dict[str, str]:
     """RGPD (S18-5) — efface tous les vecteurs d'un utilisateur dans Qdrant.
 
@@ -258,16 +348,16 @@ async def mem_forget_user(user_id: str, espace: str | None = None) -> dict | Non
 
 
 # ── Recherche / contexte (retriever.ts) ─────────────────────────────────
-async def _qdrant_search(question: str, limit: int, min_score: float, pole_id: str | None,
-                         provider: str | None) -> str:
+async def _qdrant_search(question: str, limit: int, min_score: float, user_id: str,
+                         pole_id: str | None, provider: str | None) -> str:
     try:
         prov = resolve_provider(provider)
         vector, collection = await embed_one(question, prov)
-        flt = None
-        if pole_id:
-            flt = qm.Filter(must=[qm.FieldCondition(key="pole_id", match=qm.MatchValue(value=pole_id))])
+        # S241 : filtre user_id OBLIGATOIRE — avant, seul pole_id filtrait et chacun lisait
+        # les passages des documents de tous les utilisateurs.
         results = await _client().search(
-            collection, query_vector=vector, limit=limit, with_payload=True, query_filter=flt
+            collection, query_vector=vector, limit=limit, with_payload=True,
+            query_filter=_filtre_utilisateur(user_id, pole_id),
         )
         relevant = [r for r in results if r.score > min_score]
         if not relevant:
@@ -292,10 +382,12 @@ async def _qdrant_search(question: str, limit: int, min_score: float, pole_id: s
         return ""
 
 
-async def get_context(question: str, _session_id: str, limit: int = 5, min_score: float = 0.65,
-                      pole_id: str | None = None, provider: str | None = None) -> str:
-    """Recherche sémantique Qdrant + enrichissement brique Mémoire Workplace opt-in."""
-    rag = await _qdrant_search(question, limit, min_score, pole_id, provider)
+async def get_context(question: str, _session_id: str, *, user_id: str, limit: int = 5,
+                      min_score: float = 0.65, pole_id: str | None = None,
+                      provider: str | None = None) -> str:
+    """Recherche sémantique Qdrant (documents de `user_id` seulement, S241) + enrichissement
+    brique Mémoire Workplace opt-in. Sans utilisateur, aucun passage Qdrant."""
+    rag = await _qdrant_search(question, limit, min_score, user_id, pole_id, provider) if user_id else ""
     hits = await mem_prefetch(question, 3)
     return rag + mem_format_context(hits)
 

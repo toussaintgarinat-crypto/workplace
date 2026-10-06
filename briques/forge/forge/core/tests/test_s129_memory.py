@@ -89,7 +89,7 @@ async def test_get_context_degrades_to_empty(monkeypatch):
     # Qdrant injoignable + Mémoire off → "" sans lever
     monkeypatch.setattr("app.config.settings.MEMOIRE_URL", "")
     monkeypatch.setattr("app.config.settings.QDRANT_URL", "http://127.0.0.1:1")  # port mort
-    out = await memory.get_context("question", "sess-1")
+    out = await memory.get_context("question", "sess-1", user_id="u1")
     assert out == ""
 
 

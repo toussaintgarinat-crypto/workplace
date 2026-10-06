@@ -195,7 +195,7 @@ async def ws_chat(websocket: WebSocket, session_id: str):
                 continue
 
             # ── Mode streaming standard ──────────────────────────────────
-            rag = await get_context(content, session_id)
+            rag = await get_context(content, session_id, user_id)
             system_prompt = _build_system_prompt(rag, pole_ctx, venture_ctx, agent_personality)
             full = ""
             try:
