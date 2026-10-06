@@ -90,3 +90,21 @@ async def test_existants_et_fiches_recoupent_par_utilisateur(base):
         assert await rd.existants(s, [("document", a), ("document", b)], "alice") == {("document", a)}
         fiches = await rd.fiches(s, [("document", a), ("document", b)], "alice")
         assert set(fiches) == {("document", a)} and fiches[("document", a)].titre == "A"
+
+
+@integration
+async def test_mots_vides_de_la_requete_ne_remontent_pas_de_hors_sujet(base):
+    a = await ajouter_document("alice", "Recrutement d'un conducteur de travaux",
+                               "Le poste est ouvert, le candidat dirigera les équipes de chantier.")
+    b = await ajouter_document("alice", "Devis toiture", "Il faut refaire le toit avant l'hiver.")
+    async with SessionLocal() as s:
+        cles = await rd.plein_texte(s, "refaire le toit", "alice", TOUT, 10)
+        assert ("document", b) in cles
+        assert ("document", a) not in cles
+
+
+@integration
+async def test_requete_composee_de_mots_vides_renvoie_une_liste_vide(base):
+    await ajouter_document("alice", "Le recrutement de la société des équipes", "Le poste de la société, des équipes.")
+    async with SessionLocal() as s:
+        assert await rd.plein_texte(s, "le de des", "alice", TOUT, 10) == []

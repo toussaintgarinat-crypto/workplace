@@ -61,8 +61,13 @@ async def plein_texte(s: AsyncSession, requete: str, user_id: str, sources: froz
     morceaux = []
     for i, mot in enumerate(mots):
         params[f"t{i}"] = mot
-        morceaux.append(f"plainto_tsquery('simple', forge_unaccent(:t{i})) || "
-                        f"plainto_tsquery('french', forge_unaccent(:t{i}))")
+        # La partie `simple` (qui garde codes et noms propres) n'est ajoutée que si `french` ne
+        # tient pas le terme pour un mot vide : sinon « le », « de »… correspondraient, en `simple`,
+        # à tous les titres qui contiennent ce mot (poids A) et noieraient les vrais résultats.
+        morceaux.append(
+            f"(CASE WHEN numnode(plainto_tsquery('french', forge_unaccent(:t{i}))) > 0 "
+            f"THEN plainto_tsquery('simple', forge_unaccent(:t{i})) || "
+            f"plainto_tsquery('french', forge_unaccent(:t{i})) ELSE ''::tsquery END)")
     unions = " UNION ALL ".join(
         f"SELECT '{t.source}' AS source, x.id, ts_rank_cd(x.recherche_tsv, q.r) AS rang, "
         f"x.created_at AS date FROM {t.table} x, q WHERE x.user_id = :moi AND x.recherche_tsv @@ q.r"

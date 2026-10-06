@@ -114,8 +114,17 @@ def _regexp(motif: str, texte: str | None) -> bool:
     return texte is not None and re.search(motif, texte) is not None
 
 
+MOTS_VIDES = frozenset(
+    "le la les l un une des de du d au aux et ou a en dans par pour sur avec sans ce cet cette ces "
+    "qui que quoi dont ne pas plus se sa son ses leur leurs nous vous ils elles il elle on je tu y "
+    "est sont".split())
+
+
 def _termes(requete: str) -> list[str]:
-    return re.findall(r"[^\W_]+", normaliser(requete))[:TERMES_MAX]
+    """Termes de la requête sans mots vides (déjà normalisés) : « le », « de »… correspondraient
+    à presque tous les documents, en plein texte comme en trigrammes."""
+    mots = re.findall(r"[^\W_]+", normaliser(requete))[:TERMES_MAX]
+    return [m for m in mots if m not in MOTS_VIDES]
 
 
 def _expression_fts(jetons: list[str]) -> str:

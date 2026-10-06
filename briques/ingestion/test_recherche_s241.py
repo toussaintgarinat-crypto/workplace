@@ -85,3 +85,16 @@ def test_reconstruction_de_l_index(client):
 
 def test_requete_vide_refusee(client):
     assert client.get("/recherche", params={"q": " "}).status_code == 422
+
+
+def test_mots_vides_de_la_requete_ne_remontent_pas_de_hors_sujet(client):
+    hors_sujet = _importer(client, "Recrutement d'un conducteur de travaux",
+                           "Le poste est ouvert, le candidat dirigera les équipes de chantier.")
+    cible = _importer(client, "Devis toiture", "Il faut refaire le toit avant l'hiver.")
+    assert _ids(client, "refaire le toit") == [cible]
+    assert hors_sujet not in _ids(client, "refaire le toit")
+
+
+def test_requete_composee_de_mots_vides_ne_renvoie_rien(client):
+    _importer(client, "Recrutement d'un conducteur", "Le poste de la société, des équipes.")
+    assert _ids(client, "le de des") == []
