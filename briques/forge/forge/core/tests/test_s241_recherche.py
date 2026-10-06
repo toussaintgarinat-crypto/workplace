@@ -104,3 +104,23 @@ async def test_faute_de_frappe_avec_mots_vides_trouve_toujours_le_document(base,
     cible = await ajouter_document("alice", "Contrat", "Contrat de maintenance annuelle.")
     rep = await rechercher("la maintenence", "alice")
     assert [r["id"] for r in rep["resultats"]] == [str(cible)]
+
+
+async def test_embedder_lent_borne_a_un_delai_court_et_replie_en_lexical(base, alice, client, monkeypatch):
+    """Le Cœur coupe chaque source à 8 s : un embedder qui dort ne doit pas faire perdre la Forge."""
+    import asyncio
+    import time
+
+    async def _dort(textes, provider):
+        await asyncio.sleep(10)
+        return [[0.0] for _ in textes]
+
+    monkeypatch.setattr(memory, "_embed_batch", _dort)
+    monkeypatch.setattr(memory, "available_providers", lambda: ["local"])
+    monkeypatch.setattr(memory, "resolve_provider", lambda preferred=None: "local")
+    monkeypatch.setattr(memory, "DELAI_EMBEDDING_RECHERCHE", 0.2, raising=False)
+    cible = await ajouter_document("alice", "Devis toiture", "Réfection complète.")
+    debut = time.monotonic()
+    rep = await _chercher(client, "toiture")
+    assert time.monotonic() - debut < 2
+    assert rep["mode"] == "lexical" and [r["id"] for r in rep["resultats"]] == [str(cible)]

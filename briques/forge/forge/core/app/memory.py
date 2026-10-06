@@ -21,6 +21,7 @@ brique encapsule espaces, JWT et le projet Memory (graphe IPCRa / pgvector).
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import uuid as uuidlib
@@ -55,6 +56,10 @@ _PROVIDER_KEYS = {
     "mistral": "MISTRAL_API_KEY",
 }
 
+# Recherche : le Cœur coupe chaque source à 8 s ; l'embedding de la requête est donc borné bien en
+# dessous, sans nouvelle tentative, pour que la Forge replie en lexical au lieu d'être perdue.
+# (Ne concerne PAS l'indexation, qui garde ses délais et tentatives.)
+DELAI_EMBEDDING_RECHERCHE = 3.0
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
 
@@ -276,7 +281,7 @@ async def chercher_fragments(question: str, user_id: str, limite: int = 30) -> l
         raise ValueError("user_id requis : jamais de recherche vectorielle sans propriétaire")
     provider, nom = collection_active()
     try:
-        vecteur, _ = await embed_one(question, provider)
+        vecteur, _ = await asyncio.wait_for(embed_one(question, provider), DELAI_EMBEDDING_RECHERCHE)
         client = _client()
         if not await client.collection_exists(nom):
             return []
