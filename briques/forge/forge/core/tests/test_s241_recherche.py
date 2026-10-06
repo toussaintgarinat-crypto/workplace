@@ -89,3 +89,18 @@ async def test_filtre_sources_et_requete_vide(base, embedder_factice, alice, cli
 async def test_sans_authentification_refuse(base, client):
     r = await client.get("/api/recherche/hybride", params={"q": "x"})
     assert r.status_code in (401, 403)
+
+
+async def test_requete_de_mots_vides_ne_remonte_rien_de_bout_en_bout(base, embedder_coupe):
+    from app.recherche_service import rechercher
+    await ajouter_document("alice", "Le recrutement de la société des équipes", "Le poste de la société, des équipes.")
+    rep = await rechercher("le de des", "alice")
+    assert rep["resultats"] == []
+
+
+async def test_faute_de_frappe_avec_mots_vides_trouve_toujours_le_document(base, embedder_coupe):
+    from app.recherche_service import rechercher
+    await ajouter_document("alice", "Le recrutement de la société des équipes", "Le poste de la société, des équipes.")
+    cible = await ajouter_document("alice", "Contrat", "Contrat de maintenance annuelle.")
+    rep = await rechercher("la maintenence", "alice")
+    assert [r["id"] for r in rep["resultats"]] == [str(cible)]

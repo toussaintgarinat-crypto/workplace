@@ -108,3 +108,19 @@ async def test_requete_composee_de_mots_vides_renvoie_une_liste_vide(base):
     await ajouter_document("alice", "Le recrutement de la société des équipes", "Le poste de la société, des équipes.")
     async with SessionLocal() as s:
         assert await rd.plein_texte(s, "le de des", "alice", TOUT, 10) == []
+
+
+@integration
+async def test_termes_significatifs_gardent_l_ordre_et_ecartent_les_mots_vides(base):
+    async with SessionLocal() as s:
+        assert await rd.termes_significatifs(s, "la maintenence de la chaudière") == ["maintenence", "chaudière"]
+        assert await rd.termes_significatifs(s, "le de des") == []
+
+
+@integration
+async def test_trigrammes_ignorent_les_mots_vides_de_la_requete(base):
+    await ajouter_document("alice", "Le recrutement de la société des équipes", "Le poste de la société, des équipes.")
+    cible = await ajouter_document("alice", "Contrat", "Contrat de maintenance annuelle.")
+    async with SessionLocal() as s:
+        assert await rd.trigrammes(s, "le de des", "alice", TOUT, 10) == []
+        assert await rd.trigrammes(s, "la maintenence", "alice", TOUT, 10) == [("document", cible)]

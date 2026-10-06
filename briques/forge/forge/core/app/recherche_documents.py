@@ -91,13 +91,28 @@ def sql_trigrammes(tables: list[TableRecherche]) -> str:
             f"ORDER BY rang DESC, date DESC, id LIMIT :limite")
 
 
+async def termes_significatifs(s: AsyncSession, requete: str) -> list[str]:
+    """Termes de la requête, dans l'ordre, que la configuration `french` ne tient pas pour des
+    mots vides (« le », « de », « des »… donnent une tsquery vide)."""
+    mots = termes(requete)
+    if not mots:
+        return []
+    sql = text("SELECT t.m FROM unnest(CAST(:mots AS text[])) WITH ORDINALITY AS t(m, i) "
+               "WHERE numnode(plainto_tsquery('french', forge_unaccent(t.m))) > 0 ORDER BY t.i")
+    return [r[0] for r in (await s.execute(sql, {"mots": mots})).all()]
+
+
 async def trigrammes(s: AsyncSession, requete: str, user_id: str, sources: frozenset[str],
                      limite: int) -> list[Cle]:
-    """Filet pour les fautes de frappe, utilisé quand le plein texte ne trouve rien."""
+    """Filet pour les fautes de frappe, utilisé quand le plein texte ne trouve rien. Ne cherche
+    que sur les termes significatifs : les mots vides feraient remonter des titres hors sujet."""
     tables = _tables(sources)
-    if not requete.strip() or not tables:
+    if not tables:
         return []
-    params = {"moi": user_id, "q": requete.strip(), "limite": limite}
+    utiles = await termes_significatifs(s, requete)
+    if not utiles:
+        return []
+    params = {"moi": user_id, "q": " ".join(utiles), "limite": limite}
     # SET LOCAL : valable pour la transaction en cours seulement (pas de paramètre lié possible).
     await s.execute(text(f"SET LOCAL pg_trgm.word_similarity_threshold = {float(SEUIL_TRIGRAMME)}"))
     return [(r[0], r[1]) for r in (await s.execute(text(sql_trigrammes(tables)), params)).all()]

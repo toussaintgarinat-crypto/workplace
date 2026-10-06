@@ -4,6 +4,7 @@ Trois modes : « hybride » (embedder RÉEL de la Gateway — seulement si GATEW
 transmise), « lexical » (embedder coupé) et « LIKE » (l'ancienne recherche /api/search :
 LIKE sensible à la casse, sans tolérance de faute). À lancer via le lanceur :
     scripts/en_docker.sh python -m scripts.mesure_recherche_s241
+Le script vide et réécrit des tables : il refuse de tourner hors du lanceur (base et Qdrant jetables).
 """
 from __future__ import annotations
 
@@ -66,6 +67,9 @@ async def _rappel(chercheur, ids) -> dict[str, float]:
 
 
 async def principal() -> None:
+    if not os.environ.get("FORGE_TEST_INTEGRATION"):
+        raise SystemExit("Refus : ce script écrit dans la base ; lance-le via scripts/en_docker.sh "
+                         "(base et Qdrant jetables, FORGE_TEST_INTEGRATION posée).")
     ids = await _charger()
     lignes = []
     if os.environ.get("GATEWAY_API_KEY"):
