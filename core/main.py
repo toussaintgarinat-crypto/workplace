@@ -24,8 +24,8 @@ from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
 from routers import (agenda, assistant, atelier_images_video_proxy, atelier_veille_proxy,
-                     dashboard, invite, mail_proxy, media_proxy, profil, sauvegarde_usb,
-                     studio_proxy, systeme, usine)
+                     dashboard, invite, mail_proxy, media_proxy, profil, recherche,
+                     sauvegarde_usb, studio_proxy, systeme, usine)
 from routers import auth as routeur_auth
 
 
@@ -118,5 +118,8 @@ app.include_router(media_proxy.router, dependencies=[Depends(exiger_session)])
 app.include_router(assistant.router, dependencies=_tenant)
 app.include_router(agenda.router, dependencies=_tenant)
 app.include_router(profil.router, dependencies=_tenant)
+# S241 — recherche unifiée (Forge + Ingestion + Mémoire) : session obligatoire (garde posée
+# sur la route) + contexte de tenant pour que chaque brique cherche au nom de la personne.
+app.include_router(recherche.router, dependencies=_tenant)
 # S181 — invitation d'un proche au mesh (setup key NetBird + QR) : gardé par session (cockpit).
 app.include_router(invite.router, dependencies=[Depends(exiger_session)])

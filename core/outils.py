@@ -88,12 +88,13 @@ OUTILS: list[dict] = [
         "parameters": _p({}, [])}},
     {"type": "function", "function": {
         "name": "chercher_documents",
-        "description": "Cherche dans les documents ingérés et leur classement. Sans filtre, liste tout. Filtre possible par texte (q), catégorie, projet ou entreprise.",
+        "description": "Cherche dans TOUS les documents : Forge (documents et base de connaissances), documents ingérés et mémoire. Avec q : références exactes (numéros, codes, expressions entre guillemets) en tête, puis mots et sens ; les fautes de frappe sont tolérées ; la réponse signale les sources indisponibles et le mode « lexical » (recherche par le sens momentanément coupée). Sans q : liste les documents ingérés, filtrables par catégorie, projet ou entreprise. Lecture seule.",
         "parameters": _p({
-            "q": {"type": "string", "description": "Filtre texte sur le nom/contenu (optionnel)."},
-            "categorie": {"type": "string", "description": "Filtre par catégorie (devis, facture, contrat…)."},
-            "projet": {"type": "string", "description": "Filtre par dossier de projet (ex. « prochain sprint »)."},
-            "entreprise_id": {"type": "string", "description": "Filtre par entreprise rattachée (livraison_id)."},
+            "q": {"type": "string", "description": "Termes recherchés (optionnel ; sans q, listage filtré)."},
+            "limite": {"type": "integer", "description": "Nombre maximum de résultats avec q (défaut 10, maximum 50)."},
+            "categorie": {"type": "string", "description": "Sans q : filtre par catégorie (devis, facture, contrat…)."},
+            "projet": {"type": "string", "description": "Sans q : filtre par dossier de projet (ex. « prochain sprint »)."},
+            "entreprise_id": {"type": "string", "description": "Sans q : filtre par entreprise rattachée (livraison_id)."},
         }, [])}},
     {"type": "function", "function": {
         "name": "lister_dossiers",

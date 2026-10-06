@@ -68,6 +68,7 @@ ROUTES_SESSION = {
     ("POST", "/assistant/projets"), ("PATCH", "/assistant/projets/{projet_id}"),
     ("DELETE", "/assistant/projets/{projet_id}"), ("POST", "/assistant/document"),
     ("POST", "/profil"), ("PATCH", "/profil/identite"),
+    ("GET", "/recherche"),  # S241 — recherche unifiée, session obligatoire
 }
 
 # Routes d'ÉCRITURE volontairement SANS `exiger_admin_cerveau` — chaque entrée dit pourquoi.

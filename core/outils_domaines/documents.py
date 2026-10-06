@@ -11,15 +11,25 @@ from outils_communs import _confirmation, _base, _entetes_brique
 async def dispatch(nom: str, args: dict, registre, client) -> str | None:
     """Renvoie le résultat (str) si le nom appartient à ce domaine, sinon None."""
     if nom == "chercher_documents":
+        q = (args.get("q") or "").strip()
+        if q:
+            # S241 — recherche unifiée : Forge (documents + base de connaissances), documents
+            # ingérés et Mémoire, avec références exactes en tête et fautes de frappe tolérées.
+            import recherche_unifiee
+            try:
+                res = await recherche_unifiee.rechercher(q, registre, args.get("limite") or 10)
+            except recherche_unifiee.ToutesSourcesIndisponibles:
+                return json.dumps({"ok": False, "message": "Recherche indisponible : aucune source "
+                                   "(Forge, documents ingérés, Mémoire) n'a répondu."}, ensure_ascii=False)
+            return json.dumps(res, ensure_ascii=False)
+        # Sans q : listage filtré des documents ingérés (catégorie, projet, entreprise), dont
+        # dépendent les références de projet (core/projets.py).
         params = {k: args[k] for k in ("categorie", "projet", "entreprise_id")
                   if args.get(k)}
         params["limite"] = 200
         r = await client.get(f"{_base(registre, 'ingestion')}/documents", params=params,
                              headers=_entetes_brique("ingestion"))
         docs = r.json().get("documents", []) if r.status_code < 400 else []
-        q = (args.get("q") or "").lower()
-        if q:
-            docs = [d for d in docs if q in json.dumps(d, ensure_ascii=False).lower()]
         apercu = [{"id": d.get("id"), "nom": d.get("nom"), "type": d.get("type_mime"),
                    "classement": d.get("classement")} for d in docs]
         return json.dumps({"documents": apercu, "total": len(apercu)}, ensure_ascii=False)
