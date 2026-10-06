@@ -20,7 +20,7 @@ def _bases(monkeypatch):
     monkeypatch.setattr(ru.orchestrateur, "_brique_base", lambda registre, nom: f"http://{nom}")
 
 
-def _reponses(pannes=(), lents=(), forge_identite="service"):
+def _reponses(pannes=(), lents=(), forge_identite="service", espaces_en_panne=()):
     vus = []
 
     async def gerer(requete: httpx.Request):
@@ -38,6 +38,8 @@ def _reponses(pannes=(), lents=(), forge_identite="service"):
             return httpx.Response(200, json={"mode": "lexical", "resultats": [
                 {"id": "i1", "source": "ingestion", "titre": "FAC-1", "extrait": "…", "exact": True}]})
         espace = requete.url.params["espace"]
+        if espace in espaces_en_panne:
+            raise httpx.ConnectError("espace hors ligne", request=requete)
         return httpx.Response(200, json={"mode": "hybride", "souvenirs": [
             {"id": f"m-{espace}", "titre": f"Souvenir {espace}", "extrait": "…", "correspondance": "lexicale"}]})
 
@@ -83,8 +85,24 @@ def test_source_trop_lente_signalee(monkeypatch):
 
 def test_toutes_en_panne_leve():
     transport, _ = _reponses(pannes=("forge", "ingestion", "memoire"))
-    with pytest.raises(ru.ToutesSourcesIndisponibles):
+    with pytest.raises(ru.ToutesSourcesIndisponibles) as exc:
         _lancer(transport)
+    assert exc.value.args[0] == ["forge", "ingestion", "memoire"]
+
+
+def test_un_seul_espace_memoire_en_panne_garde_son_nom():
+    transport, _ = _reponses(espaces_en_panne=("perso",))
+    rep = _lancer(transport)
+    assert rep["sources_indisponibles"] == ["memoire-perso"]
+    sources = {r["source"] for r in rep["resultats"]}
+    assert {"memoire-solution", "memoire-veille", "ingestion"} <= sources
+
+
+def test_source_inconnue_refusee():
+    transport, _ = _reponses()
+    with pytest.raises(ValueError, match="source inconnue : bar, foo"):
+        _lancer(transport, sources={"foo", "bar", "forge"})
+    assert _lancer(transport, sources=set())["sources_indisponibles"] == []
 
 
 def test_filtre_sources_et_requete_vide():

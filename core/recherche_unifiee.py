@@ -8,6 +8,9 @@ indispensable : une source en panne ou trop lente est signalée dans
 
 `partage` : vrai pour Ingestion (une seule clé de service, aucune isolation par personne) et
 pour la Forge quand elle a cherché sous son identité de service (pas de jeton utilisateur).
+
+Vocabulaire des sources indisponibles (réponse ET exception) : un espace Mémoire en panne seul
+garde son nom `memoire-<espace>` ; si les trois espaces sont en panne, ils deviennent `memoire`.
 """
 from __future__ import annotations
 
@@ -78,6 +81,12 @@ async def _memoire(client: httpx.AsyncClient, registre, q: str, n: int, espace: 
         for x in d.get("souvenirs", [])])
 
 
+def _replier_memoire(indisponibles: list[str]) -> list[str]:
+    if all(f"memoire-{e}" in indisponibles for e in ESPACES_MEMOIRE):
+        return [n for n in indisponibles if not n.startswith("memoire-")] + ["memoire"]
+    return indisponibles
+
+
 def fusionner(listes: list[_Liste], limite: int) -> list[dict]:
     """RRF sur les classements de chaque sous-source ; +1 pour une référence exacte (un score
     RRF vaut au plus 1/(K+1) par liste, donc un exact passe toujours devant)."""
@@ -98,6 +107,9 @@ async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | Non
     if not q:
         return {"resultats": [], "modes": {}, "sources_indisponibles": []}
     limite = min(max(int(limite), 1), LIMITE_MAX)
+    inconnues = sorted(set(sources or ()) - set(SOURCES))
+    if inconnues:
+        raise ValueError("source inconnue : " + ", ".join(inconnues))
     voulues = [s for s in SOURCES if not sources or s in sources]
     async with httpx.AsyncClient(timeout=DELAI_SOURCE, transport=transport) as client:
         appels: dict = {}
@@ -117,10 +129,8 @@ async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | Non
             indisponibles.append(nom)
         else:
             listes.append(reponse)
+    indisponibles = _replier_memoire(indisponibles)
     if appels and not listes:
         raise ToutesSourcesIndisponibles(indisponibles)
-    # Une brique entière en panne apparaît une fois (« memoire »), pas une fois par espace.
-    if all(f"memoire-{e}" in indisponibles for e in ESPACES_MEMOIRE):
-        indisponibles = [n for n in indisponibles if not n.startswith("memoire-")] + ["memoire"]
     return {"resultats": fusionner(listes, limite), "modes": {l.nom: l.mode for l in listes},
             "sources_indisponibles": indisponibles}
