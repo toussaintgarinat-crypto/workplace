@@ -1147,8 +1147,10 @@ const RECHERCHE_LIBELLES = {
 const RECHERCHE_LIBELLES_PANNE = Object.assign({}, RECHERCHE_LIBELLES, {
   'forge': 'Forge', 'memoire': 'Mémoire',
 });
+let RECHERCHE_SEQ = 0; // génération : une réponse périmée ne touche plus l'écran
 async function lancerRecherche() {
-  const q = document.getElementById('recherche-q').value.trim();
+  const mon = ++RECHERCHE_SEQ;
+  const q =document.getElementById('recherche-q').value.trim();
   const bandeau = document.getElementById('recherche-bandeau');
   const liste = document.getElementById('recherche-resultats');
   liste.replaceChildren();
@@ -1160,9 +1162,21 @@ async function lancerRecherche() {
   let d;
   try {
     const r = await fetch('/recherche?' + new URLSearchParams({q, limite: '20'}), {credentials: 'same-origin'});
-    d = await r.json().catch(() => ({}));
-    if (!r.ok) { attente.textContent = d.detail || ('Erreur ' + r.status); return; }
-  } catch (e) { attente.textContent = 'Erreur réseau : ' + e; return; }
+    if (mon !== RECHERCHE_SEQ) return;
+    d = await r.json().catch(() => null);
+    if (mon !== RECHERCHE_SEQ) return;
+    if (r.status === 401) { attente.textContent = 'Session expirée — recharge la page.'; return; }
+    if (!d || typeof d !== 'object') { attente.textContent = 'Réponse inattendue du serveur (HTTP ' + r.status + ').'; return; }
+    if (!r.ok) {
+      if (typeof d.detail === 'string') attente.textContent = d.detail;
+      else {
+        const msgs = Array.isArray(d.detail) ? d.detail.map(e => e && e.msg).filter(Boolean) : [];
+        attente.textContent = msgs.length ? msgs.join(' ; ') : 'Requête invalide.';
+      }
+      return;
+    }
+    if (!Array.isArray(d.resultats)) { attente.textContent = 'Réponse inattendue du serveur (HTTP ' + r.status + ').'; return; }
+  } catch (e) { if (mon === RECHERCHE_SEQ) attente.textContent = 'Erreur réseau : ' + e; return; }
   const avis = [];
   const pannes = (d.sources_indisponibles || []).map(s => RECHERCHE_LIBELLES_PANNE[s] || s);
   if (pannes.length) avis.push('Injoignable : ' + pannes.join(', ') + '.');
