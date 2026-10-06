@@ -12,8 +12,10 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import auth
 import graphe_apprentissage
 import horloge
+import modeles_gateway
 import orchestrateur
 import outils
 import proactif
@@ -30,6 +32,8 @@ from routers import auth as routeur_auth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registre.charger()
+    # ⚙ Cerveau fermé par défaut (S240) : le dire dans les journaux plutôt qu'en 403 muets.
+    auth.avertir_si_cerveau_ferme()
     orchestrateur.init_db()
     proactif.init_db()
     horloge.init_db()
@@ -51,9 +55,13 @@ async def lifespan(app: FastAPI):
     tache_proactif = asyncio.create_task(proactif.boucle(registre))
     # Horloge : déclenche les tâches périodiques déclarées par les briques (S29).
     tache_horloge = asyncio.create_task(horloge.boucle(registre))
+    # `forge/defaut` vit en base LiteLLM depuis S240 : le Cœur veille à ce qu'il existe
+    # (base vide au premier démarrage, ou réinitialisée) selon le choix de ⚙ Cerveau.
+    tache_forge = asyncio.create_task(modeles_gateway.veiller_forge())
     yield
     tache_proactif.cancel()
     tache_horloge.cancel()
+    tache_forge.cancel()
 
 
 app = FastAPI(

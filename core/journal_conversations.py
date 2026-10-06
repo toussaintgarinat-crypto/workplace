@@ -15,6 +15,7 @@ Best-effort et NON bloquant : journaliser ne doit jamais casser une conversation
 en taille (`CONVERSATIONS_JOURNAL_MAX` lignes) pour ne pas grossir sans fin.
 """
 import json
+import re
 import logging
 import os
 import time
@@ -36,8 +37,22 @@ def _max() -> int:
         return 5000
 
 
+# « + » gardé (revue S240, M8) : numéros WhatsApp/SMS « +33… » — sans lui l'historique se
+# scindait. Sans danger : le fil n'est plus jamais injecté dans un gestionnaire inline.
+_HORS_FIL = re.compile(r"[^A-Za-z0-9_.@+-]")
+
+
+def _assainir(valeur, defaut: str, longueur: int) -> str:
+    return _HORS_FIL.sub("_", str(valeur or ""))[:longueur] or defaut
+
+
 def fil(surface: str, interlocuteur: str) -> str:
-    return f"{surface or 'web'}:{interlocuteur or 'inconnu'}"
+    """`surface:interlocuteur`, assaini (revue S240, C-A).
+
+    Les deux parties viennent du corps de /assistant/chat (appelé sans session) et le fil est
+    réaffiché par le dashboard : tout caractère hors `[A-Za-z0-9_.@+-]` devient `_`, longueurs
+    bornées. Les valeurs réelles (`web:conv-…`, `telegram:telegram-perso`) sont inchangées."""
+    return f"{_assainir(surface, 'web', 64)}:{_assainir(interlocuteur, 'inconnu', 128)}"
 
 
 # ── Méta des conversations (titre, projet, épingle, archive) ─────────────────────
@@ -124,7 +139,8 @@ def enregistrer(surface: str, interlocuteur: str, role: str, content: str,
         return
     f = fil(surface, interlocuteur)
     ligne = {"ts": time.time(), "fil": f,
-             "surface": surface or "web", "interlocuteur": interlocuteur or "inconnu",
+             # Parties ASSAINIES (cf. fil()) : jamais la valeur brute du corps de la requête.
+             "surface": f.split(":", 1)[0], "interlocuteur": f.split(":", 1)[1],
              "utilisateur": utilisateur, "role": role, "content": content}
     try:
         CHEMIN.parent.mkdir(parents=True, exist_ok=True)

@@ -163,7 +163,7 @@
   },
   {
     "name": "Processus — dev",
-    "url": "http://host.docker.internal:5955/sante",
+    "url": "http://workplace_dev:5955/sante",
     "description": "Contrat briques/dev/manifest.json ; santé déclarée, pas preuve métier.",
     "type": "http",
     "method": "GET",

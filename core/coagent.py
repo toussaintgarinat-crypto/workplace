@@ -26,6 +26,7 @@ import os
 import httpx
 
 import config_assistant
+import droits
 import llm_pipeline
 import muscle
 import outils
@@ -147,6 +148,21 @@ async def executer_objectif(objectif: str, registre, *, budget_tokens: int | Non
     max_e = max_etapes or MAX_ETAPES_DEFAUT
     conf = conf or config_assistant.charger()
     trousse = _outils_lecture(registre)
+    autorises = {spec["function"]["name"] for spec in trousse}
+    # Revue S240, I1 : le co-agent n'hérite JAMAIS du droit admin du tour qui l'a lancé
+    # (coagent_lancer depuis un chat admin) — il est autonome, sans humain présent. Posé pour
+    # toute la boucle, rétabli à la sortie.
+    jeton_admin = droits.ADMIN_CERVEAU.set(False)
+    try:
+        return await _boucle(objectif, registre, budget=budget, max_e=max_e, conf=conf,
+                             client=client, etiquette=etiquette, trousse=trousse,
+                             autorises=autorises)
+    finally:
+        droits.ADMIN_CERVEAU.reset(jeton_admin)
+
+
+async def _boucle(objectif, registre, *, budget, max_e, conf, client, etiquette, trousse,
+                  autorises) -> dict:
 
     messages = [{"role": "system", "content": PROMPT_COAGENT},
                 {"role": "user", "content": objectif}]
@@ -189,7 +205,14 @@ async def executer_objectif(objectif: str, registre, *, budget_tokens: int | Non
                 except json.JSONDecodeError:
                     args = {}
                 appels.append(nom)
-                resultat = await outils.executer(nom, args, registre)
+                if nom not in autorises:
+                    # Nom halluciné ou injecté (contenu lu par un outil…) : seule la trousse
+                    # de lecture s'exécute (revue S240, I1).
+                    resultat = json.dumps({"ok": False, "erreur": f"« {nom} » n'est pas dans "
+                                           "la boîte à outils (lecture seule) du co-agent."},
+                                          ensure_ascii=False)
+                else:
+                    resultat = await outils.executer(nom, args, registre)
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                                  "content": resultat})
 

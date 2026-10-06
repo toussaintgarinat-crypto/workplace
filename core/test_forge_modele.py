@@ -1,0 +1,308 @@
+"""Modèle de la Forge choisi dans ⚙ Cerveau : `forge/defaut` EN BASE LiteLLM (S240, T3).
+
+`forge/defaut` sort du YAML : le Cœur le (re)crée en base selon le choix persisté
+(`forge_modele` : "" = Mistral small par défaut, sinon un `perso/*`). Le repli
+`forge/defaut → [gratuit/auto, gratuit/secours]` reste dans `router_settings.fallbacks` du
+YAML (prouvé sur LiteLLM v1.86.2 locale : il s'applique au groupe créé en base).
+
+$ cd core && python3 -m pytest test_forge_modele.py -v
+"""
+import asyncio
+import json
+import os
+
+os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
+os.environ.setdefault("GATEWAY_KEY", "test")
+
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+import respx  # noqa: E402
+
+import config_assistant  # noqa: E402
+import modeles_gateway as mg  # noqa: E402
+
+GW = config_assistant.GATEWAY_URL
+
+
+def _info(*modeles):
+    return {"data": [{"model_name": n, "litellm_params": {"model": lm},
+                      "model_info": {"id": i, "db_model": db}} for n, db, i, lm in modeles]}
+
+
+@pytest.fixture(autouse=True)
+def _verrou_neuf():
+    """Un asyncio.Lock se lie à la boucle qui l'a attendu la première fois ; chaque test a la
+    sienne (asyncio.run). En production : une seule boucle, un seul verrou."""
+    mg._verrou_forge = asyncio.Lock()
+
+
+@pytest.fixture(autouse=True)
+def _choix_par_defaut():
+    config_assistant.definir_forge_modele("")
+    yield
+    config_assistant.definir_forge_modele("")
+
+
+def test_params_forge_defaut_mistral_small_frigo_court():
+    assert mg.params_forge("") == {"model": "mistral/mistral-small-latest", "cooldown_time": 120}
+    assert mg.params_forge("perso/groq/x") == {"model": "groq/x", "cooldown_time": 120}
+    for invalide in ("mistral/small", "free/a/b", "gratuit/auto", "perso/opencode/glm"):
+        with pytest.raises(mg.ValeurInvalide):
+            mg.params_forge(invalide)
+
+
+@respx.mock
+def test_base_vide_cree_forge_defaut():
+    respx.get(f"{GW}/model/info").respond(json=_info(("mistral/small", False, "y", "mistral/m")))
+    nouveau = respx.post(f"{GW}/model/new").respond(json={"model_id": "f1"})
+    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    r = asyncio.run(mg.assurer_forge())
+    assert r["statut"] == "cree"
+    assert json.loads(nouveau.calls[0].request.content) == {
+        "model_name": "forge/defaut",
+        "litellm_params": {"model": "mistral/mistral-small-latest", "cooldown_time": 120}}
+    assert not suppr.called
+
+
+@respx.mock
+def test_deja_bon_rien_a_faire():
+    respx.get(f"{GW}/model/info").respond(
+        json=_info(("forge/defaut", True, "f1", "mistral/mistral-small-latest")))
+    nouveau = respx.post(f"{GW}/model/new").respond(json={"model_id": "x"})
+    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    assert asyncio.run(mg.assurer_forge())["statut"] == "ok"
+    assert not nouveau.called and not suppr.called
+
+
+@respx.mock
+def test_repointage_cree_le_nouveau_avant_de_retirer_l_ancien():
+    respx.get(f"{GW}/model/info").respond(json=_info(
+        ("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+        ("perso/groq/x", True, "p", "groq/x")))
+    ordre = []
+    respx.post(f"{GW}/model/new").mock(
+        side_effect=lambda req: ordre.append("new") or httpx.Response(200, json={"model_id": "neuf"}))
+    respx.post(f"{GW}/model/delete").mock(
+        side_effect=lambda req: ordre.append(("del", json.loads(req.content)["id"]))
+        or httpx.Response(200, json={}))
+    r = asyncio.run(mg.assurer_forge("perso/groq/x"))
+    assert r["statut"] == "repointe"
+    assert ordre == ["new", ("del", "ancien")]
+
+
+@respx.mock
+def test_doublons_ramenes_a_un_seul():
+    respx.get(f"{GW}/model/info").respond(json=_info(
+        ("forge/defaut", True, "a", "mistral/mistral-small-latest"),
+        ("forge/defaut", True, "b", "mistral/mistral-small-latest")))
+    nouveau = respx.post(f"{GW}/model/new").respond(json={"model_id": "x"})
+    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    asyncio.run(mg.assurer_forge())
+    assert not nouveau.called
+    assert [json.loads(c.request.content)["id"] for c in suppr.calls] == ["b"]
+
+
+@respx.mock
+def test_forge_encore_dans_le_yaml_on_ne_touche_a_rien():
+    """Déploiement par étapes : Cœur à jour, YAML pas encore — ne jamais doubler (LiteLLM
+    répartirait la charge entre les deux) ni toucher au YAML."""
+    respx.get(f"{GW}/model/info").respond(
+        json=_info(("forge/defaut", False, "yaml", "mistral/mistral-small-latest")))
+    nouveau = respx.post(f"{GW}/model/new").respond(json={"model_id": "x"})
+    suppr = respx.post(f"{GW}/model/delete").respond(json={})
+    assert asyncio.run(mg.assurer_forge("perso/groq/x"))["statut"] == "yaml"
+    assert not nouveau.called and not suppr.called
+
+
+@respx.mock
+def test_definir_forge_persiste_apres_succes():
+    respx.get(f"{GW}/model/info").respond(json=_info(
+        ("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+        ("perso/groq/x", True, "p", "groq/x")))
+    respx.post(f"{GW}/model/new").respond(json={"model_id": "neuf"})
+    respx.post(f"{GW}/model/delete").respond(json={})
+    chat = respx.post(f"{GW}/v1/chat/completions").respond(json={"choices": []})
+    r = asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert r["ok"] is True and r["choix"] == "perso/groq/x"
+    assert config_assistant.charger()["forge_modele"] == "perso/groq/x"
+    # Test SANS repli : sinon un modèle en panne passerait pour sain via gratuit/*.
+    corps = json.loads(chat.calls[0].request.content)
+    assert corps["model"] == "forge/defaut" and corps["disable_fallbacks"] is True
+
+
+@respx.mock
+def test_definir_forge_modele_absent_refuse_sans_persister():
+    respx.get(f"{GW}/model/info").respond(json=_info())
+    with pytest.raises(mg.Introuvable):
+        asyncio.run(mg.definir_forge("perso/groq/absent"))
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_definir_forge_gateway_muette_ne_persiste_pas():
+    respx.get(f"{GW}/model/info").respond(json=_info(("perso/groq/x", True, "p", "groq/x")))
+    respx.post(f"{GW}/model/new").mock(side_effect=httpx.ConnectError("refusé"))
+    with pytest.raises(mg.GatewayInjoignable):
+        asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_retrait_refuse_si_modele_de_la_forge():
+    config_assistant.definir_forge_modele("perso/groq/x")
+    respx.get(f"{GW}/model/info").respond(json=_info(("perso/groq/x", True, "p", "groq/x")))
+    with pytest.raises(mg.Conflit):
+        asyncio.run(mg.retirer("perso/groq/x"))
+
+
+def test_veille_reessaie_puis_espace(monkeypatch):
+    """Au démarrage la Gateway peut être absente : on réessaie vite, puis on espace."""
+    appels, attentes = [], []
+
+    async def faux_assurer(choix=None):
+        appels.append(1)
+        if len(appels) == 1:
+            raise mg.GatewayInjoignable("pas encore là")
+        return {"statut": "ok"}
+
+    async def faux_dormir(s):
+        attentes.append(s)
+        if len(attentes) >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(mg, "assurer_forge", faux_assurer)
+    monkeypatch.setattr(mg.asyncio, "sleep", faux_dormir)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(mg.veiller_forge(intervalle=600, reessai=30))
+    assert attentes == [30, 600]
+
+
+@respx.mock
+def test_route_forge_et_liste():
+    from fastapi.testclient import TestClient
+    import main
+    respx.get(f"{GW}/model/info").respond(json=_info(
+        ("forge/defaut", True, "f", "mistral/mistral-small-latest"),
+        ("perso/groq/x", True, "p", "groq/x")))
+    respx.post(f"{GW}/model/new").respond(json={"model_id": "neuf"})
+    respx.post(f"{GW}/model/delete").respond(json={})
+    respx.post(f"{GW}/v1/chat/completions").respond(json={"choices": []})
+    c = TestClient(main.app)
+    assert c.post("/assistant/forge-modele", json={"modele": "mistral/small"}).status_code == 400
+    r = c.post("/assistant/forge-modele", json={"modele": "perso/groq/x"})
+    assert r.status_code == 200 and r.json()["choix"] == "perso/groq/x"
+    forge = c.get("/assistant/modeles").json()["forge"]
+    assert forge["choix"] == "perso/groq/x" and forge["defaut"] == "mistral/mistral-small-latest"
+
+
+def test_forge_modele_non_surchargeable_par_tenant():
+    """Un seul `forge/defaut` dans la Gateway : une couche org/utilisateur n'aurait aucun effet."""
+    import config_tenant
+    with pytest.raises(config_tenant.ValeurInvalide):
+        config_tenant.valider_patch({"forge_modele": "perso/groq/x"})
+
+
+
+from test_modeles_gateway import FausseGateway  # noqa: E402
+
+
+@respx.mock
+def test_i3_echec_du_test_restaure_l_ancien_pointage_sans_persister():
+    gw = FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                       ("perso/groq/x", True, "p", "groq/x"),
+                       chat=lambda corps: httpx.Response(401, json={"error": {"message": "clé absente"}}))
+    r = asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert r["ok"] is False and r["restaure"] is True
+    assert r["choix"] == "" and "clé absente" in r["detail"]
+    forges = [d["model"] for d in gw.deps if d["nom"] == "forge/defaut"]
+    assert forges == ["mistral/mistral-small-latest"]
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_i5_yaml_present_retire_les_copies_en_base():
+    """Retour arrière (forge/defaut remis dans le YAML) : la copie en base doublerait le
+    déploiement du YAML (LiteLLM répartirait la charge) — le Cœur la retire."""
+    gw = FausseGateway(("forge/defaut", False, "yaml", "mistral/mistral-small-latest"),
+                       ("forge/defaut", True, "copie", "groq/x"))
+    r = asyncio.run(mg.assurer_forge())
+    assert r["statut"] == "yaml"
+    assert [d["id"] for d in gw.deps if d["nom"] == "forge/defaut"] == ["yaml"]
+
+
+def test_i4_etat_forge_signale_la_cle_absente(monkeypatch):
+    monkeypatch.setattr(config_assistant, "cles_fournisseurs_etat", lambda: [
+        {"id": "mistral", "label": "Mistral", "placeholder": "", "definie": False},
+        {"id": "groq", "label": "Groq", "placeholder": "", "definie": True}])
+    e = mg.etat_forge()
+    assert e["fournisseur"] == "mistral" and e["fournisseur_label"] == "Mistral"
+    assert e["cle_definie"] is False
+    config_assistant.definir_forge_modele("perso/groq/x")
+    e = mg.etat_forge()
+    assert e["fournisseur"] == "groq" and e["cle_definie"] is True
+
+
+@respx.mock
+def test_m4_restauration_en_echec_reponse_honnete():
+    gw = FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                       ("perso/groq/x", True, "p", "groq/x"),
+                       chat=lambda corps: httpx.Response(401, json={"error": {"message": "clé absente"}}))
+    origine_new = gw._new
+
+    def new_puis_panne(req):
+        if gw.n >= 1:  # la création de restauration échoue
+            raise httpx.ConnectError("Gateway tombée")
+        return origine_new(req)
+    respx.post(f"{GW}/model/new").mock(side_effect=new_puis_panne)
+    r = asyncio.run(mg.definir_forge("perso/groq/x"))
+    assert r["ok"] is False and r["restaure"] is False
+    assert r["model"] == "groq/x"  # ce qui est réellement servi, pas l'ancien
+    assert "veille" in r["detail"]
+    assert config_assistant.charger()["forge_modele"] == ""
+
+
+@respx.mock
+def test_m5_m6_ajouts_concurrents_un_seul_cree(monkeypatch):
+    gw = FausseGateway()
+    vrai = mg.deploiements
+
+    async def lent():
+        d = await vrai()
+        await asyncio.sleep(0.02)  # laisse l'autre tâche lire le même état (fenêtre de course)
+        return d
+    monkeypatch.setattr(mg, "deploiements", lent)
+
+    async def deux():
+        return await asyncio.gather(mg.ajouter("groq", "x"), mg.ajouter("groq", "x"),
+                                    return_exceptions=True)
+    res = asyncio.run(deux())
+    assert sum(isinstance(x, mg.Conflit) for x in res) == 1
+    assert [d["nom"] for d in gw.deps] == ["perso/groq/x"]
+
+
+@respx.mock
+def test_m6_retrait_attend_un_re_pointage_en_cours(monkeypatch):
+    """retirer() prend le même verrou que definir_forge : il ne peut pas retirer le modèle
+    pendant qu'on est en train d'y basculer la Forge."""
+    FausseGateway(("forge/defaut", True, "ancien", "mistral/mistral-small-latest"),
+                  ("perso/groq/x", True, "p", "groq/x"))
+    ordre = []
+    vrai_tester = mg.tester
+
+    async def tester_lent(nom):
+        ordre.append("test-debut")
+        await asyncio.sleep(0.05)
+        ordre.append("test-fin")
+        return await vrai_tester(nom)
+    monkeypatch.setattr(mg, "tester", tester_lent)
+
+    async def scenario():
+        t1 = asyncio.create_task(mg.definir_forge("perso/groq/x"))
+        await asyncio.sleep(0.01)
+        try:
+            await mg.retirer("perso/groq/x")
+        except mg.Conflit:
+            ordre.append("retrait-refuse")
+        await t1
+    asyncio.run(scenario())
+    assert ordre == ["test-debut", "test-fin", "retrait-refuse"]

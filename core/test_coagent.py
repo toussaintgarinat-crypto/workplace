@@ -145,3 +145,67 @@ if __name__ == "__main__":
             fn()
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
+
+
+# ── Revue S240, I1 : le co-agent n'hérite JAMAIS du droit admin, et ne sort pas de sa trousse ──
+
+def test_outil_hors_trousse_refuse_sans_execution():
+    """Le LLM peut halluciner un nom d'outil (ou se le faire injecter) : seul ce qui est dans
+    la trousse de lecture s'exécute."""
+    script = [(_msg_outil("agir_y"), 10), (_msg_texte("Fait."), 10)]
+    with _Patch(script) as p:
+        r = _run(coagent.executer_objectif("obj", None, conf={}))
+    assert p.executes == []
+    assert r["outils_appeles"] == ["agir_y"]
+
+
+def test_coagent_lance_depuis_un_tour_admin_ne_peut_pas_executer_dev():
+    """Même lancé depuis un tour admin du cerveau, le co-agent tourne SANS ce droit :
+    `dev_ide_executer`, même s'il figurait dans la trousse, est refusé par outils.executer."""
+    import droits
+    vu = []
+    script = [(_msg_outil("dev_ide_executer"), 10), (_msg_texte("Fait."), 10)]
+    with _Patch(script, actions=(), trousse=("dev_ide_executer",)):
+        async def _exec(nom, args, reg):
+            vu.append((nom, droits.ADMIN_CERVEAU.get()))
+            return '{"ok": true}'
+        outils.executer = _exec
+
+        async def tour_admin():
+            jeton = droits.ADMIN_CERVEAU.set(True)
+            try:
+                r = await coagent.executer_objectif("obj", None, conf={})
+                apres = droits.ADMIN_CERVEAU.get()
+            finally:
+                droits.ADMIN_CERVEAU.reset(jeton)
+            return r, apres
+        r, apres = _run(tour_admin())
+    assert vu == [("dev_ide_executer", False)]   # exécuté SANS droit admin → refusé en vrai
+    assert apres is True                         # le droit du tour appelant est restauré
+
+
+def test_dev_ide_executer_vraiment_refuse_dans_le_coagent():
+    """Bout en bout avec le VRAI outils.executer : refus, aucun appel à la brique."""
+    import droits
+    import json as _json
+    appels = []
+    script = [(_msg_outil("dev_ide_executer"), 10), (_msg_texte("Fait."), 10)]
+    with _Patch(script, actions=(), trousse=("dev_ide_executer",)) as p:
+        outils.executer = p._o[2]  # vrai executer
+
+        async def _faux_executer_interne(nom, args, reg):
+            appels.append(nom)
+            return "exécuté"
+        ancien = outils._executer
+        outils._executer = _faux_executer_interne
+        try:
+            async def tour_admin():
+                jeton = droits.ADMIN_CERVEAU.set(True)
+                try:
+                    return await coagent.executer_objectif("obj", None, conf={})
+                finally:
+                    droits.ADMIN_CERVEAU.reset(jeton)
+            _run(tour_admin())
+        finally:
+            outils._executer = ancien
+    assert appels == []

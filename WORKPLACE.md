@@ -169,6 +169,8 @@ Sur les 5 grandes briques du Jarvis (Cœur, Mémoire, LLM, Collaboration, Agents
 - [x] **4. Cœur Workplace** — squelette du cœur + registre de briques (manifest loader) ✅ (2026-06-02).
       FastAPI sur port **5100**. 6 briques enregistrées via `briques/*/manifest.json`.
       Endpoints : `GET /briques`, `GET /briques/{nom}`, `POST /briques/reload`, `GET /sante-globale`.
+      ⚠ Depuis S240, `POST /briques/reload` exige une session admin du cerveau : `make reload` ne
+      marche qu'avec `AUTH_ENABLED=false` (dev) ; sur le HP, `docker compose restart core`.
       Gateway pingée et confirmée ok depuis le cœur (`host.docker.internal:4001`).
       Lancement : `cd ~/Desktop/Workplace/core && make up`
 - [x] **5. Brancher Oria** — messagerie + collaboration ✅ (2026-06-02).

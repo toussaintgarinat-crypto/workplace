@@ -53,5 +53,19 @@ class InventoryTests(unittest.TestCase):
         self.assertIn('Processus — pending', names)
         self.assertEqual(next(m for m in monitors if m['name']=='Processus — active')['url'], 'http://host.docker.internal:6000/sante')
 
+    def test_instantane_aligne_sur_les_manifestes_reels(self):
+        """S240 (M5) : la sonde de la brique dev suit son nouveau chemin d'accès (réseau Docker
+        proxy_net, port publié sur 127.0.0.1 seulement) — l'instantané versionné ne doit pas
+        garder l'ancienne URL host.docker.internal:5955."""
+        racine = MODULE.parents[2]
+        manifeste = json.loads((racine / 'briques' / 'dev' / 'manifest.json').read_text())
+        instantane = json.loads(MODULE.with_name('monitors.json').read_text())
+        dev = next(m for m in instantane if m['name'] == 'Processus — dev')
+        self.assertEqual(dev['url'], manifeste['url_sante'])
+        compose = MODULE.with_name('docker-compose.yml').read_text()
+        kuma = compose[compose.index('  uptime-kuma:'):compose.index('  node-exporter:')]
+        self.assertIn('proxy_net', kuma, 'Kuma doit joindre proxy_net pour sonder workplace_dev')
+
+
 if __name__ == '__main__':
     unittest.main()

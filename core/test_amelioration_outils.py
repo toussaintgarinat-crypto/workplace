@@ -24,7 +24,20 @@ import amelioration  # noqa: E402
 import curateur  # noqa: E402
 import outils  # noqa: E402
 
+import droits  # noqa: E402
+import pytest  # noqa: E402
+
 NOMS = {o["function"]["name"] for o in outils.OUTILS}
+
+
+@pytest.fixture(autouse=True)
+def _tour_admin():
+    """Ces tests portent sur la logique des outils (gate de confirmation, effets) : on se
+    place dans un tour admin du cerveau. Le refus hors admin (S240, C-B) est couvert par
+    test_outils_reserves_admin.py."""
+    jeton = droits.ADMIN_CERVEAU.set(True)
+    yield
+    droits.ADMIN_CERVEAU.reset(jeton)
 _NOUVEAUX = {"amelioration_etat", "curateur_lancer", "amelioration_evaluer",
              "amelioration_decider", "capacite_decider"}
 

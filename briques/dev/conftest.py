@@ -15,7 +15,9 @@ os.environ["DEV_REPO"] = _repo
 os.environ["DEV_ATELIERS"] = os.path.join(_racine, "ateliers")
 os.environ["DEV_TRACES"] = os.path.join(_racine, "traces")
 os.environ["DEV_DB"] = os.path.join(_racine, "chantiers.json")
-os.environ.pop("DEV_KEY", None)  # atelier ouvert en test
+os.environ.pop("DEV_KEY", None)
+# Sans clé, l'atelier est FERMÉ (S240) : la suite de tests est un poste de dev local → opt-in.
+os.environ["DEV_OUVERT_SANS_CLE"] = "1"
 # IDE SpearCode (porté de Gungnir) : workspace + données en temporaire (jamais le vrai dépôt).
 os.environ["DEV_IDE_WORKSPACE"] = os.path.join(_racine, "ide-workspace")
 os.environ["DEV_IDE_DATA"] = os.path.join(_racine, "ide-data")

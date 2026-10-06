@@ -74,6 +74,10 @@ for _var, _fichier in _CHEMINS.items():
 # (make test-core) les fournit déjà ; on ne les écrase donc pas, mais `pytest core` nu marche.
 os.environ.setdefault("VAULT_SECRET", "test-secret-0123456789")
 os.environ.setdefault("GATEWAY_KEY", "test")
+# Le cerveau est FERMÉ par défaut (revue S240, I3) : sans auth, seules les installations qui
+# l'acceptent explicitement l'ouvrent. La suite de tests est une installation de dev locale
+# (AUTH_ENABLED=false) : elle pose cet opt-in ; les tests du défaut fermé le retirent.
+os.environ["CERVEAU_OUVERT_SANS_AUTH"] = "1"
 
 
 # Points chauds de modules PARTAGÉS que les tests remplacent par des doublures (client httpx,

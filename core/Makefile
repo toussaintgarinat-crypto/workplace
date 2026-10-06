@@ -21,6 +21,8 @@ logs:
 restart:
 	docker compose restart core
 
+# /briques/reload exige une session admin du cerveau depuis S240 : cette cible ne marche
+# qu'en dev (AUTH_ENABLED=false). Sur le HP : `docker compose restart core`.
 reload:
 	@curl -s -X POST http://localhost:5100/briques/reload | python3 -m json.tool
 

@@ -266,3 +266,180 @@ def sub_session_optionnel(request: Request) -> str | None:
     if _session_perimee(session, sub):
         return None
     return sub
+
+
+def _admins_cerveau() -> set[str]:
+    """Subs Keycloak autorisés à modifier le cerveau (`CERVEAU_ADMINS`, séparés par des
+    virgules). Relu à chaque appel : se règle dans l'env sans toucher au code, et les tests
+    le font varier sans recharger le module."""
+    return {s.strip() for s in os.environ.get("CERVEAU_ADMINS", "").split(",") if s.strip()}
+
+
+_HOTES_LOCAUX = {"localhost", "127.0.0.1", "[::1]"}
+
+
+def _netloc(url: str) -> str:
+    return urllib.parse.urlsplit(url).netloc.lower()
+
+
+def _origine_autorisee(origine: str, request: Request) -> bool:
+    """L'en-tête `Origin` désigne-t-il le Cœur lui-même ?
+
+    Le Cœur n'a pas d'URL publique fixe : il est servi en LAN (IP:5100), sur le mesh (IP
+    NetBird via Caddy en HTTPS) et par domaine. On compare donc l'hôte[:port] de l'origine à
+    celui de la REQUÊTE (`Host`, ou `X-Forwarded-Host` posé par un proxy), sans le schéma :
+    Caddy termine le TLS, le Cœur voit du http alors que le navigateur annonce https.
+    S'y ajoute localhost (dev). Pas de liste d'origines tierces (`CORS_ORIGINS` n'est PAS
+    consulté, revue S240 M1) : un front servi ailleurs que par le Cœur ne doit pas écrire
+    dans le cerveau, et la politique CORS actuelle (sans `allow_credentials`) l'en
+    empêcherait de toute façon."""
+    hote = _netloc(origine)
+    if not hote:
+        return False  # « null » (iframe sandbox, fichier local…) ou valeur illisible
+    if hote.rsplit(":", 1)[0] in _HOTES_LOCAUX or hote in _HOTES_LOCAUX:
+        return True
+    hotes_requete = {(request.headers.get("host") or "").lower(),
+                     (request.headers.get("x-forwarded-host") or "").split(",")[0].strip().lower()}
+    return hote in hotes_requete - {""}
+
+
+def verifier_anti_csrf(request: Request, corps_json: bool = True) -> None:
+    """Refuse une écriture déclenchée depuis une autre origine (revue S240, I1).
+
+    Le cookie de session part avec toute requête vers le Cœur, y compris celle qu'une page
+    tierce ouverte dans le navigateur de l'admin forgerait. Trois verrous, du plus fiable au
+    plus large :
+    - `Sec-Fetch-Site` (posé par le navigateur, non falsifiable par une page) présent et
+      différent de `same-origin` → 403 ;
+    - `Origin` présent et étranger au Cœur → 403 ;
+    - corps non JSON sur POST/PUT/PATCH → 415 : un <form> tiers ne sait envoyer que
+      text/plain, urlencoded ou multipart, et un `fetch` JSON cross-origin exige un preflight
+      CORS. Une requête SANS corps (DELETE, route sans paramètre) n'est pas concernée.
+    Les clients hors navigateur (curl, scripts) n'envoient aucun de ces en-têtes : ils passent
+    cette garde et restent soumis à la session.
+
+    ⚠ Garde fondée sur l'ORIGINE (revue S240, I-A) : tout ce qui est servi par le Cœur
+    lui-même est « same-origin » — y compris les fronts de briques proxifiés sous son
+    origine (`/studio-app/`, `/mail-app/`, `/atelier-images-video-app/`,
+    `/atelier-veille-app/`). Une XSS dans l'un d'eux contourne donc cette garde comme une
+    XSS du dashboard : leur échappement fait partie du même périmètre de sécurité."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site != "same-origin":
+        raise HTTPException(status_code=403, detail=f"Requête d'une autre origine refusée ({site}).")
+    origine = request.headers.get("origin")
+    if origine is not None and not _origine_autorisee(origine, request):
+        raise HTTPException(status_code=403, detail="Origine non autorisée.")
+    if corps_json and request.method in ("POST", "PUT", "PATCH"):
+        a_un_corps = (request.headers.get("content-length", "0") not in ("", "0")
+                      or "transfer-encoding" in request.headers)
+        ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if a_un_corps and ctype != "application/json":
+            raise HTTPException(status_code=415, detail="Corps attendu en application/json.")
+
+
+def _ouvert_sans_auth() -> bool:
+    """Opt-in du DEV LOCAL (revue S240, I3) : sans Keycloak, ouvrir le cerveau à
+    l'identité factice. Ignoré dès que AUTH_ENABLED=true. Jamais sur le HP."""
+    return os.environ.get("CERVEAU_OUVERT_SANS_AUTH", "").strip().lower() in ("1", "true", "oui")
+
+
+def avertir_si_cerveau_ferme() -> None:
+    """Au démarrage : dire POURQUOI ⚙ Cerveau refusera tout, plutôt qu'un 403 muet."""
+    import logging
+    log = logging.getLogger(__name__)
+    if AUTH_ENABLED and not _admins_cerveau():
+        log.warning("Cerveau fermé : AUTH_ENABLED=true mais CERVEAU_ADMINS est vide — aucune "
+                    "modification du cerveau ni outil réservé (dev, sauvegarde…) ne sera accepté.")
+    elif not AUTH_ENABLED and not _ouvert_sans_auth():
+        log.warning("Cerveau fermé : AUTH_ENABLED=false sans CERVEAU_OUVERT_SANS_AUTH=1 — "
+                    "définir CERVEAU_ADMINS avec l'auth, ou l'opt-in en dev local seulement.")
+    elif not AUTH_ENABLED and _admins_cerveau():
+        log.warning("Cerveau fermé : CERVEAU_ADMINS est défini mais AUTH_ENABLED=false.")
+
+
+async def exiger_admin_cerveau(request: Request) -> dict:
+    """Dépendance des routes qui MODIFIENT le cerveau (S240) : clés fournisseur, modèle,
+    cascade, persona, langue, voix, modèles servis, modèle de la Forge.
+
+    Avant S240, ces routes n'avaient que `lire_contexte_tenant` (non bloquant) : n'importe
+    quel appareil du LAN/mesh pouvait poser une clé et la faire servir. Règles :
+    - session Cœur exigée (`exiger_session`) ; son 303 vers /auth/login devient ici un 401,
+      car ces routes sont appelées en `fetch` (une redirection vers Keycloak y serait suivie
+      en silence et finirait en erreur CORS illisible) ;
+    - FERMÉ PAR DÉFAUT (revue S240, I3) : accordé seulement si `AUTH_ENABLED=true` ET le sub
+      de la session figure dans `CERVEAU_ADMINS` (non vide). Liste vide = personne (403) ;
+    - `AUTH_ENABLED=false` : 403, sauf opt-in explicite du dev local
+      `CERVEAU_OUVERT_SANS_AUTH=1` (identité factice) ; `CERVEAU_ADMINS` posé sans auth : 403
+      — aucune identité vérifiable, la liste ne protégerait rien ;
+    - `avertir_si_cerveau_ferme()` le journalise au démarrage du Cœur.
+
+    Les lectures (`GET /assistant/config`…) et le chat (`/assistant/chat`, utilisé par
+    Telegram/Mini App/S2S sans session) ne portent PAS cette garde.
+
+    Anti-CSRF d'abord (`verifier_anti_csrf`) : refusée avant même de lire la session."""
+    verifier_anti_csrf(request)
+    try:
+        identite = await exiger_session(request)
+    except HTTPException as e:
+        if e.status_code == 303:
+            quoi = ("lire cette donnée sensible" if request.method in ("GET", "HEAD")
+                    else "modifier le cerveau")
+            raise HTTPException(status_code=401, detail=f"Session requise pour {quoi}.") from None
+        raise
+    admins = _admins_cerveau()
+    if not AUTH_ENABLED:
+        if admins:
+            raise HTTPException(status_code=403, detail=(
+                "CERVEAU_ADMINS est défini mais AUTH_ENABLED=false : aucune identité "
+                "vérifiable, modification du cerveau refusée."))
+        if _ouvert_sans_auth():
+            return identite  # dev local, opt-in explicite
+        raise HTTPException(status_code=403, detail=(
+            "Cerveau fermé : AUTH_ENABLED=false sans opt-in. En dev local seulement, poser "
+            "CERVEAU_OUVERT_SANS_AUTH=1 ; sinon activer l'auth et définir CERVEAU_ADMINS."))
+    if not admins:
+        # Fermé par défaut (revue S240, I3) : auth active mais personne de désigné.
+        raise HTTPException(status_code=403, detail=(
+            "Cerveau fermé : CERVEAU_ADMINS est vide — désigne au moins un compte admin "
+            "(sub Keycloak) dans le .env."))
+    if identite.get("sub") not in admins:
+        raise HTTPException(status_code=403,
+                            detail="Ce compte n'est pas autorisé à modifier le cerveau.")
+    return identite
+
+
+async def admin_cerveau_ou_none(request: Request) -> dict | None:
+    """Même règle qu'`exiger_admin_cerveau` (anti-CSRF compris), sans lever : l'identité
+    admin, ou None. Sert au chat (route ouverte) pour savoir si le TOUR peut utiliser les
+    outils réservés (droits.py, revue S240 C-B)."""
+    try:
+        return await exiger_admin_cerveau(request)
+    except HTTPException:
+        return None
+
+
+async def _session_api(request: Request) -> dict:
+    try:
+        return await exiger_session(request)
+    except HTTPException as e:
+        if e.status_code == 303:
+            raise HTTPException(status_code=401, detail="Session requise.") from None
+        raise
+
+
+async def exiger_session_api(request: Request) -> dict:
+    """Session + anti-CSRF (origine et corps JSON), SANS exiger l'admin du cerveau.
+
+    Routes qui nourrissent le prompt système ou le RAG sans être « le cerveau » : projets
+    (`instructions`), profil d'amorçage, identité (revue S240, I-B). 401 plutôt que 303 :
+    appelées en `fetch`."""
+    verifier_anti_csrf(request)
+    return await _session_api(request)
+
+
+async def exiger_session_api_fichier(request: Request) -> dict:
+    """Comme `exiger_session_api`, pour un envoi de fichier (multipart) : contrôle d'origine
+    seulement — un <form> tiers sans en-tête Origin ni Sec-Fetch-Site n'existe plus dans les
+    navigateurs actuels, et la session reste exigée (`/assistant/document`)."""
+    verifier_anti_csrf(request, corps_json=False)
+    return await _session_api(request)

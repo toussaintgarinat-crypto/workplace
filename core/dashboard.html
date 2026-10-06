@@ -358,8 +358,13 @@
   .cerveau { margin-bottom: 16px; }
   .cerveau h3 { display: flex; align-items: center; gap: 10px; }
   .cerveau-row { display: flex; gap: 14px; align-items: flex-end; }
-  .cerveau-row select, .cerveau-row input[type=password] { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 9px 12px; color: #e2e8f0; font-size: 0.88rem; }
+  .cerveau-row select, .cerveau-row input[type=password], .cerveau-row input[type=text] { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 9px 12px; color: #e2e8f0; font-size: 0.88rem; }
   .cerveau-row select:focus, .cerveau-row input:focus { outline: none; border-color: #7c83ff; }
+  .modeles-groupe { margin-top: 8px; }
+  .modeles-groupe summary { cursor: pointer; font-size: 0.8rem; color: #94a3b8; }
+  .modele-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #1e2235; font-size: 0.82rem; color: #cbd5e1; }
+  .modele-ligne code { font-size: 0.8rem; word-break: break-all; }
+  .modele-ligne .btn { padding: 4px 10px; font-size: 0.75rem; }
   .cerveau-pill { font-size: 0.68rem; font-weight: 600; padding: 2px 10px; border-radius: 20px; background: #1e293b; color: #475569; border: 1px solid #2d3748; }
   .cerveau-pill.ok { background: #14532d55; color: #4ade80; border-color: #16653155; }
   .cerveau-pill.ko { background: #7f1d1d55; color: #f87171; border-color: #991b1b55; }
@@ -563,6 +568,32 @@
           <label>Clés des autres fournisseurs</label>
           <div class="liv-sub" style="margin-top:2px;margin-bottom:8px">Active un fournisseur direct (Anthropic, Groq, Mistral, OpenAI, DeepSeek, Gemini) ou OpenCode Go. Enregistrer redémarre la Gateway (~15&nbsp;s). Choisis ensuite son modèle dans « Modèle LLM » ci-dessus.</div>
           <div id="cerveau-cles-fournisseurs"><div class="liv-sub">Chargement…</div></div>
+        </div>
+      </div>
+      <!-- Modèles servis par la Gateway + modèle de la Forge (S240), sans passer par le YAML. -->
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Modèle de la Forge <span id="forge-statut" class="cerveau-pill">—</span></label>
+          <select id="cerveau-forge"><option>Chargement…</option></select>
+          <div class="liv-sub" style="margin-top:4px">Le modèle de la Forge (<code>forge/defaut</code>). En cas d'échec, la Gateway bascule sur les gratuits (Kilo). Ajoute d'abord un modèle ci-dessous pour pouvoir le choisir ici.</div>
+        </div>
+        <button class="btn" id="btn-forge" onclick="enregistrerForge()">Choisir pour la Forge</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:14px">
+        <div class="field" style="flex:1">
+          <label>Ajouter un modèle</label>
+          <div class="cerveau-row" style="gap:8px">
+            <select id="modele-fournisseur" style="flex:0 0 38%"><option>Chargement…</option></select>
+            <input type="text" id="modele-id" placeholder="identifiant, ex. llama-3.1-8b-instant" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="liv-sub" style="margin-top:4px">Identifiant exact chez le fournisseur. Le modèle est testé (une courte réponse) avant d'être gardé ; s'il ne répond pas, il est retiré. Il utilise la clé du fournisseur posée ci-dessus.</div>
+        </div>
+        <button class="btn" id="btn-modele-ajouter" onclick="ajouterModele()">Ajouter et tester</button>
+      </div>
+      <div class="cerveau-row" style="margin-top:10px">
+        <div class="field" style="flex:1">
+          <label>Modèles servis <span id="modeles-statut" class="cerveau-pill">—</span></label>
+          <div id="cerveau-modeles"><div class="liv-sub">Chargement…</div></div>
         </div>
       </div>
       <div class="cerveau-row" style="margin-top:14px">
@@ -1134,7 +1165,7 @@ let PROJET_EDIT = null;      // projet en cours d'édition dans la modale (null 
 function badgeSurface(s) {
   s = s || 'web';
   const ico = s === 'telegram' ? '💬' : '🖥';
-  return '<span class="conv-surf ' + (s === 'telegram' ? 'telegram' : 'web') + '">' + ico + '</span>';
+  return '<span class="conv-surf ' + (s === 'telegram' ? 'telegram' : 'web') + '">' + escHtml(ico) + '</span>';
 }
 async function chargerSidebarAssistant() {
   await Promise.all([chargerProjetsSidebar(), chargerConversations()]);
@@ -1159,7 +1190,7 @@ function majEnteteConversation(titre) {
   const p = PROJETS_CACHE.find(x => x.id === CONV_PROJET);
   if (p) {
     tag.style.display = 'inline-flex';
-    tag.innerHTML = '<span class="pt-dot" style="background:' + p.couleur + '"></span>' + escapeHtml(p.nom);
+    tag.innerHTML = '<span class="pt-dot" style="background:' + escCouleur(p.couleur) + '"></span>' + escapeHtml(p.nom);
     tag.title = 'Ranger dans un autre projet';
     tag.onclick = () => choisirProjetPourConversation();
   } else {
@@ -1170,7 +1201,7 @@ function majEnteteConversation(titre) {
   }
 }
 
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escapeHtml(s) { return escHtml(s || ''); }
 
 async function chargerProjetsSidebar() {
   const box = document.getElementById('asst-projets');
@@ -1182,9 +1213,9 @@ async function chargerProjetsSidebar() {
     PROJETS_CACHE.forEach(p => {
       const el = document.createElement('div');
       el.className = 'asst-projet' + (FILTRE_PROJET === p.id ? ' actif' : '');
-      el.innerHTML = '<span class="pp-dot" style="background:' + p.couleur + '"></span>'
+      el.innerHTML = '<span class="pp-dot" style="background:' + escCouleur(p.couleur) + '"></span>'
         + '<span class="pp-nom">' + escapeHtml(p.nom) + '</span>'
-        + '<span class="pp-nb">' + (p.conversations || 0) + '</span>';
+        + '<span class="pp-nb">' + escHtml(p.conversations || 0) + '</span>';
       el.dataset.pid = p.id;     // zone de dépôt : glisser une conversation ici la range (S104)
       el.onclick = () => basculerFiltreProjet(p.id);
       el.ondblclick = () => ouvrirProjetModal(p.id);
@@ -1197,7 +1228,7 @@ async function chargerProjetsSidebar() {
       ]);
       box.appendChild(el);
     });
-  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
+  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + escHtml(e.message) + '</div>'; }
 }
 
 function basculerFiltreProjet(pid) {
@@ -1215,7 +1246,7 @@ async function chargerConversations() {
     const d = await fetch(url).then(r => r.json());
     FILS_CACHE = d.fils || [];
     rendreConversations();
-  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + e.message + '</div>'; }
+  } catch(e) { box.innerHTML = '<div class="asst-vide-side">Erreur : ' + escHtml(e.message) + '</div>'; }
 }
 
 let MONTRER_ARCHIVES = false;   // les conversations archivées sont masquées par défaut
@@ -1240,9 +1271,10 @@ function rendreConversations() {
       + (f.epingle ? '<span class="conv-pin" title="Épinglée">📌</span>' : '')
       + '<span class="txt">' + escapeHtml(titre) + '</span></div>'
       + '<div class="conv-apercu">' + escapeHtml(f.dernier || '') + '</div>'
-      + '<div class="conv-actions">'
-      + '<button title="Plus…" onclick="event.stopPropagation();ouvrirMenuConv(event,\'' + f.fil + '\')">⋯</button>'
-      + '</div>';
+      + '<div class="conv-actions"><button title="Plus…" class="conv-plus">⋯</button></div>';
+    // Plus d'onclick construit en chaîne avec `f.fil` (revue S240, C-A) : le fil vient du
+    // corps de /assistant/chat ; le gestionnaire est attaché par le DOM.
+    el.querySelector('.conv-plus').addEventListener('click', ev => { ev.stopPropagation(); ouvrirMenuConv(ev, f.fil); });
     el.dataset.id = f.fil;        // cible du cliquer-déposer (S104)
     el.onclick = () => ouvrirConversation(f);
     // Menu contextuel (clic droit / appui long) : mêmes actions que le bouton ⋯.
@@ -1518,7 +1550,6 @@ const COULEURS_PALETTE = ['#5865F2','#3B82F6','#22c55e','#eab308','#f97316','#ef
 const RAPPEL_PRESETS = [[0,"à l'heure"],[10,"10 min"],[30,"30 min"],[60,"1 h"],[1440,"1 jour"],[10080,"1 sem"]];
 function libRappel(m){ if(m===0)return "à l'heure"; if(m<60)return m+" min"; if(m<1440)return (m/60)+" h"; if(m<10080)return (m/1440)+" j"; return (m/10080)+" sem"; }
 function fmtHeure(iso){ const d=new Date(iso); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
-function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
 function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function isoToLocal(iso){ if(!iso) return ''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
 function localToIso(v){ return v ? new Date(v).toISOString() : null; }
@@ -1556,7 +1587,7 @@ async function chargerAgenda(){
   cont.innerHTML='<span class="liv-sub">Chargement…</span>';
   let evts=[];
   try{ evts=(await fetch('/agenda/evenements?debut='+encodeURIComponent(debut.toISOString())+'&fin='+encodeURIComponent(fin.toISOString())).then(r=>r.json())).evenements||[]; }
-  catch(e){ cont.innerHTML='<span class="liv-sub">Agenda indisponible : '+e.message+'</span>'; return; }
+  catch(e){ cont.innerHTML='<span class="liv-sub">Agenda indisponible : '+escHtml(e.message)+'</span>'; return; }
   EVENTS_CACHE=evts;
   cont.innerHTML = calModeActuel==='mois' ? rendreMois(debut,evts) : rendreSemaine(debut,evts);
   rendreLegende();
@@ -1568,23 +1599,23 @@ function rendreLegende(){
   if(!seen.size){ box.innerHTML=''; box.style.display='none'; return; }
   box.style.display='flex';
   box.innerHTML = '<span class="cal-leg-titre">Étiquettes :</span>' + Array.from(seen.entries())
-    .map(([n,c])=>`<span class="cal-leg-chip"><span class="cal-leg-dot" style="background:${escAttr(c)}"></span>${escHtml(n)}</span>`).join('');
+    .map(([n,c])=>`<span class="cal-leg-chip"><span class="cal-leg-dot" style="background:${escCouleur(c)}"></span>${escHtml(n)}</span>`).join('');
 }
 function eventsDuJour(evts,d){ return evts.filter(e=>memeJour(new Date(e.start_at),d)).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)); }
 function chipEvent(e){
   const c=e.couleur||'#5865F2';
   const heure=e.all_day?'':fmtHeure(e.start_at)+' ';
-  return `<div class="cal-chip" style="background:${escAttr(c)}" title="${escAttr((heure)+e.title)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)">${escHtml(heure)}${escHtml(e.title)}</div>`;
+  return `<div class="cal-chip" style="background:${escCouleur(c)}" title="${escAttr((heure)+e.title)}" onclick="event.stopPropagation();ouvrirModaleEvent(${escJs(e.id)},null)">${escHtml(heure)}${escHtml(e.title)}</div>`;
 }
 function rendreMois(debut,evts){
   const today=new Date();
   let h='<div class="cal-grid">';
-  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${j}</div>`;
+  for(const j of JOURS_COURT) h+=`<div class="cal-dow">${escHtml(j)}</div>`;
   for(let i=0;i<42;i++){
     const d=new Date(debut); d.setDate(d.getDate()+i);
     const autre=d.getMonth()!==calRef.getMonth();
     const jevts=eventsDuJour(evts,d), max=3;
-    h+=`<div class="cal-cell${autre?' autre':''}${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<div class="cal-cell${autre?' autre':''}${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,${escJs(ymd(d))})">`;
     h+=`<span class="cal-num">${d.getDate()}</span>`;
     jevts.slice(0,max).forEach(e=>{ h+=chipEvent(e); });
     if(jevts.length>max) h+=`<span class="cal-plus">+${jevts.length-max}</span>`;
@@ -1597,11 +1628,11 @@ function rendreSemaine(debut,evts){
   let h='<div class="cal-week">';
   for(let i=0;i<7;i++){
     const d=new Date(debut); d.setDate(d.getDate()+i);
-    h+=`<div class="cal-wcol${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,'${ymd(d)}')">`;
+    h+=`<div class="cal-wcol${memeJour(d,today)?' aujourdhui':''}" onclick="ouvrirModaleEvent(null,${escJs(ymd(d))})">`;
     h+=`<div class="cal-whead">${JOURS_COURT[i]} ${d.getDate()}</div>`;
     eventsDuJour(evts,d).forEach(e=>{
       const c=e.couleur||'#5865F2';
-      h+=`<div class="cal-wevt" style="border-left-color:${escAttr(c)}" onclick="event.stopPropagation();ouvrirModaleEvent('${e.id}',null)"><span class="h">${e.all_day?'journée':fmtHeure(e.start_at)}</span>${escHtml(e.title)}</div>`;
+      h+=`<div class="cal-wevt" style="border-left-color:${escCouleur(c)}" onclick="event.stopPropagation();ouvrirModaleEvent(${escJs(e.id)},null)"><span class="h">${e.all_day?'journée':escHtml(fmtHeure(e.start_at))}</span>${escHtml(e.title)}</div>`;
     });
     h+='</div>';
   }
@@ -1624,8 +1655,8 @@ function ouvrirModaleEvent(id, dateYMD){
   newLabelCouleur = '#5865F2';
   const calOptions = CALENDARS.filter(c=>c.name!=='TimeTree'&&c.name!=='Google').map(c=>`<option value="${escAttr(c.id)}" ${ev&&ev.calendar_id===c.id?'selected':''}>${escHtml(c.name)}</option>`).join('');
   const rappels = (ev&&ev.rappels)||[];
-  const checks = RAPPEL_PRESETS.map(([m,lib])=>`<label style="font-weight:400;display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:0.8rem"><input type="checkbox" class="ev-rap" value="${m}" ${rappels.includes(m)?'checked':''}> ${lib}</label>`).join('');
-  const swatches = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===modalCouleur?'sel':''}" data-c="${c}" style="background:${c}" onclick="choisirCouleur('${c}')"></span>`).join('');
+  const checks = RAPPEL_PRESETS.map(([m,lib])=>`<label style="font-weight:400;display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:0.8rem"><input type="checkbox" class="ev-rap" value="${escAttr(m)}" ${rappels.includes(m)?'checked':''}> ${escHtml(lib)}</label>`).join('');
+  const swatches = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===modalCouleur?'sel':''}" data-c="${escAttr(c)}" style="background:${escCouleur(c)}" onclick="choisirCouleur(${escJs(c)})"></span>`).join('');
   const titre = ev ? (ro?'Événement (lecture seule)':'Modifier l\'événement') : 'Nouveau rendez-vous';
   const dis = ro ? 'disabled' : '';
   let html = `<div class="modal-fond" onclick="if(event.target===this)fermerModale()"><div class="modal-boite">
@@ -1634,12 +1665,12 @@ function ouvrirModaleEvent(id, dateYMD){
     ${ro?`<div class="ev-ro">⚠ Importé de ${escHtml(ev.calendrier)} — modifiable seulement dans ${escHtml(ev.calendrier)}. Ici tu peux ajouter rappels, documents et commentaires.</div>`:''}
     <div class="ev-row"><label>Titre</label><input id="ev-titre" class="ev-in" ${dis} value="${ev?escAttr(ev.title):''}" placeholder="Titre du rendez-vous"></div>
     <div class="ev-2col">
-      <div class="ev-row"><label>Début</label><input id="ev-debut" type="datetime-local" class="ev-in" ${dis} value="${dStart}"></div>
-      <div class="ev-row"><label>Fin</label><input id="ev-fin" type="datetime-local" class="ev-in" ${dis} value="${dEnd}"></div>
+      <div class="ev-row"><label>Début</label><input id="ev-debut" type="datetime-local" class="ev-in" ${dis} value="${escAttr(dStart)}"></div>
+      <div class="ev-row"><label>Fin</label><input id="ev-fin" type="datetime-local" class="ev-in" ${dis} value="${escAttr(dEnd)}"></div>
     </div>
     <div class="ev-row"><label><input type="checkbox" id="ev-allday" ${dis} ${ev&&ev.all_day?'checked':''}> Journée entière</label></div>`;
   if(!ev || !ro){
-    const newPal = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===newLabelCouleur?'sel':''}" data-nc="${c}" style="background:${c}" onclick="choisirNewLabelCouleur('${c}')"></span>`).join('');
+    const newPal = COULEURS_PALETTE.map(c=>`<span class="ev-swatch ${c===newLabelCouleur?'sel':''}" data-nc="${escAttr(c)}" style="background:${escCouleur(c)}" onclick="choisirNewLabelCouleur(${escJs(c)})"></span>`).join('');
     html += `<div class="ev-row"><label>Calendrier</label><select id="ev-cal" class="ev-in" ${dis} onchange="onCalChange()">${calOptions||'<option value="">Perso</option>'}</select></div>
     <div class="ev-row"><label>🏷 Étiquette</label>
       <select id="ev-label" class="ev-in" ${dis} onchange="onLabelChange()"><option value="">— chargement…</option></select>
@@ -1656,16 +1687,16 @@ function ouvrirModaleEvent(id, dateYMD){
     <div class="ev-row"><label>Notes</label><textarea id="ev-notes" class="ev-in" ${dis} rows="2" placeholder="Notes (optionnel)">${ev&&ev.description?escHtml(ev.description):''}</textarea></div>
     <div class="ev-row"><label>🔔 Rappels</label><div>${checks}</div></div>
     <div class="modal-actions">
-      ${ro?'':`<button class="btn" onclick="enregistrerEvent(${ev?`'${ev.id}'`:'null'})">${ev?'Enregistrer':'Créer'}</button>`}
-      ${ev?`<button class="btn" style="opacity:.7" onclick="majRappelsModale('${ev.id}')">Enregistrer les rappels</button>`:''}
-      ${ev&&!ro?`<button class="btn" style="background:#ef4444" onclick="supprimerEvent('${ev.id}')">Supprimer</button>`:''}
+      ${ro?'':`<button class="btn" onclick="enregistrerEvent(${ev?escJs(ev.id):'null'})">${ev?'Enregistrer':'Créer'}</button>`}
+      ${ev?`<button class="btn" style="opacity:.7" onclick="majRappelsModale(${escJs(ev.id)})">Enregistrer les rappels</button>`:''}
+      ${ev&&!ro?`<button class="btn" style="background:#ef4444" onclick="supprimerEvent(${escJs(ev.id)})">Supprimer</button>`:''}
     </div>`;
   if(ev){
     html += `<div class="ev-sec"><h4>📎 Documents</h4><div id="ev-docs"><span class="liv-sub">Chargement…</span></div>
       <input type="file" id="ev-file" style="margin-top:8px;font-size:0.8rem">
-      <button class="btn" style="margin-left:8px" onclick="uploadDoc('${ev.id}')">Joindre</button></div>
+      <button class="btn" style="margin-left:8px" onclick="uploadDoc(${escJs(ev.id)})">Joindre</button></div>
     <div class="ev-sec"><h4>💬 Commentaires</h4><div id="ev-comms"><span class="liv-sub">Chargement…</span></div>
-      <div style="display:flex;gap:8px;margin-top:8px"><input id="ev-comm-in" class="ev-in" placeholder="Ajouter un commentaire…"><button class="btn" onclick="ajouterComm('${ev.id}')">Envoyer</button></div></div>`;
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="ev-comm-in" class="ev-in" placeholder="Ajouter un commentaire…"><button class="btn" onclick="ajouterComm(${escJs(ev.id)})">Envoyer</button></div></div>`;
   }
   html += `</div></div>`;
   document.getElementById('event-modal').innerHTML = html;
@@ -1734,10 +1765,10 @@ async function chargerGestionEtq(){
   let labels=[];
   if(cal){ try{ labels=(await fetch('/agenda/calendriers/'+encodeURIComponent(cal)+'/etiquettes').then(r=>r.json())).etiquettes||[]; }catch(e){} }
   box.innerHTML = labels.length ? labels.map(l=>`<div class="etq-row">
-    <input type="color" value="${escAttr(l.color||'#5865F2')}" id="etq-col-${l.id}">
-    <input type="text" value="${escAttr(l.name)}" id="etq-nom-${l.id}">
-    <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="majGestionEtq('${l.id}')">💾</button>
-    <button class="sup" title="Supprimer" onclick="supprGestionEtq('${l.id}')">🗑</button>
+    <input type="color" value="${escAttr(l.color||'#5865F2')}" id="etq-col-${escAttr(l.id)}">
+    <input type="text" value="${escAttr(l.name)}" id="etq-nom-${escAttr(l.id)}">
+    <button class="btn" style="padding:4px 10px;font-size:.76rem" onclick="majGestionEtq(${escJs(l.id)})">💾</button>
+    <button class="sup" title="Supprimer" onclick="supprGestionEtq(${escJs(l.id)})">🗑</button>
   </div>`).join('') : '<span class="liv-sub">Aucune étiquette pour ce calendrier.</span>';
 }
 async function majGestionEtq(id){
@@ -1794,7 +1825,7 @@ async function chargerDocs(id){
   const box=document.getElementById('ev-docs'); if(!box) return;
   try{
     const docs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/documents').then(r=>r.json())).documents||[];
-    box.innerHTML = docs.length ? docs.map(d=>`<div class="ev-doc"><a href="/agenda/documents/${encodeURIComponent(d.id)}" target="_blank">${escHtml(d.filename)}</a><span class="liv-sub">${Math.round((d.size_bytes||0)/1024)} Ko</span><button class="sup" onclick="supprDoc('${d.id}','${id}')">✕</button></div>`).join('') : '<span class="liv-sub">Aucun document.</span>';
+    box.innerHTML = docs.length ? docs.map(d=>`<div class="ev-doc"><a href="/agenda/documents/${encodeURIComponent(d.id)}" target="_blank">${escHtml(d.filename)}</a><span class="liv-sub">${escHtml(Math.round((d.size_bytes||0)/1024))} Ko</span><button class="sup" onclick="supprDoc(${escJs(d.id)},${escJs(id)})">✕</button></div>`).join('') : '<span class="liv-sub">Aucun document.</span>';
   }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
 }
 async function uploadDoc(id){
@@ -1808,7 +1839,7 @@ async function chargerComm(id){
   const box=document.getElementById('ev-comms'); if(!box) return;
   try{
     const cs=(await fetch('/agenda/evenements/'+encodeURIComponent(id)+'/commentaires').then(r=>r.json())).commentaires||[];
-    box.innerHTML = cs.length ? cs.map(c=>`<div class="ev-comm">${escHtml(c.content)}<div class="meta">${new Date(c.created_at).toLocaleString('fr-FR')} <button class="sup" style="border:none;background:none;color:#ef4444;cursor:pointer" onclick="supprComm('${c.id}','${id}')">supprimer</button></div></div>`).join('') : '<span class="liv-sub">Aucun commentaire.</span>';
+    box.innerHTML = cs.length ? cs.map(c=>`<div class="ev-comm">${escHtml(c.content)}<div class="meta">${escHtml(new Date(c.created_at).toLocaleString('fr-FR'))} <button class="sup" style="border:none;background:none;color:#ef4444;cursor:pointer" onclick="supprComm(${escJs(c.id)},${escJs(id)})">supprimer</button></div></div>`).join('') : '<span class="liv-sub">Aucun commentaire.</span>';
   }catch(e){ box.innerHTML='<span class="liv-sub">Erreur de chargement.</span>'; }
 }
 async function ajouterComm(id){
@@ -1837,7 +1868,7 @@ function majBoutonsPartage(){
   btn.title = owner ? "Inviter quelqu'un sur cet agenda" : "Seul le propriétaire peut inviter";
 }
 function ouvrirModaleNouvelAgenda(){
-  const puces=COULEURS_PALETTE.map((c,i)=>`<span class="ev-swatch ${i===0?'sel':''}" data-pc="${c}" style="background:${c}" onclick="choisirPartageCouleur('${c}')"></span>`).join('');
+  const puces=COULEURS_PALETTE.map((c,i)=>`<span class="ev-swatch ${i===0?'sel':''}" data-pc="${escAttr(c)}" style="background:${escCouleur(c)}" onclick="choisirPartageCouleur(${escJs(c)})"></span>`).join('');
   document.getElementById('partage-modal').innerHTML=`<div class="modal-fond" onclick="if(event.target===this)fermerPartage()"><div class="modal-boite">
     <button class="modal-fermer" onclick="fermerPartage()">✕</button>
     <div class="modal-titre">Nouvel agenda partagé</div>
@@ -1874,7 +1905,7 @@ function ouvrirModaleInviterAgenda(){
     <div id="pa-resultat"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn ghost" onclick="fermerPartage()">Fermer</button>
-      <button class="btn" onclick="genererLienInvitation('${escAttr(cal.id)}')">Créer le lien</button>
+      <button class="btn" onclick="genererLienInvitation(${escJs(cal.id)})">Créer le lien</button>
     </div></div></div>`;
 }
 async function genererLienInvitation(calId){
@@ -1981,47 +2012,47 @@ function rendreDerive(d) {
   const carte = (titre, corps) =>
     '<div style="background:#0f1117;border:1px solid #2d3148;border-radius:10px;padding:12px">' +
     '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:6px">' +
-    titre + '</div>' + corps + '</div>';
+    escHtml(titre) + '</div>' + corps + '</div>';
   const cards = [];
 
-  if (d.age) cards.push(carte('Âge', '<b style="font-size:1.2rem">' + d.age.ans + ' ans</b>' +
-    '<div style="font-size:0.8rem;color:#94a3b8">' + d.age.mois + ' mois, ' + d.age.jours + ' j' +
-    (d.jour_naissance ? ' · né(e) un ' + d.jour_naissance : '') + '</div>'));
+  if (d.age) cards.push(carte('Âge', '<b style="font-size:1.2rem">' + escHtml(d.age.ans) + ' ans</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + escHtml(d.age.mois) + ' mois, ' + escHtml(d.age.jours) + ' j' +
+    (d.jour_naissance ? ' · né(e) un ' + escHtml(d.jour_naissance) : '') + '</div>'));
   if (d.anniversaire) cards.push(carte('Prochain anniversaire',
     (d.anniversaire.dans_jours === 0 ? '<b>Aujourd\'hui 🎉</b>' :
-      '<b>dans ' + d.anniversaire.dans_jours + ' j</b>') +
-    '<div style="font-size:0.8rem;color:#94a3b8">' + d.anniversaire.date + ' · ' + d.anniversaire.ages + ' ans</div>'));
+      '<b>dans ' + escHtml(d.anniversaire.dans_jours) + ' j</b>') +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + escHtml(d.anniversaire.date) + ' · ' + escHtml(d.anniversaire.ages) + ' ans</div>'));
   if (d.signe_solaire) cards.push(carte('Signe solaire',
-    '<b style="font-size:1.1rem">' + d.signe_solaire.symbole + ' ' + d.signe_solaire.nom + '</b>' +
-    '<div style="font-size:0.8rem;color:#94a3b8">élément ' + d.signe_solaire.element + '</div>'));
+    '<b style="font-size:1.1rem">' + escHtml(d.signe_solaire.symbole) + ' ' + escHtml(d.signe_solaire.nom) + '</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">élément ' + escHtml(d.signe_solaire.element) + '</div>'));
   if (d.signe_chinois) cards.push(carte('Astrologie chinoise',
-    '<b style="font-size:1.1rem">' + d.signe_chinois.emoji + ' ' + d.signe_chinois.animal + '</b>' +
-    '<div style="font-size:0.8rem;color:#94a3b8">' + d.signe_chinois.element + ' · ' + d.signe_chinois.polarite + '</div>'));
+    '<b style="font-size:1.1rem">' + escHtml(d.signe_chinois.emoji) + ' ' + escHtml(d.signe_chinois.animal) + '</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">' + escHtml(d.signe_chinois.element) + ' · ' + escHtml(d.signe_chinois.polarite) + '</div>'));
   if (d.theme_astral) { const t = d.theme_astral; cards.push(carte('Thème astral (calculé)',
     '<div style="font-size:0.85rem;line-height:1.7">' +
-    '☉ Soleil : <b>' + t.soleil.signe + '</b> ' + t.soleil.degre + '°<br>' +
-    'AC Ascendant : <b>' + t.ascendant.signe + '</b> ' + t.ascendant.degre + '°<br>' +
-    'MC Milieu du Ciel : <b>' + t.milieu_du_ciel.signe + '</b></div>')); }
+    '☉ Soleil : <b>' + escHtml(t.soleil.signe) + '</b> ' + escHtml(t.soleil.degre) + '°<br>' +
+    'AC Ascendant : <b>' + escHtml(t.ascendant.signe) + '</b> ' + escHtml(t.ascendant.degre) + '°<br>' +
+    'MC Milieu du Ciel : <b>' + escHtml(t.milieu_du_ciel.signe) + '</b></div>')); }
   if (d.chemin_de_vie != null) cards.push(carte('Numérologie',
-    '<b style="font-size:1.2rem">chemin de vie ' + d.chemin_de_vie + '</b>' +
-    (d.numerologie_nom ? '<div style="font-size:0.8rem;color:#94a3b8">expression ' + d.numerologie_nom.expression +
-      ' · âme ' + d.numerologie_nom.ame + ' · personnalité ' + d.numerologie_nom.personnalite + '</div>' : '')));
+    '<b style="font-size:1.2rem">chemin de vie ' + escHtml(d.chemin_de_vie) + '</b>' +
+    (d.numerologie_nom ? '<div style="font-size:0.8rem;color:#94a3b8">expression ' + escHtml(d.numerologie_nom.expression) +
+      ' · âme ' + escHtml(d.numerologie_nom.ame) + ' · personnalité ' + escHtml(d.numerologie_nom.personnalite) + '</div>' : '')));
   if (d.biorythmes) { const b = d.biorythmes; const bar = (lbl, v) =>
-    '<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem"><span style="width:74px;color:#94a3b8">' + lbl +
+    '<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem"><span style="width:74px;color:#94a3b8">' + escHtml(lbl) +
     '</span><span style="flex:1;height:6px;background:#1e2336;border-radius:3px;overflow:hidden">' +
-    '<span style="display:block;height:100%;width:' + Math.abs(v) + '%;background:' + (v >= 0 ? '#34d399' : '#f87171') + '"></span></span>' +
-    '<span style="width:38px;text-align:right">' + v + '%</span></div>';
+    '<span style="display:block;height:100%;width:' + escHtml(Math.abs(Number(v)) || 0) + '%;background:' + (v >= 0 ? '#34d399' : '#f87171') + '"></span></span>' +
+    '<span style="width:38px;text-align:right">' + escHtml(v) + '%</span></div>';
     cards.push(carte('Biorythmes du jour', bar('Physique', b.physique) + bar('Émotionnel', b.emotionnel) + bar('Intellectuel', b.intellectuel))); }
   if (d.jours_vecus) cards.push(carte('Jours vécus',
-    '<b style="font-size:1.2rem">' + d.jours_vecus.jours.toLocaleString('fr-FR') + ' j</b>' +
-    '<div style="font-size:0.8rem;color:#94a3b8">cap des ' + d.jours_vecus.prochain_jalon.toLocaleString('fr-FR') +
-    ' j dans ' + d.jours_vecus.dans_jours + ' j</div>'));
+    '<b style="font-size:1.2rem">' + escHtml(d.jours_vecus.jours.toLocaleString('fr-FR')) + ' j</b>' +
+    '<div style="font-size:0.8rem;color:#94a3b8">cap des ' + escHtml(d.jours_vecus.prochain_jalon.toLocaleString('fr-FR')) +
+    ' j dans ' + escHtml(d.jours_vecus.dans_jours) + ' j</div>'));
   if (d.pierre_du_mois || d.generation) cards.push(carte('Repères',
     '<div style="font-size:0.82rem;line-height:1.7">' +
-    (d.pierre_du_mois ? '💎 ' + d.pierre_du_mois + '<br>' : '') +
-    (d.fleur_du_mois ? '🌸 ' + d.fleur_du_mois + '<br>' : '') +
-    (d.saison ? '🍂 né(e) en ' + d.saison + '<br>' : '') +
-    (d.generation ? '👥 ' + d.generation : '') + '</div>'));
+    (d.pierre_du_mois ? '💎 ' + escHtml(d.pierre_du_mois) + '<br>' : '') +
+    (d.fleur_du_mois ? '🌸 ' + escHtml(d.fleur_du_mois) + '<br>' : '') +
+    (d.saison ? '🍂 né(e) en ' + escHtml(d.saison) + '<br>' : '') +
+    (d.generation ? '👥 ' + escHtml(d.generation) : '') + '</div>'));
 
   zone.innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">' +
@@ -2173,8 +2204,8 @@ async function chargerRappels() {
       <div class="rappel ${r.vu ? 'vu' : ''}">
         <div class="rappel-txt"><b>${escHtml(r.titre)}</b>${r.corps ? '<br><span class="liv-sub" style="white-space:pre-wrap">'+escHtml(r.corps)+'</span>' : ''}</div>
         <div class="rappel-actions">
-          <button class="btn ghost" onclick='parlerRappel(${JSON.stringify(r.titre)})'>En parler</button>
-          ${r.vu ? '' : `<button class="btn ghost" onclick="marquerRappelVu('${r.id}')">Vu</button>`}
+          <button class="btn ghost" onclick="parlerRappel(${escJs(r.titre)})">En parler</button>
+          ${r.vu ? '' : `<button class="btn ghost" onclick="marquerRappelVu(${escJs(r.id)})">Vu</button>`}
         </div>
       </div>`).join('');
   } catch(e) { corps.innerHTML = '<span class="liv-sub">Rappels indisponibles.</span>'; }
@@ -2194,7 +2225,7 @@ let CERVEAU_CHARGE = false;
 function toggleCerveau() {
   const p = document.getElementById('panel-cerveau');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
-  if (p.style.display === 'block') { chargerCerveau(true); chargerBudget(); }
+  if (p.style.display === 'block') { chargerCerveau(true); chargerBudget(); chargerModeles(); }
 }
 function pill(el, ok, texte) {
   el.textContent = texte;
@@ -2215,7 +2246,8 @@ async function chargerCerveau(force) {
     const liste = dispo.length ? dispo : (c.model ? [c.model] : []);
     // Option « cascade pure » (aucune tête) en haut, puis les modèles servis.
     const optCascade = `<option value=""${!c.model?' selected':''}>⚡ Cascade auto (gratuits → repli payant)</option>`;
-    sel.innerHTML = optCascade + liste.map(m => `<option value="${m}"${m===c.model?' selected':''}>${m}</option>`).join('');
+    // Noms échappés (revue S240, M6) : `free/*`/`kilo/*` viennent de catalogues externes.
+    sel.innerHTML = optCascade + liste.map(m => `<option value="${escAttr(m)}"${m===c.model?' selected':''}>${escHtml(m)}</option>`).join('');
     // Case cascade + description de la chaîne réellement essayée.
     const cb = document.getElementById('cerveau-cascade');
     if (cb) cb.checked = !!c.cascade_auto;
@@ -2232,7 +2264,7 @@ async function chargerCerveau(force) {
     const selP = document.getElementById('cerveau-persona');
     if (selP) {
       const ps = c.personas || [];
-      selP.innerHTML = ps.map(p => `<option value="${p.cle}"${p.cle===c.persona?' selected':''}>${p.emoji||''} ${p.label}</option>`).join('');
+      selP.innerHTML = ps.map(p => `<option value="${escAttr(p.cle)}"${p.cle===c.persona?' selected':''}>${escHtml(p.emoji||'')} ${escHtml(p.label)}</option>`).join('');
       majDescPersona(ps);
       selP.onchange = () => majDescPersona(ps);
       const actuel = ps.find(p => p.cle === c.persona);
@@ -2243,7 +2275,7 @@ async function chargerCerveau(force) {
     const selL = document.getElementById('cerveau-langue');
     if (selL) {
       const ls = c.langues || [];
-      selL.innerHTML = ls.map(l => `<option value="${l.code}"${l.code===c.langue?' selected':''}>${l.label}</option>`).join('');
+      selL.innerHTML = ls.map(l => `<option value="${escAttr(l.code)}"${l.code===c.langue?' selected':''}>${escHtml(l.label)}</option>`).join('');
       const actuelle = ls.find(l => l.code === c.langue);
       if (actuelle) VOIX_LOCALE = actuelle.locale_voix;
       pill(document.getElementById('langue-statut'), c.langue !== 'fr' ? null : true,
@@ -2259,10 +2291,10 @@ async function chargerCerveau(force) {
       zoneF.innerHTML = fs.map(f => `
         <div class="cerveau-row" style="margin-top:6px;align-items:flex-end">
           <div class="field" style="flex:1">
-            <label style="font-size:0.82rem">${f.label} <span class="cerveau-pill">${f.definie ? '● définie' : '● absente'}</span></label>
-            <input type="password" id="cle-f-${f.id}" placeholder="${f.placeholder}" autocomplete="off">
+            <label style="font-size:0.82rem">${escHtml(f.label)} <span class="cerveau-pill">${f.definie ? '● définie' : '● absente'}</span></label>
+            <input type="password" id="cle-f-${escAttr(f.id)}" placeholder="${escAttr(f.placeholder)}" autocomplete="off">
           </div>
-          <button class="btn ghost" onclick="enregistrerCleFournisseur('${f.id}')">Enregistrer</button>
+          <button class="btn ghost" onclick="enregistrerCleFournisseur(${escJs(f.id)})">Enregistrer</button>
         </div>`).join('') || '<div class="liv-sub">Aucun fournisseur additionnel.</div>';
     }
     // Voix : provider + URL Unmute, puis (re)construction du fournisseur.
@@ -2313,7 +2345,7 @@ async function chargerBudget() {
     const lignes = flux.slice(0, 3).map(f => {
       const cls = f.recommande_retrograder ? '' : ' shadow-ko';
       const ico = f.recommande_retrograder ? '✔' : '~';
-      return `<span class="${cls}">${ico} <b>${escHtml(f.flux)}</b> — équivalence ${Math.round(f.taux_equivalent*100)}%, économie $${f.economie_observee_usd.toFixed(4)}</span>`;
+      return `<span class="${cls}">${ico} <b>${escHtml(f.flux)}</b> — équivalence ${escHtml(Math.round(f.taux_equivalent*100))}%, économie $${escHtml(Number(f.economie_observee_usd).toFixed(4))}</span>`;
     });
     zone.innerHTML = '🧪 Shadow routing : ' + lignes.join(' | ');
   } catch(e) {}
@@ -2351,10 +2383,7 @@ async function enregistrerVoix() {
   const voix_silence_ms = isNaN(sSil) ? 5000 : Math.round(sSil * 1000);
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/voix', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ voix_provider: provider, unmute_url, wakeword_url, voix_fin_mode, voix_silence_ms })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/voix', { voix_provider: provider, unmute_url, wakeword_url, voix_fin_mode, voix_silence_ms });
     VOIX_FIN_MODE = r.voix_fin_mode || 'silence';
     VOIX_SILENCE_MS = r.voix_silence_ms || 5000;
     construireVoix(r.voix_provider, r.unmute_url, r.wakeword_url);
@@ -2372,6 +2401,109 @@ async function enregistrerVoix() {
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
   btn.classList.remove('loading');
 }
+// Écritures du cerveau (S240) : ces routes exigent une session, et `CERVEAU_ADMINS` peut
+// restreindre à certains comptes. Une réponse 401/403 renvoie `{detail}` et non l'objet
+// attendu : sans ce contrôle, le panneau affichait « ✔ » avec des champs `undefined`.
+async function envoyerCerveau(url, corps, methode) {
+  const r = await fetch(url, { method: methode || 'POST', headers: {'Content-Type':'application/json'},
+                               body: corps === undefined ? undefined : JSON.stringify(corps) });
+  let d = {};
+  try { d = await r.json(); } catch(_) {}
+  if (!r.ok) {
+    const det = typeof d.detail === 'string' ? d.detail : (d.detail ? JSON.stringify(d.detail) : 'HTTP ' + r.status);
+    throw new Error(r.status === 401 ? 'session expirée — recharge la page pour te reconnecter.' : det);
+  }
+  return d;
+}
+// ── Modèles servis + Forge (S240) ──
+const ORIGINES_MODELES = [
+  ['perso', 'Ajoutés par toi'],
+  ['yaml', 'Déclarés dans la configuration de la Gateway'],
+  ['gratuit', 'Gratuits synchronisés (OpenRouter, Kilo)'],
+  ['forge', 'Alias réservés à la Forge'],
+  ['base', 'Autres modèles en base'],
+];
+async function chargerModeles() {
+  const zone = document.getElementById('cerveau-modeles');
+  let d;
+  try {
+    const r = await fetch('/assistant/modeles');
+    d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+  } catch(e) {
+    zone.innerHTML = '<div class="liv-sub">Gateway injoignable : ' + escHtml(e.message) + '</div>';
+    pill(document.getElementById('modeles-statut'), false, '● indisponible');
+    return;
+  }
+  const modeles = d.modeles || [];
+  pill(document.getElementById('modeles-statut'), true, modeles.length + ' servis');
+  // Fournisseurs du catalogue serveur (clé définie ou non).
+  const selF = document.getElementById('modele-fournisseur');
+  const avant = selF.value;
+  selF.innerHTML = (d.fournisseurs || []).map(f =>
+    `<option value="${escAttr(f.id)}">${escHtml(f.label)}${f.cle_definie ? '' : ' (clé absente)'}</option>`).join('');
+  if (avant && [...selF.options].some(o => o.value === avant)) selF.value = avant;
+  // Sélecteur de la Forge : défaut + modèles ajoutés.
+  const forge = d.forge || {choix: '', defaut: ''};
+  const perso = modeles.filter(m => m.origine === 'perso');
+  const selForge = document.getElementById('cerveau-forge');
+  selForge.innerHTML = `<option value="">Mistral small — défaut (${escHtml(forge.defaut)})</option>`
+    + perso.map(m => `<option value="${escAttr(m.nom)}"${m.nom === forge.choix ? ' selected' : ''}>${escHtml(m.nom)}</option>`).join('');
+  // Sans clé pour son fournisseur, forge/defaut échoue à chaque appel et la Gateway sert la
+  // Forge par les gratuits (revue S240, I4) : on le dit en rouge plutôt qu'un « défaut » vert.
+  if (forge.cle_definie === false)
+    pill(document.getElementById('forge-statut'), false,
+         'Forge servie par les gratuits (clé ' + (forge.fournisseur_label || forge.fournisseur) + ' absente)');
+  else
+    pill(document.getElementById('forge-statut'), forge.choix ? null : true, forge.choix || 'défaut');
+  // Liste groupée par origine ; seuls les « perso » ont un bouton Retirer.
+  zone.innerHTML = ORIGINES_MODELES.map(([cle, titre]) => {
+    const ms = modeles.filter(m => m.origine === cle);
+    if (!ms.length) return cle === 'perso'
+      ? '<div class="liv-sub" style="margin:4px 0 8px">Aucun modèle ajouté pour l\'instant.</div>' : '';
+    const lignes = ms.map(m => `<div class="modele-ligne"><code>${escHtml(m.nom)}</code>`
+      + (m.retirable ? `<button class="btn ghost" data-nom="${escAttr(m.nom)}" onclick="retirerModele(this.dataset.nom)">Retirer</button>` : '')
+      + '</div>').join('');
+    return `<details class="modeles-groupe"${cle === 'perso' ? ' open' : ''}><summary>${titre} (${ms.length})</summary>${lignes}</details>`;
+  }).join('');
+}
+async function ajouterModele() {
+  const btn = document.getElementById('btn-modele-ajouter');
+  const fournisseur = document.getElementById('modele-fournisseur').value;
+  const modele = document.getElementById('modele-id').value.trim();
+  if (!modele) { cerveauMsg('Saisis l\'identifiant du modèle chez le fournisseur.', 'ko'); return; }
+  btn.classList.add('loading');
+  cerveauMsg('Ajout de « ' + modele + ' » puis test (jusqu\'à 20 s)…', 'info');
+  try {
+    const r = await envoyerCerveau('/assistant/modeles', { fournisseur, modele });
+    if (r.ok) { cerveauMsg('✔ « ' + r.nom + ' » ajouté : ' + r.detail + ' Il est aussi proposé dans « Modèle LLM ».', 'ok');
+                document.getElementById('modele-id').value = ''; }
+    else cerveauMsg('⚠ « ' + r.nom + ' » ne répond pas, il n\'a pas été gardé : ' + r.detail, 'ko');
+    await chargerModeles(); await chargerCerveau(true);
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
+async function retirerModele(nom) {
+  if (!confirm('Retirer « ' + nom + ' » de la Gateway ?')) return;
+  try {
+    await envoyerCerveau('/assistant/modeles/' + nom.split('/').map(encodeURIComponent).join('/'), undefined, 'DELETE');
+    cerveauMsg('✔ « ' + nom + ' » retiré.', 'ok');
+    await chargerModeles(); await chargerCerveau(true);
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+}
+async function enregistrerForge() {
+  const btn = document.getElementById('btn-forge');
+  const modele = document.getElementById('cerveau-forge').value;
+  btn.classList.add('loading');
+  cerveauMsg('Bascule de la Forge sur « ' + (modele || 'Mistral small') + ' » puis test…', 'info');
+  try {
+    const r = await envoyerCerveau('/assistant/forge-modele', { modele });
+    if (r.ok) cerveauMsg('✔ La Forge utilise « ' + r.model + ' » : ' + r.detail, 'ok');
+    else cerveauMsg('⚠ « ' + (r.essaye || modele) + ' » ne répond pas : la Forge reste sur « ' + r.model + ' ». ' + r.detail, 'ko');
+    await chargerModeles();
+  } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
+  btn.classList.remove('loading');
+}
 function majDescPersona(ps) {
   const sel = document.getElementById('cerveau-persona');
   const p = (ps || []).find(x => x.cle === sel.value);
@@ -2382,10 +2514,7 @@ async function enregistrerPersona() {
   const persona = document.getElementById('cerveau-persona').value;
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/persona', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ persona })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/persona', { persona });
     pill(document.getElementById('persona-statut'), r.persona !== 'default' ? null : true, r.persona);
     cerveauMsg('✔ Personnalité « ' + r.persona + ' » active dès le prochain message.', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
@@ -2396,12 +2525,9 @@ async function enregistrerLangue() {
   const langue = document.getElementById('cerveau-langue').value;
   btn.classList.add('loading');
   try {
-    const r = await fetch('/assistant/langue', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ langue })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/langue', { langue });
     VOIX_LOCALE = r.locale_voix || 'fr-FR';  // la voix suit immédiatement (sans recharger)
-    const opt = document.querySelector('#cerveau-langue option[value="' + r.langue + '"]');
+    const opt = [...document.querySelectorAll('#cerveau-langue option')].find(o => o.value === r.langue);
     pill(document.getElementById('langue-statut'), r.langue !== 'fr' ? null : true,
          opt ? opt.textContent : r.langue);
     cerveauMsg('✔ Langue « ' + (opt ? opt.textContent : r.langue) + ' » active : réponses et voix.', 'ok');
@@ -2414,10 +2540,7 @@ async function enregistrerModele() {
   const label = model || 'cascade auto';
   btn.classList.add('loading'); cerveauMsg('Test de « ' + label + ' »…', 'info');
   try {
-    const r = await fetch('/assistant/config', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/config', { model });
     await chargerCerveau(true);
     if (r.ok) cerveauMsg('✔ Tête « ' + (r.tete||label) + ' » active : ' + r.detail, 'ok');
     else cerveauMsg('⚠ Enregistré mais la tête ne répond pas : ' + r.detail, 'ko');
@@ -2428,10 +2551,7 @@ async function enregistrerCascade() {
   const actif = document.getElementById('cerveau-cascade').checked;
   cerveauMsg('Mise à jour de la cascade…', 'info');
   try {
-    const r = await fetch('/assistant/config', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cascade_auto: actif })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/config', { cascade_auto: actif });
     await chargerCerveau(true);
     cerveauMsg(actif ? '✔ Cascade auto activée (gratuits d\'abord).' : '✔ Cascade désactivée (modèle + repli manuel).', 'ok');
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
@@ -2445,18 +2565,15 @@ async function majMuscleNoeuds() {
     const ns = m.noeuds || [];
     if (!ns.length) { el.textContent = 'Aucun nœud déclaré (variable CALCUL_NOEUDS).'; return; }
     const icone = e => e === 'eveille' ? '🟢' : e === 'endormi' ? '🌙' : e === 'injoignable' ? '🔴' : '⚪';
-    el.innerHTML = ns.map(n => icone(n.etat) + ' ' + (n.nom || n.id) + ' — ' + n.etat
-      + (n.modele_gateway ? ' <span style="opacity:.7">(' + n.modele_gateway + ')</span>' : '')).join('<br>');
+    el.innerHTML = ns.map(n => icone(n.etat) + ' ' + escHtml(n.nom || n.id) + ' — ' + escHtml(n.etat)
+      + (n.modele_gateway ? ' <span style="opacity:.7">(' + escHtml(n.modele_gateway) + ')</span>' : '')).join('<br>');
   } catch(e) { el.textContent = 'État des nœuds indisponible.'; }
 }
 async function enregistrerMuscle() {
   const actif = document.getElementById('cerveau-muscle').checked;
   cerveauMsg('Mise à jour du muscle déporté…', 'info');
   try {
-    const r = await fetch('/assistant/muscle', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ actif })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/muscle', { actif });
     await majMuscleNoeuds();
     cerveauMsg(r.muscle_actif ? '✔ Muscle déporté activé : un nœud prêt passe en tête de cascade.'
                               : '✔ Muscle déporté désactivé (cascade habituelle).', 'ok');
@@ -2469,10 +2586,7 @@ async function enregistrerCle() {
   btn.classList.add('loading');
   cerveauMsg('Enregistrement, redémarrage de la Gateway puis test… (~15 s)', 'info');
   try {
-    const r = await fetch('/assistant/cle-openrouter', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cle })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/cle-openrouter', { cle });
     pill(document.getElementById('cle-statut'),
          r.cle_openrouter_definie ? true : false,
          r.cle_openrouter_definie ? '● définie' : '● absente');
@@ -2489,10 +2603,7 @@ async function enregistrerCleFournisseur(id) {
   if (!cle) { cerveauMsg('Saisis une clé pour ' + id + '.', 'ko'); return; }
   cerveauMsg('Enregistrement de la clé « ' + id + ' », redémarrage de la Gateway… (~15 s)', 'info');
   try {
-    const r = await fetch('/assistant/cle-fournisseur', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ fournisseur: id, cle })
-    }).then(r => r.json());
+    const r = await envoyerCerveau('/assistant/cle-fournisseur', { fournisseur: id, cle });
     if (r.ok) { cerveauMsg('✔ Clé « ' + id + ' » enregistrée, la Gateway a redémarré. Choisis son modèle dans « Modèle LLM ».', 'ok'); if (inp) inp.value = ''; }
     else cerveauMsg('⚠ Échec (' + (r.etape || '?') + ') : ' + (r.detail || ''), 'ko');
     await chargerCerveau(true);
@@ -2544,7 +2655,12 @@ async function restaurerSauvegardeUsb() {
 
 async function exporterEnv() {
   const r = await fetch('/sauvegarde-usb/env');
-  if (!r.ok) { sauvegardeMsg('⚠ Export .env impossible.', 'ko'); return; }
+  if (!r.ok) {
+    // Raison réelle (session expirée, compte hors CERVEAU_ADMINS, .env absent…) — revue S240, M3.
+    let detail = 'HTTP ' + r.status;
+    try { const d = await r.json(); if (d && d.detail) detail = typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); } catch (_) {}
+    sauvegardeMsg('⚠ Export .env impossible : ' + detail, 'ko'); return;
+  }
   const texte = await r.text();
   const lien = document.createElement('a');
   lien.href = URL.createObjectURL(new Blob([texte], { type: 'text/plain' }));
@@ -2579,8 +2695,8 @@ async function charger() {
       const actives = items.filter(({b}) => b.statut === 'actif').length;
       const cartes = items.map(({ b, h }) => carteHTML(b, h)).join('');
       groupes.insertAdjacentHTML('beforeend',
-        `<div class="groupe-couche"><h3 class="groupe-titre">${famille.icone || ''} ${famille.label}` +
-        `<span class="groupe-compteur">${actives}/${items.length}</span></h3>` +
+        `<div class="groupe-couche"><h3 class="groupe-titre">${escHtml(famille.icone || '')} ${escHtml(famille.label)}` +
+        `<span class="groupe-compteur">${escHtml(actives)}/${escHtml(items.length)}</span></h3>` +
         `<div class="grid">${cartes}</div></div>`);
     });
   } catch(e) {
@@ -2631,41 +2747,41 @@ async function chargerLivraisons() {
 function livraisonHTML(l) {
   const etapes = (l.etapes || []).map(e => {
     const cls = e.statut || 'en_attente';
-    return `<div class="step ${cls}">
-      <div class="step-nom"><span class="step-dot"></span>${ETAPES_LABELS[e.etape] || e.etape}</div>
-      <div class="step-msg">${e.message || ''}</div>
+    return `<div class="step ${escAttr(cls)}">
+      <div class="step-nom"><span class="step-dot"></span>${escHtml(ETAPES_LABELS[e.etape] || e.etape)}</div>
+      <div class="step-msg">${escHtml(e.message || '')}</div>
     </div>`;
   }).join('');
   let links = '';
   if (l.statut === 'livree' && l.url_apercu) {
     links = `<div class="liv-links">
-      <a href="${l.url_apercu}" target="_blank">Aperçu de l'app ↗</a>
-      <a href="${l.url_html}" target="_blank">Télécharger le HTML</a>
-      <button class="btn ghost" onclick="decrocher('${l.id}')">Décrocher · mettre de côté</button>
+      <a href="${escUrl(l.url_apercu)}" target="_blank" rel="noopener">Aperçu de l'app ↗</a>
+      <a href="${escUrl(l.url_html)}" target="_blank" rel="noopener">Télécharger le HTML</a>
+      <button class="btn ghost" onclick="decrocher(${escJs(l.id)})">Décrocher · mettre de côté</button>
     </div>`;
   } else if (l.statut === 'decrochee') {
     links = `<div class="liv-links">
-      <span class="liv-sub" style="margin:0">📦 ${l.dossier || 'dossier portable'}</span>
-      <button class="btn" onclick="reprendre('${l.id}')">Reprendre pour modifier</button>
+      <span class="liv-sub" style="margin:0">📦 ${escHtml(l.dossier || 'dossier portable')}</span>
+      <button class="btn" onclick="reprendre(${escJs(l.id)})">Reprendre pour modifier</button>
     </div>`;
   }
-  const err = l.statut === 'erreur' && l.erreur ? `<div class="liv-err-msg">⚠ ${l.erreur}</div>` : '';
+  const err = l.statut === 'erreur' && l.erreur ? `<div class="liv-err-msg">⚠ ${escHtml(l.erreur)}</div>` : '';
   const modeChip = l.mode === 'hebergee' ? 'hébergée' : 'autonome';
   const extra = [modeChip, l.messagerie ? 'messagerie' : null, l.packager ? 'bundle' : null]
     .filter(Boolean).join(' · ');
   // Une entreprise « de côté » n'affiche pas les pastilles d'étapes (elle n'est plus en pipeline).
   const steps = l.statut === 'decrochee' ? '' : `<div class="steps">${etapes}</div>`;
-  return `<div class="liv-card" data-liv-id="${l.id}">
+  return `<div class="liv-card" data-liv-id="${escAttr(l.id)}">
     <div class="liv-head">
       <div>
-        <div class="liv-title">${l.nom_entreprise || 'Entreprise'}</div>
-        <div class="liv-sub">${extra} · ${new Date(l.date_creation).toLocaleString('fr-FR')}</div>
+        <div class="liv-title">${escHtml(l.nom_entreprise || 'Entreprise')}</div>
+        <div class="liv-sub">${escHtml(extra)} · ${escHtml(new Date(l.date_creation).toLocaleString('fr-FR'))}</div>
       </div>
-      <span class="liv-statut liv-${l.statut}">${ {en_cours:'En cours', livree:'Livrée', erreur:'Erreur', decrochee:'De côté'}[l.statut] || l.statut }</span>
+      <span class="liv-statut liv-${escAttr(l.statut)}">${escHtml({en_cours:'En cours', livree:'Livrée', erreur:'Erreur', decrochee:'De côté'}[l.statut] || l.statut)}</span>
     </div>
     ${steps}
     ${err}${links}
-    <div class="liv-suppr"><button class="btn danger" onclick="supprimerApp('${l.id}')">Supprimer</button></div>
+    <div class="liv-suppr"><button class="btn danger" onclick="supprimerApp(${escJs(l.id)})">Supprimer</button></div>
   </div>`;
 }
 
@@ -2690,7 +2806,7 @@ async function reprendre(id) {
 // accidentel, plus fort qu'un simple confirm). On lit le nom depuis la carte (pas
 // d'injection dans l'onclick).
 async function supprimerApp(id) {
-  const carte = document.querySelector('[data-liv-id="' + id + '"]');
+  const carte = [...document.querySelectorAll('[data-liv-id]')].find(x => x.dataset.livId === id);
   const nom = carte ? carte.querySelector('.liv-title').textContent.trim() : 'cette app';
   const saisie = prompt('Supprimer définitivement « ' + nom + ' » ?\n\n'
     + 'Cette action retire l\'app de l\'usine et est IRRÉVERSIBLE.\n'
@@ -2738,8 +2854,8 @@ function ajouterImage(url, alt) {
   const d = document.createElement('div');
   d.className = 'msg assistant';
   d.innerHTML = '<div class="bulle bulle-image"><a target="_blank" rel="noopener"><img loading="lazy"></a></div>';
-  d.querySelector('a').href = url;
-  const img = d.querySelector('img'); img.src = url; img.alt = alt || 'Image générée';
+  d.querySelector('a').href = urlSure(url);
+  const img = d.querySelector('img'); img.src = urlSure(url); img.alt = alt || 'Image générée';
   fil.appendChild(d); chatEcho();
 }
 function ajouterOutil(nom, action, confirmation) {
@@ -3369,7 +3485,24 @@ ${texte}`
 }
 
 const CLASSEMENTS = {};   // doc_id → {nom, classement} (évite d'injecter du texte libre dans le HTML)
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+// ── Échappement (revue S240, C-A) ─────────────────────────────────────────────
+// TOUTE donnée venue du serveur (conversations, projets, agenda, briques, modèles, mails…)
+// insérée par innerHTML passe par l'un de ces filtres. Un filet statique le vérifie :
+// core/test_dashboard_xss.py. Pas de CSP dans S240 (chantier séparé).
+//  - escHtml / escAttr : texte et valeur d'attribut entre guillemets (échappe aussi « ' ») ;
+//  - escJs : argument d'un gestionnaire inline — onclick="f(${escJs(x)})", SANS guillemets
+//    autour : JSON.stringify fait le littéral JS, escAttr le protège dans l'attribut ;
+//  - escCouleur : seule une couleur #hex passe dans un style ;
+//  - escUrl : seuls http(s) et les chemins locaux passent dans un href (pas de javascript:).
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+function escAttr(s) { return escHtml(s); }
+function escJs(s) { return escHtml(JSON.stringify(s == null ? '' : String(s))); }
+function escCouleur(c, defaut) { return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? String(c) : (defaut || '#5865F2'); }
+function urlSure(u) { const x = String(u || ''); return /^(https?:\/\/|\/(?![\/\\]))/i.test(x) ? x : '#'; }  // « /\hôte » = « //hôte » pour un navigateur (S240, M2)
+function escUrl(u) { return escAttr(urlSure(u)); }
 
 function afficherClassement(data) {
   const c = data.classement || {};
@@ -3386,8 +3519,8 @@ function afficherClassement(data) {
     + res + ent + proj
     + (tags ? `<div class="chips">${tags}</div>` : '')
     + `<div class="cc-actions">
-         <button class="btn ghost" onclick="ajusterClassement('${data.doc_id}')">Ajuster</button>
-         <button class="btn" onclick="retenirDocument('${data.doc_id}')">Retenir en mémoire</button>
+         <button class="btn ghost" onclick="ajusterClassement(${escJs(data.doc_id)})">Ajuster</button>
+         <button class="btn" onclick="retenirDocument(${escJs(data.doc_id)})">Retenir en mémoire</button>
        </div>`;
   fil.appendChild(d); chatEcho();
 }
@@ -3428,8 +3561,8 @@ async function chargerDossiers() {
       const items = Object.entries(obj || {});
       if (!items.length) return '';
       const chips = items.map(([nom, n]) =>
-        `<span class="dossier-chip" onclick='filtrerDossier(${JSON.stringify(filtre)}, ${JSON.stringify(nom)})'>${nom} <b>${n}</b></span>`).join('');
-      return `<div class="dossier-groupe"><div class="dg-titre">${titre}</div>${chips}</div>`;
+        `<span class="dossier-chip" onclick="filtrerDossier(${escJs(filtre)}, ${escJs(nom)})">${escHtml(nom)} <b>${escHtml(n)}</b></span>`).join('');
+      return `<div class="dossier-groupe"><div class="dg-titre">${escHtml(titre)}</div>${chips}</div>`;
     };
     const html = groupe('Projets', d.projets, 'projet') + groupe('Catégories', d.categories, 'categorie');
     corps.innerHTML = html || '<span class="liv-sub">Aucun document classé pour l\'instant — déposez-en un 📎</span>';
@@ -3445,34 +3578,34 @@ function filtrerDossier(type, valeur) {
 
 function carteHTML(b, h) {
   const roleLabel = ROLES_LABELS[b.role] || b.role;
-  const offre = (b.offre || []).map(o => `<span class="chip">${o}</span>`).join('');
-  const deps = (b.depends_on || []).map(d => `<span class="chip" style="color:#7c83ff;border-color:#3d4468">${d}</span>`).join('');
+  const offre = (b.offre || []).map(o => `<span class="chip">${escHtml(o)}</span>`).join('');
+  const deps = (b.depends_on || []).map(d => `<span class="chip" style="color:#7c83ff;border-color:#3d4468">${escHtml(d)}</span>`).join('');
   let healthHTML = '';
   if (b.url_sante) {
     const cls = h.statut === 'ok' ? 'ok' : h.statut === 'inaccessible' ? 'inaccessible' : 'inconnu';
     const label = h.statut === 'ok' ? '● en ligne' : h.statut === 'inaccessible' ? '● hors ligne' : '● —';
-    healthHTML = `<span class="health health-${cls}">${label}</span>`;
+    healthHTML = `<span class="health health-${escAttr(cls)}">${escHtml(label)}</span>`;
   } else {
     healthHTML = `<span class="health health-inconnu">non exposé</span>`;
   }
   const statutClass = 'statut statut-' + b.statut;
   const statutLabel = {actif:'Actif', setup_requis:'Setup requis', a_tester:'À tester'}[b.statut] || b.statut;
-  return `<div class="card" data-cible-brique="${b.nom}">
+  return `<div class="card" data-cible-brique="${escAttr(b.nom)}">
     <div class="card-header">
       <div>
-        <div class="card-title">${b.nom}</div>
-        <div class="card-version">v${b.version}${b.port ? ` · <span class="port-pill" title="Port utilisé par la brique">:${b.port}</span>` : ''}</div>
+        <div class="card-title">${escHtml(b.nom)}</div>
+        <div class="card-version">v${escHtml(b.version)}${b.port ? ` · <span class="port-pill" title="Port utilisé par la brique">:${escHtml(b.port)}</span>` : ''}</div>
       </div>
-      <span class="role-badge role-${b.role}">${roleLabel}</span>
+      <span class="role-badge role-${escAttr(b.role)}">${escHtml(roleLabel)}</span>
     </div>
-    <div class="card-desc">${b.description}</div>
+    <div class="card-desc">${escHtml(b.description)}</div>
     ${offre ? `<div class="section-label">Offre</div><div class="chips">${offre}</div>` : ''}
     ${deps  ? `<div class="section-label">Dépend de</div><div class="chips">${deps}</div>` : ''}
     <div class="card-footer" style="margin-top:14px">
-      <span class="${statutClass}"><span class="dot"></span>${statutLabel}</span>
+      <span class="${escAttr(statutClass)}"><span class="dot"></span>${escHtml(statutLabel)}</span>
       ${healthHTML}
     </div>
-    <button class="btn ghost card-open" onclick="ouvrirBrique('${b.nom}')">Ouvrir ↗</button>
+    <button class="btn ghost card-open" onclick="ouvrirBrique(${escJs(b.nom)})">Ouvrir ↗</button>
   </div>`;
 }
 
@@ -3482,8 +3615,8 @@ function ouvrirBrique(nom) {
   const item = BRIQUES_MAP[nom]; if (!item) return;
   const b = item.b, h = item.h;
   const role = ROLES_LABELS[b.role] || b.role;
-  const offre = (b.offre || []).map(o => `<span class="chip">${o}</span>`).join('');
-  const deps = (b.depends_on || []).map(d => `<span class="chip" style="color:#7c83ff;border-color:#3d4468">${d}</span>`).join('');
+  const offre = (b.offre || []).map(o => `<span class="chip">${escHtml(o)}</span>`).join('');
+  const deps = (b.depends_on || []).map(d => `<span class="chip" style="color:#7c83ff;border-color:#3d4468">${escHtml(d)}</span>`).join('');
   const sante = !b.url_sante ? '<span class="health health-inconnu">non exposé</span>'
     : h.statut === 'ok' ? '<span class="health health-ok">● en ligne</span>'
     : h.statut === 'inaccessible' ? '<span class="health health-inaccessible">● hors ligne</span>'
@@ -3492,35 +3625,35 @@ function ouvrirBrique(nom) {
   // Accès adapté à ce que la brique expose réellement.
   let actions = '';
   if (b.vue_dashboard) {
-    actions += `<button class="btn" onclick="switchVue('${b.vue_dashboard}');fermerBrique()">Ouvrir dans le dashboard ↗</button>`;
+    actions += `<button class="btn" onclick="switchVue(${escJs(b.vue_dashboard)});fermerBrique()">Ouvrir dans le dashboard ↗</button>`;
   }
   if (b.url_ui) {
-    actions += `<a class="btn" href="${b.url_ui}" target="_blank" rel="noopener">Ouvrir l'application ↗</a>`;
+    actions += `<a class="btn" href="${escUrl(b.url_ui)}" target="_blank" rel="noopener">Ouvrir l'application ↗</a>`;
   }
   // Console API (Swagger) seulement pour les briques dont le port EST une API
   // (pas un frontend : celles-là ont un url_ui).
   if (b.port && !b.url_ui) {
-    actions += `<a class="btn ghost" href="http://localhost:${b.port}/docs" target="_blank" rel="noopener">Console API (Swagger) ↗</a>`;
+    actions += `<a class="btn ghost" href="http://localhost:${escAttr(parseInt(b.port, 10) || '')}/docs" target="_blank" rel="noopener">Console API (Swagger) ↗</a>`;
   }
   // Santé : dérivée de l'url_sante du manifest (bon port + chemin par brique).
   if (b.url_sante) {
     const sante_url = b.url_sante.replace('host.docker.internal', 'localhost');
-    actions += `<a class="btn ghost" href="${sante_url}" target="_blank" rel="noopener">Santé ↗</a>`;
+    actions += `<a class="btn ghost" href="${escUrl(sante_url)}" target="_blank" rel="noopener">Santé ↗</a>`;
   }
   if (!actions) actions = '<span class="liv-sub">Cette brique n\'est pas exposée (aucun port) — rien à ouvrir.</span>';
 
   document.getElementById('modal-brique-corps').innerHTML = `
     <div class="modal-tete">
       <div>
-        <div class="modal-titre">${b.nom} <span class="card-version">v${b.version || '—'}</span></div>
-        <span class="role-badge role-${b.role}">${role}</span>
+        <div class="modal-titre">${escHtml(b.nom)} <span class="card-version">v${escHtml(b.version || '—')}</span></div>
+        <span class="role-badge role-${escAttr(b.role)}">${escHtml(role)}</span>
       </div>
       ${sante}
     </div>
-    <div class="card-desc" style="margin:12px 0">${b.description || ''}</div>
+    <div class="card-desc" style="margin:12px 0">${escHtml(b.description || '')}</div>
     ${offre ? `<div class="section-label">Offre</div><div class="chips">${offre}</div>` : ''}
     ${deps  ? `<div class="section-label" style="margin-top:10px">Dépend de</div><div class="chips">${deps}</div>` : ''}
-    ${b.port ? `<div class="liv-sub" style="margin-top:10px">Port local : <b>${b.port}</b></div>` : ''}
+    ${b.port ? `<div class="liv-sub" style="margin-top:10px">Port local : <b>${escHtml(b.port)}</b></div>` : ''}
     <div class="modal-actions">${actions}</div>`;
   document.getElementById('modal-brique').style.display = 'flex';
 }

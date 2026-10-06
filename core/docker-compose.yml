@@ -42,6 +42,10 @@ services:
       - EXPORT_DIR=/export
       # LLM de l'assistant du Cœur (S7) — même Gateway que les autres briques.
       - GATEWAY_URL=http://host.docker.internal:4001
+      # Brique dev (S240, C-B) : publiée sur 127.0.0.1 seulement, donc jointe par le réseau
+      # Docker `proxy_net` et non par host.docker.internal. Atelier lancé HORS Docker
+      # (uvicorn sur le poste) : retirer cette ligne.
+      - DEV_URL=http://workplace_dev:5955
       # GATEWAY_KEY vient du .env racine (env_file ci-dessus).
       # Cerveau par défaut « de base » (modifiable à chaud via ⚙ Cerveau, persisté
       # dans le volume du Cœur). Priorité aux COÛTS via la CASCADE AUTO : l'assistant
@@ -70,7 +74,8 @@ services:
       - ASSISTANT_CONFIG_PATH=/data/assistant_config.json
       # Gateway MCP (POST /mcp) : point d'entrée unique pour des clients/agents tiers, mêmes
       # outils que l'assistant (statiques + découverts par manifest) + co-agent planificateur.
-      # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — recommandé hors local
+      # MCP_ACTIF=0 le coupe ; MCP_KEY (au .env racine) exige une clé — OBLIGATOIRE dès que
+      # AUTH_ENABLED=true (sinon /mcp refuse tout, S240) ; sans auth (dev local) /mcp reste ouvert,
       # car /mcp peut déclencher des ACTIONS (confirme=true reste néanmoins exigé par outil).
       - MCP_ACTIF=${MCP_ACTIF:-1}
       # NB : RESTAURANT_KEY (clé envoyée à la brique restaurant en X-API-Key pour piloter la

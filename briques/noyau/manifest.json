@@ -49,7 +49,8 @@
       "chemin": "/sauvegarde-usb/lancer",
       "action": true,
       "niveau": 1,
-      "socle": false
+      "socle": false,
+      "reserve_admin": true
     },
     {
       "nom": "sauvegarde_usb_restaurer",
@@ -58,16 +59,8 @@
       "chemin": "/sauvegarde-usb/restaurer",
       "action": true,
       "niveau": 1,
-      "socle": false
-    },
-    {
-      "nom": "env_exporter",
-      "description": "Renvoie le contenu actuel du fichier .env racine (tous les secrets/clés API du stack), pour que l'utilisateur le range lui-même où il veut (Drive, autre clé…). N'écrit jamais vers un service externe. Sert « exporte le .env », « donne-moi les secrets pour les sauvegarder ».",
-      "methode": "GET",
-      "chemin": "/sauvegarde-usb/env",
-      "action": true,
-      "niveau": 1,
-      "socle": false
+      "socle": false,
+      "reserve_admin": true
     }
   ]
 }

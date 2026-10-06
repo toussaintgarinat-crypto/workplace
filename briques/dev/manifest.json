@@ -8,7 +8,7 @@
   "statut": "a_tester",
   "chemin_source": "~/Desktop/Workplace/briques/dev",
   "port": 5955,
-  "url_sante": "http://host.docker.internal:5955/sante",
+  "url_sante": "http://workplace_dev:5955/sante",
   "url_ui": "http://localhost:5955/",
   "vue_dashboard": "dev",
   "depends_on": [],

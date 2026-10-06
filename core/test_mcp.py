@@ -191,3 +191,25 @@ if __name__ == "__main__":
             fn()
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
+
+
+def test_cle_vide_avec_auth_activee_ferme(monkeypatch):
+    """Revue S240 : MCP_KEY vide + AUTH_ENABLED=true = /mcp ouvert à tout le LAN/mesh, avec
+    tous les outils de l'assistant. On ferme (fail closed) ; en dev (auth coupée) inchangé."""
+    import auth
+    monkeypatch.delenv("MCP_KEY", raising=False)
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    assert mcp.cle_ok(None) is False
+    assert mcp.cle_ok("nimporte") is False
+    monkeypatch.setenv("MCP_KEY", "s3cr3t")
+    assert mcp.cle_ok("s3cr3t") is True
+
+
+def test_endpoint_mcp_refuse_sans_cle_quand_auth_activee(monkeypatch):
+    import auth
+    import main
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("MCP_KEY", raising=False)
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    r = TestClient(main.app).post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+    assert r.status_code == 401

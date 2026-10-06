@@ -17,6 +17,7 @@ fichier ni lancer de commande à la main.
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -124,6 +125,10 @@ def charger() -> dict:
         "muscle_actif": DEFAUT_MUSCLE_ACTIF,
         "repli_souverain": DEFAUT_REPLI_SOUVERAIN,
         "repli_souverain_avant_payant": DEFAUT_REPLI_SOUVERAIN_AVANT_PAYANT,
+        # Modèle de la Forge (S240) : "" = défaut (Mistral small), sinon un `perso/*`. Le
+        # Cœur recrée `forge/defaut` en base LiteLLM d'après ce choix (modeles_gateway.py),
+        # y compris si la base de la Gateway est réinitialisée.
+        "forge_modele": "",
     }
     if CONFIG_PATH.exists():
         try:
@@ -167,6 +172,8 @@ def charger() -> dict:
                 base["repli_souverain"] = d.get("repli_souverain")
             if d.get("repli_souverain_avant_payant") is not None:
                 base["repli_souverain_avant_payant"] = bool(d.get("repli_souverain_avant_payant"))
+            if isinstance(d.get("forge_modele"), str):
+                base["forge_modele"] = d.get("forge_modele")
         except Exception:
             pass
     return base
@@ -213,6 +220,15 @@ def definir_modele(model: str | None, fallbacks: list[str] | None = None) -> dic
         conf["model"] = model.strip()
     if fallbacks is not None:
         conf["fallback_models"] = [m.strip() for m in fallbacks if m and m.strip()]
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
+
+
+def definir_forge_modele(choix: str) -> dict:
+    """Persiste le modèle de la Forge (validé par `modeles_gateway.definir_forge`)."""
+    conf = charger()
+    conf["forge_modele"] = (choix or "").strip()
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
     return conf
@@ -354,15 +370,24 @@ async def chaine_modeles(conf: dict | None = None) -> list[str]:
 # dans le .env de la Gateway puis réinjectée à la recréation du conteneur. Pour
 # exposer un nouveau fournisseur dans le dashboard : ajouter une entrée ici + le
 # bloc modèle dans litellm_config.yaml. Aucun autre code à toucher.
+#
+# `prefixe_litellm` (S240) : préfixe de fournisseur LiteLLM v1.86.2 pour les modèles AJOUTÉS
+# depuis ⚙ Cerveau (`modeles_gateway.py`). Chaque préfixe lit, si aucun `api_key` n'est
+# passé, la variable `env` ci-contre dans l'environnement de la Gateway (vérifié dans le code
+# de LiteLLM : mistral/chat/transformation.py, groq, gemini/common_utils, anthropic/
+# common_utils, deepseek, main.py pour openai/openrouter). Absent = fournisseur dont on ne
+# peut PAS ajouter de modèle : OpenCode Go passe par `openai/` + `api_base` et exigerait sa
+# clé en clair dans la base (LiteLLM ne résout pas `os.environ/` pour un modèle en base) —
+# sans elle, LiteLLM lui enverrait OPENAI_API_KEY.
 FOURNISSEURS_CLES = [
-    {"id": "openrouter", "env": "OPENROUTER_API_KEY",   "label": "OpenRouter",             "placeholder": "sk-or-..."},
+    {"id": "openrouter", "env": "OPENROUTER_API_KEY",   "label": "OpenRouter",             "placeholder": "sk-or-...", "prefixe_litellm": "openrouter/"},
     {"id": "opencode",   "env": "OPENCODE_ZEN_API_KEY", "label": "OpenCode Go",            "placeholder": "sk-..."},
-    {"id": "anthropic",  "env": "ANTHROPIC_API_KEY",    "label": "Anthropic (direct)",     "placeholder": "sk-ant-..."},
-    {"id": "openai",     "env": "OPENAI_API_KEY",       "label": "OpenAI (direct)",        "placeholder": "sk-..."},
-    {"id": "groq",       "env": "GROQ_API_KEY",         "label": "Groq",                   "placeholder": "gsk_..."},
-    {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-..."},
-    {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "..."},
-    {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza..."},
+    {"id": "anthropic",  "env": "ANTHROPIC_API_KEY",    "label": "Anthropic (direct)",     "placeholder": "sk-ant-...", "prefixe_litellm": "anthropic/"},
+    {"id": "openai",     "env": "OPENAI_API_KEY",       "label": "OpenAI (direct)",        "placeholder": "sk-...", "prefixe_litellm": "openai/"},
+    {"id": "groq",       "env": "GROQ_API_KEY",         "label": "Groq",                   "placeholder": "gsk_...", "prefixe_litellm": "groq/"},
+    {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-...", "prefixe_litellm": "deepseek/"},
+    {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "...", "prefixe_litellm": "mistral/"},
+    {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza...", "prefixe_litellm": "gemini/"},
 ]
 _ENV_PAR_ID = {f["id"]: f["env"] for f in FOURNISSEURS_CLES}
 # Valeurs à NE PAS compter comme une vraie clé (placeholders d'amorçage).
@@ -382,8 +407,24 @@ def _cle_definie(val: str) -> bool:
     return bool(val) and "change" not in val.lower() and val not in _CLES_FACTICES
 
 
+# Caractères des clés réelles (sk-or-…, sk-ant-…, sk-proj-…, gsk_…, AIza…, Mistral
+# alphanumérique). Tout le reste est refusé : un `\n` ou `\r` injecterait une ligne de plus
+# dans le .env (ex. une autre variable de la Gateway), un `=`, un espace ou un guillemet
+# changerait la façon dont Docker le relit (revue S240, I2).
+_RE_CLE = re.compile(r"[A-Za-z0-9._\-]+", re.ASCII)
+
+
+def cle_valide(cle: str) -> bool:
+    return isinstance(cle, str) and bool(_RE_CLE.fullmatch(cle))
+
+
 def _ecrire_cle_env(nom: str, cle: str) -> None:
-    """Réécrit (ou ajoute) la ligne `{nom}=…` dans le .env de la Gateway."""
+    """Réécrit (ou ajoute) la ligne `{nom}=…` dans le .env de la Gateway.
+
+    Lève ValueError, SANS rien écrire, si la clé contient un caractère hors format."""
+    if not cle_valide(cle):
+        raise ValueError("Clé refusée : seuls lettres, chiffres, « . », « _ » et « - » sont "
+                         "acceptés (pas d'espace ni de retour à la ligne).")
     lignes: list[str] = []
     trouve = False
     if GATEWAY_ENV_PATH.exists():

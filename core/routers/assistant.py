@@ -5,7 +5,7 @@ Assistant : chat, conversations, projets, config, briefing, pouls, rappels.
 import os
 import json
 import httpx
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from etat import registre
 import accord_action
@@ -19,11 +19,13 @@ import classer
 import config_assistant
 import config_tenant
 import contexte_tenant
+import droits
 import entretien_routage
 import horloge
 import journal_conversations
 import journal_usage
 import langue as langue_mod
+import modeles_gateway
 import orchestrateur
 import outils_communs
 import personas
@@ -34,6 +36,18 @@ import proprioception
 import shadow
 
 router = APIRouter()
+
+# Garde des routes qui MODIFIENT le cerveau (S240) : session + liste blanche optionnelle
+# `CERVEAU_ADMINS`, cf. `auth.exiger_admin_cerveau`. Posée route par route et non sur tout
+# le router : `/assistant/chat` et `/assistant/historique_utilisateur` sont appelés sans
+# session par Telegram/Mini App (brique connexion) et doivent le rester. Les lectures
+# (`GET /assistant/config`…) restent ouvertes : elles ne renvoient aucun secret (l'état des
+# clés est un booléen « définie »).
+_ADMIN_CERVEAU = [Depends(auth.exiger_admin_cerveau)]
+# Session (sans exiger l'admin) pour ce qui nourrit le prompt (projets : `instructions`) ou le
+# RAG (document déposé) — revue S240, I-B. Seul appelant : le dashboard.
+_SESSION = [Depends(auth.exiger_session_api)]
+_SESSION_FICHIER = [Depends(auth.exiger_session_api_fichier)]
 
 
 @router.post("/briefing/executer", tags=["assistant"])
@@ -161,6 +175,9 @@ async def assistant_chat(corps: dict, request: Request):
     if utilisateur:
         contexte_tenant.definir_contexte(utilisateur=utilisateur)
     fil = journal_conversations.fil(surface, interlocuteur)
+    # Outils réservés (droits.py, revue S240 C-B) : seulement si CE tour porte une session
+    # admin du cerveau. Résolu ici, dans la route ; posé dans le flux SSE ci-dessous.
+    admin_tour = await auth.admin_cerveau_ou_none(request) is not None
 
     # Projet de la conversation (façon Claude Projects) : on prend le `projet_id` du corps
     # si fourni, sinon celui déjà rattaché au fil ; ses instructions nourrissent le prompt.
@@ -257,6 +274,7 @@ async def assistant_chat(corps: dict, request: Request):
 
     async def flux():
         final = ""
+        droits.ADMIN_CERVEAU.set(admin_tour)  # contexte propre au flux : pas de reset à faire
         try:
             async for evt in assistant.converser(messages, registre,
                                                   instructions_projet=instructions_projet,
@@ -340,26 +358,32 @@ async def assistant_projets():
     return {"projets": projets}
 
 
-@router.post("/assistant/projets", tags=["assistant"])
+@router.post("/assistant/projets", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_creer(corps: dict):
     """Crée un projet : `nom` (requis), `instructions` (contexte propre), `documents` (refs)."""
-    p = projets_mod.creer(nom=corps.get("nom") or "", instructions=corps.get("instructions") or "",
-                          documents=corps.get("documents") or [], couleur=corps.get("couleur"))
+    try:
+        p = projets_mod.creer(nom=corps.get("nom") or "", instructions=corps.get("instructions") or "",
+                              documents=corps.get("documents") or [], couleur=corps.get("couleur"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "projet": p}
 
 
-@router.patch("/assistant/projets/{projet_id}", tags=["assistant"])
+@router.patch("/assistant/projets/{projet_id}", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_modifier(projet_id: str, corps: dict):
     """Met à jour un projet (nom, instructions, documents, couleur)."""
-    p = projets_mod.modifier(projet_id, nom=corps.get("nom"),
-                             instructions=corps.get("instructions"),
-                             documents=corps.get("documents"), couleur=corps.get("couleur"))
+    try:
+        p = projets_mod.modifier(projet_id, nom=corps.get("nom"),
+                                 instructions=corps.get("instructions"),
+                                 documents=corps.get("documents"), couleur=corps.get("couleur"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not p:
         raise HTTPException(status_code=404, detail="Projet introuvable")
     return {"ok": True, "projet": p}
 
 
-@router.delete("/assistant/projets/{projet_id}", tags=["assistant"])
+@router.delete("/assistant/projets/{projet_id}", tags=["assistant"], dependencies=_SESSION)
 async def assistant_projet_supprimer(projet_id: str):
     """Supprime un projet ; ses conversations sont DÉTACHÉES (elles ne sont pas effacées)."""
     detachees = journal_conversations.detacher_projet(projet_id)
@@ -423,14 +447,14 @@ async def assistant_muscle_get():
     return {"muscle_actif": conf["muscle_actif"], **await muscle.etat()}
 
 
-@router.post("/assistant/muscle", tags=["assistant"])
+@router.post("/assistant/muscle", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_muscle_post(corps: dict):
     """Active/désactive le recours au muscle déporté. Corps : {"actif": bool}."""
     conf = config_assistant.definir_muscle(corps.get("actif"))
     return {"muscle_actif": conf["muscle_actif"]}
 
 
-@router.post("/assistant/routage", tags=["assistant"])
+@router.post("/assistant/routage", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_routage_post(corps: dict):
     """Active/désactive le routage dynamique (S138) et fixe le modèle économe.
 
@@ -439,7 +463,7 @@ async def assistant_routage_post(corps: dict):
     return {"routage_actif": conf["routage_actif"], "modele_econome": conf["modele_econome"]}
 
 
-@router.post("/assistant/config", tags=["assistant"])
+@router.post("/assistant/config", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_post(corps: dict):
     """Règle le cerveau de l'assistant (effet immédiat).
 
@@ -494,7 +518,7 @@ async def assistant_config_organisation_get():
     return await config_tenant.lire_couche_organisation(ctx.org_id)
 
 
-@router.put("/assistant/config/organisation", tags=["assistant"])
+@router.put("/assistant/config/organisation", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_organisation_put(corps: dict):
     """Patch (partiel) la couche organisation. Corps : clés du schéma config_assistant
     (model, persona, langue, voix_provider…). Clé hors schéma → 400."""
@@ -509,7 +533,7 @@ async def assistant_config_utilisateur_get():
     return await config_tenant.lire_couche_utilisateur(ctx.org_id, ctx.utilisateur)
 
 
-@router.put("/assistant/config/utilisateur", tags=["assistant"])
+@router.put("/assistant/config/utilisateur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_utilisateur_put(corps: dict):
     """Patch (partiel) la couche utilisateur. Clé hors schéma connu → 400."""
     ctx = contexte_tenant.contexte_actuel()
@@ -517,7 +541,7 @@ async def assistant_config_utilisateur_put(corps: dict):
         config_tenant.ecrire_couche_utilisateur(ctx.org_id, ctx.utilisateur, corps))
 
 
-@router.delete("/assistant/config/organisation", tags=["assistant"])
+@router.delete("/assistant/config/organisation", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_organisation_delete():
     """Supprime la couche organisation (retour au global). No-op si absente — seul
     recours pour retirer un patch devenu indésirable ou invalide."""
@@ -526,7 +550,7 @@ async def assistant_config_organisation_delete():
     return {"ok": True}
 
 
-@router.delete("/assistant/config/utilisateur", tags=["assistant"])
+@router.delete("/assistant/config/utilisateur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_config_utilisateur_delete():
     """Supprime la couche utilisateur (retour à ce que voit l'organisation, ou le
     global). No-op si absente."""
@@ -565,14 +589,14 @@ async def assistant_shadow_get():
     return shadow.rapport()
 
 
-@router.post("/assistant/persona", tags=["assistant"])
+@router.post("/assistant/persona", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_persona_post(corps: dict):
     """Change la personnalité de l'assistant (effet immédiat au prochain message)."""
     conf = config_assistant.definir_persona(corps.get("persona"))
     return {"ok": True, "persona": conf["persona"]}
 
 
-@router.post("/assistant/langue", tags=["assistant"])
+@router.post("/assistant/langue", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_langue_post(corps: dict):
     """Change la langue du Jarvis — réponses ET voix (effet immédiat, S39).
 
@@ -582,7 +606,7 @@ async def assistant_langue_post(corps: dict):
             "locale_voix": langue_mod.locale_voix(conf["langue"])}
 
 
-@router.post("/assistant/voix", tags=["assistant"])
+@router.post("/assistant/voix", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_voix_post(corps: dict):
     """Règle le fournisseur de voix et les URLs (effet au prochain chargement du front).
 
@@ -597,7 +621,7 @@ async def assistant_voix_post(corps: dict):
             "voix_fin_mode": conf["voix_fin_mode"], "voix_silence_ms": conf["voix_silence_ms"]}
 
 
-@router.post("/assistant/cle-openrouter", tags=["assistant"])
+@router.post("/assistant/cle-openrouter", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_cle_openrouter(corps: dict):
     """Enregistre une clé OpenRouter, recrée la Gateway, puis valide par une complétion.
 
@@ -605,7 +629,10 @@ async def assistant_cle_openrouter(corps: dict):
     cle = (corps.get("cle") or "").strip()
     if not cle:
         raise HTTPException(status_code=400, detail="La clé est vide.")
-    config_assistant._ecrire_cle(cle)
+    try:
+        config_assistant._ecrire_cle(cle)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not await config_assistant.recreer_gateway():
         return {"ok": False, "etape": "recreation",
                 "detail": "Conteneur de la Gateway introuvable (le Cœur a-t-il accès au socket Docker ?)."}
@@ -618,7 +645,7 @@ async def assistant_cle_openrouter(corps: dict):
             "cle_openrouter_definie": config_assistant.cle_openrouter_definie()}
 
 
-@router.post("/assistant/cle-fournisseur", tags=["assistant"])
+@router.post("/assistant/cle-fournisseur", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
 async def assistant_cle_fournisseur(corps: dict):
     """Enregistre la clé d'un fournisseur LLM (Anthropic, Groq, OpenCode Go…) puis
     recrée la Gateway pour qu'elle la prenne en compte.
@@ -635,7 +662,10 @@ async def assistant_cle_fournisseur(corps: dict):
         raise HTTPException(status_code=400, detail=f"Fournisseur inconnu : {fid!r}.")
     if not cle:
         raise HTTPException(status_code=400, detail="La clé est vide.")
-    config_assistant._ecrire_cle_env(nom_env, cle)
+    try:
+        config_assistant._ecrire_cle_env(nom_env, cle)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not await config_assistant.recreer_gateway():
         return {"ok": False, "etape": "recreation",
                 "detail": "Conteneur de la Gateway introuvable (accès au socket Docker ?).",
@@ -646,7 +676,53 @@ async def assistant_cle_fournisseur(corps: dict):
             "cles_fournisseurs": config_assistant.cles_fournisseurs_etat()}
 
 
-@router.post("/assistant/document", tags=["assistant"])
+async def _traduire_erreurs_modeles(coro):
+    """Erreurs de `modeles_gateway` → HTTP : entrée refusée 400, inconnu 404, conflit 409,
+    Gateway muette 502."""
+    try:
+        return await coro
+    except modeles_gateway.ValeurInvalide as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except modeles_gateway.Introuvable as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except modeles_gateway.Conflit as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except modeles_gateway.GatewayInjoignable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/assistant/modeles", tags=["assistant"])
+async def assistant_modeles_get():
+    """Modèles servis par la Gateway avec leur origine (yaml / gratuit / perso / forge) et
+    les fournisseurs dont on peut ajouter un modèle (S240). Aucun paramètre ni clé renvoyé."""
+    modeles = await _traduire_erreurs_modeles(modeles_gateway.lister())
+    return {"modeles": modeles, "fournisseurs": modeles_gateway.fournisseurs(),
+            "forge": modeles_gateway.etat_forge()}
+
+
+@router.post("/assistant/modeles", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_modeles_post(corps: dict):
+    """Ajoute `perso/<fournisseur>/<modele>` en base LiteLLM, le teste, le retire si le test
+    échoue. Corps : {"fournisseur": "groq", "modele": "llama-3.1-8b-instant"} — tout autre
+    champ (api_base, clé…) est ignoré : les paramètres viennent du catalogue serveur."""
+    return await _traduire_erreurs_modeles(
+        modeles_gateway.ajouter(corps.get("fournisseur") or "", corps.get("modele") or ""))
+
+
+@router.delete("/assistant/modeles/{nom:path}", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_modeles_delete(nom: str):
+    """Retire un modèle ajouté depuis ⚙ Cerveau (`perso/*` en base uniquement)."""
+    return await _traduire_erreurs_modeles(modeles_gateway.retirer(nom))
+
+
+@router.post("/assistant/forge-modele", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_forge_modele_post(corps: dict):
+    """Choisit le modèle de la Forge : recrée `forge/defaut` en base LiteLLM puis le teste
+    sans repli. Corps : {"modele": ""} (défaut Mistral small) ou {"modele": "perso/…"}."""
+    return await _traduire_erreurs_modeles(modeles_gateway.definir_forge(corps.get("modele") or ""))
+
+
+@router.post("/assistant/document", tags=["assistant"], dependencies=_SESSION_FICHIER)
 async def assistant_document(fichier: UploadFile = File(...)):
     """Dépose un document : l'ingère (brique `ingestion`), le fait CLASSER par le LLM, puis range
     le classement dans ses métadonnées. Renvoie le classement au front.

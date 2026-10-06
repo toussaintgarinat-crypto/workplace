@@ -2,6 +2,7 @@ import os
 from unittest.mock import AsyncMock
 
 os.environ.setdefault("NOYAU_KEY", "cle-test-noyau")
+os.environ.setdefault("AUTH_SESSION_SECRET", "test-session-secret-0123456789")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -25,8 +26,8 @@ def test_lancer_refuse_sans_auth(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     client = TestClient(_app(), follow_redirects=False)
     r = client.post("/sauvegarde-usb/lancer")
-    assert r.status_code == 303
-    assert r.headers["location"] == "/auth/login"
+    # Revue S240, I2 : branche session = exiger_admin_cerveau → 401 (appel en fetch).
+    assert r.status_code == 401
 
 
 def test_lancer_accepte_cle_service(monkeypatch):
@@ -42,7 +43,7 @@ def test_lancer_refuse_mauvaise_cle_service(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     client = TestClient(_app(), follow_redirects=False)
     r = client.post("/sauvegarde-usb/lancer", headers={"X-API-Key": "mauvaise-cle"})
-    assert r.status_code == 303
+    assert r.status_code == 401
 
 
 def test_lancer_echec_devient_400(monkeypatch):
@@ -54,9 +55,82 @@ def test_lancer_echec_devient_400(monkeypatch):
     assert "absente" in r.json()["detail"]
 
 
-def test_env_accepte_cle_service(monkeypatch):
+def test_env_refuse_la_cle_de_service(monkeypatch):
+    """Revue S240 C1 : le .env (clé maîtresse LiteLLM, clés fournisseurs, secret de session)
+    ne sort plus JAMAIS avec NOYAU_KEY — c'était la clé du dispatch de capacités, donc du chat
+    sans session (« exporte le .env » puis « oui »)."""
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(sauvegarde_usb, "lire_env", lambda: "GATEWAY_KEY=abc\n")
-    client = TestClient(_app())
+    client = TestClient(_app(), follow_redirects=False)
     r = client.get("/sauvegarde-usb/env", headers={"X-API-Key": "cle-test-noyau"})
-    assert r.status_code == 200
-    assert r.text == "GATEWAY_KEY=abc\n"
+    assert r.status_code == 401
+    assert "abc" not in r.text
+
+
+def test_env_session_admin_cerveau(monkeypatch):
+    import time
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    monkeypatch.setattr(sauvegarde_usb, "lire_env", lambda: "GATEWAY_KEY=abc\n")
+    auth._cache_access_token["toussaint"] = ("at", time.time() + 60)
+    auth._cache_access_token["marina"] = ("at", time.time() + 60)
+    try:
+        client = TestClient(_app(), follow_redirects=False)
+        ok = client.get("/sauvegarde-usb/env", cookies={auth.COOKIE_SESSION: auth.chiffrer_cookie(
+            {"sub": "toussaint", "refresh_token": "rt"})}, headers={"Sec-Fetch-Site": "same-origin"})
+        assert ok.status_code == 200 and ok.text == "GATEWAY_KEY=abc\n"
+        refuse = client.get("/sauvegarde-usb/env", cookies={auth.COOKIE_SESSION: auth.chiffrer_cookie(
+            {"sub": "marina", "refresh_token": "rt"})})
+        assert refuse.status_code == 403
+    finally:
+        auth._cache_access_token.clear()
+
+
+def test_aucune_capacite_ne_renvoie_le_env():
+    """Le registre de capacités (chat, MCP) ne doit jamais exposer une route à secrets."""
+    import glob
+    import json
+    import posixpath
+    import re
+    import urllib.parse
+    prefixes_a_secrets = ("/sauvegarde-usb/env",)
+
+    def normaliser(chemin: str) -> str:
+        # Revue S240, M2 : « /sauvegarde-usb//env/ », « /SAUVEGARDE-USB/env?x » ou
+        # « /sauvegarde-usb/./env » visent la même route — comparaison sur la forme normalisée.
+        c = urllib.parse.unquote(urllib.parse.urlsplit(chemin or "").path).lower()
+        c = posixpath.normpath(re.sub(r"/+", "/", "/" + c))
+        return c.rstrip("/") or "/"
+    assert normaliser("/SAUVEGARDE-USB//./env/?x=1") == "/sauvegarde-usb/env"
+    for f in glob.glob(os.path.join(os.path.dirname(__file__), "..", "briques", "*", "manifest.json")):
+        for c in json.load(open(f)).get("capacites") or []:
+            assert not normaliser(c.get("chemin")).startswith(prefixes_a_secrets), (f, c.get("nom"))
+
+
+
+def test_lancer_et_restaurer_session_hors_admins_refusee(monkeypatch):
+    """Revue S240, I2 : une session quelconque ne suffit plus — admin du cerveau requis."""
+    import time
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setenv("CERVEAU_ADMINS", "toussaint")
+    monkeypatch.setattr(sauvegarde_usb, "sauvegarder", AsyncMock(return_value={"sources": []}))
+    monkeypatch.setattr(sauvegarde_usb, "restaurer", AsyncMock(return_value={"sources": []}))
+    auth._cache_access_token["marina"] = ("at", time.time() + 60)
+    auth._cache_access_token["toussaint"] = ("at", time.time() + 60)
+    try:
+        client = TestClient(_app(), follow_redirects=False)
+        marina = {auth.COOKIE_SESSION: auth.chiffrer_cookie({"sub": "marina", "refresh_token": "r"})}
+        admin = {auth.COOKIE_SESSION: auth.chiffrer_cookie({"sub": "toussaint", "refresh_token": "r"})}
+        for chemin in ("/sauvegarde-usb/lancer", "/sauvegarde-usb/restaurer"):
+            assert client.post(chemin, cookies=marina).status_code == 403
+            assert client.post(chemin, cookies=admin, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+            # Anti-CSRF : même avec la session admin, une autre origine est refusée.
+            assert client.post(chemin, cookies=admin, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    finally:
+        auth._cache_access_token.clear()
+
+
+def test_cle_noyau_comparee_a_temps_constant():
+    import inspect
+    from routers import sauvegarde_usb as r
+    assert "compare_digest" in inspect.getsource(r._exiger_session_ou_cle_noyau)

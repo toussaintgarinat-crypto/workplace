@@ -14,6 +14,7 @@ Stockage : un side-car JSON unique, best-effort et borné en pratique par l'usag
 Best-effort : un échec d'écriture ne doit jamais casser une conversation — on log en debug.
 """
 import json
+import re
 import logging
 import os
 import time
@@ -88,6 +89,18 @@ def contexte_de(projet_id: str | None) -> str:
     return "\n\n".join(bouts)
 
 
+# Couleur affichée dans un `style` du dashboard : seule une couleur #hex passe (revue S240,
+# C-A — `couleur` arrivait telle quelle de POST /assistant/projets, sans session, et finissait
+# dans un innerHTML : XSS stockée sur l'origine du Cœur).
+_RE_COULEUR = re.compile(r"#[0-9a-fA-F]{3,8}")
+
+
+def valider_couleur(couleur) -> str:
+    if not isinstance(couleur, str) or not _RE_COULEUR.fullmatch(couleur) or len(couleur) not in (4, 5, 7, 9):
+        raise ValueError("Couleur invalide : attendu #rgb, #rgba, #rrggbb ou #rrggbbaa.")
+    return couleur
+
+
 def creer(nom: str, instructions: str = "", documents: list | None = None,
           couleur: str | None = None) -> dict:
     """Crée un projet et le renvoie. `nom` obligatoire (sinon « Projet sans nom »)."""
@@ -99,7 +112,7 @@ def creer(nom: str, instructions: str = "", documents: list | None = None,
         "nom": (nom or "").strip() or "Projet sans nom",
         "instructions": (instructions or "").strip(),
         "documents": list(documents or []),
-        "couleur": couleur or COULEURS[n % len(COULEURS)],
+        "couleur": valider_couleur(couleur) if couleur is not None else COULEURS[n % len(COULEURS)],
         "cree_le": time.time(),
         "maj_le": time.time(),
     }
@@ -111,6 +124,8 @@ def creer(nom: str, instructions: str = "", documents: list | None = None,
 def modifier(projet_id: str, *, nom: str | None = None, instructions: str | None = None,
              documents: list | None = None, couleur: str | None = None) -> dict | None:
     """Met à jour les champs fournis (les autres restent). Renvoie le projet ou None."""
+    if couleur is not None:
+        valider_couleur(couleur)  # avant toute écriture
     d = _charger()
     p = d["projets"].get(projet_id)
     if not p:

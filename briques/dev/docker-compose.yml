@@ -16,8 +16,15 @@ services:
     env_file:
       - path: ../../.env
         required: false
+    # 127.0.0.1 SEULEMENT (revue S240, C-B) : publié sur 0.0.0.0, l'atelier (dépôt en écriture
+    # + socket Docker) était joignable de tout le LAN/mesh. Le Cœur le joint par le réseau
+    # Docker `proxy_net` (DEV_URL=http://workplace_dev:5955 dans core/docker-compose.yml),
+    # plus par host.docker.internal (qui ne voit pas le loopback de l'hôte sous Linux).
     ports:
-      - "5955:5955"
+      - "127.0.0.1:5955:5955"
+    networks:
+      - default
+      - proxy_net
     environment:
       # Le dépôt cible = la racine Workplace montée en rw (le filet a besoin du vrai .git).
       - DEV_REPO=/repo
@@ -38,7 +45,8 @@ services:
       # depuis l'env_file : la ligne écrasait une liste d'origines restreinte par `*`.
       # Piège env-shadow à défaut RÉEL — sans symptôme, contrairement au défaut vide.
       # Le code a déjà `getenv("CORS_ORIGINS", "*")`. Cf. S211 / a1ccb7d.
-      # DEV_KEY (garde X-API-Key, vide=ouvert), DEV_REBUILD (1=rebuild réel au merge),
+      # DEV_KEY (garde X-API-Key sur TOUTES les routes sauf /sante ; vide + AUTH_ENABLED=true
+      # = atelier fermé, 503 — S240), DEV_REBUILD (1=rebuild réel au merge),
       # DEV_BRIQUES_DEBLOQUEES, GATEWAY_URL/KEY/MODEL : viennent du .env racine via env_file.
       # NE PAS les redéclarer en `=${VAR:-}` (piège « env shadow » : écraserait par du vide).
     volumes:
@@ -59,11 +67,23 @@ services:
   code-server:
     image: codercom/code-server:4.96.4   # version épinglée (pas de :latest)
     container_name: workplace_dev_ide
-    environment:
-      # Mot de passe de l'IDE (local/souverain). À surcharger dans le .env racine.
-      - PASSWORD=${DEV_IDE_PASSWORD:-<MOT_DE_PASSE_REVOQUE>}
+    # Plus de mot de passe par défaut (revue S240, C-B : « <MOT_DE_PASSE_REVOQUE> » ouvrait un terminal
+    # sur le dépôt et le .env). DEV_IDE_PASSWORD vient du .env racine via env_file — lu quelle
+    # que soit l'invocation (pas d'interpolation `${…}`, cf. piège env-shadow).
+    # Absente ou vide : l'IDE démarre VERROUILLÉ par un mot de passe aléatoire jamais affiché
+    # (revue S240, M5) — fermé, mais sans crash-loop qui ferait échouer `up --wait` de la
+    # répétition Ansible (infra/ansible, profil hp : tous les services doivent être sains).
+    env_file:
+      - path: ../../.env
+        required: false
+    entrypoint: ["/bin/sh", "-c",
+      "if [ -n \"$$DEV_IDE_PASSWORD\" ]; then export PASSWORD=\"$$DEV_IDE_PASSWORD\"; else echo 'DEV_IDE_PASSWORD absente : IDE verrouillé (mot de passe aléatoire non communiqué)' >&2; export PASSWORD=\"$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n')\"; fi; exec /usr/bin/entrypoint.sh --bind-addr 0.0.0.0:8080 \"$$@\"", "--"]
+    # Publié sur 127.0.0.1 seulement (revue S240, C-B) : plus d'accès direct depuis le LAN.
+    # À distance, l'IDE reste joignable par le mesh via Caddy (outils/mesh-https/
+    # Caddyfile.briques, https://…:18744 → localhost:8744 — Caddy est en network_mode: host),
+    # protégé par DEV_IDE_PASSWORD (revue S240, M6).
     ports:
-      - "8744:8080"
+      - "127.0.0.1:8744:8080"
     volumes:
       - ../..:/home/coder/project   # ouvre directement le dépôt Workplace
       - dev_ide_config:/home/coder/.config
@@ -80,3 +100,9 @@ services:
 volumes:
   dev_data:
   dev_ide_config:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net

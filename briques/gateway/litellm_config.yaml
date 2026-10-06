@@ -44,7 +44,8 @@ router_settings:
   # 1 h par défaut : un modèle disparu ou une clé morte ne revient pas dans la minute.
   # Frigos courts PAR DÉPLOIEMENT, qui priment sur celui-ci (router.py:6739) :
   #   • 60 s pour les gratuits (`gratuit/*` ici, `kilo/*` et `free/*` créés par gateway-sync) ;
-  #   • 120 s pour `mistral/*` et `forge/defaut` : quelques timeouts + une 503 passagère ne
+  #   • 120 s pour `mistral/*` et `forge/defaut` (ce dernier en base, posé par le Cœur — S240) :
+  #     quelques timeouts + une 503 passagère ne
   #     doivent pas livrer la Forge à Kilo pendant une heure (option B : Mistral en tête).
   cooldown_time: 3600
   allowed_fails: 3
@@ -331,15 +332,12 @@ model_list:
       model: mistral/mistral-small-latest
       api_key: os.environ/MISTRAL_API_KEY
       cooldown_time: 120  # frigo court, cf. router_settings
-  # Modèle par défaut de la Forge (S239, DEFAULT_LLM_MODEL=forge/defaut) : même déploiement
-  # que `mistral/small`, mais sous un nom à part pour porter SEUL le repli vers
-  # `gratuit/auto` (cf. router_settings.fallbacks). Changer de modèle Forge = changer cette
-  # entrée, sans toucher à la Forge.
-  - model_name: forge/defaut
-    litellm_params:
-      model: mistral/mistral-small-latest
-      api_key: os.environ/MISTRAL_API_KEY
-      cooldown_time: 120  # frigo court, cf. router_settings
+  # `forge/defaut` (DEFAULT_LLM_MODEL de la Forge) N'EST PLUS ICI depuis S240 : il vit en
+  # base LiteLLM, créé et re-pointé par le Cœur depuis ⚙ Cerveau (core/modeles_gateway.py ;
+  # défaut Mistral small, frigo 120 s). Le remettre ici le DOUBLERAIT (LiteLLM répartirait la
+  # charge entre les deux) — le Cœur, voyant un forge/defaut du YAML, cesse alors de le piloter.
+  # Son repli reste déclaré dans router_settings.fallbacks ci-dessus (s'applique au groupe en
+  # base, prouvé sur v1.86.2).
 
   # Google Gemini en direct (AI Studio, clé distincte d'OpenRouter). Clé: GEMINI_API_KEY.
   - model_name: gemini-direct/2.5-flash

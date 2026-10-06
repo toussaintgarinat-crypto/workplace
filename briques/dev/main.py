@@ -68,6 +68,7 @@ Nouveau en v0.8.0 (S93 — seam `EspaceTravail`, refactor interne sans nouvelle 
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import uuid
@@ -77,7 +78,7 @@ import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import agents
@@ -124,6 +125,39 @@ app.include_router(spearcode.router, prefix="/ide", tags=["IDE SpearCode"])
 def garde(x_api_key: Optional[str] = Header(None)) -> None:
     if DEV_KEY and x_api_key != DEV_KEY:
         raise HTTPException(status_code=401, detail="clé requise (X-API-Key)")
+
+
+# ── Garde GLOBALE (revue S240, C-B) ────────────────────────────────────────────
+# Cette brique monte le dépôt (donc le .env) en écriture et le socket Docker : un appel non
+# authentifié = exécution arbitraire sur l'hôte. Deux trous avant S240 : `DEV_KEY` vide
+# laissait tout ouvert (y compris sur le HP, port publié sur 0.0.0.0) — désormais fermé, sauf
+# opt-in de poste local — et l'IDE SpearCode
+# (`/ide/*` : écrire, exécuter des fichiers) n'avait AUCUNE garde, même avec une clé.
+# Middleware = toutes les routes, présentes et futures, sauf la sonde `/sante`.
+# Env relu à chaque requête : réglable sans reconstruire, testable sans recharger.
+_LIBRES = {"/sante"}
+
+
+@app.middleware("http")
+async def garde_globale(request, call_next):
+    if request.url.path in _LIBRES or request.method == "OPTIONS":
+        return await call_next(request)
+    cle = os.environ.get("DEV_KEY", "")
+    if not cle:
+        # FERMÉ PAR DÉFAUT (revue S240, I3), quel que soit AUTH_ENABLED — sur le HP, cette
+        # brique ne voit pas forcément la variable d'auth du Cœur. Seul un opt-in EXPLICITE
+        # de poste de dev (`DEV_OUVERT_SANS_CLE=1`) ouvre l'atelier sans clé, et il est ignoré
+        # si AUTH_ENABLED=true est visible.
+        ouvert = os.environ.get("DEV_OUVERT_SANS_CLE", "").strip().lower() in ("1", "true", "oui")
+        auth = os.environ.get("AUTH_ENABLED", "false").strip().lower() == "true"
+        if ouvert and not auth:
+            return await call_next(request)
+        return JSONResponse(status_code=503, content={
+            "detail": "Atelier fermé : DEV_KEY absente (opt-in de poste local : "
+                      "DEV_OUVERT_SANS_CLE=1, jamais sur un serveur)."})
+    if not hmac.compare_digest(request.headers.get("x-api-key", "").encode(), cle.encode()):
+        return JSONResponse(status_code=401, content={"detail": "clé requise (X-API-Key)"})
+    return await call_next(request)
 
 
 # ── Stockage JSON simple (un seul utilisateur, un seul dépôt) ───────────────────
