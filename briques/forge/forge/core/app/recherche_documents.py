@@ -34,7 +34,9 @@ def _sans_accents(texte: str) -> str:
 def extrait_autour(texte: str, mots: list[str], longueur: int = LONGUEUR_EXTRAIT) -> str:
     """Fenêtre de `longueur` caractères centrée sur le premier mot trouvé (sans casse ni
     accents), sinon le début du texte. « … » marque une coupe."""
-    texte = " ".join((texte or "").split())
+    # NFC d'abord : un caractère précomposé = un caractère, donc la suppression des accents
+    # garde les longueurs et les positions du texte normalisé valent pour le texte d'origine.
+    texte = " ".join(unicodedata.normalize("NFC", texte or "").split())
     if len(texte) <= longueur:
         return texte
     normalise = _sans_accents(texte)
@@ -71,21 +73,29 @@ async def plein_texte(s: AsyncSession, requete: str, user_id: str, sources: froz
     return [(r[0], r[1]) for r in (await s.execute(sql, params)).all()]
 
 
+def sql_trigrammes(tables: list[TableRecherche]) -> str:
+    """Requête trigramme. Le filtre est l'OPÉRATEUR `<%` (seul usage possible de l'index GIN
+    gin_trgm_ops), son seuil étant `pg_trgm.word_similarity_threshold` (posé par l'appelant)."""
+    unions = []
+    for t in tables:
+        texte = texte_normalise(t, "x.")
+        unions.append(f"SELECT '{t.source}' AS source, x.id, "
+                      f"word_similarity(forge_unaccent(lower(:q)), {texte}) AS rang, x.created_at AS date "
+                      f"FROM {t.table} x WHERE x.user_id = :moi AND forge_unaccent(lower(:q)) <% {texte}")
+    return (f"SELECT source, id FROM ({' UNION ALL '.join(unions)}) u "
+            f"ORDER BY rang DESC, date DESC, id LIMIT :limite")
+
+
 async def trigrammes(s: AsyncSession, requete: str, user_id: str, sources: frozenset[str],
                      limite: int) -> list[Cle]:
     """Filet pour les fautes de frappe, utilisé quand le plein texte ne trouve rien."""
     tables = _tables(sources)
     if not requete.strip() or not tables:
         return []
-    params = {"moi": user_id, "q": requete.strip(), "seuil": SEUIL_TRIGRAMME, "limite": limite}
-    unions = []
-    for t in tables:
-        similarite = f"word_similarity(forge_unaccent(lower(:q)), {texte_normalise(t, 'x.')})"
-        unions.append(f"SELECT '{t.source}' AS source, x.id, {similarite} AS rang, x.created_at AS date "
-                      f"FROM {t.table} x WHERE x.user_id = :moi AND {similarite} >= :seuil")
-    sql = text(f"SELECT source, id FROM ({' UNION ALL '.join(unions)}) u "
-               f"ORDER BY rang DESC, date DESC, id LIMIT :limite")
-    return [(r[0], r[1]) for r in (await s.execute(sql, params)).all()]
+    params = {"moi": user_id, "q": requete.strip(), "limite": limite}
+    # SET LOCAL : valable pour la transaction en cours seulement (pas de paramètre lié possible).
+    await s.execute(text(f"SET LOCAL pg_trgm.word_similarity_threshold = {float(SEUIL_TRIGRAMME)}"))
+    return [(r[0], r[1]) for r in (await s.execute(text(sql_trigrammes(tables)), params)).all()]
 
 
 async def _references_normalisees(s: AsyncSession, references: list[str]) -> list[str]:
