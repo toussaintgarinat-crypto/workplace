@@ -38,3 +38,9 @@ def test_ordonner_respecte_la_limite():
     cles = [("document", uuid4()) for _ in range(5)]
     assert len(ordonner({}, cles, [], 2)) == 2
     assert ordonner({}, cles, [], 0) == []
+
+
+def test_extraire_references_guillemets_typographiques_anglais():
+    # U+201C / U+201D ecrits en echappements pour qu'aucun outil ne les altere
+    assert extraire_references("devis “contrat cadre” urgent") == ["contrat cadre"]
+    assert extraire_references("voir “FAC-1”") == ["FAC-1"]

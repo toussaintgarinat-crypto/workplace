@@ -19,9 +19,9 @@ REFERENCES_MAX = 10
 
 Cle = tuple[str, UUID]
 
-_GUILLEMETS = re.compile(r'"([^"]+)"|«\s*([^»]+?)\s*»|"([^"]+)"')
+_GUILLEMETS = re.compile('"([^"]+)"|«\\s*([^»]+?)\\s*»|\u201c([^\u201d]+)\u201d')
 _CARACTERES_REFERENCE = set("-_./@#")
-_BORDS = ".,;:!?()[]{}'\"«»""…"
+_BORDS = ".,;:!?()[]{}'\"«»\u201c\u201d…"
 
 
 def _est_reference(jeton: str) -> bool:
