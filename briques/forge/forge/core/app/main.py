@@ -53,6 +53,7 @@ from app.routers.budget import router as budget_router
 from app.routers.chat import router as chat_router
 from app.routers.conseil import router as conseil_router
 from app.routers.rag import router as rag_router  # Workplace S17 — récupération RAG
+from app.routers.recherche import router as recherche_router  # S241 — recherche documentaire hybride
 from app.routers.content_agent import router as content_agent_router
 from app.routers.contrats import router as contrats_router
 from app.routers.crm import router as crm_router
@@ -205,6 +206,7 @@ mount_both(kb_router, "/api")
 mount_both(memory_palace_router, "/api")
 mount_both(search_router, "/api")
 mount_both(rag_router, "/api")  # Workplace S17 — récupération RAG en lecture seule
+mount_both(recherche_router, "/api")  # S241 — GET /api/recherche/hybride
 # S130 — ventures & audit (cœur produit)
 mount_both(ventures_router, "/api")
 # S228 — entretien guidé IA (greffé sur Forge, à côté de ventures)
