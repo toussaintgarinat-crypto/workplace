@@ -69,14 +69,19 @@ services:
     container_name: workplace_dev_ide
     # Plus de mot de passe par défaut (revue S240, C-B : « <MOT_DE_PASSE_REVOQUE> » ouvrait un terminal
     # sur le dépôt et le .env). DEV_IDE_PASSWORD vient du .env racine via env_file — lu quelle
-    # que soit l'invocation (pas d'interpolation `${…}`, cf. piège env-shadow) ; absente ou
-    # vide, le conteneur REFUSE de démarrer.
+    # que soit l'invocation (pas d'interpolation `${…}`, cf. piège env-shadow).
+    # Absente ou vide : l'IDE démarre VERROUILLÉ par un mot de passe aléatoire jamais affiché
+    # (revue S240, M5) — fermé, mais sans crash-loop qui ferait échouer `up --wait` de la
+    # répétition Ansible (infra/ansible, profil hp : tous les services doivent être sains).
     env_file:
       - path: ../../.env
         required: false
     entrypoint: ["/bin/sh", "-c",
-      "test -n \"$$DEV_IDE_PASSWORD\" || { echo 'DEV_IDE_PASSWORD absente : IDE non démarré' >&2; exit 1; }; export PASSWORD=\"$$DEV_IDE_PASSWORD\"; exec /usr/bin/entrypoint.sh --bind-addr 0.0.0.0:8080 \"$$@\"", "--"]
-    # 127.0.0.1 seulement (revue S240, C-B) : l'IDE est un terminal sur le dépôt.
+      "if [ -n \"$$DEV_IDE_PASSWORD\" ]; then export PASSWORD=\"$$DEV_IDE_PASSWORD\"; else echo 'DEV_IDE_PASSWORD absente : IDE verrouillé (mot de passe aléatoire non communiqué)' >&2; export PASSWORD=\"$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n')\"; fi; exec /usr/bin/entrypoint.sh --bind-addr 0.0.0.0:8080 \"$$@\"", "--"]
+    # Publié sur 127.0.0.1 seulement (revue S240, C-B) : plus d'accès direct depuis le LAN.
+    # À distance, l'IDE reste joignable par le mesh via Caddy (outils/mesh-https/
+    # Caddyfile.briques, https://…:18744 → localhost:8744 — Caddy est en network_mode: host),
+    # protégé par DEV_IDE_PASSWORD (revue S240, M6).
     ports:
       - "127.0.0.1:8744:8080"
     volumes:

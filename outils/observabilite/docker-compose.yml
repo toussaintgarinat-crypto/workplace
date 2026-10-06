@@ -80,6 +80,11 @@ services:
       - "${SUPERVISION_BIND_IP:-127.0.0.1}:3002:3001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # proxy_net (S240) : la brique dev n'est plus publiée que sur 127.0.0.1 (invisible via
+    # host.docker.internal sous Linux) ; Kuma la sonde par son nom, `workplace_dev:5955`.
+    networks:
+      - default
+      - proxy_net
     healthcheck:
       test: ["CMD", "node", "extra/healthcheck.js"]
       interval: 30s
@@ -117,3 +122,9 @@ volumes:
   prometheus_data:
   grafana_data:
   kuma_data:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net
