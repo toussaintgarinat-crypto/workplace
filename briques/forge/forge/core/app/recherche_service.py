@@ -53,8 +53,14 @@ async def rechercher(requete: str, user_id: str, limite: int = 10,
     limite = _borner(limite)
     candidats = limite * 3
 
+    references = extraire_references(requete)
     async with SessionLocal() as s:
-        exacts = await rd.exacts(s, extraire_references(requete), user_id, sources, candidats)
+        # S242 : sans référence ni mot significatif (« le de des »), la branche par le sens
+        # renverrait quand même ses plus proches voisins. Mesuré : aucun seuil de similarité ne
+        # sépare ce bruit des bonnes réponses avec l'embedder actuel ; on ne cherche pas.
+        if not references and not await rd.termes_significatifs(s, requete):
+            return {"mode": "hybride", "resultats": []}
+        exacts = await rd.exacts(s, references, user_id, sources, candidats)
         lexical = await rd.plein_texte(s, requete, user_id, sources, candidats)
         if not lexical:
             lexical = await rd.trigrammes(s, requete, user_id, sources, candidats)
@@ -80,5 +86,6 @@ async def rechercher(requete: str, user_id: str, limite: int = 10,
             extrait = rd.extrait_autour(fiche.texte, mots)
         resultats.append({"id": str(c.cle[1]), "source": c.cle[0], "titre": fiche.titre,
                           "extrait": extrait, "rang": len(resultats) + 1,
-                          "exact": c.correspondance == "exacte"})
+                          "exact": c.correspondance == "exacte",
+                          "correspondance": c.correspondance})
     return {"mode": mode, "resultats": resultats}

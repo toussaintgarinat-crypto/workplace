@@ -52,6 +52,14 @@ class TestRecherche:
         assert [r["id"] for r in res] == [nid]
         assert res[0]["correspondance"] == "vectorielle"
 
+    async def test_requete_de_mots_vides_ne_renvoie_rien(self, client, auth_headers, test_space, embedder_factice):
+        """Sans référence ni mot significatif, la branche par le sens renverrait quand même ses
+        voisins les plus proches : une requête vide de sens ne doit rien renvoyer (S242)."""
+        sid = test_space["id"]
+        await _creer(client, auth_headers, sid, "Le recrutement de la société des équipes", "le de des")
+        mode, res = await _chercher(client, auth_headers, sid, "le de des")
+        assert mode == "hybride" and res == []
+
     async def test_faute_de_frappe(self, client, auth_headers, test_space):
         sid = test_space["id"]
         nid = await _creer(client, auth_headers, sid, "Fournisseurs", "Les factures du trimestre")

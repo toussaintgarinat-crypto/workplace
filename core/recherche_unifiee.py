@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 
 import httpx
@@ -59,8 +61,12 @@ class _Liste:
 
 
 def _resultat(source: str, x: dict, partage: bool, exact: bool) -> dict:
+    # Une brique qui ne dit pas la nature de la correspondance est comptée « par les mots » :
+    # la reléguer derrière le sens seul serait pire que ne pas la distinguer.
+    correspondance = "exacte" if exact else (x.get("correspondance") or "lexicale")
     return {"source": source, "id": str(x.get("id") or ""), "titre": x.get("titre") or "",
-            "extrait": x.get("extrait") or "", "partage": partage, "exact": exact}
+            "extrait": x.get("extrait") or "", "partage": partage, "exact": exact,
+            "correspondance": correspondance}
 
 
 async def _forge(client: httpx.AsyncClient, registre, q: str, n: int) -> _Liste:
@@ -102,18 +108,75 @@ def _replier_memoire(indisponibles: list[str]) -> list[str]:
     return indisponibles
 
 
-def fusionner(listes: list[_Liste], limite: int) -> list[dict]:
-    """RRF sur les classements de chaque sous-source ; +1 pour une référence exacte (un score
-    RRF vaut au plus 1/(K+1) par liste, donc un exact passe toujours devant)."""
-    scores: dict[tuple[str, str], float] = {}
+def _niveau(x: dict) -> int:
+    """Niveau de la correspondance : référence exacte (2), mots (1), sens seul (0)."""
+    if x["exact"]:
+        return 2
+    return 0 if x.get("correspondance") == "vectorielle" else 1
+
+
+# Mots vides français écartés du calcul de couverture (même liste que la brique Ingestion).
+MOTS_VIDES = frozenset(
+    "le la les l un une des de du d au aux et ou a en dans par pour sur avec sans ce cet cette "
+    "ces qui que quoi dont ne pas plus se sa son ses leur leurs nous vous ils elles il elle on "
+    "je tu y est sont".split())
+SEUIL_MOT_PROCHE = 0.4
+
+
+def _normaliser(texte: str) -> str:
+    t = unicodedata.normalize("NFKD", (texte or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def _trigrammes(mot: str) -> set[str]:
+    return {mot[i:i + 3] for i in range(len(mot) - 2)}
+
+
+def _mot_present(mot: str, vocabulaire: set[str]) -> bool:
+    """Le mot, ou un mot proche (faute de frappe : Jaccard des trigrammes ≥ 0,4, longueurs à
+    3 caractères près), figure dans le vocabulaire."""
+    if mot in vocabulaire:
+        return True
+    tri = _trigrammes(mot)
+    if not tri:
+        return False
+    for autre in vocabulaire:
+        if abs(len(autre) - len(mot)) <= 3:
+            t2 = _trigrammes(autre)
+            if t2 and len(tri & t2) / len(tri | t2) >= SEUIL_MOT_PROCHE:
+                return True
+    return False
+
+
+def couverture(requete: str, titre: str, extrait: str) -> float:
+    """Part des mots significatifs de la requête visibles dans le titre ou l'extrait du
+    résultat (0 si la requête n'a aucun mot significatif)."""
+    mots = [m for m in re.findall(r"[^\W_]+", _normaliser(requete)) if m not in MOTS_VIDES]
+    if not mots:
+        return 0.0
+    vocabulaire = set(re.findall(r"[^\W_]+", _normaliser(f"{titre} {extrait}")))
+    return sum(1 for m in mots if _mot_present(m, vocabulaire)) / len(mots)
+
+
+def fusionner(listes: list[_Liste], limite: int, requete: str = "") -> list[dict]:
+    """Par niveau d'abord (référence exacte, puis mots, puis sens seul), puis par couverture
+    des mots de la requête, puis par RRF.
+
+    S242 : chaque espace ou brique a son propre premier ; à RRF seul, le premier d'un espace
+    trouvé seulement par le sens pesait autant que le premier d'un autre trouvé par ses mots
+    (« commande hetre » : un souvenir sans rapport devant « Commande hêtre »). À niveau égal,
+    les rangs de briques différentes ne se comparent pas : la couverture, calculée de la même
+    façon pour tous sur le titre et l'extrait, départage."""
+    rrf: dict[tuple[str, str], float] = {}
     fiches: dict[tuple[str, str], dict] = {}
     for liste in listes:
         for rang, x in enumerate(liste.resultats, start=1):
             cle = (x["source"], x["id"])
-            scores[cle] = scores.get(cle, 0.0) + 1.0 / (K_RRF + rang) + (1.0 if x["exact"] else 0.0)
+            rrf[cle] = rrf.get(cle, 0.0) + 1.0 / (K_RRF + rang)
             fiches.setdefault(cle, x)
-    ordre = sorted(scores, key=lambda c: (-scores[c], c[0], c[1]))[:limite]
-    return [fiches[c] for c in ordre]
+    couvertures = {c: couverture(requete, fiches[c]["titre"], fiches[c]["extrait"]) for c in fiches}
+    ordre = sorted(fiches, key=lambda c: (-_niveau(fiches[c]), -couvertures[c], -rrf[c], c[0], c[1]))
+    return [fiches[c] for c in ordre[:limite]]
 
 
 async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | None = None,
@@ -149,6 +212,6 @@ async def rechercher(q: str, registre, limite: int = 10, sources: set[str] | Non
     if appels and not listes:
         raise ToutesSourcesIndisponibles(indisponibles)
     modes = {l.nom: l.mode for l in listes}
-    return {"resultats": fusionner(listes, limite), "modes": modes,
+    return {"resultats": fusionner(listes, limite, q), "modes": modes,
             "sources_indisponibles": indisponibles,
             "recherche_par_le_sens_indisponible": degradees(modes)}

@@ -18,7 +18,7 @@ from app.schemas.search import SearchResult
 from app.services.recherche_conditions import Filtres
 from app.services.recherche_fusion import extraire_references, ordonner
 from app.services.recherche_lexicale import (
-    classement_plein_texte, classement_trigramme, correspondances_exactes,
+    classement_plein_texte, classement_trigramme, correspondances_exactes, termes_significatifs,
 )
 from app.services.recherche_vectorielle import classement_vectoriel
 
@@ -56,7 +56,14 @@ class SearchService:
         filtres = Filtres(space_id, type_filter, stage_filter, tier_filter)
         candidats = max(limit, CANDIDATS_MIN)
 
-        exacts = await correspondances_exactes(self.db, extraire_references(query), filtres, candidats)
+        references = extraire_references(query)
+        # S242 : sans référence ni mot significatif (« le de des »), la branche par le sens
+        # renverrait quand même ses plus proches voisins. Mesuré : aucun seuil de similarité
+        # ne sépare ce bruit des bonnes réponses avec l'embedder actuel ; on ne cherche pas.
+        if not references and not await termes_significatifs(self.db, query):
+            return ResultatRecherche("hybride", [])
+
+        exacts = await correspondances_exactes(self.db, references, filtres, candidats)
         lexical = await classement_plein_texte(self.db, query, filtres, candidats)
         if not lexical:
             lexical = await classement_trigramme(self.db, query, filtres, candidats)

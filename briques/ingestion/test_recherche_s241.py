@@ -49,6 +49,9 @@ def test_reference_exacte_en_tete(client):
     r = client.get("/recherche", params={"q": "facture FAC-2026-0042"}).json()["resultats"]
     assert r[0]["id"] == cible and r[0]["exact"] is True
     assert all(x["exact"] is False for x in r[1:])
+    # S242 : nature de la correspondance, pour le classement par niveau du Cœur.
+    assert r[0]["correspondance"] == "exacte"
+    assert {x["correspondance"] for x in r[1:]} == {"lexicale"}
 
 
 def test_expression_entre_guillemets_typographiques(client):

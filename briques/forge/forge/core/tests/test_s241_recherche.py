@@ -79,6 +79,30 @@ async def test_embedder_coupe_mode_lexical(base, embedder_coupe, alice, client):
     assert rep["mode"] == "lexical" and [r["id"] for r in rep["resultats"]] == [str(cible)]
 
 
+async def test_correspondance_exposee(base, embedder_factice, alice, client):
+    """S242 : le Cœur classe par niveau (exacte > mots > sens seul) : il lui faut la nature de
+    la correspondance de chaque résultat."""
+    exact = await ajouter_document("alice", "Relance", "La facture FAC-2026-0042 reste impayée.")
+    mots = await ajouter_document("alice", "Facture de mars", "Réglée par virement.")
+    rep = await _chercher(client, "facture FAC-2026-0042")
+    par_id = {r["id"]: r["correspondance"] for r in rep["resultats"]}
+    assert par_id[str(exact)] == "exacte"
+    assert par_id[str(mots)] in ("lexicale", "les_deux")
+
+
+async def test_requete_sans_mot_significatif_ignore_le_sens(base, alice, client, monkeypatch):
+    """S242 : sans référence ni mot significatif, pas même la branche par le sens (elle renvoie
+    toujours des voisins ; aucun seuil de similarité ne sépare ce bruit, mesuré)."""
+    doc = await ajouter_document("alice", "Note", "Contenu quelconque.")
+
+    async def _fragments(question, user_id, limite=30):
+        return [memory.Fragment("document", str(doc), "Contenu quelconque.", 0.48)]
+
+    monkeypatch.setattr(memory, "chercher_fragments", _fragments)
+    assert (await _chercher(client, "le de des"))["resultats"] == []
+    assert [r["id"] for r in (await _chercher(client, "note"))["resultats"]] == [str(doc)]
+
+
 async def test_filtre_sources_et_requete_vide(base, embedder_factice, alice, client):
     await ajouter_document("alice", "Toiture", "doc")
     k = await ajouter_article("alice", "Toiture", "article")

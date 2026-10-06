@@ -147,3 +147,63 @@ def test_identite_transmise(monkeypatch):
     assert forge.headers["X-Forge-User-Token"] == "Bearer JWT-M"
     assert {r.headers["X-User-Id"] for r in memoire} == {"marina"}
     assert {r.url.params["espace"] for r in memoire} == {"perso", "solution", "veille"}
+
+
+def _liste(nom, *elements):
+    """elements : (id, correspondance) dans l'ordre du classement de la sous-source."""
+    return ru._Liste(nom, "hybride", [
+        {"source": nom, "id": i, "titre": i, "extrait": "", "partage": False,
+         "exact": c == "exacte", "correspondance": c} for i, c in elements])
+
+
+def test_fusion_par_niveaux_mots_avant_sens_seul():
+    """S242 : le premier d'un espace trouvé seulement par le sens ne passe plus devant un
+    résultat de mots d'un autre espace (constat LIVE « commande hetre »)."""
+    perso = _liste("memoire-perso", ("chef", "vectorielle"))
+    solution = _liste("memoire-solution", ("hetre", "lexicale"), ("autre", "vectorielle"))
+    assert [r["id"] for r in ru.fusionner([perso, solution], 10)] == ["hetre", "chef", "autre"]
+
+
+def test_fusion_par_niveaux_exacte_puis_mots_puis_sens():
+    a = _liste("forge-document", ("sens", "vectorielle"), ("deux", "les_deux"))
+    b = _liste("ingestion", ("mot", "lexicale"), ("ref", "exacte"))
+    # Même niveau « mots » pour lexicale et les_deux : départagés par leur rang (RRF).
+    assert [r["id"] for r in ru.fusionner([a, b], 10)] == ["ref", "mot", "deux", "sens"]
+
+
+def test_fusion_correspondance_absente_comptee_comme_mots():
+    """Une brique pas encore à jour (sans `correspondance`) n'est pas reléguée."""
+    vieux = ru._Liste("forge", "hybride", [ru._resultat("forge-document", {"id": "v", "titre": "v"}, True, False)])
+    sens = _liste("memoire-perso", ("s", "vectorielle"))
+    res = ru.fusionner([sens, vieux], 10)
+    assert [r["id"] for r in res] == ["v", "s"]
+    assert res[0]["correspondance"] == "lexicale"
+
+
+def _element(source, i, titre, extrait, correspondance):
+    return ru._Liste(source, "hybride", [{"source": source, "id": i, "titre": titre, "extrait": extrait,
+                                          "partage": False, "exact": False, "correspondance": correspondance}])
+
+
+def test_couverture_departage_le_meme_niveau():
+    """S242, constat LIVE « commande hetre » : à niveau égal, le résultat qui contient tous
+    les mots de la requête (fautes et accents tolérés) passe devant celui qui n'en a qu'un ou
+    aucun visible, quelle que soit la brique qui l'a classé premier."""
+    listes = [
+        _element("forge-document", "mollick", "Interview Ethan Mollick", "L'IA est un catalyseur", "les_deux"),
+        _element("ingestion", "finances", "02_finances_2025.txt", "Carnet de commandes au 31/12", "lexicale"),
+        _element("memoire-solution", "hetre", "Commande hêtre", "Penser à commander des planches", "les_deux"),
+    ]
+    assert [r["id"] for r in ru.fusionner(listes, 10, "commande hetre")] == ["hetre", "finances", "mollick"]
+
+
+def test_couverture_ne_passe_pas_devant_le_niveau():
+    listes = [_element("memoire-perso", "sens", "Commande hêtre", "", "vectorielle"),
+              _element("ingestion", "mot", "Divers", "une commande", "lexicale")]
+    assert [r["id"] for r in ru.fusionner(listes, 10, "commande hetre")] == ["mot", "sens"]
+
+
+def test_couverture_ignore_les_mots_vides_et_tolere_les_fautes():
+    assert ru.couverture("la politque des conges", "politique-conges.txt", "") == 1.0
+    assert ru.couverture("commande hetre", "Interview Ethan Mollick", "catalyseur") == 0.0
+    assert ru.couverture("le de des", "Le titre", "") == 0.0
