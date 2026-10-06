@@ -30,6 +30,30 @@ async def test_supprime_les_orphelins(base, embedder_factice):
     assert await _ids("alice") == set()
 
 
+async def test_bilan_honnete_si_la_suppression_d_un_orphelin_echoue(base, embedder_factice, monkeypatch):
+    await memory.indexer_source(TEXTE, "44444444-4444-4444-4444-444444444444", "document", "alice", "fantôme")
+
+    async def _echec(*a, **k):
+        raise RuntimeError("qdrant en panne")
+
+    monkeypatch.setattr(memory._client(), "delete", _echec)
+    bilan = await reconcilier_index()
+    assert bilan["orphelins_supprimes"] == 0 and bilan["arret_sur_echec"] is True
+
+
+async def test_nettoie_les_fragments_d_une_source_devenue_trop_courte(base, embedder_factice):
+    doc = await ajouter_document("alice", "PV", TEXTE)
+    await memory.indexer_source(TEXTE, str(doc), "document", "alice", "PV")
+    assert await _ids("alice") == {str(doc)}
+    from app.db import SessionLocal
+    async with SessionLocal() as s:
+        await s.execute(text("UPDATE documents SET contenu = 'ok' WHERE id = :i"), {"i": doc})
+        await s.commit()
+    bilan = await reconcilier_index()
+    assert bilan["perimes_supprimes"] == 1 and bilan["revectorises"] == 0
+    assert await _ids("alice") == set()
+
+
 async def test_corrige_un_fragment_mal_attribue(base, embedder_factice):
     doc = await ajouter_article("alice", "PV", TEXTE)
     await memory.indexer_source(TEXTE, str(doc), "kb_article", "bob", "PV")

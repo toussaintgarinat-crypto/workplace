@@ -3,7 +3,7 @@
 PostgreSQL fait foi ; Qdrant n'est qu'un index reconstructible. Les ingestions des routers
 documents/kb partent en tâche de fond et ne sont jamais relancées en cas d'échec : cette
 tâche, toutes les 10 minutes, revectorise ce qui manque ou est mal attribué et supprime les
-fragments orphelins. Elle s'arrête au premier échec de l'embedder (reprise au passage suivant).
+fragments orphelins ou périmés (source devenue trop courte pour être indexée). Elle s'arrête au premier échec de l'embedder (reprise au passage suivant).
 """
 from __future__ import annotations
 
@@ -56,9 +56,16 @@ async def _sources() -> dict[str, tuple[str, str, str, str]]:
     return sources
 
 
+async def _supprimer_points(nom: str, source_id: str) -> None:
+    """Supprime les points d'une source dans la collection active ; l'exception remonte."""
+    await memory._client().delete(nom, points_selector=qm.FilterSelector(filter=qm.Filter(
+        must=[qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))])))
+
+
 async def reconcilier_index(lot: int = LOT) -> dict:
     _, nom = memory.collection_active()
-    bilan = {"revectorises": 0, "orphelins_supprimes": 0, "restants": 0, "arret_sur_echec": False}
+    bilan = {"revectorises": 0, "orphelins_supprimes": 0, "perimes_supprimes": 0,
+             "restants": 0, "arret_sur_echec": False}
     try:
         indexes = await _points_indexes(nom)
     except Exception as e:  # noqa: BLE001 — Qdrant injoignable : on réessaiera
@@ -67,9 +74,19 @@ async def reconcilier_index(lot: int = LOT) -> dict:
         return bilan
     sources = await _sources()
 
-    for source_id in [sid for sid in indexes if sid not in sources]:
-        await memory.delete_by_source(source_id)
-        bilan["orphelins_supprimes"] += 1
+    # orphelins (absents de la base) puis périmés (en base mais devenus trop courts) :
+    # on ne compte une suppression que si Qdrant l'a réellement acceptée.
+    nettoyages = [(sid, "orphelins_supprimes") for sid in indexes if sid not in sources]
+    nettoyages += [(sid, "perimes_supprimes") for sid in indexes
+                   if sid in sources and not memory.chunk_text(sources[sid][3])]
+    for source_id, compteur in nettoyages:
+        try:
+            await _supprimer_points(nom, source_id)
+        except Exception as e:  # noqa: BLE001 — on réessaiera au passage suivant
+            logger.warning("[forge:reconciliation] suppression impossible (%s) : %s", source_id, str(e)[:160])
+            bilan["arret_sur_echec"] = True
+            break
+        bilan[compteur] += 1
 
     a_faire = [sid for sid, (_, user_id, _, contenu) in sources.items()
                if memory.chunk_text(contenu) and indexes.get(sid) != {user_id}]
