@@ -24,13 +24,10 @@ runbook de référence dans le repo : **`MIGRATION-HP.md`**.
 - **Clé** : une clé dédiée `claude-code-mac->hp` (`~/.ssh/id_ed25519`) est **déjà autorisée**
   sur le HP → toutes les commandes passent en `ssh -o BatchMode=yes debian@192.168.1.89 '...'`
   (non-interactif, pas de mot de passe).
-- Si un jour la clé manque, la (ré)autoriser :
-  ```bash
-  PUB=$(cat ~/.ssh/id_ed25519.pub)
-  sshpass -p '<MOT_DE_PASSE_COFFRE>' ssh -o StrictHostKeyChecking=accept-new debian@192.168.1.89 \
-    "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qxF '$PUB' ~/.ssh/authorized_keys 2>/dev/null \
-     || echo '$PUB' >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys"
-  ```
+- Si un jour la clé manque : l'auth par mot de passe SSH est **désactivée** sur le HP
+  (sécurité, revue 2026-10) → poser la clé depuis la **console Proxmox**, ou demander à
+  l'utilisateur de lancer `ssh-copy-id -i ~/.ssh/id_ed25519.pub debian@192.168.1.89`
+  (mot de passe au coffre local, jamais en clair ici).
 - **Repo sur le HP** : `/home/debian/workplace`, branche `main`.
 - **Dashboard** : `http://192.168.1.89:5100/dashboard`.
 
