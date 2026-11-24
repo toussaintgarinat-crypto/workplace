@@ -129,6 +129,9 @@ def charger() -> dict:
         # Cœur recrée `forge/defaut` en base LiteLLM d'après ce choix (modeles_gateway.py),
         # y compris si la base de la Gateway est réinitialisée.
         "forge_modele": "",
+        # Choix du modèle PAR TÂCHE (S244b) : {"code": "perso/…", "raisonnement": …}. Vide =
+        # aucun routage par tâche (comportement inchangé). Global uniquement, comme forge_modele.
+        "modeles_taches": {},
     }
     if CONFIG_PATH.exists():
         try:
@@ -174,9 +177,31 @@ def charger() -> dict:
                 base["repli_souverain_avant_payant"] = bool(d.get("repli_souverain_avant_payant"))
             if isinstance(d.get("forge_modele"), str):
                 base["forge_modele"] = d.get("forge_modele")
+            if isinstance(d.get("modeles_taches"), dict):
+                base["modeles_taches"] = {k: v for k, v in d["modeles_taches"].items()
+                                          if k in TACHES and isinstance(v, str) and v.strip()}
         except Exception:
             pass
     return base
+
+
+TACHES = ("code", "raisonnement", "redaction", "long")
+
+
+def definir_modele_tache(tache: str, modele: str) -> dict:
+    """Associe un modèle servi à une tâche (`modele` vide = retire l'association)."""
+    if tache not in TACHES:
+        raise ValueError(f"Tâche inconnue : {tache!r} (attendu : {', '.join(TACHES)}).")
+    conf = charger()
+    taches = dict(conf.get("modeles_taches") or {})
+    if (modele or "").strip():
+        taches[tache] = modele.strip()
+    else:
+        taches.pop(tache, None)
+    conf["modeles_taches"] = taches
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(conf, ensure_ascii=False, indent=2))
+    return conf
 
 
 def definir_routage(actif: bool | None = None, modele_econome: str | None = None) -> dict:

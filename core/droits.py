@@ -25,6 +25,8 @@ RESERVES = frozenset({
     "amelioration_decider", "capacite_decider", "curateur_lancer",
     # Sommeil (S243) : éteindre une brique PARTAGÉE gêne tous les utilisateurs ; la réveiller non.
     "brique_endormir",
+    # Modèles (S244b) : le modèle de tête / par tâche change coûts et confidentialité pour tous.
+    "modele_choisir",
 })
 
 

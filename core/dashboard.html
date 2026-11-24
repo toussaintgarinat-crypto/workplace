@@ -607,6 +607,7 @@
           <div class="liv-sub" style="margin-top:4px">La liste vient du fournisseur (à jour, gardée 1 h). Tu peux aussi saisir un identifiant à la main. Le modèle est testé (une courte réponse) avant d'être gardé ; s'il ne répond pas, il est retiré. Il utilise la clé du fournisseur posée ci-dessus.</div>
         </div>
         <button class="btn" id="btn-modele-ajouter" onclick="ajouterModele()">Ajouter et tester</button>
+        <button class="btn" id="btn-modele-utiliser" onclick="ajouterModele(true)" title="Ajoute, teste, puis le met en tête de l'assistant si le test réussit">Ajouter et utiliser</button>
       </div>
       <div class="cerveau-row" style="margin-top:10px">
         <div class="field" style="flex:1">
@@ -2575,8 +2576,8 @@ async function chargerCatalogue(actualiser) {
       : d.detail;
   } catch(e) { if (seq === _catSeq) st.textContent = 'Catalogue indisponible : ' + e.message; }
 }
-async function ajouterModele() {
-  const btn = document.getElementById('btn-modele-ajouter');
+async function ajouterModele(utiliser) {
+  const btn = document.getElementById(utiliser ? 'btn-modele-utiliser' : 'btn-modele-ajouter');
   const fournisseur = document.getElementById('modele-fournisseur').value;
   const modele = document.getElementById('modele-id').value.trim();
   if (!modele) { cerveauMsg('Saisis l\'identifiant du modèle chez le fournisseur.', 'ko'); return; }
@@ -2585,7 +2586,11 @@ async function ajouterModele() {
   try {
     const r = await envoyerCerveau('/assistant/modeles', { fournisseur, modele });
     if (r.ok) { cerveauMsg('✔ « ' + r.nom + ' » ajouté : ' + r.detail + ' Il est aussi proposé dans « Modèle LLM ».', 'ok');
-                document.getElementById('modele-id').value = ''; }
+                document.getElementById('modele-id').value = '';
+                if (utiliser) {  // test déjà réussi : on le met en tête de l'assistant
+                  await envoyerCerveau('/assistant/config', { model: r.nom });
+                  cerveauMsg('✔ « ' + r.nom + ' » ajouté et mis en tête de l\'assistant : ' + r.detail, 'ok');
+                } }
     else cerveauMsg('⚠ « ' + r.nom + ' » ne répond pas, il n\'a pas été gardé : ' + r.detail, 'ko');
     await chargerModeles(); await chargerCerveau(true);
   } catch(e) { cerveauMsg('Échec : ' + e.message, 'ko'); }
