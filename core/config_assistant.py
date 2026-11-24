@@ -388,6 +388,13 @@ FOURNISSEURS_CLES = [
     {"id": "deepseek",   "env": "DEEPSEEK_API_KEY",     "label": "DeepSeek (direct)",      "placeholder": "sk-...", "prefixe_litellm": "deepseek/"},
     {"id": "mistral",    "env": "MISTRAL_API_KEY",      "label": "Mistral",                "placeholder": "...", "prefixe_litellm": "mistral/"},
     {"id": "gemini",     "env": "GEMINI_API_KEY",       "label": "Google Gemini (direct)", "placeholder": "AIza...", "prefixe_litellm": "gemini/"},
+    # S244 : fournisseurs ajoutés pour le catalogue vivant. Préfixes et variables = ceux que
+    # LiteLLM lit par défaut ; aucun `api_base` (cf. docstring de `modeles_gateway`).
+    {"id": "zai",        "env": "ZAI_API_KEY",          "label": "z.ai (GLM direct)",      "placeholder": "...", "prefixe_litellm": "zai/"},
+    {"id": "together",   "env": "TOGETHERAI_API_KEY",   "label": "Together AI",            "placeholder": "...", "prefixe_litellm": "together_ai/"},
+    {"id": "fireworks",  "env": "FIREWORKS_AI_API_KEY", "label": "Fireworks AI",           "placeholder": "fw_...", "prefixe_litellm": "fireworks_ai/"},
+    {"id": "xai",        "env": "XAI_API_KEY",          "label": "xAI (Grok)",             "placeholder": "xai-...", "prefixe_litellm": "xai/"},
+    {"id": "cohere",     "env": "COHERE_API_KEY",       "label": "Cohere",                 "placeholder": "...", "prefixe_litellm": "cohere_chat/"},
 ]
 _ENV_PAR_ID = {f["id"]: f["env"] for f in FOURNISSEURS_CLES}
 # Valeurs à NE PAS compter comme une vraie clé (placeholders d'amorçage).

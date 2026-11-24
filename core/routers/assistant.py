@@ -25,6 +25,7 @@ import horloge
 import journal_conversations
 import journal_usage
 import langue as langue_mod
+import catalogue_modeles
 import modeles_gateway
 import orchestrateur
 import outils_communs
@@ -698,6 +699,14 @@ async def assistant_modeles_get():
     modeles = await _traduire_erreurs_modeles(modeles_gateway.lister())
     return {"modeles": modeles, "fournisseurs": modeles_gateway.fournisseurs(),
             "forge": modeles_gateway.etat_forge()}
+
+
+@router.get("/assistant/catalogue/{fournisseur}", tags=["assistant"], dependencies=_ADMIN_CERVEAU)
+async def assistant_catalogue_get(fournisseur: str, actualiser: bool = False):
+    """Modèles de chat proposés par un fournisseur (S244), lus en direct chez lui et gardés
+    ~1 h. Admin : la route déclenche un appel sortant avec la clé du fournisseur. URL et clé
+    viennent du serveur ; `actualiser=true` contourne le cache."""
+    return await _traduire_erreurs_modeles(catalogue_modeles.lister(fournisseur, actualiser))
 
 
 @router.post("/assistant/modeles", tags=["assistant"], dependencies=_ADMIN_CERVEAU)

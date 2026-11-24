@@ -29,6 +29,7 @@ client = TestClient(main.app)
 
 # (méthode, chemin) des routes qui modifient le cerveau — rien de plus, rien de moins.
 ROUTES_GARDEES = {
+    ("GET", "/assistant/catalogue/{fournisseur}"),
     ("POST", "/assistant/config"),
     ("PUT", "/assistant/config/organisation"),
     ("DELETE", "/assistant/config/organisation"),

@@ -598,10 +598,13 @@
         <div class="field" style="flex:1">
           <label>Ajouter un modèle</label>
           <div class="cerveau-row" style="gap:8px">
-            <select id="modele-fournisseur" style="flex:0 0 38%"><option>Chargement…</option></select>
-            <input type="text" id="modele-id" placeholder="identifiant, ex. llama-3.1-8b-instant" autocomplete="off" spellcheck="false">
+            <select id="modele-fournisseur" style="flex:0 0 38%" onchange="chargerCatalogue(false)"><option>Chargement…</option></select>
+            <input type="text" id="modele-id" list="modele-liste" placeholder="choisis ou tape pour chercher…" autocomplete="off" spellcheck="false">
+            <datalist id="modele-liste"></datalist>
+            <button class="btn ghost" type="button" onclick="chargerCatalogue(true)" title="Relire la liste chez le fournisseur">↻</button>
           </div>
-          <div class="liv-sub" style="margin-top:4px">Identifiant exact chez le fournisseur. Le modèle est testé (une courte réponse) avant d'être gardé ; s'il ne répond pas, il est retiré. Il utilise la clé du fournisseur posée ci-dessus.</div>
+          <div class="liv-sub" id="catalogue-statut" style="margin-top:4px">—</div>
+          <div class="liv-sub" style="margin-top:4px">La liste vient du fournisseur (à jour, gardée 1 h). Tu peux aussi saisir un identifiant à la main. Le modèle est testé (une courte réponse) avant d'être gardé ; s'il ne répond pas, il est retiré. Il utilise la clé du fournisseur posée ci-dessus.</div>
         </div>
         <button class="btn" id="btn-modele-ajouter" onclick="ajouterModele()">Ajouter et tester</button>
       </div>
@@ -2528,6 +2531,7 @@ async function chargerModeles() {
   selF.innerHTML = (d.fournisseurs || []).map(f =>
     `<option value="${escAttr(f.id)}">${escHtml(f.label)}${f.cle_definie ? '' : ' (clé absente)'}</option>`).join('');
   if (avant && [...selF.options].some(o => o.value === avant)) selF.value = avant;
+  chargerCatalogue(false);
   // Sélecteur de la Forge : défaut + modèles ajoutés.
   const forge = d.forge || {choix: '', defaut: ''};
   const perso = modeles.filter(m => m.origine === 'perso');
@@ -2551,6 +2555,25 @@ async function chargerModeles() {
       + '</div>').join('');
     return `<details class="modeles-groupe"${cle === 'perso' ? ' open' : ''}><summary>${titre} (${ms.length})</summary>${lignes}</details>`;
   }).join('');
+}
+let _catSeq = 0;
+async function chargerCatalogue(actualiser) {
+  const f = document.getElementById('modele-fournisseur').value;
+  const st = document.getElementById('catalogue-statut');
+  const dl = document.getElementById('modele-liste');
+  if (!f) return;
+  const seq = ++_catSeq;  // une réponse tardive d'un autre fournisseur est ignorée
+  st.textContent = 'Lecture du catalogue…'; dl.innerHTML = '';
+  try {
+    const r = await fetch('/assistant/catalogue/' + encodeURIComponent(f) + (actualiser ? '?actualiser=true' : ''));
+    const d = await r.json();
+    if (seq !== _catSeq) return;
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    dl.innerHTML = (d.modeles || []).map(m => `<option value="${escAttr(m)}"></option>`).join('');
+    st.textContent = d.etat === 'ok'
+      ? (d.modeles.length + ' modèles de chat' + (d.detail ? ' — ' + d.detail : ''))
+      : d.detail;
+  } catch(e) { if (seq === _catSeq) st.textContent = 'Catalogue indisponible : ' + e.message; }
 }
 async function ajouterModele() {
   const btn = document.getElementById('btn-modele-ajouter');
