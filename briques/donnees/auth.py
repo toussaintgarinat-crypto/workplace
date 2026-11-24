@@ -19,6 +19,7 @@ Multi-tenant : audience vide ⇒ verify_aud désactivé (le realm du bundle suff
 """
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Optional
 
@@ -37,6 +38,9 @@ KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "").rstrip("/")          # ex: http://i
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "")                  # ex: client-acme
 KEYCLOAK_AUDIENCE = os.getenv("KEYCLOAK_AUDIENCE", "").strip()    # vide ⇒ verify_aud off
 JWKS_TTL = int(os.getenv("JWKS_TTL", "600"))                      # cache des clés (s)
+# Clé service-à-service (Cœur → données) : le Cœur lit/écrit la config ⚙ Cerveau sans jeton
+# utilisateur. VIDE ⇒ chemin inactif (jamais « clé vide acceptée »).
+SERVICE_KEY = os.getenv("DONNEES_SERVICE_KEY", "")
 
 # Réglages Keycloak partagés (porte le cache JWKS interne). Construit à l'import depuis
 # l'environnement : le comportement reste figé pour la durée de vie du process.
@@ -61,14 +65,23 @@ def verifier_jeton(token: str) -> dict:
     return verify_token_sync(token, _KC)
 
 
-def garde_auth(token: str | None = Depends(_bearer)) -> Optional[dict]:
+def _cle_service_valide(presentee: str | None) -> bool:
+    """Comparaison à temps constant ; faux d'office si aucune clé n'est configurée."""
+    return bool(SERVICE_KEY and presentee and hmac.compare_digest(presentee, SERVICE_KEY))
+
+
+def garde_auth(token: str | None = Depends(_bearer),
+               x_service_key: str | None = Header(None)) -> Optional[dict]:
     """Dependency FastAPI posée sur les routes de données.
 
     - Auth désactivée → laisse passer (renvoie None), brique ouverte comme avant.
-    - Auth activée    → exige un Bearer valide, sinon 401.
+    - Auth activée    → exige un Bearer valide OU la clé service du Cœur (`X-Service-Key`),
+      sinon 401. La clé de service ne porte aucune org : le tenant vient alors de `X-Org-ID`.
     """
     if not config_valide():
         return None
+    if _cle_service_valide(x_service_key):
+        return {"service": "coeur"}
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

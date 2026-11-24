@@ -235,3 +235,50 @@ if __name__ == "__main__":
             fn()
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
+
+
+# ── Nouvelles tentatives d'indexation (Gateway/Ollama pas prêts au démarrage du Cœur) ─────────
+
+def _embed_qui_echoue_n_fois(n):
+    appels = {"n": 0}
+    async def embed(client, textes):
+        appels["n"] += 1
+        return None if appels["n"] <= n else [_vecteur(t) for t in textes]
+    return embed, appels
+
+
+async def _sans_attente(_s):
+    return None
+
+
+def test_reessai_finit_par_indexer():
+    r.reinitialiser(); r.ACTIF = True
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(2)
+    try:
+        ok = asyncio.run(r.reessayer_indexation(_outils(), delais=(1, 1, 1, 1),
+                                                dormir=_sans_attente, client=object()))
+        assert ok is True and r._pret is True and appels["n"] == 3
+    finally:
+        r.reinitialiser()
+
+
+def test_reessai_est_borne_et_n_indexe_rien_si_toujours_ko():
+    r.reinitialiser(); r.ACTIF = True
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(99)
+    try:
+        ok = asyncio.run(r.reessayer_indexation(_outils(), delais=(1, 1, 1),
+                                                dormir=_sans_attente, client=object()))
+        assert ok is False and r._pret is False and appels["n"] == 3   # une tentative / délai
+    finally:
+        r.reinitialiser()
+
+
+def test_reessai_inerte_si_routage_desactive_ou_deja_pret():
+    r.reinitialiser(); r.ACTIF = False
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(0)
+    try:
+        assert asyncio.run(r.reessayer_indexation(_outils(), delais=(1,), dormir=_sans_attente,
+                                                  client=object())) is False
+        assert appels["n"] == 0                       # désactivé : aucun appel Gateway
+    finally:
+        r.reinitialiser()

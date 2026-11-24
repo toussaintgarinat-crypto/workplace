@@ -47,6 +47,11 @@ async def lifespan(app: FastAPI):
         await routage_outils.indexer(_specs)
     except Exception:  # noqa: BLE001 — le routage ne doit jamais bloquer le démarrage
         logging.getLogger(__name__).warning("Routage d'outils : indexation ignorée", exc_info=True)
+    # Indexation ratée (embeddings froids/Gateway pas prête) : on retente en tâche de fond au lieu
+    # de rester sans routage jusqu'au prochain redémarrage.
+    tache_reindexation = None
+    if routage_outils.ACTIF and not routage_outils._pret:
+        tache_reindexation = asyncio.create_task(routage_outils.reessayer_indexation(_specs))
     # Graphe d'apprentissage (S145) : construit après l'index embeddings, silencieux si brique absente.
     try:
         await graphe_apprentissage.charger_graphe(_specs)
@@ -64,6 +69,8 @@ async def lifespan(app: FastAPI):
     tache_sommeil = asyncio.create_task(sommeil.boucle(registre))
     yield
     tache_proactif.cancel()
+    if tache_reindexation:
+        tache_reindexation.cancel()
     tache_horloge.cancel()
     tache_forge.cancel()
     tache_sommeil.cancel()
