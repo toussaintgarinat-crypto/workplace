@@ -316,3 +316,63 @@ def test_un_lot_en_echec_laisse_l_index_vide():
         assert r._pret is False and not r._index      # tout ou rien : jamais d'index partiel
     finally:
         r.reinitialiser()
+
+
+# ── Rattrapage lexical + outils récents (incident Telegram 2026-11-24) ───────────────────────
+# « Retente le résumer » : l'embedding (all-minilm, anglophone) laissait `video_resumer` hors du
+# top_k → l'assistant répondait « je n'ai pas d'outil » alors qu'il existait.
+
+def _catalogue_bruit(n=40):
+    return [_spec(f"bruit_{i}", f"theme sans rapport numero {i}") for i in range(n)] + \
+           [_spec("video_resumer", "Résume une vidéo à partir d'une URL")]
+
+
+def test_un_mot_du_message_present_dans_le_nom_d_un_outil_le_garde():
+    r.reinitialiser(); r.ACTIF = True
+    r._index.update({s["function"]["name"]: r._normaliser([1.0, 0.0, 0.0, 0.0])
+                     for s in _catalogue_bruit()})
+    # vecteur de requête orthogonal à tous les outils → l'embedding seul ne peut rien choisir
+    gardes = r.selectionner([0.0, 0.0, 0.0, 1.0], _catalogue_bruit(), top_k=3,
+                            toujours=set(), requete="Retente le résumer")
+    try:
+        assert "video_resumer" in _noms(gardes)
+    finally:
+        r.reinitialiser()
+
+
+def test_le_rattrapage_lexical_est_borne():
+    r.reinitialiser(); r.ACTIF = True
+    outils_ = [_spec(f"agenda_action_{i}", "x") for i in range(30)]
+    r._index.update({s["function"]["name"]: r._normaliser([1.0, 0.0]) for s in outils_})
+    gardes = r.selectionner([0.0, 1.0], outils_, top_k=2, toujours=set(),
+                            requete="mon agenda action")
+    try:
+        assert len(gardes) <= 2 + r.MAX_LEXICAL
+    finally:
+        r.reinitialiser()
+
+
+def test_un_mot_trop_banal_ne_declenche_pas_le_rattrapage():
+    # « creer » figure dans plus de MAX_DF noms : il ne doit pas inonder la liste.
+    r.reinitialiser(); r.ACTIF = True
+    outils_ = [_spec(f"creer_chose_{i}", "x") for i in range(r.MAX_DF + 5)]
+    r._index.update({s["function"]["name"]: r._normaliser([1.0, 0.0]) for s in outils_})
+    gardes = r.selectionner([0.0, 1.0], outils_, top_k=1, toujours=set(), requete="creer")
+    try:
+        assert len(gardes) <= 1
+    finally:
+        r.reinitialiser()
+
+
+def test_outils_recents_lit_les_appels_des_derniers_tours():
+    msgs = [
+        {"role": "user", "content": "résume"},
+        {"role": "assistant", "content": None,
+         "tool_calls": [{"function": {"name": "video_resumer", "arguments": "{}"}}]},
+        {"role": "tool", "name": "video_resumer", "content": "{}"},
+        {"role": "assistant", "content": "voilà"},
+        {"role": "user", "content": "et en anglais ?"},
+    ]
+    assert r.outils_recents(msgs) == {"video_resumer"}
+    assert r.outils_recents([]) == set()
+    assert r.outils_recents([{"role": "user", "content": "x"}]) == set()

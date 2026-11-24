@@ -32,6 +32,8 @@ on bascule sur un cosinus en Python pur — le contexte est minuscule (~64 vecte
 incidence. Le résultat est identique ; seul le moteur de calcul change.
 """
 import logging
+import re
+import unicodedata
 import math
 import os
 
@@ -44,7 +46,7 @@ GATEWAY_URL = os.getenv("GATEWAY_URL", "http://host.docker.internal:4001")
 GATEWAY_KEY = os.getenv("GATEWAY_KEY", "")
 EMBEDDING_MODEL = os.getenv("ROUTAGE_EMBEDDING_MODEL", "text-embedding-3-small")
 ACTIF = os.getenv("ROUTAGE_OUTILS", "0").lower() in ("1", "true", "yes", "on")
-TOP_K = int(os.getenv("ROUTAGE_TOP_K", "8"))
+TOP_K = int(os.getenv("ROUTAGE_TOP_K", "12"))
 # Poids du boost lexical (graphe d'apprentissage S145). 0 = désactivé (rétrocompat parfaite).
 ALPHA_BOOST = float(os.getenv("GRAPHE_ALPHA", "0.3"))
 
@@ -187,6 +189,50 @@ def _classer(vec_requete, noms: list) -> list:
     return [n for n, _ in scores]
 
 
+# ── Rattrapage lexical (incident Telegram 2026-11-24) ────────────────────────────────────────
+# Le modèle d'embeddings (all-minilm, anglophone) rate des correspondances évidentes en
+# français : « Retente le résumer » n'amenait pas `video_resumer` dans le top_k, et l'assistant
+# répondait « je n'ai pas d'outil ». On ajoute donc les outils dont un MOT DU NOM (radical de 5
+# lettres) figure dans la requête — borné, et sans les mots banals présents dans trop de noms.
+MAX_LEXICAL = 6      # au plus N outils ajoutés par le rattrapage
+MAX_DF = 12          # un radical présent dans plus de N noms d'outils est ignoré (« creer »…)
+
+
+def _radicaux(texte: str) -> set:
+    """Radicaux (5 premières lettres, sans accents) des mots de ≥ 5 lettres."""
+    brut = unicodedata.normalize("NFKD", (texte or "").lower())
+    brut = "".join(c for c in brut if not unicodedata.combining(c))
+    return {m[:5] for m in re.findall(r"[a-z0-9]{5,}", brut)}
+
+
+def _lexicaux(requete: str, noms: list) -> set:
+    q = _radicaux(requete)
+    if not q:
+        return set()
+    par_nom = {n: _radicaux(n.replace("_", " ")) for n in noms}
+    freq: dict = {}
+    for rads in par_nom.values():
+        for rad in rads:
+            freq[rad] = freq.get(rad, 0) + 1
+    scores = {n: len({x for x in rads & q if freq[x] <= MAX_DF}) for n, rads in par_nom.items()}
+    retenus = sorted((n for n, sc in scores.items() if sc > 0), key=lambda n: -scores[n])
+    return set(retenus[:MAX_LEXICAL])
+
+
+def outils_recents(messages: list, profondeur: int = 10) -> set:
+    """Noms des outils appelés dans les derniers tours : un « Retente » ou « Avec synopsis »
+    qui suit doit retrouver l'outil qu'on vient d'utiliser, même si le message est trop court."""
+    noms = set()
+    for m in (messages or [])[-profondeur:]:
+        for tc in (m.get("tool_calls") or []):
+            n = (tc.get("function") or {}).get("name")
+            if n:
+                noms.add(n)
+        if m.get("role") == "tool" and m.get("name"):
+            noms.add(m["name"])
+    return noms
+
+
 def selectionner(vec_requete, toutes_capacites: list, *, top_k: int = TOP_K,
                  toujours=None, requete: str = "") -> list:
     """Cœur PUR (testable sans Gateway) : garde le socle `toujours` + les `top_k` outils les plus
@@ -209,7 +255,7 @@ def selectionner(vec_requete, toutes_capacites: list, *, top_k: int = TOP_K,
         scores = {n: scores.get(n, 0.0) + ALPHA_BOOST * boosts.get(n, 0.0) for n in scores}
 
     proches = set(sorted(scores, key=lambda n: -scores[n])[:top_k])
-    gardes = proches | toujours
+    gardes = proches | toujours | _lexicaux(requete, noms)
     return [s for s in toutes_capacites if _nom(s) in gardes]
 
 
