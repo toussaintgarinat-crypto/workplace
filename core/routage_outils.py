@@ -128,8 +128,18 @@ async def indexer(specs: list, client: httpx.AsyncClient | None = None) -> bool:
         return False
     proprietaire = client is None
     client = client or httpx.AsyncClient(timeout=30)
+    textes = [_texte(s) for s in specs]
+    vecteurs: list = []
     try:
-        vecteurs = await _embed_lot(client, [_texte(s) for s in specs])
+        # PAR LOTS : un seul appel pour tous les outils (~250) dépassait le délai sur Ollama CPU
+        # (~0,15 s/texte → 40 s). Tout ou rien : un lot en échec laisse l'index vide.
+        for i in range(0, len(textes), TAILLE_LOT_EMBED):
+            lot = textes[i:i + TAILLE_LOT_EMBED]
+            v = await _embed_lot(client, lot)
+            if not v or len(v) != len(lot):
+                vecteurs = []
+                break
+            vecteurs.extend(v)
     finally:
         if proprietaire:
             await client.aclose()
@@ -147,6 +157,8 @@ async def indexer(specs: list, client: httpx.AsyncClient | None = None) -> bool:
 # démarrage du Cœur (modèle d'embeddings froid → timeout). Borné : ~8 min au total, puis on
 # garde le repli « tous les outils » sans réessayer indéfiniment.
 DELAIS_REESSAI_S = (15, 30, 60, 120, 300)
+# Taille des lots d'embeddings à l'indexation (≈5 s par lot sur Ollama CPU, sous le délai de 30 s).
+TAILLE_LOT_EMBED = int(os.getenv("ROUTAGE_TAILLE_LOT", "32"))
 
 
 async def reessayer_indexation(specs: list, *, delais=DELAIS_REESSAI_S, dormir=asyncio.sleep,
