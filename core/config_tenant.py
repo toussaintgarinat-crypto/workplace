@@ -185,7 +185,7 @@ async def resoudre_avec_provenance(org_id: str | None, utilisateur: str,
 # Clés GLOBALES par nature, jamais surchargeables par une couche organisation/utilisateur :
 # `forge_modele` (S240) pilote l'unique `forge/defaut` de la Gateway — une couche par tenant
 # ferait croire à un réglage qui n'aurait aucun effet.
-_CLES_GLOBALES = frozenset({"forge_modele"})
+_CLES_GLOBALES = frozenset({"forge_modele", "modeles_taches"})
 
 
 def _cles_connues() -> frozenset:

@@ -65,6 +65,36 @@ def complexite(messages: list[dict], tools: list[dict] | None = None) -> str:
     return STANDARD
 
 
+_TACHE_CODE = re.compile(
+    r"\b(code|coder|script|fonction|bug|debug|d[ée]bogue|refactor\w*|python|javascript|typescript|"
+    r"sql|regex|api|compile\w*|stack ?trace|algorithme|dockerfile|bash)\b", re.IGNORECASE)
+_TACHE_RAISONNEMENT = re.compile(
+    r"\b(calcul\w*|[ée]quation|d[ée]montr\w*|prouv\w*|logique|probabilit\w*|math\w*|"
+    r"[ée]tape par [ée]tape|raisonn\w*|compare\w*|strat[ée]gie|analyse|pourquoi)\b", re.IGNORECASE)
+_TACHE_REDACTION = re.compile(
+    r"\b([ée]cris|r[ée]dige\w*|po[èe]me|histoire|nouvelle|mail|courriel|lettre|article|slogan|"
+    r"reformule\w*|corrige le texte|discours|scénario)\b", re.IGNORECASE)
+SEUIL_LONG = 6000
+
+
+def tache(messages: list[dict]) -> str | None:
+    """Type de tâche demandé (code | raisonnement | redaction | long) ou None.
+
+    Heuristiques locales (coût 0, comme `complexite`). Le code l'emporte (un bug à
+    expliquer reste du code), puis le raisonnement, puis la rédaction ; un très long
+    texte sans autre signal part en « long »."""
+    texte = _dernier_message_utilisateur(messages).strip()
+    if _CODE.search(texte) or _TACHE_CODE.search(texte):
+        return "code"
+    if len(texte) > SEUIL_LONG:
+        return "long"
+    if _TACHE_RAISONNEMENT.search(texte):
+        return "raisonnement"
+    if _TACHE_REDACTION.search(texte):
+        return "redaction"
+    return None
+
+
 def router(messages: list[dict], modeles: list[str], conf: dict,
            tools: list[dict] | None = None) -> tuple[list[str], str | None, str]:
     """Renvoie (modeles_effectifs, routed_to, niveau).
@@ -73,6 +103,12 @@ def router(messages: list[dict], modeles: list[str], conf: dict,
     on PRÉPOSE le modèle économe en tête (le modèle configuré reste en fallback :
     sécurité si l'économe échoue). Sinon on renvoie la liste inchangée."""
     niveau = complexite(messages, tools)
+    # Choix du modèle PAR TÂCHE (S244b) : indépendant de `routage_actif` (qui ne gère que la
+    # rétrogradation d'économie) ; actif dès qu'une tâche a un modèle. Le choix passe EN TÊTE
+    # et le reste de la chaîne reste en filet : s'il tombe, la cascade prend le relais.
+    choisi = (conf.get("modeles_taches") or {}).get(tache(messages) or "", "").strip()
+    if choisi:
+        return [choisi] + [m for m in modeles if m != choisi], choisi, niveau
     if not conf.get("routage_actif"):
         return modeles, None, niveau
     if tools:                      # outils requis → pas de rétrogradation (garde-fou)

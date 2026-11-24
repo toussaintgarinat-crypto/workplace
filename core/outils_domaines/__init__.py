@@ -2,5 +2,5 @@
 `async def dispatch(nom, args, registre, client) -> str | None`.
 """
 from . import (
-    systeme, amelioration, documents, agenda, forge, usine, studio, transcription, sommeil
+    systeme, amelioration, documents, agenda, forge, usine, studio, transcription, sommeil, modeles
 )

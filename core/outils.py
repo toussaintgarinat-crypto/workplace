@@ -68,6 +68,23 @@ OUTILS: list[dict] = [
                        "Keycloak, mémoire, agenda) et celles qui n'ont pas opté pour le sommeil.",
         "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique à endormir."}}, ["brique"])}},
     {"type": "function", "function": {
+        "name": "modeles_disponibles",
+        "description": "Modèles LLM : sans paramètre, ta tête actuelle, les modèles par tâche (code, raisonnement, "
+                       "redaction, long) et les modèles ajoutés ; avec `fournisseur` (zai, mistral, openrouter, groq, "
+                       "anthropic, openai, gemini, deepseek, together, fireworks, xai, cohere), la liste À JOUR de ses "
+                       "modèles de chat. Lecture seule.",
+        "parameters": _p({"fournisseur": {"type": "string", "description": "Ex. zai, mistral."}}, [])}},
+    {"type": "function", "function": {
+        "name": "modele_choisir",
+        "description": "Choisit un modèle : l'ajoute à la Gateway s'il n'y est pas, le TESTE (retiré s'il ne répond "
+                       "pas), puis l'utilise `pour` « assistant » (ta tête) ou pour une tâche (code, raisonnement, "
+                       "redaction, long) — il sera alors pris automatiquement pour ce type de demande. Appelle d'abord "
+                       "modeles_disponibles(fournisseur=…) pour prendre un identifiant réel. Sans fournisseur ni modèle, "
+                       "avec une tâche : retire l'association. Réservé à l'admin du cerveau.",
+        "parameters": _p({"fournisseur": {"type": "string"}, "modele": {"type": "string",
+                         "description": "Identifiant chez le fournisseur, ex. glm-5.3."},
+                         "pour": {"type": "string", "description": "assistant (défaut) | code | raisonnement | redaction | long"}}, [])}},
+    {"type": "function", "function": {
         "name": "mes_capacites",
         "description": "Décris-toi JUSTE : ta propre anatomie (tes organes/briques) et la "
                        "liste exacte de tes outils. À appeler AVANT de répondre à « que sais-tu "
@@ -482,7 +499,7 @@ from outils_communs import (  # noqa: F401
 _DISPATCHERS = (
     _dom.systeme.dispatch, _dom.amelioration.dispatch, _dom.documents.dispatch,
     _dom.agenda.dispatch, _dom.forge.dispatch, _dom.usine.dispatch,
-    _dom.studio.dispatch, _dom.transcription.dispatch, _dom.sommeil.dispatch,
+    _dom.studio.dispatch, _dom.transcription.dispatch, _dom.sommeil.dispatch, _dom.modeles.dispatch,
 )
 
 
