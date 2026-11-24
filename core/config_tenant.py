@@ -82,6 +82,18 @@ def _fusion(base: dict, patch: dict) -> dict:
     return resultat
 
 
+def _entetes(org_id: str) -> dict:
+    """En-têtes S2S vers la brique données : tenant + clé de service du Cœur.
+
+    La clé est relue à CHAQUE appel (rotation sans redémarrage). Absente, on n'envoie rien :
+    une brique données ouverte (auth désactivée) continue de fonctionner comme avant."""
+    h = {"X-Org-ID": org_id}
+    cle = os.getenv("DONNEES_SERVICE_KEY", "")
+    if cle:
+        h["X-Service-Key"] = cle
+    return h
+
+
 def _url(entite_id: str) -> str:
     return f"{DONNEES_URL}/apps/{APP_ID}/entites/{entite_id}/enregistrements"
 
@@ -108,7 +120,7 @@ async def _lire_couche(niveau: str, org_id: str, entite_id: str,
     propre = client is None
     client = client or httpx.AsyncClient(timeout=_TIMEOUT)
     try:
-        r = await client.get(_url(entite_id), headers={"X-Org-ID": org_id})
+        r = await client.get(_url(entite_id), headers=_entetes(org_id))
         r.raise_for_status()
         enregistrements = r.json()
         # Garde de FORME (pas seulement de vérité) : une réponse 200 malformée
@@ -251,7 +263,7 @@ async def _ecrire_couche(niveau: str, org_id: str, entite_id: str, patch: dict,
     propre = client is None
     client = client or httpx.AsyncClient(timeout=_TIMEOUT)
     try:
-        entetes = {"X-Org-ID": org_id}
+        entetes = _entetes(org_id)
         r = await client.get(_url(entite_id), headers=entetes)
         r.raise_for_status()
         existants = r.json()
@@ -299,7 +311,7 @@ async def _supprimer_couche(niveau: str, org_id: str, entite_id: str,
     propre = client is None
     client = client or httpx.AsyncClient(timeout=_TIMEOUT)
     try:
-        entetes = {"X-Org-ID": org_id}
+        entetes = _entetes(org_id)
         r = await client.get(_url(entite_id), headers=entetes)
         r.raise_for_status()
         existants = r.json()

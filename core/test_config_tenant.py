@@ -448,3 +448,33 @@ if __name__ == "__main__":
             fn()
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
+
+
+# ── Clé service-à-service Cœur → données (sinon 401 sur une brique à auth activée) ──────────
+
+def test_lecture_envoie_la_cle_de_service(monkeypatch):
+    _reset_cache()
+    monkeypatch.setenv("DONNEES_SERVICE_KEY", "cle-coeur")
+    vus = []
+    def h(req):
+        vus.append((req.headers.get("X-Service-Key"), req.headers.get("X-Org-ID")))
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            await config_tenant._lire_couche("organisation", "acme", "_organisation", client=c)
+    asyncio.run(go())
+    assert vus == [("cle-coeur", "acme")]
+
+
+def test_sans_cle_configuree_aucun_en_tete_service(monkeypatch):
+    _reset_cache()
+    monkeypatch.delenv("DONNEES_SERVICE_KEY", raising=False)
+    vus = []
+    def h(req):
+        vus.append(req.headers.get("X-Service-Key"))
+        return httpx.Response(200, json=[])
+    async def go():
+        async with _client(h) as c:
+            await config_tenant._lire_couche("organisation", "acme", "_organisation", client=c)
+    asyncio.run(go())
+    assert vus == [None]

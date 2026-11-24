@@ -35,6 +35,7 @@ import logging
 import math
 import os
 
+import asyncio
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -127,8 +128,18 @@ async def indexer(specs: list, client: httpx.AsyncClient | None = None) -> bool:
         return False
     proprietaire = client is None
     client = client or httpx.AsyncClient(timeout=30)
+    textes = [_texte(s) for s in specs]
+    vecteurs: list = []
     try:
-        vecteurs = await _embed_lot(client, [_texte(s) for s in specs])
+        # PAR LOTS : un seul appel pour tous les outils (~250) dépassait le délai sur Ollama CPU
+        # (~0,15 s/texte → 40 s). Tout ou rien : un lot en échec laisse l'index vide.
+        for i in range(0, len(textes), TAILLE_LOT_EMBED):
+            lot = textes[i:i + TAILLE_LOT_EMBED]
+            v = await _embed_lot(client, lot)
+            if not v or len(v) != len(lot):
+                vecteurs = []
+                break
+            vecteurs.extend(v)
     finally:
         if proprietaire:
             await client.aclose()
@@ -140,6 +151,32 @@ async def indexer(specs: list, client: httpx.AsyncClient | None = None) -> bool:
     _pret = True
     logger.info("Routage d'outils : %d outils indexés (modèle %s)", len(_index), EMBEDDING_MODEL)
     return True
+
+
+# Délais (s) entre deux tentatives d'indexation quand la Gateway/Ollama n'est pas prête au
+# démarrage du Cœur (modèle d'embeddings froid → timeout). Borné : ~8 min au total, puis on
+# garde le repli « tous les outils » sans réessayer indéfiniment.
+DELAIS_REESSAI_S = (15, 30, 60, 120, 300)
+# Taille des lots d'embeddings à l'indexation (≈5 s par lot sur Ollama CPU, sous le délai de 30 s).
+TAILLE_LOT_EMBED = int(os.getenv("ROUTAGE_TAILLE_LOT", "32"))
+
+
+async def reessayer_indexation(specs: list, *, delais=DELAIS_REESSAI_S, dormir=asyncio.sleep,
+                               client: httpx.AsyncClient | None = None) -> bool:
+    """Retente `indexer` après chaque délai tant que l'index n'est pas prêt. Renvoie True dès
+    qu'il l'est, False si le routage est désactivé ou si toutes les tentatives échouent.
+
+    Avant ce correctif l'indexation n'était tentée QU'UNE fois au démarrage : un timeout
+    d'embeddings à froid désactivait le routage jusqu'au prochain redémarrage du Cœur."""
+    if not ACTIF or not specs:
+        return False
+    for delai in delais:
+        if _pret:
+            return True
+        await dormir(delai)
+        if await indexer(specs, client=client):
+            return True
+    return _pret
 
 
 def _classer(vec_requete, noms: list) -> list:

@@ -235,3 +235,84 @@ if __name__ == "__main__":
             fn()
             print(f"  ✓ {nom}")
     print("\n✅ TOUS LES TESTS PASSENT")
+
+
+# ── Nouvelles tentatives d'indexation (Gateway/Ollama pas prêts au démarrage du Cœur) ─────────
+
+def _embed_qui_echoue_n_fois(n):
+    appels = {"n": 0}
+    async def embed(client, textes):
+        appels["n"] += 1
+        return None if appels["n"] <= n else [_vecteur(t) for t in textes]
+    return embed, appels
+
+
+async def _sans_attente(_s):
+    return None
+
+
+def test_reessai_finit_par_indexer():
+    r.reinitialiser(); r.ACTIF = True
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(2)
+    try:
+        ok = asyncio.run(r.reessayer_indexation(_outils(), delais=(1, 1, 1, 1),
+                                                dormir=_sans_attente, client=object()))
+        assert ok is True and r._pret is True and appels["n"] == 3
+    finally:
+        r.reinitialiser()
+
+
+def test_reessai_est_borne_et_n_indexe_rien_si_toujours_ko():
+    r.reinitialiser(); r.ACTIF = True
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(99)
+    try:
+        ok = asyncio.run(r.reessayer_indexation(_outils(), delais=(1, 1, 1),
+                                                dormir=_sans_attente, client=object()))
+        assert ok is False and r._pret is False and appels["n"] == 3   # une tentative / délai
+    finally:
+        r.reinitialiser()
+
+
+def test_reessai_inerte_si_routage_desactive_ou_deja_pret():
+    r.reinitialiser(); r.ACTIF = False
+    r._embed_lot, appels = _embed_qui_echoue_n_fois(0)
+    try:
+        assert asyncio.run(r.reessayer_indexation(_outils(), delais=(1,), dormir=_sans_attente,
+                                                  client=object())) is False
+        assert appels["n"] == 0                       # désactivé : aucun appel Gateway
+    finally:
+        r.reinitialiser()
+
+
+# ── Indexation PAR LOTS (un seul gros lot dépassait le délai sur Ollama CPU : ~0,15 s/outil) ──
+
+def test_indexer_decoupe_en_lots():
+    r.reinitialiser(); r.ACTIF = True
+    tailles = []
+    async def embed(client, textes):
+        tailles.append(len(textes))
+        return [_vecteur(t) for t in textes]
+    r._embed_lot = embed
+    specs = [_spec(f"outil_{i}", f"theme numero {i}") for i in range(70)]
+    try:
+        assert asyncio.run(r.indexer(specs, client=object())) is True
+        assert tailles == [r.TAILLE_LOT_EMBED] * (70 // r.TAILLE_LOT_EMBED) + \
+            ([70 % r.TAILLE_LOT_EMBED] if 70 % r.TAILLE_LOT_EMBED else [])
+        assert len(r._index) == 70
+    finally:
+        r.reinitialiser()
+
+
+def test_un_lot_en_echec_laisse_l_index_vide():
+    r.reinitialiser(); r.ACTIF = True
+    appels = {"n": 0}
+    async def embed(client, textes):
+        appels["n"] += 1
+        return None if appels["n"] == 2 else [_vecteur(t) for t in textes]
+    r._embed_lot = embed
+    specs = [_spec(f"outil_{i}", f"theme {i}") for i in range(r.TAILLE_LOT_EMBED * 3)]
+    try:
+        assert asyncio.run(r.indexer(specs, client=object())) is False
+        assert r._pret is False and not r._index      # tout ou rien : jamais d'index partiel
+    finally:
+        r.reinitialiser()
