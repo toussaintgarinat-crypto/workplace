@@ -29,8 +29,9 @@ class _FauxClient:
     """Client HTTP factice : sert /model/info et enregistre les ajouts/suppressions."""
 
     def __init__(self, actuels: dict, echouer_sur: str | None = None,
-                 info_en_plus: list | None = None):
+                 info_en_plus: list | None = None, perimes: set | None = None):
         self._actuels = actuels
+        self._perimes = perimes or set()
         self._info_en_plus = info_en_plus or []
         self._echouer_sur = echouer_sur
         self.ajouts, self.suppressions = [], []
@@ -43,7 +44,12 @@ class _FauxClient:
         return False
 
     def get(self, url, **k):
-        data = [{"model_name": n, "model_info": {"id": i, "db_model": True}}
+        def _emp(n):
+            if n in self._perimes:
+                return sync.empreinte("ancienne-cle-morte")
+            return sync.empreinte("anonymous" if n.startswith("kilo/") else sync.OPENROUTER_API_KEY)
+        data = [{"model_name": n, "model_info": {"id": i, "db_model": True,
+                                                 "cle_empreinte": _emp(n)}}
                 for n, i in self._actuels.items()]
         return _Resp({"data": data + self._info_en_plus})
 
@@ -53,6 +59,8 @@ class _FauxClient:
                 raise RuntimeError("LiteLLM a refusé")
             self.ajouts.append(json["model_name"])
             self.params[json["model_name"]] = json["litellm_params"]
+            self.infos = getattr(self, "infos", {})
+            self.infos[json["model_name"]] = json.get("model_info")
         elif url.endswith("/model/delete"):
             self.suppressions.append(json["id"])
         return _Resp({})
@@ -70,12 +78,12 @@ class _Resp:
 
 
 def _preparer(monkeypatch, catalogue, actuels, echouer_sur=None, kilo=None,
-              info_en_plus=None):
+              info_en_plus=None, perimes=None):
     """`catalogue` = catalogue BRUT d'OpenRouter, `kilo` = celui de Kilo (vide par défaut).
 
     Une valeur `Exception` simule un catalogue injoignable pour cette source.
     """
-    faux = _FauxClient(actuels, echouer_sur, info_en_plus)
+    faux = _FauxClient(actuels, echouer_sur, info_en_plus, perimes)
     bruts = {"openrouter": catalogue, "kilo": kilo if kilo is not None else []}
 
     def _brut(source):
@@ -342,3 +350,45 @@ def test_kilo_exclure_compare_par_segment(monkeypatch):
                            _modele("poolside/laguna-s-2.1:free")])
     sync.synchroniser()
     assert sorted(faux.ajouts) == ["kilo/nvidia-autre/m", "kilo/poolside/laguna-s-2.1"]
+
+
+# ── Rotation de clé : un modèle enregistré avec l'ancienne clé doit être RECRÉÉ ─────────────
+# Incident 2026-11-24 : la clé OpenRouter avait changé, mais le sync laissait les `free/*`
+# « inchangés » avec leur clé littérale périmée en base (401 « User not found »).
+
+def test_modele_enregistre_avec_une_ancienne_cle_est_recree(monkeypatch):
+    faux = _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")],
+                     actuels={"free/google/gemma-4-31b-it": "id-gemma"},
+                     perimes={"free/google/gemma-4-31b-it"})
+    r = sync.synchroniser()
+    assert faux.suppressions == ["id-gemma"]
+    assert faux.ajouts == ["free/google/gemma-4-31b-it"]
+    assert faux.params["free/google/gemma-4-31b-it"]["api_key"] == sync.OPENROUTER_API_KEY
+    assert r["inchanges"] == 0
+
+
+def test_le_modele_recree_porte_l_empreinte_de_la_cle_courante(monkeypatch):
+    faux = _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")], actuels={})
+    sync.synchroniser()
+    assert faux.infos["free/google/gemma-4-31b-it"] == {
+        "cle_empreinte": sync.empreinte(sync.OPENROUTER_API_KEY)}
+
+
+def test_modele_sans_empreinte_ancien_format_est_recree_une_fois(monkeypatch):
+    faux = _preparer(monkeypatch, catalogue=[_modele("google/gemma-4-31b-it:free")],
+                     actuels={"free/google/gemma-4-31b-it": "id-vieux"})
+    # simule un modèle créé avant ce correctif : /model/info ne porte aucune empreinte
+    orig = faux.get
+    def get_sans_empreinte(url, **k):
+        r = orig(url, **k)
+        for m in r.json()["data"]:
+            m["model_info"].pop("cle_empreinte", None)
+        return r
+    faux.get = get_sans_empreinte
+    sync.synchroniser()
+    assert faux.suppressions == ["id-vieux"] and faux.ajouts == ["free/google/gemma-4-31b-it"]
+
+
+def test_l_empreinte_ne_contient_pas_la_cle():
+    e = sync.empreinte("sk-or-v1-secret")
+    assert "secret" not in e and len(e) == 12

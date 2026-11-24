@@ -128,11 +128,31 @@ ASYNC_TIMEOUT = float(os.environ.get("OUTILS_ASYNC_TIMEOUT", "600"))
 ASYNC_POLL = float(os.environ.get("OUTILS_ASYNC_POLL", "5"))
 
 
+# Coupures transitoires du sondage : uvicorn ferme les connexions inactives après 5 s, soit
+# exactement notre pas de sondage (ASYNC_POLL) → « Server disconnected without sending a
+# response » sur une connexion réutilisée au mauvais moment (incident 2026-11-24).
+_POLL_ERREURS_MAX = 3
+
+
 async def _poll_async(poll_url: str, headers: dict | None, brique: str,
                       job_id: str) -> str:
-    async with httpx.AsyncClient(timeout=None, headers=headers) as c:
+    # Pas de réutilisation de connexion au-delà de 1 s (< délai keep-alive serveur).
+    limites = httpx.Limits(keepalive_expiry=1.0)
+    async with httpx.AsyncClient(timeout=None, headers=headers, limits=limites) as c:
+        coupures = 0
         while True:
-            r = await c.request("GET", poll_url, headers=headers)
+            try:
+                r = await c.request("GET", poll_url, headers=headers)
+            except (httpx.TransportError, httpx.RemoteProtocolError) as e:
+                coupures += 1
+                if coupures >= _POLL_ERREURS_MAX:
+                    return json.dumps({"ok": False, "brique": brique, "job_id": job_id,
+                                       "message": f"Suivi du job interrompu ({coupures} coupures "
+                                                  f"de suite) : {e}. Le job peut tourner encore : "
+                                                  f"GET {poll_url}"}, ensure_ascii=False)
+                await asyncio.sleep(ASYNC_POLL)
+                continue
+            coupures = 0
             try:
                 data = r.json()
             except ValueError:

@@ -128,6 +128,42 @@ def briques_endormissables(registre) -> list[str]:
     return [n for n in registre.briques if config(registre, n)]
 
 
+def _liste_dormeuses(registre) -> str:
+    """« synopsis (rôle video), connecteurs » — pour guider l'assistant quand il se trompe."""
+    morceaux = []
+    for n in briques_endormissables(registre):
+        role = (registre.briques.get(n) or {}).get("role")
+        morceaux.append(f"{n} (rôle {role})" if role and role != n else n)
+    return ", ".join(morceaux) or "aucune"
+
+
+def resoudre(registre, nom: str) -> tuple[str, str | None]:
+    """Traduit ce que l'assistant a écrit en NOM DE BRIQUE du registre. Renvoie (brique, note).
+
+    Incident 2026-11-24 : `synopsis` a pour rôle « video » alors qu'une autre brique s'appelle
+    `video`, et sa capacité s'appelle `video_resumer` ; l'assistant a visé `video` et
+    `atelier-images-video`. Ordre : nom exact → nom d'une CAPACITÉ (renvoie sa brique) → RÔLE
+    partagé (la seule brique qui dort) → nom tel quel. `note` explique la correction ou, si la
+    brique visée ne dort pas, liste celles qui dorment."""
+    brut = (nom or "").strip()
+    briques = registre.briques
+    exact = brut if brut in briques else next(
+        (b for b in briques if b.lower() == brut.lower().replace("_", "-")), None)
+    if exact:
+        if config(registre, exact):
+            return exact, None
+        return exact, (f"« {exact} » ne dort pas (pas d'option sommeil, ou protégée). "
+                       f"Briques qui peuvent dormir : {_liste_dormeuses(registre)}.")
+    for b, m in briques.items():
+        if brut in [c.get("nom") for c in (m or {}).get("capacites") or []]:
+            return b, f"« {brut} » est un outil de la brique « {b} »."
+    memes_roles = [b for b, m in briques.items() if (m or {}).get("role") == brut and config(registre, b)]
+    if len(memes_roles) == 1:
+        return memes_roles[0], f"« {brut} » désigne la brique « {memes_roles[0]} » (rôle {brut})."
+    return brut, (f"« {brut} » n'est pas une brique connue. "
+                  f"Briques qui peuvent dormir : {_liste_dormeuses(registre)}.")
+
+
 # ── État ─────────────────────────────────────────────────────────────────────
 
 async def _etats_conteneurs(cfg: dict) -> list[dict | None]:

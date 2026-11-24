@@ -55,7 +55,7 @@ OUTILS: list[dict] = [
         "name": "brique_etat",
         "description": "État de sommeil des briques qui peuvent dormir (eveillee, endormie, demarrage, inconnue). "
                        "Sans paramètre : toutes ; avec `brique` : une seule. Lecture seule.",
-        "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique (ex. geo, video, images)."}}, [])}},
+        "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique qui dort (voir brique_etat sans paramètre). Un nom d'outil (ex. video_resumer) est accepté et traduit en sa brique."}}, [])}},
     {"type": "function", "function": {
         "name": "brique_reveiller",
         "description": "Réveille une brique endormie et attend qu'elle soit prête (quelques secondes). "
@@ -575,6 +575,10 @@ async def executer(nom: str, args: dict, registre) -> str:
 
 
 async def _executer(nom: str, args: dict, registre) -> str:
+    # « qui » apparaît dans les messages d'erreur. Pour une capacité de manifeste on nomme la
+    # BRIQUE puis l'outil : « Brique injoignable (video_resumer) » faisait croire à l'assistant
+    # que `video_resumer` était une brique (incident Telegram 2026-11-24).
+    qui = nom
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             for dispatch in _DISPATCHERS:
@@ -584,6 +588,7 @@ async def _executer(nom: str, args: dict, registre) -> str:
             # — CAPACITÉS DYNAMIQUES (S64) : routées par le catalogue des manifests —
             cap = _capacites_dynamiques(registre).get(nom)
             if cap:
+                qui = f"{cap['brique']} · outil {nom}"
                 # Brique endormie (S243) : on la réveille AVANT l'appel. Une action pas encore
                 # confirmée ne réveille rien : `_appel_dynamique` ne fera que demander l'accord.
                 if not (cap.get("action") and not (args or {}).get("confirme")):
@@ -595,10 +600,10 @@ async def _executer(nom: str, args: dict, registre) -> str:
     except ValueError as e:
         return f"Impossible : {e}"
     except cycle_de_vie.EchecCycle as e:
-        return f"Échec ({nom}) : {e}"
+        return f"Échec ({qui}) : {e}"
     except RuntimeError as e:  # brique absente du registre
-        return f"Indisponible ({nom}) : {e}"
+        return f"Indisponible ({qui}) : {e}"
     except httpx.HTTPError as e:
-        return f"Brique injoignable ({nom}) : {e}"
+        return f"Brique injoignable ({qui}) : {e}"
     except Exception as e:  # noqa: BLE001
-        return f"Erreur ({nom}) : {e}"
+        return f"Erreur ({qui}) : {e}"

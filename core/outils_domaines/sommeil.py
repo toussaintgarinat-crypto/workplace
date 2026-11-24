@@ -18,6 +18,9 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
     if nom not in ("brique_etat", "brique_reveiller", "brique_endormir"):
         return None
     brique = ((args or {}).get("brique") or "").strip()
+    note = None
+    if brique:
+        brique, note = sommeil.resoudre(registre, brique)
 
     if nom == "brique_etat":
         if brique:
@@ -25,13 +28,16 @@ async def dispatch(nom: str, args: dict, registre, client) -> str | None:
             res = {"brique": brique, "etat": s}
             if s == "inconnue":
                 res["message"] = (f"« {brique} » n'a pas d'option sommeil, ou son conteneur est "
-                                  "introuvable : son état de sommeil n'est pas connu.")
+                                  "introuvable : son état de sommeil n'est pas connu. " + (note or ""))
+            elif note:
+                res["message"] = note
             return _j(res)
         return _j({"briques": [{"brique": n, "etat": await sommeil.etat(registre, n)}
                                for n in sommeil.briques_endormissables(registre)]})
 
     if not brique:
         return "Précise la brique (paramètre « brique »), ex. brique_reveiller(brique=\"geo\")."
-    if nom == "brique_reveiller":
-        return _j(await sommeil.reveiller(registre, brique))
-    return _j(await sommeil.endormir(registre, brique))
+    res = await (sommeil.reveiller if nom == "brique_reveiller" else sommeil.endormir)(registre, brique)
+    if note:
+        res["message"] = f"{res.get('message', '')} {note}".strip()
+    return _j(res)
