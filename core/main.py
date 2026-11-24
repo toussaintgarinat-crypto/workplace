@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import auth
 import graphe_apprentissage
 import horloge
+import sommeil
 import modeles_gateway
 import orchestrateur
 import outils
@@ -58,10 +59,14 @@ async def lifespan(app: FastAPI):
     # `forge/defaut` vit en base LiteLLM depuis S240 : le Cœur veille à ce qu'il existe
     # (base vide au premier démarrage, ou réinitialisée) selon le choix de ⚙ Cerveau.
     tache_forge = asyncio.create_task(modeles_gateway.veiller_forge())
+    # Briques qui dorment (S243) : endort celles qui n'ont pas servi depuis leur délai
+    # d'inactivité. Inerte tant que SOMMEIL_ACTIF n'est pas posé.
+    tache_sommeil = asyncio.create_task(sommeil.boucle(registre))
     yield
     tache_proactif.cancel()
     tache_horloge.cancel()
     tache_forge.cancel()
+    tache_sommeil.cancel()
 
 
 app = FastAPI(

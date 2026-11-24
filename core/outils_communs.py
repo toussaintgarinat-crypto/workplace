@@ -7,6 +7,8 @@ import json
 import os
 import uuid
 import httpx
+
+import sommeil
 import contexte_tenant
 import orchestrateur
 
@@ -563,6 +565,10 @@ async def _etat_briques(client: httpx.AsyncClient, registre) -> dict:
         entree = {"nom": nom, "role": manifest.get("role"), "sante": "inconnu"}
         # Chemin de santé propre à chaque brique (certaines exposent /health, d'autres /sante) :
         # on dérive le chemin de l'url_sante du manifest, et l'hôte du registre.
+        if await sommeil.etat(registre, nom) == "endormie":   # S243 : dort volontairement
+            entree["sante"] = "endormie"
+            briques.append(entree)
+            continue
         url_sante = manifest.get("url_sante") or ""
         chemin = "/" + url_sante.split("/", 3)[-1] if url_sante.count("/") >= 3 else "/sante"
         try:

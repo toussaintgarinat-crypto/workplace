@@ -28,6 +28,7 @@ import conscience
 import cycle_de_vie
 import droits
 import orchestrateur
+import sommeil
 
 
 # ── Catalogue (specs function-calling) ───────────────────────────────────────
@@ -50,6 +51,22 @@ OUTILS: list[dict] = [
         "name": "etat_briques",
         "description": "Liste les briques de la solution (Ingestion, Audit, Générateur, Données, Mémoire…) et leur santé.",
         "parameters": _p({}, [])}},
+    {"type": "function", "function": {
+        "name": "brique_etat",
+        "description": "État de sommeil des briques qui peuvent dormir (eveillee, endormie, demarrage, inconnue). "
+                       "Sans paramètre : toutes ; avec `brique` : une seule. Lecture seule.",
+        "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique (ex. geo, video, images)."}}, [])}},
+    {"type": "function", "function": {
+        "name": "brique_reveiller",
+        "description": "Réveille une brique endormie et attend qu'elle soit prête (quelques secondes). "
+                       "Inutile avant d'appeler un de ses outils : le Cœur la réveille tout seul.",
+        "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique à réveiller."}}, ["brique"])}},
+    {"type": "function", "function": {
+        "name": "brique_endormir",
+        "description": "Endort une brique peu utilisée pour libérer de la RAM (elle se réveille à la prochaine "
+                       "demande). Réservé à l'admin du cerveau. Refusé pour les briques vitales (Cœur, Gateway, "
+                       "Keycloak, mémoire, agenda) et celles qui n'ont pas opté pour le sommeil.",
+        "parameters": _p({"brique": {"type": "string", "description": "Nom de la brique à endormir."}}, ["brique"])}},
     {"type": "function", "function": {
         "name": "mes_capacites",
         "description": "Décris-toi JUSTE : ta propre anatomie (tes organes/briques) et la "
@@ -465,7 +482,7 @@ from outils_communs import (  # noqa: F401
 _DISPATCHERS = (
     _dom.systeme.dispatch, _dom.amelioration.dispatch, _dom.documents.dispatch,
     _dom.agenda.dispatch, _dom.forge.dispatch, _dom.usine.dispatch,
-    _dom.studio.dispatch, _dom.transcription.dispatch,
+    _dom.studio.dispatch, _dom.transcription.dispatch, _dom.sommeil.dispatch,
 )
 
 
@@ -550,6 +567,12 @@ async def _executer(nom: str, args: dict, registre) -> str:
             # — CAPACITÉS DYNAMIQUES (S64) : routées par le catalogue des manifests —
             cap = _capacites_dynamiques(registre).get(nom)
             if cap:
+                # Brique endormie (S243) : on la réveille AVANT l'appel. Une action pas encore
+                # confirmée ne réveille rien : `_appel_dynamique` ne fera que demander l'accord.
+                if not (cap.get("action") and not (args or {}).get("confirme")):
+                    echec = await sommeil.assurer_eveillee(registre, cap["brique"])
+                    if echec:
+                        return echec
                 return await _appel_dynamique(client, cap, args)
             return f"Outil inconnu : {nom}"
     except ValueError as e:

@@ -9,6 +9,7 @@
   "chemin_source": "briques/synopsis",
   "port": 6090,
   "url_sante": "http://host.docker.internal:6090/sante",
+  "sommeil": {"conteneurs": ["workplace-synopsis"], "inactivite_min": 30, "attente_s": 90},
   "depends_on": [
     "gateway",
     "transcription"

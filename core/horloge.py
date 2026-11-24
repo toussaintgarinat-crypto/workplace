@@ -42,6 +42,8 @@ from pathlib import Path
 
 import httpx
 
+import sommeil
+
 import orchestrateur
 
 logger = logging.getLogger(__name__)
@@ -179,6 +181,12 @@ async def _executer(client: httpx.AsyncClient, tache: dict, quand: datetime) -> 
     except RuntimeError as e:
         _enregistrer(brique, nom, statut="indisponible", resultat=str(e), quand=quand)
         return {"brique": brique, "tache": nom, "statut": "indisponible", "detail": str(e)}
+
+    # Brique endormie (S243) : on la réveille avant d'appeler sa tâche planifiée.
+    echec_reveil = await sommeil.assurer_eveillee(tache["_registre"], brique)
+    if echec_reveil:
+        _enregistrer(brique, nom, statut="indisponible", resultat=echec_reveil, quand=quand)
+        return {"brique": brique, "tache": nom, "statut": "indisponible", "detail": echec_reveil}
 
     url = f"{base}{tache['chemin']}"
     try:
