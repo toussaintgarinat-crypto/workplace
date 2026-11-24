@@ -22,6 +22,7 @@ par le Cœur depuis ⚙ Cerveau (S240 : `forge/defaut`, `perso/*`), hors de ses 
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 from dataclasses import dataclass
 
@@ -146,6 +147,15 @@ def nom_workplace(id_amont: str, prefixe: str = PREFIXE) -> str:
     return f"{prefixe}{chemin}/{slug}"
 
 
+def empreinte(cle: str) -> str:
+    """Empreinte courte (non réversible) de la clé amont, posée dans `model_info` à la création.
+
+    LiteLLM stocke la clé LITTÉRALE dans la base à l'ajout d'un modèle ; si la clé change
+    ensuite (rotation), les modèles déjà en base gardent l'ancienne et répondent 401. Comparer
+    cette empreinte à celle de la clé courante permet de les recréer (incident 2026-11-24)."""
+    return hashlib.sha256((cle or "").encode()).hexdigest()[:12]
+
+
 def modeles_actuels(client: httpx.Client) -> list[dict]:
     """Modèles AJOUTÉS EN BASE servis par LiteLLM : [{nom, id}], pour le différentiel.
 
@@ -160,7 +170,8 @@ def modeles_actuels(client: httpx.Client) -> list[dict]:
         info = m.get("model_info") or {}
         if info.get("db_model") is False:
             continue
-        actuels.append({"nom": m.get("model_name", ""), "id": info.get("id", "")})
+        actuels.append({"nom": m.get("model_name", ""), "id": info.get("id", ""),
+                        "empreinte": info.get("cle_empreinte")})
     return actuels
 
 
@@ -201,6 +212,8 @@ def _synchroniser_source(client: httpx.Client, source: Source, actuels_tous: lis
     voulus = {nom_workplace(m["id"], source.prefixe): m
               for m in _selection(source, exploitables)}
     actuels = {a["nom"]: a["id"] for a in actuels_tous if a["nom"].startswith(source.prefixe)}
+    empreintes = {a["nom"]: a.get("empreinte") for a in actuels_tous
+                  if a["nom"].startswith(source.prefixe)}
     # Catalogue vide OU inexploitable (aucun gratuit à outils) alors que la source sert déjà
     # des modèles : anomalie (catalogue tronqué, format changé) bien plus probable qu'une
     # disparition de TOUS ses gratuits → on ne vide pas la cascade, on le signale (revue S239,
@@ -212,12 +225,27 @@ def _synchroniser_source(client: httpx.Client, source: Source, actuels_tous: lis
 
     a_ajouter = [n for n in voulus if n not in actuels]
     a_retirer = [n for n in actuels if n not in voulus]
+    # Modèles voulus ET présents mais enregistrés avec une AUTRE clé (ou sans empreinte : créés
+    # avant ce correctif) : on les supprime puis on les recrée avec la clé courante.
+    emp_courante = empreinte(source.cle)
+    a_rafraichir = [n for n in voulus if n in actuels and empreintes.get(n) != emp_courante]
 
     ajoutes, retires, erreurs = [], [], []
+    rafraichis = []
+    for nom in a_rafraichir:
+        try:
+            r = client.post(f"{LITELLM_URL}/model/delete", headers=_entetes(),
+                            timeout=_TIMEOUT, json={"id": actuels[nom]})
+            r.raise_for_status()
+            a_ajouter.append(nom)     # recréé juste après, avec la clé courante
+            rafraichis.append(nom)
+        except Exception as e:  # noqa: BLE001
+            erreurs.append(f"rafraîchissement {nom} : {str(e)[:120]}")
     for nom in a_ajouter:
         try:
             r = client.post(f"{LITELLM_URL}/model/new", headers=_entetes(), timeout=_TIMEOUT,
-                            json={"model_name": nom, "litellm_params": _params(source, voulus[nom])})
+                            json={"model_name": nom, "litellm_params": _params(source, voulus[nom]),
+                                  "model_info": {"cle_empreinte": emp_courante}})
             r.raise_for_status()
             ajoutes.append(nom)
         except Exception as e:  # noqa: BLE001
@@ -237,6 +265,7 @@ def _synchroniser_source(client: httpx.Client, source: Source, actuels_tous: lis
     # en échec se comptait comme un modèle en place, et le rapport annonçait « 12 inchangés »
     # alors que les 12 ajouts venaient d'échouer — exactement ce qu'on veut voir.
     return {"statut": "ok", "ajoutes": ajoutes, "retires": retires,
+            "rafraichis": rafraichis,
             "inchanges": len(voulus) - len(a_ajouter), "erreurs": erreurs}
 
 
