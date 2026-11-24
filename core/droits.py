@@ -23,6 +23,8 @@ RESERVES = frozenset({
     "sauvegarde_usb_restaurer", "sauvegarde_usb_lancer",
     # Auto-amélioration : un addendum appliqué entre dans le prompt système (S69/S70).
     "amelioration_decider", "capacite_decider", "curateur_lancer",
+    # Sommeil (S243) : éteindre une brique PARTAGÉE gêne tous les utilisateurs ; la réveiller non.
+    "brique_endormir",
 })
 
 

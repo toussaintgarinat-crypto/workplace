@@ -8,6 +8,7 @@ import json
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+import sommeil
 from etat import registre
 import assistant
 import auth
@@ -259,6 +260,11 @@ async def sante_globale():
             info: dict = {"famille": brique.get("famille", "autre")}
             if not url:
                 resultats[nom] = {**info, "statut": "non_applicable"}
+                continue
+            # Brique endormie volontairement (S243) : ni ping ni fausse alerte. « endormie »
+            # n'est dit que si le conteneur existe ET est arrêté (sinon : vrai ping, vraie panne).
+            if await sommeil.etat(registre, nom) == "endormie":
+                resultats[nom] = {**info, "statut": "endormie"}
                 continue
             try:
                 r = await client.get(url)

@@ -9,6 +9,7 @@
   "chemin_source": "~/Desktop/Workplace/briques/connecteurs",
   "port": 6200,
   "url_sante": "http://host.docker.internal:6200/sante",
+  "sommeil": {"conteneurs": ["workplace_connecteurs"], "inactivite_min": 30, "attente_s": 90},
   "depends_on": [],
   "offre": [
     "connecteurs_tiers_airbyte",

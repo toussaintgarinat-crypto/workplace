@@ -3668,7 +3668,7 @@ function carteHTML(b, h) {
   let healthHTML = '';
   if (b.url_sante) {
     const cls = h.statut === 'ok' ? 'ok' : h.statut === 'inaccessible' ? 'inaccessible' : 'inconnu';
-    const label = h.statut === 'ok' ? '● en ligne' : h.statut === 'inaccessible' ? '● hors ligne' : '● —';
+    const label = h.statut === 'ok' ? '● en ligne' : h.statut === 'inaccessible' ? '● hors ligne' : h.statut === 'endormie' ? '● endormie (se réveille à la demande)' : '● —';
     healthHTML = `<span class="health health-${escAttr(cls)}">${escHtml(label)}</span>`;
   } else {
     healthHTML = `<span class="health health-inconnu">non exposé</span>`;

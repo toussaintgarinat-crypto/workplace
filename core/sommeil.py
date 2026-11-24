@@ -245,3 +245,23 @@ async def balayer(registre, maintenant: float | None = None) -> list[str]:
                 logger.info("sommeil : « %s » endormie après %.0f min d'inactivité.",
                             nom, (t - derniere) / 60)
     return dormies
+
+
+INTERVALLE_BALAYAGE_S = float(os.getenv("SOMMEIL_INTERVALLE_S", "300"))
+
+
+async def boucle(registre) -> None:
+    """Tâche de fond (démarrée dans le lifespan du Cœur) : balaie toutes les
+    `SOMMEIL_INTERVALLE_S` secondes. Une erreur (Docker muet…) est journalisée et la boucle
+    continue : le sommeil ne doit jamais faire tomber le Cœur."""
+    await asyncio.sleep(60)  # laisser les briques démarrer
+    while True:
+        try:
+            dormies = await balayer(registre)
+            if dormies:
+                logger.info("Sommeil : %d brique(s) endormie(s) : %s", len(dormies), ", ".join(dormies))
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("Sommeil boucle : %s", ex)
+        await asyncio.sleep(INTERVALLE_BALAYAGE_S)
