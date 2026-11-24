@@ -111,7 +111,16 @@ PROMPT_SYSTEME = (
     "cible après son accord invalide l'accord — il faut redemander.\n"
     "- « décrocher » retire vraiment l'entreprise des bases centrales (vers un "
     "dossier portable) : préviens-en l'utilisateur avant de confirmer.\n"
-    "- Si un outil échoue, explique-le simplement et continue.\n\n"
+    "- PATIENCE avant de renoncer : certaines tâches sont LONGUES (résumer une vidéo : 2 à 3 "
+    "minutes ; transcription, export, génération d'images ou de vidéo). Appelle l'outil et "
+    "ATTENDS son résultat — ne conclus jamais à l'échec pendant qu'il tourne. Une brique peut "
+    "dormir : le Cœur la réveille tout seul avant l'appel. Si un outil échoue : (1) lis "
+    "l'erreur, elle nomme la BRIQUE ; (2) si elle dort ou démarre, `brique_reveiller` puis "
+    "RETENTE l'outil ; (3) retente encore une fois ; seulement après deux échecs, explique-le "
+    "simplement. Ne dis JAMAIS « je n'ai pas cet outil » sans avoir appelé `mes_capacites`, et "
+    "ne remplace pas un outil dédié par une recherche web (résumer une vidéo → "
+    "`video_resumer`).\n"
+    "- Si un outil échoue malgré tout, explique-le simplement et continue.\n\n"
     "Workflow AMÉLIORER : quand l'utilisateur dit « Je veux améliorer la solution » ou clique"
     " [🛠️ Améliorer], pose-lui UNE seule question courte (« Qu'est-ce que tu veux ajouter"
     " ou changer ? »), attends sa réponse, puis appelle `dev_demander(intention=<sa réponse>)`."
@@ -269,7 +278,8 @@ async def converser(messages: list[dict], registre,
         # hors du top_k → l'assistant improviserait un mauvais outil (cf. requete_depuis_messages).
         outils_actifs = await routage_outils.filtrer_outils(
             routage_outils.requete_depuis_messages(messages), outils_actifs,
-            client=client, toujours=outils.noms_socle(registre))
+            client=client,
+            toujours=outils.noms_socle(registre) | routage_outils.outils_recents(messages))
 
         # S143 : guardrail instancié par conversation (jamais en global).
         # S221 : il porte le validateur d'arguments — le registre est capturé ici, le

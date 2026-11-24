@@ -63,7 +63,7 @@ services:
       # sémantique. `text-embedding-3-small` n'y est pas enregistré (→ 400) ; le passer ici exige
       # de l'ajouter au litellm_config.yaml avec une clé OpenAI/OpenRouter.
       - ROUTAGE_EMBEDDING_MODEL=${ROUTAGE_EMBEDDING_MODEL:-embedding/all-minilm}
-      - ROUTAGE_TOP_K=${ROUTAGE_TOP_K:-8}
+      - ROUTAGE_TOP_K=${ROUTAGE_TOP_K:-12}
       - CASCADE_AUTO=1
       - REPLI_PAYANT=deepseek/deepseek-v4-flash
       - CASCADE_FREE_N=3
