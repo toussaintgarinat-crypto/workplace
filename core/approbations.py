@@ -234,6 +234,7 @@ def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str
     emp = accord_action.empreinte(capacite, args)
     user = _utilisateur(utilisateur)
     org = org_id or contexte_tenant.contexte_actuel().org_id
+    deja = {p: preuve_valide(p, (args or {}).get("app"), user, now) for p in prerequis}
     with _conn() as c:
         ex = c.execute(
             "SELECT * FROM approbations WHERE capacite=? AND empreinte=? AND sensibilite=? "
@@ -249,7 +250,7 @@ def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (id_, capacite, emp, resume, sensibilite, origine or ORIGINE.get(), "en_attente",
              now, now + ttl_secondes(sensibilite),
-             json.dumps({p: False for p in prerequis}), code, user, org,
+             json.dumps(deja), code, user, org,
              json.dumps(args or {}, default=str)))
         _journaliser(c, id_, "creee",
                      detail=f"{sensibilite}/{origine or ORIGINE.get()}/{user}", maintenant=now)
@@ -431,6 +432,63 @@ def satisfaire_prerequis(id_: str, nom: str) -> bool:
         return bool(p) and all(p.values())
 
 
+# ── Preuves (S247 : « sauvegarde vérifiée ») ─────────────────────────────────
+
+PREUVE_TTL_MAX_S = 24 * 3600
+
+
+def _norm_cle(cle) -> str:
+    return str(cle or "").strip().lower()
+
+
+def _assurer_preuves(c) -> None:
+    c.execute("""CREATE TABLE IF NOT EXISTS preuves (
+                    nom TEXT NOT NULL, cle TEXT NOT NULL, utilisateur TEXT NOT NULL,
+                    preuve_id TEXT NOT NULL, expire_a REAL NOT NULL,
+                    PRIMARY KEY (nom, cle, utilisateur))""")
+
+
+def preuve_valide(nom: str, cle: str, utilisateur: str, maintenant: float) -> bool:
+    with _conn() as c:
+        _assurer_preuves(c)
+        r = c.execute("SELECT expire_a FROM preuves WHERE nom=? AND cle=? AND utilisateur=?",
+                      (nom, _norm_cle(cle), utilisateur)).fetchone()
+    return bool(r and r["expire_a"] > maintenant)
+
+
+def enregistrer_preuve(nom: str, cles: list[str], preuve_id: str, expire_a: float, *,
+                       utilisateur: str | None = None,
+                       maintenant: float | None = None) -> list[str]:
+    """Enregistre une preuve (par utilisateur ET par clé d'app) puis lève ce prérequis sur les
+    demandes `en_attente` de CET utilisateur visant cette app. Renvoie les ids des demandes dont
+    tous les prérequis sont désormais réunis (à renotifier avec boutons)."""
+    now = maintenant if maintenant is not None else time.time()
+    user = _utilisateur(utilisateur)
+    expire_a = min(float(expire_a), now + PREUVE_TTL_MAX_S)
+    cles_n = {_norm_cle(k) for k in cles if _norm_cle(k)}
+    if expire_a <= now or not cles_n or not preuve_id:
+        return []
+    with _conn() as c:
+        _assurer_preuves(c)
+        for k in cles_n:
+            c.execute("INSERT OR REPLACE INTO preuves (nom, cle, utilisateur, preuve_id, expire_a) "
+                      "VALUES (?,?,?,?,?)", (nom, k, user, preuve_id, expire_a))
+        rows = c.execute(
+            "SELECT id, prerequis, args FROM approbations WHERE statut='en_attente' "
+            "AND utilisateur=? AND expire_a>?", (user, now)).fetchall()
+    liberees = []
+    for r in rows:
+        try:
+            cle_demande = _norm_cle(json.loads(r["args"] or "{}").get("app"))
+            prereq = json.loads(r["prerequis"] or "{}")
+        except (ValueError, AttributeError):
+            continue
+        if cle_demande in cles_n and prereq.get(nom) is False:
+            if satisfaire_prerequis(r["id"], nom):
+                liberees.append(r["id"])
+    return liberees
+
+
 # ── Exécution ────────────────────────────────────────────────────────────────
 
 def consommer(capacite: str, args: dict, niveau: str | None = None,
@@ -602,7 +660,8 @@ def _derniere(capacite: str, args: dict, statuts: tuple[str, ...], niveau: str,
 
 
 def exiger(capacite: str, args: dict, niveau: str, resume: str,
-           maintenant: float | None = None) -> tuple[str | None, str | None, dict | None]:
+           maintenant: float | None = None, *,
+           prerequis: tuple[str, ...] = ()) -> tuple[str | None, str | None, dict | None]:
     """Cœur de la garde. Renvoie (id_consomme, message_pour_le_llm, demande_creee).
 
     - une approbation valide existe  -> elle est CONSOMMÉE, l'appelant exécute ;
@@ -637,7 +696,8 @@ def exiger(capacite: str, args: dict, niveau: str, resume: str,
         return None, (
             f"Action `{capacite}` : cette action vient déjà d'être exécutée après approbation "
             "(résultat dans le message Telegram de l'humain). Ne la redemande pas."), None
-    demande = creer(capacite, args, resume, niveau, maintenant=now, utilisateur=user)
+    demande = creer(capacite, args, resume, niveau, maintenant=now, utilisateur=user,
+                    prerequis=prerequis)
     return None, (
         f"Action `{capacite}` NON exécutée : une demande d'approbation ({demande['id'][:8]}, "
         f"niveau {niveau}) vient d'être envoyée à l'humain sur Telegram. Dis-lui que tu "
