@@ -127,7 +127,7 @@ Expected : Debian 13, ~5,7 Go de RAM, 2 cœurs.
 
 ---
 
-# PARTIE 2 — Brique `livraison` (squelette ; plan détaillé à écrire après la Task 4)
+# PARTIE 2 — Brique `livraison` : **plan détaillé écrit** → `2026-11-25-s246-partie2-brique-livraison.md` (le tableau ci-dessous est l'ancien squelette)
 
 Chaque tâche suivra le format TDD du plan S245b (test d'abord, faux serveur local, commit par tâche). Interfaces déjà décidées (spec S246) :
 
