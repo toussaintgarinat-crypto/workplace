@@ -163,8 +163,17 @@ def init_db() -> None:
         for nom, ddl in (("utilisateur", "TEXT NOT NULL DEFAULT 'perso'"),
                          ("org_id", "TEXT"), ("args", "TEXT")):
             if nom not in existantes:
-                c.execute(f"ALTER TABLE approbations ADD COLUMN {nom} {ddl}")
+                _ajouter_colonne(c, "approbations", nom, ddl)
         c.execute("CREATE INDEX IF NOT EXISTS idx_appr_user ON approbations(utilisateur, statut)")
+
+
+def _ajouter_colonne(c, table: str, nom: str, ddl: str) -> None:
+    """ALTER TABLE ADD COLUMN tolérant à un autre processus qui l'aurait ajoutée avant nous."""
+    try:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {nom} {ddl}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
 
 
 def _journaliser(c, id_: str, evenement: str, par=None, canal=None, detail=None,
@@ -503,6 +512,18 @@ def abandonner(id_: str, raison: str, maintenant: float | None = None) -> bool:
             return False
         _journaliser(c, id_, "abandonnee", detail=(raison or "")[:200], maintenant=now)
     return True
+
+
+def noter(id_: str, evenement: str, detail: str | None = None) -> None:
+    """Journalise un événement sans transition d'état (ex. `reprise_echec`)."""
+    with _conn() as c:
+        _journaliser(c, id_, evenement, detail=(detail or "")[:200])
+
+
+def nb_evenements(id_: str, evenement: str) -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) FROM approbations_journal WHERE approbation_id=? "
+                         "AND evenement=?", (id_, evenement)).fetchone()[0]
 
 
 def conclure(id_: str, ok: bool, resultat: str) -> None:

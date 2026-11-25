@@ -563,3 +563,33 @@ def test_relancer_reprend_les_approuvees_orphelines(client, demande, reprises):
     r = client.post("/approbations/relancer", headers=ENT)
     assert reprises == [demande["id"]]
     assert r.json()["reprises"] == [demande["id"]]
+
+
+# ── Revue S245b : mauvais utilisateur et validation sur les routes code ─────
+
+def test_code_armer_mauvais_utilisateur_introuvable(client, demande_destructive):
+    r = client.post(f"/approbations/{demande_destructive['id']}/code/armer", headers=ENT,
+                    json={"par": "tg:42", "utilisateur": "intrus"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and r.json()["raison"] == "introuvable"
+
+
+def test_code_mauvais_utilisateur_non_pris_en_charge(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    code = approbations.lire(id_)["code"]
+    r = client.post("/approbations/code", headers=ENT,
+                    json={"par": "tg:42", "code": code, "utilisateur": "intrus"})
+    assert r.json() == {"pris_en_charge": False}
+    assert reprises == []
+
+
+def test_code_et_armer_utilisateur_vide_422(client, demande_destructive):
+    r = client.post(f"/approbations/{demande_destructive['id']}/code/armer", headers=ENT,
+                    json={"par": "tg:42", "utilisateur": ""})
+    assert r.status_code == 422
+    r = client.post("/approbations/code", headers=ENT,
+                    json={"par": "tg:42", "code": "123456", "utilisateur": ""})
+    assert r.status_code == 422

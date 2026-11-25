@@ -230,14 +230,15 @@ toujours **pas posées sur le HP** : le tout reste dormant jusqu'à l'activation
 
 - `approbations.abandonner` : une demande `approuvee` dont la capacité n'est plus sensible, ou dont
   la garde refuse à la reprise, passe à `expiree` et est journalisée `abandonnee`, pour que
-  l'horloge ne la rejoue pas indéfiniment. Limite connue : le message Telegram n'est **pas** édité
-  dans ce cas, il reste « Approuvée ».
+  l'horloge ne la rejoue pas indéfiniment. Le message Telegram est édité au mieux à l'état final (« ⌛ Expirée »,
+  sans jamais lever) ; ce même abandon couvre aussi les arguments absents.
 - `pont._tenter_code` : un approbateur sans compte lié est avalé en échec fermé
   (`approbateur_sans_compte`) ; ses 6 chiffres ne sont jamais relayés au LLM.
 - Anti-redemande de 5 min après une exécution réussie (`DELAI_APRES_EXECUTION_S`).
 - Reprise des `approuvee` orphelines par l'horloge (`/approbations/relancer`, champ `reprises`).
 - Une exception avant consommation lors de la reprise laisse la demande `approuvee` ; elle est
-  réessayée jusqu'à expiration.
+  journalisée (`reprise_echec`, type d'exception seul) et réessayée, bornée à 3 échecs : au
+  troisième, abandon (`expiree`, message édité).
 
 ### Écarts et limites assumés
 
@@ -245,4 +246,5 @@ toujours **pas posées sur le HP** : le tout reste dormant jusqu'à l'activation
 2. **Pas de JWT à la reprise, repli sur le compte de service** : `user_token` n'est pas persisté. À la reprise `_user_token` vaut None, `contexte_tenant.entetes_forge()` renvoie `{}` et l'adaptateur Forge RETOMBE sur son compte de service (`core/outils_communs.py`, `entetes_forge_sortants`). Une capacité de la brique Forge s'exécuterait donc sous l'identité de service, pas celle du demandeur (changement de privilège possible), et n'échouerait pas. Prérequis avant de rendre sensible une capacité Forge : voir S246. Le contexte repris porte `utilisateur` + `org_id`.
 3. **Résultat non réinjecté dans le fil de conversation** : le résultat de la reprise est visible dans le message Telegram édité (✅/⚠️) et dans `approbations.resultat`. Le réinjecter dans le journal de conversation est reporté (hors périmètre).
 4. **Au plus une exécution** : `consommer` marque `executee` *avant* d'exécuter. Un crash du Cœur pendant l'exécution laisse la demande `executee` sans résultat, sans rejeu automatique (sens sûr).
-5. Limite 3 d'S245 (écran affichant le code destructif) et 4 (`satisfaire_prerequis` sans verrou, S247) : non traitées ici. Reste aussi : webhook Telegram sans secret (callbacks et codes ignorés dans ce cas).
+5. **`org_id` hors filtres** : `org_id` ne fait pas partie des filtres de consommation/dédoublonnage (seul `utilisateur`) : un utilisateur actif dans deux organisations pourrait voir une approbation de l'une consommée pour l'autre à arguments identiques — à traiter si le multi-organisation par utilisateur devient réel.
+6. Limite 3 d'S245 (écran affichant le code destructif) et 4 (`satisfaire_prerequis` sans verrou, S247) : non traitées ici. Reste aussi : webhook Telegram sans secret (callbacks et codes ignorés dans ce cas).

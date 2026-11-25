@@ -19,18 +19,31 @@ du DEMANDEUR (utilisateur, organisation, origine) avec les arguments exacts pers
 - Le résultat n'est pas réinjecté dans le fil de conversation (visible dans le message Telegram
   édité et dans `approbations.resultat`).
 - Une exception AVANT la consommation (ex. base verrouillée) laisse la demande `approuvee` :
-  elle est journalisée, et l'horloge (`/approbations/relancer` → `a_reprendre`) la reprendra
-  jusqu'à son expiration."""
+  elle est journalisée (`reprise_echec`), et l'horloge (`/approbations/relancer` → `a_reprendre`)
+  la reprendra ; après 3 échecs elle est abandonnée (`expiree`).
+- Tout abandon édite au mieux le message du canal (« ⌛ Expirée »)."""
 import asyncio
 import logging
 
 import approbations
+import approbations_canal
 import contexte_tenant
 import outils
 
 log = logging.getLogger(__name__)
 
 _TACHES: set[asyncio.Task] = set()          # références fortes (sinon le GC peut tuer la tâche)
+MAX_ECHECS_AVANT_CONSOMMATION = 3
+
+
+async def _abandonner(registre, id_: str, raison: str) -> None:
+    """Abandonne la demande puis édite (au mieux) le message du canal à l'état final."""
+    if not approbations.abandonner(id_, raison):
+        return
+    try:
+        await approbations_canal.mettre_a_jour(registre, approbations.lire(id_))
+    except Exception as exc:  # noqa: BLE001 — l'édition du message ne doit jamais faire échouer
+        log.warning("approbation %s : message non édité (%s)", id_[:8], type(exc).__name__)
 
 
 async def reprendre(registre, id_: str) -> str:
@@ -49,11 +62,12 @@ async def reprendre(registre, id_: str) -> str:
             # Sans garde, `outils.executer` n'appellerait pas `exiger` : la demande ne serait
             # jamais consommée et l'action pourrait être rejouée sans contrôle. On n'exécute pas.
             log.warning("approbation %s : capacité plus sensible/introuvable, abandon", id_[:8])
-            approbations.abandonner(id_, "capacité plus sensible/introuvable")
+            await _abandonner(registre, id_, "capacité plus sensible/introuvable")
             return "ignoree"
         args = approbations.args_de(id_)
         if args is None:
             log.warning("approbation %s : reprise impossible (arguments absents)", id_[:8])
+            await _abandonner(registre, id_, "arguments absents")
             return "sans_args"
         jetons = contexte_tenant.definir_contexte(utilisateur=demande["utilisateur"],
                                                   org_id=demande.get("org_id"))
@@ -62,7 +76,7 @@ async def reprendre(registre, id_: str) -> str:
         if approbations.lire(id_)["statut"] == "approuvee":
             log.warning("approbation %s : reprise sans effet (garde refusée, non consommée), "
                         "abandon", id_[:8])
-            approbations.abandonner(id_, "garde refusée à la reprise (non consommée)")
+            await _abandonner(registre, id_, "garde refusée à la reprise (non consommée)")
             return "non_consommee"
         return "executee"
     except Exception as exc:  # noqa: BLE001 — jamais remonter dans une tâche de fond
@@ -71,8 +85,15 @@ async def reprendre(registre, id_: str) -> str:
             # `executee -> echec` seulement ; no-op si la demande n'a pas été consommée.
             approbations.conclure(id_, False, f"reprise : {type(exc).__name__}")
             if approbations.lire(id_)["statut"] == "approuvee":
-                log.warning("approbation %s : exception avant consommation, demande non "
-                            "consommée (restera reprenable par l'horloge)", id_[:8])
+                approbations.noter(id_, "reprise_echec", type(exc).__name__)
+                if (approbations.nb_evenements(id_, "reprise_echec")
+                        >= MAX_ECHECS_AVANT_CONSOMMATION):
+                    log.warning("approbation %s : %d échecs avant consommation, abandon",
+                                id_[:8], MAX_ECHECS_AVANT_CONSOMMATION)
+                    await _abandonner(registre, id_, "reprise en échec répété")
+                else:
+                    log.warning("approbation %s : exception avant consommation, demande non "
+                                "consommée (restera reprenable par l'horloge)", id_[:8])
         except Exception as exc2:  # noqa: BLE001
             log.warning("approbation %s : état final illisible (%s)", id_[:8],
                         type(exc2).__name__)

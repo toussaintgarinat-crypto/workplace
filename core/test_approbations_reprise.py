@@ -375,3 +375,73 @@ def _demande_approuvee_args(args, utilisateur="alice", org="org-1"):
     ok, _ = approbations.approuver(d["id"], "tg:1", "telegram", utilisateur=utilisateur)
     assert ok
     return d["id"]
+
+
+# ── Revue S245b : message édité après abandon, bornage des échecs, migration ──
+
+def test_abandon_capacite_non_sensible_edite_le_message(monkeypatch, faux_outils):
+    monkeypatch.setattr(outils, "est_sensible", lambda nom, registre: None)
+    id_ = _demande_approuvee()
+    asyncio.run(approbations_reprise.reprendre(REGISTRE, id_))
+    assert faux_outils["maj"] == ["expiree"]
+
+
+def test_abandon_garde_refusee_edite_le_message(monkeypatch, faux_outils):
+    monkeypatch.setattr(approbations, "exiger", lambda *a, **k: (None, "refus", None))
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "non_consommee"
+    assert faux_outils["maj"] == ["expiree"]
+
+
+def test_abandon_sans_args_abandonne_et_edite_le_message(faux_outils):
+    import sqlite3
+    id_ = _demande_approuvee()
+    c = sqlite3.connect(approbations.DB)
+    c.execute("UPDATE approbations SET args=NULL WHERE id=?", (id_,))
+    c.commit()
+    c.close()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "sans_args"
+    assert approbations.lire(id_)["statut"] == "expiree"
+    assert faux_outils["maj"] == ["expiree"]
+    assert approbations.a_reprendre(maintenant=10 ** 10, delai_s=0) == []
+
+
+def test_edition_du_message_qui_leve_ne_remonte_pas(monkeypatch, faux_outils):
+    async def _boom(registre, demande):
+        raise RuntimeError("telegram down")
+
+    monkeypatch.setattr(approbations_canal, "mettre_a_jour", _boom)
+    monkeypatch.setattr(outils, "est_sensible", lambda nom, registre: None)
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "ignoree"
+    assert approbations.lire(id_)["statut"] == "expiree"
+
+
+def test_echecs_avant_consommation_bornes_a_trois(monkeypatch, faux_outils):
+    def _casse(*a, **k):
+        raise RuntimeError("base verrouillée")
+
+    monkeypatch.setattr(approbations, "exiger", _casse)
+    id_ = _demande_approuvee()
+    for _ in range(2):
+        assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "echec"
+        assert approbations.lire(id_)["statut"] == "approuvee"
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "echec"
+    assert approbations.lire(id_)["statut"] == "expiree"
+    assert approbations.nb_evenements(id_, "reprise_echec") == 3
+    detail = [e["detail"] for e in approbations.journal(id_) if e["evenement"] == "reprise_echec"]
+    assert detail == ["RuntimeError"] * 3
+    assert approbations.a_reprendre(maintenant=10 ** 10, delai_s=0) == []
+    assert faux_outils["maj"][-1] == "expiree"
+
+
+def test_ajouter_colonne_tolere_une_colonne_deja_ajoutee(tmp_path):
+    import sqlite3
+    c = sqlite3.connect(str(tmp_path / "x.db"))
+    c.execute("CREATE TABLE t (a TEXT)")
+    approbations._ajouter_colonne(c, "t", "b", "TEXT")
+    approbations._ajouter_colonne(c, "t", "b", "TEXT")          # ne lève pas
+    assert {r[1] for r in c.execute("PRAGMA table_info(t)")} == {"a", "b"}
+    with pytest.raises(sqlite3.OperationalError):               # autre erreur : relevée
+        approbations._ajouter_colonne(c, "inexistante", "b", "TEXT")
+    c.close()
