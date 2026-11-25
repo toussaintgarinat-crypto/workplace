@@ -1,0 +1,117 @@
+{
+  "nom": "livraison",
+  "famille": "infra",
+  "version": "0.1.0",
+  "description": "Exploitation des apps déployées sur Dokploy : état, logs, et actions réversibles gardées par approbation Telegram (redémarrer, déployer, revenir en arrière).",
+  "role": "livraison",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/livraison",
+  "port": 6240,
+  "url_sante": "http://host.docker.internal:6240/sante",
+  "depends_on": [],
+  "offre": [],
+  "besoin": [],
+  "capacites": [
+    {
+      "nom": "livraison_apps",
+      "description": "Liste les applications déployées sur Dokploy (id, nom, projet, environnement, statut). À appeler d'abord pour connaître les noms. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps",
+      "params": {},
+      "action": false,
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_etat",
+      "description": "État d'une application déployée : statut, dernier déploiement (titre, statut, début, fin, même en échec), version en service (dernier déploiement réussi) et retour arrière possible ou non. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps/{app}/etat",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": false,
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_logs",
+      "description": "Dernières lignes de log du dernier déploiement d'une application, secrets masqués (jetons, e-mails, mots de passe). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps/{app}/logs",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        },
+        "tail": {
+          "type": "integer",
+          "description": "Nombre de lignes à lire (défaut 100, maximum 500)."
+        }
+      },
+      "action": false,
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_redemarrer",
+      "description": "Redémarre une application déployée sur Dokploy (rechargement du conteneur, sans nouveau build). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/redemarrer",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": true,
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_deployer",
+      "description": "Relance un déploiement d'une application sur Dokploy (rebuild et redéploiement de la version courante). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/deployer",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        },
+        "titre": {
+          "type": "string",
+          "description": "Titre du déploiement (optionnel). Défaut : « Déploiement demandé via l'assistant »."
+        }
+      },
+      "action": true,
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_rollback",
+      "description": "Revient à une version antérieure d'une application (par défaut la précédente ; impossible si le rollback n'est pas activé). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/rollback",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        },
+        "version": {
+          "type": "string",
+          "description": "Titre ou id du déploiement visé (optionnel ; défaut : le précédent)."
+        }
+      },
+      "action": true,
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
+    }
+  ],
+  "taches": []
+}
