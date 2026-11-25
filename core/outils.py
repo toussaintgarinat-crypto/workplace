@@ -25,6 +25,7 @@ import httpx
 
 import agenda
 import approbations
+import approbations_canal
 import catalogue
 import conscience
 import cycle_de_vie
@@ -557,8 +558,7 @@ def est_erreur(resultat: str) -> bool:
 
 
 async def _notifier_approbation(registre, demande: dict) -> None:
-    """Remplacé par `approbations_canal.notifier` (S245, tâche 5). Par défaut : rien."""
-    return None
+    await approbations_canal.notifier(registre, demande)
 
 
 def est_sensible(nom: str, registre) -> str | None:
