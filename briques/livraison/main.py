@@ -46,6 +46,7 @@ def sante():
 # ── Capacités de lecture ──
 from dokploy import Dokploy, DokployErreur  # noqa: E402
 from masque import masquer  # noqa: E402
+import repere_rollback  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
 LOGS_MAX = 20000
@@ -83,8 +84,15 @@ def _erreur(e: DokployErreur) -> HTTPException:
 # ⚠ À vérifier pendant la preuve LIVE (T12) : le comportement réel de Dokploy après un
 # `rollback.rollback` (apparition ou non d'une nouvelle entrée `deployments[]`). S'il n'en crée
 # pas, le « courant » calculé ici restera l'ancien déploiement après un rollback.
-def _courant(deps: list[dict]) -> Optional[int]:
-    """Index (deps du plus récent au plus ancien) du déploiement en service, ou None."""
+def _courant(deps: list[dict], repere: Optional[dict] = None) -> Optional[int]:
+    """Index (deps du plus récent au plus ancien) du déploiement en service, ou None.
+
+    `repere` (voir `repere_rollback`) : si un rollback a été fait et qu'aucun déploiement plus
+    récent n'est apparu depuis, le courant est la version visée par ce rollback."""
+    if repere and deps and deps[0].get("id") == repere.get("dernier_id"):
+        i = next((i for i, x in enumerate(deps) if x.get("id") == repere.get("cible_id")), None)
+        if i is not None:
+            return i
     return next((i for i, x in enumerate(deps) if x.get("statut") == "done"), None)
 
 
@@ -92,10 +100,10 @@ def _rollback_possible(x: dict) -> bool:
     return x.get("statut") == "done" and bool(x.get("rollback_id"))
 
 
-def _cible_par_defaut(info: dict) -> Optional[dict]:
+def _cible_par_defaut(info: dict, repere: Optional[dict] = None) -> Optional[dict]:
     """Le plus récent déploiement `done` ANTÉRIEUR au courant portant un `rollback_id`."""
     deps = info["deploiements"]
-    i = _courant(deps)
+    i = _courant(deps, repere)
     if not info["rollback_actif"] or i is None:
         return None
     return next((x for x in deps[i + 1:] if _rollback_possible(x)), None)
@@ -122,11 +130,13 @@ async def etat_app(app_: str, _: str = Depends(cle_api)):
     except DokployErreur as e:
         raise _erreur(e)
     deps = info["deploiements"]
-    i = _courant(deps)
+    repere = repere_rollback.lire(a["id"])
+    i = _courant(deps, repere)
     return {"nom": info["nom"], "statut": info["statut"],
-            "rollback_disponible": _cible_par_defaut(info) is not None,
+            "rollback_disponible": _cible_par_defaut(info, repere) is not None,
             "dernier_deploiement": _resume(deps[0] if deps else None),
-            "en_service": _resume(deps[i] if i is not None else None)}
+            "en_service": _resume(deps[i] if i is not None else None),
+            "via_rollback": bool(i is not None and i != _courant(deps))}
 
 
 @app.get("/apps/{app_}/logs")
@@ -217,10 +227,12 @@ async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
             if not (info["rollback_actif"] and cible and _rollback_possible(cible)):
                 cible = None
         else:
-            cible = _cible_par_defaut(info)
+            cible = _cible_par_defaut(info, repere_rollback.lire(a["id"]))
         if not cible:
             raise HTTPException(409, _ROLLBACK_IMPOSSIBLE)
         await d.rollback(cible["rollback_id"])
+        if deps:
+            repere_rollback.noter(a["id"], deps[0]["id"], cible["id"])
     except DokployErreur as e:
         raise _erreur(e)
     return {"ok": True, "app": a["nom"], "version_visee": cible["titre"],

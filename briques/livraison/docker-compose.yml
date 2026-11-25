@@ -12,6 +12,10 @@ services:
       - "6240:6240"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
+    environment:
+      - LIVRAISON_DATA=/data
+    volumes:
+      - livraison_data:/data              # repère du dernier rollback par application
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6240/sante')"]
@@ -19,3 +23,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+volumes:
+  livraison_data:

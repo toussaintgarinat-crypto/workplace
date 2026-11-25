@@ -470,3 +470,45 @@ def test_manifeste_actions_reversibles():
         assert x["params"]["app"]["requis"] is True
     assert caps["livraison_deployer"]["params"]["titre"]["type"] == "string"
     assert caps["livraison_rollback"]["params"]["version"]["type"] == "string"
+
+
+# ── Repère de rollback : « en service » juste après un retour arrière (preuve LIVE T12) ──
+def _ajoute_deploiement(etat, did, titre, rollback_id):
+    etat["apps"]["A1"]["deployments"].append(
+        {"deploymentId": did, "title": titre, "status": "done", "createdAt": "t" + did,
+         "finishedAt": "t" + did + "b", "rollbackId": rollback_id})
+
+
+def test_etat_apres_rollback_annonce_la_version_visee(ea):
+    assert ca.get("/apps/calendrier/etat").json()["en_service"]["titre"] == "v2"
+    r = ca.post("/apps/calendrier/rollback")
+    assert r.status_code == 200 and r.json()["version_visee"] == "v1"
+    e_ = ca.get("/apps/calendrier/etat").json()
+    assert e_["en_service"]["titre"] == "v1" and e_["via_rollback"] is True
+    assert e_["dernier_deploiement"]["titre"] == "v2"
+
+
+def test_apres_rollback_plus_de_version_plus_ancienne_donc_second_rollback_impossible(ea):
+    ca.post("/apps/calendrier/rollback")
+    assert ca.get("/apps/calendrier/etat").json()["rollback_disponible"] is False
+    assert ca.post("/apps/calendrier/rollback").status_code == 409
+
+
+def test_second_rollback_vise_la_version_anterieure_a_celle_en_service(ea):
+    _ajoute_deploiement(ea, "D3", "v3", "R3")          # du plus récent : v3, v2, v1
+    assert ca.post("/apps/calendrier/rollback").json()["version_visee"] == "v2"
+    assert ca.post("/apps/calendrier/rollback").json()["version_visee"] == "v1"
+    assert [a["corps"] for a in _appels_mut(ea)] == [{"rollbackId": "R2"}, {"rollbackId": "R1"}]
+
+
+def test_nouveau_deploiement_perime_le_repere(ea):
+    ca.post("/apps/calendrier/rollback")
+    _ajoute_deploiement(ea, "D3", "v3", "R3")
+    e_ = ca.get("/apps/calendrier/etat").json()
+    assert e_["en_service"]["titre"] == "v3" and e_["via_rollback"] is False
+
+
+def test_repere_non_ecrivable_ne_fait_pas_echouer_le_rollback(ea, monkeypatch):
+    monkeypatch.setenv("LIVRAISON_DATA", "/proc/interdit/livraison")
+    r = ca.post("/apps/calendrier/rollback")
+    assert r.status_code == 200 and r.json()["ok"] is True

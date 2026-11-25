@@ -14,7 +14,7 @@ chat de l'assistant (HP), approuvées par le compte Telegram lié à l'utilisate
 ## Ce que la preuve a révélé (et corrigé)
 1. Corps vide des mutations Dokploy (redeploy, rollback) → succès si 2xx (commit « une mutation … à corps vide est un succès »). Le faux serveur divergeait du réel.
 2. Choix d'outil du LLM : descriptions de `livraison_redemarrer|deployer|rollback` réécrites avec « UNIQUEMENT quand… / PAS pour… ».
-3. **Reste connu** : après un rollback, Dokploy n'ajoute AUCUNE entrée `deployments[]` ; `/etat` continue d'annoncer comme « en service » le dernier déploiement alors que le service tourne sur une version antérieure (ici `:v3`). À corriger (lire le tag d'image réellement en service ou mémoriser le dernier rollback) avant de s'y fier pour décider d'un second rollback.
+3. Après un rollback, Dokploy n'ajoute AUCUNE entrée `deployments[]` : `/etat` annonçait comme « en service » le dernier déploiement alors que le service tournait sur une version antérieure (`:v3`). **Corrigé** : la brique mémorise, par application, le déploiement visé et le plus récent au moment du rollback (`repere_rollback.py`, volume `livraison_data`) ; `/etat` renvoie `en_service` = version visée + `via_rollback: true` tant qu'aucun déploiement plus récent n'apparaît, et un second rollback par défaut vise la version antérieure à celle en service.
 4. Les tags `v1…v4` ont la même image (code identique) : la preuve se lit sur la référence du service, pas sur l'ID d'image.
 
 ## Configuration de production (HP)
