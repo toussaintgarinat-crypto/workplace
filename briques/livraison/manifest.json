@@ -12,6 +12,47 @@
   "depends_on": [],
   "offre": [],
   "besoin": [],
-  "capacites": [],
+  "capacites": [
+    {
+      "nom": "livraison_apps",
+      "description": "Liste les applications déployées sur Dokploy (id, nom, projet, environnement, statut). À appeler d'abord pour connaître les noms. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps",
+      "params": {},
+      "action": false
+    },
+    {
+      "nom": "livraison_etat",
+      "description": "État d'une application déployée : statut, dernier déploiement (titre, statut, début, fin) et retour arrière possible ou non. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps/{app}/etat",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": false
+    },
+    {
+      "nom": "livraison_logs",
+      "description": "Dernières lignes de log du dernier déploiement d'une application, secrets masqués (jetons, e-mails, mots de passe). Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps/{app}/logs",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        },
+        "tail": {
+          "type": "integer",
+          "description": "Nombre de lignes à lire (défaut 100, maximum 500)."
+        }
+      },
+      "action": false
+    }
+  ],
   "taches": []
 }
