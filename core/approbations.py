@@ -241,7 +241,7 @@ def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str
             (id_, capacite, emp, resume, sensibilite, origine or ORIGINE.get(), "en_attente",
              now, now + ttl_secondes(sensibilite),
              json.dumps({p: False for p in prerequis}), code, user, org,
-             json.dumps(args or {}, sort_keys=True, default=str)))
+             json.dumps(args or {}, default=str)))
         _journaliser(c, id_, "creee",
                      detail=f"{sensibilite}/{origine or ORIGINE.get()}/{user}", maintenant=now)
     return lire(id_)

@@ -13,7 +13,9 @@ du DEMANDEUR (utilisateur, organisation, origine) avec les arguments exacts pers
 - Au plus une exécution : `executee` est posé AVANT l'exécution (un crash ne rejoue pas).
 
 ## NON garanti
-- Le JWT de l'utilisateur n'est pas persisté : une capacité qui l'exige échoue (état `echec`).
+- Le JWT de l'utilisateur n'est pas persisté : à la reprise `entetes_forge()` renvoie `{}` et
+  l'adaptateur Forge RETOMBE sur son compte de service (changement de privilège possible, pas
+  d'échec) ; ne pas rendre sensible une capacité Forge sans le garde-fou décrit en S246.
 - Le résultat n'est pas réinjecté dans le fil de conversation (visible dans le message Telegram
   édité et dans `approbations.resultat`).
 - Une exception AVANT la consommation (ex. base verrouillée) laisse la demande `approuvee` :

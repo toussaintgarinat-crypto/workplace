@@ -357,3 +357,21 @@ def test_lancer_planifie_la_reprise_en_tache_de_fond(faux_outils):
 
     asyncio.run(scenario())
     assert len(faux_outils["appels"]) == 1
+
+
+def test_reprendre_args_imbriques_ordre_non_alphabetique(faux_outils):
+    # Régression : sort_keys à la sérialisation changeait l'ordre des dicts imbriqués,
+    # donc l'empreinte (repr) ; la reprise abandonnait l'action approuvée.
+    args = {"app": "crm", "env": {"PORT": "80", "HOST": "x", "A": "1"}}
+    id_ = _demande_approuvee_args(args)
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "executee"
+    assert approbations.lire(id_)["statut"] == "executee"
+    assert faux_outils["appels"] == [("app_redemarrer", {**args, "confirme": True})]
+
+
+def _demande_approuvee_args(args, utilisateur="alice", org="org-1"):
+    d = approbations.creer("app_redemarrer", args, "r", "reversible",
+                           origine="incident", utilisateur=utilisateur, org_id=org)
+    ok, _ = approbations.approuver(d["id"], "tg:1", "telegram", utilisateur=utilisateur)
+    assert ok
+    return d["id"]
