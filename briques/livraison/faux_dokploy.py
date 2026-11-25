@@ -39,12 +39,17 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
         if chemin == "/api/application.one":
             a = apps.get(req.url.params.get("applicationId"))
             return rep(200, _gras(a)) if a else rep(404, {"message": "NOT_FOUND"})
-        if chemin in ("/api/application.reload", "/api/application.redeploy",
+        if chemin == "/api/application.redeploy":
+            # Réel (v0.31.4) : 200 avec un corps VIDE (non JSON).
+            a = apps.get((corps or {}).get("applicationId"))
+            return httpx.Response(200, content=b"") if a else rep(404, {"message": "NOT_FOUND"})
+        if chemin in ("/api/application.reload",
                       "/api/application.start", "/api/application.stop"):
             a = apps.get((corps or {}).get("applicationId"))
             return rep(200, _gras(a)) if a else rep(404, {"message": "NOT_FOUND"})
         if chemin == "/api/rollback.rollback":
-            return rep(200, True)
+            # Réel : corps vide aussi (comme redeploy) ; la brique doit l'accepter.
+            return httpx.Response(200, content=b"")
         if chemin == "/api/deployment.readLogs":
             did = req.url.params.get("deploymentId")
             return rep(200, etat.get("logs", {}).get(did, "ligne de log\n"))

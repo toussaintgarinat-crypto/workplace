@@ -61,6 +61,11 @@ class Dokploy:
         try:
             return r.json()
         except ValueError:
+            # Constaté en réel (v0.31.4) : `application.redeploy` répond 200 avec un corps
+            # NON JSON (vide). Pour une mutation acceptée (2xx), c'est un succès : l'action
+            # est partie ; la déclarer en échec ferait réapprouver et ré-exécuter.
+            if mutation:
+                return None
             raise DokployErreur("Réponse de Dokploy illisible (JSON invalide).",
                                 r.status_code) from None
 

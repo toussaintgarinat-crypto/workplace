@@ -188,3 +188,19 @@ def test_delais_lecture_20s_mutation_60s(monkeypatch):
     run(c.apps())
     run(c.deployer("A1", "t"))
     assert vus == [20.0, 60.0]
+
+
+def test_mutation_corps_vide_2xx_est_un_succes():
+    """Constaté en réel : redeploy et rollback répondent 200 sans corps JSON."""
+    e = etat()
+    c = cli(e)
+    assert run(c.deployer("A1", "t"))["ok"] is True
+    assert run(c.rollback("R1"))["ok"] is True
+
+
+def test_lecture_corps_invalide_reste_une_erreur():
+    import httpx
+    c = Dokploy("http://d.test", "k",
+                transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"")))
+    with pytest.raises(DokployErreur):
+        run(c.apps())
