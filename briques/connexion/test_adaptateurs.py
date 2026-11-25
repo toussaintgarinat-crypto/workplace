@@ -265,3 +265,17 @@ def test_parser_callback_message_id_malforme_rend_none():
     p = _payload_cb()
     p["callback_query"]["message"]["message_id"] = "pas-un-entier"
     assert A.Telegram().parser_callback(p) is None
+
+
+def test_telegram_webhook_secret_temps_constant(monkeypatch):
+    import adaptateurs
+    ad = A.Telegram()
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s3cr3t-é")
+    appels = []
+    reel = adaptateurs.hmac.compare_digest
+    monkeypatch.setattr(adaptateurs.hmac, "compare_digest",
+                        lambda a, b: appels.append((type(a), type(b))) or reel(a, b))
+    assert ad.verifier_webhook({"x-telegram-bot-api-secret-token": "s3cr3t-é"}, b"") is True
+    assert ad.verifier_webhook({}, b"") is False                       # en-tête absent
+    assert ad.verifier_webhook({"X-Telegram-Bot-Api-Secret-Token": "ééé"}, b"") is False
+    assert appels and all(t == (bytes, bytes) for t in appels)

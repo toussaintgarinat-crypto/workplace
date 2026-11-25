@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import pytest  # noqa: E402
 
 import approbations  # noqa: E402
+import approbations_canal  # noqa: E402
 import outils  # noqa: E402
 
 
@@ -303,3 +304,46 @@ def test_secrets_differents_empreintes_differentes_resume_masque(_env):
     assert _env["atteints"] == []                       # l'approbation ne vaut que pour secret-un
     _run("app_redemarrer", {"app": "crm", "password": "secret-un"})
     assert len(_env["atteints"]) == 1
+
+
+# ── Revue finale : mise à jour finale du canal, origine ──────────────────────
+
+def test_message_telegram_edite_apres_execution(_env, monkeypatch):
+    vus = []
+
+    async def maj(registre, demande):
+        vus.append((demande["statut"], approbations_canal.texte_final(demande)))
+
+    monkeypatch.setattr(approbations_canal, "mettre_a_jour", maj)
+    _run("app_redemarrer", {"app": "crm"})
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    res = _run("app_redemarrer", {"app": "crm"})
+    assert '"ok": true' in res
+    assert len(vus) == 1 and vus[0][0] == "executee" and "✅ Exécutée" in vus[0][1]
+
+
+def test_message_final_echec_et_panne_canal_sans_effet_sur_le_resultat(_env, monkeypatch):
+    async def casse(nom, args, registre):
+        return "Erreur (dokploy) : boom"
+
+    async def maj_ko(registre, demande):
+        raise RuntimeError("telegram down")
+
+    _run("app_redemarrer", {"app": "crm"})
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    monkeypatch.setattr(outils, "_executer", casse)
+    monkeypatch.setattr(approbations_canal, "mettre_a_jour", maj_ko)
+    assert _run("app_redemarrer", {"app": "crm"}) == "Erreur (dokploy) : boom"
+    assert "⚠️ Échec" in approbations_canal.texte_final(
+        approbations.lire(_env["notifs"][0]))
+
+
+def test_origine_tracee_par_les_points_d_entree(_env, monkeypatch):
+    import mcp as mcp_mod
+    # Chemin réel du MCP : tools/call -> avec_origine("mcp") -> outils.executer -> exiger.
+    monkeypatch.setattr(mcp_mod, "lister_outils", lambda registre: [{"name": "app_redemarrer"}])
+    asyncio.run(mcp_mod.traiter({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                 "params": {"name": "app_redemarrer",
+                                            "arguments": {"app": "crm"}}}, REGISTRE))
+    assert [d["origine"] for d in approbations.en_attente()] == ["mcp"]
+    assert approbations.ORIGINE.get() == "inconnue"

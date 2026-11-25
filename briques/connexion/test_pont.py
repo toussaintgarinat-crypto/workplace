@@ -715,14 +715,35 @@ def test_code_d_un_approbateur_arme_n_est_pas_relaye(monkeypatch, retour, attend
     assert C.charger("faux", "code-9") == []         # le code n'entre pas dans l'historique
 
 
-# 10
-def test_code_sans_saisie_armee_est_relaye_comme_avant(monkeypatch):
+# 10 (révisé revue finale) : approbateur + 6 chiffres sans saisie armée => JAMAIS relayé
+def test_code_sans_saisie_armee_d_un_approbateur_n_est_jamais_relaye(monkeypatch):
     faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": False})
     _approbateur("code-10")
     r = _run(pont.traiter("faux", A.Entrant("faux", "code-10", "123456", "G")))
-    assert r["ok"] is True and r["reponse"] == "réponse assistant"
-    assert len(appels) == 1
+    assert r["ok"] is True and r.get("reponse") is None
+    assert appels == []                              # rien dans converser
     assert coeur.codes == [("faux:code-10", "123456")]
+    assert len(faux.envoyes) == 1
+    assert "Aucune saisie de code en cours" in faux.envoyes[0][1]
+    assert "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-10") == []        # jamais dans l'historique
+
+
+def test_code_prerequis_non_reunis_message_honnete(monkeypatch):
+    faux, coeur, appels = _brancher_code(
+        monkeypatch, code={"pris_en_charge": True, "ok": False, "raison": "prerequis"})
+    _approbateur("code-pre")
+    _run(pont.traiter("faux", A.Entrant("faux", "code-pre", "123456", "G")))
+    assert appels == []
+    assert "Pas encore prête : sauvegarde non vérifiée" in faux.envoyes[0][1]
+    assert "123456" not in faux.envoyes[0][1]
+
+
+def test_non_approbateur_six_chiffres_reste_relaye(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": False})
+    K.lier("faux", "code-10b", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-10b", "123456", "G")))
+    assert r["reponse"] == "réponse assistant" and len(appels) == 1 and coeur.codes == []
 
 
 # 11

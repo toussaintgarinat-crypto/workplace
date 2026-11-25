@@ -127,7 +127,10 @@ class Telegram(Adaptateur):
         secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
         if not secret:
             return True                          # pas de secret configuré → on n'exige rien
-        return _entete(headers, "X-Telegram-Bot-Api-Secret-Token") == secret
+        fourni = _entete(headers, "X-Telegram-Bot-Api-Secret-Token")
+        if fourni is None:
+            return False
+        return hmac.compare_digest(str(fourni).encode("utf-8"), secret.encode("utf-8"))
 
     def parser_entrant(self, payload: dict) -> list:
         msg = (payload or {}).get("message") or (payload or {}).get("edited_message") or {}

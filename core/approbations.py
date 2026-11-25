@@ -20,14 +20,18 @@ persistante, à usage unique, expirante, journalisée.
 """
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
 import accord_action
+
+logger = logging.getLogger(__name__)
 
 DB = os.getenv("APPROBATIONS_DB", "/data/approbations.db")
 
@@ -53,8 +57,25 @@ _TRANSITIONS = {
 
 def ttl_secondes(niveau: str) -> int:
     """Durée de vie d'une demande, par niveau. Lue à chaque appel (env surchargeable)."""
-    minutes = int(os.getenv(f"APPROBATION_TTL_{niveau.upper()}_MIN", _TTL_DEFAUT_MIN[niveau]))
+    nom = f"APPROBATION_TTL_{niveau.upper()}_MIN"
+    try:
+        minutes = int(os.getenv(nom, _TTL_DEFAUT_MIN[niveau]))
+        if minutes <= 0:
+            raise ValueError("TTL <= 0")
+    except (TypeError, ValueError):
+        minutes = _TTL_DEFAUT_MIN[niveau]
+        logger.warning("%s invalide (entier > 0 attendu), repli sur %s min", nom, minutes)
     return minutes * 60
+
+
+@contextmanager
+def avec_origine(origine: str):
+    """Pose l'origine du tour pour les demandes créées dans le bloc (ContextVar set/reset)."""
+    jeton = ORIGINE.set(origine)
+    try:
+        yield
+    finally:
+        ORIGINE.reset(jeton)
 
 
 # ── Base ─────────────────────────────────────────────────────────────────────
@@ -248,6 +269,8 @@ def armer_saisie_code(id_: str, par: str, maintenant: float | None = None) -> tu
         if r["expire_a"] <= now:
             _expirer_une(c, id_, "en_attente", now)
             return False, "expiree"
+        if not all(json.loads(r["prerequis"]).values()):
+            return False, "prerequis"
         c.execute("INSERT OR REPLACE INTO saisie_code (approbateur, approbation_id, expire_a) "
                   "VALUES (?,?,?)", (par, id_, now + TTL_SAISIE_CODE_S))
         _journaliser(c, id_, "saisie_code_armee", par, "telegram", maintenant=now)
@@ -274,6 +297,10 @@ def valider_code_saisi(par: str, code: str, maintenant: float | None = None) -> 
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             _expirer_une(c, id_, "en_attente", now)
             return {"ok": False, "raison": "expiree", "approbation_id": id_, "restants": 0}
+        if not all(json.loads(r["prerequis"]).values()):
+            # Prérequis non réunis : jamais d'approbation, pas un essai raté, saisie désarmée.
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            return {"ok": False, "raison": "prerequis", "approbation_id": id_, "restants": 0}
         saisi = (code or "").strip()
         # Format strict AVANT toute comparaison : compare_digest(str, str) lève TypeError
         # sur du non-ASCII. Un format invalide est un essai raté, pas un crash.

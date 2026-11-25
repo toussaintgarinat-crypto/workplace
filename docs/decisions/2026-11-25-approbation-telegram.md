@@ -121,7 +121,37 @@ Ajouts décidés en revue :
 - **Secrets en texte brut non masqués dans le résumé** : `password=x` dans un texte libre,
   `Basic …`, `api-key=…` ne sont pas reconnus. L'expurgation est une meilleure-effort.
 - **Telegram est un tiers** : il conserve le texte du résumé envoyé.
-- La comparaison du secret de webhook n'est pas à temps constant (préexistant).
+- *(corrigé en revue finale : la comparaison du secret de webhook est désormais à temps constant,
+  `hmac.compare_digest` sur des octets.)*
+- **L'approbation n'est PAS liée à un utilisateur ni à un tenant.** L'empreinte couvre
+  capacité + arguments seulement. Dans le Cœur multi-utilisateur (S182), l'utilisateur B qui appelle
+  la même action avec des arguments identiques dans la fenêtre d'exécution consomme l'approbation
+  de l'utilisateur A ; chaque approbateur reçoit chaque demande et le message ne nomme pas le
+  demandeur. **Écart connu, à fermer AVANT que la première capacité multi-utilisateur déclare
+  `sensibilite`.** Proposition : stocker utilisateur/org dans la ligne, filtrer
+  `creer`/`consommer`/`_derniere`/`en_attente`, afficher le demandeur dans le message Telegram.
+- **Pas d'exécution automatique après approbation.** Le modèle est « approuver puis ré-appeler » :
+  après le clic, l'humain ou le LLM doit relancer l'outil dans la fenêtre de 5 minutes. Les
+  origines co-agent et incident n'ont aucun mécanisme de reprise : leurs approbations expirent. Un
+  mécanisme de reprise à l'approbation est à planifier (S246+).
+- **Le code destructif n'est lisible que via `GET /approbations/en_attente`** (session) : aucun
+  panneau de tableau de bord ne l'affiche encore (interface à venir).
+- **`ORIGINE`** (conversation / coagent / mcp) est posée à l'entrée de `outils.executer` par les
+  trois appelants (`core/assistant.py`, `core/coagent.py`, `core/mcp.py`) via
+  `approbations.avec_origine`. Toute autre voie (incident, tâche d'horloge, appel direct) reste
+  `inconnue`, sauf si l'appelant passe `origine=` explicitement.
+- **Piège d'exploitation : `API_KEYS`** est une liste de clés partagée, lue par de nombreuses
+  briques depuis le `.env` racine ; la renseigner pour activer les approbations ferme toutes ces
+  briques d'un coup. Recommandation (suivi) : une variable dédiée aux clés acceptées par la brique
+  connexion.
+- **`satisfaire_prerequis` n'est pas protégé par un verrou** (lecture-modif-écriture du JSON des
+  prérequis) : à corriger en S247, quand les prérequis serviront réellement.
+- **Prérequis et destructif (corrigé en revue finale)** : `armer_saisie_code` et
+  `valider_code_saisi` imposent désormais les prérequis (sinon un code correct approuvait un
+  destructif sans sauvegarde vérifiée). Un code soumis prérequis non réunis n'approuve jamais, ne
+  compte pas comme essai raté et désarme la saisie.
+- **Un approbateur qui envoie 6 chiffres** sans saisie armée n'est plus jamais relayé au LLM ni
+  journalisé : réponse « Aucune saisie de code en cours ».
 
 ## Limites assumées
 
@@ -139,16 +169,21 @@ Fichiers de test (comptes mesurés le 2026-11-25) :
 
 | Fichier | Tests |
 |---|---|
-| `core/test_approbations.py` (état, TTL, code, atomicité, journal, persistance) | 43 |
-| `core/test_approbations_garde.py` (garde dans `executer`, non-régression, expurgation) | 38 |
-| `core/test_approbations_routes.py` (routes HTTP, clé, relance) | 37 |
+| `core/test_approbations.py` (état, TTL, code, atomicité, journal, persistance) | 51 |
+| `core/test_approbations_garde.py` (garde dans `executer`, non-régression, expurgation) | 41 |
+| `core/test_approbations_routes.py` (routes HTTP, clé, relance) | 38 |
 | `core/test_approbations_canal.py` (Cœur → connexion) | 12 |
-| `briques/connexion/test_pont.py` | 73 |
+| `briques/connexion/test_pont.py` | 75 |
 | `briques/connexion/test_main.py` | 34 |
-| `briques/connexion/test_correspondance.py`, `test_adaptateurs.py`, `test_client_assistant.py` | 14, 27, 12 |
+| `briques/connexion/test_correspondance.py`, `test_adaptateurs.py`, `test_client_assistant.py` | 14, 28, 12 |
 
-Suites complètes : `core` **1239 passed, 3 xfailed** (xfail préexistants dans
-`test_routage_demandes_courtes.py`) ; `briques/connexion` **193 passed**.
+Suites complètes : `core` **1251 passed, 3 xfailed** (xfail préexistants dans
+`test_routage_demandes_courtes.py`) ; `briques/connexion` **196 passed**.
+Tests ajoutés en revue finale : prérequis du destructif (armer refusé, code refusé, puis accepté),
+code 6 chiffres jamais relayé (approbateur) / relayé (non-approbateur), webhook en temps constant,
+TTL invalide, message final ✅ Exécutée / ⚠️ Échec, origine (MCP de bout en bout + ContextVar).
+L'origine du chat et du co-agent n'est testée que par la plomberie ContextVar et le chemin MCP
+(pas de double de test existant pour la boucle de l'assistant).
 
 **Preuve par mutation** (convention du dépôt, cf. S222). Chaque mutation a été appliquée seule,
 les tests lancés, puis le fichier restauré (`git diff` vide). Un test qui passe avant *et* après
@@ -156,14 +191,14 @@ ne prouve rien : seules les colonnes « échoue » comptent.
 
 | # | Mutation | Tests lancés | Résultat mesuré |
 |---|---|---|---|
-| a | `outils.executer` : `niveau = None` au lieu de `est_sensible(...)` (garde neutralisée) | `test_approbations_garde.py` (38) | **11 échouent, 27 passent.** Échouent : `test_sans_approbation_rien_ne_s_execute…`, `test_le_llm_ne_peut_pas_se_confirmer_tout_seul`, `test_approuvee_puis_executee_une_fois`, `test_approbation_pour_crm_ne_vaut_pas_pour_autre`, `test_refus_bloque_la_redemande_immediate`, `test_destructif_exige_le_code_pas_le_bouton`, `test_un_echec_d_execution_est_journalise`, `test_typo_sensibilite_exige_une_approbation`, `test_conclure_meme_si_executer_leve`, `test_notification_en_echec_ne_se_propage_pas`, `test_secrets_differents_empreintes_differentes_resume_masque`. Passent (non-régression) : `test_lecture_passe_sans_approbation`, `test_capacite_sans_sensibilite_garde_le_comportement_historique`, `test_est_sensible_lit_le_manifeste`, normalisation/lecture de `est_sensible`, expurgation du résumé. |
+| a | `outils.executer` : `niveau = None` au lieu de `est_sensible(...)` (garde neutralisée) | `test_approbations_garde.py` (41) | **14 échouent, 27 passent** (re-mesuré en revue finale ; aux 11 d'origine s'ajoutent les 3 tests du message final et de l'origine). Échouent : `test_sans_approbation_rien_ne_s_execute…`, `test_le_llm_ne_peut_pas_se_confirmer_tout_seul`, `test_approuvee_puis_executee_une_fois`, `test_approbation_pour_crm_ne_vaut_pas_pour_autre`, `test_refus_bloque_la_redemande_immediate`, `test_destructif_exige_le_code_pas_le_bouton`, `test_un_echec_d_execution_est_journalise`, `test_typo_sensibilite_exige_une_approbation`, `test_conclure_meme_si_executer_leve`, `test_notification_en_echec_ne_se_propage_pas`, `test_secrets_differents_empreintes_differentes_resume_masque`. Passent (non-régression) : `test_lecture_passe_sans_approbation`, `test_capacite_sans_sensibilite_garde_le_comportement_historique`, `test_est_sensible_lit_le_manifeste`, normalisation/lecture de `est_sensible`, expurgation du résumé. |
 | b | `approbations.consommer` : filtre `sensibilite` retiré (SELECT et UPDATE) | `test_approbations_garde.py` + `test_approbations.py` (81) | **2 échouent, 79 passent** : `test_approbation_reversible_ne_debloque_pas_destructif`, `test_consommer_destructif_ne_prend_pas_une_approbation_reversible`. |
 | c | `approbations.valider_code_saisi` : comparaison du code remplacée par `if True` | `test_approbations.py` + `test_approbations_routes.py` (80) | **6 échouent, 74 passent** : `test_trois_codes_faux_refusent_la_demande`, `test_le_bon_code_apres_refus_n_approuve_rien`, `test_saisie_non_ascii_ou_mal_formee_compte_comme_essai_sans_crash`, `test_essais_concurrents_ne_depassent_pas_la_limite`, `test_code_faux_decremente_restants`, `test_code_non_ascii_ne_plante_pas`. |
-| d | `pont.traiter_callback` : condition `est_approbateur` retirée | `briques/connexion` (193) | **3 échouent, 190 passent** : `test_callback_non_approbateur_ignore_sans_appeler_le_coeur`, `test_callback_inconnu_ou_en_attente_ignore`, `test_callback_statut_ouvert_ne_donne_pas_le_droit`. |
-| d2 | `pont.traiter_callback` : contrôles `chat_type == private` et `chat_id == from_id` retirés (le « mauvais chat » est une condition distincte de d) | `briques/connexion` (193) | **2 échouent, 191 passent** : `test_callback_approbateur_en_groupe_ignore`, `test_callback_chat_different_de_l_emetteur_ignore`. |
-| e | `main.py` webhook : garde `if authentifiee:` retirée devant `traiter_callback` | `briques/connexion` (193) | **1 échoue, 192 passent** : `test_webhook_callback_sans_secret_est_refuse_sans_toucher_le_coeur`. |
-| e2 | `main.py` webhook : `source_authentifiee=True` forcé pour les messages | `briques/connexion` (193) | **1 échoue, 192 passent** : `test_webhook_message_transmet_le_drapeau_source_authentifiee[None-entete0-False]`. |
-| e3 | `pont.traiter` : abandon des 6 chiffres d'un approbateur en source non authentifiée retiré | `briques/connexion` (193) | **1 échoue, 192 passent** : `test_code_d_un_approbateur_via_source_non_authentifiee_est_ignore`. |
+| d | `pont.traiter_callback` : condition `est_approbateur` retirée | `briques/connexion` (196) | **3 échouent, 190 passent** : `test_callback_non_approbateur_ignore_sans_appeler_le_coeur`, `test_callback_inconnu_ou_en_attente_ignore`, `test_callback_statut_ouvert_ne_donne_pas_le_droit`. |
+| d2 | `pont.traiter_callback` : contrôles `chat_type == private` et `chat_id == from_id` retirés (le « mauvais chat » est une condition distincte de d) | `briques/connexion` (196) | **2 échouent, 191 passent** : `test_callback_approbateur_en_groupe_ignore`, `test_callback_chat_different_de_l_emetteur_ignore`. |
+| e | `main.py` webhook : garde `if authentifiee:` retirée devant `traiter_callback` | `briques/connexion` (196) | **1 échoue, 192 passent** : `test_webhook_callback_sans_secret_est_refuse_sans_toucher_le_coeur`. |
+| e2 | `main.py` webhook : `source_authentifiee=True` forcé pour les messages | `briques/connexion` (196) | **1 échoue, 192 passent** : `test_webhook_message_transmet_le_drapeau_source_authentifiee[None-entete0-False]`. |
+| e3 | `pont.traiter` : abandon des 6 chiffres d'un approbateur en source non authentifiée retiré | `briques/connexion` (196) | **1 échoue, 192 passent** : `test_code_d_un_approbateur_via_source_non_authentifiee_est_ignore`. |
 
 Les 8 mutations sont attrapées. Le brief attendait que la mutation d fasse aussi échouer le
 test « mauvais chat » ; ce n'est pas le cas, car ce contrôle est indépendant de

@@ -684,6 +684,11 @@ async def executer(nom: str, args: dict, registre) -> str:
             raise
         if id_appr:
             approbations.conclure(id_appr, not est_erreur(resultat), resultat)
+            try:   # best-effort : message Telegram édité à l'état final (✅ Exécutée / ⚠️ Échec)
+                await approbations_canal.mettre_a_jour(registre, approbations.lire(id_appr))
+            except Exception as exc:  # noqa: BLE001 — ne doit jamais altérer le résultat
+                logging.getLogger(__name__).warning(
+                    "mise à jour finale d'approbation en échec (%s) : %s", nom, exc)
     _APPELS[nom] = _APPELS.get(nom, 0) + 1
     if est_erreur(resultat):
         _ECHECS[nom] = _ECHECS.get(nom, 0) + 1

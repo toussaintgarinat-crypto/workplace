@@ -31,6 +31,7 @@ un oubli.
 import hmac
 import os
 
+import approbations
 import outils
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -109,7 +110,8 @@ async def traiter(corps: dict, registre) -> dict | None:
         if nom not in {t["name"] for t in lister_outils(registre)}:
             return _rep(id_, error={"code": -32602, "message": f"Outil inconnu : {nom}"})
         try:
-            texte = await outils.executer(nom, params.get("arguments") or {}, registre)
+            with approbations.avec_origine("mcp"):
+                texte = await outils.executer(nom, params.get("arguments") or {}, registre)
             return _rep(id_, {"content": [{"type": "text", "text": texte}], "isError": False})
         except Exception as e:  # noqa: BLE001 — erreur d'EXÉCUTION → isError (convention MCP)
             return _rep(id_, {"content": [{"type": "text", "text": f"Erreur outil : {e}"}],

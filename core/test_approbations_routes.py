@@ -456,3 +456,16 @@ def test_l_horloge_construit_un_bearer_accepte_par_la_route(client, monkeypatch)
     assert entetes == BEARER
     r = client.post(tache["chemin"], headers=entetes)
     assert r.status_code == 200, r.text
+
+
+# ── Revue finale : prérequis non réunis sur un destructif ───────────────────
+
+def test_destructif_prerequis_non_reunis_armer_refuse_sans_fuite(client):
+    d = approbations.creer("app_supprimer", {"app": "x"}, "d", "destructif",
+                           prerequis=("sauvegarde_verifiee",))
+    r = client.post(f"/approbations/{d['id']}/code/armer", headers=ENT, json={"par": "tg:42"})
+    assert r.status_code == 200 and r.json() == {"ok": False, "raison": "prerequis"}
+    r2 = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": d["code"]})
+    assert r2.status_code == 200 and r2.json() == {"pris_en_charge": False}
+    assert d["code"] not in r.text + r2.text
+    assert approbations.lire(d["id"])["statut"] == "en_attente"

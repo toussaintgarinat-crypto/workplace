@@ -383,3 +383,51 @@ def test_bon_code_apres_decision_par_un_autre_canal_n_approuve_pas():
     r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3)
     assert r["ok"] is False and r["raison"] == "deja_decidee"
     assert approbations.lire(a["id"])["statut"] == "refusee"
+
+
+# ── Revue finale S245 : prérequis imposés au code destructif ─────────────────
+
+def test_armer_refuse_si_prerequis_non_reunis():
+    a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (False, "prerequis")
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2) is None
+    assert approbations.lire(a["id"])["statut"] == "en_attente"
+
+
+def test_code_soumis_prerequis_non_reunis_n_approuve_jamais():
+    a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
+    with approbations._conn() as c:   # saisie armée « de force » (état incohérent)
+        c.execute("INSERT INTO saisie_code (approbateur, approbation_id, expire_a) VALUES (?,?,?)",
+                  ("tg:42", a["id"], T0 + 999))
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert r["ok"] is False and r["raison"] == "prerequis"
+    lue = approbations.lire(a["id"])
+    assert lue["statut"] == "en_attente" and lue["essais"] == 0     # pas un essai raté
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3) is None  # désarmée
+
+
+def test_destructif_prerequis_satisfaits_puis_code_approuve():
+    a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
+    approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee")
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (True, "ok")
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert r["ok"] is True and approbations.lire(a["id"])["statut"] == "approuvee"
+
+
+@pytest.mark.parametrize("valeur", ["abc", "0", "-5", ""])
+def test_ttl_invalide_retombe_sur_le_defaut(monkeypatch, caplog, valeur):
+    monkeypatch.setenv("APPROBATION_TTL_DESTRUCTIF_MIN", valeur)
+    with caplog.at_level("WARNING"):
+        assert approbations.ttl_secondes("destructif") == 15 * 60
+    assert "APPROBATION_TTL_DESTRUCTIF_MIN" in caplog.text
+
+
+def test_origine_contextvar_set_reset():
+    assert approbations.ORIGINE.get() == "inconnue"
+    with approbations.avec_origine("mcp"):
+        assert approbations.creer("c1", {}, "r", "reversible", maintenant=T0)["origine"] == "mcp"
+    assert approbations.ORIGINE.get() == "inconnue"
+    with pytest.raises(RuntimeError):
+        with approbations.avec_origine("coagent"):
+            raise RuntimeError
+    assert approbations.ORIGINE.get() == "inconnue"

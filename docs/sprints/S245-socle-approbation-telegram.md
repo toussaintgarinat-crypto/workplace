@@ -64,6 +64,18 @@ de journal/audit existant du Cœur — *à identifier au démarrage* (`journal_m
 - La sécurité d'un compte Telegram compromis (le bouton hérite de ce risque). D'où le niveau
   `destructif` en Mini App, et le TTL court.
 - Les capacités sans champ `sensibilite` : inchangées.
+- **Approbation non liée à un utilisateur/tenant** (empreinte = capacité + args) : en multi-user
+  (S182), B peut consommer l'approbation de A ; tous les approbateurs reçoivent tout, sans nom du
+  demandeur. Écart connu à fermer AVANT la première capacité multi-user sensible (stocker
+  utilisateur/org, filtrer creer/consommer/_derniere/en_attente, afficher le demandeur).
+- **Pas d'exécution automatique après approbation** : approuver puis ré-appeler dans les 5 min ;
+  co-agent et incident n'ont pas de reprise, leurs approbations expirent (reprise à planifier, S246+).
+- Le code destructif n'est lisible que via `GET /approbations/en_attente` (session) ; pas de
+  panneau de tableau de bord pour l'instant.
+- `ORIGINE` : posée pour chat (« conversation »), co-agent, MCP ; les autres voies restent « inconnue ».
+- `API_KEYS` est partagée par de nombreuses briques (`.env` racine) : la renseigner ferme toutes ces
+  briques d'un coup ; prévoir une variable dédiée à la brique connexion (suivi).
+- `satisfaire_prerequis` sans verrou (à corriger en S247).
 
 ## Tests et preuves
 
@@ -96,9 +108,13 @@ actions existantes vers le nouveau système.
    sont ignorés). `API_KEYS` de la brique doit contenir `CONNEXION_KEY` du Cœur.
 2. Marquer son compte approbateur : `POST /correspondances/approbateur` (compte déjà lié,
    chat privé avec le bot).
-3. Déclencher une capacité de test `sensibilite: reversible` : le message Telegram arrive avec
-   les boutons ; clic **Approuver** → exécution → message édité en ✅.
-4. Même chose avec un `destructif` : bouton → le message demande un code ; lire le code dans
-   l'app (`GET /approbations/en_attente`) → le saisir dans Telegram → exécution → ✅.
+3. Déclencher une capacité de test `sensibilite: reversible` : l'assistant répond qu'il attend
+   l'approbation ; le message Telegram arrive avec les boutons ; clic ✅ → message édité ✅
+   (le clic n'exécute RIEN) ; ré-invoquer la même demande dans les 5 min (« vas-y, relance ») →
+   l'action s'exécute une seule fois → le message affiche ✅ Exécutée ; une 2e invocation est
+   refusée.
+4. Même chose avec un `destructif` : ✅ → le bot demande le code ; lire le code dans l'app
+   (`GET /approbations/en_attente`, cookie de session) → le saisir dans Telegram → ré-invoquer la
+   même demande dans les 5 min → exécution → ✅ Exécutée.
 5. Vérifier aussi : un autre compte (non approbateur) ne peut pas cliquer ; un refus ; une
    expiration.

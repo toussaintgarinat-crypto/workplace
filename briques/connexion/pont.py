@@ -156,7 +156,7 @@ async def _transcrire_vocal(reseau: str, ad, entrant, envoyer: bool) -> dict:
 
 _VERDICT = {"expiree": "⌛ Demande expirée.", "deja_decidee": "ℹ️ Demande déjà traitée."}
 _BULLE = {"ok": "Décision enregistrée", "expiree": "Demande expirée",
-          "deja_decidee": "Déjà traitée", "prerequis": "Pas encore prête",
+          "deja_decidee": "Déjà traitée", "prerequis": "Pas encore prête : sauvegarde non vérifiée",
           "introuvable": "Demande inconnue"}
 
 
@@ -212,7 +212,7 @@ async def traiter_callback(reseau: str, cb) -> dict:
 
 async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
     """Un message « 123456 » d'un approbateur est un CODE potentiel, jamais une question pour
-    le LLM. None => message ordinaire (relayé comme avant). Si le Cœur est injoignable, on NE
+    le LLM. None => message ordinaire (relayé comme avant) ; pour un approbateur, 6 chiffres ne sont JAMAIS relayés. Si le Cœur est injoignable, on NE
     relaie PAS les chiffres (ça pourrait être un code) : on demande de réessayer."""
     texte = (entrant.texte or "").strip()
     if not _CODE.fullmatch(texte):
@@ -230,12 +230,20 @@ async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
             pass
         return {"ok": False, "raison": "noyau_injoignable"}
     if not r.get("pris_en_charge"):
-        return None
+        # Un approbateur qui envoie 6 chiffres sans saisie armée : JAMAIS relayé au LLM ni
+        # journalisé (ce pourrait être un code valable pour une demande qui vient de se régler).
+        msg = "Aucune saisie de code en cours : appuie d'abord sur ✅ sur la demande concernée."
+        try:
+            await ad.envoyer(entrant.id_externe, msg)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": True, "code": "aucune_saisie"}
     msg = {"ok": "✅ Code bon, action approuvée.",
            "code_faux": f"❌ Code faux — {r.get('restants', 0)} essai(s) restant(s).",
            "essais_epuises": "❌ 3 codes faux : demande REFUSÉE.",
            "expiree": "⌛ Demande expirée.",
-           "deja_decidee": "ℹ️ Demande déjà traitée."}.get(r.get("raison"),
+           "deja_decidee": "ℹ️ Demande déjà traitée.",
+           "prerequis": "⏳ Pas encore prête : sauvegarde non vérifiée."}.get(r.get("raison"),
                                                            "Code non pris en compte.")
     try:
         await ad.envoyer(entrant.id_externe, msg)
@@ -281,6 +289,10 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True,
         pris = await _tenter_code(reseau, ad, entrant)
         if pris is not None:
             return pris
+    elif (transcrit is None and _CODE.fullmatch((entrant.texte or "").strip())
+          and correspondance.est_approbateur(reseau, entrant.id_externe)):
+        # Réseau non configuré / mode sans envoi : mêmes 6 chiffres, même règle — jamais relayés.
+        return {"ok": True, "raison": "code_non_traite"}
 
     historique = await _historique_pour(reseau, entrant.id_externe, corr.get("utilisateur"))
     messages = _construire(reseau, entrant, corr, historique)
