@@ -21,3 +21,9 @@ chat de l'assistant (HP), approuvées par le compte Telegram lié à l'utilisate
 - `.env` racine : `APPROBATIONS_CLE`, `CONNEXION_KEY`=`CONNEXION_API_KEYS`, `LIVRAISON_KEY`=`LIVRAISON_API_KEYS`, `DOKPLOY_URL` (mesh), `DOKPLOY_API_KEY` = clé de l'utilisateur **limité au projet `temoin`** (pas la clé owner). Sauvegarde `.env.avant-s246` ; ancienne image `core-core:avant-s246`.
 - Approbateur : compte Telegram lié à l'utilisateur ; l'approbation est liée à l'utilisateur demandeur (S245b).
 - Pièges rencontrés : `docker compose up` a relancé `workplace_agenda_litestream` (arrêté exprès, plante sans bucket) → arrêté de nouveau, `restart=no` ; `standard-telephonique` non recréé (réseau externe `roomkit-visio_default` absent, il ne tournait pas).
+
+## Clôture S246 (2026-11-25)
+- `AUTH_SESSION_SECRET` du Cœur (défini en clair dans `core/docker-compose.override.yml` du HP, fichier non suivi par git et jamais committé) a été **tourné** après avoir été affiché par erreur dans une session ; les sessions ouvertes sont déconnectées (reconnexion Keycloak). Ancien fichier : `core/docker-compose.override.yml.avant-rotation` (0600, sur le HP). Piste d'hygiène : sortir ce secret du compose vers le `.env` racine.
+- Prérequis inchangé avant toute capacité **Forge** sensible : à la reprise il n'y a pas de JWT et l'adaptateur Forge retombe sur son compte de service (voir fichier S246). Aucune capacité Forge n'est sensible aujourd'hui.
+- Non utilisé en v1 : `forgejo.py` (client Forgejo lecture seule) n'est pas branché.
+- Preuve live du repère de rollback (`via_rollback`) : couverte par 5 tests ; à constater en vrai au prochain rollback réel.
