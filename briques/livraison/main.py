@@ -99,3 +99,68 @@ async def logs_app(app_: str, tail: int = 100, _: str = Depends(cle_api)):
         raise _erreur(e)
     return {"nom": info["nom"], "deploiement": info["deploiements"][0]["titre"],
             "logs": masquer(logs)}
+
+
+# ── Actions réversibles (gardées par approbation côté Cœur, S245) ──
+from pydantic import BaseModel  # noqa: E402
+
+TITRE_DEFAUT = "Déploiement demandé via l'assistant"
+
+
+class CorpsDeployer(BaseModel):
+    titre: Optional[str] = None
+
+
+class CorpsRollback(BaseModel):
+    version: Optional[str] = None
+
+
+@app.post("/apps/{app_}/redemarrer")
+async def redemarrer_app(app_: str, _: str = Depends(cle_api)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+        await d.redemarrer(a["id"])
+    except DokployErreur as e:
+        raise _erreur(e)
+    return {"ok": True, "app": a["nom"]}
+
+
+@app.post("/apps/{app_}/deployer")
+async def deployer_app(app_: str, corps: Optional[CorpsDeployer] = None,
+                       _: str = Depends(cle_api)):
+    titre = ((corps.titre if corps else None) or "").strip() or TITRE_DEFAUT
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+        await d.deployer(a["id"], titre)
+    except DokployErreur as e:
+        raise _erreur(e)
+    return {"ok": True, "app": a["nom"], "titre": titre}
+
+
+_ROLLBACK_IMPOSSIBLE = ("retour arrière impossible : le rollback n'est pas activé sur cette app "
+                        "ou il n'y a pas de version antérieure")
+
+
+@app.post("/apps/{app_}/rollback")
+async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
+                       _: str = Depends(cle_api)):
+    version = ((corps.version if corps else None) or "").strip()
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+        deps = (await d.app(a["id"]))["deploiements"]   # du plus récent au plus ancien
+        if version:
+            cibles = ([x for x in deps if x["id"] == version]
+                      or [x for x in deps if x["titre"] == version])
+            cible = cibles[0] if cibles else None
+        else:
+            cible = next((x for x in deps[1:] if x.get("rollback_id")), None)
+        if not cible or not cible.get("rollback_id"):
+            raise HTTPException(409, _ROLLBACK_IMPOSSIBLE)
+        await d.rollback(cible["rollback_id"])
+    except DokployErreur as e:
+        raise _erreur(e)
+    return {"ok": True, "app": a["nom"], "version_visee": cible["titre"],
+            "rollback_id": cible["rollback_id"]}

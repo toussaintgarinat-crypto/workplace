@@ -146,3 +146,121 @@ def test_manifeste_capacites_lecture():
         assert caps[n]["params"]["app"]["type"] == "string" and caps[n]["params"]["app"]["requis"] is True
         assert "{app}" in caps[n]["chemin"]
     assert caps["livraison_logs"]["params"]["tail"]["type"] == "integer"
+
+
+# ── Actions réversibles (tâche 10) ──
+def _appels_mut(e):
+    return [a for a in e["appels"] if a["methode"] == "POST"]
+
+
+def test_redemarrer_appelle_reload(e):
+    r = c.post("/apps/calendrier/redemarrer")
+    assert r.status_code == 200 and r.json()["ok"] is True
+    (a,) = _appels_mut(e)
+    assert a["chemin"] == "/api/application.reload"
+    assert a["corps"] == {"applicationId": "A1", "appName": "cal-x"}
+
+
+def test_redemarrer_corps_vide_et_query_du_coeur(e):
+    r = c.post("/apps/A1/redemarrer?app=A1", json={"app": "A1"})
+    assert r.status_code == 200
+    r = c.post("/apps/A1/redemarrer", content=b"", headers={"content-type": "application/json"})
+    assert r.status_code == 200
+
+
+def test_deployer_titre_defaut_et_fourni(e):
+    assert c.post("/apps/A1/deployer").status_code == 200
+    assert c.post("/apps/A1/deployer", json={"titre": "mon titre"}).status_code == 200
+    assert c.post("/apps/A1/deployer?titre=zz", json={}).status_code == 200
+    titres = [a["corps"]["title"] for a in _appels_mut(e)]
+    assert titres == ["Déploiement demandé via l'assistant", "mon titre",
+                      "Déploiement demandé via l'assistant"]
+    assert all(a["chemin"] == "/api/application.redeploy" for a in _appels_mut(e))
+
+
+def test_rollback_defaut_cible_precedent(e):
+    r = c.post("/apps/A1/rollback")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "app": "calendrier", "version_visee": "v1",
+                        "rollback_id": "R1"}
+    (a,) = _appels_mut(e)
+    assert a["chemin"] == "/api/rollback.rollback" and a["corps"] == {"rollbackId": "R1"}
+
+
+def test_rollback_saute_les_deploiements_sans_rollback_id(e):
+    deps = e["apps"]["A1"]["deployments"]
+    deps.append({"deploymentId": "D3", "title": "v3", "status": "done",
+                 "createdAt": "t3", "finishedAt": "t3b", "rollbackId": None})
+    deps.append({"deploymentId": "D0", "title": "v0", "status": "done",
+                 "createdAt": "t0", "finishedAt": "t0b", "rollbackId": None})
+    # ordre récent->ancien : v3(None), v2(R2), v1(R1), v0(None) ; courant = v3
+    assert c.post("/apps/A1/rollback").json()["rollback_id"] == "R2"
+
+
+def test_rollback_impossible_409(e):
+    for nom in ("vide", "neuve"):
+        r = c.post(f"/apps/{nom}/rollback")
+        assert r.status_code == 409 and "retour arrière impossible" in r.json()["detail"]
+    assert _appels_mut(e) == []
+
+
+def test_rollback_version_par_titre_et_par_id(e):
+    assert c.post("/apps/A1/rollback", json={"version": "v2"}).json()["rollback_id"] == "R2"
+    assert c.post("/apps/A1/rollback", json={"version": "D1"}).json()["version_visee"] == "v1"
+
+
+def test_rollback_version_inconnue_ou_sans_rollback_id_409(e):
+    e["apps"]["A1"]["deployments"].append(
+        {"deploymentId": "D0", "title": "ancien", "status": "done",
+         "createdAt": "t0", "finishedAt": "t0b", "rollbackId": None})
+    for v in ("zzz", "ancien"):
+        r = c.post("/apps/A1/rollback", json={"version": v})
+        assert r.status_code == 409 and "retour arrière impossible" in r.json()["detail"]
+    assert _appels_mut(e) == []
+
+
+@pytest.mark.parametrize("chemin,corps", [("/apps/A1/redemarrer", None), ("/apps/A1/deployer", None),
+                                          ("/apps/A1/rollback", None)])
+def test_actions_ne_fuient_aucun_secret(e, chemin, corps):
+    r = c.post(chemin)
+    assert r.status_code == 200
+    assert "refreshToken" not in r.text and "SECRET" not in r.text
+
+
+def test_actions_app_ambigue_404_et_limite_429_en_502(e):
+    assert c.post("/apps/zzz/redemarrer").status_code == 404
+    e["limite"] = True
+    r = c.post("/apps/A1/redemarrer")
+    assert r.status_code == 502 and "Limite" in r.json()["detail"]
+
+
+def test_actions_injoignable_502(monkeypatch):
+    import httpx
+
+    def boom(req):
+        raise httpx.ConnectError("x")
+    monkeypatch.setattr(main, "fournisseur",
+                        lambda: Dokploy("http://d.test", "k", transport=httpx.MockTransport(boom)))
+    for ch in ("redemarrer", "deployer", "rollback"):
+        assert c.post(f"/apps/A1/{ch}").status_code == 502
+
+
+def test_actions_protegees(monkeypatch, e):
+    monkeypatch.setenv("LIVRAISON_API_KEYS", "secret")
+    for ch in ("redemarrer", "deployer", "rollback"):
+        assert c.post(f"/apps/A1/{ch}").status_code == 401
+    assert _appels_mut(e) == []
+
+
+def test_manifeste_actions_reversibles():
+    m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
+    caps = {x["nom"]: x for x in m["capacites"]}
+    for n, ch in (("livraison_redemarrer", "redemarrer"), ("livraison_deployer", "deployer"),
+                  ("livraison_rollback", "rollback")):
+        x = caps[n]
+        assert x["methode"] == "POST" and x["chemin"] == f"/apps/{{app}}/{ch}"
+        assert x["action"] is True and x["sensibilite"] == "reversible"
+        assert "approbation" in x["description"] and "Telegram" in x["description"]
+        assert x["params"]["app"]["requis"] is True
+    assert caps["livraison_deployer"]["params"]["titre"]["type"] == "string"
+    assert caps["livraison_rollback"]["params"]["version"]["type"] == "string"
