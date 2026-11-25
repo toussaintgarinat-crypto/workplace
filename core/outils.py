@@ -23,6 +23,7 @@ import uuid
 import httpx
 
 import agenda
+import approbations
 import catalogue
 import conscience
 import cycle_de_vie
@@ -554,6 +555,26 @@ def est_erreur(resultat: str) -> bool:
         return False
 
 
+async def _notifier_approbation(registre, demande: dict) -> None:
+    """Remplacé par `approbations_canal.notifier` (S245, tâche 5). Par défaut : rien."""
+    return None
+
+
+def est_sensible(nom: str, registre) -> str | None:
+    """Niveau de sensibilité (`reversible|donnees|destructif`) d'une capacité de manifeste,
+    ou None (lecture, pas de champ, outil inconnu). S245."""
+    cap = _capacites_dynamiques(registre).get(nom)
+    niveau = (cap or {}).get("sensibilite")
+    return niveau if niveau in approbations.NIVEAUX_SENSIBLES else None
+
+
+def _resume_action(nom: str, args: dict) -> str:
+    """Résumé lisible montré à l'humain : la capacité et ses arguments EXACTS."""
+    utiles = {k: v for k, v in (args or {}).items() if k != "confirme" and v is not None}
+    detail = ", ".join(f"{k}={v!r}" for k, v in sorted(utiles.items())) or "sans argument"
+    return f"{nom}({detail})"[:300]
+
+
 async def executer(nom: str, args: dict, registre) -> str:
     """Exécute un outil et renvoie une chaîne (résultat ou message) pour le LLM.
 
@@ -563,11 +584,27 @@ async def executer(nom: str, args: dict, registre) -> str:
     (try/except) reste ici, centralisé, inchangé.
 
     Point de passage UNIQUE du chat, du co-agent et de /mcp : c'est donc ici que les outils
-    réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py)."""
+    réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py).
+
+    S245 : une capacité qui déclare `sensibilite` ne s'exécute que si `approbations.exiger`
+    consomme une approbation humaine de même empreinte — QUEL QUE SOIT l'appelant (chat,
+    co-agent, MCP) : c'est ce qui ferme le trou signalé dans l'ADR du gate (S222)."""
     if est_reserve_admin(nom, registre) and not droits.ADMIN_CERVEAU.get():
         resultat = droits.refus(nom)
     else:
+        niveau = est_sensible(nom, registre)
+        id_appr = None
+        if niveau:
+            id_appr, refus, nouvelle = approbations.exiger(
+                nom, args or {}, niveau, _resume_action(nom, args or {}))
+            if refus:
+                if nouvelle:
+                    await _notifier_approbation(registre, nouvelle)
+                return refus
+            args = {**(args or {}), "confirme": True}   # l'approbation EST la confirmation
         resultat = await _executer(nom, args, registre)
+        if id_appr:
+            approbations.conclure(id_appr, not est_erreur(resultat), resultat)
     _APPELS[nom] = _APPELS.get(nom, 0) + 1
     if est_erreur(resultat):
         _ECHECS[nom] = _ECHECS.get(nom, 0) + 1

@@ -405,3 +405,46 @@ def enregistrer_messages(id_: str, messages: list[dict]) -> None:
     """Mémorise les messages Telegram (chat_id, message_id) pour pouvoir les éditer ensuite."""
     with _conn() as c:
         c.execute("UPDATE approbations SET messages=? WHERE id=?", (json.dumps(messages), id_))
+
+
+# ── La garde ─────────────────────────────────────────────────────────────────
+
+def _derniere(capacite: str, args: dict, statuts: tuple[str, ...], niveau: str) -> dict | None:
+    emp = accord_action.empreinte(capacite, args)
+    marques = ",".join("?" * len(statuts))
+    with _conn() as c:
+        r = c.execute(f"SELECT * FROM approbations WHERE capacite=? AND empreinte=? "
+                      f"AND sensibilite=? AND statut IN ({marques}) ORDER BY cree_a DESC LIMIT 1",
+                      (capacite, emp, niveau, *statuts)).fetchone()
+    return _vue(r) if r else None
+
+
+def exiger(capacite: str, args: dict, niveau: str, resume: str,
+           maintenant: float | None = None) -> tuple[str | None, str | None, dict | None]:
+    """Cœur de la garde. Renvoie (id_consomme, message_pour_le_llm, demande_creee).
+
+    - une approbation valide existe  -> elle est CONSOMMÉE, l'appelant exécute ;
+    - une demande est déjà ouverte   -> message d'attente, pas de doublon ;
+    - un refus très récent           -> message de refus, pas de redemande ;
+    - sinon                          -> une demande est créée (l'appelant la notifie)."""
+    now = maintenant if maintenant is not None else time.time()
+    id_ = consommer(capacite, args, niveau=niveau, maintenant=now)
+    if id_:
+        return id_, None, None
+    ouverte = _derniere(capacite, args, ("en_attente",), niveau)
+    if ouverte and ouverte["expire_a"] > now:
+        return None, (
+            f"Action `{capacite}` NON exécutée : la demande d'approbation {ouverte['id'][:8]} "
+            "attend la réponse de l'humain sur Telegram. N'insiste pas et n'essaie pas de "
+            "contourner : dis à l'utilisateur que tu attends son approbation."), None
+    refusee = _derniere(capacite, args, ("refusee",), niveau)
+    if refusee and (refusee["decide_a"] or 0) + DELAI_APRES_REFUS_S > now:
+        return None, (
+            f"Action `{capacite}` NON exécutée : l'humain a REFUSÉ cette action. Ne la "
+            "redemande pas ; propose une alternative ou demande-lui ce qu'il veut."), None
+    demande = creer(capacite, args, resume, niveau, maintenant=now)
+    return None, (
+        f"Action `{capacite}` NON exécutée : une demande d'approbation ({demande['id'][:8]}, "
+        f"niveau {niveau}) vient d'être envoyée à l'humain sur Telegram. Dis-lui que tu "
+        "attends son approbation. Quand il aura approuvé, rappelle le MÊME outil avec les "
+        "MÊMES arguments."), demande
