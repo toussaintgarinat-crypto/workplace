@@ -5,6 +5,7 @@ Aucune logique de catalogue/capacités ici (elle reste dans outils.py).
 import asyncio
 import json
 import os
+import urllib.parse
 import uuid
 import httpx
 
@@ -115,13 +116,59 @@ def timeout_proxy(chemin: str, longs: tuple[tuple[str, float], ...]) -> float:
     return TIMEOUT_PROXY_COURT
 
 
+# Mutations dont la brique attend elle-même longtemps son aval (livraison : 60 s vers Dokploy,
+# plus deux lectures de 20 s) : le Cœur ne doit pas couper avant elle, sinon une action qui
+# aboutit est rapportée en échec puis réapprouvée (double exécution). Cf. `timeout_proxy`.
+TIMEOUT_MUTATION_LONGUE = 120.0
+_ROUTES_DYNAMIQUES_LENTES = (("/redemarrer", TIMEOUT_MUTATION_LONGUE),
+                             ("/rollback", TIMEOUT_MUTATION_LONGUE),
+                             ("/deployer", TIMEOUT_MUTATION_LONGUE))
+
+
+def _timeout_dynamique(cap: dict) -> float | None:
+    """Timeout propre à la capacité, ou None pour garder celui du client (30 s)."""
+    chemin = "/" + cap["chemin"].strip("/")
+    for suffixe, timeout in _ROUTES_DYNAMIQUES_LENTES:
+        if chemin.endswith(suffixe):
+            return timeout
+    return None
+
+
+def _segment(v) -> str:
+    """Valeur encodée comme UN segment de chemin : `/ ? # % espace` ne changent jamais la
+    route (S246 I5 : `app="x/deployer?"` exécutait une autre action). `.`/`..` sont encodés
+    aussi, sinon httpx normalise `/apps/../rollback` en `/rollback`. Aucune capacité ne
+    déclare de convertisseur `{x:path}` : aucune n'attend légitimement de `/` (audit S246)."""
+    s = urllib.parse.quote(str(v), safe="")
+    return s.replace(".", "%2E") if s in (".", "..") else s
+
+
 def _url_dynamique(cap: dict, args: dict) -> str:
-    """URL de la capacité, avec substitution des params de chemin ``{x}`` depuis les args."""
+    """URL de la capacité, avec substitution (encodée) des params de chemin ``{x}``."""
     url = cap["url"]
     if "{" in url:
         for k, v in args.items():
-            url = url.replace("{" + k + "}", str(v))
+            url = url.replace("{" + k + "}", _segment(v))
     return url
+
+
+_DETAIL_RELAYE_MAX = 300
+
+
+def _message_refus(cap: dict, r) -> str:
+    """Message d'un refus (>= 400). Avec `relayer_erreurs` (opt-in de la capacité), le
+    `detail` d'un corps JSON est relayé s'il est une chaîne courte — sinon rien de plus
+    (un corps d'erreur arbitraire peut contenir des traces internes)."""
+    base = f"Brique « {cap['brique']} » a refusé ({r.status_code})"
+    if cap.get("relayer_erreurs"):
+        try:
+            corps = r.json()
+        except ValueError:
+            corps = None
+        detail = corps.get("detail") if isinstance(corps, dict) else None
+        if isinstance(detail, str) and detail.strip() and len(detail) <= _DETAIL_RELAYE_MAX:
+            return f"{base} : {detail}"
+    return base + "."
 
 
 ASYNC_TIMEOUT = float(os.environ.get("OUTILS_ASYNC_TIMEOUT", "600"))
@@ -210,10 +257,15 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     entetes = (entetes_forge_sortants() if cap["brique"] == "forge"
                else _entetes_brique(cap["brique"]) or {})
     entetes = entetes or None
+    # Timeout passé SEULEMENT pour les routes lentes (les faux clients des tests et le
+    # client partagé de `_executer` gardent leur défaut sinon).
+    t = _timeout_dynamique(cap)
+    extra = {"timeout": t} if t is not None else {}
     if cap["methode"] == "GET":
-        r = await client.request("GET", url, params=charge, headers=entetes)
+        r = await client.request("GET", url, params=charge, headers=entetes, **extra)
     else:
-        r = await client.request(cap["methode"], url, json=charge, params=charge, headers=entetes)
+        r = await client.request(cap["methode"], url, json=charge, params=charge, headers=entetes,
+                                 **extra)
     # ── Branche async (S179) : 202 sur cap async → on poll ──
     if cap.get("async") and r.status_code == 202:
         try:
@@ -244,8 +296,7 @@ async def _appel_dynamique(client, cap: dict, args: dict) -> str:
     # ── Branche sync (comportement S64 inchangé) ──
     if r.status_code >= 400:
         return json.dumps({"ok": False, "brique": cap["brique"],
-                           "message": f"Brique « {cap['brique']} » a refusé ({r.status_code})."},
-                          ensure_ascii=False)
+                           "message": _message_refus(cap, r)}, ensure_ascii=False)
     try:
         base = cap["url"].rsplit(cap["chemin"], 1)[0]
         return json.dumps(_reecrire_url_media(cap["brique"], base, r.json()), ensure_ascii=False)

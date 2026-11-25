@@ -96,6 +96,8 @@ def collecter_capacites(registre) -> list[dict]:
                 # S240 — réservée à l'admin du cerveau (outils.est_reserve_admin)
                 "reserve_admin": bool(decl.get("reserve_admin", False)),
                 "poll_chemin": decl.get("poll_chemin"),
+                # S246 — relaie le `detail` court (≤ 300 car.) d'une erreur métier à l'assistant
+                "relayer_erreurs": bool(decl.get("relayer_erreurs", False)),
             })
     return capacites
 

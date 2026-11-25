@@ -29,6 +29,7 @@ import os
 import re
 import sys
 import tempfile
+import types
 import typing
 from pathlib import Path
 
@@ -174,7 +175,7 @@ def _contrat_de_route(route):
         modele = getattr(route.body_field, "type_", None)
         # `corps: Optional[Modele] = None` (corps facultatif, motif de `livraison`) : on
         # déballe l'Optional, sinon le modèle est pris pour un champ opaque « corps ».
-        if not isinstance(modele, type):
+        if typing.get_origin(modele) in (typing.Union, types.UnionType):
             candidats = [a for a in typing.get_args(modele) if a is not type(None)]
             if len(candidats) == 1:
                 modele = candidats[0]
