@@ -58,7 +58,7 @@
     },
     {
       "nom": "livraison_redemarrer",
-      "description": "Redémarre une application déployée sur Dokploy (rechargement du conteneur, sans nouveau build). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "description": "Redémarre le conteneur d'une application déployée (même version, aucun nouveau build). À utiliser UNIQUEMENT quand l'utilisateur demande un redémarrage / relance / « restart ». PAS pour revenir à une version antérieure (→ livraison_rollback) ni pour livrer du nouveau code (→ livraison_deployer). L'exécution attend l'approbation de l'utilisateur sur Telegram.",
       "methode": "POST",
       "chemin": "/apps/{app}/redemarrer",
       "params": {
@@ -74,7 +74,7 @@
     },
     {
       "nom": "livraison_deployer",
-      "description": "Relance un déploiement d'une application sur Dokploy (rebuild et redéploiement de la version courante). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "description": "Relance un build + déploiement d'une application (publie une nouvelle version à partir du code du dépôt). À utiliser quand l'utilisateur demande de déployer / redéployer / mettre en ligne la dernière version. PAS pour un simple redémarrage (→ livraison_redemarrer) ni un retour en arrière (→ livraison_rollback). L'exécution attend l'approbation de l'utilisateur sur Telegram.",
       "methode": "POST",
       "chemin": "/apps/{app}/deployer",
       "params": {
@@ -94,7 +94,7 @@
     },
     {
       "nom": "livraison_rollback",
-      "description": "Revient à une version antérieure d'une application (par défaut la précédente ; impossible si le rollback n'est pas activé). À n'appeler qu'après que l'utilisateur l'ait demandé ; l'exécution attend son approbation sur Telegram.",
+      "description": "REVIENT À LA VERSION PRÉCÉDENTE d'une application (retour en arrière, annulation du dernier déploiement). À utiliser quand l'utilisateur dit « reviens en arrière », « version précédente », « annule le dernier déploiement », « rollback ». Par défaut la version précédente ; le paramètre `version` désigne une version précise. Impossible si le rollback n'est pas activé (le dire à l'utilisateur). Ce n'est PAS un redémarrage. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
       "methode": "POST",
       "chemin": "/apps/{app}/rollback",
       "params": {
