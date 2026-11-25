@@ -53,3 +53,8 @@
   `_courant`) : si Dokploy n'ajoute aucune entrée après un rollback, `/etat` (`en_service`,
   `rollback_disponible`) et le rollback par défaut suivant raisonneront encore sur la version
   d'avant le retour arrière. À observer pendant la preuve, puis corriger la règle si besoin.
+
+## Clé Dokploy limitée (T12, 2026-11-25) — décision I6 appliquée
+- Utilisateur Dokploy `livraison@dokploy.invalid` (rôle `member`), permissions : projet `temoin` seul (+ son environnement et son application), `canAccessToAPI:true`, aucun droit de création/suppression. ⚠ `user.assignPermissions` prend l'**userId** (pas l'id de membre renvoyé par `user.all`) ; avec le mauvais id il répond 200 sans rien changer.
+- Clé `livraison-bot` créée **par cet utilisateur** (`rateLimitEnabled:false`). Vérifié : `project.all` ne montre que `temoin` ; `project.create` refusé ; `user.all` et `registry.all` refusés (401) ; `application.reload` accepté.
+- La clé owner (`DOKPLOY_API_KEY` du fichier de secrets) n'est PAS donnée à la brique ; la brique reçoit `DOKPLOY_BOT_API_KEY`.
