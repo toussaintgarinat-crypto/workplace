@@ -85,6 +85,9 @@ JUSTIFIES: dict[tuple[str, str], str] = {
         "en-tête absent : la requête n'a pas encore désigné de ressource",
     ("briques/connexion/main.py", 'raise HTTPException(403, "Vérification d\'abonnement refusée.")'):
         "porte sur l'appelant",
+    ("briques/connexion/main.py",
+     'raise HTTPException(403, "Route désactivée : configure CONNEXION_API_KEYS.")'):
+        "route fermée tant qu'aucune clé n'est configurée ; ne désigne aucune ressource (S245b)",
     ("briques/agenda/backend/auth.py",
      'raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")'):
         "rôle de l'appelant, indépendant de toute ressource",
