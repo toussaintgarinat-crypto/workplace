@@ -584,6 +584,39 @@ def est_sensible(nom: str, registre) -> str | None:
     return "destructif"
 
 
+def est_prerequis(nom: str, registre) -> tuple[str, ...]:
+    """Prérequis déclarés par le manifeste d'une capacité gardée (S247). Une valeur qui n'est ni
+    une liste ni un texte est ignorée : la garde `sensibilite` reste seule en vigueur."""
+    brut = (_capacites_dynamiques(registre).get(nom) or {}).get("prerequis")
+    if isinstance(brut, str):
+        brut = [brut]
+    if not isinstance(brut, list):
+        return ()
+    return tuple(str(p).strip() for p in brut if str(p).strip())
+
+
+async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, registre) -> None:
+    """Si `nom` déclare `fournit_preuve`, lit le verdict DANS le résultat de la brique (jamais
+    dans les arguments), enregistre la preuve et renotifie les demandes libérées."""
+    preuve = (_capacites_dynamiques(registre).get(nom) or {}).get("fournit_preuve")
+    if not preuve or est_erreur(resultat):
+        return
+    try:
+        d = json.loads(resultat)
+        if d.get("verdict") != "valide" or not d.get("preuve_id"):
+            return
+        expire_a = float(d["expire_a"])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return
+    cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
+    for id_ in approbations.enregistrer_preuve(str(preuve), [k for k in cles if k],
+                                               str(d["preuve_id"]), expire_a):
+        try:
+            await _notifier_approbation(registre, approbations.lire(id_))
+        except Exception as exc:  # noqa: BLE001 — ne doit jamais altérer le résultat
+            logging.getLogger(__name__).warning("renotification d'approbation en échec : %s", exc)
+
+
 # Le résumé est stocké en base, envoyé sur Telegram et répété dans l'édition finale : il ne doit
 # JAMAIS contenir de secret. On masque donc la valeur des arguments dont le NOM évoque un secret,
 # les mots de passe intégrés à une URL (scheme://user:mdp@hôte) et les jetons opaques longs.
@@ -666,7 +699,8 @@ async def executer(nom: str, args: dict, registre) -> str:
         id_appr = None
         if niveau:
             id_appr, refus, nouvelle = approbations.exiger(
-                nom, args or {}, niveau, _resume_action(nom, args or {}))
+                nom, args or {}, niveau, _resume_action(nom, args or {}),
+                prerequis=est_prerequis(nom, registre))
             if refus:
                 if nouvelle:
                     try:
@@ -682,6 +716,7 @@ async def executer(nom: str, args: dict, registre) -> str:
             if id_appr:
                 approbations.conclure(id_appr, False, f"interrompue : {type(exc).__name__}")
             raise
+        await _enregistrer_preuve_eventuelle(nom, args, resultat, registre)
         if id_appr:
             approbations.conclure(id_appr, not est_erreur(resultat), resultat)
             try:   # best-effort : message Telegram édité à l'état final (✅ Exécutée / ⚠️ Échec)
