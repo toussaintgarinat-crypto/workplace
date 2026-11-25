@@ -11,3 +11,6 @@
   ansible.builtin.command: docker compose up -d
   args: {chdir: "{{ forgejo_dir }}"}
   changed_when: true
+- name: Let Docker networks (Dokploy builds) reach Forgejo through the host firewall
+  ansible.builtin.command: ufw allow from 172.16.0.0/12 to any port {{ forgejo_http_port }} proto tcp
+  changed_when: true

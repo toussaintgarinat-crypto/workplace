@@ -30,3 +30,6 @@ def test_published_ports_guarded_and_forgejo_off_3000():
     t = text()
     assert "--ctstate DNAT -j DROP" in t
     assert "forgejo_http_port: 3001" in t
+
+def test_forgejo_reachable_from_docker_networks():
+    assert "ufw allow from 172.16.0.0/12" in text()

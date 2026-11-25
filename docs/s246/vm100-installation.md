@@ -32,3 +32,10 @@
 - Une clé de test (`spike-s246`, limitée à 10/jour) reste à supprimer dans l'interface.
 
 **Forgejo 17.0.2** (swagger `GET /swagger.v1.json`, base API Gitea 1.22) : jetons personnels à portée limitée, création de dépôt `POST /user/repos`, miroirs `POST /repos/migrate`.
+
+## Task 5 — app témoin Calendrier Familial (2026-11-25)
+- Dépôt poussé dans Forgejo (`wp-admin/calendrier-familial`, public, branche `main`) ; projet Dokploy `temoin`, application `calendrier-familial` (source git personnalisée, build Dockerfile). Service Swarm 1/1, healthcheck interne 200. RAM VM : ~1,5 Go / 5,6 Go.
+- **Écart n°4** : 1er déploiement en erreur — les conteneurs de build ne joignaient pas Forgejo (ufw bloque les réseaux Docker vers l'hôte). Règle `ufw allow from 172.16.0.0/12 to port 3001` ajoutée au rôle `forgejo` (+ test) et réappliquée ; 2ᵉ déploiement `done`. Les logs d'échec sont lisibles via `deployment.readLogs` (le client devra les filtrer, S249).
+- Prouvé par l'API : `deploy`, `redeploy`, `reload` (exige `appName`+`applicationId`), `stop` (service 0/0, statut `idle`), `start` (1/1, `done`), `deployment.all`, `deployment.readLogs`.
+- **Écart n°5** : `start`/`stop` renvoient **tout l'objet application** (≈ 5 Ko, dont `refreshToken`) → la brique doit en extraire quelques champs, jamais le renvoyer au LLM.
+- **Écart n°6 (ROLLBACK, non résolu)** : `application.update {rollbackActive:true}` n'a produit aucun `rollbackId` visible après un redéploiement ; aucune route de liste des rollbacks n'existe (seulement `rollback.rollback` et `rollback.delete`). Dokploy lie le rollback à un **registre d'images** (`rollbackRegistryId`, routes `registry.*`). Piste : utiliser le registre de conteneurs de Forgejo, ce qui impose de déclarer `192.168.1.165:3001` comme registre non sécurisé (HTTP) dans le démon Docker de la VM 100. **Décision à prendre avant la Partie 2.**
