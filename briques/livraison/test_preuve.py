@@ -78,3 +78,12 @@ def test_exiger_preuve_refuse_sans_preuve():
 def test_exiger_preuve_accepte_une_preuve_fraiche():
     preuve.noter("A1", "P1", "valide", {})
     assert main.exiger_preuve("A1")["preuve_id"] == "P1"
+
+
+def test_verdict_non_valide_refuse_meme_avec_expiration_future(tmp_path):
+    import json
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / "preuves_sauvegarde.json").write_text(json.dumps(
+        {"A1": {"preuve_id": "P9", "verdict": "invalide", "comptages": {},
+                "cree_a": T0, "expire_a": T0 + 10_000}}))
+    assert preuve.valide("A1", T0 + 1) is None
