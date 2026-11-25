@@ -784,3 +784,66 @@ def test_sonder_dispatche_callback_et_message(monkeypatch):
     r = _run(pont.sonder("faux"))
     assert vus == {"cb": ["sd-2"], "msg": ["sd-1"]}
     assert r["traites"] == 2 and r["autorises"] == 2
+
+
+# ── S245 (revue) : source non authentifiée, Telegram isolé, journal ───────────────────
+def test_code_d_un_approbateur_via_source_non_authentifiee_est_ignore(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": True, "ok": True,
+                                                            "raison": "ok"})
+    _approbateur("code-na")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-na", "123456", "G"),
+                          source_authentifiee=False))
+    assert coeur.codes == [] and appels == [] and faux.envoyes == []
+    assert r["ok"] is True
+
+
+def test_code_d_un_non_approbateur_via_source_non_authentifiee_reste_ordinaire(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    K.lier("faux", "code-na2", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-na2", "123456", "G"),
+                          source_authentifiee=False))
+    assert coeur.codes == [] and len(appels) == 1 and r["reponse"] == "réponse assistant"
+
+
+def test_message_ordinaire_d_un_approbateur_via_source_non_authentifiee_est_relaye(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    _approbateur("code-na3")
+    _run(pont.traiter("faux", A.Entrant("faux", "code-na3", "bonjour", "G"),
+                      source_authentifiee=False))
+    assert len(appels) == 1
+
+
+@pytest.mark.parametrize("casse", ["repondre_callback", "envoyer", "editer_message"])
+def test_callback_telegram_en_panne_apres_decision_garde_le_verdict(monkeypatch, casse):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+
+    async def panne(*a, **k):
+        raise httpx.ConnectError("telegram KO")
+
+    monkeypatch.setattr(faux, casse, panne)
+    _approbateur("cb-tgko")
+    r = _run(pont.traiter_callback("faux", _cb("cb-tgko")))
+    assert r == {"ok": True, "raison": "ok"}
+    assert coeur.decisions == [(ID_AP, "ok", "faux:cb-tgko")]
+
+
+def test_callback_armement_telegram_en_panne_garde_code_demande(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": False, "raison": "code_requis"})
+
+    async def panne(*a, **k):
+        raise httpx.ConnectError("telegram KO")
+
+    monkeypatch.setattr(faux, "envoyer", panne)
+    monkeypatch.setattr(faux, "repondre_callback", panne)
+    _approbateur("cb-tgko2")
+    r = _run(pont.traiter_callback("faux", _cb("cb-tgko2")))
+    assert r == {"ok": True, "raison": "code_demande"}
+
+
+def test_code_coeur_en_erreur_journalise_sans_les_chiffres(monkeypatch, caplog):
+    faux, coeur, appels = _brancher_code(monkeypatch, code=httpx.ConnectError("KO"))
+    _approbateur("code-log")
+    with caplog.at_level(logging.WARNING):
+        _run(pont.traiter("faux", A.Entrant("faux", "code-log", "123456", "G")))
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    assert "123456" not in caplog.text

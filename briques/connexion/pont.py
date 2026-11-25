@@ -174,31 +174,40 @@ async def traiter_callback(reseau: str, cb) -> dict:
         return {"ok": False, "raison": "ignore"}
     id_, decision = m.group(1), m.group(2)
     par = f"{reseau}:{cb.from_id}"
+
+    async def _tg(coro):                          # Telegram best-effort : la décision est déjà prise
+        try:
+            await coro
+        except Exception as e:  # noqa: BLE001
+            _log.warning("Approbation : appel %s en échec (%s)", reseau, type(e).__name__)
+
     try:
         rep = await client_assistant.decider_approbation(id_, decision, par)
         if rep.get("raison") == "code_requis" and decision == "ok":
             armement = await client_assistant.armer_code(id_, par)
             if armement.get("ok"):
-                await ad.repondre_callback(cb.callback_id, "Code requis")
-                await ad.envoyer(cb.chat_id, "🔐 Action destructive : saisis ici le code à "
-                                             "6 chiffres affiché dans l'app Workplace "
-                                             "(3 essais, 5 min).")
-                return {"ok": True, "raison": "code_demande"}
-            rep = armement
-        raison = rep.get("raison")
-        await ad.repondre_callback(cb.callback_id, _BULLE.get(raison, "Impossible"))
-        if rep.get("ok") and raison == "ok":
-            await ad.editer_message(cb.chat_id, cb.message_id,
-                                    "✅ Approuvée." if decision == "ok" else "❌ Refusée.")
-        elif raison in _VERDICT:
-            await ad.editer_message(cb.chat_id, cb.message_id, _VERDICT[raison])
-        return {"ok": bool(rep.get("ok")), "raison": raison}
+                code_demande = True
+            else:
+                code_demande, rep = False, armement
+        else:
+            code_demande = False
     except Exception:  # noqa: BLE001 — Cœur injoignable : repli honnête, aucune exécution
-        try:
-            await ad.repondre_callback(cb.callback_id, "Service indisponible, réessaie")
-        except Exception:  # noqa: BLE001
-            pass
+        await _tg(ad.repondre_callback(cb.callback_id, "Service indisponible, réessaie"))
         return {"ok": False, "raison": "noyau_injoignable"}
+    if code_demande:
+        await _tg(ad.repondre_callback(cb.callback_id, "Code requis"))
+        await _tg(ad.envoyer(cb.chat_id, "🔐 Action destructive : saisis ici le code à "
+                                         "6 chiffres affiché dans l'app Workplace "
+                                         "(3 essais, 5 min)."))
+        return {"ok": True, "raison": "code_demande"}
+    raison = rep.get("raison")
+    await _tg(ad.repondre_callback(cb.callback_id, _BULLE.get(raison, "Impossible")))
+    if rep.get("ok") and raison == "ok":
+        await _tg(ad.editer_message(cb.chat_id, cb.message_id,
+                                    "✅ Approuvée." if decision == "ok" else "❌ Refusée."))
+    elif raison in _VERDICT:
+        await _tg(ad.editer_message(cb.chat_id, cb.message_id, _VERDICT[raison]))
+    return {"ok": bool(rep.get("ok")), "raison": raison}
 
 
 async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
@@ -212,7 +221,9 @@ async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
         return None
     try:
         r = await client_assistant.soumettre_code(f"{reseau}:{entrant.id_externe}", texte)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log.warning("Approbation : saisie de code, Cœur injoignable ou refusé (%s) — "
+                     "APPROBATIONS_CLE configurée ?", type(e).__name__)
         try:
             await ad.envoyer(entrant.id_externe, "Service indisponible, réessaie.")
         except Exception:  # noqa: BLE001
@@ -233,7 +244,8 @@ async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
     return {"ok": True, "code": r.get("raison")}
 
 
-async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
+async def traiter(reseau: str, entrant, *, envoyer: bool = True,
+                  source_authentifiee: bool = True) -> dict:
     """Traite un message entrant de bout en bout. Renvoie un compte-rendu (sans lever)."""
     ad = adaptateurs.obtenir(reseau)
     if ad is None:
@@ -258,7 +270,14 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
             return cr
         transcrit = entrant.texte = cr["texte"]
 
-    if envoyer and transcrit is None and ad.configure():
+    if (not source_authentifiee and transcrit is None
+            and _CODE.fullmatch((entrant.texte or "").strip())
+            and correspondance.est_approbateur(reseau, entrant.id_externe)):
+        # 6 chiffres d'un approbateur via une source SANS authentification (webhook sans
+        # secret) : identité forgeable → ni soumis au Cœur, ni relayé au LLM. Abandon muet.
+        return {"ok": True, "raison": "source_non_authentifiee"}
+
+    if envoyer and transcrit is None and source_authentifiee and ad.configure():
         pris = await _tenter_code(reseau, ad, entrant)
         if pris is not None:
             return pris

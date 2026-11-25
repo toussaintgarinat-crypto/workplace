@@ -22,7 +22,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
                                RedirectResponse, StreamingResponse)
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 import adaptateurs
@@ -88,7 +88,7 @@ class DroitApprobateur(BaseModel):
 
 
 class NotifApprobation(BaseModel):
-    id: str
+    id: str = Field(pattern=r"^[0-9a-f]{32}$")
     resume: str
     sensibilite: str
     prerequis_ok: bool = True
@@ -174,12 +174,18 @@ async def webhook(reseau: str, request: Request):
     # Discord : répondre au PING par un PONG (type 1).
     if reseau == "discord" and isinstance(payload, dict) and payload.get("type") == 1:
         return {"type": 1}
+    # Sans TELEGRAM_WEBHOOK_SECRET, verifier_webhook accepte tout : le from.id du payload n'est
+    # alors PAS une identité. Fail closed : ni clic d'approbation, ni saisie de code (S245).
+    authentifiee = not (reseau == "telegram" and not os.getenv("TELEGRAM_WEBHOOK_SECRET"))
     parse_cb = getattr(ad, "parser_callback", None)
     cb = parse_cb(payload) if parse_cb else None
     if cb:                                        # clic sur un bouton d'approbation (S245)
-        return {"ok": True, "callback": (await pont.traiter_callback(reseau, cb)).get("raison")}
+        if authentifiee:
+            await pont.traiter_callback(reseau, cb)
+        return {"ok": True}                       # corps constant : aucun oracle
     entrants = ad.parser_entrant(payload)
-    comptes = [await pont.traiter(reseau, e) for e in entrants]
+    comptes = [await pont.traiter(reseau, e, source_authentifiee=authentifiee)
+               for e in entrants]
     return {"ok": True, "recus": len(entrants),
             "autorises": sum(1 for c in comptes if c.get("ok"))}
 

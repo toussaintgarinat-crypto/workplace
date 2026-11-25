@@ -159,8 +159,12 @@ class Telegram(Adaptateur):
         de = cq.get("from") or {}
         if not (de.get("id") and chat.get("id") and cq.get("id")):
             return None
+        try:
+            mid = int(msg.get("message_id") or 0)
+        except (TypeError, ValueError):
+            return None                       # ne doit jamais bloquer le sondage
         return Callback(self.nom, str(de["id"]), str(chat["id"]), chat.get("type") or "",
-                        int(msg.get("message_id") or 0), str(cq["id"]), cq.get("data") or "")
+                        mid, str(cq["id"]), cq.get("data") or "")
 
     async def envoyer_boutons(self, id_externe: str, texte: str, boutons: list) -> dict | None:
         corps = {"chat_id": id_externe, "text": texte}

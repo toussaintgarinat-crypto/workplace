@@ -260,9 +260,6 @@ def test_mettre_a_jour_exige_la_cle_api(monkeypatch, tg):
 
 def test_routes_approbation_ne_sont_pas_proxifiees(monkeypatch, tg):
     """Le catch-all /{chemin:path} relaie au dashboard : les routes doivent le précéder."""
-    async def boom(*a, **k):
-        raise AssertionError("proxy_dashboard atteint")
-
     monkeypatch.setattr(main.miniapp, "verifier_session", lambda *_: pytest.fail("proxy"))
     monkeypatch.setattr(main, "API_KEYS", {"k1"})
     h = {"X-API-Key": "k1"}
@@ -276,6 +273,7 @@ def test_routes_approbation_ne_sont_pas_proxifiees(monkeypatch, tg):
 
 # ── webhook ──────────────────────────────────────────────────────────────────────────
 def test_webhook_callback_query_est_route_vers_traiter_callback(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s3")
     vus = []
 
     async def faux_cb(reseau, cb):
@@ -290,8 +288,9 @@ def test_webhook_callback_query_est_route_vers_traiter_callback(monkeypatch):
     upd = {"update_id": 1, "callback_query": {
         "id": "c", "from": {"id": 42}, "data": f"ap:{ID_AP}:ok",
         "message": {"message_id": 3, "chat": {"id": 42, "type": "private"}}}}
-    r = client.post("/webhook/telegram", json=upd)
-    assert r.status_code == 200 and r.json() == {"ok": True, "callback": "ok"}
+    r = client.post("/webhook/telegram", json=upd,
+                    headers={"X-Telegram-Bot-Api-Secret-Token": "s3"})
+    assert r.status_code == 200 and r.json() == {"ok": True}      # corps constant
     assert vus == [("telegram", "42", f"ap:{ID_AP}:ok")]
 
 
@@ -370,3 +369,70 @@ def test_route_approbateur_refuse_entree_inconnue_ou_non_liee(monkeypatch):
     assert client.post("/correspondances/approbateur", headers=h, json={
         "reseau": "telegram", "id_externe": "pa4", "approbateur": True}).status_code == 404
     assert K.est_approbateur("telegram", "pa4") is False
+
+
+# ── S245 : webhook sans secret = source non authentifiée (fail closed) ────────────────
+_UPD_CB = {"update_id": 1, "callback_query": {
+    "id": "c", "from": {"id": 42}, "data": f"ap:{ID_AP}:ok",
+    "message": {"message_id": 3, "chat": {"id": 42, "type": "private"}}}}
+
+
+def test_webhook_callback_sans_secret_est_refuse_sans_toucher_le_coeur(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    vus = []
+
+    async def faux_cb(reseau, cb):
+        vus.append(cb)
+        return {"ok": True, "raison": "ok"}
+
+    async def pas_traiter(*a, **k):
+        raise AssertionError("un clic ne doit pas passer par traiter()")
+
+    monkeypatch.setattr(pont, "traiter_callback", faux_cb)
+    monkeypatch.setattr(pont, "traiter", pas_traiter)
+    for nom in ("decider_approbation", "armer_code", "soumettre_code"):
+        monkeypatch.setattr(main.client_assistant, nom,
+                            lambda *a, **k: pytest.fail("Cœur appelé"))
+    r = client.post("/webhook/telegram", json=_UPD_CB)
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert vus == []
+
+
+def test_webhook_callback_corps_constant_meme_si_ignore(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s3")
+
+    async def faux_cb(reseau, cb):
+        return {"ok": False, "raison": "ignore"}
+
+    monkeypatch.setattr(pont, "traiter_callback", faux_cb)
+    r = client.post("/webhook/telegram", json=_UPD_CB,
+                    headers={"X-Telegram-Bot-Api-Secret-Token": "s3"})
+    assert r.json() == {"ok": True}
+
+
+@pytest.mark.parametrize("secret,entete,attendu", [(None, {}, False),
+                                                   ("s3", {"X-Telegram-Bot-Api-Secret-Token": "s3"}, True)])
+def test_webhook_message_transmet_le_drapeau_source_authentifiee(monkeypatch, secret, entete,
+                                                                 attendu):
+    if secret:
+        monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", secret)
+    else:
+        monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    vus = []
+
+    async def faux_traiter(reseau, e, **k):
+        vus.append(k.get("source_authentifiee"))
+        return {"ok": True}
+
+    monkeypatch.setattr(pont, "traiter", faux_traiter)
+    upd = {"message": {"chat": {"id": 555}, "text": "coucou", "from": {"first_name": "T"}}}
+    r = client.post("/webhook/telegram", json=upd, headers=entete)
+    assert r.status_code == 200 and r.json()["recus"] == 1
+    assert vus == [attendu]
+
+
+def test_notifier_refuse_un_id_non_hex32(tg):
+    for mauvais in ("abc", "Z" * 32, "A1" * 16, "a1" * 17, ""):
+        r = client.post("/approbation/notifier", json=_notif(id=mauvais), headers=_H)
+        assert r.status_code == 422, mauvais
+    assert tg.boutons == []

@@ -145,12 +145,14 @@ def approbateurs(reseau: str) -> list[str]:
     """`id_externe` des approbateurs d'un réseau (mêmes conditions que `est_approbateur`)."""
     return [e["id_externe"] for e in table().values()
             if e.get("reseau") == reseau and e.get("statut") == "lie"
-            and e.get("approbateur") is True]
+            and e.get("approbateur") is True and not str(e["id_externe"]).startswith("-")]
 
 
 def definir_approbateur(reseau: str, id_externe: str, valeur: bool) -> dict | None:
     """Pose/retire le drapeau. Ne marche que sur une entrée existante au statut « lie »
     (None sinon) : on n'accorde jamais ce droit à un inconnu ou à quelqu'un en attente."""
+    if str(id_externe).startswith("-"):           # groupe Telegram : un résumé y serait publié
+        return None
     t = table()
     e = t.get(_cle(reseau, str(id_externe)))
     if not e or e.get("statut") != "lie":

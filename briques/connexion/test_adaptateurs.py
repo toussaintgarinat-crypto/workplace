@@ -259,3 +259,9 @@ def test_repondre_callback_appelle_answerCallbackQuery(monkeypatch):
     _, url, kw = appels[0]
     assert url.endswith("/answerCallbackQuery")
     assert kw["json"] == {"callback_query_id": "cb1", "text": "Décision enregistrée"}
+
+
+def test_parser_callback_message_id_malforme_rend_none():
+    p = _payload_cb()
+    p["callback_query"]["message"]["message_id"] = "pas-un-entier"
+    assert A.Telegram().parser_callback(p) is None

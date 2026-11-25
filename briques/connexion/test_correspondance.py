@@ -140,3 +140,14 @@ def test_delier_supprime_le_droit():
     assert K.est_approbateur("telegram", "del-1") is False
     K.lier("telegram", "del-1", "u")                         # re-création : pas de droit hérité
     assert K.est_approbateur("telegram", "del-1") is False
+
+
+def test_groupe_telegram_ne_peut_jamais_etre_approbateur():
+    K.lier("telegram", "-100123", "g@wp")
+    assert K.definir_approbateur("telegram", "-100123", True) is None
+    assert K.est_approbateur("telegram", "-100123") is False
+    t = K.table()
+    t["telegram:-100124"] = {"reseau": "telegram", "id_externe": "-100124", "statut": "lie",
+                             "utilisateur": "g@wp", "approbateur": True}   # forcé à la main
+    K._sauver(t)
+    assert "-100124" not in K.approbateurs("telegram")
