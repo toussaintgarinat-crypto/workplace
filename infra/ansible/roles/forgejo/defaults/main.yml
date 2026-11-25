@@ -4,3 +4,4 @@ forgejo_http_port: 3001      # 3000 est pris par Dokploy
 forgejo_ssh_port: 2222
 forgejo_dir: /opt/forgejo
 forgejo_root_url: "http://{{ forgejo_host | default(ansible_default_ipv4.address) }}:{{ forgejo_http_port }}/"
+forgejo_registry_host: "{{ ansible_default_ipv4.address }}:{{ forgejo_http_port }}"

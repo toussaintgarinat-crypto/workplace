@@ -1,3 +1,13 @@
+- name: Declare the Forgejo container registry as insecure (HTTP, LAN/mesh only)
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: '{{ {"insecure-registries": [forgejo_registry_host]} | to_nice_json }}'
+    mode: "0644"
+  register: forgejo_daemon
+
+- name: Restart Docker when the registry list changed
+  ansible.builtin.systemd: {name: docker, state: restarted}
+  when: forgejo_daemon.changed
 - name: Forgejo directory
   ansible.builtin.file: {path: "{{ forgejo_dir }}", state: directory, mode: "0750"}
 - name: Generate SECRET_KEY once (kept on the VM only, never in the repo)

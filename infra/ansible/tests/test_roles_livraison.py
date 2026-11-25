@@ -33,3 +33,6 @@ def test_published_ports_guarded_and_forgejo_off_3000():
 
 def test_forgejo_reachable_from_docker_networks():
     assert "ufw allow from 172.16.0.0/12" in text()
+
+def test_forgejo_registry_declared_insecure_for_rollback():
+    assert "insecure-registries" in text()
