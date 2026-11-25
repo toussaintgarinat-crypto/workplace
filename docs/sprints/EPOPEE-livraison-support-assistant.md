@@ -44,7 +44,7 @@ Workplace **orchestre** ces outils ; il ne les réimplémente pas.
 
 | Sprint | Contenu | Dépend de | Fichier détail | État |
 |---|---|---|---|---|
-| S245 | Socle d'approbation Telegram (demandes liées à l'action, niveaux, journal) | S75/S76 existants | [S245-socle-approbation-telegram.md](S245-socle-approbation-telegram.md) | codé + revu (LIVE à prouver) |
+| S245 | Socle d'approbation Telegram (demandes liées à l'action, niveaux, journal) | S75/S76 existants | [S245-socle-approbation-telegram.md](S245-socle-approbation-telegram.md) | codé + revu + S245b (liaison utilisateur, reprise, `CONNEXION_API_KEYS`) ; LIVE à prouver |
 | S246 | Forgejo + Dokploy, outils d'exploitation (logs, redémarrer, rollback) | S245 | [S246-forgejo-dokploy-exploitation.md](S246-forgejo-dokploy-exploitation.md) | spécifié |
 | S247 | Sauvegarde vérifiée + reset app entière (bleu/vert) | S246 | [S247-sauvegarde-verifiee-reset-app-entiere.md](S247-sauvegarde-verifiee-reset-app-entiere.md) | spécifié |
 | S248 | Contrat d'app + reset par utilisateur (app pilote) | S247 | [S248-contrat-app-reset-par-utilisateur.md](S248-contrat-app-reset-par-utilisateur.md) | spécifié |

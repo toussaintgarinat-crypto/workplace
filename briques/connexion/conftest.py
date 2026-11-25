@@ -9,6 +9,7 @@ import os
 import tempfile
 
 os.environ["API_KEYS"] = ""                      # admin en mode ouvert
+os.environ.pop("CONNEXION_API_KEYS", None)       # une variable exportée par le shell ne doit pas fermer les tests
 os.environ["CONNEXION_OUVERT"] = "0"             # consentement requis par défaut
 os.environ["CONNEXION_TTS"] = "0"                # pas de synthèse réseau par défaut (déterminisme)
 os.environ["CONNEXION_DIR"] = tempfile.mkdtemp(prefix="connexion_test_")
