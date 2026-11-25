@@ -203,3 +203,48 @@ ne prouve rien : seules les colonnes « échoue » comptent.
 Les 8 mutations sont attrapées. Le brief attendait que la mutation d fasse aussi échouer le
 test « mauvais chat » ; ce n'est pas le cas, car ce contrôle est indépendant de
 `est_approbateur` (d2 le couvre séparément).
+
+## S245b (2026-11-25) : approbation liée à l'utilisateur, reprise par le Cœur
+
+Branche `s245b-approbation-liee-utilisateur`. Ferme trois limites d'S245. Les clés ne sont
+toujours **pas posées sur le HP** : le tout reste dormant jusqu'à l'activation en fin d'S246.
+
+### Les 3 décisions
+
+- **Q1 = A : seul le demandeur approuve.** La demande porte `utilisateur` et `org_id` ; `creer`,
+  `consommer`, `_derniere`, `en_attente`, `approuver`, `refuser`, `armer_saisie_code` et
+  `valider_code_saisi` filtrent par utilisateur ; l'argument `utilisateur` (kw-only) n'est obligatoire
+  que pour `approuver`, `refuser`, `armer_saisie_code` et `valider_code_saisi` ; `creer`, `consommer`
+  et `_derniere` prennent par défaut l'utilisateur du contexte tenant. Côté
+  brique connexion, la demande n'est envoyée qu'à l'approbateur lié à ce demandeur
+  (`correspondance.approbateurs_de`) et le pont résout l'utilisateur de l'approbateur
+  (`utilisateur_de`) avant d'appeler le Cœur, qui revérifie.
+- **Q2 = A : `CONNEXION_API_KEYS` propre à la brique.** Variable présente mais vide = brique
+  ouverte ; variable absente = repli sur `API_KEYS`. Le Cœur et les briques appelantes envoient
+  `CONNEXION_KEY`. On ne renseigne jamais `API_KEYS` pour cela (une vingtaine de briques la lisent).
+- **Q3 = A : le Cœur exécute l'action approuvée** (`core/approbations_reprise.py`), dans le contexte
+  (utilisateur + org) du demandeur, déclenchée par le bouton **et** par le code destructif valide.
+  Les arguments sont purgés à tout état final.
+
+### Ajouts au-delà du plan (revues)
+
+- `approbations.abandonner` : une demande `approuvee` dont la capacité n'est plus sensible, ou dont
+  la garde refuse à la reprise, passe à `expiree` et est journalisée `abandonnee`, pour que
+  l'horloge ne la rejoue pas indéfiniment. Le message Telegram est édité au mieux à l'état final (« ⌛ Expirée »,
+  sans jamais lever) ; ce même abandon couvre aussi les arguments absents.
+- `pont._tenter_code` : un approbateur sans compte lié est avalé en échec fermé
+  (`approbateur_sans_compte`) ; ses 6 chiffres ne sont jamais relayés au LLM.
+- Anti-redemande de 5 min après une exécution réussie (`DELAI_APRES_EXECUTION_S`).
+- Reprise des `approuvee` orphelines par l'horloge (`/approbations/relancer`, champ `reprises`).
+- Une exception avant consommation lors de la reprise laisse la demande `approuvee` ; elle est
+  journalisée (`reprise_echec`, type d'exception seul) et réessayée, bornée à 3 échecs : au
+  troisième, abandon (`expiree`, message édité).
+
+### Écarts et limites assumés
+
+1. **Args en clair en base** jusqu'à l'état final : l'exécution exige les vrais arguments, donc ils ne peuvent pas être expurgés (le résumé affiché, lui, reste expurgé). Mitigation : purge (`args = NULL`) à toute sortie de `en_attente`/`approuvee` vers un état final, jamais exposés par une route.
+2. **Pas de JWT à la reprise, repli sur le compte de service** : `user_token` n'est pas persisté. À la reprise `_user_token` vaut None, `contexte_tenant.entetes_forge()` renvoie `{}` et l'adaptateur Forge RETOMBE sur son compte de service (`core/outils_communs.py`, `entetes_forge_sortants`). Une capacité de la brique Forge s'exécuterait donc sous l'identité de service, pas celle du demandeur (changement de privilège possible), et n'échouerait pas. Prérequis avant de rendre sensible une capacité Forge : voir S246. Le contexte repris porte `utilisateur` + `org_id`.
+3. **Résultat non réinjecté dans le fil de conversation** : le résultat de la reprise est visible dans le message Telegram édité (✅/⚠️) et dans `approbations.resultat`. Le réinjecter dans le journal de conversation est reporté (hors périmètre).
+4. **Au plus une exécution** : `consommer` marque `executee` *avant* d'exécuter. Un crash du Cœur pendant l'exécution laisse la demande `executee` sans résultat, sans rejeu automatique (sens sûr).
+5. **`org_id` hors filtres** : `org_id` ne fait pas partie des filtres de consommation/dédoublonnage (seul `utilisateur`) : un utilisateur actif dans deux organisations pourrait voir une approbation de l'une consommée pour l'autre à arguments identiques — à traiter si le multi-organisation par utilisateur devient réel.
+6. Limite 3 d'S245 (écran affichant le code destructif) et 4 (`satisfaire_prerequis` sans verrou, S247) : non traitées ici. Reste aussi : webhook Telegram sans secret (callbacks et codes ignorés dans ce cas).

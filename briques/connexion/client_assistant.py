@@ -150,14 +150,17 @@ async def _poster_approbation(chemin: str, corps: dict, timeout: float = 15.0) -
         return r.json()
 
 
-async def decider_approbation(id_: str, decision: str, par: str) -> dict:
-    return await _poster_approbation(f"/approbations/{id_}/decision",
-                                     {"decision": decision, "par": par, "canal": "telegram"})
+async def decider_approbation(id_: str, decision: str, par: str, utilisateur: str) -> dict:
+    return await _poster_approbation(
+        f"/approbations/{id_}/decision",
+        {"decision": decision, "par": par, "utilisateur": utilisateur, "canal": "telegram"})
 
 
-async def armer_code(id_: str, par: str) -> dict:
-    return await _poster_approbation(f"/approbations/{id_}/code/armer", {"par": par})
+async def armer_code(id_: str, par: str, utilisateur: str) -> dict:
+    return await _poster_approbation(f"/approbations/{id_}/code/armer",
+                                     {"par": par, "utilisateur": utilisateur})
 
 
-async def soumettre_code(par: str, code: str) -> dict:
-    return await _poster_approbation("/approbations/code", {"par": par, "code": code})
+async def soumettre_code(par: str, code: str, utilisateur: str) -> dict:
+    return await _poster_approbation("/approbations/code",
+                                     {"par": par, "code": code, "utilisateur": utilisateur})

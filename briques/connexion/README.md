@@ -32,6 +32,9 @@ Tout se configure par variables d'environnement (à poser dans le `.env` racine,
 secret en dur**). En dev, `CONNEXION_OUVERT=1` autorise tout le monde (rattaché à
 `CONNEXION_UTILISATEUR_DEFAUT`).
 
+Clés d'accès de la brique : `CONNEXION_API_KEYS` (CSV) l'emporte dès qu'elle est présente, même vide
+(vide = mode ouvert) ; absente, repli sur `API_KEYS`. Ne pas renseigner `API_KEYS` à la place (≈20 briques la lisent).
+
 ## Réseaux
 
 ### Telegram — le plus simple (preuve LIVE ciblée, aucune URL publique requise)

@@ -24,6 +24,7 @@ CLE = "cle-test-approbations"
 ENT = {"X-Approbations-Cle": CLE}
 BEARER = {"Authorization": f"Bearer {CLE}"}
 INCONNU = "0" * 32
+U = "marina"   # sub de la fixture `session` : les demandes de test lui appartiennent
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +50,10 @@ def _isoler(monkeypatch, tmp_path):
 
     monkeypatch.setattr(approbations_canal, "notifier", _notifier)
     monkeypatch.setattr(approbations_canal, "mettre_a_jour", _maj)
+    # La reprise (Task 6) est testée à part : ici le registre n'a pas la capacité, la reprise
+    # réelle abandonnerait les demandes de test.
+    import approbations_reprise
+    monkeypatch.setattr(approbations_reprise, "lancer", lambda registre, id_: None)
     yield appels
     auth._cache_access_token.clear()
 
@@ -82,23 +87,25 @@ def session():
 
 @pytest.fixture
 def demande():
-    return approbations.creer("app_redemarrer", {"app": "crm"}, "r", "reversible")
+    return approbations.creer("app_redemarrer", {"app": "crm"}, "r", "reversible",
+                             utilisateur=U)
 
 
 @pytest.fixture
 def demande_destructive():
-    return approbations.creer("app_supprimer", {"app": "crm"}, "d", "destructif")
+    return approbations.creer("app_supprimer", {"app": "crm"}, "d", "destructif",
+                             utilisateur=U)
 
 
 def _decision(client, id_, decision="ok", headers=ENT, par="tg:42"):
     return client.post(f"/approbations/{id_}/decision", headers=headers,
-                       json={"decision": decision, "par": par, "canal": "telegram"})
+                       json={"decision": decision, "par": par, "canal": "telegram", "utilisateur": U})
 
 
 # ── Décision ────────────────────────────────────────────────────────────────
 
 def test_decision_sans_cle_ou_mauvaise_cle_401(client, demande):
-    corps = {"decision": "ok", "par": "tg:42", "canal": "telegram"}
+    corps = {"decision": "ok", "par": "tg:42", "canal": "telegram", "utilisateur": U}
     assert client.post(f"/approbations/{demande['id']}/decision", json=corps).status_code == 401
     assert client.post(f"/approbations/{demande['id']}/decision",
                        headers={"X-Approbations-Cle": "x"}, json=corps).status_code == 401
@@ -107,7 +114,7 @@ def test_decision_sans_cle_ou_mauvaise_cle_401(client, demande):
 
 def test_decision_fail_closed_si_cle_non_configuree(client_sans_cle, demande):
     r = client_sans_cle.post(f"/approbations/{demande['id']}/decision", headers=ENT,
-                             json={"decision": "ok", "par": "tg:42", "canal": "telegram"})
+                             json={"decision": "ok", "par": "tg:42", "canal": "telegram", "utilisateur": U})
     assert r.status_code == 503
     assert approbations.lire(demande["id"])["statut"] == "en_attente"
 
@@ -115,7 +122,7 @@ def test_decision_fail_closed_si_cle_non_configuree(client_sans_cle, demande):
 def test_decision_cle_vide_envoyee_avec_cle_non_configuree_503(client_sans_cle, demande):
     r = client_sans_cle.post(f"/approbations/{demande['id']}/decision",
                              headers={"X-Approbations-Cle": ""},
-                             json={"decision": "ok", "par": "tg:42", "canal": "telegram"})
+                             json={"decision": "ok", "par": "tg:42", "canal": "telegram", "utilisateur": U})
     assert r.status_code == 503
 
 
@@ -153,7 +160,7 @@ def test_decision_id_forge_422_et_inconnu_introuvable(client):
 
 
 def test_id_invalide_rejete_422_sur_toutes_les_routes_a_id(client):
-    r = client.post("/approbations/pas-un-id/code/armer", headers=ENT, json={"par": "tg:42"})
+    r = client.post("/approbations/pas-un-id/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     assert r.status_code == 422
 
 
@@ -183,8 +190,8 @@ def test_reponses_des_routes_a_cle_ne_contiennent_jamais_le_code(client, demande
     id_ = demande_destructive["id"]
     brut = [
         _decision(client, id_, "ok").text,
-        client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"}).text,
-        client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "000000"}).text,
+        client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U}).text,
+        client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "000000", "utilisateur": U}).text,
         client.post("/approbations/relancer", headers=ENT).text,
     ]
     for texte in brut:
@@ -195,10 +202,10 @@ def test_reponses_des_routes_a_cle_ne_contiennent_jamais_le_code(client, demande
 
 def test_code_armer_puis_code_valide_approuve(client, demande_destructive, appels):
     id_ = demande_destructive["id"]
-    r = client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
+    r = client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     assert r.json() == {"ok": True, "raison": "ok"}
     r = client.post("/approbations/code", headers=ENT,
-                    json={"par": "tg:42", "code": demande_destructive["code"]})
+                    json={"par": "tg:42", "code": demande_destructive["code"], "utilisateur": U})
     assert r.json() == {"pris_en_charge": True, "ok": True, "raison": "ok",
                         "approbation_id": id_, "restants": 0}
     assert approbations.lire(id_)["statut"] == "approuvee"
@@ -206,34 +213,34 @@ def test_code_armer_puis_code_valide_approuve(client, demande_destructive, appel
 
 
 def test_code_armer_sur_non_destructif(client, demande):
-    r = client.post(f"/approbations/{demande['id']}/code/armer", headers=ENT, json={"par": "tg:42"})
+    r = client.post(f"/approbations/{demande['id']}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     assert r.json() == {"ok": False, "raison": "pas_destructif"}
 
 
 def test_code_armer_et_code_exigent_la_cle(client, demande_destructive):
     id_ = demande_destructive["id"]
-    assert client.post(f"/approbations/{id_}/code/armer", json={"par": "tg:42"}).status_code == 401
-    assert client.post("/approbations/code", json={"par": "tg:42", "code": "1"}).status_code == 401
+    assert client.post(f"/approbations/{id_}/code/armer", json={"par": "tg:42", "utilisateur": U}).status_code == 401
+    assert client.post("/approbations/code", json={"par": "tg:42", "code": "1", "utilisateur": U}).status_code == 401
 
 
 def test_code_armer_et_code_fail_closed_si_cle_non_configuree(client_sans_cle, demande_destructive):
     id_ = demande_destructive["id"]
     assert client_sans_cle.post(f"/approbations/{id_}/code/armer", headers=ENT,
-                                json={"par": "tg:42"}).status_code == 503
+                                json={"par": "tg:42", "utilisateur": U}).status_code == 503
     assert client_sans_cle.post("/approbations/code", headers=ENT,
-                                json={"par": "tg:42", "code": "1"}).status_code == 503
+                                json={"par": "tg:42", "code": "1", "utilisateur": U}).status_code == 503
 
 
 def test_code_sans_saisie_armee_pris_en_charge_false(client):
-    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "123456"})
+    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "123456", "utilisateur": U})
     assert r.status_code == 200 and r.json() == {"pris_en_charge": False}
 
 
 def test_code_faux_decremente_restants(client, demande_destructive):
     id_ = demande_destructive["id"]
-    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     faux = "000000" if demande_destructive["code"] != "000000" else "111111"
-    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": faux})
+    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": faux, "utilisateur": U})
     j = r.json()
     assert j["pris_en_charge"] is True and j["ok"] is False
     assert j["approbation_id"] == id_
@@ -244,8 +251,8 @@ def test_code_faux_decremente_restants(client, demande_destructive):
 
 def test_code_non_ascii_ne_plante_pas(client, demande_destructive):
     id_ = demande_destructive["id"]
-    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
-    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "١٢٣٤٥٦"})
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
+    r = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "١٢٣٤٥٦", "utilisateur": U})
     assert r.status_code == 200 and r.json()["ok"] is False
 
 
@@ -296,7 +303,7 @@ def test_relancer_fail_closed_si_cle_non_configuree_503(client_sans_cle):
 def test_relancer_accepte_la_cle_en_bearer_pour_l_horloge(client):
     # L'horloge ne sait poser que `Authorization: Bearer <env>` (entete_token_env).
     r = client.post("/approbations/relancer", headers=BEARER)
-    assert r.status_code == 200 and r.json() == {"expirees": [], "relancees": []}
+    assert r.status_code == 200 and r.json() == {"expirees": [], "relancees": [], "reprises": []}
 
 
 def test_relancer_expire_les_perimees_et_relance_les_anciennes(client, monkeypatch, appels):
@@ -348,8 +355,8 @@ def test_mise_a_jour_envoyee_au_canal_ne_contient_jamais_le_code(
         client, appels, demande_destructive):
     id_ = demande_destructive["id"]
     _decision(client, id_, "ko")
-    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
-    client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "000000"})
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
+    client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": "000000", "utilisateur": U})
     assert appels["maj"]
     for demande in appels["maj"]:
         assert "code" not in demande
@@ -376,9 +383,9 @@ def test_decision_survit_a_une_panne_du_canal(client, demande, canal_en_panne):
 
 def test_code_survit_a_une_panne_du_canal(client, demande_destructive, canal_en_panne):
     id_ = demande_destructive["id"]
-    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     r = client.post("/approbations/code", headers=ENT,
-                    json={"par": "tg:42", "code": demande_destructive["code"]})
+                    json={"par": "tg:42", "code": demande_destructive["code"], "utilisateur": U})
     assert r.status_code == 200
     assert r.json()["pris_en_charge"] is True and r.json()["ok"] is True
     assert approbations.lire(id_)["statut"] == "approuvee"
@@ -462,10 +469,127 @@ def test_l_horloge_construit_un_bearer_accepte_par_la_route(client, monkeypatch)
 
 def test_destructif_prerequis_non_reunis_armer_refuse_sans_fuite(client):
     d = approbations.creer("app_supprimer", {"app": "x"}, "d", "destructif",
-                           prerequis=("sauvegarde_verifiee",))
-    r = client.post(f"/approbations/{d['id']}/code/armer", headers=ENT, json={"par": "tg:42"})
+                           prerequis=("sauvegarde_verifiee",), utilisateur=U)
+    r = client.post(f"/approbations/{d['id']}/code/armer", headers=ENT, json={"par": "tg:42", "utilisateur": U})
     assert r.status_code == 200 and r.json() == {"ok": False, "raison": "prerequis"}
-    r2 = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": d["code"]})
+    r2 = client.post("/approbations/code", headers=ENT, json={"par": "tg:42", "code": d["code"], "utilisateur": U})
     assert r2.status_code == 200 and r2.json() == {"pris_en_charge": False}
     assert d["code"] not in r.text + r2.text
     assert approbations.lire(d["id"])["statut"] == "en_attente"
+
+
+# ── S245b : approbation liée à l'utilisateur ────────────────────────────────
+
+def test_decision_exige_le_champ_utilisateur(client, demande):
+    r = client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                    json={"decision": "ok", "par": "tg:42"})
+    assert r.status_code == 422
+
+
+def test_decision_d_un_autre_utilisateur_est_introuvable(client, demande):
+    r = client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                    json={"decision": "ok", "par": "tg:42", "utilisateur": "intrus"})
+    assert r.json()["ok"] is False and r.json()["raison"] == "introuvable"
+    assert approbations.lire(demande["id"])["statut"] == "en_attente"
+
+
+def test_decision_du_demandeur_passe(client, demande):
+    r = client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                    json={"decision": "ok", "par": "tg:42",
+                          "utilisateur": demande["utilisateur"]})
+    assert r.json()["ok"] is True
+
+
+def test_en_attente_ne_liste_que_les_demandes_de_la_session(client, demande, session):
+    autre = approbations.creer("app_redemarrer", {"app": "autre"}, "o", "reversible",
+                               utilisateur="intrus")
+    ids = {a["id"] for a in client.get("/approbations/en_attente", cookies=session)
+           .json()["approbations"]}
+    assert demande["id"] in ids and autre["id"] not in ids
+
+
+# ── Reprise après approbation (Task 6) ──────────────────────────────────────
+
+@pytest.fixture
+def reprises(monkeypatch):
+    import approbations_reprise
+    vues = []
+    monkeypatch.setattr(approbations_reprise, "lancer", lambda registre, id_: vues.append(id_))
+    return vues
+
+
+def test_approuver_declenche_la_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ok", "par": "tg:42", "utilisateur": demande["utilisateur"]})
+    assert reprises == [demande["id"]]
+
+
+def test_refuser_ne_declenche_pas_de_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ko", "par": "tg:42", "utilisateur": demande["utilisateur"]})
+    assert reprises == []
+
+
+def test_decision_en_echec_ne_declenche_pas_de_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ok", "par": "tg:42", "utilisateur": "intrus"})
+    assert reprises == []
+
+
+def test_code_bon_declenche_la_reprise(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    code = approbations.lire(id_)["code"]
+    client.post("/approbations/code", headers=ENT,
+                json={"par": "tg:42", "code": code, "utilisateur": u})
+    assert reprises == [id_]
+
+
+def test_code_faux_ne_declenche_pas_de_reprise(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    client.post("/approbations/code", headers=ENT,
+                json={"par": "tg:42", "code": "000000", "utilisateur": u})
+    assert reprises == []
+
+
+def test_relancer_reprend_les_approuvees_orphelines(client, demande, reprises):
+    approbations.approuver(demande["id"], "tg:42", "telegram", time.time() - 3600,
+                           utilisateur=demande["utilisateur"])
+    r = client.post("/approbations/relancer", headers=ENT)
+    assert reprises == [demande["id"]]
+    assert r.json()["reprises"] == [demande["id"]]
+
+
+# ── Revue S245b : mauvais utilisateur et validation sur les routes code ─────
+
+def test_code_armer_mauvais_utilisateur_introuvable(client, demande_destructive):
+    r = client.post(f"/approbations/{demande_destructive['id']}/code/armer", headers=ENT,
+                    json={"par": "tg:42", "utilisateur": "intrus"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and r.json()["raison"] == "introuvable"
+
+
+def test_code_mauvais_utilisateur_non_pris_en_charge(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    code = approbations.lire(id_)["code"]
+    r = client.post("/approbations/code", headers=ENT,
+                    json={"par": "tg:42", "code": code, "utilisateur": "intrus"})
+    assert r.json() == {"pris_en_charge": False}
+    assert reprises == []
+
+
+def test_code_et_armer_utilisateur_vide_422(client, demande_destructive):
+    r = client.post(f"/approbations/{demande_destructive['id']}/code/armer", headers=ENT,
+                    json={"par": "tg:42", "utilisateur": ""})
+    assert r.status_code == 422
+    r = client.post("/approbations/code", headers=ENT,
+                    json={"par": "tg:42", "code": "123456", "utilisateur": ""})
+    assert r.status_code == 422

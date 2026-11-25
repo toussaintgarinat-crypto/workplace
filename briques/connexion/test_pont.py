@@ -486,19 +486,21 @@ class _Coeur:
     """Faux Cœur : consigne les appels de client_assistant et rend des réponses scriptées."""
     def __init__(self, monkeypatch, decision=None, armer=None, code=None):
         self.decisions, self.armements, self.codes = [], [], []
+        self.utilisateurs = []
         self._decision = decision if decision is not None else {"ok": True, "raison": "ok"}
         self._armer = armer if armer is not None else {"ok": True}
         self._code = code if code is not None else {"pris_en_charge": False}
 
-        async def _d(id_, decision, par):
+        async def _d(id_, decision, par, utilisateur):
+            self.utilisateurs.append(utilisateur)
             self.decisions.append((id_, decision, par))
             return self._decision
 
-        async def _a(id_, par):
+        async def _a(id_, par, utilisateur):
             self.armements.append((id_, par))
             return self._armer
 
-        async def _c(par, code):
+        async def _c(par, code, utilisateur):
             self.codes.append((par, code))
             if isinstance(self._code, Exception):
                 raise self._code
@@ -527,6 +529,13 @@ def _installer(monkeypatch, **kw):
     faux = FauxApprob()
     monkeypatch.setitem(A.REGISTRE, "faux", faux)
     return faux, _Coeur(monkeypatch, **kw)
+
+
+def test_callback_transmet_l_utilisateur_lie_de_l_approbateur(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+    _approbateur("cb-u1")                                  # lié à « cb-u1@wp »
+    _run(pont.traiter_callback("faux", _cb("cb-u1")))
+    assert coeur.utilisateurs == ["cb-u1@wp"]
 
 
 # 1
@@ -774,6 +783,41 @@ def test_code_approbateur_coeur_en_erreur_ne_part_jamais_au_llm(monkeypatch):
     assert len(faux.envoyes) == 1 and "indisponible" in faux.envoyes[0][1].lower()
     assert "123456" not in faux.envoyes[0][1]
     assert C.charger("faux", "code-err") == []
+
+
+def _approbateur_sans_compte(ident, utilisateur):
+    """Force un état incohérent : « lie » + approbateur mais sans utilisateur rattaché."""
+    _approbateur(ident)
+    t = K.table()
+    e = t[K._cle("faux", ident)]
+    if utilisateur is None:
+        e.pop("utilisateur", None)
+    else:
+        e["utilisateur"] = utilisateur
+    K._sauver(t)
+    assert K.est_approbateur("faux", ident) and not K.utilisateur_de("faux", ident)
+
+
+@pytest.mark.parametrize("utilisateur", [None, ""])
+def test_code_d_un_approbateur_sans_compte_n_est_jamais_relaye(monkeypatch, utilisateur):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    _approbateur_sans_compte("code-sc", utilisateur)
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-sc", "123456", "G")))
+    assert r == {"ok": False, "raison": "approbateur_sans_compte"}
+    assert appels == []                              # JAMAIS relayé au LLM
+    assert coeur.appels == []                        # ni soumis au Cœur
+    assert len(faux.envoyes) == 1 and "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-sc") == []
+
+
+@pytest.mark.parametrize("utilisateur", [None, ""])
+def test_callback_approbateur_sans_compte_ignore(monkeypatch, utilisateur):
+    faux, coeur = _installer(monkeypatch)
+    _approbateur_sans_compte("cb-sc", utilisateur)
+    r = _run(pont.traiter_callback("faux", _cb("cb-sc")))
+    assert r == {"ok": False, "raison": "ignore"}
+    assert coeur.appels == []
+    assert faux.reponses_cb == [] and faux.editions == [] and faux.envoyes == []
 
 
 def test_code_non_autorise_ne_declenche_pas_le_coeur(monkeypatch):

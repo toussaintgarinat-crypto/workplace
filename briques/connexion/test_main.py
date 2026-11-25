@@ -144,7 +144,7 @@ _H = {"X-API-Key": "k1"}
 
 
 def _approb(ident):
-    K.lier("telegram", ident, f"{ident}@wp")
+    K.lier("telegram", ident, "u-ok@wp")
     K.definir_approbateur("telegram", ident, True)
 
 
@@ -161,8 +161,9 @@ def tg(monkeypatch):
 
 
 def _notif(**kw):
-    corps = {"id": ID_AP, "resume": "Supprimer le client Dupont", "sensibilite": "reversible",
-             "prerequis_ok": True, "relance": False, "expire_a": 0}
+    corps = {"id": ID_AP, "utilisateur": "u-ok@wp", "resume": "Supprimer le client Dupont",
+             "sensibilite": "reversible", "prerequis_ok": True, "relance": False,
+             "expire_a": 0}
     corps.update(kw)
     return corps
 
@@ -170,7 +171,7 @@ def _notif(**kw):
 def test_notifier_envoie_a_chaque_approbateur_avec_boutons(tg):
     _approb("n1")
     _approb("n2")
-    K.lier("telegram", "n3", "simple@wp")            # lié non approbateur : ne reçoit rien
+    K.lier("telegram", "n3", "u-ok@wp")            # lié non approbateur : ne reçoit rien
     r = client.post("/approbation/notifier", json=_notif(), headers=_H)
     assert r.status_code == 200
     assert sorted(m["chat_id"] for m in r.json()["messages"]) == ["n1", "n2"]
@@ -322,7 +323,7 @@ def test_liaison_ordinaire_ne_peut_pas_poser_approbateur():
 def test_liaison_ordinaire_ne_retire_ni_n_accorde_le_droit():
     _approb("lb2")
     client.post("/correspondances", json={"reseau": "telegram", "id_externe": "lb2",
-                                          "utilisateur": "lb2@wp"})
+                                          "utilisateur": "u-ok@wp"})
     assert K.est_approbateur("telegram", "lb2") is True          # même compte : conservé
     client.post("/correspondances", json={"reseau": "telegram", "id_externe": "lb2",
                                           "utilisateur": "autre@wp"})
@@ -436,3 +437,38 @@ def test_notifier_refuse_un_id_non_hex32(tg):
         r = client.post("/approbation/notifier", json=_notif(id=mauvais), headers=_H)
         assert r.status_code == 422, mauvais
     assert tg.boutons == []
+
+
+def test_notifier_ne_cible_que_les_approbateurs_du_demandeur(tg):
+    K.lier("telegram", "na", "alice")
+    K.definir_approbateur("telegram", "na", True)
+    K.lier("telegram", "nb", "bob")
+    K.definir_approbateur("telegram", "nb", True)
+    r = client.post("/approbation/notifier", json=_notif(utilisateur="alice"), headers=_H)
+    assert [m["chat_id"] for m in r.json()["messages"]] == ["na"]
+    assert [b[0] for b in tg.boutons] == ["na"]
+
+
+def test_notifier_exige_l_utilisateur(tg):
+    corps = _notif()
+    corps.pop("utilisateur")
+    assert client.post("/approbation/notifier", json=corps, headers=_H).status_code == 422
+
+
+def test_cles_api_priorite_a_connexion_api_keys(monkeypatch):
+    monkeypatch.setenv("CONNEXION_API_KEYS", "c1, c2")
+    monkeypatch.setenv("API_KEYS", "autre")
+    assert main._lire_cles_api() == {"c1", "c2"}
+
+
+def test_cles_api_repli_sur_api_keys_si_variable_absente(monkeypatch):
+    monkeypatch.delenv("CONNEXION_API_KEYS", raising=False)
+    monkeypatch.setenv("API_KEYS", "k9")
+    assert main._lire_cles_api() == {"k9"}
+
+
+def test_cles_api_variable_presente_mais_vide_ne_replie_pas(monkeypatch):
+    """Q2 = A : présente-vide = mode ouvert, on n'hérite PAS d'API_KEYS."""
+    monkeypatch.setenv("CONNEXION_API_KEYS", "")
+    monkeypatch.setenv("API_KEYS", "k9")
+    assert main._lire_cles_api() == set()

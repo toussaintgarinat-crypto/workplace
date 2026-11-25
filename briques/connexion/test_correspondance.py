@@ -151,3 +151,21 @@ def test_groupe_telegram_ne_peut_jamais_etre_approbateur():
                              "utilisateur": "g@wp", "approbateur": True}   # forcé à la main
     K._sauver(t)
     assert "-100124" not in K.approbateurs("telegram")
+
+
+def test_utilisateur_de_et_approbateurs_de():
+    K.lier("faux", "u-a1", "alice")
+    K.definir_approbateur("faux", "u-a1", True)
+    K.lier("faux", "u-b1", "bob")
+    K.definir_approbateur("faux", "u-b1", True)
+    K.lier("faux", "u-a2", "alice")                       # lié, PAS approbateur
+    assert K.utilisateur_de("faux", "u-a1") == "alice"
+    assert K.utilisateur_de("faux", "inconnu") is None
+    assert K.approbateurs_de("faux", "alice") == ["u-a1"]
+    assert K.approbateurs_de("faux", "bob") == ["u-b1"]
+    assert K.approbateurs_de("faux", "personne") == []
+
+
+def test_utilisateur_de_ignore_une_entree_non_liee():
+    K.resoudre("faux", "u-attente", "X")                  # statut en_attente
+    assert K.utilisateur_de("faux", "u-attente") is None

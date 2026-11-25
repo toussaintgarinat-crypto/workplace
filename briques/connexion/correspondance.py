@@ -148,6 +148,20 @@ def approbateurs(reseau: str) -> list[str]:
             and e.get("approbateur") is True and not str(e["id_externe"]).startswith("-")]
 
 
+def utilisateur_de(reseau: str, id_externe: str) -> str | None:
+    """Utilisateur Workplace d'un interlocuteur **lié** (S245b), sinon None."""
+    e = table().get(_cle(reseau, str(id_externe)))
+    if e and e.get("statut") == "lie" and e.get("utilisateur"):
+        return e["utilisateur"]
+    return None
+
+
+def approbateurs_de(reseau: str, utilisateur: str) -> list[str]:
+    """Approbateurs d'un réseau dont le compte lié est `utilisateur` (S245b : une demande
+    n'est envoyée qu'à l'approbateur de son demandeur)."""
+    return [i for i in approbateurs(reseau) if utilisateur_de(reseau, i) == utilisateur]
+
+
 def definir_approbateur(reseau: str, id_externe: str, valeur: bool) -> dict | None:
     """Pose/retire le drapeau. Ne marche que sur une entrée existante au statut « lie »
     (None sinon) : on n'accorde jamais ce droit à un inconnu ou à quelqu'un en attente."""

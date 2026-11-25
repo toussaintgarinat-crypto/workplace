@@ -111,16 +111,18 @@ def test_approbation_envoie_la_cle_partagee(monkeypatch):
     monkeypatch.setenv("NOYAU_ASSISTANT_URL", "http://coeur:5100")
     appels = []
     _faux_httpx(monkeypatch, appels)
-    asyncio.run(CA.decider_approbation("a" * 32, "ok", "telegram:42"))
-    asyncio.run(CA.armer_code("a" * 32, "telegram:42"))
-    asyncio.run(CA.soumettre_code("telegram:42", "123456"))
+    asyncio.run(CA.decider_approbation("a" * 32, "ok", "telegram:42", "alice"))
+    asyncio.run(CA.armer_code("a" * 32, "telegram:42", "alice"))
+    asyncio.run(CA.soumettre_code("telegram:42", "123456", "alice"))
     assert [a[0] for a in appels] == [
         f"http://coeur:5100/approbations/{'a' * 32}/decision",
         f"http://coeur:5100/approbations/{'a' * 32}/code/armer",
         "http://coeur:5100/approbations/code"]
     assert all(a[2] == {"X-Approbations-Cle": "cle-secrete"} for a in appels)
-    assert appels[0][1] == {"decision": "ok", "par": "telegram:42", "canal": "telegram"}
-    assert appels[2][1] == {"par": "telegram:42", "code": "123456"}
+    assert appels[0][1] == {"decision": "ok", "par": "telegram:42", "utilisateur": "alice",
+                           "canal": "telegram"}
+    assert appels[1][1] == {"par": "telegram:42", "utilisateur": "alice"}
+    assert appels[2][1] == {"par": "telegram:42", "code": "123456", "utilisateur": "alice"}
 
 
 @pytest.mark.parametrize("valeur", [None, "", "   "])
@@ -131,9 +133,9 @@ def test_approbation_sans_cle_leve_et_n_envoie_rien(monkeypatch, valeur):
         monkeypatch.setenv("APPROBATIONS_CLE", valeur)
     appels = []
     _faux_httpx(monkeypatch, appels)
-    for coro in (CA.decider_approbation("a" * 32, "ok", "telegram:1"),
-                 CA.armer_code("a" * 32, "telegram:1"),
-                 CA.soumettre_code("telegram:1", "123456")):
+    for coro in (CA.decider_approbation("a" * 32, "ok", "telegram:1", "alice"),
+                 CA.armer_code("a" * 32, "telegram:1", "alice"),
+                 CA.soumettre_code("telegram:1", "123456", "alice")):
         with pytest.raises(RuntimeError):
             asyncio.run(coro)
     assert appels == []

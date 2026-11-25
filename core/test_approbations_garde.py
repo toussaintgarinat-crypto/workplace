@@ -91,7 +91,7 @@ def test_le_llm_ne_peut_pas_se_confirmer_tout_seul(_env):
 
 def test_approuvee_puis_executee_une_fois(_env):
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     res = _run("app_redemarrer", {"app": "crm"})
     assert _env["atteints"] == [("app_redemarrer", {"app": "crm", "confirme": True})]
     assert '"ok": true' in res
@@ -101,14 +101,14 @@ def test_approuvee_puis_executee_une_fois(_env):
 
 def test_approbation_pour_crm_ne_vaut_pas_pour_autre(_env):
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     _run("app_redemarrer", {"app": "autre"})
     assert _env["atteints"] == []
 
 
 def test_refus_bloque_la_redemande_immediate(_env):
     _run("app_redemarrer", {"app": "crm"})
-    approbations.refuser(_env["notifs"][0], "tg:42", "telegram")
+    approbations.refuser(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     res = _run("app_redemarrer", {"app": "crm"})
     assert "refusé" in res.lower()
     assert len(_env["notifs"]) == 1 and _env["atteints"] == []
@@ -117,11 +117,11 @@ def test_refus_bloque_la_redemande_immediate(_env):
 def test_destructif_exige_le_code_pas_le_bouton(_env):
     _run("app_reset", {"app": "crm"})
     id_ = _env["notifs"][0]
-    assert approbations.approuver(id_, "tg:42", "telegram") == (False, "code_requis")
+    assert approbations.approuver(id_, "tg:42", "telegram", utilisateur="perso") == (False, "code_requis")
     _run("app_reset", {"app": "crm"})
     assert _env["atteints"] == []
-    approbations.armer_saisie_code(id_, "tg:42")
-    approbations.valider_code_saisi("tg:42", approbations.lire(id_)["code"])
+    approbations.armer_saisie_code(id_, "tg:42", utilisateur="perso")
+    approbations.valider_code_saisi("tg:42", approbations.lire(id_)["code"], utilisateur="perso")
     _run("app_reset", {"app": "crm"})
     assert [a[0] for a in _env["atteints"]] == ["app_reset"]
 
@@ -131,7 +131,7 @@ def test_un_echec_d_execution_est_journalise(_env, monkeypatch):
         return "Erreur (dokploy) : boom"
 
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     monkeypatch.setattr(outils, "_executer", casse)
     _run("app_redemarrer", {"app": "crm"})
     assert approbations.lire(_env["notifs"][0])["statut"] == "echec"
@@ -160,7 +160,7 @@ def test_exiger_direct():
 
 def test_approbation_reversible_ne_debloque_pas_destructif():
     id_, _, nouvelle = approbations.exiger("c", {"a": 1}, "reversible", "r")
-    approbations.approuver(nouvelle["id"], "tg:42", "telegram")
+    approbations.approuver(nouvelle["id"], "tg:42", "telegram", utilisateur="perso")
     id2, msg2, nouvelle2 = approbations.exiger("c", {"a": 1}, "destructif", "r")
     assert id2 is None and msg2 and nouvelle2["statut"] == "en_attente"
     assert nouvelle2["sensibilite"] == "destructif"
@@ -168,7 +168,7 @@ def test_approbation_reversible_ne_debloque_pas_destructif():
 
 def test_refus_reversible_ne_bloque_pas_destructif():
     _, _, nouvelle = approbations.exiger("c", {"a": 1}, "reversible", "r")
-    approbations.refuser(nouvelle["id"], "tg:42", "telegram")
+    approbations.refuser(nouvelle["id"], "tg:42", "telegram", utilisateur="perso")
     id2, msg2, nouvelle2 = approbations.exiger("c", {"a": 1}, "destructif", "r")
     assert id2 is None and nouvelle2 is not None and "REFUSÉ" not in msg2
 
@@ -212,7 +212,7 @@ def test_typo_sensibilite_exige_une_approbation(_env):
 
 def test_conclure_meme_si_executer_leve(_env, monkeypatch):
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
 
     async def annule(nom, args, registre):
         raise asyncio.CancelledError()
@@ -299,7 +299,7 @@ def test_secrets_differents_empreintes_differentes_resume_masque(_env):
     assert d1["empreinte"] != d2["empreinte"]
     for d in (d1, d2):
         assert "secret-un" not in d["resume"] and "secret-deux" not in d["resume"]
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     _run("app_redemarrer", {"app": "crm", "password": "secret-deux"})
     assert _env["atteints"] == []                       # l'approbation ne vaut que pour secret-un
     _run("app_redemarrer", {"app": "crm", "password": "secret-un"})
@@ -316,7 +316,7 @@ def test_message_telegram_edite_apres_execution(_env, monkeypatch):
 
     monkeypatch.setattr(approbations_canal, "mettre_a_jour", maj)
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     res = _run("app_redemarrer", {"app": "crm"})
     assert '"ok": true' in res
     assert len(vus) == 1 and vus[0][0] == "executee" and "✅ Exécutée" in vus[0][1]
@@ -330,7 +330,7 @@ def test_message_final_echec_et_panne_canal_sans_effet_sur_le_resultat(_env, mon
         raise RuntimeError("telegram down")
 
     _run("app_redemarrer", {"app": "crm"})
-    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram", utilisateur="perso")
     monkeypatch.setattr(outils, "_executer", casse)
     monkeypatch.setattr(approbations_canal, "mettre_a_jour", maj_ko)
     assert _run("app_redemarrer", {"app": "crm"}) == "Erreur (dokploy) : boom"
