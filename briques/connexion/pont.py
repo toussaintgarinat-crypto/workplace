@@ -222,7 +222,14 @@ async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
         return None
     utilisateur = correspondance.utilisateur_de(reseau, entrant.id_externe)
     if not utilisateur:
-        return None
+        # Approbateur sans compte rattaché (état incohérent) : fail closed, comme « Cœur
+        # injoignable » — les 6 chiffres ne sont ni soumis, ni relayés au LLM.
+        _log.warning("Approbation : approbateur sans utilisateur rattaché, code non traité")
+        try:
+            await ad.envoyer(entrant.id_externe, "Service indisponible, réessaie.")
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "raison": "approbateur_sans_compte"}
     try:
         r = await client_assistant.soumettre_code(f"{reseau}:{entrant.id_externe}", texte,
                                                   utilisateur)

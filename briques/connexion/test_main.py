@@ -161,8 +161,9 @@ def tg(monkeypatch):
 
 
 def _notif(**kw):
-    corps = {"id": ID_AP, "utilisateur": "u-ok@wp", "resume": "Supprimer le client Dupont", "sensibilite": "reversible",
-             "prerequis_ok": True, "relance": False, "expire_a": 0}
+    corps = {"id": ID_AP, "utilisateur": "u-ok@wp", "resume": "Supprimer le client Dupont",
+             "sensibilite": "reversible", "prerequis_ok": True, "relance": False,
+             "expire_a": 0}
     corps.update(kw)
     return corps
 

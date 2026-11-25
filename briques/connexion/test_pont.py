@@ -785,6 +785,41 @@ def test_code_approbateur_coeur_en_erreur_ne_part_jamais_au_llm(monkeypatch):
     assert C.charger("faux", "code-err") == []
 
 
+def _approbateur_sans_compte(ident, utilisateur):
+    """Force un état incohérent : « lie » + approbateur mais sans utilisateur rattaché."""
+    _approbateur(ident)
+    t = K.table()
+    e = t[K._cle("faux", ident)]
+    if utilisateur is None:
+        e.pop("utilisateur", None)
+    else:
+        e["utilisateur"] = utilisateur
+    K._sauver(t)
+    assert K.est_approbateur("faux", ident) and not K.utilisateur_de("faux", ident)
+
+
+@pytest.mark.parametrize("utilisateur", [None, ""])
+def test_code_d_un_approbateur_sans_compte_n_est_jamais_relaye(monkeypatch, utilisateur):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    _approbateur_sans_compte("code-sc", utilisateur)
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-sc", "123456", "G")))
+    assert r == {"ok": False, "raison": "approbateur_sans_compte"}
+    assert appels == []                              # JAMAIS relayé au LLM
+    assert coeur.appels == []                        # ni soumis au Cœur
+    assert len(faux.envoyes) == 1 and "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-sc") == []
+
+
+@pytest.mark.parametrize("utilisateur", [None, ""])
+def test_callback_approbateur_sans_compte_ignore(monkeypatch, utilisateur):
+    faux, coeur = _installer(monkeypatch)
+    _approbateur_sans_compte("cb-sc", utilisateur)
+    r = _run(pont.traiter_callback("faux", _cb("cb-sc")))
+    assert r == {"ok": False, "raison": "ignore"}
+    assert coeur.appels == []
+    assert faux.reponses_cb == [] and faux.editions == [] and faux.envoyes == []
+
+
 def test_code_non_autorise_ne_declenche_pas_le_coeur(monkeypatch):
     faux, coeur, appels = _brancher_code(monkeypatch)
     r = _run(pont.traiter("faux", A.Entrant("faux", "code-inconnu", "123456", "G")))
