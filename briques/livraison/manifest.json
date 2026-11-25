@@ -1,0 +1,17 @@
+{
+  "nom": "livraison",
+  "famille": "infra",
+  "version": "0.1.0",
+  "description": "Exploitation des apps déployées sur Dokploy : état, logs, et actions gardées (redémarrer, déployer, revenir en arrière). Squelette S246 : les capacités arrivent avec les tâches suivantes.",
+  "role": "livraison",
+  "couche": "backend",
+  "statut": "a_tester",
+  "chemin_source": "~/Desktop/Workplace/briques/livraison",
+  "port": 6240,
+  "url_sante": "http://host.docker.internal:6240/sante",
+  "depends_on": [],
+  "offre": [],
+  "besoin": [],
+  "capacites": [],
+  "taches": []
+}

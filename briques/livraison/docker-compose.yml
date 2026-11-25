@@ -1,0 +1,21 @@
+services:
+  livraison:
+    build: .
+    container_name: workplace_livraison
+    image: workplace/livraison:0.1.0          # tag épinglé (pas de :latest flottant)
+    env_file:
+      # DOKPLOY_URL, DOKPLOY_API_KEY, FORGEJO_URL, FORGEJO_TOKEN, LIVRAISON_API_KEYS
+      # viennent du .env racine (jamais littéraux ici). Facultatif.
+      - path: ../../.env
+        required: false
+    ports:
+      - "6240:6240"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre les services hôtes sous Linux
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6240/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
