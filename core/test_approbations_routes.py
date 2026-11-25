@@ -354,3 +354,74 @@ def test_mise_a_jour_envoyee_au_canal_ne_contient_jamais_le_code(
     for demande in appels["maj"]:
         assert "code" not in demande
         assert demande_destructive["code"] not in json.dumps(demande, default=str)
+
+
+# ── Canal best-effort / relance / env tolérant ─────────────────────────────
+
+@pytest.fixture
+def canal_en_panne(monkeypatch):
+    async def _boom(*a, **k):
+        raise RuntimeError("connexion down")
+    monkeypatch.setattr(approbations_canal, "notifier", _boom)
+    monkeypatch.setattr(approbations_canal, "mettre_a_jour", _boom)
+
+
+def test_decision_survit_a_une_panne_du_canal(client, demande, canal_en_panne):
+    r = _decision(client, demande["id"], "ok")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "raison": "ok", "statut": "approuvee",
+                        "sensibilite": "reversible"}
+    assert approbations.lire(demande["id"])["statut"] == "approuvee"
+
+
+def test_code_survit_a_une_panne_du_canal(client, demande_destructive, canal_en_panne):
+    id_ = demande_destructive["id"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42"})
+    r = client.post("/approbations/code", headers=ENT,
+                    json={"par": "tg:42", "code": demande_destructive["code"]})
+    assert r.status_code == 200
+    assert r.json()["pris_en_charge"] is True and r.json()["ok"] is True
+    assert approbations.lire(id_)["statut"] == "approuvee"
+
+
+def test_relancer_continue_malgre_un_notifier_qui_leve(client, monkeypatch, appels):
+    a = approbations.creer("app_redemarrer", {"app": "a"}, "a", "reversible",
+                           maintenant=time.time() - 3 * 3600)
+    b = approbations.creer("app_redemarrer", {"app": "b"}, "b", "reversible",
+                           maintenant=time.time() - 2 * 3600)
+    vus = []
+
+    async def _notifier(registre, demande, relance=False):
+        vus.append(demande["id"])
+        if len(vus) == 1:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(approbations_canal, "notifier", _notifier)
+    r = client.post("/approbations/relancer", headers=ENT)
+    assert r.status_code == 200
+    assert sorted(r.json()["relancees"]) == sorted([a["id"], b["id"]])
+    assert len(vus) == 2
+
+
+def test_relancer_marque_avant_de_notifier(client, monkeypatch, appels):
+    d = approbations.creer("app_redemarrer", {"app": "x"}, "x", "reversible",
+                           maintenant=time.time() - 2 * 3600)
+
+    async def _boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(approbations_canal, "notifier", _boom)
+    assert client.post("/approbations/relancer", headers=ENT).json()["relancees"] == [d["id"]]
+    assert approbations.lire(d["id"])["nb_relances"] == 1
+    assert client.post("/approbations/relancer", headers=ENT).json()["relancees"] == []
+    assert approbations.lire(d["id"])["nb_relances"] == 1
+
+
+def test_relancer_env_malforme_retombe_sur_les_defauts(client, monkeypatch, appels):
+    monkeypatch.setenv("APPROBATION_RELANCE_MIN", "abc")
+    monkeypatch.setenv("APPROBATION_RELANCE_MAX", "")
+    d = approbations.creer("app_redemarrer", {"app": "x"}, "x", "reversible",
+                           maintenant=time.time() - 2 * 3600)
+    r = client.post("/approbations/relancer", headers=ENT)
+    assert r.status_code == 200
+    assert r.json()["relancees"] == [d["id"]]

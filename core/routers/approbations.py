@@ -18,6 +18,7 @@ jamais dans le manifest). La clé est donc acceptée soit en `X-Approbations-Cle
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from typing import Literal
 
@@ -28,6 +29,8 @@ import approbations
 import approbations_canal
 import auth
 from etat import registre
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/approbations", tags=["approbations"])
 
@@ -66,10 +69,27 @@ class Saisie(BaseModel):
     code: str
 
 
+async def _canal_sans_echec(fonction, id_: str, *args, **kw) -> None:
+    """Appel au canal en best-effort : la décision est déjà enregistrée, une panne de la brique
+    `connexion` ne doit pas faire échouer la route. Journalise l'id tronqué, jamais le code."""
+    try:
+        await fonction(registre, *args, **kw)
+    except Exception as e:  # noqa: BLE001
+        log.warning("approbation %s : canal indisponible (%s)", str(id_)[:8], type(e).__name__)
+
+
+def _entier_env(nom: str, defaut: int) -> int:
+    try:
+        return int(os.getenv(nom, str(defaut)))
+    except (TypeError, ValueError):
+        log.warning("%s invalide, repli sur %s", nom, defaut)
+        return defaut
+
+
 async def _maj(id_: str) -> dict | None:
     lue = approbations.lire(id_)
     if lue:
-        await approbations_canal.mettre_a_jour(registre, _sans_code(lue))
+        await _canal_sans_echec(approbations_canal.mettre_a_jour, id_, _sans_code(lue))
     return lue
 
 
@@ -113,14 +133,14 @@ async def relancer(x_approbations_cle: str | None = Header(None),
     if not fournie and authorization and authorization.lower().startswith("bearer "):
         fournie = authorization[7:].strip()
     _verifier_cle(fournie)
-    delai = int(os.getenv("APPROBATION_RELANCE_MIN", "60")) * 60
-    maxi = int(os.getenv("APPROBATION_RELANCE_MAX", "3"))
+    delai = _entier_env("APPROBATION_RELANCE_MIN", 60) * 60
+    maxi = _entier_env("APPROBATION_RELANCE_MAX", 3)
     perimees = approbations.expirer_perimees()
     for id_ in perimees:
         await _maj(id_)
     relancees = []
     for d in approbations.a_relancer(delai, maxi):
-        await approbations_canal.notifier(registre, _sans_code(d), relance=True)
-        approbations.marquer_relancee(d["id"])
+        approbations.marquer_relancee(d["id"])  # réclamer d'abord, notifier ensuite
+        await _canal_sans_echec(approbations_canal.notifier, d["id"], _sans_code(d), relance=True)
         relancees.append(d["id"])
     return {"expirees": perimees, "relancees": relancees}
