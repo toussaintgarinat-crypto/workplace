@@ -1,0 +1,3 @@
+dokploy_version: v0.31.4
+dokploy_advertise_addr: "{{ ansible_default_ipv4.address }}"
+dokploy_installer_url: https://dokploy.com/install.sh

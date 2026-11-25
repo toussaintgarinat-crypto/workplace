@@ -1,0 +1,10 @@
+[Unit]
+Description=Restrict published Docker ports to LAN and mesh
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/docker-user-guard.sh
+[Install]
+WantedBy=multi-user.target

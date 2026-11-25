@@ -1,0 +1,1648 @@
+{
+ "info": {
+  "description": "This documentation describes the Forgejo API.",
+  "license": {
+   "name": "This file is distributed under the MIT license for the purpose of interoperability",
+   "url": "http://opensource.org/licenses/MIT"
+  },
+  "title": "Forgejo API",
+  "version": "17.0.2+gitea-1.22.0"
+ },
+ "paths": {
+  "/admin/users": {
+   "get": {
+    "operationId": "adminSearchUsers",
+    "parameters": [
+     {
+      "description": "ID of the user's login source to search for",
+      "format": "int64",
+      "in": "query",
+      "name": "source_id",
+      "type": "integer"
+     },
+     {
+      "description": "user's login name to search for",
+      "in": "query",
+      "name": "login_name",
+      "type": "string"
+     },
+     {
+      "description": "whether or not to filter users with the 2fa enabled",
+      "in": "query",
+      "name": "is_2fa_enabled",
+      "type": "boolean"
+     },
+     {
+      "description": "sort order of results",
+      "enum": [
+       "oldest",
+       "newest",
+       "alphabetically",
+       "reversealphabetically",
+       "recentupdate",
+       "leastupdate"
+      ],
+      "in": "query",
+      "name": "sort",
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/UserList"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     }
+    },
+    "summary": "Search users according filter conditions",
+    "tags": [
+     "admin"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminCreateUser",
+    "parameters": [
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateUserOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/User"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Create a user account",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}": {
+   "delete": {
+    "operationId": "adminDeleteUser",
+    "parameters": [
+     {
+      "description": "username of user to delete",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "purge the user from the system completely",
+      "in": "query",
+      "name": "purge",
+      "type": "boolean"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Delete user account",
+    "tags": [
+     "admin"
+    ]
+   },
+   "patch": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminEditUser",
+    "parameters": [
+     {
+      "description": "username of user to edit",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/EditUserOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/User"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Edit an existing user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/emails": {
+   "delete": {
+    "operationId": "adminDeleteUserEmails",
+    "parameters": [
+     {
+      "description": "username of user to delete email addresses from",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/DeleteEmailOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Delete email addresses from a user's account",
+    "tags": [
+     "admin"
+    ]
+   },
+   "get": {
+    "operationId": "adminListUserEmails",
+    "parameters": [
+     {
+      "description": "username of user to get email addresses of",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/EmailList"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "List all email addresses for a user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/keys": {
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminCreatePublicKey",
+    "parameters": [
+     {
+      "description": "username of the user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "key",
+      "schema": {
+       "$ref": "#/definitions/CreateKeyOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/PublicKey"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Add an SSH public key to user's account",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/keys/{id}": {
+   "delete": {
+    "operationId": "adminDeleteUserPublicKey",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "id of the key to delete",
+      "format": "int64",
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Remove a public key from user's account",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/orgs": {
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminCreateOrg",
+    "parameters": [
+     {
+      "description": "username of the user that will own the created organization",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "organization",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/CreateOrgOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Organization"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Create an organization",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/quota": {
+   "get": {
+    "operationId": "adminGetUserQuota",
+    "parameters": [
+     {
+      "description": "username of user to query",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/QuotaInfo"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Get the user's quota info",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/quota/groups": {
+   "post": {
+    "operationId": "adminSetUserQuotaGroups",
+    "parameters": [
+     {
+      "description": "username of the user to modify the quota groups from",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "list of groups that the user should be a member of",
+      "in": "body",
+      "name": "groups",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/SetUserQuotaGroupsOptions"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Set the user's quota groups to a given list.",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/rename": {
+   "post": {
+    "operationId": "adminRenameUser",
+    "parameters": [
+     {
+      "description": "existing username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/RenameUserOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Rename a user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/repos": {
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminCreateRepo",
+    "parameters": [
+     {
+      "description": "username of the user. This user will own the created repository",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "repository",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/CreateRepoOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Repository"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "409": {
+      "$ref": "#/responses/error"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Create a repository on behalf of a user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/tokens": {
+   "get": {
+    "operationId": "adminListUserAccessTokens",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/AccessTokenList"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "List the specified user's access tokens",
+    "tags": [
+     "admin"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "adminCreateUserAccessToken",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateAccessTokenOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/AccessToken"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Create an access token for the specified user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{username}/tokens/{token}": {
+   "delete": {
+    "operationId": "adminDeleteUserAccessToken",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "token to be deleted, identified by ID and if not available by name",
+      "in": "path",
+      "name": "token",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/error"
+     }
+    },
+    "summary": "Delete an access token for the specified user",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/orgs": {
+   "get": {
+    "operationId": "orgGetAll",
+    "parameters": [
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/OrganizationList"
+     }
+    },
+    "summary": "List all organizations",
+    "tags": [
+     "organization"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "orgCreate",
+    "parameters": [
+     {
+      "in": "body",
+      "name": "organization",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/CreateOrgOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Organization"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Create an organization",
+    "tags": [
+     "organization"
+    ]
+   }
+  },
+  "/repos/migrate": {
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "repoMigrate",
+    "parameters": [
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/MigrateRepoOptions"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Repository"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "409": {
+      "description": "The repository with the same name already exists."
+     },
+     "413": {
+      "$ref": "#/responses/quotaExceeded"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Migrate a remote git repository",
+    "tags": [
+     "repository"
+    ]
+   }
+  },
+  "/repos/{owner}/{repo}": {
+   "delete": {
+    "operationId": "repoDelete",
+    "parameters": [
+     {
+      "description": "owner of the repo to delete",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo to delete",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Delete a repository",
+    "tags": [
+     "repository"
+    ]
+   },
+   "get": {
+    "operationId": "repoGet",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/Repository"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Get a repository",
+    "tags": [
+     "repository"
+    ]
+   },
+   "patch": {
+    "operationId": "repoEdit",
+    "parameters": [
+     {
+      "description": "owner of the repo to edit",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo to edit",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "Properties of a repo that you can edit",
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/EditRepoOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/Repository"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Edit a repository's properties. Only fields that are set will be changed.",
+    "tags": [
+     "repository"
+    ]
+   }
+  },
+  "/repos/{owner}/{repo}/actions/runs": {
+   "get": {
+    "operationId": "ListActionRuns",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results, default maximum page size is 50",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     },
+     {
+      "description": "Returns workflow run triggered by the specified events. For example, `push`, `pull_request` or `workflow_dispatch`.",
+      "in": "query",
+      "items": {
+       "type": "string"
+      },
+      "name": "event",
+      "type": "array"
+     },
+     {
+      "description": "Returns workflow runs with the check run status or conclusion that is specified. For example, a conclusion can be success or a status can be in_progress. Only Forgejo Actions can set a status of waiting, pending, or requested.\n",
+      "in": "query",
+      "items": {
+       "enum": [
+        "unknown",
+        "waiting",
+        "running",
+        "success",
+        "failure",
+        "cancelled",
+        "skipped",
+        "blocked"
+       ],
+       "type": "string"
+      },
+      "name": "status",
+      "type": "array"
+     },
+     {
+      "description": "Returns the workflow run associated with the run number.\n",
+      "format": "int64",
+      "in": "query",
+      "name": "run_number",
+      "type": "integer"
+     },
+     {
+      "description": "Only returns workflow runs that are associated with the specified head_sha.",
+      "in": "query",
+      "name": "head_sha",
+      "type": "string"
+     },
+     {
+      "description": "Only return workflow runs that involve the given Git reference, for example, `refs/heads/main`.",
+      "in": "query",
+      "name": "ref",
+      "type": "string"
+     },
+     {
+      "description": "Only return workflow runs that involve the given workflow ID.",
+      "in": "query",
+      "name": "workflow_id",
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/ActionRunList"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     }
+    },
+    "summary": "List a repository's action runs",
+    "tags": [
+     "repository"
+    ]
+   }
+  },
+  "/repos/{owner}/{repo}/branches": {
+   "get": {
+    "operationId": "repoListBranches",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/BranchList"
+     }
+    },
+    "summary": "List a repository's branches",
+    "tags": [
+     "repository"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "repoCreateBranch",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateBranchRepoOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Branch"
+     },
+     "403": {
+      "description": "The branch is archived or a mirror."
+     },
+     "404": {
+      "description": "The old branch does not exist."
+     },
+     "409": {
+      "description": "The branch with the same name already exists."
+     },
+     "413": {
+      "$ref": "#/responses/quotaExceeded"
+     },
+     "423": {
+      "$ref": "#/responses/repoArchivedError"
+     }
+    },
+    "summary": "Create a branch",
+    "tags": [
+     "repository"
+    ]
+   }
+  },
+  "/repos/{owner}/{repo}/hooks": {
+   "get": {
+    "operationId": "repoListHooks",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/HookList"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "List the hooks in a repository",
+    "tags": [
+     "repository"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "repoCreateHook",
+    "parameters": [
+     {
+      "description": "owner of the repo",
+      "in": "path",
+      "name": "owner",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "name of the repo",
+      "in": "path",
+      "name": "repo",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateHookOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Hook"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Create a hook",
+    "tags": [
+     "repository"
+    ]
+   }
+  },
+  "/user/applications/oauth2": {
+   "get": {
+    "operationId": "userGetOAuth2Applications",
+    "parameters": [
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/OAuth2ApplicationList"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     }
+    },
+    "summary": "List the authenticated user's oauth2 applications",
+    "tags": [
+     "user"
+    ]
+   },
+   "post": {
+    "operationId": "userCreateOAuth2Application",
+    "parameters": [
+     {
+      "in": "body",
+      "name": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/CreateOAuth2ApplicationOptions"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/OAuth2Application"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     }
+    },
+    "summary": "Creates a new OAuth2 application",
+    "tags": [
+     "user"
+    ]
+   }
+  },
+  "/user/applications/oauth2/{id}": {
+   "delete": {
+    "operationId": "userDeleteOAuth2Application",
+    "parameters": [
+     {
+      "description": "token to be deleted",
+      "format": "int64",
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Delete an OAuth2 application",
+    "tags": [
+     "user"
+    ]
+   },
+   "get": {
+    "operationId": "userGetOAuth2Application",
+    "parameters": [
+     {
+      "description": "Application ID to be found",
+      "format": "int64",
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/OAuth2Application"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Get an OAuth2 application",
+    "tags": [
+     "user"
+    ]
+   },
+   "patch": {
+    "operationId": "userUpdateOAuth2Application",
+    "parameters": [
+     {
+      "description": "application to be updated",
+      "format": "int64",
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "type": "integer"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/CreateOAuth2ApplicationOptions"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/OAuth2Application"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Update an OAuth2 application, this includes regenerating the client secret",
+    "tags": [
+     "user"
+    ]
+   }
+  },
+  "/user/repos": {
+   "get": {
+    "operationId": "userCurrentListRepos",
+    "parameters": [
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     },
+     {
+      "description": "order the repositories",
+      "enum": [
+       "name",
+       "id",
+       "newest",
+       "oldest",
+       "recentupdate",
+       "leastupdate",
+       "reversealphabetically",
+       "alphabetically",
+       "reversesize",
+       "size",
+       "reversegitsize",
+       "gitsize",
+       "reverselfssize",
+       "lfssize",
+       "moststars",
+       "feweststars",
+       "mostforks",
+       "fewestforks"
+      ],
+      "in": "query",
+      "name": "order_by",
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/RepositoryList"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "List the repos that the authenticated user owns",
+    "tags": [
+     "user"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "createCurrentUserRepo",
+    "parameters": [
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateRepoOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/Repository"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "401": {
+      "$ref": "#/responses/unauthorized"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "409": {
+      "description": "The repository with the same name already exists."
+     },
+     "413": {
+      "$ref": "#/responses/quotaExceeded"
+     },
+     "422": {
+      "$ref": "#/responses/validationError"
+     }
+    },
+    "summary": "Create a repository",
+    "tags": [
+     "repository",
+     "user"
+    ]
+   }
+  },
+  "/users/{username}/tokens": {
+   "get": {
+    "operationId": "userGetTokens",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "page number of results to return (1-based)",
+      "in": "query",
+      "name": "page",
+      "type": "integer"
+     },
+     {
+      "description": "page size of results",
+      "in": "query",
+      "name": "limit",
+      "type": "integer"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/responses/AccessTokenList"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "List the specified user's access tokens",
+    "tags": [
+     "user"
+    ]
+   },
+   "post": {
+    "consumes": [
+     "application/json"
+    ],
+    "operationId": "userCreateToken",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "in": "body",
+      "name": "body",
+      "schema": {
+       "$ref": "#/definitions/CreateAccessTokenOption"
+      }
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "201": {
+      "$ref": "#/responses/AccessToken"
+     },
+     "400": {
+      "$ref": "#/responses/error"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     }
+    },
+    "summary": "Generate an access token for the specified user",
+    "tags": [
+     "user"
+    ]
+   }
+  },
+  "/users/{username}/tokens/{token}": {
+   "delete": {
+    "operationId": "userDeleteAccessToken",
+    "parameters": [
+     {
+      "description": "username of user",
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "description": "token to be deleted, identified by ID and if not available by name",
+      "in": "path",
+      "name": "token",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "produces": [
+     "application/json"
+    ],
+    "responses": {
+     "204": {
+      "$ref": "#/responses/empty"
+     },
+     "403": {
+      "$ref": "#/responses/forbidden"
+     },
+     "404": {
+      "$ref": "#/responses/notFound"
+     },
+     "422": {
+      "$ref": "#/responses/error"
+     }
+    },
+    "summary": "Delete an access token from the specified user's account",
+    "tags": [
+     "user"
+    ]
+   }
+  }
+ }
+}

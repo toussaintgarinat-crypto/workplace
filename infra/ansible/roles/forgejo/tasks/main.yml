@@ -1,0 +1,13 @@
+- name: Forgejo directory
+  ansible.builtin.file: {path: "{{ forgejo_dir }}", state: directory, mode: "0750"}
+- name: Generate SECRET_KEY once (kept on the VM only, never in the repo)
+  ansible.builtin.shell: |
+    umask 077
+    echo "FORGEJO__security__SECRET_KEY=$(openssl rand -hex 32)" > {{ forgejo_dir }}/forgejo.env
+  args: {creates: "{{ forgejo_dir }}/forgejo.env"}
+- name: Compose file
+  ansible.builtin.template: {src: compose.yml.j2, dest: "{{ forgejo_dir }}/compose.yml", mode: "0640"}
+- name: Start Forgejo
+  ansible.builtin.command: docker compose up -d
+  args: {chdir: "{{ forgejo_dir }}"}
+  changed_when: true

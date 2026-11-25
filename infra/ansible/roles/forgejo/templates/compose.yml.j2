@@ -1,0 +1,17 @@
+services:
+  forgejo:
+    image: {{ forgejo_image }}
+    restart: unless-stopped
+    env_file: ./forgejo.env
+    environment:
+      - FORGEJO__server__ROOT_URL={{ forgejo_root_url }}
+      - FORGEJO__server__SSH_PORT={{ forgejo_ssh_port }}
+      - FORGEJO__security__INSTALL_LOCK=true
+      - FORGEJO__service__DISABLE_REGISTRATION=true
+    volumes:
+      - forgejo-data:/data
+    ports:
+      - "{{ forgejo_http_port }}:3000"
+      - "{{ forgejo_ssh_port }}:22"
+volumes:
+  forgejo-data:

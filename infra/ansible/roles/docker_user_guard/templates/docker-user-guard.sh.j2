@@ -1,0 +1,10 @@
+#!/bin/sh
+# Managed by Ansible. Drop any published (DNAT-ed) port from a source not allowed.
+iptables -N WP-GUARD 2>/dev/null || iptables -F WP-GUARD
+iptables -A WP-GUARD -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+{% for src in docker_guard_allowed_sources %}
+iptables -A WP-GUARD -s {{ src }} -j RETURN
+{% endfor %}
+iptables -A WP-GUARD -m conntrack --ctstate DNAT -j DROP
+iptables -A WP-GUARD -j RETURN
+iptables -C DOCKER-USER -j WP-GUARD 2>/dev/null || iptables -I DOCKER-USER 1 -j WP-GUARD

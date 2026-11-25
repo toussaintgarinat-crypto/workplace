@@ -1,0 +1,7 @@
+- name: Dokploy and Forgejo on the delivery VM
+  hosts: livraison
+  become: true
+  roles:
+    - dokploy
+    - docker_user_guard
+    - forgejo

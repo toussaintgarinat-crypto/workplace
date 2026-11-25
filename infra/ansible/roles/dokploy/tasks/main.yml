@@ -1,0 +1,20 @@
+- name: Detect an existing Dokploy service
+  ansible.builtin.command: docker service ls --filter name=dokploy --format '{% raw %}{{.Name}}{% endraw %}'
+  register: dokploy_services
+  changed_when: false
+  failed_when: false
+
+- name: Download the official installer (pinned version is passed at run time)
+  ansible.builtin.get_url:
+    url: "{{ dokploy_installer_url }}"
+    dest: /root/dokploy-install.sh
+    mode: "0700"
+  when: "'dokploy' not in dokploy_services.stdout_lines"
+
+- name: Install Dokploy at a pinned version
+  ansible.builtin.command: sh /root/dokploy-install.sh
+  environment:
+    DOKPLOY_VERSION: "{{ dokploy_version }}"
+    ADVERTISE_ADDR: "{{ dokploy_advertise_addr }}"
+  when: "'dokploy' not in dokploy_services.stdout_lines"
+  changed_when: true

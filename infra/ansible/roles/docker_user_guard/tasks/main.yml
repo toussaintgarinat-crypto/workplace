@@ -1,0 +1,6 @@
+- name: Install guard script
+  ansible.builtin.template: {src: docker-user-guard.sh.j2, dest: /usr/local/sbin/docker-user-guard.sh, mode: "0750"}
+- name: Install guard unit
+  ansible.builtin.template: {src: docker-user-guard.service.j2, dest: /etc/systemd/system/docker-user-guard.service, mode: "0644"}
+- name: Enable and apply the guard
+  ansible.builtin.systemd: {name: docker-user-guard, enabled: true, state: restarted, daemon_reload: true}
