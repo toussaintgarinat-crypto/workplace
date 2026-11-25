@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import approbations as _approbations_store
 import auth
 import graphe_apprentissage
 import horloge
@@ -24,7 +25,7 @@ import routage_outils
 from auth import exiger_session
 from contexte_tenant import lire_contexte_tenant
 from etat import registre
-from routers import (agenda, assistant, atelier_images_video_proxy, atelier_veille_proxy,
+from routers import (agenda, approbations, assistant, atelier_images_video_proxy, atelier_veille_proxy,
                      dashboard, invite, mail_proxy, media_proxy, profil, recherche,
                      sauvegarde_usb, studio_proxy, systeme, usine)
 from routers import auth as routeur_auth
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     orchestrateur.init_db()
     proactif.init_db()
     horloge.init_db()
+    _approbations_store.init_db()
     # Routage d'outils par embeddings (opt-in ROUTAGE_OUTILS) : on indexe AU DÉMARRAGE les
     # descriptions d'outils pour pouvoir filtrer, à chaque requête, sur les plus pertinents.
     # Best-effort : une indexation ratée (Gateway KO, numpy absent) n'empêche jamais le démarrage
@@ -128,6 +130,9 @@ app.include_router(atelier_veille_proxy.router,
 # par uuid, aucune notion multi-tenant côté brique) — cf. core/routers/media_proxy.py.
 app.include_router(media_proxy.router, dependencies=[Depends(exiger_session)])
 app.include_router(assistant.router, dependencies=_tenant)
+# S245 — approbations : pas de dépendance globale, chaque route porte sa garde (clé partagée
+# fail-closed pour la brique connexion et l'horloge, session pour la liste).
+app.include_router(approbations.router)
 app.include_router(agenda.router, dependencies=_tenant)
 app.include_router(profil.router, dependencies=_tenant)
 # S241 — recherche unifiée (Forge + Ingestion + Mémoire) : session obligatoire (garde posée
