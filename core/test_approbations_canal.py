@@ -11,7 +11,7 @@ import approbations_canal as canal  # noqa: E402
 def _d(**kw):
     base = {"id": "a" * 32, "capacite": "app_reset", "resume": "app_reset(app='crm')",
             "sensibilite": "destructif", "statut": "en_attente", "code": "424242",
-            "prerequis": {}, "expire_a": 1.0, "decide_par": None}
+            "prerequis": {}, "expire_a": 1.0, "decide_par": None, "utilisateur": "perso"}
     base.update(kw)
     return base
 
@@ -132,3 +132,9 @@ def test_relance_fusionne_sans_doublon(monkeypatch, tmp_path):
     asyncio.run(canal.notifier(object(), a, relance=True))
     assert approbations.lire(a["id"])["messages"] == [
         {"chat_id": "1", "message_id": 2}, {"chat_id": "1", "message_id": 7}]
+
+
+def test_charge_notification_porte_l_utilisateur():
+    demande = {"id": "a" * 32, "resume": "r", "sensibilite": "reversible", "prerequis": {},
+               "expire_a": 1.0, "utilisateur": "alice"}
+    assert canal.charge_notification(demande)["utilisateur"] == "alice"

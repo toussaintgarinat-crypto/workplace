@@ -6,7 +6,8 @@
 
 Modèle de confiance : les routes `decision`, `code/armer` et `code` font CONFIANCE au champ `par`
 envoyé par la brique `connexion`. C'est la brique — pas le Cœur — qui vérifie que l'expéditeur
-Telegram est un approbateur autorisé ; le Cœur ne voit que la clé partagée.
+Telegram est un approbateur autorisé ET quel compte Workplace lui est lié (`utilisateur`) ; le
+Cœur ne voit que la clé partagée, mais re-vérifie que `utilisateur` == demandeur de la demande.
 
 Le `code` d'un destructif n'apparaît QUE dans `GET /approbations/en_attente` (session). Aucune
 réponse des routes à clé ne le contient, et il n'est jamais transmis au canal de notification.
@@ -22,12 +23,13 @@ import logging
 import os
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
+from pydantic import BaseModel, Field
 
 import approbations
 import approbations_canal
 import auth
+import contexte_tenant
 from etat import registre
 
 log = logging.getLogger(__name__)
@@ -57,16 +59,19 @@ def _sans_code(demande: dict) -> dict:
 class Decision(BaseModel):
     decision: Literal["ok", "ko"]
     par: str
+    utilisateur: str = Field(min_length=1)   # compte Workplace LIÉ à l'approbateur (connexion)
     canal: str = "telegram"
 
 
 class Armer(BaseModel):
     par: str
+    utilisateur: str = Field(min_length=1)
 
 
 class Saisie(BaseModel):
     par: str
     code: str
+    utilisateur: str = Field(min_length=1)
 
 
 async def _canal_sans_echec(fonction, id_: str, *args, **kw) -> None:
@@ -96,21 +101,21 @@ async def _maj(id_: str) -> dict | None:
 @router.post("/{id_}/decision", dependencies=[Depends(exiger_cle)])
 async def decision(body: Decision, id_: str = Path(pattern=_ID_RE)):
     agir = approbations.approuver if body.decision == "ok" else approbations.refuser
-    ok, raison = agir(id_, body.par, body.canal)
-    lue = await _maj(id_)
+    ok, raison = agir(id_, body.par, body.canal, utilisateur=body.utilisateur)
+    lue = await _maj(id_) if raison != "introuvable" else None
     return {"ok": ok, "raison": raison, "statut": lue and lue["statut"],
             "sensibilite": lue and lue["sensibilite"]}
 
 
 @router.post("/{id_}/code/armer", dependencies=[Depends(exiger_cle)])
 async def armer(body: Armer, id_: str = Path(pattern=_ID_RE)):
-    ok, raison = approbations.armer_saisie_code(id_, body.par)
+    ok, raison = approbations.armer_saisie_code(id_, body.par, utilisateur=body.utilisateur)
     return {"ok": ok, "raison": raison}
 
 
 @router.post("/code", dependencies=[Depends(exiger_cle)])
 async def code(body: Saisie):
-    r = approbations.valider_code_saisi(body.par, body.code)
+    r = approbations.valider_code_saisi(body.par, body.code, utilisateur=body.utilisateur)
     if r is None:
         return {"pris_en_charge": False}
     await _maj(r["approbation_id"])
@@ -118,10 +123,11 @@ async def code(body: Saisie):
 
 
 @router.get("/en_attente", dependencies=[Depends(auth.exiger_session_api)])
-async def en_attente():
-    """Demandes ouvertes. Le `code` d'un destructif n'est exposé QU'ICI (session obligatoire) :
-    c'est le canal distinct de Telegram qui fait sa valeur."""
-    return {"approbations": approbations.en_attente()}
+async def en_attente(request: Request):
+    """Demandes ouvertes DE L'UTILISATEUR DE LA SESSION. Le `code` d'un destructif n'est exposé
+    QU'ICI (session obligatoire) : c'est le canal distinct de Telegram qui fait sa valeur."""
+    utilisateur = auth.sub_session_optionnel(request) or contexte_tenant.UTILISATEUR_DEFAUT
+    return {"approbations": approbations.en_attente(utilisateur=utilisateur)}
 
 
 @router.post("/relancer")

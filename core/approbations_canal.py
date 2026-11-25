@@ -21,6 +21,7 @@ def charge_notification(demande: dict, relance: bool = False) -> dict:
     prerequis = demande.get("prerequis") or {}
     return {"id": demande["id"], "resume": demande["resume"],
             "sensibilite": demande["sensibilite"],
+            "utilisateur": demande["utilisateur"],
             "prerequis_ok": all(prerequis.values()) if prerequis else True,
             "relance": relance, "expire_a": demande["expire_a"]}
 
