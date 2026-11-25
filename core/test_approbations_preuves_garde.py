@@ -95,7 +95,9 @@ def test_preuve_connue_a_la_creation_notifie_deja_satisfait(env):
     json.dumps({"ok": True, "verdict": "valide", "preuve_id": "P1"}),      # pas d'expire_a
     _verdict(expire_a="demain"),
     _verdict(expire_a="123"),
-    _verdict(expire_a=True),
+    _verdict(expire_a=float("nan")),
+    _verdict(expire_a=float("inf")),
+    _verdict(expire_a=float("-inf")),
     _verdict(preuve_id=7),
     json.dumps({"verdict": "valide", "preuve_id": "P1", "expire_a": 4_000_000_000.0}),
     json.dumps({"ok": None, "verdict": "valide", "preuve_id": "P1", "expire_a": 4e9}),
@@ -123,3 +125,49 @@ def test_echec_d_enregistrement_ne_fait_rien_echapper(env, monkeypatch):
     env["resultat_verif"] = _verdict()
     assert _run("livraison_verifier_sauvegarde", {"app": "calendrier"}) == env["resultat_verif"]
     assert env["notifs"] == []
+
+
+def test_expire_a_booleen_n_appelle_meme_pas_enregistrer_preuve(env, monkeypatch):
+    appels = []
+    monkeypatch.setattr(approbations, "enregistrer_preuve", lambda *a, **k: appels.append(a))
+    env["resultat_verif"] = _verdict(expire_a=True)
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    assert appels == []
+
+
+def test_expire_a_non_fini_n_appelle_pas_enregistrer_preuve(env, monkeypatch):
+    appels = []
+    monkeypatch.setattr(approbations, "enregistrer_preuve", lambda *a, **k: appels.append(a))
+    for v in (float("nan"), float("inf")):
+        env["resultat_verif"] = _verdict(expire_a=v)
+        _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    assert appels == []
+
+
+def test_verdict_invalide_apres_valide_annule_la_preuve_et_baisse_les_drapeaux(env):
+    env["resultat_verif"] = _verdict()
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    _run("livraison_reset_app", {"app": "calendrier"})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": True}
+    ouverte = approbations.en_attente()[0]["id"]
+    env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="P2")
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    assert approbations.lire(ouverte)["prerequis"] == {"preuve_sauvegarde": False}
+    _run("livraison_reset_app", {"app": "calendrier", "x": 1})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": False}
+
+
+def test_verdict_invalide_sans_preuve_id_ne_revoque_pas(env, monkeypatch):
+    appels = []
+    monkeypatch.setattr(approbations, "revoquer_preuve", lambda *a, **k: appels.append(a))
+    env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="")
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    assert appels == []
+
+
+def test_echec_de_revocation_ne_fait_rien_echapper(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("base cassée")
+    monkeypatch.setattr(approbations, "revoquer_preuve", boom)
+    env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="P2")
+    assert _run("livraison_verifier_sauvegarde", {"app": "calendrier"}) == env["resultat_verif"]

@@ -7,13 +7,10 @@ les contrôles (santé, comptages) sont passés ». Elle est la condition de tou
 refuse d'agir, on ne devine pas.
 """
 import json
-import logging
 import os
 import time
 from pathlib import Path
 from typing import Optional
-
-log = logging.getLogger(__name__)
 
 PREUVE_TTL_S = 6 * 3600
 
@@ -38,9 +35,13 @@ def lire(app_id: str) -> Optional[dict]:
 def valide(app_id: str, maintenant: Optional[float] = None) -> Optional[dict]:
     now = maintenant if maintenant is not None else time.time()
     r = lire(app_id)
-    if r and r.get("verdict") == "valide" and float(r.get("expire_a", 0)) > now:
-        return r
-    return None
+    if not r or r.get("verdict") != "valide":
+        return None
+    try:
+        expire_a = float(r.get("expire_a", 0))
+    except (TypeError, ValueError):
+        return None
+    return r if expire_a > now else None
 
 
 def noter(app_id: str, preuve_id: str, verdict: str, comptages: dict,

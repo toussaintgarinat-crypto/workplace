@@ -234,14 +234,17 @@ def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str
     emp = accord_action.empreinte(capacite, args)
     user = _utilisateur(utilisateur)
     org = org_id or contexte_tenant.contexte_actuel().org_id
-    deja = {p: preuve_valide(p, (args or {}).get("app"), user, now) for p in prerequis}
     with _conn() as c:
+        # Verrou d'écriture AVANT la lecture des preuves : une preuve qui arrive entre la lecture
+        # et l'INSERT ne peut plus laisser un drapeau False périmé.
+        c.execute("BEGIN IMMEDIATE")
         ex = c.execute(
             "SELECT * FROM approbations WHERE capacite=? AND empreinte=? AND sensibilite=? "
             "AND utilisateur=? AND statut IN ('en_attente','approuvee') AND expire_a>? "
             "ORDER BY cree_a DESC LIMIT 1", (capacite, emp, sensibilite, user, now)).fetchone()
         if ex:
             return _vue(ex)
+        deja = {p: _preuve_valide_c(c, p, (args or {}).get("app"), user, now) for p in prerequis}
         id_ = secrets.token_hex(16)
         code = f"{secrets.randbelow(10 ** 6):06d}" if sensibilite == "destructif" else None
         c.execute(
@@ -291,7 +294,7 @@ def approuver(id_: str, par: str, canal: str, maintenant: float | None = None, *
             return False, "expiree"
         if r["sensibilite"] == "destructif":
             return False, "code_requis"
-        if not all(json.loads(r["prerequis"]).values()):
+        if not _prerequis_tenus(c, r, _args_de_ligne(r), now):
             return False, "prerequis"
         if not _transition(c, id_, "en_attente", "approuvee", decide_a=now, decide_par=par,
                            canal=canal, expire_a=max(r["expire_a"], now + FENETRE_EXECUTION_S)):
@@ -343,7 +346,7 @@ def armer_saisie_code(id_: str, par: str, maintenant: float | None = None, *,
         if r["expire_a"] <= now:
             _expirer_une(c, id_, "en_attente", now)
             return False, "expiree"
-        if not all(json.loads(r["prerequis"]).values()):
+        if not _prerequis_tenus(c, r, _args_de_ligne(r), now):
             return False, "prerequis"
         c.execute("INSERT OR REPLACE INTO saisie_code (approbateur, approbation_id, expire_a) "
                   "VALUES (?,?,?)", (par, id_, now + TTL_SAISIE_CODE_S))
@@ -378,7 +381,7 @@ def valider_code_saisi(par: str, code: str, maintenant: float | None = None, *,
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             _expirer_une(c, id_, "en_attente", now)
             return {"ok": False, "raison": "expiree", "approbation_id": id_, "restants": 0}
-        if not all(json.loads(r["prerequis"]).values()):
+        if not _prerequis_tenus(c, r, _args_de_ligne(r), now):
             # Prérequis non réunis : jamais d'approbation, pas un essai raté, saisie désarmée.
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             return {"ok": False, "raison": "prerequis", "approbation_id": id_, "restants": 0}
@@ -421,6 +424,7 @@ def valider_code_saisi(par: str, code: str, maintenant: float | None = None, *,
 def satisfaire_prerequis(id_: str, nom: str) -> bool:
     """Marque un prérequis comme réuni. True ssi TOUS le sont désormais."""
     with _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
         r = c.execute("SELECT prerequis FROM approbations WHERE id=?", (id_,)).fetchone()
         if not r:
             return False
@@ -448,12 +452,71 @@ def _assurer_preuves(c) -> None:
                     PRIMARY KEY (nom, cle, utilisateur))""")
 
 
+def _preuve_valide_c(c, nom: str, cle, utilisateur: str, maintenant: float) -> bool:
+    _assurer_preuves(c)
+    r = c.execute("SELECT expire_a FROM preuves WHERE nom=? AND cle=? AND utilisateur=?",
+                  (nom, _norm_cle(cle), utilisateur)).fetchone()
+    return bool(r and r["expire_a"] > maintenant)
+
+
 def preuve_valide(nom: str, cle: str, utilisateur: str, maintenant: float) -> bool:
     with _conn() as c:
+        return _preuve_valide_c(c, nom, cle, utilisateur, maintenant)
+
+
+def _args_de_ligne(r) -> dict:
+    try:
+        v = json.loads(r["args"] or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+def _prerequis_tenus(c, r, args: dict, now: float) -> bool:
+    """Revérifie, à l'INSTANT de l'usage, chaque prérequis déclaré : drapeau levé ET preuve encore
+    valide. Un drapeau dont la preuve a expiré ou été révoquée est rebaissé en base (fail closed).
+    Sans prérequis déclaré : toujours vrai (comportement historique)."""
+    p = json.loads(r["prerequis"] or "{}")
+    if not p:
+        return True
+    changes = False
+    for nom, v in p.items():
+        if v and not _preuve_valide_c(c, nom, (args or {}).get("app"), r["utilisateur"], now):
+            p[nom] = False
+            changes = True
+    if changes:
+        c.execute("UPDATE approbations SET prerequis=? WHERE id=?", (json.dumps(p), r["id"]))
+        _journaliser(c, r["id"], "prerequis_perdu", maintenant=now)
+    return all(p.values())
+
+
+def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None) -> list[str]:
+    """Annule la preuve (verdict `invalide` plus récent) : supprime l'enregistrement et rebaisse le
+    drapeau sur les demandes `en_attente`/`approuvee` de CET utilisateur visant ces apps."""
+    user = _utilisateur(utilisateur)
+    cles_n = {_norm_cle(k) for k in cles if _norm_cle(k)}
+    if not cles_n:
+        return []
+    baissees = []
+    with _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
         _assurer_preuves(c)
-        r = c.execute("SELECT expire_a FROM preuves WHERE nom=? AND cle=? AND utilisateur=?",
-                      (nom, _norm_cle(cle), utilisateur)).fetchone()
-    return bool(r and r["expire_a"] > maintenant)
+        for k in cles_n:
+            c.execute("DELETE FROM preuves WHERE nom=? AND cle=? AND utilisateur=?", (nom, k, user))
+        for r in c.execute("SELECT id, prerequis, args FROM approbations WHERE utilisateur=? "
+                           "AND statut IN ('en_attente','approuvee')", (user,)).fetchall():
+            try:
+                cle_demande = _norm_cle(json.loads(r["args"] or "{}").get("app"))
+                prereq = json.loads(r["prerequis"] or "{}")
+            except (ValueError, AttributeError):
+                continue
+            if cle_demande in cles_n and prereq.get(nom) is True:
+                prereq[nom] = False
+                c.execute("UPDATE approbations SET prerequis=? WHERE id=?",
+                          (json.dumps(prereq), r["id"]))
+                _journaliser(c, r["id"], "prerequis_revoque", detail=nom)
+                baissees.append(r["id"])
+    return baissees
 
 
 def enregistrer_preuve(nom: str, cles: list[str], preuve_id: str, expire_a: float, *,
@@ -502,11 +565,15 @@ def consommer(capacite: str, args: dict, niveau: str | None = None,
     filtre = "" if niveau is None else " AND sensibilite=?"
     extra = () if niveau is None else (niveau,)
     with _conn() as c:
-        ids = [r["id"] for r in c.execute(
-            "SELECT id FROM approbations WHERE capacite=? AND empreinte=? AND utilisateur=? "
+        c.execute("BEGIN IMMEDIATE")
+        rows = c.execute(
+            "SELECT * FROM approbations WHERE capacite=? AND empreinte=? AND utilisateur=? "
             "AND statut='approuvee' AND expire_a>?" + filtre + " ORDER BY decide_a",
-            (capacite, emp, user, now, *extra))]
-        for id_ in ids:
+            (capacite, emp, user, now, *extra)).fetchall()
+        for r in rows:
+            id_ = r["id"]
+            if not _prerequis_tenus(c, r, args, now):
+                continue
             cur = c.execute(
                 "UPDATE approbations SET statut='executee', args=NULL "
                 "WHERE id=? AND statut='approuvee' AND expire_a>?" + filtre,
@@ -524,6 +591,10 @@ def consommer_id(id_: str, capacite: str, args: dict, niveau: str, utilisateur: 
     now = maintenant if maintenant is not None else time.time()
     emp = accord_action.empreinte(capacite, args)
     with _conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
+        if not r or not _prerequis_tenus(c, r, args, now):
+            return False
         cur = c.execute(
             "UPDATE approbations SET statut='executee', args=NULL "
             "WHERE id=? AND capacite=? AND empreinte=? AND sensibilite=? AND utilisateur=? "

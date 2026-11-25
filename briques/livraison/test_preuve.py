@@ -80,10 +80,24 @@ def test_exiger_preuve_accepte_une_preuve_fraiche():
     assert main.exiger_preuve("A1")["preuve_id"] == "P1"
 
 
-def test_verdict_non_valide_refuse_meme_avec_expiration_future(tmp_path):
+def test_verdict_non_valide_refuse_meme_avec_expiration_future(tmp_path, monkeypatch):
     import json
+    monkeypatch.setenv("LIVRAISON_DATA", str(tmp_path / "data"))
     (tmp_path / "data").mkdir(exist_ok=True)
     (tmp_path / "data" / "preuves_sauvegarde.json").write_text(json.dumps(
         {"A1": {"preuve_id": "P9", "verdict": "invalide", "comptages": {},
                 "cree_a": T0, "expire_a": T0 + 10_000}}))
+    assert preuve.valide("A1", T0 + 1) is None
+
+
+def test_expire_a_non_numerique_vaut_aucune_preuve(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("LIVRAISON_DATA", str(tmp_path / "d2"))
+    (tmp_path / "d2").mkdir()
+    (tmp_path / "d2" / "preuves_sauvegarde.json").write_text(json.dumps(
+        {"A1": {"preuve_id": "P9", "verdict": "valide", "comptages": {},
+                "cree_a": T0, "expire_a": "demain"}}))
+    assert preuve.valide("A1", T0 + 1) is None
+    (tmp_path / "d2" / "preuves_sauvegarde.json").write_text(json.dumps(
+        {"A1": {"preuve_id": "P9", "verdict": "valide", "expire_a": None}}))
     assert preuve.valide("A1", T0 + 1) is None

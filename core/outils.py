@@ -18,6 +18,7 @@ Familles :
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import uuid
@@ -603,14 +604,19 @@ async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, re
         return
     try:
         d = json.loads(resultat)
-        if d.get("ok") is not True or d.get("verdict") != "valide":
+        if d.get("ok") is not True or d.get("verdict") not in ("valide", "invalide"):
             return
         pid = d.get("preuve_id")
+        cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
+        if d.get("verdict") == "invalide":
+            # La dernière vérification fait foi : un verdict invalide annule toute preuve valide.
+            if isinstance(pid, str) and pid.strip():
+                approbations.revoquer_preuve(str(preuve), [k for k in cles if k])
+            return
         expire_a = d["expire_a"]
         if (not isinstance(pid, str) or not pid.strip() or isinstance(expire_a, bool)
-                or not isinstance(expire_a, (int, float))):
+                or not isinstance(expire_a, (int, float)) or not math.isfinite(expire_a)):
             return
-        cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
         libres = approbations.enregistrer_preuve(
             str(preuve), [k for k in cles if k], pid, float(expire_a))
     except Exception as exc:  # noqa: BLE001 — fail closed : aucune preuve, résultat inchangé

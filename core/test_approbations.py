@@ -271,6 +271,9 @@ def test_prerequis_satisfaits_debloquent_l_approbation():
     a = _demande("donnees", prerequis=("sauvegarde_verifiee", "restauration_testee"))
     assert approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee") is False
     assert approbations.satisfaire_prerequis(a["id"], "restauration_testee") is True
+    for nom in ("sauvegarde_verifiee", "restauration_testee"):   # drapeaux revérifiés à l'usage
+        approbations.enregistrer_preuve(nom, ["crm"], "P1", T0 + 3600, utilisateur="perso",
+                                        maintenant=T0)
     assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
 
 
@@ -408,7 +411,9 @@ def test_code_soumis_prerequis_non_reunis_n_approuve_jamais():
 
 def test_destructif_prerequis_satisfaits_puis_code_approuve():
     a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
-    approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee")
+    # Le drapeau seul ne suffit plus (revérifié à l'usage) : une vraie preuve doit exister.
+    approbations.enregistrer_preuve("sauvegarde_verifiee", ["crm"], "P1", T0 + 3600,
+                                    utilisateur="perso", maintenant=T0)
     assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
     r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert r["ok"] is True and approbations.lire(a["id"])["statut"] == "approuvee"
