@@ -17,6 +17,7 @@ Familles :
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 
@@ -562,10 +563,24 @@ async def _notifier_approbation(registre, demande: dict) -> None:
 
 def est_sensible(nom: str, registre) -> str | None:
     """Niveau de sensibilité (`reversible|donnees|destructif`) d'une capacité de manifeste,
-    ou None (lecture, pas de champ, outil inconnu). S245."""
+    ou None (lecture, champ absent, outil inconnu). S245.
+
+    FAIL CLOSED : la valeur est normalisée (`str().strip().lower()`). Absente/None/`lecture`
+    -> None (non gardée) ; un niveau connu -> ce niveau ; TOUTE autre valeur (faute de frappe,
+    `True`, ...) -> `destructif` (le plus strict) avec un avertissement dans les logs."""
     cap = _capacites_dynamiques(registre).get(nom)
-    niveau = (cap or {}).get("sensibilite")
-    return niveau if niveau in approbations.NIVEAUX_SENSIBLES else None
+    brut = (cap or {}).get("sensibilite")
+    if brut is None:
+        return None
+    valeur = str(brut).strip().lower()
+    if valeur == "lecture":
+        return None
+    if valeur in approbations.NIVEAUX_SENSIBLES:
+        return valeur
+    logging.getLogger(__name__).warning(
+        "capacité %r : sensibilite invalide %r -> traitée comme 'destructif' (fail closed)",
+        nom, brut)
+    return "destructif"
 
 
 def _resume_action(nom: str, args: dict) -> str:
@@ -599,10 +614,19 @@ async def executer(nom: str, args: dict, registre) -> str:
                 nom, args or {}, niveau, _resume_action(nom, args or {}))
             if refus:
                 if nouvelle:
-                    await _notifier_approbation(registre, nouvelle)
+                    try:
+                        await _notifier_approbation(registre, nouvelle)
+                    except Exception as exc:  # noqa: BLE001 — le refus doit toujours revenir
+                        logging.getLogger(__name__).warning(
+                            "notification d'approbation en échec (%s) : %s", nom, exc)
                 return refus
             args = {**(args or {}), "confirme": True}   # l'approbation EST la confirmation
-        resultat = await _executer(nom, args, registre)
+        try:
+            resultat = await _executer(nom, args, registre)
+        except BaseException as exc:
+            if id_appr:
+                approbations.conclure(id_appr, False, f"interrompue : {type(exc).__name__}")
+            raise
         if id_appr:
             approbations.conclure(id_appr, not est_erreur(resultat), resultat)
     _APPELS[nom] = _APPELS.get(nom, 0) + 1

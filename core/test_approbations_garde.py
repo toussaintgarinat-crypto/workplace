@@ -170,3 +170,64 @@ def test_refus_reversible_ne_bloque_pas_destructif():
     approbations.refuser(nouvelle["id"], "tg:42", "telegram")
     id2, msg2, nouvelle2 = approbations.exiger("c", {"a": 1}, "destructif", "r")
     assert id2 is None and nouvelle2 is not None and "REFUSÉ" not in msg2
+
+
+# ── Revue Task 3 : fail closed, conclure et notification robustes ────────────
+
+def _registre_sens(valeur):
+    cap = {"nom": "cap_x", "chemin": "/x", "methode": "POST", "action": True,
+           "description": "x", "params": {"app": {"type": "string"}}}
+    if valeur != "ABSENT":
+        cap["sensibilite"] = valeur
+    return _FauxRegistre({"b": {"nom": "b", "port": 6999, "capacites": [cap]}})
+
+
+@pytest.mark.parametrize("valeur", ["destructive", "high", True, "", 3, "supprimer"])
+def test_sensibilite_invalide_est_destructif_fail_closed(valeur, caplog):
+    with caplog.at_level("WARNING"):
+        assert outils.est_sensible("cap_x", _registre_sens(valeur)) == "destructif"
+    assert "cap_x" in caplog.text
+
+
+@pytest.mark.parametrize("valeur,attendu", [
+    ("Destructif", "destructif"), ("destructif ", "destructif"),
+    (" reversible ", "reversible"), ("DONNEES", "donnees"),
+])
+def test_sensibilite_normalisee(valeur, attendu):
+    assert outils.est_sensible("cap_x", _registre_sens(valeur)) == attendu
+
+
+@pytest.mark.parametrize("valeur", ["lecture", "Lecture ", None, "ABSENT"])
+def test_sensibilite_lecture_ou_absente_non_gardee(valeur):
+    assert outils.est_sensible("cap_x", _registre_sens(valeur)) is None
+
+
+def test_typo_sensibilite_exige_une_approbation(_env):
+    reg = _registre_sens("destructive")
+    res = asyncio.run(outils.executer("cap_x", {"app": "a"}, reg))
+    assert _env["atteints"] == [] and "NON exécutée" in res
+    assert approbations.lire(_env["notifs"][0])["sensibilite"] == "destructif"
+
+
+def test_conclure_meme_si_executer_leve(_env, monkeypatch):
+    _run("app_redemarrer", {"app": "crm"})
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+
+    async def annule(nom, args, registre):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(outils, "_executer", annule)
+    with pytest.raises(asyncio.CancelledError):
+        _run("app_redemarrer", {"app": "crm"})
+    ligne = approbations.lire(_env["notifs"][0])
+    assert ligne["statut"] == "echec"
+    assert "interrompue" in str(ligne.get("resultat", "")) + str(ligne)
+
+
+def test_notification_en_echec_ne_se_propage_pas(_env, monkeypatch):
+    async def casse(registre, demande):
+        raise RuntimeError("telegram HS")
+
+    monkeypatch.setattr(outils, "_notifier_approbation", casse)
+    res = _run("app_redemarrer", {"app": "crm"})
+    assert "NON exécutée" in res and _env["atteints"] == []
