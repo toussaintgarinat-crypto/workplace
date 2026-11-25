@@ -425,3 +425,34 @@ def test_relancer_env_malforme_retombe_sur_les_defauts(client, monkeypatch, appe
     r = client.post("/approbations/relancer", headers=ENT)
     assert r.status_code == 200
     assert r.json()["relancees"] == [d["id"]]
+
+
+# ── Mode attente : tâche d'horloge (Task 7) ──────────────────────────────────
+
+def _tache_relance():
+    import pathlib
+    m = json.loads((pathlib.Path(__file__).parents[1] / "briques/noyau/manifest.json").read_text())
+    return {x["nom"]: x for x in m["taches"]}["approbations-relance"]
+
+
+def test_le_manifeste_noyau_declare_la_tache_de_relance():
+    t = _tache_relance()
+    assert t["methode"] == "POST" and t["chemin"] == "/approbations/relancer"
+    assert t["cadence_heures"] <= 0.25          # l'horloge bat toutes les 15 min
+    # L'horloge ne sait poser que `Authorization: Bearer $<env>` : la clé vient de l'env.
+    assert t["entete_token_env"] == "APPROBATIONS_CLE"
+
+
+def test_l_horloge_construit_un_bearer_accepte_par_la_route(client, monkeypatch):
+    import horloge
+    tache = {"brique": "noyau", **_tache_relance()}
+    taches = horloge.collecter_taches(type("R", (), {"briques": {"noyau": {"taches": [_tache_relance()]}}})())
+    assert taches[0]["entete_token_env"] == "APPROBATIONS_CLE"
+    # Lue AU MOMENT de l'appel : le secret n'est jamais figé dans la tâche.
+    monkeypatch.setenv("APPROBATIONS_CLE", "autre-valeur")
+    assert horloge._entetes(taches[0]) == {"Authorization": "Bearer autre-valeur"}
+    monkeypatch.setenv("APPROBATIONS_CLE", CLE)
+    entetes = horloge._entetes(taches[0])
+    assert entetes == BEARER
+    r = client.post(tache["chemin"], headers=entetes)
+    assert r.status_code == 200, r.text
