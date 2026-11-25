@@ -94,6 +94,12 @@ def test_preuve_connue_a_la_creation_notifie_deja_satisfait(env):
     _verdict(preuve_id=""),
     json.dumps({"ok": True, "verdict": "valide", "preuve_id": "P1"}),      # pas d'expire_a
     _verdict(expire_a="demain"),
+    _verdict(expire_a="123"),
+    _verdict(expire_a=True),
+    _verdict(preuve_id=7),
+    json.dumps({"verdict": "valide", "preuve_id": "P1", "expire_a": 4_000_000_000.0}),
+    json.dumps({"ok": None, "verdict": "valide", "preuve_id": "P1", "expire_a": 4e9}),
+    json.dumps({"ok": "true", "verdict": "valide", "preuve_id": "P1", "expire_a": 4e9}),
     "Erreur : brique injoignable",
     "pas du json",
 ])
@@ -108,3 +114,12 @@ def test_le_llm_ne_peut_pas_fabriquer_une_preuve_en_argument(env):
     _run("livraison_reset_app", {"app": "calendrier", "preuve_sauvegarde": True,
                                  "verdict": "valide"})
     assert env["notifs"][-1][1] == {"preuve_sauvegarde": False}
+
+
+def test_echec_d_enregistrement_ne_fait_rien_echapper(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("base cassée")
+    monkeypatch.setattr(approbations, "enregistrer_preuve", boom)
+    env["resultat_verif"] = _verdict()
+    assert _run("livraison_verifier_sauvegarde", {"app": "calendrier"}) == env["resultat_verif"]
+    assert env["notifs"] == []

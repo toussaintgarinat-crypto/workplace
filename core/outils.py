@@ -603,14 +603,21 @@ async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, re
         return
     try:
         d = json.loads(resultat)
-        if d.get("verdict") != "valide" or not d.get("preuve_id"):
+        if d.get("ok") is not True or d.get("verdict") != "valide":
             return
-        expire_a = float(d["expire_a"])
-    except (ValueError, KeyError, TypeError, AttributeError):
+        pid = d.get("preuve_id")
+        expire_a = d["expire_a"]
+        if (not isinstance(pid, str) or not pid.strip() or isinstance(expire_a, bool)
+                or not isinstance(expire_a, (int, float))):
+            return
+        cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
+        libres = approbations.enregistrer_preuve(
+            str(preuve), [k for k in cles if k], pid, float(expire_a))
+    except Exception as exc:  # noqa: BLE001 — fail closed : aucune preuve, résultat inchangé
+        if not isinstance(exc, (ValueError, KeyError, TypeError, AttributeError)):
+            logging.getLogger(__name__).warning("enregistrement de preuve en échec : %s", exc)
         return
-    cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
-    for id_ in approbations.enregistrer_preuve(str(preuve), [k for k in cles if k],
-                                               str(d["preuve_id"]), expire_a):
+    for id_ in libres:
         try:
             await _notifier_approbation(registre, approbations.lire(id_))
         except Exception as exc:  # noqa: BLE001 — ne doit jamais altérer le résultat
