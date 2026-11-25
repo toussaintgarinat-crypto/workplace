@@ -167,8 +167,9 @@ async def traiter_callback(reseau: str, cb) -> dict:
     Le Cœur fait confiance à `par` : l'armement du code n'a donc lieu qu'après ces contrôles."""
     ad = adaptateurs.obtenir(reseau)
     m = _CB.fullmatch(cb.data or "")
+    utilisateur = correspondance.utilisateur_de(reseau, cb.from_id)
     if (ad is None or not m or cb.chat_type != "private" or cb.chat_id != cb.from_id
-            or not correspondance.est_approbateur(reseau, cb.from_id)):
+            or not correspondance.est_approbateur(reseau, cb.from_id) or not utilisateur):
         _log.warning("Approbation : callback ignoré (from=%s chat=%s type=%s data_len=%d)",
                      cb.from_id, cb.chat_id, cb.chat_type, len(cb.data or ""))
         return {"ok": False, "raison": "ignore"}
@@ -182,9 +183,9 @@ async def traiter_callback(reseau: str, cb) -> dict:
             _log.warning("Approbation : appel %s en échec (%s)", reseau, type(e).__name__)
 
     try:
-        rep = await client_assistant.decider_approbation(id_, decision, par)
+        rep = await client_assistant.decider_approbation(id_, decision, par, utilisateur)
         if rep.get("raison") == "code_requis" and decision == "ok":
-            armement = await client_assistant.armer_code(id_, par)
+            armement = await client_assistant.armer_code(id_, par, utilisateur)
             if armement.get("ok"):
                 code_demande = True
             else:
@@ -219,8 +220,12 @@ async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
         return None
     if not correspondance.est_approbateur(reseau, entrant.id_externe):
         return None
+    utilisateur = correspondance.utilisateur_de(reseau, entrant.id_externe)
+    if not utilisateur:
+        return None
     try:
-        r = await client_assistant.soumettre_code(f"{reseau}:{entrant.id_externe}", texte)
+        r = await client_assistant.soumettre_code(f"{reseau}:{entrant.id_externe}", texte,
+                                                  utilisateur)
     except Exception as e:  # noqa: BLE001
         _log.warning("Approbation : saisie de code, Cœur injoignable ou refusé (%s) — "
                      "APPROBATIONS_CLE configurée ?", type(e).__name__)

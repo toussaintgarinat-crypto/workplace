@@ -486,19 +486,21 @@ class _Coeur:
     """Faux Cœur : consigne les appels de client_assistant et rend des réponses scriptées."""
     def __init__(self, monkeypatch, decision=None, armer=None, code=None):
         self.decisions, self.armements, self.codes = [], [], []
+        self.utilisateurs = []
         self._decision = decision if decision is not None else {"ok": True, "raison": "ok"}
         self._armer = armer if armer is not None else {"ok": True}
         self._code = code if code is not None else {"pris_en_charge": False}
 
-        async def _d(id_, decision, par):
+        async def _d(id_, decision, par, utilisateur):
+            self.utilisateurs.append(utilisateur)
             self.decisions.append((id_, decision, par))
             return self._decision
 
-        async def _a(id_, par):
+        async def _a(id_, par, utilisateur):
             self.armements.append((id_, par))
             return self._armer
 
-        async def _c(par, code):
+        async def _c(par, code, utilisateur):
             self.codes.append((par, code))
             if isinstance(self._code, Exception):
                 raise self._code
@@ -527,6 +529,13 @@ def _installer(monkeypatch, **kw):
     faux = FauxApprob()
     monkeypatch.setitem(A.REGISTRE, "faux", faux)
     return faux, _Coeur(monkeypatch, **kw)
+
+
+def test_callback_transmet_l_utilisateur_lie_de_l_approbateur(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+    _approbateur("cb-u1")                                  # lié à « cb-u1@wp »
+    _run(pont.traiter_callback("faux", _cb("cb-u1")))
+    assert coeur.utilisateurs == ["cb-u1@wp"]
 
 
 # 1

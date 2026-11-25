@@ -89,6 +89,7 @@ class DroitApprobateur(BaseModel):
 
 class NotifApprobation(BaseModel):
     id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    utilisateur: str = Field(min_length=1)    # S245b : seul l'approbateur de CE compte reçoit
     resume: str
     sensibilite: str
     prerequis_ok: bool = True
@@ -306,7 +307,7 @@ async def approbation_notifier(body: NotifApprobation, _cle: str = Depends(cle_a
     if ad is not None and ad.configure():
         entete = "🔁 Rappel — " if body.relance else ""
         ico = _ICONE.get(body.sensibilite, "")
-        for dest in correspondance.approbateurs("telegram"):
+        for dest in correspondance.approbateurs_de("telegram", body.utilisateur):
             if not body.prerequis_ok:
                 texte = f"{entete}{ico} Approbation en attente de preuves\n{body.resume}"
                 clavier = []
