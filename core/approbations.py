@@ -227,3 +227,169 @@ def refuser(id_: str, par: str, canal: str, maintenant: float | None = None) -> 
             return False, "deja_decidee"
         _journaliser(c, id_, "refusee", par, canal, maintenant=now)
     return True, "ok"
+
+
+# ── Code à 6 chiffres (destructif) ───────────────────────────────────────────
+# Le code n'est JAMAIS envoyé sur Telegram : il est affiché dans l'app (GET /approbations/
+# en_attente, session obligatoire). Un compte Telegram compromis seul ne suffit donc pas.
+
+def armer_saisie_code(id_: str, par: str, maintenant: float | None = None) -> tuple[bool, str]:
+    """Le bouton Approuver d'un destructif « arme » la saisie : le PROCHAIN message à 6
+    chiffres de cet approbateur sera lu comme le code de CETTE demande."""
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
+        if not r:
+            return False, "introuvable"
+        if r["sensibilite"] != "destructif":
+            return False, "pas_destructif"
+        if r["statut"] != "en_attente":
+            return False, "deja_decidee"
+        if r["expire_a"] <= now:
+            _expirer_une(c, id_, "en_attente", now)
+            return False, "expiree"
+        c.execute("INSERT OR REPLACE INTO saisie_code (approbateur, approbation_id, expire_a) "
+                  "VALUES (?,?,?)", (par, id_, now + TTL_SAISIE_CODE_S))
+        _journaliser(c, id_, "saisie_code_armee", par, "telegram", maintenant=now)
+    return True, "ok"
+
+
+def valider_code_saisi(par: str, code: str, maintenant: float | None = None) -> dict | None:
+    """Vérifie un code saisi. Renvoie None si `par` n'a aucune saisie armée (le message
+    n'est alors pas un code : le pont le laisse partir vers l'assistant)."""
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        s = c.execute("SELECT * FROM saisie_code WHERE approbateur=?", (par,)).fetchone()
+        if not s:
+            return None
+        if s["expire_a"] <= now:
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            return None
+        id_ = s["approbation_id"]
+        r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
+        if not r or r["statut"] != "en_attente":
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            return {"ok": False, "raison": "deja_decidee", "approbation_id": id_, "restants": 0}
+        if r["expire_a"] <= now:
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            _expirer_une(c, id_, "en_attente", now)
+            return {"ok": False, "raison": "expiree", "approbation_id": id_, "restants": 0}
+        if hmac.compare_digest((code or "").strip(), r["code"] or ""):
+            _transition(c, id_, "en_attente", "approuvee", decide_a=now, decide_par=par,
+                        canal="telegram+code",
+                        expire_a=max(r["expire_a"], now + FENETRE_EXECUTION_S))
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            _journaliser(c, id_, "approuvee", par, "telegram+code", maintenant=now)
+            return {"ok": True, "raison": "ok", "approbation_id": id_, "restants": 0}
+        essais = r["essais"] + 1
+        c.execute("UPDATE approbations SET essais=? WHERE id=?", (essais, id_))
+        _journaliser(c, id_, "code_faux", par, "telegram", detail=f"essai {essais}",
+                     maintenant=now)
+        if essais >= ESSAIS_CODE_MAX:
+            _transition(c, id_, "en_attente", "refusee", decide_a=now, decide_par=par,
+                        canal="telegram+code")
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            _journaliser(c, id_, "refusee", par, "telegram+code", detail="essais épuisés",
+                         maintenant=now)
+            return {"ok": False, "raison": "essais_epuises", "approbation_id": id_, "restants": 0}
+        return {"ok": False, "raison": "code_faux", "approbation_id": id_,
+                "restants": ESSAIS_CODE_MAX - essais}
+
+
+# ── Prérequis (utilisés dès S247 : « sauvegarde vérifiée ») ──────────────────
+
+def satisfaire_prerequis(id_: str, nom: str) -> bool:
+    """Marque un prérequis comme réuni. True ssi TOUS le sont désormais."""
+    with _conn() as c:
+        r = c.execute("SELECT prerequis FROM approbations WHERE id=?", (id_,)).fetchone()
+        if not r:
+            return False
+        p = json.loads(r["prerequis"])
+        if nom in p:
+            p[nom] = True
+            c.execute("UPDATE approbations SET prerequis=? WHERE id=?", (json.dumps(p), id_))
+            _journaliser(c, id_, "prerequis_satisfait", detail=nom)
+        return bool(p) and all(p.values())
+
+
+# ── Exécution ────────────────────────────────────────────────────────────────
+
+def consommer(capacite: str, args: dict, niveau: str | None = None,
+              maintenant: float | None = None) -> str | None:
+    """Consomme une approbation `approuvee` de même empreinte. ATOMIQUE : l'UPDATE conditionnel
+    est l'arbitre ; si deux appels concurrents la visent, un seul modifie 1 ligne.
+    Si `niveau` est donné, seule une approbation de CE niveau est consommable : une approbation
+    `reversible` ne débloque jamais un `destructif` (même action, même empreinte)."""
+    now = maintenant if maintenant is not None else time.time()
+    emp = accord_action.empreinte(capacite, args)
+    filtre = "" if niveau is None else " AND sensibilite=?"
+    extra = () if niveau is None else (niveau,)
+    with _conn() as c:
+        ids = [r["id"] for r in c.execute(
+            "SELECT id FROM approbations WHERE capacite=? AND empreinte=? AND statut='approuvee' "
+            "AND expire_a>?" + filtre + " ORDER BY decide_a", (capacite, emp, now, *extra))]
+        for id_ in ids:
+            cur = c.execute(
+                "UPDATE approbations SET statut='executee' "
+                "WHERE id=? AND statut='approuvee' AND expire_a>?" + filtre,
+                (id_, now, *extra))
+            if cur.rowcount == 1:
+                _journaliser(c, id_, "executee", maintenant=now)
+                return id_
+    return None
+
+
+def conclure(id_: str, ok: bool, resultat: str) -> None:
+    """Note le résultat de l'exécution ; un échec fait passer `executee` à `echec`."""
+    with _conn() as c:
+        if ok:
+            c.execute("UPDATE approbations SET resultat=? WHERE id=?", ((resultat or "")[:500], id_))
+            return
+        if _transition(c, id_, "executee", "echec", resultat=(resultat or "")[:500]):
+            _journaliser(c, id_, "echec", detail=(resultat or "")[:200])
+
+
+# ── Expiration, attente, relance (mode attente, approche B) ──────────────────
+
+def expirer_perimees(maintenant: float | None = None) -> list[str]:
+    now = maintenant if maintenant is not None else time.time()
+    faites: list[str] = []
+    with _conn() as c:
+        for r in c.execute("SELECT id, statut FROM approbations WHERE statut IN "
+                           "('en_attente','approuvee') AND expire_a<=?", (now,)).fetchall():
+            if _transition(c, r["id"], r["statut"], "expiree"):
+                _journaliser(c, r["id"], "expiree", maintenant=now)
+                faites.append(r["id"])
+        c.execute("DELETE FROM saisie_code WHERE expire_a<=?", (now,))
+    return faites
+
+
+def en_attente() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM approbations WHERE statut='en_attente' "
+                         "ORDER BY cree_a").fetchall()
+    return [_vue(r) for r in rows]
+
+
+def a_relancer(delai_s: int, max_relances: int, maintenant: float | None = None) -> list[dict]:
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM approbations WHERE statut='en_attente' AND expire_a>? "
+            "AND nb_relances<? AND COALESCE(relance_a, cree_a)+?<=? ORDER BY cree_a",
+            (now, max_relances, delai_s, now)).fetchall()
+    return [_vue(r) for r in rows]
+
+
+def marquer_relancee(id_: str, maintenant: float | None = None) -> None:
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        c.execute("UPDATE approbations SET nb_relances=nb_relances+1, relance_a=? WHERE id=?",
+                  (now, id_))
+        _journaliser(c, id_, "relancee", maintenant=now)
+
+
+def enregistrer_messages(id_: str, messages: list[dict]) -> None:
+    """Mémorise les messages Telegram (chat_id, message_id) pour pouvoir les éditer ensuite."""
+    with _conn() as c:
+        c.execute("UPDATE approbations SET messages=? WHERE id=?", (json.dumps(messages), id_))

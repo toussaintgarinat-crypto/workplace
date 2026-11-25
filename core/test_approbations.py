@@ -112,3 +112,204 @@ def test_prerequis_bloquent_l_approbation():
     a = _demande("donnees", prerequis=("sauvegarde_verifiee",))
     assert a["prerequis"] == {"sauvegarde_verifiee": False}
     assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (False, "prerequis")
+
+
+import threading
+
+
+# ── Code à 6 chiffres (destructif) ───────────────────────────────────────────
+
+def test_code_bon_approuve_un_destructif():
+    a = _demande("destructif")
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (True, "ok")
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert r["ok"] is True and r["approbation_id"] == a["id"]
+    assert approbations.lire(a["id"])["statut"] == "approuvee"
+
+
+def test_pas_de_saisie_armee_le_message_n_est_pas_un_code():
+    _demande("destructif")
+    assert approbations.valider_code_saisi("tg:42", "123456") is None
+
+
+def test_trois_codes_faux_refusent_la_demande():
+    a = _demande("destructif")
+    faux = "000000" if a["code"] != "000000" else "111111"
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    r1 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2)
+    r2 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 3)
+    assert (r1["raison"], r1["restants"]) == ("code_faux", 2)
+    assert (r2["raison"], r2["restants"]) == ("code_faux", 1)
+    r3 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 4)
+    assert r3["raison"] == "essais_epuises"
+    assert approbations.lire(a["id"])["statut"] == "refusee"
+    # la saisie est désarmée : un 4e message repart au LLM
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 5) is None
+
+
+def test_le_bon_code_apres_refus_n_approuve_rien():
+    a = _demande("destructif")
+    faux = "000000" if a["code"] != "000000" else "111111"
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    for i in range(3):
+        approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2 + i)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 9)  # doit échouer
+    assert approbations.lire(a["id"])["statut"] == "refusee"
+
+
+def test_armer_refuse_hors_destructif_ou_expire():
+    assert approbations.armer_saisie_code(_demande("reversible")["id"], "tg:42") == (False, "pas_destructif")
+    d = _demande("destructif")
+    assert approbations.armer_saisie_code(d["id"], "tg:42", maintenant=T0 + 16 * 60) == (False, "expiree")
+
+
+def test_saisie_armee_expire_au_bout_de_5_minutes():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 1 + 301) is None
+
+
+def test_la_saisie_d_un_autre_approbateur_ne_compte_pas():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    assert approbations.valider_code_saisi("tg:99", a["code"], maintenant=T0 + 2) is None
+
+
+# ── Consommation atomique ────────────────────────────────────────────────────
+
+def _approuvee(**kw):
+    a = _demande(**kw)
+    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1)
+    return a
+
+
+def test_consommer_une_seule_fois():
+    a = _approuvee()
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 2) == a["id"]
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 3) is None
+    assert approbations.lire(a["id"])["statut"] == "executee"
+
+
+def test_consommer_exige_la_meme_empreinte():
+    _approuvee()
+    assert approbations.consommer("app_redemarrer", {"app": "autre"}, maintenant=T0 + 2) is None
+    assert approbations.consommer("autre_cap", {"app": "crm"}, maintenant=T0 + 2) is None
+
+
+def test_consommer_ignore_confirme():
+    _approuvee()
+    assert approbations.consommer("app_redemarrer", {"app": "crm", "confirme": True}, maintenant=T0 + 2)
+
+
+def test_consommer_sans_approbation_ou_en_attente_ou_refusee():
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}) is None
+    _demande()
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 1) is None
+
+
+def test_consommer_apres_la_fenetre_d_execution():
+    _approuvee()
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 1 + 301 + 30 * 60) is None
+
+
+def test_consommation_concurrente_une_seule_gagne():
+    _approuvee()
+    gagnants = []
+
+    def tenter():
+        r = approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 2)
+        if r:
+            gagnants.append(r)
+
+    fils = [threading.Thread(target=tenter) for _ in range(12)]
+    [f.start() for f in fils]
+    [f.join() for f in fils]
+    assert len(gagnants) == 1
+
+
+def test_conclure_echec_passe_executee_a_echec():
+    a = _approuvee()
+    approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 2)
+    approbations.conclure(a["id"], False, "Erreur (crm) : boom")
+    lue = approbations.lire(a["id"])
+    assert lue["statut"] == "echec" and "boom" in lue["resultat"]
+
+
+def test_conclure_succes_garde_executee_et_note_le_resultat():
+    a = _approuvee()
+    approbations.consommer("app_redemarrer", {"app": "crm"}, maintenant=T0 + 2)
+    approbations.conclure(a["id"], True, "ok")
+    assert approbations.lire(a["id"])["statut"] == "executee"
+
+
+# ── Niveau de sensibilité dans la consommation (déviation de sécurité) ───────
+
+def test_consommer_destructif_ne_prend_pas_une_approbation_reversible():
+    a = _approuvee()  # reversible, approuvée par bouton
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, niveau="destructif",
+                                  maintenant=T0 + 2) is None
+    assert approbations.lire(a["id"])["statut"] == "approuvee"
+
+
+def test_consommer_avec_niveau_correspondant_consomme():
+    a = _approuvee()
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, niveau="reversible",
+                                  maintenant=T0 + 2) == a["id"]
+
+
+def test_consommer_destructif_approuve_par_code_se_consomme_avec_son_niveau():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert approbations.consommer("app_redemarrer", {"app": "crm"}, niveau="destructif",
+                                  maintenant=T0 + 3) == a["id"]
+
+
+# ── Prérequis ────────────────────────────────────────────────────────────────
+
+def test_prerequis_satisfaits_debloquent_l_approbation():
+    a = _demande("donnees", prerequis=("sauvegarde_verifiee", "restauration_testee"))
+    assert approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee") is False
+    assert approbations.satisfaire_prerequis(a["id"], "restauration_testee") is True
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (True, "ok")
+
+
+def test_prerequis_inconnu_ignore():
+    a = _demande("donnees", prerequis=("sauvegarde_verifiee",))
+    assert approbations.satisfaire_prerequis(a["id"], "inconnu") is False
+
+
+# ── Expiration et relance ────────────────────────────────────────────────────
+
+def test_expirer_perimees():
+    vieille = _demande()
+    ok = approbations.creer("autre", {}, "r", "donnees", maintenant=T0)
+    assert approbations.expirer_perimees(maintenant=T0 + 31 * 60) == [vieille["id"]]
+    assert approbations.lire(vieille["id"])["statut"] == "expiree"
+    assert approbations.lire(ok["id"])["statut"] == "en_attente"
+    assert approbations.expirer_perimees(maintenant=T0 + 31 * 60) == []  # idempotent
+
+
+def test_une_approbation_non_utilisee_finit_expiree():
+    a = _approuvee()
+    assert a["id"] in approbations.expirer_perimees(maintenant=T0 + 3600)
+    assert approbations.lire(a["id"])["statut"] == "expiree"
+
+
+def test_a_relancer_respecte_delai_et_plafond():
+    a = _demande()
+    assert approbations.a_relancer(600, 3, maintenant=T0 + 300) == []
+    assert [x["id"] for x in approbations.a_relancer(600, 3, maintenant=T0 + 601)] == [a["id"]]
+    approbations.marquer_relancee(a["id"], maintenant=T0 + 601)
+    assert approbations.a_relancer(600, 3, maintenant=T0 + 700) == []
+    assert [x["id"] for x in approbations.a_relancer(600, 3, maintenant=T0 + 1300)] == [a["id"]]
+    for i in range(3):
+        approbations.marquer_relancee(a["id"], maintenant=T0 + 1300 + i)
+    assert approbations.a_relancer(600, 3, maintenant=T0 + 5000) == []  # plafond atteint
+
+
+def test_en_attente_et_messages():
+    a = _demande()
+    approbations.enregistrer_messages(a["id"], [{"chat_id": "42", "message_id": 7}])
+    assert approbations.lire(a["id"])["messages"] == [{"chat_id": "42", "message_id": 7}]
+    assert [x["id"] for x in approbations.en_attente()] == [a["id"]]
