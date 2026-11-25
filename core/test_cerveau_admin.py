@@ -70,6 +70,7 @@ ROUTES_SESSION = {
     ("DELETE", "/assistant/projets/{projet_id}"), ("POST", "/assistant/document"),
     ("POST", "/profil"), ("PATCH", "/profil/identite"),
     ("GET", "/recherche"),  # S241 — recherche unifiée, session obligatoire
+    ("GET", "/approbations/en_attente"),  # S245 — liste + code destructif, session obligatoire
 }
 
 # Routes d'ÉCRITURE volontairement SANS `exiger_admin_cerveau` — chaque entrée dit pourquoi.
@@ -81,11 +82,17 @@ _DONNEES = ("données de la personne (conversations, rappels, agenda) — n'entr
             "prompt système ; même exposition que /assistant/chat, à fermer avec lui")
 _USINE = ("pilotage de l'usine (génération d'apps, coût LLM) — même exposition que "
           "/assistant/chat, à fermer avec lui")
+_APPROB = ("clé partagée APPROBATIONS_CLE avec la brique connexion (temps constant, fail closed : "
+           "503 si absente, 401 si fausse), S245")
 _SESSION = "session obligatoire (exiger_session) : proxy de brique isolé par personne"
 LISTE_BLANCHE = {
     ("POST", "/assistant/chat"): _CHAT,
     ("POST", "/mcp"): "clé MCP_KEY propre ; refus si vide avec AUTH_ENABLED=true (mcp.cle_ok)",
     ("POST", "/briefing/executer"): "tâche d'horloge (manifest noyau), appel interne sans session",
+    **{("POST", c): _APPROB for c in (
+        "/approbations/{id_}/decision", "/approbations/{id_}/code/armer", "/approbations/code")},
+    ("POST", "/approbations/relancer"): "tâche d'horloge (Bearer APPROBATIONS_CLE) OU X-Approbations-Cle ; "
+        "fail closed (503 si clé absente), S245",
     ("POST", "/pouls/battre"): "tâche d'horloge (manifest noyau), appel interne sans session",
     ("POST", "/curateur/cycle"): "tâche d'horloge `curation-hebdo` ; PROPOSE seulement, n'applique rien",
     ("POST", "/sauvegarde-usb/lancer"): "NOYAU_KEY (temps constant) OU session admin du cerveau "

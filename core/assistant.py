@@ -30,6 +30,7 @@ import guardrails_outils
 import langue as langue_mod
 import llm_pipeline
 import muscle
+import approbations
 import outils
 import routage_outils
 import personas
@@ -369,8 +370,11 @@ async def converser(messages: list[dict], registre,
                 # Cœur a enregistré un accord pour CES arguments exacts ; un accord ne
                 # naît que d'un vrai tour de parole humain (cf. accord_action).
                 est_une_action = outils.est_action(nom, registre)
+                # S245 — une capacité SENSIBLE est gardée dans outils.executer par une
+                # approbation Telegram : le « oui » conversationnel ne la concerne plus.
+                sensible = outils.est_sensible(nom, registre) is not None
                 refus_accord = None
-                if est_une_action:
+                if est_une_action and not sensible:
                     if args.get("confirme"):
                         _ok, refus_accord = accord_action.REGISTRE.consommer(
                             fil_accord, nom, args)
@@ -406,7 +410,8 @@ async def converser(messages: list[dict], registre,
                         {"erreur": f"[GATE] {refus_accord}", "confirmation_requise": True},
                         ensure_ascii=False)
                 else:
-                    resultat = await outils.executer(nom, args, registre)
+                    with approbations.avec_origine("conversation"):
+                        resultat = await outils.executer(nom, args, registre)
                     # S143 — mise à jour de l'état + idempotence.
                     guardrail.after_call(nom, args, resultat,
                                          erreur=_est_erreur_outil(resultat))

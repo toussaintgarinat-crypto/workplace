@@ -38,6 +38,9 @@ services:
       # Idem pour ECOUTE_KEY (S184, commandes de mot-clé sur mesure) : vient du .env racine,
       # ne pas la redéclarer ici. Idem pour INGESTION_KEY (S211, brique `ingestion` fermée) :
       # sans elle le Cœur ne peut plus déposer/lire/classer un document (401).
+      # S245 (approbations) : APPROBATIONS_CLE, CONNEXION_KEY et les réglages APPROBATION_*
+      # (RELANCE_MIN/MAX, TTL_REVERSIBLE/DONNEES/DESTRUCTIF_MIN) viennent du .env racine via
+      # env_file — NE PAS les redéclarer ici (piège « env shadow », cf. .env.example).
       # Dossiers portables des entreprises décrochées (cycle de vie S6).
       - EXPORT_DIR=/export
       # LLM de l'assistant du Cœur (S7) — même Gateway que les autres briques.

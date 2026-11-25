@@ -140,3 +140,142 @@ def test_discord_parser_commande():
 # ── Email/SMS (squelette honnête) ────────────────────────────────────────────────
 def test_emailsms_non_configure():
     assert A.REGISTRE["email_sms"].configure() is False
+
+
+# ── S245 : boutons inline + callback_query Telegram ──────────────────────────────
+import asyncio
+import json as _json
+
+import httpx
+
+
+class _R:
+    def __init__(self, data=None):
+        self._d = data or {"ok": True, "result": {}}
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._d
+
+
+def _faux_tg(monkeypatch, reponse=None):
+    """Remplace httpx.AsyncClient de l'adaptateur ; consigne (méthode HTTP, url, kwargs)."""
+    appels = []
+
+    class _C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            appels.append(("POST", url, kw))
+            return _R(reponse)
+
+        async def get(self, url, **kw):
+            appels.append(("GET", url, kw))
+            return _R(reponse)
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", _C)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    return appels
+
+
+def _payload_cb(data="ap:" + "a" * 32 + ":ok"):
+    return {"update_id": 1, "callback_query": {
+        "id": "cb1", "from": {"id": 42},
+        "message": {"message_id": 7, "chat": {"id": 42, "type": "private"}},
+        "data": data}}
+
+
+def test_parser_callback_extrait_les_champs():
+    cb = A.Telegram().parser_callback(_payload_cb())
+    assert (cb.from_id, cb.chat_id, cb.chat_type, cb.message_id, cb.callback_id) == (
+        "42", "42", "private", 7, "cb1")
+    assert cb.reseau == "telegram" and cb.data == "ap:" + "a" * 32 + ":ok"
+
+
+def test_parser_callback_ignore_un_message_normal():
+    upd = {"update_id": 2, "message": {"chat": {"id": 42}, "text": "salut"}}
+    assert A.Telegram().parser_callback(upd) is None
+    assert A.Telegram().parser_callback({}) is None
+    assert A.Telegram().parser_callback({"callback_query": {"id": "x"}}) is None  # incomplet
+
+
+def test_parser_entrant_ignore_un_callback_query():
+    assert A.Telegram().parser_entrant(_payload_cb()) == []
+
+
+def test_recuperer_demande_les_callback_query_et_rend_les_deux(monkeypatch, tmp_path):
+    msg = {"update_id": 10, "message": {"chat": {"id": 42}, "text": "coucou",
+                                        "from": {"first_name": "G"}}}
+    cb = _payload_cb()
+    cb["update_id"] = 11
+    appels = _faux_tg(monkeypatch, {"ok": True, "result": [msg, cb]})
+    sortie = asyncio.run(A.Telegram().recuperer())
+    _, url, kw = appels[0]
+    assert url.endswith("/getUpdates")
+    assert _json.loads(kw["params"]["allowed_updates"]) == ["message", "callback_query"]
+    assert [type(x).__name__ for x in sortie] == ["Entrant", "Callback"]
+
+
+def test_envoyer_boutons_poste_un_inline_keyboard(monkeypatch):
+    appels = _faux_tg(monkeypatch, {"ok": True, "result": {"message_id": 99,
+                                                           "chat": {"id": 42}}})
+    clavier = [[{"text": "OK", "callback_data": "ap:x:ok"}]]
+    r = asyncio.run(A.Telegram().envoyer_boutons("42", "Texte", clavier))
+    _, url, kw = appels[0]
+    assert url.endswith("/sendMessage")
+    assert kw["json"]["reply_markup"] == {"inline_keyboard": clavier}
+    assert kw["json"]["chat_id"] == "42" and kw["json"]["text"] == "Texte"
+    assert r == {"chat_id": "42", "message_id": 99}
+
+
+def test_envoyer_boutons_sans_clavier_n_a_pas_de_reply_markup(monkeypatch):
+    appels = _faux_tg(monkeypatch, {"ok": True, "result": {"message_id": 5,
+                                                           "chat": {"id": 42}}})
+    asyncio.run(A.Telegram().envoyer_boutons("42", "Texte", []))
+    assert "reply_markup" not in appels[0][2]["json"]
+
+
+def test_editer_message_retire_le_clavier(monkeypatch):
+    appels = _faux_tg(monkeypatch)
+    asyncio.run(A.Telegram().editer_message("42", 7, "Fait"))
+    _, url, kw = appels[0]
+    assert url.endswith("/editMessageText")
+    assert kw["json"] == {"chat_id": "42", "message_id": 7, "text": "Fait",
+                          "reply_markup": {"inline_keyboard": []}}
+
+
+def test_repondre_callback_appelle_answerCallbackQuery(monkeypatch):
+    appels = _faux_tg(monkeypatch)
+    asyncio.run(A.Telegram().repondre_callback("cb1", "Décision enregistrée"))
+    _, url, kw = appels[0]
+    assert url.endswith("/answerCallbackQuery")
+    assert kw["json"] == {"callback_query_id": "cb1", "text": "Décision enregistrée"}
+
+
+def test_parser_callback_message_id_malforme_rend_none():
+    p = _payload_cb()
+    p["callback_query"]["message"]["message_id"] = "pas-un-entier"
+    assert A.Telegram().parser_callback(p) is None
+
+
+def test_telegram_webhook_secret_temps_constant(monkeypatch):
+    import adaptateurs
+    ad = A.Telegram()
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s3cr3t-é")
+    appels = []
+    reel = adaptateurs.hmac.compare_digest
+    monkeypatch.setattr(adaptateurs.hmac, "compare_digest",
+                        lambda a, b: appels.append((type(a), type(b))) or reel(a, b))
+    assert ad.verifier_webhook({"x-telegram-bot-api-secret-token": "s3cr3t-é"}, b"") is True
+    assert ad.verifier_webhook({}, b"") is False                       # en-tête absent
+    assert ad.verifier_webhook({"X-Telegram-Bot-Api-Secret-Token": "ééé"}, b"") is False
+    assert appels and all(t == (bytes, bytes) for t in appels)

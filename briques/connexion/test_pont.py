@@ -2,6 +2,7 @@
 import asyncio
 
 import httpx
+import pytest
 
 import adaptateurs as A
 import conversations as C
@@ -451,3 +452,419 @@ def test_pousser_repli_honnete_sans_cible(monkeypatch):
     r = _run(main.pousser(main.Pousser(utilisateur="personne@nulle-part", texte="x"),
                           _cle="public"))
     assert r == {"ok": True, "envoyes": 0, "cibles": 0, "detail": []}
+
+
+# ═══ S245 : approbation Telegram — callbacks, code à 6 chiffres ═══════════════════════
+import logging
+import re
+
+ID_AP = "a1" * 16                                   # 32 hex
+
+
+class FauxApprob(FauxAdaptateur):
+    """FauxAdaptateur + API boutons/callback qui enregistre ses appels."""
+    nom = "faux"
+
+    def __init__(self):
+        super().__init__()
+        self.reponses_cb = []
+        self.editions = []
+        self.boutons = []
+
+    async def repondre_callback(self, callback_id, texte=""):
+        self.reponses_cb.append((callback_id, texte))
+
+    async def editer_message(self, chat_id, message_id, texte):
+        self.editions.append((chat_id, message_id, texte))
+
+    async def envoyer_boutons(self, id_externe, texte, boutons):
+        self.boutons.append((id_externe, texte, boutons))
+        return {"chat_id": id_externe, "message_id": 1}
+
+
+class _Coeur:
+    """Faux Cœur : consigne les appels de client_assistant et rend des réponses scriptées."""
+    def __init__(self, monkeypatch, decision=None, armer=None, code=None):
+        self.decisions, self.armements, self.codes = [], [], []
+        self._decision = decision if decision is not None else {"ok": True, "raison": "ok"}
+        self._armer = armer if armer is not None else {"ok": True}
+        self._code = code if code is not None else {"pris_en_charge": False}
+
+        async def _d(id_, decision, par):
+            self.decisions.append((id_, decision, par))
+            return self._decision
+
+        async def _a(id_, par):
+            self.armements.append((id_, par))
+            return self._armer
+
+        async def _c(par, code):
+            self.codes.append((par, code))
+            if isinstance(self._code, Exception):
+                raise self._code
+            return self._code
+
+        monkeypatch.setattr(client_assistant, "decider_approbation", _d)
+        monkeypatch.setattr(client_assistant, "armer_code", _a)
+        monkeypatch.setattr(client_assistant, "soumettre_code", _c)
+
+    @property
+    def appels(self):
+        return self.decisions + self.armements + self.codes
+
+
+def _approbateur(ident):
+    K.lier("faux", ident, f"{ident}@wp")
+    assert K.definir_approbateur("faux", ident, True) is not None
+
+
+def _cb(from_id, data=None, chat_id=None, chat_type="private"):
+    return A.Callback("faux", from_id, chat_id or from_id, chat_type, 7, "cbid",
+                      data if data is not None else f"ap:{ID_AP}:ok")
+
+
+def _installer(monkeypatch, **kw):
+    faux = FauxApprob()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    return faux, _Coeur(monkeypatch, **kw)
+
+
+# 1
+def test_callback_non_approbateur_ignore_sans_appeler_le_coeur(monkeypatch, caplog):
+    faux, coeur = _installer(monkeypatch)
+    K.lier("faux", "cb-lie-simple", "u@wp")          # lié mais PAS approbateur
+    with caplog.at_level(logging.WARNING):
+        r = _run(pont.traiter_callback("faux", _cb("cb-lie-simple")))
+    assert r == {"ok": False, "raison": "ignore"}
+    assert coeur.appels == []
+    assert faux.reponses_cb == [] and faux.editions == [] and faux.envoyes == []   # pas d'oracle
+    assert "ignoré" in caplog.text and "cb-lie-simple" in caplog.text
+    assert ID_AP not in caplog.text                  # jamais le contenu du callback_data
+
+
+def test_callback_inconnu_ou_en_attente_ignore(monkeypatch):
+    faux, coeur = _installer(monkeypatch)
+    K.resoudre("faux", "cb-attente", "X")
+    assert _run(pont.traiter_callback("faux", _cb("cb-attente")))["raison"] == "ignore"
+    assert _run(pont.traiter_callback("faux", _cb("cb-jamais-vu")))["raison"] == "ignore"
+    assert coeur.appels == []
+
+
+def test_callback_statut_ouvert_ne_donne_pas_le_droit(monkeypatch):
+    faux, coeur = _installer(monkeypatch)
+    monkeypatch.setenv("CONNEXION_OUVERT", "1")
+    monkeypatch.setenv("CONNEXION_UTILISATEUR_DEFAUT", "patron")
+    K.resoudre("faux", "cb-ouvert", "O")
+    assert _run(pont.traiter_callback("faux", _cb("cb-ouvert")))["raison"] == "ignore"
+    assert coeur.appels == []
+
+
+# 2
+def test_callback_approbateur_en_groupe_ignore(monkeypatch):
+    faux, coeur = _installer(monkeypatch)
+    _approbateur("cb-grp")
+    for t in ("group", "supergroup", "channel", ""):
+        r = _run(pont.traiter_callback("faux", _cb("cb-grp", chat_type=t)))
+        assert r["raison"] == "ignore"
+    assert coeur.appels == [] and faux.reponses_cb == []
+
+
+# 3
+def test_callback_chat_different_de_l_emetteur_ignore(monkeypatch):
+    faux, coeur = _installer(monkeypatch)
+    _approbateur("cb-autrechat")
+    r = _run(pont.traiter_callback("faux", _cb("cb-autrechat", chat_id="999")))
+    assert r["raison"] == "ignore"
+    assert coeur.appels == [] and faux.reponses_cb == []
+
+
+# 4
+@pytest.mark.parametrize("data", [
+    "ap:zzz:ok", f"x:{ID_AP}:ok", f"ap:{ID_AP}:peut-etre", f"ap:{ID_AP}:OK",
+    f"ap:{ID_AP}:ok:extra", "ap:" + "a1" * 17 + ":ok", f"ap:{ID_AP.upper()}:ok",
+    f" ap:{ID_AP}:ok", f"ap:{ID_AP}:ok\n", "", "ap:" + "f" * 500 + ":ok"])
+def test_callback_data_forge_ignore(monkeypatch, data):
+    faux, coeur = _installer(monkeypatch)
+    _approbateur("cb-forge")
+    r = _run(pont.traiter_callback("faux", _cb("cb-forge", data=data)))
+    assert r["raison"] == "ignore"
+    assert coeur.appels == [] and faux.reponses_cb == []
+
+
+def test_callback_reseau_inconnu_ignore(monkeypatch):
+    coeur = _Coeur(monkeypatch)
+    r = _run(pont.traiter_callback("n-existe-pas", _cb("x")))
+    assert r["raison"] == "ignore" and coeur.appels == []
+
+
+# 5
+def test_callback_ok_reversible_decide_et_edite(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+    _approbateur("cb-5")
+    r = _run(pont.traiter_callback("faux", _cb("cb-5")))
+    assert r["ok"] is True
+    assert coeur.decisions == [(ID_AP, "ok", "faux:cb-5")]
+    assert coeur.armements == []
+    assert faux.reponses_cb and faux.reponses_cb[0][0] == "cbid"
+    assert faux.editions and faux.editions[0][:2] == ("cb-5", 7)
+    assert "approuv" in faux.editions[0][2].lower()
+
+
+# 6
+def test_callback_ko_decide_refus(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+    _approbateur("cb-6")
+    r = _run(pont.traiter_callback("faux", _cb("cb-6", data=f"ap:{ID_AP}:ko")))
+    assert r["ok"] is True
+    assert coeur.decisions == [(ID_AP, "ko", "faux:cb-6")]
+    assert coeur.armements == []
+    assert "refus" in faux.editions[0][2].lower()
+
+
+# 7
+def test_callback_destructif_arme_le_code_sans_jamais_l_afficher(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": False, "raison": "code_requis"},
+                             armer={"ok": True, "code": "654321"})   # même si le Cœur en rendait un
+    _approbateur("cb-7")
+    r = _run(pont.traiter_callback("faux", _cb("cb-7")))
+    assert r["raison"] == "code_demande"
+    assert coeur.armements == [(ID_AP, "faux:cb-7")]
+    assert len(faux.envoyes) == 1 and faux.envoyes[0][0] == "cb-7"
+    texte = faux.envoyes[0][1]
+    assert "app" in texte.lower() and "6 chiffres" in texte
+    assert not re.search(r"\d{6}", texte)
+    assert "654321" not in texte and not any("654321" in str(x) for x in faux.reponses_cb)
+
+
+def test_callback_ko_destructif_n_arme_pas(monkeypatch):
+    """Un refus ne déclenche jamais l'armement d'une saisie de code."""
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+    _approbateur("cb-7b")
+    _run(pont.traiter_callback("faux", _cb("cb-7b", data=f"ap:{ID_AP}:ko")))
+    assert coeur.armements == []
+
+
+def test_callback_armement_refuse_n_annonce_pas_de_saisie(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": False, "raison": "code_requis"},
+                             armer={"ok": False, "raison": "expiree"})
+    _approbateur("cb-7c")
+    _run(pont.traiter_callback("faux", _cb("cb-7c")))
+    assert faux.envoyes == []
+    assert faux.reponses_cb and "expir" in faux.reponses_cb[0][1].lower()
+
+
+# 8
+@pytest.mark.parametrize("raison,mot", [("expiree", "expir"), ("deja_decidee", "trait")])
+def test_callback_expiree_ou_deja_decidee_edite_sans_executer(monkeypatch, raison, mot):
+    faux, coeur = _installer(monkeypatch, decision={"ok": False, "raison": raison})
+    _approbateur("cb-8")
+    r = _run(pont.traiter_callback("faux", _cb("cb-8")))
+    assert r == {"ok": False, "raison": raison}
+    assert coeur.armements == []
+    assert faux.editions and mot in faux.editions[0][2].lower()
+    assert faux.envoyes == []
+
+
+def test_callback_coeur_injoignable_repli_honnete(monkeypatch):
+    faux, coeur = _installer(monkeypatch)
+
+    async def boom(*a, **k):
+        raise httpx.ConnectError("coeur KO")
+
+    monkeypatch.setattr(client_assistant, "decider_approbation", boom)
+    _approbateur("cb-9")
+    r = _run(pont.traiter_callback("faux", _cb("cb-9")))
+    assert r == {"ok": False, "raison": "noyau_injoignable"}
+    assert faux.reponses_cb and "indisponible" in faux.reponses_cb[0][1].lower()
+    assert faux.editions == []                       # rien n'est présenté comme décidé
+
+
+# ── saisie du code à 6 chiffres ──────────────────────────────────────────────────────
+def _brancher_code(monkeypatch, code=None, **kw):
+    faux = FauxApprob()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    coeur = _Coeur(monkeypatch, code=code, **kw)
+    appels = []
+
+    async def converser(messages, **_):
+        appels.append(messages)
+        return "réponse assistant"
+
+    monkeypatch.setattr(client_assistant, "converser", converser)
+    return faux, coeur, appels
+
+
+# 9
+@pytest.mark.parametrize("retour,attendu", [
+    ({"pris_en_charge": True, "ok": True, "raison": "ok"}, "Code bon"),
+    ({"pris_en_charge": True, "ok": False, "raison": "code_faux", "restants": 2},
+     "2 essai"),
+    ({"pris_en_charge": True, "ok": False, "raison": "essais_epuises", "restants": 0},
+     "REFUSÉE"),
+    ({"pris_en_charge": True, "ok": False, "raison": "expiree"}, "expir"),
+])
+def test_code_d_un_approbateur_arme_n_est_pas_relaye(monkeypatch, retour, attendu):
+    faux, coeur, appels = _brancher_code(monkeypatch, code=retour)
+    _approbateur("code-9")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-9", "123456", "G")))
+    assert r["ok"] is True
+    assert appels == []                              # JAMAIS relayé au LLM
+    assert coeur.codes == [("faux:code-9", "123456")]
+    assert len(faux.envoyes) == 1 and attendu in faux.envoyes[0][1]
+    assert "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-9") == []         # le code n'entre pas dans l'historique
+
+
+# 10 (révisé revue finale) : approbateur + 6 chiffres sans saisie armée => JAMAIS relayé
+def test_code_sans_saisie_armee_d_un_approbateur_n_est_jamais_relaye(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": False})
+    _approbateur("code-10")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-10", "123456", "G")))
+    assert r["ok"] is True and r.get("reponse") is None
+    assert appels == []                              # rien dans converser
+    assert coeur.codes == [("faux:code-10", "123456")]
+    assert len(faux.envoyes) == 1
+    assert "Aucune saisie de code en cours" in faux.envoyes[0][1]
+    assert "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-10") == []        # jamais dans l'historique
+
+
+def test_code_prerequis_non_reunis_message_honnete(monkeypatch):
+    faux, coeur, appels = _brancher_code(
+        monkeypatch, code={"pris_en_charge": True, "ok": False, "raison": "prerequis"})
+    _approbateur("code-pre")
+    _run(pont.traiter("faux", A.Entrant("faux", "code-pre", "123456", "G")))
+    assert appels == []
+    assert "Pas encore prête : sauvegarde non vérifiée" in faux.envoyes[0][1]
+    assert "123456" not in faux.envoyes[0][1]
+
+
+def test_non_approbateur_six_chiffres_reste_relaye(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": False})
+    K.lier("faux", "code-10b", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-10b", "123456", "G")))
+    assert r["reponse"] == "réponse assistant" and len(appels) == 1 and coeur.codes == []
+
+
+# 11
+def test_code_d_un_non_approbateur_est_relaye_et_jamais_soumis(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": True, "ok": True,
+                                                            "raison": "ok"})
+    K.lier("faux", "code-11", "u@wp")                # lié, pas approbateur
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-11", "123456", "G")))
+    assert r["ok"] is True and len(appels) == 1
+    assert coeur.codes == []
+
+
+@pytest.mark.parametrize("texte", ["12345", "1234567", "12345a", "123 456", "ma carte 123456",
+                                   "١٢٣٤٥٦", "123456\n123456"])
+def test_texte_qui_n_est_pas_exactement_six_chiffres_n_appelle_pas_le_coeur(monkeypatch, texte):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    _approbateur("code-fmt")
+    _run(pont.traiter("faux", A.Entrant("faux", "code-fmt", texte, "G")))
+    assert coeur.codes == [] and len(appels) == 1
+
+
+def test_code_approbateur_coeur_en_erreur_ne_part_jamais_au_llm(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code=httpx.ConnectError("KO"))
+    _approbateur("code-err")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-err", "123456", "G")))
+    assert appels == []                              # les chiffres pourraient être un code
+    assert r["ok"] is False
+    assert len(faux.envoyes) == 1 and "indisponible" in faux.envoyes[0][1].lower()
+    assert "123456" not in faux.envoyes[0][1]
+    assert C.charger("faux", "code-err") == []
+
+
+def test_code_non_autorise_ne_declenche_pas_le_coeur(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-inconnu", "123456", "G")))
+    assert r["raison"] == "non_autorise" and coeur.codes == [] and appels == []
+
+
+# ── sonder : dispatch par type ─────────────────────────────────────────────────────────
+def test_sonder_dispatche_callback_et_message(monkeypatch):
+    class _Sonde(FauxApprob):
+        async def recuperer(self):
+            return [A.Entrant("faux", "sd-1", "salut", "G"), _cb("sd-2")]
+
+    faux = _Sonde()
+    monkeypatch.setitem(A.REGISTRE, "faux", faux)
+    vus = {"cb": [], "msg": []}
+
+    async def faux_cb(reseau, cb):
+        vus["cb"].append(cb.from_id)
+        return {"ok": True, "raison": "ok"}
+
+    async def faux_traiter(reseau, e, **k):
+        vus["msg"].append(e.id_externe)
+        return {"ok": True}
+
+    monkeypatch.setattr(pont, "traiter_callback", faux_cb)
+    monkeypatch.setattr(pont, "traiter", faux_traiter)
+    r = _run(pont.sonder("faux"))
+    assert vus == {"cb": ["sd-2"], "msg": ["sd-1"]}
+    assert r["traites"] == 2 and r["autorises"] == 2
+
+
+# ── S245 (revue) : source non authentifiée, Telegram isolé, journal ───────────────────
+def test_code_d_un_approbateur_via_source_non_authentifiee_est_ignore(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch, code={"pris_en_charge": True, "ok": True,
+                                                            "raison": "ok"})
+    _approbateur("code-na")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-na", "123456", "G"),
+                          source_authentifiee=False))
+    assert coeur.codes == [] and appels == [] and faux.envoyes == []
+    assert r["ok"] is True
+
+
+def test_code_d_un_non_approbateur_via_source_non_authentifiee_reste_ordinaire(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    K.lier("faux", "code-na2", "u@wp")
+    r = _run(pont.traiter("faux", A.Entrant("faux", "code-na2", "123456", "G"),
+                          source_authentifiee=False))
+    assert coeur.codes == [] and len(appels) == 1 and r["reponse"] == "réponse assistant"
+
+
+def test_message_ordinaire_d_un_approbateur_via_source_non_authentifiee_est_relaye(monkeypatch):
+    faux, coeur, appels = _brancher_code(monkeypatch)
+    _approbateur("code-na3")
+    _run(pont.traiter("faux", A.Entrant("faux", "code-na3", "bonjour", "G"),
+                      source_authentifiee=False))
+    assert len(appels) == 1
+
+
+@pytest.mark.parametrize("casse", ["repondre_callback", "envoyer", "editer_message"])
+def test_callback_telegram_en_panne_apres_decision_garde_le_verdict(monkeypatch, casse):
+    faux, coeur = _installer(monkeypatch, decision={"ok": True, "raison": "ok"})
+
+    async def panne(*a, **k):
+        raise httpx.ConnectError("telegram KO")
+
+    monkeypatch.setattr(faux, casse, panne)
+    _approbateur("cb-tgko")
+    r = _run(pont.traiter_callback("faux", _cb("cb-tgko")))
+    assert r == {"ok": True, "raison": "ok"}
+    assert coeur.decisions == [(ID_AP, "ok", "faux:cb-tgko")]
+
+
+def test_callback_armement_telegram_en_panne_garde_code_demande(monkeypatch):
+    faux, coeur = _installer(monkeypatch, decision={"ok": False, "raison": "code_requis"})
+
+    async def panne(*a, **k):
+        raise httpx.ConnectError("telegram KO")
+
+    monkeypatch.setattr(faux, "envoyer", panne)
+    monkeypatch.setattr(faux, "repondre_callback", panne)
+    _approbateur("cb-tgko2")
+    r = _run(pont.traiter_callback("faux", _cb("cb-tgko2")))
+    assert r == {"ok": True, "raison": "code_demande"}
+
+
+def test_code_coeur_en_erreur_journalise_sans_les_chiffres(monkeypatch, caplog):
+    faux, coeur, appels = _brancher_code(monkeypatch, code=httpx.ConnectError("KO"))
+    _approbateur("code-log")
+    with caplog.at_level(logging.WARNING):
+        _run(pont.traiter("faux", A.Entrant("faux", "code-log", "123456", "G")))
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    assert "123456" not in caplog.text

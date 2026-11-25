@@ -17,12 +17,16 @@ Familles :
 
 import asyncio
 import json
+import logging
 import os
+import re
 import uuid
 
 import httpx
 
 import agenda
+import approbations
+import approbations_canal
 import catalogue
 import conscience
 import cycle_de_vie
@@ -554,6 +558,93 @@ def est_erreur(resultat: str) -> bool:
         return False
 
 
+async def _notifier_approbation(registre, demande: dict) -> None:
+    await approbations_canal.notifier(registre, demande)
+
+
+def est_sensible(nom: str, registre) -> str | None:
+    """Niveau de sensibilité (`reversible|donnees|destructif`) d'une capacité de manifeste,
+    ou None (lecture, champ absent, outil inconnu). S245.
+
+    FAIL CLOSED : la valeur est normalisée (`str().strip().lower()`). Absente/None/`lecture`
+    -> None (non gardée) ; un niveau connu -> ce niveau ; TOUTE autre valeur (faute de frappe,
+    `True`, ...) -> `destructif` (le plus strict) avec un avertissement dans les logs."""
+    cap = _capacites_dynamiques(registre).get(nom)
+    brut = (cap or {}).get("sensibilite")
+    if brut is None:
+        return None
+    valeur = str(brut).strip().lower()
+    if valeur == "lecture":
+        return None
+    if valeur in approbations.NIVEAUX_SENSIBLES:
+        return valeur
+    logging.getLogger(__name__).warning(
+        "capacité %r : sensibilite invalide %r -> traitée comme 'destructif' (fail closed)",
+        nom, brut)
+    return "destructif"
+
+
+# Le résumé est stocké en base, envoyé sur Telegram et répété dans l'édition finale : il ne doit
+# JAMAIS contenir de secret. On masque donc la valeur des arguments dont le NOM évoque un secret,
+# les mots de passe intégrés à une URL (scheme://user:mdp@hôte) et les jetons opaques longs.
+# L'empreinte qui lie l'approbation est calculée ailleurs, sur les VRAIS arguments : cette
+# expurgation ne change que l'affichage.
+_CLES_SECRETES = ("pass", "pwd", "secret", "token", "key", "auth", "credential", "dsn",
+                  "cookie", "bearer")
+_RE_URL_IDENTIFIANTS = re.compile(r"(\w[\w+.\-]*://[^\s:/@]+:)[^\s@/]+(@)")
+_RE_JETON_OPAQUE = re.compile(r"[A-Za-z0-9_\-]{32,}")
+_RE_QUERY_SECRET = re.compile(
+    r"([?&](?:token|key|password|passwd|pwd|secret|sig|signature|auth|apikey|api_key|"
+    r"access_token)=)[^&\s#'\"]+", re.IGNORECASE)
+_RE_BEARER = re.compile(r"(\bBearer\s+)[^\s'\",;]+", re.IGNORECASE)
+_VALEUR_MAX = 80
+_PROFONDEUR_MAX = 5
+
+
+def _cle_secrete(cle) -> bool:
+    return any(m in str(cle).lower() for m in _CLES_SECRETES)
+
+
+def _expurger_texte(texte: str) -> str:
+    texte = _RE_URL_IDENTIFIANTS.sub(r"\1***\2", texte)
+    texte = _RE_QUERY_SECRET.sub(r"\1***", texte)
+    texte = _RE_BEARER.sub(r"\1***", texte)
+    return _RE_JETON_OPAQUE.sub("***", texte)
+
+
+def _expurger(valeur, profondeur: int = 0):
+    """Copie de `valeur` sans secret, récursivement (affichage seulement, jamais l'empreinte)."""
+    if isinstance(valeur, str):
+        return _expurger_texte(valeur)
+    if isinstance(valeur, (dict, list, tuple, set, frozenset)) and profondeur >= _PROFONDEUR_MAX:
+        return "…"
+    if isinstance(valeur, dict):
+        return {k: ("***" if _cle_secrete(k) else _expurger(v, profondeur + 1))
+                for k, v in valeur.items()}
+    if isinstance(valeur, (list, set, frozenset)):
+        return [_expurger(v, profondeur + 1) for v in valeur]
+    if isinstance(valeur, tuple):
+        return tuple(_expurger(v, profondeur + 1) for v in valeur)
+    if valeur is None or isinstance(valeur, (bool, int, float)):
+        return valeur
+    return _expurger_texte(repr(valeur))
+
+
+def _valeur_affichable(cle: str, valeur) -> str:
+    if _cle_secrete(cle):
+        return "'***'"
+    texte = repr(_expurger(valeur))
+    return texte if len(texte) <= _VALEUR_MAX else texte[:_VALEUR_MAX - 1] + "…"
+
+
+def _resume_action(nom: str, args: dict) -> str:
+    """Résumé lisible montré à l'humain : la capacité et ses arguments (secrets expurgés)."""
+    utiles = {k: v for k, v in (args or {}).items() if k != "confirme" and v is not None}
+    detail = ", ".join(f"{k}={_valeur_affichable(k, v)}"
+                       for k, v in sorted(utiles.items())) or "sans argument"
+    return f"{nom}({detail})"[:300]
+
+
 async def executer(nom: str, args: dict, registre) -> str:
     """Exécute un outil et renvoie une chaîne (résultat ou message) pour le LLM.
 
@@ -563,11 +654,41 @@ async def executer(nom: str, args: dict, registre) -> str:
     (try/except) reste ici, centralisé, inchangé.
 
     Point de passage UNIQUE du chat, du co-agent et de /mcp : c'est donc ici que les outils
-    réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py)."""
+    réservés à l'admin du cerveau sont refusés hors tour admin (revue S240, C-B, droits.py).
+
+    S245 : une capacité qui déclare `sensibilite` ne s'exécute que si `approbations.exiger`
+    consomme une approbation humaine de même empreinte — QUEL QUE SOIT l'appelant (chat,
+    co-agent, MCP) : c'est ce qui ferme le trou signalé dans l'ADR du gate (S222)."""
     if est_reserve_admin(nom, registre) and not droits.ADMIN_CERVEAU.get():
         resultat = droits.refus(nom)
     else:
-        resultat = await _executer(nom, args, registre)
+        niveau = est_sensible(nom, registre)
+        id_appr = None
+        if niveau:
+            id_appr, refus, nouvelle = approbations.exiger(
+                nom, args or {}, niveau, _resume_action(nom, args or {}))
+            if refus:
+                if nouvelle:
+                    try:
+                        await _notifier_approbation(registre, nouvelle)
+                    except Exception as exc:  # noqa: BLE001 — le refus doit toujours revenir
+                        logging.getLogger(__name__).warning(
+                            "notification d'approbation en échec (%s) : %s", nom, exc)
+                return refus
+            args = {**(args or {}), "confirme": True}   # l'approbation EST la confirmation
+        try:
+            resultat = await _executer(nom, args, registre)
+        except BaseException as exc:
+            if id_appr:
+                approbations.conclure(id_appr, False, f"interrompue : {type(exc).__name__}")
+            raise
+        if id_appr:
+            approbations.conclure(id_appr, not est_erreur(resultat), resultat)
+            try:   # best-effort : message Telegram édité à l'état final (✅ Exécutée / ⚠️ Échec)
+                await approbations_canal.mettre_a_jour(registre, approbations.lire(id_appr))
+            except Exception as exc:  # noqa: BLE001 — ne doit jamais altérer le résultat
+                logging.getLogger(__name__).warning(
+                    "mise à jour finale d'approbation en échec (%s) : %s", nom, exc)
     _APPELS[nom] = _APPELS.get(nom, 0) + 1
     if est_erreur(resultat):
         _ECHECS[nom] = _ECHECS.get(nom, 0) + 1

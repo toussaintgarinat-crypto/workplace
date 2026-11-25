@@ -29,6 +29,7 @@ import config_assistant
 import droits
 import llm_pipeline
 import muscle
+import approbations
 import outils
 
 logger = logging.getLogger(__name__)
@@ -212,7 +213,8 @@ async def _boucle(objectif, registre, *, budget, max_e, conf, client, etiquette,
                                            "la boîte à outils (lecture seule) du co-agent."},
                                           ensure_ascii=False)
                 else:
-                    resultat = await outils.executer(nom, args, registre)
+                    with approbations.avec_origine("coagent"):
+                        resultat = await outils.executer(nom, args, registre)
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                                  "content": resultat})
 

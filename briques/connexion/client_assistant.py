@@ -127,3 +127,37 @@ async def historique_utilisateur(utilisateur: str, limite: int = 40,
         data = r.json()
     msgs = data.get("messages")
     return msgs if isinstance(msgs, list) else []
+
+
+# ── Approbations (S245) : appels du pont vers le Cœur, authentifiés par clé partagée ──
+def _base_noyau() -> str:
+    return os.getenv("NOYAU_ASSISTANT_URL", "http://host.docker.internal:5100").rstrip("/")
+
+
+def _entetes_approbation() -> dict:
+    """Clé partagée Cœur↔brique. Absente => on LÈVE (fail closed) plutôt que d'envoyer vide."""
+    cle = (os.getenv("APPROBATIONS_CLE") or "").strip()
+    if not cle:
+        raise RuntimeError("APPROBATIONS_CLE absente : appel d'approbation refusé.")
+    return {"X-Approbations-Cle": cle}
+
+
+async def _poster_approbation(chemin: str, corps: dict, timeout: float = 15.0) -> dict:
+    entetes = _entetes_approbation()
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.post(f"{_base_noyau()}{chemin}", json=corps, headers=entetes)
+        r.raise_for_status()
+        return r.json()
+
+
+async def decider_approbation(id_: str, decision: str, par: str) -> dict:
+    return await _poster_approbation(f"/approbations/{id_}/decision",
+                                     {"decision": decision, "par": par, "canal": "telegram"})
+
+
+async def armer_code(id_: str, par: str) -> dict:
+    return await _poster_approbation(f"/approbations/{id_}/code/armer", {"par": par})
+
+
+async def soumettre_code(par: str, code: str) -> dict:
+    return await _poster_approbation("/approbations/code", {"par": par, "code": code})

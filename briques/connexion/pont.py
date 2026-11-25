@@ -12,7 +12,9 @@ Pour chaque message reçu d'un réseau :
 Repli HONNÊTE partout : assistant injoignable → message d'excuse clair (jamais une fausse
 réponse) ; réseau injoignable à l'envoi → on journalise sans rien perdre en silence.
 """
+import logging
 import os
+import re
 
 import httpx
 
@@ -21,6 +23,10 @@ import client_assistant
 import conversations
 import correspondance
 import voix
+
+_CB = re.compile(r"ap:([0-9a-f]{32}):(ok|ko)")          # utilisé avec fullmatch
+_CODE = re.compile(r"[0-9]{6}")                         # ASCII seulement (pas d'autres chiffres)
+_log = logging.getLogger(__name__)
 
 _EXT_IMAGE = ("png", "jpg", "jpeg", "webp", "gif")
 
@@ -148,7 +154,106 @@ async def _transcrire_vocal(reseau: str, ad, entrant, envoyer: bool) -> dict:
     return {"ok": False, "raison": "transcription_indisponible", "reponse": _REPLI_VOIX}
 
 
-async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
+_VERDICT = {"expiree": "⌛ Demande expirée.", "deja_decidee": "ℹ️ Demande déjà traitée."}
+_BULLE = {"ok": "Décision enregistrée", "expiree": "Demande expirée",
+          "deja_decidee": "Déjà traitée", "prerequis": "Pas encore prête : sauvegarde non vérifiée",
+          "introuvable": "Demande inconnue"}
+
+
+async def traiter_callback(reseau: str, cb) -> dict:
+    """Clic sur un bouton d'approbation. TOUTE vérification d'identité est ici, AVANT le Cœur :
+    callback_data strict, chat privé, chat == émetteur, approbateur explicite (« lie »). Sinon
+    : ignoré SANS réponse (pas d'oracle), journalisé (identifiants seulement, jamais le data).
+    Le Cœur fait confiance à `par` : l'armement du code n'a donc lieu qu'après ces contrôles."""
+    ad = adaptateurs.obtenir(reseau)
+    m = _CB.fullmatch(cb.data or "")
+    if (ad is None or not m or cb.chat_type != "private" or cb.chat_id != cb.from_id
+            or not correspondance.est_approbateur(reseau, cb.from_id)):
+        _log.warning("Approbation : callback ignoré (from=%s chat=%s type=%s data_len=%d)",
+                     cb.from_id, cb.chat_id, cb.chat_type, len(cb.data or ""))
+        return {"ok": False, "raison": "ignore"}
+    id_, decision = m.group(1), m.group(2)
+    par = f"{reseau}:{cb.from_id}"
+
+    async def _tg(coro):                          # Telegram best-effort : la décision est déjà prise
+        try:
+            await coro
+        except Exception as e:  # noqa: BLE001
+            _log.warning("Approbation : appel %s en échec (%s)", reseau, type(e).__name__)
+
+    try:
+        rep = await client_assistant.decider_approbation(id_, decision, par)
+        if rep.get("raison") == "code_requis" and decision == "ok":
+            armement = await client_assistant.armer_code(id_, par)
+            if armement.get("ok"):
+                code_demande = True
+            else:
+                code_demande, rep = False, armement
+        else:
+            code_demande = False
+    except Exception:  # noqa: BLE001 — Cœur injoignable : repli honnête, aucune exécution
+        await _tg(ad.repondre_callback(cb.callback_id, "Service indisponible, réessaie"))
+        return {"ok": False, "raison": "noyau_injoignable"}
+    if code_demande:
+        await _tg(ad.repondre_callback(cb.callback_id, "Code requis"))
+        await _tg(ad.envoyer(cb.chat_id, "🔐 Action destructive : saisis ici le code à "
+                                         "6 chiffres affiché dans l'app Workplace "
+                                         "(3 essais, 5 min)."))
+        return {"ok": True, "raison": "code_demande"}
+    raison = rep.get("raison")
+    await _tg(ad.repondre_callback(cb.callback_id, _BULLE.get(raison, "Impossible")))
+    if rep.get("ok") and raison == "ok":
+        await _tg(ad.editer_message(cb.chat_id, cb.message_id,
+                                    "✅ Approuvée." if decision == "ok" else "❌ Refusée."))
+    elif raison in _VERDICT:
+        await _tg(ad.editer_message(cb.chat_id, cb.message_id, _VERDICT[raison]))
+    return {"ok": bool(rep.get("ok")), "raison": raison}
+
+
+async def _tenter_code(reseau: str, ad, entrant) -> dict | None:
+    """Un message « 123456 » d'un approbateur est un CODE potentiel, jamais une question pour
+    le LLM. None => message ordinaire (relayé comme avant) ; pour un approbateur, 6 chiffres ne sont JAMAIS relayés. Si le Cœur est injoignable, on NE
+    relaie PAS les chiffres (ça pourrait être un code) : on demande de réessayer."""
+    texte = (entrant.texte or "").strip()
+    if not _CODE.fullmatch(texte):
+        return None
+    if not correspondance.est_approbateur(reseau, entrant.id_externe):
+        return None
+    try:
+        r = await client_assistant.soumettre_code(f"{reseau}:{entrant.id_externe}", texte)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("Approbation : saisie de code, Cœur injoignable ou refusé (%s) — "
+                     "APPROBATIONS_CLE configurée ?", type(e).__name__)
+        try:
+            await ad.envoyer(entrant.id_externe, "Service indisponible, réessaie.")
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "raison": "noyau_injoignable"}
+    if not r.get("pris_en_charge"):
+        # Un approbateur qui envoie 6 chiffres sans saisie armée : JAMAIS relayé au LLM ni
+        # journalisé (ce pourrait être un code valable pour une demande qui vient de se régler).
+        msg = "Aucune saisie de code en cours : appuie d'abord sur ✅ sur la demande concernée."
+        try:
+            await ad.envoyer(entrant.id_externe, msg)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": True, "code": "aucune_saisie"}
+    msg = {"ok": "✅ Code bon, action approuvée.",
+           "code_faux": f"❌ Code faux — {r.get('restants', 0)} essai(s) restant(s).",
+           "essais_epuises": "❌ 3 codes faux : demande REFUSÉE.",
+           "expiree": "⌛ Demande expirée.",
+           "deja_decidee": "ℹ️ Demande déjà traitée.",
+           "prerequis": "⏳ Pas encore prête : sauvegarde non vérifiée."}.get(r.get("raison"),
+                                                           "Code non pris en compte.")
+    try:
+        await ad.envoyer(entrant.id_externe, msg)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "code": r.get("raison")}
+
+
+async def traiter(reseau: str, entrant, *, envoyer: bool = True,
+                  source_authentifiee: bool = True) -> dict:
     """Traite un message entrant de bout en bout. Renvoie un compte-rendu (sans lever)."""
     ad = adaptateurs.obtenir(reseau)
     if ad is None:
@@ -172,6 +277,22 @@ async def traiter(reseau: str, entrant, *, envoyer: bool = True) -> dict:
         if not cr["ok"]:
             return cr
         transcrit = entrant.texte = cr["texte"]
+
+    if (not source_authentifiee and transcrit is None
+            and _CODE.fullmatch((entrant.texte or "").strip())
+            and correspondance.est_approbateur(reseau, entrant.id_externe)):
+        # 6 chiffres d'un approbateur via une source SANS authentification (webhook sans
+        # secret) : identité forgeable → ni soumis au Cœur, ni relayé au LLM. Abandon muet.
+        return {"ok": True, "raison": "source_non_authentifiee"}
+
+    if envoyer and transcrit is None and source_authentifiee and ad.configure():
+        pris = await _tenter_code(reseau, ad, entrant)
+        if pris is not None:
+            return pris
+    elif (transcrit is None and _CODE.fullmatch((entrant.texte or "").strip())
+          and correspondance.est_approbateur(reseau, entrant.id_externe)):
+        # Réseau non configuré / mode sans envoi : mêmes 6 chiffres, même règle — jamais relayés.
+        return {"ok": True, "raison": "code_non_traite"}
 
     historique = await _historique_pour(reseau, entrant.id_externe, corr.get("utilisateur"))
     messages = _construire(reseau, entrant, corr, historique)
@@ -228,6 +349,11 @@ async def sonder(reseau: str) -> dict:
     if ad is None or not ad.configure():
         return {"ok": True, "reseau": reseau, "traites": 0, "configure": False}
     entrants = await ad.recuperer()
-    comptes = [await traiter(reseau, e) for e in entrants]
+    comptes = []
+    for e in entrants:
+        if isinstance(e, adaptateurs.Callback):
+            comptes.append(await traiter_callback(reseau, e))
+        else:
+            comptes.append(await traiter(reseau, e))
     return {"ok": True, "reseau": reseau, "traites": len(entrants),
             "autorises": sum(1 for c in comptes if c.get("ok"))}

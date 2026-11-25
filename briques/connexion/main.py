@@ -22,7 +22,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
                                RedirectResponse, StreamingResponse)
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 import adaptateurs
@@ -54,6 +54,15 @@ def cle_api(x_api_key: Optional[str] = Header(None),
     raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
 
 
+def cle_api_fermee(cle: str = Depends(cle_api)) -> str:
+    """Comme `cle_api` mais FAIL CLOSED : sans `API_KEYS` configurée, refus (403). Pour les
+    routes dont l'ouverture permettrait de s'octroyer un pouvoir (approbateur) ou de faire
+    écrire le bot aux approbateurs avec un texte arbitraire (S245)."""
+    if not API_KEYS:
+        raise HTTPException(403, "Route désactivée : configure API_KEYS.")
+    return cle
+
+
 class Envoi(BaseModel):
     reseau: str
     id_externe: str
@@ -70,6 +79,26 @@ class Liaison(BaseModel):
     id_externe: Optional[str] = None
     utilisateur: str
     code: Optional[str] = None        # alternative : lier par code de liaison
+
+
+class DroitApprobateur(BaseModel):
+    reseau: str
+    id_externe: str
+    approbateur: bool
+
+
+class NotifApprobation(BaseModel):
+    id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    resume: str
+    sensibilite: str
+    prerequis_ok: bool = True
+    relance: bool = False
+    expire_a: float = 0
+
+
+class MajApprobation(BaseModel):
+    messages: list[dict]
+    texte: str
 
 
 class InitData(BaseModel):
@@ -145,8 +174,18 @@ async def webhook(reseau: str, request: Request):
     # Discord : répondre au PING par un PONG (type 1).
     if reseau == "discord" and isinstance(payload, dict) and payload.get("type") == 1:
         return {"type": 1}
+    # Sans TELEGRAM_WEBHOOK_SECRET, verifier_webhook accepte tout : le from.id du payload n'est
+    # alors PAS une identité. Fail closed : ni clic d'approbation, ni saisie de code (S245).
+    authentifiee = not (reseau == "telegram" and not os.getenv("TELEGRAM_WEBHOOK_SECRET"))
+    parse_cb = getattr(ad, "parser_callback", None)
+    cb = parse_cb(payload) if parse_cb else None
+    if cb:                                        # clic sur un bouton d'approbation (S245)
+        if authentifiee:
+            await pont.traiter_callback(reseau, cb)
+        return {"ok": True}                       # corps constant : aucun oracle
     entrants = ad.parser_entrant(payload)
-    comptes = [await pont.traiter(reseau, e) for e in entrants]
+    comptes = [await pont.traiter(reseau, e, source_authentifiee=authentifiee)
+               for e in entrants]
     return {"ok": True, "recus": len(entrants),
             "autorises": sum(1 for c in comptes if c.get("ok"))}
 
@@ -237,10 +276,70 @@ async def correspondances_lier(body: Liaison, _cle: str = Depends(cle_api)):
     return {"ok": True, "correspondance": e}
 
 
+@app.post("/correspondances/approbateur", tags=["admin"])
+async def correspondances_approbateur(body: DroitApprobateur,
+                                      _cle: str = Depends(cle_api_fermee)):
+    """Pose/retire le droit d'APPROUVER (S245). Fail closed : refusé si `API_KEYS` est vide ;
+    uniquement sur une entrée existante au statut « lie ». La liaison ordinaire ne le pose pas."""
+    e = correspondance.definir_approbateur(body.reseau, body.id_externe, body.approbateur)
+    if e is None:
+        raise HTTPException(404, "Interlocuteur inconnu ou non lié.")
+    return {"ok": True, "approbateur": e["approbateur"]}
+
+
 @app.delete("/correspondances", tags=["admin"])
 async def correspondances_delier(reseau: str, id_externe: str, _cle: str = Depends(cle_api)):
     """Détache un interlocuteur (il repassera « en attente »)."""
     return {"ok": correspondance.delier(reseau, id_externe)}
+
+
+# ── Approbations (S245) : le Cœur demande, la brique notifie les approbateurs ─────
+_ICONE = {"reversible": "🟡", "donnees": "🟠", "destructif": "🔴"}
+
+
+@app.post("/approbation/notifier", tags=["admin"])
+async def approbation_notifier(body: NotifApprobation, _cle: str = Depends(cle_api_fermee)):
+    """Envoie la demande à CHAQUE approbateur lié, avec boutons. Aucun approbateur => rien
+    (fail closed). Le texte ne contient JAMAIS de code : il est affiché dans l'app."""
+    ad = adaptateurs.obtenir("telegram")
+    messages = []
+    if ad is not None and ad.configure():
+        entete = "🔁 Rappel — " if body.relance else ""
+        ico = _ICONE.get(body.sensibilite, "")
+        for dest in correspondance.approbateurs("telegram"):
+            if not body.prerequis_ok:
+                texte = f"{entete}{ico} Approbation en attente de preuves\n{body.resume}"
+                clavier = []
+            else:
+                suffixe = ("\n🔐 Après avoir appuyé, saisis le code à 6 chiffres affiché dans "
+                           "l'app." if body.sensibilite == "destructif" else "")
+                texte = (f"{entete}{ico} Approbation demandée ({body.sensibilite})\n"
+                         f"{body.resume}{suffixe}")
+                clavier = [[{"text": "✅ Approuver", "callback_data": f"ap:{body.id}:ok"},
+                            {"text": "❌ Refuser", "callback_data": f"ap:{body.id}:ko"}]]
+            try:
+                m = await ad.envoyer_boutons(dest, texte, clavier)
+                if m:
+                    messages.append(m)
+            except Exception:  # noqa: BLE001 — un destinataire KO ne bloque pas les autres
+                continue
+    return {"messages": messages}
+
+
+@app.post("/approbation/mettre_a_jour", tags=["admin"])
+async def approbation_mettre_a_jour(body: MajApprobation,
+                                    _cle: str = Depends(cle_api_fermee)):
+    """Édite (et retire le clavier de) chaque message de la demande une fois tranchée."""
+    ad = adaptateurs.obtenir("telegram")
+    faits = 0
+    if ad is not None and ad.configure():
+        for m in body.messages:
+            try:
+                await ad.editer_message(m["chat_id"], m["message_id"], body.texte)
+                faits += 1
+            except Exception:  # noqa: BLE001
+                continue
+    return {"edites": faits}
 
 
 # ── Mini App Telegram (S77) : front public GARDÉ, le Cœur reste interne ──────────

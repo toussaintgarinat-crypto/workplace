@@ -23,6 +23,16 @@
       "tolere_echec": true
     },
     {
+      "nom": "approbations-relance",
+      "description": "Mode attente (S245) : expire les demandes d'approbation périmées et relance sur Telegram celles qui attendent depuis APPROBATION_RELANCE_MIN. L'assistant n'agit JAMAIS sans validation : la relance ne fait que reposer la question.",
+      "methode": "POST",
+      "chemin": "/approbations/relancer",
+      "cadence_heures": 0.25,
+      "idempotent": true,
+      "entete_token_env": "APPROBATIONS_CLE",
+      "tolere_echec": true
+    },
+    {
       "nom": "pouls-autonome",
       "description": "Pouls autonome (S67) : l'horloge réveille le co-agent (lecture seule, borné par un budget quotidien de tokens) sur un objectif récurrent — point proactif + 3 priorités — déposé en rappel 🔔.",
       "methode": "POST",

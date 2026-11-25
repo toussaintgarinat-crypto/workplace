@@ -51,6 +51,7 @@ _TMP = tempfile.mkdtemp(prefix="workplace-core-tests-")
 _CHEMINS = {
     "ASSISTANT_CONFIG_PATH": "assistant_config.json",
     "AMELIORATION_PATH": "ameliorations.json",
+    "APPROBATIONS_DB": "approbations.db",
     "CAPACITES_PROPOSEES_PATH": "capacites_proposees.json",
     "CONVERSATIONS_JOURNAL_PATH": "conversations_journal.jsonl",
     "HORLOGE_DB": "horloge.db",

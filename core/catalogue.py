@@ -86,6 +86,8 @@ def collecter_capacites(registre) -> list[dict]:
                 "url": base + chemin,
                 "params": dict(decl.get("params") or {}),
                 "action": bool(decl.get("action", False)),
+                # S245 — niveau de sensibilité : active l'approbation Telegram (core/approbations)
+                "sensibilite": decl.get("sensibilite"),
                 # S90 — porte à divulgation progressive
                 "niveau": _niveau(decl.get("niveau")),
                 # S134 — socle:true = toujours inclus dans le routage par embeddings
