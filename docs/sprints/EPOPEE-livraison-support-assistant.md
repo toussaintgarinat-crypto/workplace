@@ -5,7 +5,7 @@
 > rédigés, au niveau conception). **Ne lire que le fichier du sprint en cours.** Au démarrage d'un
 > sprint : relire son fichier, lever ses « questions à trancher », puis `writing-plans`.
 
-Créé le 2026-11-25 (brainstorming). Statut global : **5 sprints spécifiés (conception), rien codé**.
+Créé le 2026-11-25 (brainstorming). Statut global : **S245 codé + revu (preuve LIVE Telegram différée en SLIVE) ; S246-S249 spécifiés**.
 
 ## Objectif
 
@@ -44,7 +44,7 @@ Workplace **orchestre** ces outils ; il ne les réimplémente pas.
 
 | Sprint | Contenu | Dépend de | Fichier détail | État |
 |---|---|---|---|---|
-| S245 | Socle d'approbation Telegram (demandes liées à l'action, niveaux, journal) | S75/S76 existants | [S245-socle-approbation-telegram.md](S245-socle-approbation-telegram.md) | spécifié |
+| S245 | Socle d'approbation Telegram (demandes liées à l'action, niveaux, journal) | S75/S76 existants | [S245-socle-approbation-telegram.md](S245-socle-approbation-telegram.md) | codé + revu (LIVE à prouver) |
 | S246 | Forgejo + Dokploy, outils d'exploitation (logs, redémarrer, rollback) | S245 | [S246-forgejo-dokploy-exploitation.md](S246-forgejo-dokploy-exploitation.md) | spécifié |
 | S247 | Sauvegarde vérifiée + reset app entière (bleu/vert) | S246 | [S247-sauvegarde-verifiee-reset-app-entiere.md](S247-sauvegarde-verifiee-reset-app-entiere.md) | spécifié |
 | S248 | Contrat d'app + reset par utilisateur (app pilote) | S247 | [S248-contrat-app-reset-par-utilisateur.md](S248-contrat-app-reset-par-utilisateur.md) | spécifié |

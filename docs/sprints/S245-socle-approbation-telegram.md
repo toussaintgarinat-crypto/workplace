@@ -1,6 +1,6 @@
 # S245 — Socle d'approbation Telegram
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **spécifié, non codé**.
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **CODÉ + REVU, preuve LIVE Telegram différée (SLIVE)**. ADR : `docs/decisions/2026-11-25-approbation-telegram.md`.
 Dépend de : S222 (`core/accord_action.py`, ADR `docs/decisions/2026-08-09-gate-action-structurel.md`),
 S76 (boutons), S77 (Mini App Telegram, `briques/connexion/miniapp.py`).
 
@@ -79,8 +79,26 @@ de journal/audit existant du Cœur — *à identifier au démarrage* (`journal_m
 Aucun outil d'exploitation d'apps (S246). Pas de page maintenance. Pas de migration des 133
 actions existantes vers le nouveau système.
 
-## Questions à trancher au démarrage
+## Questions tranchées (2026-11-25)
 
-1. Où stocker le propriétaire Telegram autorisé : `correspondance.py` suffit-il, ou faut-il un champ « approbateur » explicite ?
-2. Mini App ou code à 6 chiffres pour `destructif` ?
-3. Durée d'expiration par niveau (proposition : réversible 30 min, données 2 h, destructif 15 min).
+1. **Propriétaire autorisé** : approbateur **explicite**, champ `approbateur: true` dans
+   `correspondances.json` (posé via `POST /correspondances/approbateur`), en plus du statut
+   « lié » et d'un chat privé.
+2. **Destructif** : **code à 6 chiffres** affiché dans l'app, saisi dans Telegram (3 essais).
+   Pas de Mini App.
+3. **Expiration** : réversible 30 min, données 120 min, destructif 15 min, configurables par
+   `APPROBATION_TTL_<NIVEAU>_MIN`.
+
+## Preuve LIVE différée (SLIVE) : recette
+
+1. Poser `APPROBATIONS_CLE` (même valeur) dans le `.env` du Cœur **et** de la brique connexion ;
+   poser `TELEGRAM_WEBHOOK_SECRET` si le bot est en mode webhook (sans lui, callbacks et codes
+   sont ignorés). `API_KEYS` de la brique doit contenir `CONNEXION_KEY` du Cœur.
+2. Marquer son compte approbateur : `POST /correspondances/approbateur` (compte déjà lié,
+   chat privé avec le bot).
+3. Déclencher une capacité de test `sensibilite: reversible` : le message Telegram arrive avec
+   les boutons ; clic **Approuver** → exécution → message édité en ✅.
+4. Même chose avec un `destructif` : bouton → le message demande un code ; lire le code dans
+   l'app (`GET /approbations/en_attente`) → le saisir dans Telegram → exécution → ✅.
+5. Vérifier aussi : un autre compte (non approbateur) ne peut pas cliquer ; un refus ; une
+   expiration.

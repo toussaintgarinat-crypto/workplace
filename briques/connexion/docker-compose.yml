@@ -28,9 +28,10 @@ services:
       # fil local de ce canal. Repli honnête automatique si le Cœur est injoignable.
       - CONNEXION_HISTORIQUE_CROISE=${CONNEXION_HISTORIQUE_CROISE:-1}
       - CONNEXION_DIR=/data/connexion
+      # S245 (approbations) : APPROBATIONS_CLE (identique au Cœur) et API_KEYS (doit inclure
+      # CONNEXION_KEY du Cœur) viennent aussi du .env racine ; TELEGRAM_WEBHOOK_SECRET y est
+      # REQUIS en mode webhook.
       # ⚠ Tokens des réseaux (TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WHATSAPP_*,
-      # S245 : APPROBATIONS_CLE (identique au Cœur) et API_KEYS (doit inclure CONNEXION_KEY du
-      # Cœur) viennent aussi du .env racine ; TELEGRAM_WEBHOOK_SECRET y est REQUIS en mode webhook.
       # DISCORD_*), identifiant par défaut, liste CONNEXION_RESEAUX et clés API_KEYS :
       # à poser dans le .env RACINE — ils sont hérités via `env_file` ci-dessus.
       # NE PAS les redéclarer ici : une ligne `VAR=${VAR:-}` s'interpole depuis le SHELL
