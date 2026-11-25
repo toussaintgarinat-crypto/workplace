@@ -68,3 +68,8 @@ Portée par utilisateur (S248). Sauvegardes de Workplace lui-même (déjà couve
 
 1. Durée de conservation de l'instance bleue ?
 2. Quelles apps sont éligibles en premier (celles qui ont une vraie base et des volumes) ?
+
+## Idée ajoutée (2026-11-25) — miroir de tous les dépôts GitHub dans Forgejo
+Contexte : se couvrir contre un GitHub payant ou fermé. Prouvé en S246 sur Calendrier Familial : dépôt Forgejo recréé en *pull mirror* (`POST /repos/migrate` avec `mirror:true`, `mirror_interval:"10m0s"`), commits identiques à GitHub.
+À faire ici : (1) mesurer la taille totale des dépôts (VM 100 : 60 Go, partagés avec les images Docker) ; (2) script qui liste le compte GitHub et crée un miroir par dépôt ; (3) jeton GitHub **en lecture seule** pour les dépôts privés (jamais dans le dépôt git) ; (4) **sauvegarde de Forgejo** vers un autre disque/lieu — sans elle le risque est seulement déplacé (VM unique) ; (5) tester la conversion d'un miroir en dépôt normal (bascule si GitHub disparaît).
+Limites connues : un miroir ne copie que le code git (pas tickets/PR) ; Dokploy ne redéploie pas seul à la synchro ; nettoyage des images du registre Forgejo (rollback) à prévoir.
