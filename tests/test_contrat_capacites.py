@@ -29,6 +29,7 @@ import os
 import re
 import sys
 import tempfile
+import typing
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,12 @@ def _contrat_de_route(route):
         pile.extend(sous.dependencies)
     if route.body_field is not None:
         modele = getattr(route.body_field, "type_", None)
+        # `corps: Optional[Modele] = None` (corps facultatif, motif de `livraison`) : on
+        # déballe l'Optional, sinon le modèle est pris pour un champ opaque « corps ».
+        if not isinstance(modele, type):
+            candidats = [a for a in typing.get_args(modele) if a is not type(None)]
+            if len(candidats) == 1:
+                modele = candidats[0]
         if isinstance(modele, type) and issubclass(modele, BaseModel):
             for nom, champ in modele.model_fields.items():
                 acceptes.add(champ.alias or nom)

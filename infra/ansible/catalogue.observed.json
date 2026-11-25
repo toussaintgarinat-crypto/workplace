@@ -218,6 +218,15 @@
       "postgres"
     ]
   },
+  "livraison": {
+    "directory": "briques/livraison",
+    "files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      "livraison"
+    ]
+  },
   "mail": {
     "directory": "briques/mail",
     "files": [

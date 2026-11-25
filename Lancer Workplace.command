@@ -96,6 +96,7 @@ BRIQUES=(
   # pour qu'il la découvre via son manifest au démarrage.
   "dev|$RACINE/briques/dev|http://localhost:5955/sante"
   "oria|$RACINE/oria-stack/oria|"
+  "livraison|$RACINE/briques/livraison|http://localhost:6240/sante"
   "core|$RACINE/core|http://localhost:5100/health"
   # Pont messageries : APRÈS le Cœur (il appelle :5100) + transcription/voix (vocal).
   "connexion|$RACINE/briques/connexion|http://localhost:5870/sante"

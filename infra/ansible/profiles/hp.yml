@@ -395,6 +395,14 @@ s237_catalogue:
     - world-engine
     dependencies:
     - relais
+  livraison:
+    directory: briques/livraison
+    files:
+    - docker-compose.yml
+    services:
+    - livraison
+    dependencies:
+    - relais
   core:
     directory: core
     files:
@@ -1002,6 +1010,16 @@ s237_private_projects:
     probes:
     - service: world-engine
       port: 6230
+      path: /sante
+  livraison:
+    env_file: '{{ s237_inputs }}/env/livraison.env'
+    bind_mappings: {}
+    environment:
+      livraison:
+        TELEGRAM_BOT_TOKEN: ''
+    probes:
+    - service: livraison
+      port: 6240
       path: /sante
   core:
     env_file: '{{ s237_inputs }}/env/core.env'
