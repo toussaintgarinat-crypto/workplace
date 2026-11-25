@@ -3,8 +3,11 @@ from typing import Optional
 
 import httpx
 
-LOGS_MAX = 20000
 TAIL_MAX = 10000
+DELAI_LECTURE = 20.0
+DELAI_MUTATION = 60.0
+MESSAGE_DELAI_MUTATION = ("Délai dépassé : l'action a peut-être été exécutée — vérifie avec "
+                          "livraison_etat avant de réessayer.")
 
 
 class DokployErreur(Exception):
@@ -18,22 +21,31 @@ class DokployErreur(Exception):
 
 class Dokploy:
     def __init__(self, base_url: str, cle: str,
-                 transport: Optional[httpx.AsyncBaseTransport] = None, delai: float = 20.0):
+                 transport: Optional[httpx.AsyncBaseTransport] = None,
+                 delai: float = DELAI_LECTURE, delai_mutation: float = DELAI_MUTATION):
         self._base = base_url.rstrip("/")
         self._cle = cle
         self._transport = transport
         self._delai = delai
+        self._delai_mutation = delai_mutation
 
     async def _requete(self, methode: str, chemin: str, params: Optional[dict] = None,
                        json: Optional[dict] = None):
+        mutation = methode != "GET"
         try:
-            async with httpx.AsyncClient(base_url=self._base, transport=self._transport,
-                                         timeout=self._delai) as c:
+            async with httpx.AsyncClient(
+                    base_url=self._base, transport=self._transport,
+                    timeout=self._delai_mutation if mutation else self._delai) as c:
                 r = await c.request(methode, chemin, params=params, json=json,
                                     headers={"x-api-key": self._cle})
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+            # Avant envoi : la requête n'est jamais partie, rien n'a été exécuté.
             raise DokployErreur("Dokploy injoignable (réseau ou service arrêté).") from None
         except httpx.TimeoutException:
+            # Après envoi (lecture/écriture) : sur une MUTATION, Dokploy a peut-être exécuté
+            # l'action. Le dire (504) évite une double exécution à la réapprobation.
+            if mutation:
+                raise DokployErreur(MESSAGE_DELAI_MUTATION, 504) from None
             raise DokployErreur("Délai dépassé en attendant Dokploy.") from None
         except httpx.HTTPError:
             raise DokployErreur("Échec de la communication avec Dokploy.") from None
@@ -83,7 +95,7 @@ class Dokploy:
                                 params={"deploymentId": deploiement_id, "tail": str(tail)})
         if not isinstance(r, str):
             raise DokployErreur("Réponse de Dokploy inattendue (logs).")
-        return r[-LOGS_MAX:]
+        return r   # jamais tronqué ici : masquer d'abord, couper ensuite (main.logs_app)
 
     @staticmethod
     def _minimal(rep, id_: str, app_name: Optional[str] = None) -> dict:
@@ -97,13 +109,13 @@ class Dokploy:
                 sortie["nom"] = rep["name"]
         return sortie
 
-    async def redemarrer(self, id_: str) -> dict:
-        info = await self.app(id_)
-        if not info.get("app_name"):
+    async def redemarrer(self, id_: str, app_name: str) -> dict:
+        """`app_name` vient de `app()` déjà appelé par la route (pas d'appel redondant)."""
+        if not app_name:
             raise DokployErreur("Nom technique de l'application introuvable.")
         rep = await self._requete("POST", "/api/application.reload",
-                                  json={"applicationId": id_, "appName": info["app_name"]})
-        return self._minimal(rep, id_, info["app_name"])
+                                  json={"applicationId": id_, "appName": app_name})
+        return self._minimal(rep, id_, app_name)
 
     async def deployer(self, id_: str, titre: str) -> dict:
         rep = await self._requete("POST", "/api/application.redeploy",

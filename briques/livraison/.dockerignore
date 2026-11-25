@@ -1,0 +1,12 @@
+# Jamais dans l'image : secrets locaux, tests, faux serveurs, caches, docs internes.
+.env
+.env.*
+!.env.example
+test_*.py
+faux_*.py
+conftest.py
+__pycache__/
+*.pyc
+.pytest_cache/
+*.md
+!README.md

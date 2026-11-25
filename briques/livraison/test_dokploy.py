@@ -62,8 +62,10 @@ def test_app_inconnue_404():
 
 def test_redemarrer_envoie_app_name_et_id_et_ne_renvoie_pas_le_gras():
     e = etat()
-    r = run(cli(e).redemarrer("A1"))
-    corps = [a for a in e["appels"] if a["chemin"] == "/api/application.reload"][0]["corps"]
+    r = run(cli(e).redemarrer("A1", "calendrier-x"))
+    # I2 : app_name déjà résolu par la route → un SEUL appel (pas de application.one redondant)
+    assert [a["chemin"] for a in e["appels"]] == ["/api/application.reload"]
+    corps = e["appels"][0]["corps"]
     assert corps == {"applicationId": "A1", "appName": "calendrier-x"}
     assert "refreshToken" not in str(r) and "SECRET" not in str(r)
     assert r["ok"] is True and r["id"] == "A1"
@@ -86,11 +88,12 @@ def test_rollback_envoie_rollback_id():
     assert r["ok"] is True and r["rollback_id"] == "R1"
 
 
-def test_logs_deploiement_chaine_bornee():
+def test_logs_deploiement_non_tronques_avant_masquage():
+    # I4 : la troncature se fait APRÈS masquage (dans la route), jamais ici.
     e = etat()
     e["logs"] = {"D1": "x" * 50000 + "FIN"}
     r = run(cli(e).logs_deploiement("D1", tail=5))
-    assert isinstance(r, str) and len(r) <= 20000 and r.endswith("FIN")
+    assert isinstance(r, str) and len(r) == 50003 and r.endswith("FIN")
     a = [x for x in e["appels"] if x["chemin"] == "/api/deployment.readLogs"][0]
     assert a["params"] == {"deploymentId": "D1", "tail": "5"}
 
@@ -136,3 +139,52 @@ def test_timeout_message_honnete():
     with pytest.raises(DokployErreur) as ex:
         run(c.apps())
     assert "délai" in ex.value.message.lower()
+
+
+def test_redemarrer_sans_app_name_refuse_sans_appel():
+    e = etat()
+    with pytest.raises(DokployErreur):
+        run(cli(e).redemarrer("A1", ""))
+    assert e["appels"] == []
+
+
+def _transport_mutation(exc):
+    def h(req):
+        if req.method == "POST":
+            raise exc
+        return httpx.Response(200, json=[])
+    return httpx.MockTransport(h)
+
+
+@pytest.mark.parametrize("appel", [lambda c: c.redemarrer("A1", "x"),
+                                   lambda c: c.deployer("A1", "t"),
+                                   lambda c: c.rollback("R1")])
+def test_mutation_timeout_apres_envoi_peut_avoir_ete_executee(appel):
+    c = Dokploy("http://d.test", "k", transport=_transport_mutation(httpx.ReadTimeout("x")))
+    with pytest.raises(DokployErreur) as ex:
+        run(appel(c))
+    assert ex.value.statut == 504
+    assert ex.value.message == ("Délai dépassé : l'action a peut-être été exécutée — vérifie "
+                                "avec livraison_etat avant de réessayer.")
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectError("x"), httpx.ConnectTimeout("x")])
+def test_mutation_erreur_de_connexion_reste_injoignable(exc):
+    c = Dokploy("http://d.test", "k", transport=_transport_mutation(exc))
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer("A1", "t"))
+    assert "injoignable" in ex.value.message and ex.value.statut != 504
+
+
+def test_delais_lecture_20s_mutation_60s(monkeypatch):
+    vus = []
+    vrai = httpx.AsyncClient.__init__
+
+    def espion(self, *a, **k):
+        vus.append(k.get("timeout"))
+        vrai(self, *a, **k)
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", espion)
+    c = cli(etat())
+    run(c.apps())
+    run(c.deployer("A1", "t"))
+    assert vus == [20.0, 60.0]

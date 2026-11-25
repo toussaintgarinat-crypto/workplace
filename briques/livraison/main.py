@@ -26,6 +26,17 @@ def cle_api(x_api_key: Optional[str] = Header(None),
     raise HTTPException(401, "Clé API manquante ou invalide (header X-API-Key).")
 
 
+def cle_api_fermee(cle: str = Depends(cle_api)) -> str:
+    """Comme `cle_api` mais FAIL CLOSED (motif `briques/connexion`) : sans
+    `LIVRAISON_API_KEYS` configurée, les actions sont refusées (403) AVANT tout appel à
+    Dokploy — sinon n'importe qui sur le LAN (ou une page web en CSRF « simple request »)
+    pourrait redémarrer/déployer/revenir en arrière. Le Cœur présente la clé via
+    `LIVRAISON_KEY` (= l'une des valeurs de `LIVRAISON_API_KEYS`)."""
+    if not _lire_cles_api():
+        raise HTTPException(403, "Route désactivée : configure LIVRAISON_API_KEYS.")
+    return cle
+
+
 @app.get("/sante")
 def sante():
     return {"ok": True, "brique": "livraison",
@@ -37,6 +48,7 @@ from dokploy import Dokploy, DokployErreur  # noqa: E402
 from masque import masquer  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
+LOGS_MAX = 20000
 
 
 def fournisseur() -> Dokploy:
@@ -53,13 +65,44 @@ async def _resoudre(d: Dokploy, app_: str) -> dict:
         exact = [a for a in apps if (a["nom"] or "").lower() == app_.strip().lower()]
     if len(exact) == 1:
         return exact[0]
-    noms = ", ".join(sorted({a["nom"] for a in apps if a["nom"]})) or "aucune"
+    candidats = exact or apps
+    noms = ", ".join(sorted({f"{a['nom']} ({a.get('projet')}/{a.get('environnement')})"
+                             for a in candidats if a["nom"]})) or "aucune"
     raison = "ambiguë" if exact else "introuvable"
     raise HTTPException(404, f"Application {raison} : dites laquelle parmi {noms}.")
 
 
 def _erreur(e: DokployErreur) -> HTTPException:
-    return HTTPException(502, e.message)
+    # 504 = délai dépassé APRÈS envoi d'une mutation (peut-être exécutée) ; sinon 502.
+    return HTTPException(504 if e.statut == 504 else 502, e.message)
+
+
+# ── Règle du « courant » (I3) ──
+# Courant (= en service) : le déploiement le plus RÉCENT de statut `done` — pas forcément
+# `deps[0]` (un déploiement plus récent peut être en `error`/`running`).
+# ⚠ À vérifier pendant la preuve LIVE (T12) : le comportement réel de Dokploy après un
+# `rollback.rollback` (apparition ou non d'une nouvelle entrée `deployments[]`). S'il n'en crée
+# pas, le « courant » calculé ici restera l'ancien déploiement après un rollback.
+def _courant(deps: list[dict]) -> Optional[int]:
+    """Index (deps du plus récent au plus ancien) du déploiement en service, ou None."""
+    return next((i for i, x in enumerate(deps) if x.get("statut") == "done"), None)
+
+
+def _rollback_possible(x: dict) -> bool:
+    return x.get("statut") == "done" and bool(x.get("rollback_id"))
+
+
+def _cible_par_defaut(info: dict) -> Optional[dict]:
+    """Le plus récent déploiement `done` ANTÉRIEUR au courant portant un `rollback_id`."""
+    deps = info["deploiements"]
+    i = _courant(deps)
+    if not info["rollback_actif"] or i is None:
+        return None
+    return next((x for x in deps[i + 1:] if _rollback_possible(x)), None)
+
+
+def _resume(dep: Optional[dict]) -> Optional[dict]:
+    return {k: dep[k] for k in ("titre", "statut", "debut", "fin")} if dep else None
 
 
 @app.get("/apps")
@@ -79,10 +122,11 @@ async def etat_app(app_: str, _: str = Depends(cle_api)):
     except DokployErreur as e:
         raise _erreur(e)
     deps = info["deploiements"]
-    dernier = ({k: deps[0][k] for k in ("titre", "statut", "debut", "fin")} if deps else None)
-    rollback = bool(info["rollback_actif"] and any(x.get("rollback_id") for x in deps[1:]))
+    i = _courant(deps)
     return {"nom": info["nom"], "statut": info["statut"],
-            "rollback_disponible": rollback, "dernier_deploiement": dernier}
+            "rollback_disponible": _cible_par_defaut(info) is not None,
+            "dernier_deploiement": _resume(deps[0] if deps else None),
+            "en_service": _resume(deps[i] if i is not None else None)}
 
 
 @app.get("/apps/{app_}/logs")
@@ -98,7 +142,18 @@ async def logs_app(app_: str, tail: int = 100, _: str = Depends(cle_api)):
     except DokployErreur as e:
         raise _erreur(e)
     return {"nom": info["nom"], "deploiement": info["deploiements"][0]["titre"],
-            "logs": masquer(logs)}
+            "logs": _masquer_puis_couper(logs)}
+
+
+def _masquer_puis_couper(logs: str) -> str:
+    """Masque le texte COMPLET, puis garde les LOGS_MAX derniers caractères en retirant la
+    première ligne partielle : un jeton à cheval sur la coupure ne laisse aucun fragment."""
+    texte = masquer(logs)
+    if len(texte) <= LOGS_MAX:
+        return texte
+    texte = texte[-LOGS_MAX:]
+    nl = texte.find("\n")
+    return texte[nl + 1:] if nl != -1 else texte
 
 
 # ── Actions réversibles (gardées par approbation côté Cœur, S245) ──
@@ -116,11 +171,12 @@ class CorpsRollback(BaseModel):
 
 
 @app.post("/apps/{app_}/redemarrer")
-async def redemarrer_app(app_: str, _: str = Depends(cle_api)):
+async def redemarrer_app(app_: str, _: str = Depends(cle_api_fermee)):
     d = fournisseur()
-    try:
+    try:   # 3 appels : project.all, application.one (appName), application.reload
         a = await _resoudre(d, app_)
-        await d.redemarrer(a["id"])
+        info = await d.app(a["id"])
+        await d.redemarrer(a["id"], info["app_name"])
     except DokployErreur as e:
         raise _erreur(e)
     return {"ok": True, "app": a["nom"]}
@@ -128,7 +184,7 @@ async def redemarrer_app(app_: str, _: str = Depends(cle_api)):
 
 @app.post("/apps/{app_}/deployer")
 async def deployer_app(app_: str, corps: Optional[CorpsDeployer] = None,
-                       _: str = Depends(cle_api)):
+                       _: str = Depends(cle_api_fermee)):
     titre = ((corps.titre if corps else None) or "").strip() or TITRE_DEFAUT
     d = fournisseur()
     try:
@@ -145,19 +201,24 @@ _ROLLBACK_IMPOSSIBLE = ("retour arrière impossible : le rollback n'est pas acti
 
 @app.post("/apps/{app_}/rollback")
 async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
-                       _: str = Depends(cle_api)):
+                       _: str = Depends(cle_api_fermee)):
     version = ((corps.version if corps else None) or "").strip()
     d = fournisseur()
     try:
         a = await _resoudre(d, app_)
-        deps = (await d.app(a["id"]))["deploiements"]   # du plus récent au plus ancien
+        info = await d.app(a["id"])
+        deps = info["deploiements"]   # du plus récent au plus ancien
         if version:
             cibles = ([x for x in deps if x["id"] == version]
                       or [x for x in deps if x["titre"] == version])
+            if len(cibles) > 1:
+                raise HTTPException(409, "version ambiguë : précise l'id du déploiement")
             cible = cibles[0] if cibles else None
+            if not (info["rollback_actif"] and cible and _rollback_possible(cible)):
+                cible = None
         else:
-            cible = next((x for x in deps[1:] if x.get("rollback_id")), None)
-        if not cible or not cible.get("rollback_id"):
+            cible = _cible_par_defaut(info)
+        if not cible:
             raise HTTPException(409, _ROLLBACK_IMPOSSIBLE)
         await d.rollback(cible["rollback_id"])
     except DokployErreur as e:

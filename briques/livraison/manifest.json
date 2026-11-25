@@ -19,11 +19,12 @@
       "methode": "GET",
       "chemin": "/apps",
       "params": {},
-      "action": false
+      "action": false,
+      "relayer_erreurs": true
     },
     {
       "nom": "livraison_etat",
-      "description": "État d'une application déployée : statut, dernier déploiement (titre, statut, début, fin) et retour arrière possible ou non. Lecture seule.",
+      "description": "État d'une application déployée : statut, dernier déploiement (titre, statut, début, fin, même en échec), version en service (dernier déploiement réussi) et retour arrière possible ou non. Lecture seule.",
       "methode": "GET",
       "chemin": "/apps/{app}/etat",
       "params": {
@@ -33,7 +34,8 @@
           "requis": true
         }
       },
-      "action": false
+      "action": false,
+      "relayer_erreurs": true
     },
     {
       "nom": "livraison_logs",
@@ -51,7 +53,8 @@
           "description": "Nombre de lignes à lire (défaut 100, maximum 500)."
         }
       },
-      "action": false
+      "action": false,
+      "relayer_erreurs": true
     },
     {
       "nom": "livraison_redemarrer",
@@ -66,7 +69,8 @@
         }
       },
       "action": true,
-      "sensibilite": "reversible"
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
     },
     {
       "nom": "livraison_deployer",
@@ -85,7 +89,8 @@
         }
       },
       "action": true,
-      "sensibilite": "reversible"
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
     },
     {
       "nom": "livraison_rollback",
@@ -104,7 +109,8 @@
         }
       },
       "action": true,
-      "sensibilite": "reversible"
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
     }
   ],
   "taches": []

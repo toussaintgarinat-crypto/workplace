@@ -45,3 +45,11 @@
 - **Rollback par le registre Forgejo : prouvé.** Rôle `forgejo` : `/etc/docker/daemon.json` `insecure-registries` (HTTP, LAN/mesh uniquement ; Docker redémarré, garde `DOCKER-USER` toujours en place). Dokploy : `registry.create` (`registryType:"cloud"`, jeton Forgejo `write:package`), puis `application.update {rollbackActive:true, rollbackRegistryId, registryId}`. Chaque déploiement suivant pousse `:vN` + `:latest` dans Forgejo et porte un `rollbackId` (champ `deployments[].rollbackId` de `application.one`). `rollback.rollback {rollbackId}` : image `:latest` → `:v1`, conteneur sain.
 - ⚠ `registry.create` renvoie le mot de passe/jeton en clair : la brique ne doit jamais relayer cette réponse.
 - **Miroir GitHub → Forgejo** : dépôt Forgejo recréé en *pull mirror* (`POST /repos/migrate`, `mirror:true`, `mirror_interval:"10m0s"`), lecture seule côté Forgejo ; on pousse sur GitHub, Forgejo suit en ≤ 10 min (`POST /repos/{o}/{r}/mirror-sync` pour forcer). Un dépôt privé exigerait un jeton GitHub. Dokploy ne redéploie pas tout seul à la synchro (déploiement toujours demandé via la brique).
+
+## Reste à prouver en T12 (preuve LIVE)
+- **Comportement réel de Dokploy après un rollback** : `rollback.rollback {rollbackId}` crée-t-il
+  (ou non) une nouvelle entrée dans `application.one → deployments[]` ? La brique définit le
+  déploiement « en service » comme le plus récent de statut `done` (`briques/livraison/main.py`,
+  `_courant`) : si Dokploy n'ajoute aucune entrée après un rollback, `/etat` (`en_service`,
+  `rollback_disponible`) et le rollback par défaut suivant raisonneront encore sur la version
+  d'avant le retour arrière. À observer pendant la preuve, puis corriger la règle si besoin.
