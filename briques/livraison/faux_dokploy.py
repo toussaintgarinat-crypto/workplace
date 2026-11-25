@@ -1,0 +1,53 @@
+"""Faux serveur Dokploy (httpx.MockTransport) reproduisant les contrats v0.31.4.
+
+Formes relevées sur le vrai Dokploy : `project.all` ne liste que
+{applicationId, name, applicationStatus} par application ; `application.one` porte
+`appName`, `rollbackActive`, `deployments[]` (du plus ancien au plus récent) ;
+`start/stop/reload/redeploy` renvoient l'objet application entier (avec `refreshToken`).
+"""
+import json
+
+import httpx
+
+
+def _gras(app: dict) -> dict:
+    return {**app, "refreshToken": "SECRET", "env": "TOKEN=SECRET", "password": "SECRET"}
+
+
+def fabrique_transport(etat: dict) -> httpx.MockTransport:
+    etat.setdefault("appels", [])
+
+    def rep(code, corps):
+        return httpx.Response(code, json=corps)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        chemin = req.url.path
+        corps = json.loads(req.content) if req.content else None
+        etat["appels"].append({"methode": req.method, "chemin": chemin, "corps": corps,
+                               "params": dict(req.url.params)})
+        if req.headers.get("x-api-key") != etat.get("cle"):
+            return rep(401, {"message": "Unauthorized"})
+        if etat.get("limite"):
+            return rep(429, {"message": "Rate limit exceeded"})
+        apps = etat["apps"]
+        if chemin == "/api/project.all":
+            liste = [{"applicationId": a["applicationId"], "name": a["name"],
+                      "applicationStatus": a["applicationStatus"]} for a in apps.values()]
+            return rep(200, [{"projectId": "P1", "name": "temoin", "environments": [
+                {"environmentId": "E1", "name": "production", "isDefault": True,
+                 "applications": liste, "postgres": [], "compose": []}]}])
+        if chemin == "/api/application.one":
+            a = apps.get(req.url.params.get("applicationId"))
+            return rep(200, _gras(a)) if a else rep(404, {"message": "NOT_FOUND"})
+        if chemin in ("/api/application.reload", "/api/application.redeploy",
+                      "/api/application.start", "/api/application.stop"):
+            a = apps.get((corps or {}).get("applicationId"))
+            return rep(200, _gras(a)) if a else rep(404, {"message": "NOT_FOUND"})
+        if chemin == "/api/rollback.rollback":
+            return rep(200, True)
+        if chemin == "/api/deployment.readLogs":
+            did = req.url.params.get("deploymentId")
+            return rep(200, etat.get("logs", {}).get(did, "ligne de log\n"))
+        return rep(404, {"message": "NOT_FOUND"})
+
+    return httpx.MockTransport(handler)
