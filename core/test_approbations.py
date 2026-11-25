@@ -55,44 +55,44 @@ def test_creer_est_idempotent_sur_la_meme_action():
 
 def test_approuver_reversible():
     a = _demande()
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 10) == (True, "ok")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 10, utilisateur="perso") == (True, "ok")
     lue = approbations.lire(a["id"])
     assert lue["statut"] == "approuvee" and lue["decide_par"] == "tg:42"
 
 
 def test_double_approbation_refusee():
     a = _demande()
-    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1)
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 2) == (False, "deja_decidee")
+    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 2, utilisateur="perso") == (False, "deja_decidee")
 
 
 def test_approuver_apres_expiration_marque_expiree():
     a = _demande()
-    ok, raison = approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 31 * 60)
+    ok, raison = approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 31 * 60, utilisateur="perso")
     assert (ok, raison) == (False, "expiree")
     assert approbations.lire(a["id"])["statut"] == "expiree"
 
 
 def test_destructif_ne_s_approuve_pas_par_bouton_seul():
     a = _demande("destructif")
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (False, "code_requis")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso") == (False, "code_requis")
     assert approbations.lire(a["id"])["statut"] == "en_attente"
 
 
 def test_id_inconnu():
-    assert approbations.approuver("0" * 32, "tg:42", "telegram") == (False, "introuvable")
-    assert approbations.refuser("0" * 32, "tg:42", "telegram") == (False, "introuvable")
+    assert approbations.approuver("0" * 32, "tg:42", "telegram", utilisateur="perso") == (False, "introuvable")
+    assert approbations.refuser("0" * 32, "tg:42", "telegram", utilisateur="perso") == (False, "introuvable")
 
 
 def test_refuser_puis_plus_d_approbation():
     a = _demande()
-    assert approbations.refuser(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (True, "ok")
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 2) == (False, "deja_decidee")
+    assert approbations.refuser(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 2, utilisateur="perso") == (False, "deja_decidee")
 
 
 def test_journal_append_only_trace_chaque_transition():
     a = _demande()
-    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1)
+    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso")
     assert [e["evenement"] for e in approbations.journal(a["id"])] == ["creee", "approuvee"]
     with sqlite3.connect(approbations.DB) as c:
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
@@ -103,7 +103,7 @@ def test_journal_append_only_trace_chaque_transition():
 
 def test_persistance_apres_redemarrage():
     a = _demande()
-    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1)
+    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso")
     approbations.init_db()  # « redémarrage » : la base reste, init_db est idempotent
     assert approbations.lire(a["id"])["statut"] == "approuvee"
 
@@ -111,7 +111,7 @@ def test_persistance_apres_redemarrage():
 def test_prerequis_bloquent_l_approbation():
     a = _demande("donnees", prerequis=("sauvegarde_verifiee",))
     assert a["prerequis"] == {"sauvegarde_verifiee": False}
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (False, "prerequis")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso") == (False, "prerequis")
 
 
 import threading
@@ -121,65 +121,65 @@ import threading
 
 def test_code_bon_approuve_un_destructif():
     a = _demande("destructif")
-    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (True, "ok")
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert r["ok"] is True and r["approbation_id"] == a["id"]
     assert approbations.lire(a["id"])["statut"] == "approuvee"
 
 
 def test_pas_de_saisie_armee_le_message_n_est_pas_un_code():
     _demande("destructif")
-    assert approbations.valider_code_saisi("tg:42", "123456") is None
+    assert approbations.valider_code_saisi("tg:42", "123456", utilisateur="perso") is None
 
 
 def test_trois_codes_faux_refusent_la_demande():
     a = _demande("destructif")
     faux = "000000" if a["code"] != "000000" else "111111"
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    r1 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2)
-    r2 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 3)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    r1 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2, utilisateur="perso")
+    r2 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 3, utilisateur="perso")
     assert (r1["raison"], r1["restants"]) == ("code_faux", 2)
     assert (r2["raison"], r2["restants"]) == ("code_faux", 1)
-    r3 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 4)
+    r3 = approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 4, utilisateur="perso")
     assert r3["raison"] == "essais_epuises"
     assert approbations.lire(a["id"])["statut"] == "refusee"
     # la saisie est désarmée : un 4e message repart au LLM
-    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 5) is None
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 5, utilisateur="perso") is None
 
 
 def test_le_bon_code_apres_refus_n_approuve_rien():
     a = _demande("destructif")
     faux = "000000" if a["code"] != "000000" else "111111"
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
     for i in range(3):
-        approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2 + i)
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 9)  # doit échouer
+        approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2 + i, utilisateur="perso")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 9, utilisateur="perso")  # doit échouer
     assert approbations.lire(a["id"])["statut"] == "refusee"
 
 
 def test_armer_refuse_hors_destructif_ou_expire():
-    assert approbations.armer_saisie_code(_demande("reversible")["id"], "tg:42") == (False, "pas_destructif")
+    assert approbations.armer_saisie_code(_demande("reversible")["id"], "tg:42", utilisateur="perso") == (False, "pas_destructif")
     d = _demande("destructif")
-    assert approbations.armer_saisie_code(d["id"], "tg:42", maintenant=T0 + 16 * 60) == (False, "expiree")
+    assert approbations.armer_saisie_code(d["id"], "tg:42", maintenant=T0 + 16 * 60, utilisateur="perso") == (False, "expiree")
 
 
 def test_saisie_armee_expire_au_bout_de_5_minutes():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 1 + 301) is None
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 1 + 301, utilisateur="perso") is None
 
 
 def test_la_saisie_d_un_autre_approbateur_ne_compte_pas():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    assert approbations.valider_code_saisi("tg:99", a["code"], maintenant=T0 + 2) is None
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    assert approbations.valider_code_saisi("tg:99", a["code"], maintenant=T0 + 2, utilisateur="perso") is None
 
 
 # ── Consommation atomique ────────────────────────────────────────────────────
 
 def _approuvee(**kw):
     a = _demande(**kw)
-    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1)
+    approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso")
     return a
 
 
@@ -259,8 +259,8 @@ def test_consommer_avec_niveau_correspondant_consomme():
 
 def test_consommer_destructif_approuve_par_code_se_consomme_avec_son_niveau():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert approbations.consommer("app_redemarrer", {"app": "crm"}, niveau="destructif",
                                   maintenant=T0 + 3) == a["id"]
 
@@ -271,7 +271,7 @@ def test_prerequis_satisfaits_debloquent_l_approbation():
     a = _demande("donnees", prerequis=("sauvegarde_verifiee", "restauration_testee"))
     assert approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee") is False
     assert approbations.satisfaire_prerequis(a["id"], "restauration_testee") is True
-    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1) == (True, "ok")
+    assert approbations.approuver(a["id"], "tg:42", "telegram", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
 
 
 def test_prerequis_inconnu_ignore():
@@ -323,12 +323,12 @@ def _faux(a):
 
 def test_saisie_non_ascii_ou_mal_formee_compte_comme_essai_sans_crash():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    r1 = approbations.valider_code_saisi("tg:42", "é12345", maintenant=T0 + 2)
-    r2 = approbations.valider_code_saisi("tg:42", "12345", maintenant=T0 + 3)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    r1 = approbations.valider_code_saisi("tg:42", "é12345", maintenant=T0 + 2, utilisateur="perso")
+    r2 = approbations.valider_code_saisi("tg:42", "12345", maintenant=T0 + 3, utilisateur="perso")
     assert (r1["raison"], r1["restants"]) == ("code_faux", 2)
     assert (r2["raison"], r2["restants"]) == ("code_faux", 1)
-    r3 = approbations.valider_code_saisi("tg:42", "١٢٣٤٥٦", maintenant=T0 + 4)  # chiffres arabes
+    r3 = approbations.valider_code_saisi("tg:42", "١٢٣٤٥٦", maintenant=T0 + 4, utilisateur="perso")  # chiffres arabes
     assert r3["raison"] == "essais_epuises"
     assert approbations.lire(a["id"])["statut"] == "refusee"
     ev = [e["evenement"] for e in approbations.journal(a["id"])]
@@ -338,12 +338,12 @@ def test_saisie_non_ascii_ou_mal_formee_compte_comme_essai_sans_crash():
 def test_essais_concurrents_ne_depassent_pas_la_limite():
     a = _demande("destructif")
     faux = _faux(a)
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
     res, barre = [], threading.Barrier(8)
 
     def go():
         barre.wait()
-        res.append(approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2))
+        res.append(approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2, utilisateur="perso"))
 
     ts = [threading.Thread(target=go) for _ in range(8)]
     [t.start() for t in ts]
@@ -358,29 +358,29 @@ def test_essais_concurrents_ne_depassent_pas_la_limite():
 
 def test_course_a_l_approbation_ne_journalise_pas_approuvee(monkeypatch):
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
     monkeypatch.setattr(approbations, "_transition", lambda *a_, **k: False)
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert r["ok"] is False and r["raison"] == "deja_decidee"
     assert "approuvee" not in [e["evenement"] for e in approbations.journal(a["id"])]
 
 
 def test_bon_code_apres_expiration_de_la_demande_n_approuve_pas():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
     # saisie encore armée (5 min) mais demande expirée : on force l'expiration de la demande
     with approbations._conn() as c:
         c.execute("UPDATE approbations SET expire_a=? WHERE id=?", (T0 + 2, a["id"]))
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3)
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3, utilisateur="perso")
     assert r["ok"] is False and r["raison"] == "expiree"
     assert approbations.lire(a["id"])["statut"] == "expiree"
 
 
 def test_bon_code_apres_decision_par_un_autre_canal_n_approuve_pas():
     a = _demande("destructif")
-    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
-    assert approbations.refuser(a["id"], "tg:99", "telegram", maintenant=T0 + 2)
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso")
+    assert approbations.refuser(a["id"], "tg:99", "telegram", maintenant=T0 + 2, utilisateur="perso")
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3, utilisateur="perso")
     assert r["ok"] is False and r["raison"] == "deja_decidee"
     assert approbations.lire(a["id"])["statut"] == "refusee"
 
@@ -389,8 +389,8 @@ def test_bon_code_apres_decision_par_un_autre_canal_n_approuve_pas():
 
 def test_armer_refuse_si_prerequis_non_reunis():
     a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
-    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (False, "prerequis")
-    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2) is None
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso") == (False, "prerequis")
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso") is None
     assert approbations.lire(a["id"])["statut"] == "en_attente"
 
 
@@ -399,18 +399,18 @@ def test_code_soumis_prerequis_non_reunis_n_approuve_jamais():
     with approbations._conn() as c:   # saisie armée « de force » (état incohérent)
         c.execute("INSERT INTO saisie_code (approbateur, approbation_id, expire_a) VALUES (?,?,?)",
                   ("tg:42", a["id"], T0 + 999))
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert r["ok"] is False and r["raison"] == "prerequis"
     lue = approbations.lire(a["id"])
     assert lue["statut"] == "en_attente" and lue["essais"] == 0     # pas un essai raté
-    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3) is None  # désarmée
+    assert approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3, utilisateur="perso") is None  # désarmée
 
 
 def test_destructif_prerequis_satisfaits_puis_code_approuve():
     a = _demande("destructif", prerequis=("sauvegarde_verifiee",))
     approbations.satisfaire_prerequis(a["id"], "sauvegarde_verifiee")
-    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1) == (True, "ok")
-    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1, utilisateur="perso") == (True, "ok")
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2, utilisateur="perso")
     assert r["ok"] is True and approbations.lire(a["id"])["statut"] == "approuvee"
 
 

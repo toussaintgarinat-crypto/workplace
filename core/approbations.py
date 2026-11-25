@@ -30,6 +30,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 import accord_action
+import contexte_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,11 @@ def avec_origine(origine: str):
         ORIGINE.reset(jeton)
 
 
+def _utilisateur(explicite: str | None) -> str:
+    """Utilisateur de la demande : l'explicite, sinon celui du tour courant (contexte tenant)."""
+    return explicite or contexte_tenant.contexte_actuel().utilisateur
+
+
 # ── Base ─────────────────────────────────────────────────────────────────────
 
 def _conn() -> sqlite3.Connection:
@@ -109,7 +115,10 @@ def init_db() -> None:
                 essais INTEGER NOT NULL DEFAULT 0,
                 nb_relances INTEGER NOT NULL DEFAULT 0,
                 relance_a REAL,
-                messages TEXT NOT NULL DEFAULT '[]'
+                messages TEXT NOT NULL DEFAULT '[]',
+                utilisateur TEXT NOT NULL DEFAULT 'perso',
+                org_id TEXT,
+                args TEXT
             )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_appr_emp ON approbations(capacite, empreinte, statut)")
         c.execute("""
@@ -133,6 +142,13 @@ def init_db() -> None:
                 approbation_id TEXT NOT NULL,
                 expire_a REAL NOT NULL
             )""")
+        # S245b : colonnes ajoutées à une base S245 déjà déployée (ALTER idempotent).
+        existantes = {r["name"] for r in c.execute("PRAGMA table_info(approbations)")}
+        for nom, ddl in (("utilisateur", "TEXT NOT NULL DEFAULT 'perso'"),
+                         ("org_id", "TEXT"), ("args", "TEXT")):
+            if nom not in existantes:
+                c.execute(f"ALTER TABLE approbations ADD COLUMN {nom} {ddl}")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_appr_user ON approbations(utilisateur, statut)")
 
 
 def _journaliser(c, id_: str, evenement: str, par=None, canal=None, detail=None,
@@ -145,6 +161,7 @@ def _journaliser(c, id_: str, evenement: str, par=None, canal=None, detail=None,
 
 def _vue(row) -> dict:
     d = dict(row)
+    d.pop("args", None)          # S245b : arguments réels jamais exposés (cf. `args_de`)
     d["prerequis"] = json.loads(d.get("prerequis") or "{}")
     d["messages"] = json.loads(d.get("messages") or "[]")
     return d
@@ -176,29 +193,35 @@ def _transition(c, id_: str, de: str, vers: str, **colonnes) -> bool:
 # ── Création ─────────────────────────────────────────────────────────────────
 
 def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str | None = None,
-          prerequis: tuple[str, ...] = (), maintenant: float | None = None) -> dict:
-    """Crée une demande `en_attente`, ou renvoie celle déjà ouverte pour la même action."""
+          prerequis: tuple[str, ...] = (), maintenant: float | None = None, *,
+          utilisateur: str | None = None, org_id: str | None = None) -> dict:
+    """Crée une demande `en_attente`, ou renvoie celle déjà ouverte pour la même action ET le
+    même utilisateur. Les `args` exacts sont conservés pour la reprise (purgés à l'état final)."""
     if sensibilite not in NIVEAUX_SENSIBLES:
         raise ValueError(f"sensibilité non approuvable : {sensibilite!r}")
     now = maintenant if maintenant is not None else time.time()
     emp = accord_action.empreinte(capacite, args)
+    user = _utilisateur(utilisateur)
+    org = org_id or contexte_tenant.contexte_actuel().org_id
     with _conn() as c:
         ex = c.execute(
             "SELECT * FROM approbations WHERE capacite=? AND empreinte=? AND sensibilite=? "
-            "AND statut IN ('en_attente','approuvee') AND expire_a>? "
-            "ORDER BY cree_a DESC LIMIT 1", (capacite, emp, sensibilite, now)).fetchone()
+            "AND utilisateur=? AND statut IN ('en_attente','approuvee') AND expire_a>? "
+            "ORDER BY cree_a DESC LIMIT 1", (capacite, emp, sensibilite, user, now)).fetchone()
         if ex:
             return _vue(ex)
         id_ = secrets.token_hex(16)
         code = f"{secrets.randbelow(10 ** 6):06d}" if sensibilite == "destructif" else None
         c.execute(
             "INSERT INTO approbations (id, capacite, empreinte, resume, sensibilite, origine, "
-            "statut, cree_a, expire_a, prerequis, code) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "statut, cree_a, expire_a, prerequis, code, utilisateur, org_id, args) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (id_, capacite, emp, resume, sensibilite, origine or ORIGINE.get(), "en_attente",
              now, now + ttl_secondes(sensibilite),
-             json.dumps({p: False for p in prerequis}), code))
-        _journaliser(c, id_, "creee", detail=f"{sensibilite}/{origine or ORIGINE.get()}",
-                     maintenant=now)
+             json.dumps({p: False for p in prerequis}), code, user, org,
+             json.dumps(args or {}, sort_keys=True, default=str)))
+        _journaliser(c, id_, "creee",
+                     detail=f"{sensibilite}/{origine or ORIGINE.get()}/{user}", maintenant=now)
     return lire(id_)
 
 
@@ -209,12 +232,25 @@ def _expirer_une(c, id_: str, de: str, now: float) -> None:
         _journaliser(c, id_, "expiree", maintenant=now)
 
 
-def approuver(id_: str, par: str, canal: str, maintenant: float | None = None) -> tuple[bool, str]:
+def _pas_a_lui(c, r, id_: str, par: str, canal: str, utilisateur: str, now: float) -> bool:
+    """True (et journalise) si la demande appartient à un AUTRE utilisateur que `utilisateur`.
+    L'appelant répond « introuvable » : on ne révèle pas l'existence d'une demande d'autrui."""
+    if r["utilisateur"] == utilisateur:
+        return False
+    _journaliser(c, id_, "refus_autre_utilisateur", par, canal,
+                 detail=f"demandeur={r['utilisateur']} approbateur={utilisateur}", maintenant=now)
+    return True
+
+
+def approuver(id_: str, par: str, canal: str, maintenant: float | None = None, *,
+              utilisateur: str) -> tuple[bool, str]:
     """Approbation par bouton. `destructif` EXIGE le code (cf. `valider_code_saisi`)."""
     now = maintenant if maintenant is not None else time.time()
     with _conn() as c:
         r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
         if not r:
+            return False, "introuvable"
+        if _pas_a_lui(c, r, id_, par, canal, utilisateur, now):
             return False, "introuvable"
         if r["statut"] != "en_attente":
             return False, "deja_decidee"
@@ -232,11 +268,14 @@ def approuver(id_: str, par: str, canal: str, maintenant: float | None = None) -
     return True, "ok"
 
 
-def refuser(id_: str, par: str, canal: str, maintenant: float | None = None) -> tuple[bool, str]:
+def refuser(id_: str, par: str, canal: str, maintenant: float | None = None, *,
+            utilisateur: str) -> tuple[bool, str]:
     now = maintenant if maintenant is not None else time.time()
     with _conn() as c:
         r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
         if not r:
+            return False, "introuvable"
+        if _pas_a_lui(c, r, id_, par, canal, utilisateur, now):
             return False, "introuvable"
         if r["statut"] != "en_attente":
             return False, "deja_decidee"
@@ -254,13 +293,16 @@ def refuser(id_: str, par: str, canal: str, maintenant: float | None = None) -> 
 # Le code n'est JAMAIS envoyé sur Telegram : il est affiché dans l'app (GET /approbations/
 # en_attente, session obligatoire). Un compte Telegram compromis seul ne suffit donc pas.
 
-def armer_saisie_code(id_: str, par: str, maintenant: float | None = None) -> tuple[bool, str]:
+def armer_saisie_code(id_: str, par: str, maintenant: float | None = None, *,
+                      utilisateur: str) -> tuple[bool, str]:
     """Le bouton Approuver d'un destructif « arme » la saisie : le PROCHAIN message à 6
     chiffres de cet approbateur sera lu comme le code de CETTE demande."""
     now = maintenant if maintenant is not None else time.time()
     with _conn() as c:
         r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
         if not r:
+            return False, "introuvable"
+        if _pas_a_lui(c, r, id_, par, "telegram", utilisateur, now):
             return False, "introuvable"
         if r["sensibilite"] != "destructif":
             return False, "pas_destructif"
@@ -277,7 +319,8 @@ def armer_saisie_code(id_: str, par: str, maintenant: float | None = None) -> tu
     return True, "ok"
 
 
-def valider_code_saisi(par: str, code: str, maintenant: float | None = None) -> dict | None:
+def valider_code_saisi(par: str, code: str, maintenant: float | None = None, *,
+                       utilisateur: str) -> dict | None:
     """Vérifie un code saisi. Renvoie None si `par` n'a aucune saisie armée (le message
     n'est alors pas un code : le pont le laisse partir vers l'assistant)."""
     now = maintenant if maintenant is not None else time.time()
@@ -290,6 +333,12 @@ def valider_code_saisi(par: str, code: str, maintenant: float | None = None) -> 
             return None
         id_ = s["approbation_id"]
         r = c.execute("SELECT * FROM approbations WHERE id=?", (id_,)).fetchone()
+        if r and r["utilisateur"] != utilisateur:
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            _journaliser(c, id_, "refus_autre_utilisateur", par, "telegram",
+                         detail=f"demandeur={r['utilisateur']} approbateur={utilisateur}",
+                         maintenant=now)
+            return None
         if not r or r["statut"] != "en_attente":
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             return {"ok": False, "raison": "deja_decidee", "approbation_id": id_, "restants": 0}
@@ -354,19 +403,20 @@ def satisfaire_prerequis(id_: str, nom: str) -> bool:
 # ── Exécution ────────────────────────────────────────────────────────────────
 
 def consommer(capacite: str, args: dict, niveau: str | None = None,
-              maintenant: float | None = None) -> str | None:
-    """Consomme une approbation `approuvee` de même empreinte. ATOMIQUE : l'UPDATE conditionnel
-    est l'arbitre ; si deux appels concurrents la visent, un seul modifie 1 ligne.
-    Si `niveau` est donné, seule une approbation de CE niveau est consommable : une approbation
-    `reversible` ne débloque jamais un `destructif` (même action, même empreinte)."""
+              maintenant: float | None = None, *, utilisateur: str | None = None) -> str | None:
+    """Consomme une approbation `approuvee` de même empreinte ET du même utilisateur. ATOMIQUE :
+    l'UPDATE conditionnel est l'arbitre. Si `niveau` est donné, seule une approbation de CE
+    niveau est consommable (un `reversible` ne débloque jamais un `destructif`)."""
     now = maintenant if maintenant is not None else time.time()
     emp = accord_action.empreinte(capacite, args)
+    user = _utilisateur(utilisateur)
     filtre = "" if niveau is None else " AND sensibilite=?"
     extra = () if niveau is None else (niveau,)
     with _conn() as c:
         ids = [r["id"] for r in c.execute(
-            "SELECT id FROM approbations WHERE capacite=? AND empreinte=? AND statut='approuvee' "
-            "AND expire_a>?" + filtre + " ORDER BY decide_a", (capacite, emp, now, *extra))]
+            "SELECT id FROM approbations WHERE capacite=? AND empreinte=? AND utilisateur=? "
+            "AND statut='approuvee' AND expire_a>?" + filtre + " ORDER BY decide_a",
+            (capacite, emp, user, now, *extra))]
         for id_ in ids:
             cur = c.execute(
                 "UPDATE approbations SET statut='executee' "
@@ -403,10 +453,15 @@ def expirer_perimees(maintenant: float | None = None) -> list[str]:
     return faites
 
 
-def en_attente() -> list[dict]:
+def en_attente(utilisateur: str | None = None) -> list[dict]:
+    """Demandes ouvertes. `utilisateur=None` : toutes (usage interne) ; sinon seulement les siennes."""
     with _conn() as c:
-        rows = c.execute("SELECT * FROM approbations WHERE statut='en_attente' "
-                         "ORDER BY cree_a").fetchall()
+        if utilisateur is None:
+            rows = c.execute("SELECT * FROM approbations WHERE statut='en_attente' "
+                             "ORDER BY cree_a").fetchall()
+        else:
+            rows = c.execute("SELECT * FROM approbations WHERE statut='en_attente' "
+                             "AND utilisateur=? ORDER BY cree_a", (utilisateur,)).fetchall()
     return [_vue(r) for r in rows]
 
 
@@ -436,13 +491,15 @@ def enregistrer_messages(id_: str, messages: list[dict]) -> None:
 
 # ── La garde ─────────────────────────────────────────────────────────────────
 
-def _derniere(capacite: str, args: dict, statuts: tuple[str, ...], niveau: str) -> dict | None:
+def _derniere(capacite: str, args: dict, statuts: tuple[str, ...], niveau: str,
+              utilisateur: str) -> dict | None:
     emp = accord_action.empreinte(capacite, args)
     marques = ",".join("?" * len(statuts))
     with _conn() as c:
         r = c.execute(f"SELECT * FROM approbations WHERE capacite=? AND empreinte=? "
-                      f"AND sensibilite=? AND statut IN ({marques}) ORDER BY cree_a DESC LIMIT 1",
-                      (capacite, emp, niveau, *statuts)).fetchone()
+                      f"AND sensibilite=? AND utilisateur=? AND statut IN ({marques}) "
+                      f"ORDER BY cree_a DESC LIMIT 1",
+                      (capacite, emp, niveau, utilisateur, *statuts)).fetchone()
     return _vue(r) if r else None
 
 
@@ -455,21 +512,22 @@ def exiger(capacite: str, args: dict, niveau: str, resume: str,
     - un refus très récent           -> message de refus, pas de redemande ;
     - sinon                          -> une demande est créée (l'appelant la notifie)."""
     now = maintenant if maintenant is not None else time.time()
-    id_ = consommer(capacite, args, niveau=niveau, maintenant=now)
+    user = _utilisateur(None)
+    id_ = consommer(capacite, args, niveau=niveau, maintenant=now, utilisateur=user)
     if id_:
         return id_, None, None
-    ouverte = _derniere(capacite, args, ("en_attente",), niveau)
+    ouverte = _derniere(capacite, args, ("en_attente",), niveau, user)
     if ouverte and ouverte["expire_a"] > now:
         return None, (
             f"Action `{capacite}` NON exécutée : la demande d'approbation {ouverte['id'][:8]} "
             "attend la réponse de l'humain sur Telegram. N'insiste pas et n'essaie pas de "
             "contourner : dis à l'utilisateur que tu attends son approbation."), None
-    refusee = _derniere(capacite, args, ("refusee",), niveau)
+    refusee = _derniere(capacite, args, ("refusee",), niveau, user)
     if refusee and (refusee["decide_a"] or 0) + DELAI_APRES_REFUS_S > now:
         return None, (
             f"Action `{capacite}` NON exécutée : l'humain a REFUSÉ cette action. Ne la "
             "redemande pas ; propose une alternative ou demande-lui ce qu'il veut."), None
-    demande = creer(capacite, args, resume, niveau, maintenant=now)
+    demande = creer(capacite, args, resume, niveau, maintenant=now, utilisateur=user)
     return None, (
         f"Action `{capacite}` NON exécutée : une demande d'approbation ({demande['id'][:8]}, "
         f"niveau {niveau}) vient d'être envoyée à l'humain sur Telegram. Dis-lui que tu "
