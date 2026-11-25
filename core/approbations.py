@@ -274,15 +274,27 @@ def valider_code_saisi(par: str, code: str, maintenant: float | None = None) -> 
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             _expirer_une(c, id_, "en_attente", now)
             return {"ok": False, "raison": "expiree", "approbation_id": id_, "restants": 0}
-        if hmac.compare_digest((code or "").strip(), r["code"] or ""):
-            _transition(c, id_, "en_attente", "approuvee", decide_a=now, decide_par=par,
-                        canal="telegram+code",
-                        expire_a=max(r["expire_a"], now + FENETRE_EXECUTION_S))
+        saisi = (code or "").strip()
+        # Format strict AVANT toute comparaison : compare_digest(str, str) lève TypeError
+        # sur du non-ASCII. Un format invalide est un essai raté, pas un crash.
+        format_ok = saisi.isascii() and saisi.isdigit() and len(saisi) == 6
+        if format_ok and hmac.compare_digest(saisi.encode(), (r["code"] or "").encode()):
+            if not _transition(c, id_, "en_attente", "approuvee", decide_a=now, decide_par=par,
+                               canal="telegram+code",
+                               expire_a=max(r["expire_a"], now + FENETRE_EXECUTION_S)):
+                c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+                return {"ok": False, "raison": "deja_decidee", "approbation_id": id_,
+                        "restants": 0}
             c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
             _journaliser(c, id_, "approuvee", par, "telegram+code", maintenant=now)
             return {"ok": True, "raison": "ok", "approbation_id": id_, "restants": 0}
-        essais = r["essais"] + 1
-        c.execute("UPDATE approbations SET essais=? WHERE id=?", (essais, id_))
+        # Incrément ATOMIQUE (l'UPDATE prend le verrou d'écriture) : pas de lecture-modif-écriture.
+        cur = c.execute("UPDATE approbations SET essais=essais+1 WHERE id=? AND statut='en_attente'",
+                        (id_,))
+        if cur.rowcount != 1:
+            c.execute("DELETE FROM saisie_code WHERE approbateur=?", (par,))
+            return {"ok": False, "raison": "deja_decidee", "approbation_id": id_, "restants": 0}
+        essais = c.execute("SELECT essais FROM approbations WHERE id=?", (id_,)).fetchone()["essais"]
         _journaliser(c, id_, "code_faux", par, "telegram", detail=f"essai {essais}",
                      maintenant=now)
         if essais >= ESSAIS_CODE_MAX:

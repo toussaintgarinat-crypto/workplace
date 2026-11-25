@@ -313,3 +313,73 @@ def test_en_attente_et_messages():
     approbations.enregistrer_messages(a["id"], [{"chat_id": "42", "message_id": 7}])
     assert approbations.lire(a["id"])["messages"] == [{"chat_id": "42", "message_id": 7}]
     assert [x["id"] for x in approbations.en_attente()] == [a["id"]]
+
+
+# ── Saisie du code : robustesse (revue) ──────────────────────────────────────
+
+def _faux(a):
+    return "000000" if a["code"] != "000000" else "111111"
+
+
+def test_saisie_non_ascii_ou_mal_formee_compte_comme_essai_sans_crash():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    r1 = approbations.valider_code_saisi("tg:42", "é12345", maintenant=T0 + 2)
+    r2 = approbations.valider_code_saisi("tg:42", "12345", maintenant=T0 + 3)
+    assert (r1["raison"], r1["restants"]) == ("code_faux", 2)
+    assert (r2["raison"], r2["restants"]) == ("code_faux", 1)
+    r3 = approbations.valider_code_saisi("tg:42", "١٢٣٤٥٦", maintenant=T0 + 4)  # chiffres arabes
+    assert r3["raison"] == "essais_epuises"
+    assert approbations.lire(a["id"])["statut"] == "refusee"
+    ev = [e["evenement"] for e in approbations.journal(a["id"])]
+    assert ev.count("code_faux") == 3
+
+
+def test_essais_concurrents_ne_depassent_pas_la_limite():
+    a = _demande("destructif")
+    faux = _faux(a)
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    res, barre = [], threading.Barrier(8)
+
+    def go():
+        barre.wait()
+        res.append(approbations.valider_code_saisi("tg:42", faux, maintenant=T0 + 2))
+
+    ts = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert not any(r and r["ok"] for r in res)
+    assert approbations.lire(a["id"])["statut"] == "refusee"
+    with approbations._conn() as c:
+        assert c.execute("SELECT essais FROM approbations WHERE id=?", (a["id"],)).fetchone()[0] == 3
+    ev = [e["evenement"] for e in approbations.journal(a["id"])]
+    assert ev.count("code_faux") == 3
+
+
+def test_course_a_l_approbation_ne_journalise_pas_approuvee(monkeypatch):
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    monkeypatch.setattr(approbations, "_transition", lambda *a_, **k: False)
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 2)
+    assert r["ok"] is False and r["raison"] == "deja_decidee"
+    assert "approuvee" not in [e["evenement"] for e in approbations.journal(a["id"])]
+
+
+def test_bon_code_apres_expiration_de_la_demande_n_approuve_pas():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    # saisie encore armée (5 min) mais demande expirée : on force l'expiration de la demande
+    with approbations._conn() as c:
+        c.execute("UPDATE approbations SET expire_a=? WHERE id=?", (T0 + 2, a["id"]))
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3)
+    assert r["ok"] is False and r["raison"] == "expiree"
+    assert approbations.lire(a["id"])["statut"] == "expiree"
+
+
+def test_bon_code_apres_decision_par_un_autre_canal_n_approuve_pas():
+    a = _demande("destructif")
+    approbations.armer_saisie_code(a["id"], "tg:42", maintenant=T0 + 1)
+    assert approbations.refuser(a["id"], "tg:99", "telegram", maintenant=T0 + 2)
+    r = approbations.valider_code_saisi("tg:42", a["code"], maintenant=T0 + 3)
+    assert r["ok"] is False and r["raison"] == "deja_decidee"
+    assert approbations.lire(a["id"])["statut"] == "refusee"
