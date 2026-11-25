@@ -47,6 +47,7 @@ def sante():
 from dokploy import Dokploy, DokployErreur  # noqa: E402
 from masque import masquer  # noqa: E402
 import repere_rollback  # noqa: E402
+import preuve  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
 LOGS_MAX = 20000
@@ -237,3 +238,26 @@ async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
         raise _erreur(e)
     return {"ok": True, "app": a["nom"], "version_visee": cible["titre"],
             "rollback_id": cible["rollback_id"]}
+
+
+@app.get("/apps/{app_}/preuve")
+async def preuve_app(app_: str, _: str = Depends(cle_api)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+    except DokployErreur as e:
+        raise _erreur(e)
+    r = preuve.lire(a["id"]) or {}
+    return {"app": a["nom"], "app_id": a["id"], "valide": preuve.valide(a["id"]) is not None,
+            "preuve_id": r.get("preuve_id"), "verdict": r.get("verdict"),
+            "expire_a": r.get("expire_a"), "comptages": r.get("comptages")}
+
+
+def exiger_preuve(app_id: str) -> dict:
+    """Défense en profondeur : même si le Cœur était contourné, une action `donnees` sans
+    preuve de sauvegarde fraîche est refusée par la brique elle-même."""
+    r = preuve.valide(app_id)
+    if not r:
+        raise HTTPException(409, "aucune preuve de sauvegarde valide pour cette application : "
+                                 "lance d'abord la vérification de sauvegarde")
+    return r
