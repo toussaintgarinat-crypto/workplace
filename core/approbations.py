@@ -49,6 +49,12 @@ DELAI_APRES_REFUS_S = 600
 # Origine du tour courant (métadonnée journalisée) : posée par l'appelant si connue.
 ORIGINE: ContextVar[str] = ContextVar("approbation_origine", default="inconnue")
 
+# Après exécution réussie, la même action (même utilisateur) n'est pas redemandée pendant ce
+# délai : le LLM qui « rappelle l'outil » par habitude ne déclenche pas un 2e cycle humain.
+DELAI_APRES_EXECUTION_S = 300
+# Pose l'id de l'approbation en cours de REPRISE (exécution par le Cœur après approbation).
+REPRISE: ContextVar[str | None] = ContextVar("approbation_reprise", default=None)
+
 _TRANSITIONS = {
     "en_attente": {"approuvee", "refusee", "expiree"},
     "approuvee": {"executee", "expiree"},
@@ -77,6 +83,16 @@ def avec_origine(origine: str):
         yield
     finally:
         ORIGINE.reset(jeton)
+
+
+@contextmanager
+def avec_reprise(id_: str):
+    """Pose l'id de l'approbation reprise : `exiger` consomme CET id, sans jamais créer de demande."""
+    jeton = REPRISE.set(id_)
+    try:
+        yield
+    finally:
+        REPRISE.reset(jeton)
 
 
 def _utilisateur(explicite: str | None) -> str:
@@ -180,10 +196,16 @@ def journal(id_: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+_ETATS_FINAUX = ("refusee", "expiree", "echec", "executee")
+
+
 def _transition(c, id_: str, de: str, vers: str, **colonnes) -> bool:
-    """Seul point où `statut` change. Atomique : 0 ligne modifiée = quelqu'un a gagné avant."""
+    """Seul point où `statut` change. Atomique : 0 ligne modifiée = quelqu'un a gagné avant.
+    Toute sortie vers un état final purge les `args` réels (S245b)."""
     if vers not in _TRANSITIONS.get(de, set()):
         raise ValueError(f"transition interdite : {de} -> {vers}")
+    if vers in _ETATS_FINAUX:
+        colonnes = {**colonnes, "args": None}
     sets = "".join(f", {k}=?" for k in colonnes)
     cur = c.execute(f"UPDATE approbations SET statut=?{sets} WHERE id=? AND statut=?",
                     (vers, *colonnes.values(), id_, de))
@@ -419,13 +441,56 @@ def consommer(capacite: str, args: dict, niveau: str | None = None,
             (capacite, emp, user, now, *extra))]
         for id_ in ids:
             cur = c.execute(
-                "UPDATE approbations SET statut='executee' "
+                "UPDATE approbations SET statut='executee', args=NULL "
                 "WHERE id=? AND statut='approuvee' AND expire_a>?" + filtre,
                 (id_, now, *extra))
             if cur.rowcount == 1:
                 _journaliser(c, id_, "executee", maintenant=now)
                 return id_
     return None
+
+
+def consommer_id(id_: str, capacite: str, args: dict, niveau: str, utilisateur: str,
+                 maintenant: float | None = None) -> bool:
+    """Consomme CETTE approbation (reprise après approbation) : `approuvee`, non expirée,
+    même capacité/empreinte/niveau/utilisateur. ATOMIQUE, usage unique."""
+    now = maintenant if maintenant is not None else time.time()
+    emp = accord_action.empreinte(capacite, args)
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE approbations SET statut='executee', args=NULL "
+            "WHERE id=? AND capacite=? AND empreinte=? AND sensibilite=? AND utilisateur=? "
+            "AND statut='approuvee' AND expire_a>?",
+            (id_, capacite, emp, niveau, utilisateur, now))
+        if cur.rowcount != 1:
+            return False
+        _journaliser(c, id_, "executee", detail="reprise", maintenant=now)
+    return True
+
+
+def args_de(id_: str) -> dict | None:
+    """Arguments RÉELS d'une demande non terminée (None si purgés/absents). Usage interne :
+    ne jamais renvoyer ce résultat par une route ni l'envoyer au canal."""
+    with _conn() as c:
+        r = c.execute("SELECT args FROM approbations WHERE id=?", (id_,)).fetchone()
+    if not r or r["args"] is None:
+        return None
+    try:
+        v = json.loads(r["args"])
+    except (TypeError, ValueError):
+        return None
+    return v if isinstance(v, dict) else None
+
+
+def a_reprendre(maintenant: float | None = None, delai_s: int = 60) -> list[str]:
+    """Approuvées, non expirées, avec args, décidées depuis plus de `delai_s` : leur reprise
+    n'a pas abouti (Cœur redémarré entre l'approbation et l'exécution)."""
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id FROM approbations WHERE statut='approuvee' AND args IS NOT NULL "
+            "AND expire_a>? AND decide_a<=? ORDER BY decide_a", (now, now - delai_s)).fetchall()
+    return [r["id"] for r in rows]
 
 
 def conclure(id_: str, ok: bool, resultat: str) -> None:
@@ -513,6 +578,13 @@ def exiger(capacite: str, args: dict, niveau: str, resume: str,
     - sinon                          -> une demande est créée (l'appelant la notifie)."""
     now = maintenant if maintenant is not None else time.time()
     user = _utilisateur(None)
+    rid = REPRISE.get()
+    if rid:
+        if consommer_id(rid, capacite, args, niveau, user, now):
+            return rid, None, None
+        return None, (
+            f"Reprise de l'approbation {rid[:8]} impossible (expirée, déjà utilisée ou "
+            "arguments différents) : action NON exécutée."), None
     id_ = consommer(capacite, args, niveau=niveau, maintenant=now, utilisateur=user)
     if id_:
         return id_, None, None
@@ -527,9 +599,14 @@ def exiger(capacite: str, args: dict, niveau: str, resume: str,
         return None, (
             f"Action `{capacite}` NON exécutée : l'humain a REFUSÉ cette action. Ne la "
             "redemande pas ; propose une alternative ou demande-lui ce qu'il veut."), None
+    faite = _derniere(capacite, args, ("executee",), niveau, user)
+    if faite and (faite["decide_a"] or 0) + DELAI_APRES_EXECUTION_S > now:
+        return None, (
+            f"Action `{capacite}` : cette action vient déjà d'être exécutée après approbation "
+            "(résultat dans le message Telegram de l'humain). Ne la redemande pas."), None
     demande = creer(capacite, args, resume, niveau, maintenant=now, utilisateur=user)
     return None, (
         f"Action `{capacite}` NON exécutée : une demande d'approbation ({demande['id'][:8]}, "
         f"niveau {niveau}) vient d'être envoyée à l'humain sur Telegram. Dis-lui que tu "
-        "attends son approbation. Quand il aura approuvé, rappelle le MÊME outil avec les "
-        "MÊMES arguments."), demande
+        "attends son approbation. Quand il aura approuvé, l'action s'exécutera AUTOMATIQUEMENT : "
+        "ne rappelle pas l'outil et ne cherche pas à la relancer."), demande
