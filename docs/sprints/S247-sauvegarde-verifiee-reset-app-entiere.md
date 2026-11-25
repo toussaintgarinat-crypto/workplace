@@ -1,6 +1,6 @@
 # S247 — Sauvegarde vérifiée + remise à zéro de l'app entière
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **spécifié, non codé**.
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **en cours (partie 1 codée sur `sprint/s247-sauvegarde-verifiee`, spike Dokploy à faire)**.
 Dépend de : S245 (prérequis d'approbation), S246 (Dokploy, brique `livraison`).
 Lire d'abord : `docs/specs` S236 (sauvegardes cohérentes), S237b (SeaweedFS), note mémoire
 `sprint-sauvegarde-continue-rpo`.
@@ -73,3 +73,14 @@ Portée par utilisateur (S248). Sauvegardes de Workplace lui-même (déjà couve
 Contexte : se couvrir contre un GitHub payant ou fermé. Prouvé en S246 sur Calendrier Familial : dépôt Forgejo recréé en *pull mirror* (`POST /repos/migrate` avec `mirror:true`, `mirror_interval:"10m0s"`), commits identiques à GitHub.
 À faire ici : (1) mesurer la taille totale des dépôts (VM 100 : 60 Go, partagés avec les images Docker) ; (2) script qui liste le compte GitHub et crée un miroir par dépôt ; (3) jeton GitHub **en lecture seule** pour les dépôts privés (jamais dans le dépôt git) ; (4) **sauvegarde de Forgejo** vers un autre disque/lieu — sans elle le risque est seulement déplacé (VM unique) ; (5) tester la conversion d'un miroir en dépôt normal (bascule si GitHub disparaît).
 Limites connues : un miroir ne copie que le code git (pas tickets/PR) ; Dokploy ne redéploie pas seul à la synchro ; nettoyage des images du registre Forgejo (rollback) à prévoir.
+
+## Décisions (2026-11-25)
+1. **Destination des sauvegardes** : SeaweedFS du HP (S3, port 9106) + copie USB existante (S233/S236). Ni autre machine ni hors site en S247.
+2. **Défaut `/etat` après rollback** : durcir davantage (lire l'état réel du service plutôt que se fier au seul repère mémorisé). Faisabilité à établir par le spike (question 5) ; code en partie 2.
+3. **Miroir de tous les dépôts GitHub** : sprint dédié, hors S247. Seule la sauvegarde de Forgejo (point 4 de l'idée) reste en S247.
+
+## Découvertes (partie 1)
+- Avant S247, `approbations.exiger` ne transmettait aucun prérequis à `creer` : aucune capacité ne pouvait en déclarer un. Désormais un manifeste peut déclarer `prerequis: [...]` (capacité gardée) et `fournit_preuve: "..."` (capacité de vérification) ; le Cœur lit le verdict dans le résultat de la brique (jamais dans les arguments du LLM). `core/catalogue.py` devait aussi laisser passer ces deux champs.
+- Dokploy 0.31.4 : sauvegardes natives pour les bases et le compose, pas pour une application simple (à confirmer au spike, `docs/s247/spike-dokploy.md`).
+- `satisfaire_prerequis` n'a toujours pas de verrou (limite 4 de S245b) ; `enregistrer_preuve` l'appelle séquentiellement et reste idempotent.
+- Reste mineur noté en revue : course minuscule dans `creer` (prérequis calculés hors de la transaction d'insertion), `expire_a=NaN` accepté mais jamais honoré, écritures du registre de preuves de la brique non verrouillées (1 worker à confirmer).
