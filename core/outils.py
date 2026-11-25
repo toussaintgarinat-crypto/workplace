@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid
 
 import httpx
@@ -583,10 +584,33 @@ def est_sensible(nom: str, registre) -> str | None:
     return "destructif"
 
 
+# Le résumé est stocké en base, envoyé sur Telegram et répété dans l'édition finale : il ne doit
+# JAMAIS contenir de secret. On masque donc la valeur des arguments dont le NOM évoque un secret,
+# les mots de passe intégrés à une URL (scheme://user:mdp@hôte) et les jetons opaques longs.
+# L'empreinte qui lie l'approbation est calculée ailleurs, sur les VRAIS arguments : cette
+# expurgation ne change que l'affichage.
+_CLES_SECRETES = ("pass", "pwd", "secret", "token", "key", "auth", "credential", "dsn",
+                  "cookie", "bearer", "apikey")
+_RE_URL_IDENTIFIANTS = re.compile(r"(\w[\w+.\-]*://[^\s:/@]+:)[^\s@/]+(@)")
+_RE_JETON_OPAQUE = re.compile(r"[A-Za-z0-9_\-]{32,}")
+_VALEUR_MAX = 80
+
+
+def _valeur_affichable(cle: str, valeur) -> str:
+    if any(m in str(cle).lower() for m in _CLES_SECRETES):
+        return "'***'"
+    if isinstance(valeur, str):
+        valeur = _RE_URL_IDENTIFIANTS.sub(r"\1***\2", valeur)
+        valeur = _RE_JETON_OPAQUE.sub("***", valeur)
+    texte = repr(valeur)
+    return texte if len(texte) <= _VALEUR_MAX else texte[:_VALEUR_MAX - 1] + "…"
+
+
 def _resume_action(nom: str, args: dict) -> str:
-    """Résumé lisible montré à l'humain : la capacité et ses arguments EXACTS."""
+    """Résumé lisible montré à l'humain : la capacité et ses arguments (secrets expurgés)."""
     utiles = {k: v for k, v in (args or {}).items() if k != "confirme" and v is not None}
-    detail = ", ".join(f"{k}={v!r}" for k, v in sorted(utiles.items())) or "sans argument"
+    detail = ", ".join(f"{k}={_valeur_affichable(k, v)}"
+                       for k, v in sorted(utiles.items())) or "sans argument"
     return f"{nom}({detail})"[:300]
 
 

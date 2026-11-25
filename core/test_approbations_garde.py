@@ -231,3 +231,44 @@ def test_notification_en_echec_ne_se_propage_pas(_env, monkeypatch):
     monkeypatch.setattr(outils, "_notifier_approbation", casse)
     res = _run("app_redemarrer", {"app": "crm"})
     assert "NON exécutée" in res and _env["atteints"] == []
+
+
+# ── Résumé expurgé des secrets (revue Task 5) ────────────────────────────────
+
+def test_resume_expurge_les_cles_sensibles():
+    r = outils._resume_action("x", {"password": "hunter2", "api_key": "abc", "token": "t0k",
+                                    "app": "crm", "db_dsn": "pg://u@h/d"})
+    for secret in ("hunter2", "abc", "t0k", "pg://u@h/d"):
+        assert secret not in r
+    assert "app='crm'" in r and "'***'" in r
+
+
+def test_resume_masque_url_avec_identifiants_et_jeton_opaque():
+    r = outils._resume_action("x", {"cible": "postgres://bob:s3cr3tpw@db.local/x",
+                                    "valeur": "A" * 40})
+    assert "s3cr3tpw" not in r and "A" * 40 not in r
+    assert "bob" in r and "db.local" in r
+
+
+def test_resume_tronque_les_longues_valeurs():
+    r = outils._resume_action("x", {"note": "mot " * 100})
+    assert len(r) < 150
+
+
+def test_resume_args_ordinaires_inchanges():
+    assert outils._resume_action("app_reset", {"app": "crm"}) == "app_reset(app='crm')"
+
+
+def test_secrets_differents_empreintes_differentes_resume_masque(_env):
+    _run("app_redemarrer", {"app": "crm", "password": "secret-un"})
+    _run("app_redemarrer", {"app": "crm", "password": "secret-deux"})
+    assert len(_env["notifs"]) == 2                     # deux demandes distinctes
+    d1, d2 = (approbations.lire(i) for i in _env["notifs"])
+    assert d1["empreinte"] != d2["empreinte"] if "empreinte" in d1 else True
+    for d in (d1, d2):
+        assert "secret-un" not in d["resume"] and "secret-deux" not in d["resume"]
+    approbations.approuver(_env["notifs"][0], "tg:42", "telegram")
+    _run("app_redemarrer", {"app": "crm", "password": "secret-deux"})
+    assert _env["atteints"] == []                       # l'approbation ne vaut que pour secret-un
+    _run("app_redemarrer", {"app": "crm", "password": "secret-un"})
+    assert len(_env["atteints"]) == 1

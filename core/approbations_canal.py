@@ -43,12 +43,31 @@ async def _poster(registre, chemin: str, corps: dict) -> dict:
         return r.json()
 
 
+def _messages_valides(brut) -> list[dict]:
+    """Ne garde que les {chat_id, message_id} bien formés, sans doublon, ordre conservé."""
+    if not isinstance(brut, list):
+        return []
+    vus, sortie = set(), []
+    for m in brut:
+        if not isinstance(m, dict) or m.get("chat_id") is None or m.get("message_id") is None:
+            continue
+        cle = (str(m["chat_id"]), str(m["message_id"]))
+        if cle not in vus:
+            vus.add(cle)
+            sortie.append({"chat_id": m["chat_id"], "message_id": m["message_id"]})
+    return sortie
+
+
 async def notifier(registre, demande: dict, relance: bool = False) -> None:
     try:
         rep = await _poster(registre, "/approbation/notifier",
                             charge_notification(demande, relance))
-        messages = rep.get("messages") or []
+        messages = _messages_valides(rep.get("messages") if isinstance(rep, dict) else None)
         if messages and demande.get("id"):
+            if relance:   # on garde les messages d'avant : ils restent éditables
+                existants = _messages_valides((approbations.lire(demande["id"]) or {})
+                                              .get("messages"))
+                messages = _messages_valides(existants + messages)
             approbations.enregistrer_messages(demande["id"], messages)
     except Exception as ex:  # noqa: BLE001 — jamais bloquant
         logger.warning("Approbation %s : notification Telegram impossible : %s",
