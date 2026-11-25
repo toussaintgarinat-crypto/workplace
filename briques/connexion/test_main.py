@@ -109,3 +109,264 @@ def test_manifeste_declare_tous_les_champs_requis_par_envoi(params):
     """Filet local du contrat (le filet du parc est `tests/test_contrat_capacites.py`)."""
     requis = {nom for nom, champ in main.Envoi.model_fields.items() if champ.is_required()}
     assert requis <= set(params), f"champs requis non déclarés : {sorted(requis - set(params))}"
+
+
+# ═══ S245 : approbation Telegram (routes /approbation/*, drapeau approbateur) ════════
+import re
+
+import correspondance as K
+import pont
+
+ID_AP = "b2" * 16
+
+
+class _TgFaux:
+    """Adaptateur Telegram configuré qui enregistre boutons et éditions."""
+    def __init__(self, casse=()):
+        self.boutons, self.editions, self.casse = [], [], set(casse)
+
+    def configure(self):
+        return True
+
+    async def envoyer_boutons(self, id_externe, texte, boutons):
+        if id_externe in self.casse:
+            raise RuntimeError("destinataire KO")
+        self.boutons.append((id_externe, texte, boutons))
+        return {"chat_id": id_externe, "message_id": 100 + len(self.boutons)}
+
+    async def editer_message(self, chat_id, message_id, texte):
+        if chat_id in self.casse:
+            raise RuntimeError("KO")
+        self.editions.append((chat_id, message_id, texte))
+
+
+_H = {"X-API-Key": "k1"}
+
+
+def _approb(ident):
+    K.lier("telegram", ident, f"{ident}@wp")
+    K.definir_approbateur("telegram", ident, True)
+
+
+@pytest.fixture
+def tg(monkeypatch):
+    """Telegram factice + aucun approbateur résiduel d'un test précédent."""
+    for e in K.lister():
+        if e.get("reseau") == "telegram":
+            K.delier("telegram", e["id_externe"])
+    faux = _TgFaux()
+    monkeypatch.setitem(adaptateurs.REGISTRE, "telegram", faux)
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})      # les routes /approbation/* sont fail closed
+    return faux
+
+
+def _notif(**kw):
+    corps = {"id": ID_AP, "resume": "Supprimer le client Dupont", "sensibilite": "reversible",
+             "prerequis_ok": True, "relance": False, "expire_a": 0}
+    corps.update(kw)
+    return corps
+
+
+def test_notifier_envoie_a_chaque_approbateur_avec_boutons(tg):
+    _approb("n1")
+    _approb("n2")
+    K.lier("telegram", "n3", "simple@wp")            # lié non approbateur : ne reçoit rien
+    r = client.post("/approbation/notifier", json=_notif(), headers=_H)
+    assert r.status_code == 200
+    assert sorted(m["chat_id"] for m in r.json()["messages"]) == ["n1", "n2"]
+    assert all("message_id" in m for m in r.json()["messages"])
+    assert sorted(b[0] for b in tg.boutons) == ["n1", "n2"]
+    kb = tg.boutons[0][2]
+    assert [b["callback_data"] for b in kb[0]] == [f"ap:{ID_AP}:ok", f"ap:{ID_AP}:ko"]
+    assert "Dupont" in tg.boutons[0][1]
+
+
+def test_notifier_sans_approbateur_n_envoie_rien(tg):
+    K.lier("telegram", "n-lie", "simple@wp")
+    r = client.post("/approbation/notifier", json=_notif(), headers=_H)
+    assert r.status_code == 200 and r.json() == {"messages": []}
+    assert tg.boutons == []
+
+
+def test_notifier_prerequis_non_reunis_sans_bouton_approuver(tg):
+    _approb("n4")
+    client.post("/approbation/notifier", json=_notif(prerequis_ok=False), headers=_H)
+    _, texte, clavier = tg.boutons[0]
+    assert "en attente de preuves" in texte
+    assert clavier == []
+    assert "ap:" not in str(tg.boutons)
+
+
+def test_notifier_destructif_dit_que_le_code_est_dans_l_app(tg):
+    _approb("n5")
+    client.post("/approbation/notifier", json=_notif(sensibilite="destructif"), headers=_H)
+    texte = tg.boutons[0][1]
+    assert "app" in texte.lower() and "6 chiffres" in texte
+    assert not re.search(r"\d{6}", texte)
+
+
+def test_notifier_relance_est_marque(tg):
+    _approb("n6")
+    client.post("/approbation/notifier", json=_notif(relance=True), headers=_H)
+    assert "Rappel" in tg.boutons[0][1]
+
+
+def test_notifier_un_destinataire_ko_ne_bloque_pas_les_autres(monkeypatch, tg):
+    tg.casse = {"n7"}
+    _approb("n7")
+    _approb("n8")
+    r = client.post("/approbation/notifier", json=_notif(), headers=_H)
+    assert [m["chat_id"] for m in r.json()["messages"]] == ["n8"]
+
+
+def test_notifier_exige_la_cle_api(monkeypatch, tg):
+    _approb("n9")
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    assert client.post("/approbation/notifier", json=_notif()).status_code == 401
+    assert client.post("/approbation/notifier", json=_notif(),
+                       headers={"X-API-Key": "mauvaise"}).status_code == 401
+    assert tg.boutons == []
+    r = client.post("/approbation/notifier", json=_notif(), headers={"X-API-Key": "k1"})
+    assert r.status_code == 200 and len(r.json()["messages"]) == 1
+
+
+def test_notifier_et_mettre_a_jour_fermes_si_api_keys_vide(monkeypatch, tg):
+    """Sans API_KEYS la route serait ouverte : n'importe qui ferait écrire le bot aux
+    approbateurs avec un texte arbitraire. Fail closed."""
+    _approb("n10")
+    monkeypatch.setattr(main, "API_KEYS", set())
+    assert client.post("/approbation/notifier", json=_notif()).status_code == 403
+    r = client.post("/approbation/mettre_a_jour",
+                    json={"messages": [{"chat_id": "n10", "message_id": 1}], "texte": "x"})
+    assert r.status_code == 403
+    assert tg.boutons == [] and tg.editions == []
+
+
+def test_mettre_a_jour_edite_chaque_message(monkeypatch, tg):
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    r = client.post("/approbation/mettre_a_jour", headers={"X-API-Key": "k1"}, json={
+        "messages": [{"chat_id": "m1", "message_id": 5}, {"chat_id": "m2", "message_id": 6}],
+        "texte": "✅ Approuvée"})
+    assert r.status_code == 200 and r.json() == {"edites": 2}
+    assert tg.editions == [("m1", 5, "✅ Approuvée"), ("m2", 6, "✅ Approuvée")]
+
+
+def test_mettre_a_jour_exige_la_cle_api(monkeypatch, tg):
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    r = client.post("/approbation/mettre_a_jour",
+                    json={"messages": [{"chat_id": "m1", "message_id": 5}], "texte": "x"})
+    assert r.status_code == 401 and tg.editions == []
+
+
+def test_routes_approbation_ne_sont_pas_proxifiees(monkeypatch, tg):
+    """Le catch-all /{chemin:path} relaie au dashboard : les routes doivent le précéder."""
+    async def boom(*a, **k):
+        raise AssertionError("proxy_dashboard atteint")
+
+    monkeypatch.setattr(main.miniapp, "verifier_session", lambda *_: pytest.fail("proxy"))
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    h = {"X-API-Key": "k1"}
+    assert client.post("/approbation/notifier", json=_notif(), headers=h).status_code == 200
+    assert client.post("/approbation/mettre_a_jour", headers=h,
+                       json={"messages": [], "texte": "x"}).status_code == 200
+    assert client.post("/correspondances/approbateur", headers=h, json={
+        "reseau": "telegram", "id_externe": "inexistant", "approbateur": True}
+    ).status_code == 404
+
+
+# ── webhook ──────────────────────────────────────────────────────────────────────────
+def test_webhook_callback_query_est_route_vers_traiter_callback(monkeypatch):
+    vus = []
+
+    async def faux_cb(reseau, cb):
+        vus.append((reseau, cb.from_id, cb.data))
+        return {"ok": True, "raison": "ok"}
+
+    async def pas_traiter(*a, **k):
+        raise AssertionError("un clic ne doit pas passer par traiter()")
+
+    monkeypatch.setattr(pont, "traiter_callback", faux_cb)
+    monkeypatch.setattr(pont, "traiter", pas_traiter)
+    upd = {"update_id": 1, "callback_query": {
+        "id": "c", "from": {"id": 42}, "data": f"ap:{ID_AP}:ok",
+        "message": {"message_id": 3, "chat": {"id": 42, "type": "private"}}}}
+    r = client.post("/webhook/telegram", json=upd)
+    assert r.status_code == 200 and r.json() == {"ok": True, "callback": "ok"}
+    assert vus == [("telegram", "42", f"ap:{ID_AP}:ok")]
+
+
+def test_webhook_callback_exige_toujours_la_signature(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s3")
+    vus = []
+
+    async def faux_cb(reseau, cb):
+        vus.append(cb)
+        return {"ok": True}
+
+    monkeypatch.setattr(pont, "traiter_callback", faux_cb)
+    upd = {"callback_query": {"id": "c", "from": {"id": 42}, "data": "x",
+                              "message": {"message_id": 3, "chat": {"id": 42,
+                                                                     "type": "private"}}}}
+    assert client.post("/webhook/telegram", json=upd).status_code == 401
+    assert vus == []
+
+
+# ── pose du drapeau approbateur ─────────────────────────────────────────────────────
+def test_liaison_ordinaire_ne_peut_pas_poser_approbateur():
+    r = client.post("/correspondances", json={
+        "reseau": "telegram", "id_externe": "lb1", "utilisateur": "u@wp", "approbateur": True})
+    assert r.status_code == 200
+    assert K.est_approbateur("telegram", "lb1") is False
+    assert not K.table()["telegram:lb1"].get("approbateur")
+
+
+def test_liaison_ordinaire_ne_retire_ni_n_accorde_le_droit():
+    _approb("lb2")
+    client.post("/correspondances", json={"reseau": "telegram", "id_externe": "lb2",
+                                          "utilisateur": "lb2@wp"})
+    assert K.est_approbateur("telegram", "lb2") is True          # même compte : conservé
+    client.post("/correspondances", json={"reseau": "telegram", "id_externe": "lb2",
+                                          "utilisateur": "autre@wp"})
+    assert K.est_approbateur("telegram", "lb2") is False         # autre compte : retiré
+
+
+def test_route_approbateur_pose_et_retire_le_drapeau(monkeypatch):
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    h = {"X-API-Key": "k1"}
+    K.lier("telegram", "pa1", "u@wp")
+    r = client.post("/correspondances/approbateur", headers=h, json={
+        "reseau": "telegram", "id_externe": "pa1", "approbateur": True})
+    assert r.status_code == 200 and r.json()["approbateur"] is True
+    assert K.est_approbateur("telegram", "pa1") is True
+    r = client.post("/correspondances/approbateur", headers=h, json={
+        "reseau": "telegram", "id_externe": "pa1", "approbateur": False})
+    assert r.status_code == 200 and K.est_approbateur("telegram", "pa1") is False
+
+
+def test_route_approbateur_fermee_si_api_keys_vide(monkeypatch):
+    monkeypatch.setattr(main, "API_KEYS", set())
+    K.lier("telegram", "pa2", "u@wp")
+    r = client.post("/correspondances/approbateur", json={
+        "reseau": "telegram", "id_externe": "pa2", "approbateur": True})
+    assert r.status_code == 403
+    assert K.est_approbateur("telegram", "pa2") is False
+
+
+def test_route_approbateur_exige_la_cle(monkeypatch):
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    K.lier("telegram", "pa3", "u@wp")
+    r = client.post("/correspondances/approbateur", json={
+        "reseau": "telegram", "id_externe": "pa3", "approbateur": True})
+    assert r.status_code == 401 and K.est_approbateur("telegram", "pa3") is False
+
+
+def test_route_approbateur_refuse_entree_inconnue_ou_non_liee(monkeypatch):
+    monkeypatch.setattr(main, "API_KEYS", {"k1"})
+    h = {"X-API-Key": "k1"}
+    assert client.post("/correspondances/approbateur", headers=h, json={
+        "reseau": "telegram", "id_externe": "n-existe-pas", "approbateur": True}
+    ).status_code == 404
+    K.resoudre("telegram", "pa4", "Attente")
+    assert client.post("/correspondances/approbateur", headers=h, json={
+        "reseau": "telegram", "id_externe": "pa4", "approbateur": True}).status_code == 404
+    assert K.est_approbateur("telegram", "pa4") is False

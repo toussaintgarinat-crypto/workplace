@@ -73,13 +73,21 @@ def resoudre(reseau: str, id_externe: str, nom: str | None = None) -> dict:
             "nom": e.get("nom"), "nouveau": nouveau}
 
 
+def _rattacher(e: dict, utilisateur: str) -> None:
+    """Passe une entrée à « lie ». Le droit d'approbation (S245) suit le COMPTE : conservé si
+    on relie au même utilisateur, retiré si l'entrée change de compte (jamais transmis)."""
+    if e.get("utilisateur") != utilisateur:
+        e.pop("approbateur", None)
+    e.update(statut="lie", utilisateur=utilisateur, lie_le=time.time())
+
+
 def lier(reseau: str, id_externe: str, utilisateur: str) -> dict:
     """Relie (consentement administrateur) un interlocuteur à un utilisateur Workplace."""
     t = table()
     cle = _cle(reseau, id_externe)
     e = t.get(cle) or {"reseau": reseau, "id_externe": id_externe,
                        "code": _code(), "vu_le": time.time()}
-    e.update(statut="lie", utilisateur=utilisateur, lie_le=time.time())
+    _rattacher(e, utilisateur)
     t[cle] = e
     _sauver(t)
     return e
@@ -91,7 +99,7 @@ def lier_par_code(code: str, utilisateur: str) -> dict | None:
     code = (code or "").strip().upper()
     for cle, e in t.items():
         if e.get("code") == code:
-            e.update(statut="lie", utilisateur=utilisateur, lie_le=time.time())
+            _rattacher(e, utilisateur)
             _sauver(t)
             return e
     return None
@@ -123,3 +131,30 @@ def cibles_pour(utilisateur: str) -> list:
         if e.get("utilisateur") == utilisateur and e.get("statut") in ("lie", "ouvert"):
             cibles.append((e.get("reseau"), e.get("id_externe")))
     return cibles
+
+
+def est_approbateur(reseau: str, id_externe: str) -> bool:
+    """Droit d'APPROUVER une action sensible (S245). Triple condition, vide par défaut :
+    entrée connue, statut « lie » (JAMAIS « ouvert » : CONNEXION_OUVERT=1 ne donne aucun
+    droit d'approbation) et drapeau `approbateur` explicitement True."""
+    e = table().get(_cle(reseau, str(id_externe)))
+    return bool(e) and e.get("statut") == "lie" and e.get("approbateur") is True
+
+
+def approbateurs(reseau: str) -> list[str]:
+    """`id_externe` des approbateurs d'un réseau (mêmes conditions que `est_approbateur`)."""
+    return [e["id_externe"] for e in table().values()
+            if e.get("reseau") == reseau and e.get("statut") == "lie"
+            and e.get("approbateur") is True]
+
+
+def definir_approbateur(reseau: str, id_externe: str, valeur: bool) -> dict | None:
+    """Pose/retire le drapeau. Ne marche que sur une entrée existante au statut « lie »
+    (None sinon) : on n'accorde jamais ce droit à un inconnu ou à quelqu'un en attente."""
+    t = table()
+    e = t.get(_cle(reseau, str(id_externe)))
+    if not e or e.get("statut") != "lie":
+        return None
+    e["approbateur"] = bool(valeur)
+    _sauver(t)
+    return e

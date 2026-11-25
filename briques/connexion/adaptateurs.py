@@ -50,6 +50,18 @@ class Entrant:
     media_nom: Optional[str] = None   # nom de fichier suggéré (extension utile au moteur STT)
 
 
+@dataclass
+class Callback:
+    """Un clic sur un bouton inline (Telegram `callback_query`)."""
+    reseau: str
+    from_id: str
+    chat_id: str
+    chat_type: str
+    message_id: int
+    callback_id: str
+    data: str
+
+
 class Adaptateur:
     nom = "base"
 
@@ -138,6 +150,41 @@ class Telegram(Adaptateur):
                             media_nom=f"voix.{ext}")]
         return []
 
+    def parser_callback(self, payload: dict) -> "Callback | None":
+        cq = (payload or {}).get("callback_query")
+        if not isinstance(cq, dict):
+            return None
+        msg = cq.get("message") or {}
+        chat = msg.get("chat") or {}
+        de = cq.get("from") or {}
+        if not (de.get("id") and chat.get("id") and cq.get("id")):
+            return None
+        return Callback(self.nom, str(de["id"]), str(chat["id"]), chat.get("type") or "",
+                        int(msg.get("message_id") or 0), str(cq["id"]), cq.get("data") or "")
+
+    async def envoyer_boutons(self, id_externe: str, texte: str, boutons: list) -> dict | None:
+        corps = {"chat_id": id_externe, "text": texte}
+        if boutons:
+            corps["reply_markup"] = {"inline_keyboard": boutons}
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(self._api("sendMessage"), json=corps)
+            r.raise_for_status()
+            m = r.json().get("result") or {}
+        return {"chat_id": str((m.get("chat") or {}).get("id", id_externe)),
+                "message_id": m.get("message_id")}
+
+    async def repondre_callback(self, callback_id: str, texte: str = "") -> None:
+        async with httpx.AsyncClient(timeout=15) as c:
+            await c.post(self._api("answerCallbackQuery"),
+                         json={"callback_query_id": callback_id, "text": texte[:200]})
+
+    async def editer_message(self, chat_id: str, message_id: int, texte: str) -> None:
+        """Remplace le texte ET retire le clavier (la décision ne peut plus être rejouée)."""
+        async with httpx.AsyncClient(timeout=15) as c:
+            await c.post(self._api("editMessageText"), json={
+                "chat_id": chat_id, "message_id": message_id, "text": texte,
+                "reply_markup": {"inline_keyboard": []}})
+
     async def telecharger_media(self, media_id: str) -> bytes:
         """getFile → chemin → téléchargement des octets depuis l'API fichiers de Telegram."""
         async with httpx.AsyncClient(timeout=60) as c:
@@ -156,13 +203,18 @@ class Telegram(Adaptateur):
             return []
         offset = stockage.lire_json("telegram_offset.json", {}).get("offset", 0)
         async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.get(self._api("getUpdates"), params={"offset": offset, "timeout": 0})
+            r = await c.get(self._api("getUpdates"), params={
+                "offset": offset, "timeout": 0,
+                "allowed_updates": json.dumps(["message", "callback_query"])})
             r.raise_for_status()
             data = r.json()
         entrants, dernier = [], offset
         for upd in data.get("result", []):
             dernier = max(dernier, upd.get("update_id", 0) + 1)
             entrants.extend(self.parser_entrant(upd))
+            cb = self.parser_callback(upd)
+            if cb:
+                entrants.append(cb)
         if dernier != offset:
             stockage.ecrire_json("telegram_offset.json", {"offset": dernier})
         return entrants
