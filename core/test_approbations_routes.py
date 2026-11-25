@@ -299,7 +299,7 @@ def test_relancer_fail_closed_si_cle_non_configuree_503(client_sans_cle):
 def test_relancer_accepte_la_cle_en_bearer_pour_l_horloge(client):
     # L'horloge ne sait poser que `Authorization: Bearer <env>` (entete_token_env).
     r = client.post("/approbations/relancer", headers=BEARER)
-    assert r.status_code == 200 and r.json() == {"expirees": [], "relancees": []}
+    assert r.status_code == 200 and r.json() == {"expirees": [], "relancees": [], "reprises": []}
 
 
 def test_relancer_expire_les_perimees_et_relance_les_anciennes(client, monkeypatch, appels):
@@ -502,3 +502,60 @@ def test_en_attente_ne_liste_que_les_demandes_de_la_session(client, demande, ses
     ids = {a["id"] for a in client.get("/approbations/en_attente", cookies=session)
            .json()["approbations"]}
     assert demande["id"] in ids and autre["id"] not in ids
+
+
+# ── Reprise après approbation (Task 6) ──────────────────────────────────────
+
+@pytest.fixture
+def reprises(monkeypatch):
+    import approbations_reprise
+    vues = []
+    monkeypatch.setattr(approbations_reprise, "lancer", lambda registre, id_: vues.append(id_))
+    return vues
+
+
+def test_approuver_declenche_la_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ok", "par": "tg:42", "utilisateur": demande["utilisateur"]})
+    assert reprises == [demande["id"]]
+
+
+def test_refuser_ne_declenche_pas_de_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ko", "par": "tg:42", "utilisateur": demande["utilisateur"]})
+    assert reprises == []
+
+
+def test_decision_en_echec_ne_declenche_pas_de_reprise(client, demande, reprises):
+    client.post(f"/approbations/{demande['id']}/decision", headers=ENT,
+                json={"decision": "ok", "par": "tg:42", "utilisateur": "intrus"})
+    assert reprises == []
+
+
+def test_code_bon_declenche_la_reprise(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    code = approbations.lire(id_)["code"]
+    client.post("/approbations/code", headers=ENT,
+                json={"par": "tg:42", "code": code, "utilisateur": u})
+    assert reprises == [id_]
+
+
+def test_code_faux_ne_declenche_pas_de_reprise(client, demande_destructive, reprises):
+    id_ = demande_destructive["id"]
+    u = demande_destructive["utilisateur"]
+    client.post(f"/approbations/{id_}/code/armer", headers=ENT, json={"par": "tg:42",
+                                                                      "utilisateur": u})
+    client.post("/approbations/code", headers=ENT,
+                json={"par": "tg:42", "code": "000000", "utilisateur": u})
+    assert reprises == []
+
+
+def test_relancer_reprend_les_approuvees_orphelines(client, demande, reprises):
+    approbations.approuver(demande["id"], "tg:42", "telegram", time.time() - 3600,
+                           utilisateur=demande["utilisateur"])
+    r = client.post("/approbations/relancer", headers=ENT)
+    assert reprises == [demande["id"]]
+    assert r.json()["reprises"] == [demande["id"]]

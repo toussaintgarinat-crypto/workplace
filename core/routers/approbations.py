@@ -15,6 +15,10 @@ réponse des routes à clé ne le contient, et il n'est jamais transmis au canal
 `/approbations/relancer` est appelé par l'horloge S29, qui ne sait poser qu'un en-tête
 `Authorization: Bearer <variable d'env>` (`entete_token_env` du manifest ; le secret ne figure
 jamais dans le manifest). La clé est donc acceptée soit en `X-Approbations-Cle`, soit en Bearer.
+
+L'approbation déclenche l'exécution par le Cœur (S245b) : après une décision `ok` ou un code
+valide, `approbations_reprise.lancer` rejoue l'action en tâche de fond ; `relancer` reprend aussi
+les approuvées restées orphelines (Cœur redémarré entre l'approbation et l'exécution).
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ from pydantic import BaseModel, Field
 
 import approbations
 import approbations_canal
+import approbations_reprise
 import auth
 import contexte_tenant
 from etat import registre
@@ -103,6 +108,8 @@ async def decision(body: Decision, id_: str = Path(pattern=_ID_RE)):
     agir = approbations.approuver if body.decision == "ok" else approbations.refuser
     ok, raison = agir(id_, body.par, body.canal, utilisateur=body.utilisateur)
     lue = await _maj(id_) if raison != "introuvable" else None
+    if body.decision == "ok" and ok:
+        approbations_reprise.lancer(registre, id_)
     return {"ok": ok, "raison": raison, "statut": lue and lue["statut"],
             "sensibilite": lue and lue["sensibilite"]}
 
@@ -119,6 +126,8 @@ async def code(body: Saisie):
     if r is None:
         return {"pris_en_charge": False}
     await _maj(r["approbation_id"])
+    if r.get("ok") and r.get("raison") == "ok":
+        approbations_reprise.lancer(registre, r["approbation_id"])
     return {"pris_en_charge": True, **r}
 
 
@@ -149,4 +158,7 @@ async def relancer(x_approbations_cle: str | None = Header(None),
         approbations.marquer_relancee(d["id"])  # réclamer d'abord, notifier ensuite
         await _canal_sans_echec(approbations_canal.notifier, d["id"], _sans_code(d), relance=True)
         relancees.append(d["id"])
-    return {"expirees": perimees, "relancees": relancees}
+    reprises = approbations.a_reprendre()
+    for id_ in reprises:
+        approbations_reprise.lancer(registre, id_)
+    return {"expirees": perimees, "relancees": relancees, "reprises": reprises}

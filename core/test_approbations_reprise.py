@@ -1,4 +1,5 @@
 """S245b — reprise après approbation : garde en mode reprise, purge des args, anti-redemande."""
+import asyncio
 import os
 import sys
 
@@ -7,6 +8,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 
 import approbations  # noqa: E402
+import approbations_canal  # noqa: E402
+import approbations_reprise  # noqa: E402
+import contexte_tenant  # noqa: E402
+import outils  # noqa: E402
 
 T0 = 1_000_000.0
 ARGS = {"app": "crm", "token": "SECRET-ARG"}
@@ -152,3 +157,148 @@ def test_args_reellement_ecrits_en_colonne_apres_creer():
     assert json.loads(brut) == ARGS
     assert "args" not in d and "SECRET-ARG" not in str(d)       # jamais exposés par la vue
 
+
+
+# ── Task 6 : reprise (exécution par le Cœur) ────────────────────────────────
+
+class _Reg:
+    def __init__(self, briques):
+        self.briques = briques
+
+
+REGISTRE = _Reg({"dokploy": {"nom": "dokploy", "port": 6300, "capacites": [
+    {"nom": "app_redemarrer", "chemin": "/redemarrer", "methode": "POST", "action": True,
+     "sensibilite": "reversible", "description": "Redémarre une app.",
+     "params": {"app": {"type": "string", "requis": True}}}]}})
+
+
+@pytest.fixture
+def faux_outils(monkeypatch):
+    vu = {"appels": [], "contexte": [], "maj": [], "notifs": []}
+
+    async def _executer(nom, args, registre):
+        ctx = contexte_tenant.contexte_actuel()
+        vu["appels"].append((nom, dict(args)))
+        vu["contexte"].append((ctx.utilisateur, ctx.org_id, approbations.ORIGINE.get()))
+        return '{"ok": true}'
+
+    async def _maj(registre, demande):
+        vu["maj"].append(demande["statut"])
+
+    async def _notifier(registre, demande):
+        vu["notifs"].append(demande["id"])
+
+    monkeypatch.setattr(outils, "_executer", _executer)
+    monkeypatch.setattr(approbations_canal, "mettre_a_jour", _maj)
+    monkeypatch.setattr(outils, "_notifier_approbation", _notifier)
+    return vu
+
+
+def _demande_approuvee(utilisateur="alice", org="org-1"):
+    d = approbations.creer("app_redemarrer", {"app": "crm"}, "r", "reversible",
+                           origine="incident", utilisateur=utilisateur, org_id=org)
+    ok, _ = approbations.approuver(d["id"], "tg:1", "telegram", utilisateur=utilisateur)
+    assert ok
+    return d["id"]
+
+
+def test_reprendre_execute_dans_le_contexte_du_demandeur(faux_outils):
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "executee"
+    assert faux_outils["appels"] == [("app_redemarrer", {"app": "crm", "confirme": True})]
+    assert faux_outils["contexte"] == [("alice", "org-1", "incident")]
+    assert approbations.lire(id_)["statut"] == "executee"
+    assert faux_outils["maj"] == ["executee"]          # message Telegram édité à l'état final
+    assert faux_outils["notifs"] == []                 # AUCUNE nouvelle demande
+
+
+def test_reprendre_ne_fuit_pas_le_contexte(faux_outils):
+    id_ = _demande_approuvee()
+    asyncio.run(approbations_reprise.reprendre(REGISTRE, id_))
+    assert contexte_tenant.contexte_actuel().utilisateur == "perso"
+    assert approbations.REPRISE.get() is None
+
+
+def test_reprendre_deux_fois_n_execute_qu_une_fois(faux_outils):
+    id_ = _demande_approuvee()
+
+    async def deux():
+        return await asyncio.gather(approbations_reprise.reprendre(REGISTRE, id_),
+                                    approbations_reprise.reprendre(REGISTRE, id_))
+
+    asyncio.run(deux())
+    assert len(faux_outils["appels"]) == 1
+
+
+def test_reprendre_ignore_une_demande_non_approuvee(faux_outils):
+    d = approbations.creer("app_redemarrer", {"app": "crm"}, "r", "reversible",
+                           utilisateur="alice")
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, d["id"])) == "ignoree"
+    assert faux_outils["appels"] == []
+
+
+def test_reprendre_sans_args_ne_fait_rien(faux_outils):
+    id_ = _demande_approuvee()
+    import sqlite3
+    c = sqlite3.connect(approbations.DB)
+    c.execute("UPDATE approbations SET args=NULL WHERE id=?", (id_,))
+    c.commit()
+    c.close()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "sans_args"
+    assert faux_outils["appels"] == []
+
+
+def test_echec_d_execution_passe_en_echec(monkeypatch, faux_outils):
+    async def _boom(nom, args, registre):
+        return '{"erreur": "dokploy injoignable"}'
+
+    monkeypatch.setattr(outils, "_executer", _boom)
+    id_ = _demande_approuvee()
+    asyncio.run(approbations_reprise.reprendre(REGISTRE, id_))
+    assert approbations.lire(id_)["statut"] == "echec"
+    assert faux_outils["maj"] == ["echec"]
+
+
+def test_exception_dans_l_outil_ne_remonte_pas(monkeypatch, faux_outils):
+    async def _crash(nom, args, registre):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(outils, "_executer", _crash)
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "echec"
+    assert approbations.lire(id_)["statut"] == "echec"
+
+
+def test_exception_avant_consommation_est_journalisee_et_reste_reprenable(
+        monkeypatch, faux_outils, caplog):
+    def _casse(*a, **k):
+        raise RuntimeError("base verrouillée")
+
+    monkeypatch.setattr(approbations, "exiger", _casse)
+    id_ = _demande_approuvee()
+    with caplog.at_level("WARNING"):
+        assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "echec"
+    assert approbations.lire(id_)["statut"] == "approuvee"       # pas consommée : l'horloge réessaiera
+    assert "non consommée" in caplog.text and "SECRET" not in caplog.text
+
+
+def test_garde_qui_refuse_n_est_pas_comptee_executee(monkeypatch, faux_outils):
+    # exiger refuse (empreinte différente) sans lever : rien n'est exécuté, on ne ment pas.
+    monkeypatch.setattr(approbations, "exiger",
+                        lambda *a, **k: (None, "refus", None))
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "non_consommee"
+    assert faux_outils["appels"] == []
+
+
+def test_lancer_planifie_la_reprise_en_tache_de_fond(faux_outils):
+    id_ = _demande_approuvee()
+
+    async def scenario():
+        approbations_reprise.lancer(REGISTRE, id_)
+        assert approbations_reprise._TACHES
+        while approbations_reprise._TACHES:
+            await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert len(faux_outils["appels"]) == 1
