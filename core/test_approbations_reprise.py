@@ -214,9 +214,17 @@ def test_reprendre_execute_dans_le_contexte_du_demandeur(faux_outils):
 
 def test_reprendre_ne_fuit_pas_le_contexte(faux_outils):
     id_ = _demande_approuvee()
-    asyncio.run(approbations_reprise.reprendre(REGISTRE, id_))
-    assert contexte_tenant.contexte_actuel().utilisateur == "perso"
-    assert approbations.REPRISE.get() is None
+
+    async def scenario():
+        # Les assertions DOIVENT s'exécuter dans la même coroutine (contexte non copié).
+        contexte_tenant.definir_contexte(utilisateur="avant")
+        origine_avant = approbations.ORIGINE.get()
+        await approbations_reprise.reprendre(REGISTRE, id_)
+        assert contexte_tenant.contexte_actuel().utilisateur == "avant"
+        assert approbations.REPRISE.get() is None
+        assert approbations.ORIGINE.get() == origine_avant
+
+    asyncio.run(scenario())
 
 
 def test_reprendre_deux_fois_n_execute_qu_une_fois(faux_outils):
@@ -282,13 +290,60 @@ def test_exception_avant_consommation_est_journalisee_et_reste_reprenable(
     assert "non consommée" in caplog.text and "SECRET" not in caplog.text
 
 
-def test_garde_qui_refuse_n_est_pas_comptee_executee(monkeypatch, faux_outils):
-    # exiger refuse (empreinte différente) sans lever : rien n'est exécuté, on ne ment pas.
+def test_garde_qui_refuse_abandonne_la_demande(monkeypatch, faux_outils):
+    # exiger refuse (empreinte différente) sans lever : rien n'est exécuté, on ne ment pas,
+    # et la demande est abandonnée pour que l'horloge ne la rejoue pas indéfiniment.
     monkeypatch.setattr(approbations, "exiger",
                         lambda *a, **k: (None, "refus", None))
     id_ = _demande_approuvee()
     assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "non_consommee"
     assert faux_outils["appels"] == []
+    assert approbations.lire(id_)["statut"] == "expiree"
+    assert approbations.args_de(id_) is None
+    assert "abandonnee" in [e["evenement"] for e in approbations.journal(id_)]
+
+
+def test_capacite_plus_sensible_n_est_pas_executee_et_est_abandonnee(monkeypatch, faux_outils):
+    monkeypatch.setattr(outils, "est_sensible", lambda nom, registre: None)
+    id_ = _demande_approuvee()
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "ignoree"
+    assert faux_outils["appels"] == []
+    assert approbations.lire(id_)["statut"] == "expiree"
+    assert approbations.args_de(id_) is None
+    evts = [e for e in approbations.journal(id_) if e["evenement"] == "abandonnee"]
+    assert evts and "plus sensible" in evts[0]["detail"]
+    assert approbations.a_reprendre(maintenant=10 ** 10, delai_s=0) == []
+
+
+def test_sensibilite_changee_n_est_pas_executee(monkeypatch, faux_outils):
+    monkeypatch.setattr(outils, "est_sensible", lambda nom, registre: "destructif")
+    id_ = _demande_approuvee()          # approuvée en « reversible »
+    assert asyncio.run(approbations_reprise.reprendre(REGISTRE, id_)) == "ignoree"
+    assert faux_outils["appels"] == []
+    assert approbations.lire(id_)["statut"] == "expiree"
+
+
+def test_abandonner_seulement_depuis_approuvee():
+    id_ = _approuvee()
+    assert approbations.abandonner(id_, "raison " + "x" * 300, maintenant=T0 + 5) is True
+    assert approbations.lire(id_)["statut"] == "expiree"
+    assert approbations.args_de(id_) is None
+    evt = [e for e in approbations.journal(id_) if e["evenement"] == "abandonnee"]
+    assert len(evt) == 1 and len(evt[0]["detail"]) == 200
+    assert approbations.abandonner(id_, "encore") is False        # déjà finale
+
+
+def test_abandonner_sans_effet_sur_les_autres_etats():
+    d = approbations.creer("app_redemarrer", ARGS, "r", "reversible", maintenant=T0,
+                           utilisateur="alice")
+    assert approbations.abandonner(d["id"], "x") is False          # en_attente
+    assert approbations.lire(d["id"])["statut"] == "en_attente"
+    assert approbations.abandonner("inexistant", "x") is False
+    id_ = _approuvee()
+    approbations.consommer_id(id_, "app_redemarrer", ARGS, "reversible", "alice", T0 + 2)
+    assert approbations.abandonner(id_, "x") is False              # executee
+    assert approbations.lire(id_)["statut"] == "executee"
+    assert not [e for e in approbations.journal(id_) if e["evenement"] == "abandonnee"]
 
 
 def test_lancer_planifie_la_reprise_en_tache_de_fond(faux_outils):

@@ -493,6 +493,18 @@ def a_reprendre(maintenant: float | None = None, delai_s: int = 60) -> list[str]
     return [r["id"] for r in rows]
 
 
+def abandonner(id_: str, raison: str, maintenant: float | None = None) -> bool:
+    """Abandonne une demande `approuvee` que la reprise ne peut plus exécuter légitimement
+    (capacité plus sensible, garde refusée) : `approuvee -> expiree` (args purgés), journalisée
+    `abandonnee`, pour que l'horloge cesse de la rejouer. True si la transition a eu lieu."""
+    now = maintenant if maintenant is not None else time.time()
+    with _conn() as c:
+        if not _transition(c, id_, "approuvee", "expiree"):
+            return False
+        _journaliser(c, id_, "abandonnee", detail=(raison or "")[:200], maintenant=now)
+    return True
+
+
 def conclure(id_: str, ok: bool, resultat: str) -> None:
     """Note le résultat de l'exécution ; un échec fait passer `executee` à `echec`."""
     with _conn() as c:

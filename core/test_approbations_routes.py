@@ -50,6 +50,10 @@ def _isoler(monkeypatch, tmp_path):
 
     monkeypatch.setattr(approbations_canal, "notifier", _notifier)
     monkeypatch.setattr(approbations_canal, "mettre_a_jour", _maj)
+    # La reprise (Task 6) est testée à part : ici le registre n'a pas la capacité, la reprise
+    # réelle abandonnerait les demandes de test.
+    import approbations_reprise
+    monkeypatch.setattr(approbations_reprise, "lancer", lambda registre, id_: None)
     yield appels
     auth._cache_access_token.clear()
 

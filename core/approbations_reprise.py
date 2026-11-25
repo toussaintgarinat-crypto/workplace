@@ -35,11 +35,19 @@ async def reprendre(registre, id_: str) -> str:
     """Exécute l'approbation `id_` si elle est `approuvee`. Ne lève jamais.
 
     Renvoie `executee` | `ignoree` | `sans_args` | `non_consommee` (la garde a refusé sans
-    lever : rien n'a été exécuté) | `echec` (exception)."""
+    lever : rien n'a été exécuté, demande abandonnée) | `echec` (exception).
+    Une capacité devenue non sensible (ou de niveau différent) n'est PAS exécutée : abandon."""
     jetons = None
     try:
         demande = approbations.lire(id_)
         if not demande or demande["statut"] != "approuvee":
+            return "ignoree"
+        niveau = outils.est_sensible(demande["capacite"], registre)
+        if not niveau or niveau != demande.get("sensibilite"):
+            # Sans garde, `outils.executer` n'appellerait pas `exiger` : la demande ne serait
+            # jamais consommée et l'action pourrait être rejouée sans contrôle. On n'exécute pas.
+            log.warning("approbation %s : capacité plus sensible/introuvable, abandon", id_[:8])
+            approbations.abandonner(id_, "capacité plus sensible/introuvable")
             return "ignoree"
         args = approbations.args_de(id_)
         if args is None:
@@ -50,8 +58,9 @@ async def reprendre(registre, id_: str) -> str:
         with approbations.avec_origine(demande["origine"]), approbations.avec_reprise(id_):
             await outils.executer(demande["capacite"], args, registre)
         if approbations.lire(id_)["statut"] == "approuvee":
-            log.warning("approbation %s : reprise sans effet (garde refusée, non consommée)",
-                        id_[:8])
+            log.warning("approbation %s : reprise sans effet (garde refusée, non consommée), "
+                        "abandon", id_[:8])
+            approbations.abandonner(id_, "garde refusée à la reprise (non consommée)")
             return "non_consommee"
         return "executee"
     except Exception as exc:  # noqa: BLE001 — jamais remonter dans une tâche de fond
