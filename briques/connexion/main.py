@@ -40,12 +40,24 @@ app = FastAPI(title="Connexion — pont messageries ↔ assistant", version="0.1
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
-API_KEYS = {k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()}
+def _lire_cles_api() -> set[str]:
+    """Clés de CETTE brique. `CONNEXION_API_KEYS` (S245b) l'emporte dès qu'elle est PRÉSENTE
+    dans l'environnement, même vide (vide = mode ouvert). Absente : repli sur `API_KEYS`
+    (usage autonome historique). Raison d'être : `API_KEYS` est lue par ≈20 briques via
+    `env_file` — la renseigner les fermerait toutes."""
+    brut = os.environ.get("CONNEXION_API_KEYS")
+    if brut is None:
+        brut = os.getenv("API_KEYS", "")
+    return {k.strip() for k in brut.split(",") if k.strip()}
+
+
+API_KEYS = _lire_cles_api()
 
 
 def cle_api(x_api_key: Optional[str] = Header(None),
             authorization: Optional[str] = Header(None)) -> str:
-    """Auth BYO optionnelle (X-API-Key ou Bearer). Mode ouvert si `API_KEYS` vide."""
+    """Auth BYO optionnelle (X-API-Key ou Bearer). Mode ouvert si `CONNEXION_API_KEYS` (ou, à
+    défaut, `API_KEYS`) est vide."""
     presentee = x_api_key or (authorization or "").removeprefix("Bearer ").strip() or None
     if not API_KEYS:
         return presentee or "public"
@@ -59,7 +71,7 @@ def cle_api_fermee(cle: str = Depends(cle_api)) -> str:
     routes dont l'ouverture permettrait de s'octroyer un pouvoir (approbateur) ou de faire
     écrire le bot aux approbateurs avec un texte arbitraire (S245)."""
     if not API_KEYS:
-        raise HTTPException(403, "Route désactivée : configure API_KEYS.")
+        raise HTTPException(403, "Route désactivée : configure CONNEXION_API_KEYS.")
     return cle
 
 

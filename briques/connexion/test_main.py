@@ -453,3 +453,22 @@ def test_notifier_exige_l_utilisateur(tg):
     corps = _notif()
     corps.pop("utilisateur")
     assert client.post("/approbation/notifier", json=corps, headers=_H).status_code == 422
+
+
+def test_cles_api_priorite_a_connexion_api_keys(monkeypatch):
+    monkeypatch.setenv("CONNEXION_API_KEYS", "c1, c2")
+    monkeypatch.setenv("API_KEYS", "autre")
+    assert main._lire_cles_api() == {"c1", "c2"}
+
+
+def test_cles_api_repli_sur_api_keys_si_variable_absente(monkeypatch):
+    monkeypatch.delenv("CONNEXION_API_KEYS", raising=False)
+    monkeypatch.setenv("API_KEYS", "k9")
+    assert main._lire_cles_api() == {"k9"}
+
+
+def test_cles_api_variable_presente_mais_vide_ne_replie_pas(monkeypatch):
+    """Q2 = A : présente-vide = mode ouvert, on n'hérite PAS d'API_KEYS."""
+    monkeypatch.setenv("CONNEXION_API_KEYS", "")
+    monkeypatch.setenv("API_KEYS", "k9")
+    assert main._lire_cles_api() == set()
