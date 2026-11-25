@@ -1,0 +1,27 @@
+# S247 — Spike Dokploy v0.31.4 (2026-11-25/26, VM 100)
+
+Méthode : clés lues dans `~/.workplace-secrets/` (jamais recopiées ici), objets jetables créés puis **tous supprimés** (vérifié : projet `temoin` = `calendrier-familial` seul, 0 destination, 0 service Postgres, règles ufw et conteneurs jetables retirés).
+Écart au plan : aucune clé n'a été créée sur le SeaweedFS de **production** d'Oria (identité administrateur unique, `-s3.iam=false` : ajouter des clés propres à un bucket obligerait à changer sa configuration). La mécanique a été prouvée sur un **SeaweedFS jetable de la même image** (`chrislusf/seaweedfs:4.48@sha256:4e61…`) lancé sur la VM 100 ; l'accès réseau VM 100 → HP:9106 a été prouvé séparément (TCP joignable).
+
+## Verdicts
+
+| # | Question | Verdict |
+|---|---|---|
+| 1 | Sauvegarde d'une base vers un S3 SeaweedFS | **OUI.** `destination.create` (provider `Other`, endpoint `http://<hôte>:8333`, région `us-east-1`) + `destination.testConnection` = 200 ; `backup.create` + `backup.manualBackupPostgres` en 0,5 s ; `backup.listBackupFilesByBackupId` liste le fichier ; l'objet est visible dans le bucket (`<appName>/<prefix>/<horodatage>.sql.gz`). Il a fallu autoriser le port S3 dans ufw pour `172.16.0.0/12` (comme pour Forgejo). Format : `pg_dump -Fc` gzippé (restaurer avec `pg_restore`, pas `psql`). |
+| 2 | Volumes de fichiers | **OUI.** `volumeBackups.create|list|runManually|update|delete` : archive `.tar` du volume (66 Mo en 6 s) dans le même bucket. Option `turnOff` (arrête le service pendant la copie) : sans elle, la copie d'un volume de base vivante n'est pas cohérente — à utiliser pour les volumes, jamais comme sauvegarde principale d'une base. |
+| 3 | Restauration jetable | **Réalisable, mais PAS par l'API.** Aucune route de restauration dans les 659 routes (seulement `backup.getDownloadUrl`) : la restauration native est réservée à l'interface web. Restauration manuelle prouvée (télécharger l'objet, `pg_restore` dans une base jetable) : 0 erreur, 42 lignes = 42 lignes. **Conséquence** : la brique `livraison` (qui n'a que la clé API Dokploy et pas le socket Docker) ne peut pas restaurer seule. Il faut un exécuteur côté VM 100 (script/timer Ansible) que la brique déclenche sans y avoir d'accès shell — décision de conception pour la partie 2. |
+| 4 | Bleu/vert | **OUI, par clone + domaines.** `project.duplicate` avec `duplicateInSameProject:true` et `selectedServices:[{id,type:"application"}]` crée `<nom> (copy)` dans le même projet (même source Forgejo, variables copiées, **sans données**). `application.deploy` → `done`. `domain.create` (`host`, `port` = port exposé de l'app, `https:false`, `certificateType:"none"`) puis `domain.update` : Traefik est réécrit **instantanément** (0,1 s), sans redéploiement ; échanger les `host` des deux domaines = bascule, les rééchanger = retour arrière. Reste à concevoir : le vert doit pointer sur des **données restaurées**, pas sur celles de la bleue ; et chaque redéploiement du spike a publié de nouvelles versions `vN` dans le registre Forgejo (images de rollback). |
+| 5 | État réel du service (durcir `/etat`) | **NON avec la clé limitée.** `docker.getContainersByAppNameMatch` est accessible (nom du conteneur, `state`, `status`) mais **sans l'image** ; `docker.getConfig` (qui donne `Config.Image`) répond 401 à la clé limitée et, avec la clé owner, renverrait aussi `Config.Env` (secrets). `application.one` ne porte pas l'image en service (`dockerImage` null). **Décision à prendre** (voir « Décisions ») : le durcissement voulu ne peut pas se faire sans élargir les droits. |
+| 6 | Sauvegarde de Forgejo | **Facile.** `forgejo dump` (user `git`, dans le conteneur) : 94 Mo, 0,3 s, tout (dépôts, base, config) en un zip. Envoi vers S3 : `curl --aws-sigv4` suffit (pas d'AWS CLI nécessaire) ; la VM 100 atteint HP:9106. Disque VM 100 : 50 Go libres sur 59. |
+
+## Autres constats
+- Le 404 vu en testant le routage venait de l'application (uvicorn, route `/` inexistante), pas de Traefik : un hôte inconnu renvoie le 404 texte de Traefik.
+- `project.all` ne liste pour un service Postgres que `name` et `postgresId` ; `appName` s'obtient par `postgres.one`.
+- Les routes `destination.*`, `backup.*`, `volumeBackups.*`, `project.duplicate`, `domain.*` exigent des droits que la clé **limitée** du bot n'a pas forcément (non testé ici : le spike a utilisé la clé owner). À tester avant d'écrire la partie 2, sinon la brique aura besoin d'une clé plus large pour sauvegarder/basculer.
+
+## Décisions à prendre pour la partie 2
+1. **Restauration** : un exécuteur côté VM 100 (rôle Ansible + petit service) déclenché par la brique, ou restauration réalisée par la brique via une clé SSH à commande forcée ? (moindre privilège → exécuteur dédié recommandé).
+2. **`/etat` durci** : abandonner l'idée (garder le repère mémorisé, qui marche et est testé), ou accorder à la brique un accès lecture à l'image en service (nouvel utilisateur/clé plus large) ?
+3. **Droits de la clé** de la brique pour `destination/backup/volumeBackups/domain/project.duplicate` : à vérifier ; sinon créer une clé dédiée à S247 limitée au projet `temoin`.
+4. **Sauvegarde de Forgejo** : `forgejo dump` + envoi S3 (recommandé, 0 dépendance) plutôt que GoBackup (backup seulement, pas de restauration ni de vérification).
+5. **Vrai SeaweedFS du HP** : prévoir une identité S3 dédiée (fichier d'identités) ou accepter d'utiliser l'identité administrateur d'Oria — à décider ; non fait ici volontairement.
