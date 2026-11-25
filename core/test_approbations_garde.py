@@ -259,12 +259,43 @@ def test_resume_args_ordinaires_inchanges():
     assert outils._resume_action("app_reset", {"app": "crm"}) == "app_reset(app='crm')"
 
 
+def test_resume_expurge_recursivement_dict_liste_query_bearer():
+    r = outils._resume_action("x", {
+        "opts": {"password": "hunter2"},
+        "h": {"Authorization": "Bearer abc"},
+        "l": ["postgres://u:pw@h/d"],
+        "u": "https://h/?token=abc123&page=2",
+        "txt": "envoie Authorization: Bearer xyz789 ici",
+        "imbr": [{"api_key": "kkk111", "n": 1}],
+        "cles": {1: "ok", ("a", "b"): "x"},
+    })
+    for secret in ("hunter2", "Bearer abc", "u:pw@", "abc123", "xyz789", "kkk111"):
+        assert secret not in r, secret
+    assert "Bearer ***" in r and "page=2" in r and "'n': 1" in r
+
+
+def test_resume_profondeur_bornee():
+    prof = {}
+    cur = prof
+    for _ in range(20):
+        cur["a"] = {}
+        cur = cur["a"]
+    cur["password"] = "deepsecret"
+    r = outils._resume_action("x", {"p": prof})
+    assert "deepsecret" not in r
+
+
+def test_resume_args_ordinaires_imbriques_inchanges():
+    assert outils._resume_action("x", {"app": "crm", "opts": {"replicas": 2}}) == \
+        "x(app='crm', opts={'replicas': 2})"
+
+
 def test_secrets_differents_empreintes_differentes_resume_masque(_env):
     _run("app_redemarrer", {"app": "crm", "password": "secret-un"})
     _run("app_redemarrer", {"app": "crm", "password": "secret-deux"})
     assert len(_env["notifs"]) == 2                     # deux demandes distinctes
     d1, d2 = (approbations.lire(i) for i in _env["notifs"])
-    assert d1["empreinte"] != d2["empreinte"] if "empreinte" in d1 else True
+    assert d1["empreinte"] != d2["empreinte"]
     for d in (d1, d2):
         assert "secret-un" not in d["resume"] and "secret-deux" not in d["resume"]
     approbations.approuver(_env["notifs"][0], "tg:42", "telegram")

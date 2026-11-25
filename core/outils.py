@@ -590,19 +590,50 @@ def est_sensible(nom: str, registre) -> str | None:
 # L'empreinte qui lie l'approbation est calculée ailleurs, sur les VRAIS arguments : cette
 # expurgation ne change que l'affichage.
 _CLES_SECRETES = ("pass", "pwd", "secret", "token", "key", "auth", "credential", "dsn",
-                  "cookie", "bearer", "apikey")
+                  "cookie", "bearer")
 _RE_URL_IDENTIFIANTS = re.compile(r"(\w[\w+.\-]*://[^\s:/@]+:)[^\s@/]+(@)")
 _RE_JETON_OPAQUE = re.compile(r"[A-Za-z0-9_\-]{32,}")
+_RE_QUERY_SECRET = re.compile(
+    r"([?&](?:token|key|password|passwd|pwd|secret|sig|signature|auth|apikey|api_key|"
+    r"access_token)=)[^&\s#'\"]+", re.IGNORECASE)
+_RE_BEARER = re.compile(r"(\bBearer\s+)[^\s'\",;]+", re.IGNORECASE)
 _VALEUR_MAX = 80
+_PROFONDEUR_MAX = 5
+
+
+def _cle_secrete(cle) -> bool:
+    return any(m in str(cle).lower() for m in _CLES_SECRETES)
+
+
+def _expurger_texte(texte: str) -> str:
+    texte = _RE_URL_IDENTIFIANTS.sub(r"\1***\2", texte)
+    texte = _RE_QUERY_SECRET.sub(r"\1***", texte)
+    texte = _RE_BEARER.sub(r"\1***", texte)
+    return _RE_JETON_OPAQUE.sub("***", texte)
+
+
+def _expurger(valeur, profondeur: int = 0):
+    """Copie de `valeur` sans secret, récursivement (affichage seulement, jamais l'empreinte)."""
+    if isinstance(valeur, str):
+        return _expurger_texte(valeur)
+    if isinstance(valeur, (dict, list, tuple, set, frozenset)) and profondeur >= _PROFONDEUR_MAX:
+        return "…"
+    if isinstance(valeur, dict):
+        return {k: ("***" if _cle_secrete(k) else _expurger(v, profondeur + 1))
+                for k, v in valeur.items()}
+    if isinstance(valeur, (list, set, frozenset)):
+        return [_expurger(v, profondeur + 1) for v in valeur]
+    if isinstance(valeur, tuple):
+        return tuple(_expurger(v, profondeur + 1) for v in valeur)
+    if valeur is None or isinstance(valeur, (bool, int, float)):
+        return valeur
+    return _expurger_texte(repr(valeur))
 
 
 def _valeur_affichable(cle: str, valeur) -> str:
-    if any(m in str(cle).lower() for m in _CLES_SECRETES):
+    if _cle_secrete(cle):
         return "'***'"
-    if isinstance(valeur, str):
-        valeur = _RE_URL_IDENTIFIANTS.sub(r"\1***\2", valeur)
-        valeur = _RE_JETON_OPAQUE.sub("***", valeur)
-    texte = repr(valeur)
+    texte = repr(_expurger(valeur))
     return texte if len(texte) <= _VALEUR_MAX else texte[:_VALEUR_MAX - 1] + "…"
 
 
