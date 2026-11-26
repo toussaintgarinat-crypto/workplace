@@ -204,3 +204,40 @@ def test_lecture_corps_invalide_reste_une_erreur():
                 transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"")))
     with pytest.raises(DokployErreur):
         run(c.apps())
+
+
+def _etat_sauvegarde():
+    e = etat()
+    e["fichiers"] = {"B1": [{"Name": "vieux.sql.gz", "Size": 10, "ModTime":
+                             "2026-11-25T10:00:00.000000000Z", "IsDir": False}]}
+    return e
+
+
+def test_sauvegarder_base_appelle_la_route_et_ne_renvoie_que_ok():
+    e = _etat_sauvegarde()
+    r = run(cli(e).sauvegarder_base("B1"))
+    assert r == {"ok": True, "backup_id": "B1"}
+    a = [x for x in e["appels"] if x["chemin"] == "/api/backup.manualBackupPostgres"][0]
+    assert a["methode"] == "POST" and a["corps"] == {"backupId": "B1"}
+
+
+def test_fichiers_sauvegarde_liste_blanche_plus_recent_d_abord_sans_dossiers():
+    e = _etat_sauvegarde()
+    e["fichiers"]["B1"] += [{"Name": "dossier", "IsDir": True, "ModTime": "2026-11-27T00:00:00Z"},
+                            {"Name": "recent.sql.gz", "Size": 20, "Path": "SECRET",
+                             "ModTime": "2026-11-26T10:00:00.000000000Z", "IsDir": False}]
+    r = run(cli(e).fichiers_sauvegarde("B1"))
+    assert [f["nom"] for f in r] == ["recent.sql.gz", "vieux.sql.gz"]
+    assert set(r[0]) == {"nom", "taille", "date"} and "SECRET" not in str(r)
+
+
+def test_fichiers_sauvegarde_inconnue_404():
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(_etat_sauvegarde()).fichiers_sauvegarde("ZZ"))
+    assert ex.value.statut == 404
+
+
+def test_sauvegarder_volume_corps_vide_est_un_succes():
+    e = _etat_sauvegarde()
+    assert run(cli(e).sauvegarder_volume("V1")) == {"ok": True, "volume_backup_id": "V1"}
+    assert e["volumes_lances"] == ["V1"]

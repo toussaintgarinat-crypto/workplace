@@ -6,6 +6,7 @@ Formes relevées sur le vrai Dokploy : `project.all` ne liste que
 `start/stop/reload/redeploy` renvoient l'objet application entier (avec `refreshToken`).
 """
 import json
+from datetime import datetime, timezone
 
 import httpx
 
@@ -53,6 +54,23 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
         if chemin == "/api/deployment.readLogs":
             did = req.url.params.get("deploymentId")
             return rep(200, etat.get("logs", {}).get(did, "ligne de log\n"))
+        if chemin == "/api/backup.manualBackupPostgres":
+            fichiers = etat.get("fichiers", {}).get((corps or {}).get("backupId"))
+            if fichiers is None:
+                return rep(404, {"message": "NOT_FOUND"})
+            if etat.get("echec_sauvegarde"):
+                return rep(500, {"message": "boom"})
+            if not etat.get("sauvegarde_sans_fichier"):
+                maintenant = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000000Z")
+                fichiers.append({"Name": f"{maintenant}.sql.gz", "Size": 1113, "Path": "SECRET",
+                                 "ModTime": maintenant, "IsDir": False})
+            return rep(200, True)
+        if chemin == "/api/backup.listBackupFilesByBackupId":
+            fichiers = etat.get("fichiers", {}).get(req.url.params.get("backupId"))
+            return rep(200, fichiers) if fichiers is not None else rep(404, {"message": "NOT_FOUND"})
+        if chemin == "/api/volumeBackups.runManually":
+            etat.setdefault("volumes_lances", []).append((corps or {}).get("volumeBackupId"))
+            return httpx.Response(200, content=b"")   # réel : corps vide
         return rep(404, {"message": "NOT_FOUND"})
 
     return httpx.MockTransport(handler)

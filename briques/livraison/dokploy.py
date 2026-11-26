@@ -130,3 +130,22 @@ class Dokploy:
     async def rollback(self, rollback_id: str) -> dict:
         await self._requete("POST", "/api/rollback.rollback", json={"rollbackId": rollback_id})
         return {"ok": True, "rollback_id": rollback_id}
+
+    async def sauvegarder_base(self, backup_id: str) -> dict:
+        await self._requete("POST", "/api/backup.manualBackupPostgres",
+                            json={"backupId": backup_id})
+        return {"ok": True, "backup_id": backup_id}
+
+    async def fichiers_sauvegarde(self, backup_id: str) -> list[dict]:
+        r = await self._requete("GET", "/api/backup.listBackupFilesByBackupId",
+                                params={"backupId": backup_id})
+        if not isinstance(r, list):
+            raise DokployErreur("Réponse de Dokploy inattendue (fichiers de sauvegarde).")
+        fichiers = [{"nom": f.get("Name"), "taille": f.get("Size"), "date": f.get("ModTime")}
+                    for f in r if isinstance(f, dict) and not f.get("IsDir") and f.get("Name")]
+        return sorted(fichiers, key=lambda f: f["date"] or "", reverse=True)
+
+    async def sauvegarder_volume(self, volume_backup_id: str) -> dict:
+        await self._requete("POST", "/api/volumeBackups.runManually",
+                            json={"volumeBackupId": volume_backup_id})
+        return {"ok": True, "volume_backup_id": volume_backup_id}
