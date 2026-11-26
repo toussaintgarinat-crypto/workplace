@@ -204,3 +204,12 @@ def test_verifier_multi_base_une_en_echec_une_ok(e):
     r = run(sauvegarde.verifier(_dok(e), ex, {"bases": [BASE, autre], "volumes": []}, "A1"))
     assert r["verdict"] == "invalide" and len(r["raisons"]) == 1 and r["raisons"][0].startswith("autre :")
     assert "temoin" in r["comptages"]
+
+
+def test_sauvegarde_et_verification_suivent_la_base_active(e):
+    import operations
+    operations.enregistrer_emplacements("calendrier", {"app_id": "A1", "domaine_id": "D"},
+                                        {"app_id": "B1", "domaine_id": "E"}, "B",
+                                        "temoin_v0a1b2c3d")
+    assert main._entree_inventaire("calendrier")["bases"][0]["base"] == "temoin_v0a1b2c3d"
+    assert inventaire.lire("calendrier")["bases"][0]["base"] == "temoin"

@@ -77,6 +77,10 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             return rep(401, {"message": "Unauthorized"})
         if etat.get("limite"):
             return rep(429, {"message": "Rate limit exceeded"})
+        # Panne injectée : `pannes[chemin]` = liste consommée appel par appel (True -> 500).
+        pannes = (etat.get("pannes") or {}).get(chemin)
+        if pannes and pannes.pop(0):
+            return rep(500, {"message": "panne injectée"})
         apps = etat["apps"]
         if chemin == "/api/project.all":
             liste = [{"applicationId": a["applicationId"], "name": a["name"],
@@ -94,6 +98,8 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
                 if a["_lectures_deploy"] >= 2:
                     a["_lectures_deploy"] = None
                     a["applicationStatus"] = "error" if etat.get("deploy_echoue") else "done"
+                    if a.get("deployments"):
+                        a["deployments"][-1]["status"] = a["applicationStatus"]
             return rep(200, _gras(a, etat))
         if chemin in ("/api/project.duplicate", "/api/application.delete"):
             return rep(401, {"message": "unauthorized to access resource"})
@@ -120,6 +126,12 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
                 return rep(404, {"message": "NOT_FOUND"})
             a["applicationStatus"] = "running"
             a["_lectures_deploy"] = 0
+            # Comme le réel : chaque déploiement laisse une trace (du plus ancien au plus récent).
+            n = etat["compteur_deploiements"] = etat.get("compteur_deploiements", 0) + 1
+            quand = f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%S}.{n:06d}Z"
+            a.setdefault("deployments", []).append(
+                {"deploymentId": f"DEP{n}", "title": "deploy", "status": "running",
+                 "createdAt": quand, "finishedAt": None, "rollbackId": None})
             return httpx.Response(200, content=b"")
         if chemin == "/api/domain.create":
             if corps["applicationId"] not in apps:

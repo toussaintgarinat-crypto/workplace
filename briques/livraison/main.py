@@ -64,6 +64,8 @@ import repere_rollback  # noqa: E402
 import preuve  # noqa: E402
 import inventaire  # noqa: E402
 import sauvegarde  # noqa: E402
+import operations  # noqa: E402
+import reset  # noqa: E402
 from client_executeur import Executeur  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
@@ -289,10 +291,15 @@ def executeur() -> Executeur:
 
 
 def _entree_inventaire(nom_app: str) -> dict:
+    """Après un reset bleu/vert, la sauvegarde et sa vérification suivent la base ACTIVE."""
     e = inventaire.lire(nom_app)
     if not e:
         raise HTTPException(404, "aucun inventaire de sauvegarde valide pour cette application")
-    return e
+    try:
+        etat = operations.lire(nom_app)
+    except OSError:
+        raise HTTPException(503, "état des opérations illisible : base active inconnue") from None
+    return reset.base_effective(e, etat)
 
 
 @app.post("/apps/{app_}/sauvegarder")
