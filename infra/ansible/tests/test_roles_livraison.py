@@ -71,7 +71,7 @@ def test_executeur_unit_confinee_par_systemd():
     for d in ("NoNewPrivileges=true", "ProtectHome=true", "PrivateTmp=true",
               "ProtectKernelTunables=true", "ProtectControlGroups=true",
               "RestrictNamespaces=true", "LockPersonality=true",
-              "RestrictAddressFamilies=AF_INET AF_UNIX", "MemoryMax=1G", "TasksMax=64",
+              "RestrictAddressFamilies=AF_INET AF_UNIX", "MemoryMax=2G", "TasksMax=64",
               "ProtectSystem=strict", "CapabilityBoundingSet=\n"):
         assert d in t, d
     unit = (BASE / "roles/executeur_restauration/templates/executeur-restauration.service.j2").read_text()

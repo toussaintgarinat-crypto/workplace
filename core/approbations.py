@@ -481,17 +481,12 @@ def _prerequis_tenus(c, r, args: dict, now: float) -> bool:
         return True
     changes = False
     for nom, v in p.items():
-        # La PREUVE fait foi, pas le drapeau : une preuve disparue ou expirée rebaisse le drapeau ;
-        # une preuve valide (ex. nouvelle vérification après l'approbation) le relève, sinon une
-        # approbation `approuvee` resterait bloquée jusqu'à son expiration.
-        tenu = _preuve_valide_c(c, nom, (args or {}).get("app"), r["utilisateur"], now)
-        if tenu != bool(v):
-            p[nom] = tenu
+        if v and not _preuve_valide_c(c, nom, (args or {}).get("app"), r["utilisateur"], now):
+            p[nom] = False
             changes = True
     if changes:
         c.execute("UPDATE approbations SET prerequis=? WHERE id=?", (json.dumps(p), r["id"]))
-        _journaliser(c, r["id"], "prerequis_perdu" if not all(p.values()) else "prerequis_retabli",
-                     maintenant=now)
+        _journaliser(c, r["id"], "prerequis_perdu", maintenant=now)
     return all(p.values())
 
 

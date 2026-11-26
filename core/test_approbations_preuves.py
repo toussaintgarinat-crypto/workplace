@@ -218,10 +218,11 @@ def test_creer_lit_la_preuve_dans_la_meme_connexion(monkeypatch):
     assert len(appels) == 2  # 1 pour creer (lecture + insert), 1 pour lire()
 
 
-def test_consommer_id_sans_preuve_ne_brule_pas_l_approbation_et_reste_reutilisable_apres_reverification():
+def test_consommer_id_sans_preuve_ne_brule_pas_l_approbation_mais_ne_ressuscite_pas():
     """(a) La preuve est contrôlée AVANT la consommation : sans preuve, l'approbation reste
-    `approuvee` ; une nouvelle vérification réussie la rend de nouveau consommable (jamais
-    d'exécution sans preuve, jamais d'approbation brûlée pour rien)."""
+    `approuvee` (pas brûlée) mais ne s'exécute pas ; DÉCISION : une nouvelle vérification
+    ultérieure NE la ressuscite PAS (le consentement a été donné sous une preuve qui a disparu :
+    il faut une nouvelle approbation explicite)."""
     a = _approuvee(100)
     args = {"app": "calendrier"}
     assert approbations.consommer_id(a["id"], "livraison_reset_app", args, "donnees", "perso",
@@ -233,7 +234,7 @@ def test_consommer_id_sans_preuve_ne_brule_pas_l_approbation_et_reste_reutilisab
     approbations.enregistrer_preuve("preuve_sauvegarde", ["calendrier"], "P2", T0 + 3600,
                                     utilisateur="perso", maintenant=T0 + 103)
     assert approbations.consommer_id(a["id"], "livraison_reset_app", args, "donnees", "perso",
-                                     maintenant=T0 + 104) is True
+                                     maintenant=T0 + 104) is False
 
 
 def test_consommer_sans_preuve_ne_brule_pas_l_approbation():
