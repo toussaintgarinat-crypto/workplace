@@ -40,7 +40,7 @@ class FauxRunner:
             if "pg_restore" in argv:
                 return self.pg_restore, b"", b""
             sql, base = argv[-1], argv[argv.index("-d") + 1]
-            if "create database" in sql or "drop database" in sql:
+            if re.match(r"(create|drop) (database|role)", sql) or "drop database" in sql:
                 return 0, b"", b""
             tables = self.restaure if base.startswith("restore_") else self.origine
             if "information_schema" in sql:
@@ -64,6 +64,34 @@ def test_nominal_valide_et_base_jetable_supprimee():
     assert out["comptages_origine"] == out["comptages_restaures"] == {"evenements": 42}
     assert len(_sql(r, "create database restore_")) == 1
     assert len(_sql(r, "drop database if exists restore_")) == 1
+
+
+def test_restauration_et_relecture_par_un_role_jetable_sans_privilege():
+    r = FauxRunner()
+    executeur.verifier(r, CFG, dict(CORPS))
+    cree = _sql(r, "create role restore_")
+    assert len(cree) == 1
+    for mot in ("nosuperuser", "nocreatedb", "nocreaterole", "noreplication", "nobypassrls"):
+        assert mot in cree[0][-1]
+    role = re.search(r"create role (restore_\w+)", cree[0][-1]).group(1)
+    assert len(_sql(r, f"create database {role} owner {role}")) == 1
+    pgr = [a for a in r.commandes() if "pg_restore" in a][0]
+    assert pgr[pgr.index("-U") + 1] == role and "--no-privileges" in pgr and "--no-owner" in pgr
+    # jamais d'accès à la base jetable avec le compte privilégié de l'application
+    for a in r.commandes():
+        if a[:2] == ["docker", "exec"] and "-d" in a and a[a.index("-d") + 1] == role:
+            assert a[a.index("-U") + 1] == role
+    assert len(_sql(r, f"drop role if exists {role}")) == 1
+
+
+def test_echec_de_suppression_du_role_est_signale():
+    class R(FauxRunner):
+        def run(self, argv, stdin=None, timeout=300):
+            if argv[:2] == ["docker", "exec"] and argv[-1].startswith("drop role"):
+                return 1, b"", b""
+            return super().run(argv, stdin, timeout)
+    out = executeur.verifier(R(), CFG, dict(CORPS))
+    assert out["verdict"] == "valide" and out["nettoyage"] == "echec"
 
 
 def test_comptages_differents_invalide_et_base_supprimee():

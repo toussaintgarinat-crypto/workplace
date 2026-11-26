@@ -144,27 +144,35 @@ def verifier(runner, cfg: dict, corps) -> dict:
     if not origine:
         return _resultat("invalide", "aucune table dans la base d'origine : rien à prouver",
                          origine, {}, debut)
+    # Le contenu de la sauvegarde n'est pas digne de confiance : il est restauré et relu avec un
+    # rôle jetable SANS privilège (ni superutilisateur, ni création de rôle/base), propriétaire
+    # de la seule base jetable. Le superutilisateur ne sert qu'à créer/supprimer ces deux objets.
     jetable = "restore_" + secrets.token_hex(4)
     restaure: dict = {}
     nettoyage = "ok"
     verdict, raison = "valide", None
     try:
-        _psql(runner, cid, utilisateur, "postgres", f"create database {jetable}")
-        code, _, _ = runner.run(["docker", "exec", "-i", cid, "pg_restore", "-U", utilisateur,
-                                 "-d", jetable, "--no-owner"], stdin=donnees, timeout=900)
+        _psql(runner, cid, utilisateur, "postgres",
+              f"create role {jetable} login nosuperuser nocreatedb nocreaterole noinherit "
+              f"noreplication nobypassrls connection limit 4")
+        _psql(runner, cid, utilisateur, "postgres", f"create database {jetable} owner {jetable}")
+        code, _, _ = runner.run(["docker", "exec", "-i", cid, "pg_restore", "-U", jetable,
+                                 "-d", jetable, "--no-owner", "--no-privileges"],
+                                stdin=donnees, timeout=900)
         if code != 0:
             verdict, raison = "invalide", "pg_restore a échoué"
         else:
-            restaure = comptages(runner, cid, utilisateur, jetable)
+            restaure = comptages(runner, cid, jetable, jetable)
             if restaure != origine:
                 verdict = "invalide"
                 raison = "comptages différents entre l'original et la copie restaurée"
     finally:
-        try:
-            _psql(runner, cid, utilisateur, "postgres",
-                  f"drop database if exists {jetable} with (force)")
-        except ErreurExecuteur:
-            nettoyage = "echec"
+        for sql in (f"drop database if exists {jetable} with (force)",
+                    f"drop role if exists {jetable}"):
+            try:
+                _psql(runner, cid, utilisateur, "postgres", sql)
+            except ErreurExecuteur:
+                nettoyage = "echec"
     return _resultat(verdict, raison, origine, restaure, debut, nettoyage)
 
 
