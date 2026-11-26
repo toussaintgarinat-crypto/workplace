@@ -48,6 +48,9 @@ from dokploy import Dokploy, DokployErreur  # noqa: E402
 from masque import masquer  # noqa: E402
 import repere_rollback  # noqa: E402
 import preuve  # noqa: E402
+import inventaire  # noqa: E402
+import sauvegarde  # noqa: E402
+from client_executeur import Executeur  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
 LOGS_MAX = 20000
@@ -261,3 +264,41 @@ def exiger_preuve(app_id: str) -> dict:
         raise HTTPException(409, "aucune preuve de sauvegarde valide pour cette application : "
                                  "lance d'abord la vérification de sauvegarde")
     return r
+
+
+def executeur() -> Executeur:
+    url, cle = os.getenv("EXECUTEUR_URL"), os.getenv("EXECUTEUR_KEY")
+    if not url or not cle:
+        raise HTTPException(503, "Exécuteur de restauration non configuré "
+                                 "(EXECUTEUR_URL / EXECUTEUR_KEY).")
+    return Executeur(url, cle)
+
+
+def _entree_inventaire(nom_app: str) -> dict:
+    e = inventaire.lire(nom_app)
+    if not e:
+        raise HTTPException(404, "aucun inventaire de sauvegarde valide pour cette application")
+    return e
+
+
+@app.post("/apps/{app_}/sauvegarder")
+async def sauvegarder_app(app_: str, _: str = Depends(cle_api_fermee)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+        r = await sauvegarde.sauvegarder(d, _entree_inventaire(a["nom"]))
+    except DokployErreur as e:
+        raise _erreur(e)
+    return {"ok": True, "app": a["nom"], **r}
+
+
+@app.post("/apps/{app_}/sauvegardes/verifier")
+async def verifier_sauvegarde(app_: str, _: str = Depends(cle_api_fermee)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+    except DokployErreur as e:
+        raise _erreur(e)
+    entree = _entree_inventaire(a["nom"])   # avant executeur() : un 404 prime sur un 503
+    r = await sauvegarde.verifier(d, executeur(), entree, a["id"])
+    return {"app": a["nom"], "app_id": a["id"], **r}

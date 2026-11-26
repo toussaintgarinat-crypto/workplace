@@ -452,9 +452,9 @@ def test_logs_non_coupes_intacts(e):
     assert c.get("/apps/A1/logs").json()["logs"] == "un\ndeux\n"
 
 
-def test_manifeste_relayer_erreurs_sur_les_6_capacites():
+def test_manifeste_relayer_erreurs_sur_les_8_capacites():
     m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
-    assert len(m["capacites"]) == 6
+    assert len(m["capacites"]) == 8
     assert all(x.get("relayer_erreurs") is True for x in m["capacites"])
 
 

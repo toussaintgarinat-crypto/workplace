@@ -111,6 +111,38 @@
       "action": true,
       "sensibilite": "reversible",
       "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_sauvegarder",
+      "description": "Lance une sauvegarde de l'application (bases et volumes déclarés à l'inventaire) vers le stockage S3. Aucun effet sur la production. À utiliser quand l'utilisateur demande de sauvegarder / mettre de côté les données. Pour PROUVER que la sauvegarde est restaurable, utiliser livraison_verifier_sauvegarde. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/sauvegarder",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom ou id de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": true,
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_verifier_sauvegarde",
+      "description": "PROUVE que la sauvegarde d'une application est restaurable : fait une sauvegarde fraîche, la restaure dans une base jetable et compare les comptages de chaque table avec l'original. Renvoie un verdict valide/invalide. Une action destructrice sur les données (remise à zéro) ne pourra être approuvée sur Telegram qu'après un verdict VALIDE sur la MÊME application : réutilise exactement le nom d'application donné par livraison_apps. N'affecte pas la production.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/sauvegardes/verifier",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application (voir livraison_apps), identique à celui de l'action à approuver.",
+          "requis": true
+        }
+      },
+      "action": false,
+      "fournit_preuve": "preuve_sauvegarde",
+      "relayer_erreurs": true
     }
   ],
   "taches": []
