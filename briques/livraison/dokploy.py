@@ -1,9 +1,17 @@
 """Client HTTP Dokploy v0.31.4 (auth `x-api-key`). Liste blanche de champs en sortie."""
-from typing import Optional
+import asyncio
+import time
+from typing import Callable, Optional
 
 import httpx
 
 TAIL_MAX = 10000
+CHAMPS_APP_COMPLETE = ("applicationId", "name", "appName", "applicationStatus", "sourceType",
+                       "customGitUrl", "customGitBranch", "customGitBuildPath", "buildType",
+                       "dockerfile", "dockerContextPath", "env")
+CHAMPS_DOMAINE = ("domainId", "host", "port", "path", "https")
+CHAMPS_SAUVEGARDE = ("schedule", "prefix", "enabled", "destinationId", "keepLatestCount",
+                     "databaseType", "backupType")
 DELAI_LECTURE = 20.0
 DELAI_MUTATION = 60.0
 MESSAGE_DELAI_MUTATION = ("Délai dépassé : l'action a peut-être été exécutée — vérifie avec "
@@ -149,3 +157,95 @@ class Dokploy:
         await self._requete("POST", "/api/volumeBackups.runManually",
                             json={"volumeBackupId": volume_backup_id})
         return {"ok": True, "volume_backup_id": volume_backup_id}
+
+    # ------------------------------------------------------------------
+    # S247 2b : créer, configurer, déployer, domaines, rebasculer la sauvegarde
+    # (formes de corps validées sur le vrai Dokploy 0.31.4, clé limitée au projet témoin)
+    # ------------------------------------------------------------------
+
+    async def environnement_id(self) -> str:
+        """Premier environnement du premier projet (la clé est limitée à un projet)."""
+        projets = await self._requete("GET", "/api/project.all")
+        for p in projets if isinstance(projets, list) else []:
+            for e in p.get("environments") or []:
+                if e.get("environmentId"):
+                    return e["environmentId"]
+        raise DokployErreur("Aucun environnement Dokploy accessible avec cette clé.")
+
+    async def app_complete(self, id_: str) -> dict:
+        """`application.one` filtré sur liste blanche. `env` y figure (l'orchestrateur doit
+        le relire pour réécrire UNE variable) : il ne sort jamais de la brique ni dans un log
+        ou un message d'erreur (les erreurs de `_requete` ne relaient jamais de corps)."""
+        a = await self._requete("GET", "/api/application.one", params={"applicationId": id_})
+        if not isinstance(a, dict):
+            raise DokployErreur("Réponse de Dokploy inattendue.")
+        sortie = {k: a.get(k) for k in CHAMPS_APP_COMPLETE}
+        sortie["domains"] = [{k: d.get(k) for k in CHAMPS_DOMAINE}
+                             for d in (a.get("domains") or []) if isinstance(d, dict)]
+        return sortie
+
+    async def creer_app(self, environment_id: str, nom: str, description: str) -> dict:
+        r = await self._requete("POST", "/api/application.create",
+                                json={"name": nom, "environmentId": environment_id,
+                                      "description": description})
+        if not isinstance(r, dict) or not r.get("applicationId"):
+            raise DokployErreur("Réponse de Dokploy inattendue (création d'application).")
+        return {"id": r["applicationId"], "app_name": r.get("appName")}
+
+    async def configurer_source(self, id_: str, source: dict) -> None:
+        await self._requete("POST", "/api/application.saveGitProvider", json={
+            "applicationId": id_, "customGitUrl": source.get("customGitUrl"),
+            "customGitBranch": source.get("customGitBranch"),
+            "customGitBuildPath": source.get("customGitBuildPath"),
+            "watchPaths": [], "enableSubmodules": False})
+        await self._requete("POST", "/api/application.saveBuildType", json={
+            "applicationId": id_, "buildType": source.get("buildType"),
+            "dockerfile": source.get("dockerfile"),
+            "dockerContextPath": source.get("dockerContextPath"),
+            "dockerBuildStage": "", "herokuVersion": None, "railpackVersion": None,
+            "publishDirectory": None, "isStaticSpa": None})
+
+    async def ecrire_env(self, id_: str, env: str) -> None:
+        await self._requete("POST", "/api/application.saveEnvironment", json={
+            "applicationId": id_, "env": env, "buildArgs": "", "buildSecrets": "",
+            "createEnvFile": True})
+
+    async def creer_domaine(self, id_: str, host: str, port: int) -> str:
+        r = await self._requete("POST", "/api/domain.create", json={
+            "host": host, "path": "/", "port": port, "https": False, "applicationId": id_,
+            "certificateType": "none", "domainType": "application"})
+        if not isinstance(r, dict) or not r.get("domainId"):
+            raise DokployErreur("Réponse de Dokploy inattendue (création de domaine).")
+        return r["domainId"]
+
+    async def changer_hote(self, domain_id: str, host: str, port: int) -> None:
+        await self._requete("POST", "/api/domain.update", json={
+            "domainId": domain_id, "host": host, "path": "/", "port": port, "https": False,
+            "certificateType": "none", "domainType": "application"})
+
+    async def deployer_et_attendre(self, id_: str, titre: str, delai_s: float = 600,
+                                   pas_s: float = 5,
+                                   horloge: Callable[[], float] = time.monotonic,
+                                   dormir: Callable = asyncio.sleep) -> str:
+        # `titre` : `application.deploy` n'en prend pas (corps validé : {applicationId}).
+        await self._requete("POST", "/api/application.deploy", json={"applicationId": id_})
+        debut = horloge()
+        while horloge() - debut < delai_s:
+            statut = (await self.app_complete(id_)).get("applicationStatus")
+            if statut == "done":
+                return "done"
+            if statut == "error":
+                raise DokployErreur("Le déploiement de l'instance neuve a échoué.")
+            await dormir(pas_s)
+        raise DokployErreur("Délai dépassé : le déploiement de l'instance neuve n'est pas "
+                            "terminé (vérifie son état dans Dokploy).")
+
+    async def rebaser_sauvegarde(self, backup_id: str, base: str) -> None:
+        """Repointe la sauvegarde sur `base` : relève la config (champs obligatoires de
+        `backup.update`), recopie tout, ne change que `database`."""
+        b = await self._requete("GET", "/api/backup.one", params={"backupId": backup_id})
+        if not isinstance(b, dict):
+            raise DokployErreur("Réponse de Dokploy inattendue (sauvegarde).")
+        corps = {"backupId": backup_id, "database": base}
+        corps.update({k: b.get(k) for k in CHAMPS_SAUVEGARDE})
+        await self._requete("POST", "/api/backup.update", json=corps)

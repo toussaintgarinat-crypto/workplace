@@ -6,17 +6,25 @@ Formes relevées sur le vrai Dokploy : `project.all` ne liste que
 `start/stop/reload/redeploy` renvoient l'objet application entier (avec `refreshToken`).
 """
 import json
+from typing import Optional
 from datetime import datetime, timezone
 
 import httpx
 
 
-def _gras(app: dict) -> dict:
-    return {**app, "refreshToken": "SECRET", "env": "TOKEN=SECRET", "password": "SECRET"}
+def _gras(app: dict, etat: Optional[dict] = None) -> dict:
+    sortie = {**app, "refreshToken": "SECRET", "password": "SECRET",
+              "env": app.get("env", "TOKEN=SECRET")}
+    if etat is not None:
+        sortie["domains"] = [dict(d, refreshToken="SECRET") for d in etat["domaines"].values()
+                             if d.get("applicationId") == app["applicationId"]]
+    return sortie
 
 
 def fabrique_transport(etat: dict) -> httpx.MockTransport:
     etat.setdefault("appels", [])
+    etat.setdefault("domaines", {})
+    etat.setdefault("backups", {})
 
     def rep(code, corps):
         return httpx.Response(code, json=corps)
@@ -39,7 +47,61 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
                  "applications": liste, "postgres": [], "compose": []}]}])
         if chemin == "/api/application.one":
             a = apps.get(req.url.params.get("applicationId"))
-            return rep(200, _gras(a)) if a else rep(404, {"message": "NOT_FOUND"})
+            if not a:
+                return rep(404, {"message": "NOT_FOUND"})
+            if a.get("_lectures_deploy") is not None:
+                # `running` à la 1re lecture après `application.deploy`, final à la 2e.
+                a["_lectures_deploy"] += 1
+                if a["_lectures_deploy"] >= 2:
+                    a["_lectures_deploy"] = None
+                    a["applicationStatus"] = "error" if etat.get("deploy_echoue") else "done"
+            return rep(200, _gras(a, etat))
+        if chemin in ("/api/project.duplicate", "/api/application.delete"):
+            return rep(401, {"message": "unauthorized to access resource"})
+        if chemin == "/api/application.create":
+            n = etat["compteur"] = etat.get("compteur", 0) + 1
+            nouv = {"applicationId": f"NEW{n}", "name": corps["name"], "appName": f"{corps['name']}-n{n}",
+                    "description": corps.get("description"), "environmentId": corps["environmentId"],
+                    "applicationStatus": "idle", "env": "", "deployments": []}
+            apps[nouv["applicationId"]] = nouv
+            return rep(200, _gras(nouv))
+        if chemin in ("/api/application.saveGitProvider", "/api/application.saveBuildType",
+                      "/api/application.saveEnvironment"):
+            a = apps.get((corps or {}).get("applicationId"))
+            if not a:
+                return rep(404, {"message": "NOT_FOUND"})
+            a.update({k: v for k, v in corps.items() if k != "applicationId"})
+            a["sourceType"] = a.get("sourceType") or "git"
+            return rep(200, True)
+        if chemin == "/api/application.deploy":
+            a = apps.get((corps or {}).get("applicationId"))
+            if not a:
+                return rep(404, {"message": "NOT_FOUND"})
+            a["applicationStatus"] = "running"
+            a["_lectures_deploy"] = 0
+            return httpx.Response(200, content=b"")
+        if chemin == "/api/domain.create":
+            n = etat["compteur_domaines"] = etat.get("compteur_domaines", 0) + 1
+            d = {"domainId": f"DOM{n}", "host": corps["host"], "port": corps["port"],
+                 "path": corps.get("path"), "https": corps.get("https"),
+                 "applicationId": corps["applicationId"]}
+            etat["domaines"][d["domainId"]] = d
+            return rep(200, d)
+        if chemin == "/api/domain.update":
+            d = etat["domaines"].get(corps.get("domainId"))
+            if not d:
+                return rep(404, {"message": "NOT_FOUND"})
+            d.update(host=corps["host"], port=corps["port"])
+            return httpx.Response(200, content=b"")
+        if chemin == "/api/backup.one":
+            b = etat["backups"].get(req.url.params.get("backupId"))
+            return rep(200, b) if b else rep(404, {"message": "NOT_FOUND"})
+        if chemin == "/api/backup.update":
+            b = etat["backups"].get(corps.get("backupId"))
+            if not b:
+                return rep(404, {"message": "NOT_FOUND"})
+            b.update({k: v for k, v in corps.items() if k != "backupId"})
+            return httpx.Response(200, content=b"")
         if chemin == "/api/application.redeploy":
             # Réel (v0.31.4) : 200 avec un corps VIDE (non JSON).
             a = apps.get((corps or {}).get("applicationId"))

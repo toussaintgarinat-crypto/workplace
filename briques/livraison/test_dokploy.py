@@ -241,3 +241,198 @@ def test_sauvegarder_volume_corps_vide_est_un_succes():
     e = _etat_sauvegarde()
     assert run(cli(e).sauvegarder_volume("V1")) == {"ok": True, "volume_backup_id": "V1"}
     assert e["volumes_lances"] == ["V1"]
+
+
+# --- Task 3 (S247 2b) : créer, configurer, déployer, domaines, rebasculer la sauvegarde ---
+
+def _appels(e, chemin):
+    return [a for a in e["appels"] if a["chemin"] == chemin]
+
+
+def test_environnement_id_premier_projet_premier_environnement():
+    assert run(cli(etat()).environnement_id()) == "E1"
+
+
+def test_environnement_id_aucun_leve():
+    c = Dokploy("http://d.test", "k",
+                transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])))
+    with pytest.raises(DokployErreur):
+        run(c.environnement_id())
+
+
+def test_app_complete_liste_blanche_garde_env_sans_secrets():
+    e = etat()
+    e["apps"]["A1"].update(sourceType="git", customGitUrl="u", customGitBranch="main",
+                           customGitBuildPath="/", buildType="dockerfile", dockerfile="Dockerfile",
+                           dockerContextPath=".", env="DATABASE_URL=postgres://x")
+    e["domaines"] = {"D9": {"domainId": "D9", "host": "a.test", "port": 80, "path": "/",
+                            "https": False, "applicationId": "A1", "certificateType": "none"}}
+    r = run(cli(e).app_complete("A1"))
+    assert r["env"] == "DATABASE_URL=postgres://x"
+    assert r["domains"] == [{"domainId": "D9", "host": "a.test", "port": 80, "path": "/",
+                             "https": False}]
+    assert r["applicationStatus"] == "done" and r["appName"] == "calendrier-x"
+    assert set(r) == {"applicationId", "name", "appName", "applicationStatus", "sourceType",
+                      "customGitUrl", "customGitBranch", "customGitBuildPath", "buildType",
+                      "dockerfile", "dockerContextPath", "env", "domains"}
+    assert "refreshToken" not in str(r) and "password" not in str(r) and "SECRET" not in str(r)
+
+
+def test_app_complete_inconnue_404_et_message_sans_env():
+    e = etat()
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(e).app_complete("ZZ"))
+    assert ex.value.statut == 404
+
+
+def test_aucune_erreur_ne_contient_le_contenu_de_env():
+    secret = "DATABASE_URL=postgres://user:MOTDEPASSE@h/db"
+    corps_piege = {"applicationId": "A1", "env": secret, "message": secret}
+    for code in (401, 404, 429, 500):
+        c = Dokploy("http://d.test", "k", transport=httpx.MockTransport(
+            lambda r, code=code: httpx.Response(code, json=corps_piege)))
+        for appel in (lambda: c.app_complete("A1"), lambda: c.ecrire_env("A1", secret)):
+            with pytest.raises(DokployErreur) as ex:
+                run(appel())
+            assert "MOTDEPASSE" not in str(ex.value) and "MOTDEPASSE" not in ex.value.message
+
+
+def test_creer_app_corps_exact_et_retour():
+    e = etat()
+    r = run(cli(e).creer_app("E1", "temoin-b", "jumeau"))
+    assert r == {"id": "NEW1", "app_name": "temoin-b-n1"}
+    assert _appels(e, "/api/application.create")[0]["corps"] == {
+        "name": "temoin-b", "environmentId": "E1", "description": "jumeau"}
+    assert "NEW1" in e["apps"]
+
+
+def test_configurer_source_deux_appels_corps_exacts():
+    e = etat()
+    src = {"customGitUrl": "https://git/x.git", "customGitBranch": "main",
+           "customGitBuildPath": "/", "buildType": "dockerfile",
+           "dockerfile": "Dockerfile", "dockerContextPath": "."}
+    assert run(cli(e).configurer_source("A1", src)) is None
+    assert [a["chemin"] for a in e["appels"]] == ["/api/application.saveGitProvider",
+                                                   "/api/application.saveBuildType"]
+    assert e["appels"][0]["corps"] == {
+        "applicationId": "A1", "customGitUrl": "https://git/x.git", "customGitBranch": "main",
+        "customGitBuildPath": "/", "watchPaths": [], "enableSubmodules": False}
+    assert e["appels"][1]["corps"] == {
+        "applicationId": "A1", "buildType": "dockerfile", "dockerfile": "Dockerfile",
+        "dockerContextPath": ".", "dockerBuildStage": "", "herokuVersion": None,
+        "railpackVersion": None, "publishDirectory": None, "isStaticSpa": None}
+
+
+def test_ecrire_env_corps_exact():
+    e = etat()
+    assert run(cli(e).ecrire_env("A1", "A=1\nB=2")) is None
+    assert _appels(e, "/api/application.saveEnvironment")[0]["corps"] == {
+        "applicationId": "A1", "env": "A=1\nB=2", "buildArgs": "", "buildSecrets": "",
+        "createEnvFile": True}
+    assert e["apps"]["A1"]["env"] == "A=1\nB=2"
+
+
+def test_creer_domaine_et_changer_hote():
+    e = etat()
+    c = cli(e)
+    did = run(c.creer_domaine("A1", "b.test", 3000))
+    assert did == "DOM1"
+    assert _appels(e, "/api/domain.create")[0]["corps"] == {
+        "host": "b.test", "path": "/", "port": 3000, "https": False, "applicationId": "A1",
+        "certificateType": "none", "domainType": "application"}
+    assert run(c.changer_hote(did, "c.test", 3001)) is None
+    assert _appels(e, "/api/domain.update")[0]["corps"] == {
+        "domainId": "DOM1", "host": "c.test", "path": "/", "port": 3001, "https": False,
+        "certificateType": "none", "domainType": "application"}
+    assert e["domaines"]["DOM1"]["host"] == "c.test"
+
+
+class _Horloge:
+    def __init__(self):
+        self.t = 0.0
+        self.dormis = []
+
+    def __call__(self):
+        return self.t
+
+    async def dormir(self, s):
+        self.dormis.append(s)
+        self.t += s
+
+
+def test_deployer_et_attendre_done():
+    e = etat()
+    h = _Horloge()
+    r = run(cli(e).deployer_et_attendre("A1", "reset", horloge=h, dormir=h.dormir))
+    assert r == "done"
+    assert _appels(e, "/api/application.deploy")[0]["corps"] == {"applicationId": "A1"}
+    assert h.dormis == [5]    # running à la 1re lecture, done à la 2e
+
+
+def test_deployer_et_attendre_error():
+    e = etat()
+    e["deploy_echoue"] = True
+    h = _Horloge()
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(e).deployer_et_attendre("A1", "reset", horloge=h, dormir=h.dormir))
+    assert ex.value.message == "Le déploiement de l'instance neuve a échoué."
+
+
+def test_deployer_et_attendre_delai():
+    e = etat()
+    c = cli(e)
+
+    async def toujours_running(id_):
+        return {"applicationStatus": "running"}
+    c.app_complete = toujours_running
+    h = _Horloge()
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer_et_attendre("A1", "reset", delai_s=20, pas_s=5, horloge=h,
+                                   dormir=h.dormir))
+    assert ex.value.message.startswith("Délai dépassé")
+    assert len(h.dormis) == 4
+
+
+def _etat_backup():
+    e = etat()
+    e["backups"] = {"B1": {"backupId": "B1", "schedule": "0 2 * * *", "prefix": "pg",
+                           "enabled": True, "destinationId": "DEST", "keepLatestCount": 7,
+                           "databaseType": "postgres", "backupType": "database",
+                           "database": "ancienne", "secretInterne": "SECRET"}}
+    return e
+
+
+def test_rebaser_sauvegarde_relit_puis_ne_change_que_database():
+    e = _etat_backup()
+    assert run(cli(e).rebaser_sauvegarde("B1", "neuve")) is None
+    assert [(a["methode"], a["chemin"]) for a in e["appels"]] == [
+        ("GET", "/api/backup.one"), ("POST", "/api/backup.update")]
+    assert e["appels"][0]["params"] == {"backupId": "B1"}
+    assert e["appels"][1]["corps"] == {
+        "backupId": "B1", "database": "neuve", "schedule": "0 2 * * *", "prefix": "pg",
+        "enabled": True, "destinationId": "DEST", "keepLatestCount": 7,
+        "databaseType": "postgres", "backupType": "database"}
+    assert e["backups"]["B1"]["database"] == "neuve"
+
+
+def test_rebaser_sauvegarde_backup_one_refuse_ne_poste_rien():
+    e = _etat_backup()
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(e).rebaser_sauvegarde("ZZ", "neuve"))
+    assert ex.value.statut == 404
+    assert [a["chemin"] for a in e["appels"]] == ["/api/backup.one"]
+
+
+def test_le_faux_refuse_duplicate_et_delete_comme_le_vrai():
+    e = etat()
+    c = cli(e)
+    for chemin in ("/api/project.duplicate", "/api/application.delete"):
+        with pytest.raises(DokployErreur) as ex:
+            run(c._requete("POST", chemin, json={"x": 1}))
+        assert ex.value.statut == 401
+
+
+def test_nouvelles_methodes_cle_inconnue_401():
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(etat(), cle="mauvaise").creer_app("E1", "n", "d"))
+    assert ex.value.statut == 401
