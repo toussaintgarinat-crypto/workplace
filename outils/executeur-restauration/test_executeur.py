@@ -60,6 +60,7 @@ def test_nominal_valide_et_base_jetable_supprimee():
     r = FauxRunner()
     out = executeur.verifier(r, CFG, dict(CORPS))
     assert out["ok"] is True and out["verdict"] == "valide" and out["raison"] is None
+    assert out["nettoyage"] == "ok"
     assert out["comptages_origine"] == out["comptages_restaures"] == {"evenements": 42}
     assert len(_sql(r, "create database restore_")) == 1
     assert len(_sql(r, "drop database if exists restore_")) == 1
@@ -107,7 +108,8 @@ def test_base_sans_table_ne_prouve_rien():
     ("service", "postgres-x; rm"), ("service", "mysql-abc-def"), ("service", "postgres-ab"),
     ("base", "Temoin"), ("base", "a;b"), ("utilisateur", "x y"),
     ("objet", "../etc/passwd"), ("objet", "/abs/chemin"), ("objet", "a/../b"), ("objet", "a b"),
-    ("objet", "")])
+    ("objet", ""), ("service", "postgres-abc-def\n"), ("utilisateur", "temoin\n"),
+    ("base", "temoin\n"), ("objet", "a/b.gz\n")])
 def test_arguments_invalides_refuses_avant_tout_appel(champ, valeur):
     r = FauxRunner()
     corps = {**CORPS, champ: valeur}
@@ -209,3 +211,74 @@ def test_http_sante_et_route_inconnue(serveur):
     with pytest.raises(urllib.error.HTTPError) as e:
         urllib.request.urlopen(url + "/autre", timeout=10)
     assert e.value.code == 404
+
+
+def test_pg_restore_timeout_124_invalide_et_base_supprimee_avec_force():
+    r = FauxRunner(pg_restore=124)
+    out = executeur.verifier(r, CFG, dict(CORPS))
+    assert out["verdict"] == "invalide" and "pg_restore" in out["raison"]
+    drops = _sql(r, "drop database if exists restore_")
+    assert len(drops) == 1 and drops[0][-1].endswith("with (force)")
+
+
+def test_nettoyage_en_echec_signale():
+    class R(FauxRunner):
+        def run(self, argv, stdin=None, timeout=300):
+            if argv[:2] == ["docker", "exec"] and "drop database" in argv[-1]:
+                self.appels.append((list(argv), stdin))
+                return 1, b"", b""
+            return super().run(argv, stdin, timeout)
+    out = executeur.verifier(R(), CFG, dict(CORPS))
+    assert out["verdict"] == "valide" and out["nettoyage"] == "echec"
+
+
+def test_flux_deflate_corrompu_est_invalide():
+    import zlib
+    class R(FauxRunner):
+        def run(self, argv, stdin=None, timeout=300):
+            if argv[0] == "curl":
+                self.appels.append((list(argv), stdin))
+                bon = gzip.compress(b"PGDMP" + b"x" * 5000)
+                Path(argv[argv.index("-o") + 1]).write_bytes(bon[:20] + b"\xff\xfe\xfd" * 10 + bon[50:])
+                return 0, b"", b""
+            return super().run(argv, stdin, timeout)
+    out = executeur.verifier(R(), CFG, dict(CORPS))
+    assert out["verdict"] == "invalide" and "illisible" in out["raison"]
+
+
+def test_runner_convertit_timeout_en_124():
+    code, _, err = executeur.Runner().run(["sleep", "5"], timeout=1)
+    assert code == 124 and err == b"timeout"
+
+
+def test_http_exception_inattendue_500_sans_detail(serveur):
+    url, runner = serveur
+    def boom(argv, stdin=None, timeout=300):
+        raise ValueError("secret interne")
+    runner.run = boom
+    code, corps = _post(url, CORPS, "cle-exec")
+    assert code == 500 and corps == {"erreur": "erreur interne de l'exécuteur"}
+    assert not executeur.VERROU.locked()
+
+
+def test_config_refuse_caracteres_dangereux_pour_curl():
+    base = {"EXECUTEUR_KEY": "k", "EXECUTEUR_S3_ENDPOINT": "http://x", "EXECUTEUR_S3_BUCKET": "b",
+            "EXECUTEUR_S3_KEY": "a", "EXECUTEUR_S3_SECRET": "s"}
+    for champ in ("S3_ENDPOINT", "S3_BUCKET", "S3_KEY", "S3_SECRET"):
+        for mauvais in ('a"b', "a\\b", "a\rb", "a\nb"):
+            with pytest.raises(ErreurExecuteur) as e:
+                executeur.charger_config({**base, "EXECUTEUR_" + champ: mauvais})
+            assert e.value.statut == 500
+
+
+def test_handler_timeout_socket():
+    assert executeur.fabrique_handler(FauxRunner(), CFG).timeout == 30
+
+
+def test_curl_plafonne_la_taille_et_filtre_conteneur_avec_point():
+    r = FauxRunner()
+    executeur.verifier(r, CFG, dict(CORPS))
+    curl = [a for a in r.commandes() if a[0] == "curl"][0]
+    assert "--max-filesize" in curl and curl[curl.index("--max-filesize") + 1] == "536870912"
+    ps = [a for a in r.commandes() if a[:2] == ["docker", "ps"]][0]
+    assert "name=^postgres-abc-def\\." in ps
