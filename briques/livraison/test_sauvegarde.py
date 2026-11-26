@@ -34,6 +34,8 @@ def _executeur(reponse, appels):
 def e(monkeypatch, tmp_path):
     etat = _etat()
     etat["fichiers"] = {"B1": [dict(ANCIEN)]}
+    etat["backups"] = {"B1": {"backupId": "B1", "database": "temoin"},
+                       "B2": {"backupId": "B2", "database": "autre"}}
     monkeypatch.setattr(main, "fournisseur",
                         lambda: Dokploy("http://d.test", "k", transport=fabrique_transport(etat)))
     inv = tmp_path / "inv.json"
@@ -282,3 +284,41 @@ def test_erreur_disque_a_la_revocation_initiale_invalide_sans_sauvegarde(e, monk
     d = r.json()
     assert r.status_code == 200 and d["verdict"] == "invalide" and d["raisons"]
     assert e["appels"] == [] or all("backup" not in str(a).lower() for a in e["appels"])
+
+
+# ── sauvegarde désynchronisée de la base active (S247 2b, I1) ──
+
+def test_verifier_sauvegarde_desynchronisee_invalide_sans_restaurer(e):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    e["backups"]["B1"]["database"] = "temoin_v0a1b2c3d"     # rebasée, état resté sur temoin
+    appels = []
+    r = run(sauvegarde.verifier(_dok(e), _executeur(OK, appels), _entree(), "A1"))
+    assert r["verdict"] == "invalide" and r["raisons"] == ["temoin : sauvegarde_desynchronisee"]
+    assert appels == [] and preuve.lire("A1") is None
+    assert not [a for a in e["appels"] if a["chemin"] == "/api/backup.manualBackupPostgres"]
+
+
+def test_verifier_suit_la_base_active_mais_exige_la_meme_sauvegarde(e):
+    import operations
+    import reset
+    operations.basculer_etat("calendrier", "B", "temoin_v0a1b2c3d", "temoin")
+    entree = reset.base_effective(_entree(), operations.lire("calendrier"))
+    r = run(sauvegarde.verifier(_dok(e), _executeur(OK, []), entree, "A1"))
+    assert r["raisons"] == ["temoin_v0a1b2c3d : sauvegarde_desynchronisee"]
+    e["backups"]["B1"]["database"] = "temoin_v0a1b2c3d"
+    r = run(sauvegarde.verifier(_dok(e), _executeur(OK, []), entree, "A1"))
+    assert r["verdict"] == "valide", r
+
+
+def test_sauvegarder_desynchronisee_refuse_sans_rien_lancer(e):
+    e["backups"]["B1"]["database"] = "autre_chose"
+    with pytest.raises(sauvegarde.SauvegardeDesynchronisee):
+        run(sauvegarde.sauvegarder(_dok(e), _entree()))
+    assert not [a for a in e["appels"] if a["methode"] == "POST"]
+
+
+def test_route_sauvegarder_desynchronisee_409(e):
+    e["backups"]["B1"]["database"] = "autre_chose"
+    r = c.post("/apps/calendrier/sauvegarder", headers=H)
+    assert r.status_code == 409 and r.json()["detail"].startswith("sauvegarde_desynchronisee")
+    assert not [a for a in e["appels"] if a["methode"] == "POST"]

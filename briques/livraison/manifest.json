@@ -94,7 +94,7 @@
     },
     {
       "nom": "livraison_rollback",
-      "description": "REVIENT À LA VERSION PRÉCÉDENTE d'une application (retour en arrière, annulation du dernier déploiement). À utiliser quand l'utilisateur dit « reviens en arrière », « version précédente », « annule le dernier déploiement », « rollback ». Par défaut la version précédente ; le paramètre `version` désigne une version précise. Impossible si le rollback n'est pas activé (le dire à l'utilisateur). Ce n'est PAS un redémarrage. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "REVIENT À LA VERSION PRÉCÉDENTE d'une application (retour en arrière, annulation du dernier déploiement). À utiliser quand l'utilisateur dit « reviens en arrière », « version précédente », « annule le dernier déploiement », « rollback ». Par défaut la version précédente ; le paramètre `version` désigne une version précise. Impossible si le rollback n'est pas activé (le dire à l'utilisateur). Ce n'est PAS un redémarrage. PAS après un reset pour revenir à l'instance précédente → livraison_retour_arriere. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
       "methode": "POST",
       "chemin": "/apps/{app}/rollback",
       "params": {

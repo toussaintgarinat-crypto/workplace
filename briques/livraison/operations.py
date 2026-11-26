@@ -155,13 +155,21 @@ def enregistrer_emplacements(app: str, a: dict, b: dict, actif: str, base_active
         _ecrire_tout(tout)
 
 
-def basculer_etat(app: str, actif: str, base_active: str, base_precedente: Optional[str]) -> None:
+def basculer_etat(app: str, actif: str, base_active: str, base_precedente: Optional[str],
+                  precedente_protegee: bool = False) -> None:
+    """`precedente_protegee` (posé par un retour arrière, effacé par un reset réussi) : la base
+    précédente porte les écritures les plus récentes de l'instance quittée ; le reset suivant
+    ne doit PAS la supprimer comme « N-2 ». Écrit dans la MÊME écriture atomique que la bascule."""
     with _verrou:
         tout = _lire_tout()
         e = _entree(tout, app)
         e.update(actif=actif, base_active=base_active, base_precedente=base_precedente,
-                 retour_invalide=False)
+                 retour_invalide=False, precedente_protegee=bool(precedente_protegee))
         _ecrire_tout(tout)
+
+
+def precedente_protegee(etat: Optional[dict]) -> bool:
+    return isinstance(etat, dict) and etat.get("precedente_protegee") is True
 
 
 def invalider_retour(app: str) -> None:
@@ -181,8 +189,11 @@ def marquer_interrompues() -> list:
         for app, e in tout.items():
             op = e.get("op") if isinstance(e, dict) else None
             if isinstance(op, dict) and op.get("etat") == "en_cours":
-                op.update(etat="interrompue", fin=time.time(),
-                          message="la brique a redémarré pendant l'opération")
+                message = "la brique a redémarré pendant l'opération"
+                neuve = op.get("base_neuve")
+                if isinstance(neuve, str) and neuve and neuve != e.get("base_active"):
+                    message += f" ; base neuve {neuve} peut-être orpheline (à vérifier)"
+                op.update(etat="interrompue", fin=time.time(), message=_propre(message))
                 changes.append(app)
         if changes:
             _ecrire_tout(tout)

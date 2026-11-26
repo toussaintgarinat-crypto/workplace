@@ -271,12 +271,18 @@ def test_sabotage_sante_ko():
     _aucune_bascule(etat, _lancer(etat, ex, sante=_malade), ex, "sante_ko")
 
 
-def test_sabotage_env_inattendu():
-    etat, ex = _monde(env="NODE_ENV=production\nPASSWORD=SECRETXYZ\n"), FauxEx()
+@pytest.mark.parametrize("env", ["NODE_ENV=production\nPASSWORD=SECRETXYZ\n",
+                                 "DATABASE_URL=postgres://temoin:SECRETXYZ@pg:5432/autre\n"])
+def test_env_sans_variable_base_refuse_avant_tout_clonage(env):
+    etat, ex = _monde(env=env), FauxEx()
     s = _lancer(etat, ex)
-    assert s["op"]["message"] == "env_inattendu"
+    assert s["op"]["etat"] == "echec" and s["op"]["motif"] == "env_sans_variable_base"
+    assert s["op"]["message"] == ("env_sans_variable_base : ajoute DATABASE_URL pointant sur la "
+                                  "base temoin dans l'application (instance A)")
+    assert ex.appels == []          # ni clone ni comptage
+    assert _appels(etat, "/api/backup.manualBackupPostgres") == []
     assert _appels(etat, "/api/application.saveEnvironment") == []
-    assert _appels(etat, "/api/domain.update") == [] and ex.bases == set()
+    assert _appels(etat, "/api/domain.update") == [] and "SECRETXYZ" not in str(s)
 
 
 def test_sabotage_recomptage_different_trois_fois():
@@ -296,9 +302,11 @@ def test_ecritures_pendant_l_operation_puis_stables():
     assert ex.noms("supprimer_base") == [premiere] and s["base_active"] == seconde
 
 
-def test_echec_du_premier_changer_hote_annule_tout():
+@pytest.mark.parametrize("panne", [400, "connexion"])
+def test_echec_du_premier_changer_hote_annule_tout(panne):
+    # Refus explicite (4xx) ou requête jamais partie : provablement non appliqué.
     etat, ex = _monde(), FauxEx()
-    etat["pannes"] = {"/api/domain.update": [True]}
+    etat["pannes"] = {"/api/domain.update": [panne]}
     s = _lancer(etat, ex)
     assert s["op"]["etat"] == "echec" and s["op"]["message"].startswith("bascule_incomplete")
     assert _hotes(etat) == {"A1": PUBLIC, _jumeau(etat): TEST}
@@ -331,19 +339,29 @@ def _message_bascule_incomplete(s, nouvelle):
         f"base neuve {nouvelle} conservée ; l'état indique encore la base temoin")
 
 
+def _message_hotes_remis(s, nouvelle):
+    assert s["op"]["etat"] == "echec" and s["op"]["motif"] == "bascule_incomplete"
+    assert s["op"]["message"] == (
+        f"bascule_incomplete : vérifier les domaines ; sauvegarde sur temoin ; "
+        f"base neuve {nouvelle} conservée")
+
+
 def test_echec_du_second_changer_hote_remet_les_hotes():
     etat, ex = _monde(), FauxEx()
     etat["pannes"] = {"/api/domain.update": [False, True]}
     s = _lancer(etat, ex)
     b = _jumeau(etat)
     nouvelle = ex.noms("cloner")[0]
-    _message_bascule_incomplete(s, nouvelle)
+    _message_hotes_remis(s, nouvelle)
     assert _hotes(etat) == {"A1": PUBLIC, b: TEST}
     assert s["actif"] == "A" and s["base_active"] == "temoin"
-    # le public a peut-être écrit dans la base neuve : ni suppression ni sauvegarde défaite
+    # le public a peut-être écrit dans la base neuve : elle est gardée ; les hôtes sont remis,
+    # donc la sauvegarde revient sur la base active de l'état (sinon le reset suivant
+    # clonerait la mauvaise base sans le voir)
     assert nouvelle in ex.bases and nouvelle not in ex.noms("supprimer_base")
-    assert etat["backups"]["BK1"]["database"] == nouvelle
-    assert [a["corps"]["database"] for a in _appels(etat, "/api/backup.update")] == [nouvelle]
+    assert etat["backups"]["BK1"]["database"] == "temoin"
+    assert [a["corps"]["database"] for a in _appels(etat, "/api/backup.update")] == [
+        nouvelle, "temoin"]
     # jamais sans hôte public : l'actif retrouve le public AVANT que l'inactif ne le rende
     ups = [(a["corps"]["domainId"], a["corps"]["host"]) for a in _appels(etat, "/api/domain.update")]
     dom_a, dom_b = s["emplacements"]["A"]["domaine_id"], s["emplacements"]["B"]["domaine_id"]
@@ -369,19 +387,80 @@ def test_echec_disque_a_la_bascule_remet_les_hotes(monkeypatch):
     monkeypatch.setattr(operations, "basculer_etat", panne)
     s = _lancer(etat, ex)
     nouvelle = ex.noms("cloner")[0]
-    _message_bascule_incomplete(s, nouvelle)
+    _message_hotes_remis(s, nouvelle)
     assert _hotes(etat)["A1"] == PUBLIC and s["actif"] == "A"
-    assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == nouvelle
+    assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == "temoin"
 
 
-def test_premier_changer_hote_en_504_conserve_la_base():
-    # 504 sur une mutation : Dokploy l'a peut-être appliquée, le public a peut-être basculé
+@pytest.mark.parametrize("panne", [504, True, 502, "lecture"])
+def test_premier_changer_hote_incertain_conserve_la_base(panne):
+    # Requête partie sans réponse fiable (délai, 5xx, réponse perdue) : Dokploy l'a peut-être
+    # appliquée (et peut encore l'appliquer) ; ni base supprimée ni sauvegarde défaite.
     etat, ex = _monde(), FauxEx()
-    etat["pannes"] = {"/api/domain.update": [504]}
+    etat["pannes"] = {"/api/domain.update": [panne]}
     s = _lancer(etat, ex)
     nouvelle = ex.noms("cloner")[0]
     _message_bascule_incomplete(s, nouvelle)
     assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == nouvelle
+    assert nouvelle not in ex.noms("supprimer_base")
+    assert [a["corps"]["database"] for a in _appels(etat, "/api/backup.update")] == [nouvelle]
+
+
+def test_reset_suivant_refuse_si_la_sauvegarde_est_desynchronisee():
+    etat, ex = _monde(), FauxEx()
+    etat["pannes"] = {"/api/domain.update": [504]}
+    _lancer(etat, ex)
+    n_clones = len(ex.noms("cloner"))
+    s = _lancer(etat, ex)
+    assert s["op"]["etat"] == "echec" and s["op"]["motif"] == "sauvegarde_desynchronisee"
+    assert s["op"]["message"].startswith(
+        "sauvegarde_desynchronisee : la sauvegarde Dokploy ne vise pas la base active temoin")
+    assert len(ex.noms("cloner")) == n_clones
+    assert _appels(etat, "/api/backup.manualBackupPostgres")[1:] == []
+
+
+def test_premier_reset_refuse_si_la_sauvegarde_vise_une_autre_base():
+    etat, ex = _monde(), FauxEx()
+    etat["backups"]["BK1"]["database"] = "autre"
+    s = _lancer(etat, ex)
+    assert s["op"]["motif"] == "sauvegarde_desynchronisee" and ex.appels == []
+    assert _appels(etat, "/api/domain.update") == []
+
+
+@pytest.mark.parametrize("pannes", [{"/api/backup.update": [400]},
+                                    {"/api/backup.one": [False, True]}])
+def test_rebase_provablement_non_appliquee_pas_de_compensation(pannes):
+    etat, ex = _monde(), FauxEx()
+    etat["pannes"] = pannes
+    s = _lancer(etat, ex)
+    assert s["op"]["etat"] == "echec" and s["op"]["motif"] == "erreur_dokploy", s["op"]
+    assert len(_appels(etat, "/api/backup.update")) == (1 if "/api/backup.update" in pannes
+                                                        else 0)
+    assert etat["backups"]["BK1"]["database"] == "temoin" and ex.bases == set()
+    assert _appels(etat, "/api/domain.update") == []
+
+
+def test_rebase_incertaine_est_compensee():
+    etat, ex = _monde(), FauxEx()
+    etat["pannes"] = {"/api/backup.update": ["lecture"]}
+    s = _lancer(etat, ex)
+    nouvelle = ex.noms("cloner")[0]
+    assert s["op"]["motif"] == "erreur_dokploy"
+    assert [a["corps"]["database"] for a in _appels(etat, "/api/backup.update")] == [
+        nouvelle, "temoin"]
+    assert etat["backups"]["BK1"]["database"] == "temoin" and ex.bases == set()
+
+
+def test_base_neuve_persistee_avant_le_clonage():
+    vus = []
+
+    class Espion(FauxEx):
+        async def cloner(self, service, utilisateur, base, objet, nouvelle_base):
+            vus.append((operations.lire(APP)["op"].get("base_neuve"), nouvelle_base))
+            return await super().cloner(service, utilisateur, base, objet, nouvelle_base)
+    etat = _monde()
+    _lancer(etat, Espion(recomptes=[{"evenements": 43, "membres": 3}]))
+    assert len(vus) == 2 and all(a == b for a, b in vus)
 
 
 # ── secrets, verrou, interruption, configuration ──
@@ -560,6 +639,37 @@ def test_retour_arriere_sans_base_precedente_refuse():
     assert _appels(etat, "/api/domain.update") == []
 
 
+def test_reset_apres_retour_arriere_conserve_la_base_quittee():
+    etat, ex = _monde(), FauxEx()
+    g1 = _lancer(etat, ex)["base_active"]
+    r = _retour(etat)
+    assert r["precedente_protegee"] is True and r["base_precedente"] == g1
+    s = _lancer(etat, ex)
+    assert s["op"]["etat"] == "reussie", s["op"]
+    assert g1 not in ex.noms("supprimer_base") and g1 in ex.bases
+    m = s["op"]["message"]
+    assert (f"base {g1} conservée (écritures de l'instance quittée) : à supprimer à la main"
+            in m) and len(m) <= 300
+    assert s["precedente_protegee"] is False and s["base_precedente"] == "temoin"
+
+
+def test_reset_apres_retour_arriere_message_complet_avec_noms_longs():
+    racine = "a" * 31
+    entree = {**ENTREE, "bases": [{**ENTREE["bases"][0], "base": racine}]}
+    env = ENV.replace("/temoin\n", f"/{racine}\n")
+    etat, ex = _monde(env=env), FauxEx()
+    etat["backups"]["BK1"]["database"] = racine
+    ex.origine = {f"table_{i}": 10 ** 6 for i in range(20)}
+    g1 = _lancer(etat, ex, entree=entree)["base_active"]
+    oid = operations.demarrer(APP, "retour")
+    run(reset.retour_arriere(_dok(etat), entree, APP, oid, sante=_sain))
+    s = _lancer(etat, ex, entree=entree)
+    assert s["op"]["etat"] == "reussie", s["op"]
+    assert s["op"]["message"].startswith(
+        f"Attention : base {g1} conservée (écritures de l'instance quittée) : à supprimer à "
+        "la main. Les données écrites")
+
+
 def test_retour_arriere_apres_deux_resets():
     etat, ex = _monde(), FauxEx()
     s1 = _lancer(etat, ex)
@@ -653,6 +763,7 @@ def test_verifier_suit_la_base_active():
         return httpx.Response(200, json={"ok": True, "verdict": "valide",
                                          "comptages_restaures": {"e": 1}})
     ex = Executeur("http://exec.test", "k", transport=httpx.MockTransport(h))
+    etat["backups"]["BK1"]["database"] = "temoin_v0a1b2c3d"
     e = reset.base_effective(ENTREE, {"base_active": "temoin_v0a1b2c3d"})
     r = run(sauvegarde.verifier(_dok(etat), ex, e, "A1"))
     assert r["verdict"] == "valide" and vus[0]["base"] == "temoin_v0a1b2c3d"

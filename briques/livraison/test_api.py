@@ -562,6 +562,7 @@ def er(ea, tmp_path, monkeypatch):
     _inventaire(tmp_path, monkeypatch)
     monkeypatch.setenv("EXECUTEUR_URL", "http://ex.test")
     monkeypatch.setenv("EXECUTEUR_KEY", "k")
+    monkeypatch.setenv("LIVRAISON_TRAEFIK_URL", "http://traefik.test")
     ea["apps"]["A1"]["env"] = "DATABASE_URL=postgres://u:SECRETXYZ@h/temoin\nPASSWORD=SECRETXYZ"
     preuve.noter("A1", "P1", "valide", {})
     appels = []
@@ -726,3 +727,91 @@ def test_manifeste_capacites_reset():
     assert o["action"] is False and "sensibilite" not in o
     for x in (r, b, o):
         assert x["params"]["app"]["requis"] is True and x["relayer_erreurs"] is True
+
+
+def test_reset_sans_traefik_503_avant_tout(er, monkeypatch):
+    monkeypatch.delenv("LIVRAISON_TRAEFIK_URL")
+    _poser_deux_emplacements()
+    for chemin in ("/apps/calendrier/reset", "/apps/calendrier/retour-arriere"):
+        r = ca.post(chemin)
+        assert r.status_code == 503 and "LIVRAISON_TRAEFIK_URL non configuré" in r.json()["detail"]
+    assert er["appels_reset"] == [] and (operations.lire("calendrier").get("op") is None)
+
+
+@pytest.mark.parametrize("base", ["a" * 32, "temoin_v0a1b2c3d"])
+def test_reset_nom_de_base_racine_invalide_409_avant_le_202(er, tmp_path, monkeypatch, base):
+    f = tmp_path / "inv2.json"
+    f.write_text(json.dumps({"calendrier": {"bases": [dict(BASE_INV, base=base)], "volumes": [],
+                                            "reset": dict(RESET_INV)}}))
+    monkeypatch.setenv("LIVRAISON_INVENTAIRE", str(f))
+    r = ca.post("/apps/calendrier/reset")
+    assert r.status_code == 409 and r.json()["detail"].startswith(
+        "configuration invalide : nom de base trop long")
+    assert operations.lire("calendrier") is None and er["appels_reset"] == []
+
+
+# ── Après un reset (actif = B), les outils visent le jumeau (S247 2b, I4) ──
+
+@pytest.fixture
+def eb(ea):
+    ea["apps"]["B1"] = {"applicationId": "B1", "name": "calendrier-jumeau", "appName": "cal-b",
+                        "applicationStatus": "done", "rollbackActive": True, "deployments": [
+                            {"deploymentId": "DB1", "title": "b1", "status": "done",
+                             "createdAt": "u1", "finishedAt": "u1b", "rollbackId": "RB1"},
+                            {"deploymentId": "DB2", "title": "b2", "status": "done",
+                             "createdAt": "u2", "finishedAt": "u2b", "rollbackId": "RB2"}]}
+    return ea
+
+
+def _ids_vises(etat):
+    sortie = []
+    for a in etat["appels"]:
+        corps = a["corps"] or {}
+        sortie.append(corps.get("applicationId") or a["params"].get("applicationId")
+                      or corps.get("rollbackId") or a["params"].get("deploymentId"))
+    return [x for x in sortie if x]
+
+
+@pytest.mark.parametrize("actif,cible,rb,dep", [("B", "B1", "RB1", "DB2"),
+                                                 ("A", "A1", "R1", "D2"), (None, "A1", "R1", "D2")])
+def test_outils_visent_l_emplacement_actif(eb, actif, cible, rb, dep):
+    if actif:
+        operations.enregistrer_emplacements("calendrier", {"app_id": "A1"}, {"app_id": "B1"},
+                                            "A", "temoin")
+        if actif == "B":
+            operations.basculer_etat("calendrier", "B", "temoin_v0123abcd", "temoin")
+    attendu = {"B": "B", "A": "A", None: None}[actif]
+    e_ = ca.get("/apps/calendrier/etat").json()
+    assert e_["emplacement"] == attendu
+    assert e_["nom"] == ("calendrier-jumeau" if actif == "B" else "calendrier")
+    assert ca.get("/apps/calendrier/logs").status_code == 200
+    for chemin in ("redemarrer", "deployer", "rollback"):
+        r = ca.post(f"/apps/calendrier/{chemin}")
+        assert r.status_code == 200 and r.json().get("emplacement") == attendu, r.json()
+    vises = _ids_vises(eb)
+    autres = {"B1", "RB1", "RB2", "DB1", "DB2"} if cible == "A1" else {
+        "A1", "R1", "R2", "D1", "D2"}
+    assert cible in vises and rb in vises and dep in vises
+    assert not set(vises) & autres, vises
+
+
+def test_le_jumeau_par_son_nom_se_resout_sur_lui_meme(eb):
+    _poser_deux_emplacements()
+    operations.basculer_etat("calendrier", "A", "temoin", "temoin_v0123abcd")
+    e_ = ca.get("/apps/calendrier-jumeau/etat").json()
+    assert e_["nom"] == "calendrier-jumeau" and e_["emplacement"] is None
+    ca.post("/apps/calendrier-jumeau/redemarrer")
+    assert [a["corps"]["applicationId"] for a in eb["appels"]
+            if a["chemin"] == "/api/application.reload"] == ["B1"]
+
+
+def test_preuve_reste_indexee_sur_l_app_d_origine(eb):
+    _poser_deux_emplacements()
+    assert ca.get("/apps/calendrier/preuve").json()["app_id"] == "A1"
+
+
+def test_manifeste_rollback_renvoie_au_retour_arriere_apres_reset():
+    m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
+    caps = {x["nom"]: x for x in m["capacites"]}
+    assert ("PAS après un reset pour revenir à l'instance précédente → livraison_retour_arriere"
+            in caps["livraison_rollback"]["description"])

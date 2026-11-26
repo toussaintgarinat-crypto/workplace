@@ -20,7 +20,7 @@ import httpx
 
 import operations
 from client_executeur import ExecuteurErreur
-from dokploy import CLES_SOURCE, DokployErreur
+from dokploy import CLES_SOURCE, DokployErreur, peut_etre_appliquee
 from envreecriture import nomme_la_base, reecrire_env
 from sauvegarde import TOLERANCE_HORLOGE_S, _epoch
 
@@ -99,6 +99,8 @@ class _Contexte:
         self.rebase_tente = self.bascule_tentee = self.bascule_faite = False
         self.env_ecrit = False          # env de l'inactif peut-être réécrit (retour invalide)
         self.public_bascule = False     # le public sert peut-être déjà l'inactif
+        self.bascule_incertaine = False  # 1er échange peut-être appliqué (réponse perdue/5xx)
+        self.precedente_protegee = False  # base précédente = écritures d'une instance quittée
         self.conserve = False           # base neuve et sauvegarde gardées en l'état
         self.cible_sauvegarde: Optional[str] = None
         self.base_active: Optional[str] = None
@@ -132,6 +134,7 @@ class _Contexte:
         self.inactif = "B" if self.actif == "A" else "A"
         self.base_active = etat.get("base_active") or self.base_racine
         self.base_precedente = etat.get("base_precedente")
+        self.precedente_protegee = operations.precedente_protegee(etat)
 
     def dom(self, slot: str) -> str:
         return self.emp[slot]["domaine_id"]
@@ -189,6 +192,14 @@ async def _preparer(c: _Contexte, app_id: str) -> None:
     if c.app_id("A") != app_id:
         raise _Echec("configuration_manquante")
     await _verifier_hotes(c)
+    # Contrôles purs, AVANT tout clonage : l'actif lit bien la base active (sinon la réécriture
+    # échouerait après un clonage inutile), et la sauvegarde Dokploy vise bien cette base (sinon
+    # le clone partirait d'une autre base sans que personne ne le voie). L'env ne sort pas d'ici.
+    actif = await c.d.app_complete(c.app_id(c.actif))
+    if not nomme_la_base(actif.get("env"), c.cfg["variable_env"], c.base_active):
+        raise _Echec("env_sans_variable_base")
+    if await c.d.base_sauvegarde(c.sauvegarde_id) != c.base_active:
+        raise _Echec("sauvegarde_desynchronisee")
 
 
 # ── étapes 2 à 5 : clonage, configuration, santé, recomptage ──
@@ -200,7 +211,10 @@ async def _cloner(c: _Contexte) -> None:
     if not fichiers or _epoch(fichiers[0]["date"]) < debut - TOLERANCE_HORLOGE_S:
         raise _Echec("sauvegarde_absente")
     c.heure_sauvegarde = (fichiers[0]["date"] or "")[11:19]
-    c.nouvelle = f"{c.base_racine}_v{secrets.token_hex(4)}"
+    nom = f"{c.base_racine}_v{secrets.token_hex(4)}"
+    # Persisté AVANT de cloner : après un arrêt brutal, une base orpheline reste identifiable.
+    operations.etape(c.app, c.op, "clonage", base_neuve=nom)
+    c.nouvelle = nom
     r = await c.ex.cloner(c.service, c.utilisateur, c.base_active,
                           f"{c.prefixe}/{fichiers[0]['nom']}", c.nouvelle)
     c.comptages = r.get("comptages_origine")
@@ -314,10 +328,17 @@ async def _rebaser(c: _Contexte, base: str) -> None:
     c.marquer("sauvegarde")
     c.rebase_tente = True
     c.cible_sauvegarde = base
-    await c.d.rebaser_sauvegarde(c.sauvegarde_id, base)
+    try:
+        await c.d.rebaser_sauvegarde(c.sauvegarde_id, base)
+    except DokployErreur as e:
+        if not peut_etre_appliquee(e):      # provablement non appliqué : rien à défaire
+            c.rebase_tente = False
+            c.cible_sauvegarde = None
+        raise
 
 
-async def _basculer(c: _Contexte, base_active: str, base_precedente: Optional[str]) -> None:
+async def _basculer(c: _Contexte, base_active: str, base_precedente: Optional[str],
+                    precedente_protegee: bool = False) -> None:
     """Public sur l'inactif D'ABORD, puis test sur l'ancien actif : jamais sans hôte public."""
     c.marquer("bascule")
     c.bascule_tentee = True
@@ -325,15 +346,18 @@ async def _basculer(c: _Contexte, base_active: str, base_precedente: Optional[st
     try:
         await c.d.changer_hote(c.dom(c.inactif), c.cfg["domaine_public"], port)
     except DokployErreur as e:
-        if e.statut == 504:     # mutation peut-être appliquée
-            c.public_bascule = True
+        # Requête partie sans réponse fiable (coupure, délai, 5xx) : peut-être appliquée, et
+        # Dokploy peut encore l'appliquer après notre remise des hôtes.
+        if peut_etre_appliquee(e):
+            c.public_bascule = c.bascule_incertaine = True
         raise
     except asyncio.CancelledError:
-        c.public_bascule = True
+        c.public_bascule = c.bascule_incertaine = True
         raise
     c.public_bascule = True     # de vrais utilisateurs écrivent peut-être déjà dans la base neuve
     await c.d.changer_hote(c.dom(c.actif), c.cfg["domaine_test"], port)
-    operations.basculer_etat(c.app, c.inactif, base_active, base_precedente)
+    operations.basculer_etat(c.app, c.inactif, base_active, base_precedente,
+                             precedente_protegee=precedente_protegee)
     c.bascule_faite = True
 
 
@@ -350,8 +374,11 @@ async def _remettre_hotes(c: _Contexte) -> bool:
 
 async def _compenser(c: _Contexte, motif: str) -> str:
     """Remet tout dans l'état d'avant (meilleur effort, ne lève jamais) ; rend le motif final.
-    Dès que le public a pu servir l'inactif, la base neuve et la sauvegarde sont GARDÉES (des
-    données y ont peut-être été écrites) : seul l'échange des hôtes est défait."""
+    Dès que le public a pu servir l'inactif, la base neuve est GARDÉE (des données y ont
+    peut-être été écrites). Hôtes remis avec certitude : la sauvegarde revient sur la base
+    active de l'état (sinon le reset suivant clonerait la mauvaise base). Hôtes non remis, ou
+    premier échange incertain (Dokploy peut encore l'appliquer) : la sauvegarde reste aussi
+    sur la base neuve, et le message le dit."""
     if c.env_ecrit and not c.bascule_faite:
         try:
             operations.invalider_retour(c.app)
@@ -359,11 +386,22 @@ async def _compenser(c: _Contexte, motif: str) -> str:
             log.error("reset %s : retour arrière non invalidé (%s)", c.app, _motif(e))
     if c.bascule_tentee and not c.bascule_faite:
         remis = await _remettre_hotes(c)
-        if c.public_bascule or not remis:
+        if c.bascule_incertaine or not remis:
             log.error("reset %s : bascule incomplète (hôtes %s), base neuve et sauvegarde "
                       "conservées — vérifier les domaines", c.app,
                       "remis" if remis else "non remis")
             c.conserve = True
+            return "bascule_incomplete"
+        if c.public_bascule:
+            c.conserve = True
+            if c.rebase_tente:
+                try:
+                    await c.d.rebaser_sauvegarde(c.sauvegarde_id, c.base_active)
+                    c.cible_sauvegarde = c.base_active
+                except Exception:
+                    log.error("reset %s : sauvegarde non rebasculée sur la base active", c.app)
+            log.error("reset %s : bascule incomplète (hôtes remis), base neuve conservée — "
+                      "vérifier les domaines", c.app)
             return "bascule_incomplete"
         motif = "bascule_incomplete"
     if c.rebase_tente:
@@ -390,6 +428,13 @@ def _terminer(c: _Contexte, etat: str, message: str, motif: Optional[str] = None
 
 def _message_echec(c: _Contexte, motif: str) -> str:
     """Les noms de base ne sont pas des secrets (motif validé) : on les donne pour agir."""
+    if motif == "env_sans_variable_base":
+        return (f"env_sans_variable_base : ajoute {c.cfg['variable_env']} pointant sur la base "
+                f"{c.base_active} dans l'application (instance {c.actif})")
+    if motif == "sauvegarde_desynchronisee":
+        return (f"sauvegarde_desynchronisee : la sauvegarde Dokploy ne vise pas la base active "
+                f"{c.base_active} (bascule incomplète ?) : vérifier les domaines et la remettre "
+                f"sur {c.base_active}")
     if motif != "bascule_incomplete":
         return motif
     parties = ["bascule_incomplete : vérifier les domaines"]
@@ -450,14 +495,24 @@ async def reset(d, ex, entree, app_nom: str, app_id: str, operation_id: str,
             c.marquer("nettoyage")
         except Exception:
             pass
-        if not await _supprimer(c, n_moins_2, {c.nouvelle, ancienne}):
+        if (c.precedente_protegee and n_moins_2 and RE_GENEREE.fullmatch(n_moins_2)
+                and n_moins_2 not in {c.nouvelle, ancienne, c.base_racine}):
+            # Après un retour arrière, la « N-2 » est la base de l'instance quittée : elle
+            # porte les écritures les plus récentes. Jamais supprimée automatiquement.
+            c.alertes.append(f"base {n_moins_2} conservée (écritures de l'instance quittée) : "
+                             "à supprimer à la main")
+        elif not await _supprimer(c, n_moins_2, {c.nouvelle, ancienne}):
             c.alertes.append("ancienne base N-2 non supprimée (à nettoyer)")
         message = (f"Les données écrites dans l'ancienne instance après {c.heure_sauvegarde} "
                    f"(UTC, heure de la sauvegarde) restent dans l'ancienne base {ancienne}. "
                    f"L'instance {c.inactif} est active, base {c.nouvelle} "
                    f"({_resume(c.comptages)}).")
         if c.alertes:
-            message += " Attention : " + " ; ".join(c.alertes) + "."
+            alerte = "Attention : " + " ; ".join(c.alertes) + "."
+            # Le message est borné (operations.MESSAGE_MAX) : une alerte à agir ne doit jamais
+            # être celle que la troncature coupe.
+            message = (message + " " + alerte if len(message) + 1 + len(alerte)
+                       <= operations.MESSAGE_MAX else alerte + " " + message)
         _terminer(c, "reussie", message)
 
     await _executer(c, deroule)
@@ -488,7 +543,7 @@ async def retour_arriere(d, entree, app_nom: str, operation_id: str,
         await _verifier_sante(c)
         quitte, base_quittee = c.actif, c.base_active
         await _rebaser(c, c.base_precedente)
-        await _basculer(c, c.base_precedente, base_quittee)
+        await _basculer(c, c.base_precedente, base_quittee, precedente_protegee=True)
         _terminer(c, "reussie",
                   f"Les données écrites depuis la bascule sont dans l'emplacement {quitte} / "
                   f"base {base_quittee}. L'instance {c.inactif} est de nouveau active, "

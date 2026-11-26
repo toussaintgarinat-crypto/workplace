@@ -81,7 +81,38 @@ def fournisseur() -> Dokploy:
 
 
 async def _resoudre(d: Dokploy, app_: str) -> dict:
+    return _choisir(await d.apps(), app_)
+
+
+async def _resoudre_actif(d: Dokploy, app_: str) -> dict:
+    """Comme `_resoudre`, mais pour les outils qui AGISSENT sur l'instance qui sert le public
+    (état, logs, redémarrer, déployer, rollback) : après un reset bleu/vert (actif = B), c'est
+    le jumeau. Rend l'app à viser avec `emplacement` (None hors reset). Preuve, inventaire et
+    reset restent indexés sur l'app d'origine (`_resoudre`). Le jumeau désigné par son propre
+    nom se résout sur lui-même (aucun état d'opérations sous ce nom)."""
     apps = await d.apps()
+    a = _choisir(apps, app_)
+    try:
+        etat = operations.lire(a["nom"])
+    except OSError:
+        raise HTTPException(503, "état des opérations illisible : instance active inconnue") from None
+    emp = (etat or {}).get("emplacements") or {}
+    if not (isinstance(emp.get("A"), dict) and emp["A"].get("app_id") == a["id"]):
+        return {**a, "emplacement": None}
+    b = emp.get("B")
+    if etat.get("actif") == "B" and isinstance(b, dict) and b.get("app_id"):
+        jumeau = next((x for x in apps if x["id"] == b["app_id"]), None)
+        return {**(jumeau or {"id": b["app_id"], "nom": a["nom"] + reset.SUFFIXE_JUMEAU}),
+                "emplacement": "B"}
+    return {**a, "emplacement": "A"}
+
+
+def _emplacement(a: dict) -> dict:
+    """Réponses d'action : l'emplacement visé n'apparaît que pour une app en bleu/vert."""
+    return {"emplacement": a["emplacement"]} if a.get("emplacement") else {}
+
+
+def _choisir(apps: list, app_: str) -> dict:
     exact = [a for a in apps if a["id"] == app_]
     if not exact:
         exact = [a for a in apps if (a["nom"] or "").lower() == app_.strip().lower()]
@@ -146,14 +177,14 @@ async def lister_apps(_: str = Depends(cle_api)):
 async def etat_app(app_: str, _: str = Depends(cle_api)):
     d = fournisseur()
     try:
-        a = await _resoudre(d, app_)
+        a = await _resoudre_actif(d, app_)
         info = await d.app(a["id"])
     except DokployErreur as e:
         raise _erreur(e)
     deps = info["deploiements"]
     repere = repere_rollback.lire(a["id"])
     i = _courant(deps, repere)
-    return {"nom": info["nom"], "statut": info["statut"],
+    return {"nom": info["nom"], "statut": info["statut"], "emplacement": a["emplacement"],
             "rollback_disponible": _cible_par_defaut(info, repere) is not None,
             "dernier_deploiement": _resume(deps[0] if deps else None),
             "en_service": _resume(deps[i] if i is not None else None),
@@ -165,7 +196,7 @@ async def logs_app(app_: str, tail: int = 100, _: str = Depends(cle_api)):
     tail = max(1, min(tail, TAIL_BRIQUE_MAX))
     d = fournisseur()
     try:
-        a = await _resoudre(d, app_)
+        a = await _resoudre_actif(d, app_)
         info = await d.app(a["id"])
         if not info["deploiements"]:
             raise HTTPException(404, f"Aucun déploiement pour « {info['nom']} » : pas de logs.")
@@ -205,12 +236,12 @@ class CorpsRollback(BaseModel):
 async def redemarrer_app(app_: str, _: str = Depends(cle_api_fermee)):
     d = fournisseur()
     try:   # 3 appels : project.all, application.one (appName), application.reload
-        a = await _resoudre(d, app_)
+        a = await _resoudre_actif(d, app_)
         info = await d.app(a["id"])
         await d.redemarrer(a["id"], info["app_name"])
     except DokployErreur as e:
         raise _erreur(e)
-    return {"ok": True, "app": a["nom"]}
+    return {"ok": True, "app": a["nom"], **_emplacement(a)}
 
 
 @app.post("/apps/{app_}/deployer")
@@ -219,11 +250,11 @@ async def deployer_app(app_: str, corps: Optional[CorpsDeployer] = None,
     titre = ((corps.titre if corps else None) or "").strip() or TITRE_DEFAUT
     d = fournisseur()
     try:
-        a = await _resoudre(d, app_)
+        a = await _resoudre_actif(d, app_)
         await d.deployer(a["id"], titre)
     except DokployErreur as e:
         raise _erreur(e)
-    return {"ok": True, "app": a["nom"], "titre": titre}
+    return {"ok": True, "app": a["nom"], "titre": titre, **_emplacement(a)}
 
 
 _ROLLBACK_IMPOSSIBLE = ("retour arrière impossible : le rollback n'est pas activé sur cette app "
@@ -236,7 +267,7 @@ async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
     version = ((corps.version if corps else None) or "").strip()
     d = fournisseur()
     try:
-        a = await _resoudre(d, app_)
+        a = await _resoudre_actif(d, app_)
         info = await d.app(a["id"])
         deps = info["deploiements"]   # du plus récent au plus ancien
         if version:
@@ -257,7 +288,7 @@ async def rollback_app(app_: str, corps: Optional[CorpsRollback] = None,
     except DokployErreur as e:
         raise _erreur(e)
     return {"ok": True, "app": a["nom"], "version_visee": cible["titre"],
-            "rollback_id": cible["rollback_id"]}
+            "rollback_id": cible["rollback_id"], **_emplacement(a)}
 
 
 @app.get("/apps/{app_}/preuve")
@@ -311,6 +342,8 @@ async def sauvegarder_app(app_: str, _: str = Depends(cle_api_fermee)):
         r = await sauvegarde.sauvegarder(d, _entree_inventaire(a["nom"]))
     except DokployErreur as e:
         raise _erreur(e)
+    except sauvegarde.SauvegardeDesynchronisee as e:
+        raise HTTPException(409, str(e)) from None
     return {"ok": True, "app": a["nom"], **r}
 
 
@@ -339,6 +372,20 @@ def _entree_brute(nom_app: str) -> dict:
     return e
 
 
+def _exiger_reset_configurable(entree: dict) -> None:
+    """Refus AVANT le 202 (sinon l'échec n'arrive qu'en fond, après la réservation)."""
+    if not entree.get("reset"):
+        raise HTTPException(409, "reset non configuré pour cette application")
+    base = ((entree.get("bases") or [{}])[0] or {}).get("base")
+    if (not isinstance(base, str) or not reset.RE_RACINE.fullmatch(base)
+            or reset.RE_GENEREE.fullmatch(base)):
+        raise HTTPException(409, "configuration invalide : nom de base trop long ou hors motif "
+                                 "pour un reset (31 caractères au plus, [a-z0-9_])")
+    if not os.getenv("LIVRAISON_TRAEFIK_URL"):
+        raise HTTPException(503, "LIVRAISON_TRAEFIK_URL non configuré : contrôle de santé de "
+                                 "l'instance neuve impossible")
+
+
 def _lancer(app_nom: str, type_: str, coro_fabrique) -> dict:
     """Réserve l'opération (409 si déjà en cours) puis lance la tâche de fond ; 202."""
     try:
@@ -361,8 +408,7 @@ async def reset_app(app_: str, _: str = Depends(cle_api_fermee)):
     except DokployErreur as e:
         raise _erreur(e)
     entree = _entree_brute(a["nom"])
-    if not entree.get("reset"):
-        raise HTTPException(409, "reset non configuré pour cette application")
+    _exiger_reset_configurable(entree)
     ex = executeur()
     exiger_preuve(a["id"])
     return _lancer(a["nom"], "reset", lambda oid: reset.reset(d, ex, entree, a["nom"], a["id"], oid))
@@ -376,8 +422,7 @@ async def retour_arriere_app(app_: str, _: str = Depends(cle_api_fermee)):
     except DokployErreur as e:
         raise _erreur(e)
     entree = _entree_brute(a["nom"])
-    if not entree.get("reset"):
-        raise HTTPException(409, "reset non configuré pour cette application")
+    _exiger_reset_configurable(entree)
     try:
         etat = operations.lire(a["nom"])
     except OSError:

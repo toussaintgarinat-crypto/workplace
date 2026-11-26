@@ -24,7 +24,28 @@ def _epoch(iso: Optional[str]) -> float:
         return 0.0
 
 
+MOTIF_DESYNCHRONISEE = "sauvegarde_desynchronisee"
+
+
+class SauvegardeDesynchronisee(Exception):
+    """La sauvegarde Dokploy ne vise pas la base attendue (base active ou base d'inventaire)."""
+
+    def __init__(self, base: str):
+        super().__init__(f"{MOTIF_DESYNCHRONISEE} : la sauvegarde Dokploy ne vise pas la base "
+                         f"{base} (base active) ; la remettre sur {base} dans Dokploy")
+        self.base = base
+
+
+async def _exiger_synchronisee(d: Dokploy, b: dict) -> None:
+    """`b["base"]` vient de `base_effective` (base active d'un reset, sinon celle de
+    l'inventaire) : la sauvegarde Dokploy doit viser exactement cette base."""
+    if await d.base_sauvegarde(b["sauvegarde_id"]) != b["base"]:
+        raise SauvegardeDesynchronisee(b["base"])
+
+
 async def sauvegarder(d: Dokploy, entree: dict) -> dict:
+    for b in entree.get("bases", []):      # toutes contrôlées AVANT d'en lancer une seule
+        await _exiger_synchronisee(d, b)
     bases = []
     for b in entree.get("bases", []):
         await d.sauvegarder_base(b["sauvegarde_id"])
@@ -76,6 +97,7 @@ async def _verifier(d, ex, entree, app_id, preuve_id, horloge, delai_global) -> 
         for b in bases:
             nom = b["base"]
             try:
+                await _exiger_synchronisee(d, b)
                 await d.sauvegarder_base(b["sauvegarde_id"])
                 fichiers = await d.fichiers_sauvegarde(b["sauvegarde_id"])
                 if not fichiers or _epoch(fichiers[0]["date"]) < debut - TOLERANCE_HORLOGE_S:
@@ -83,6 +105,9 @@ async def _verifier(d, ex, entree, app_id, preuve_id, horloge, delai_global) -> 
                     continue
                 r = await ex.verifier(b["service"], b["utilisateur"], b["base"],
                                       f"{b['prefixe_s3']}/{fichiers[0]['nom']}")
+            except SauvegardeDesynchronisee:
+                raisons.append(f"{nom} : {MOTIF_DESYNCHRONISEE}")
+                continue
             except (DokployErreur, ExecuteurErreur) as e:
                 raisons.append(f"{nom} : {e.message}")
                 continue

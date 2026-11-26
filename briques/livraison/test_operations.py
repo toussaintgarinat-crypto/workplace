@@ -195,3 +195,45 @@ def test_invalider_retour_oserror_propage_etat_intact(data, monkeypatch):
         with pytest.raises(OSError):
             operations.invalider_retour("app")
     assert json.loads((data / "operations.json").read_text()) == avant
+
+
+def test_precedente_protegee_posee_par_retour_effacee_par_reset():
+    operations.basculer_etat("app", "B", "g1", "temoin")
+    assert operations.precedente_protegee(operations.lire("app")) is False
+    operations.basculer_etat("app", "A", "temoin", "g1", precedente_protegee=True)
+    d = operations.lire("app")
+    assert d["precedente_protegee"] is True and operations.precedente_protegee(d)
+    operations.basculer_etat("app", "B", "g2", "temoin")      # reset réussi : effacé
+    assert operations.precedente_protegee(operations.lire("app")) is False
+    assert operations.precedente_protegee(None) is False
+
+
+def test_precedente_protegee_oserror_propage_etat_intact(data, monkeypatch):
+    operations.basculer_etat("app", "B", "g1", "temoin")
+    avant = json.loads((data / "operations.json").read_text())
+
+    def boom(*a, **k):
+        raise OSError("fsync")
+    with monkeypatch.context() as m:
+        m.setattr(os, "fsync", boom)
+        with pytest.raises(OSError):
+            operations.basculer_etat("app", "A", "temoin", "g1", precedente_protegee=True)
+    assert json.loads((data / "operations.json").read_text()) == avant
+
+
+def test_marquer_interrompues_nomme_la_base_neuve_orpheline():
+    operations.basculer_etat("a", "A", "temoin", None)
+    oid = operations.demarrer("a", "reset")
+    operations.etape("a", oid, "clonage", base_neuve="temoin_v0a1b2c3d")
+    operations.marquer_interrompues()
+    assert operations.lire("a")["op"]["message"] == (
+        "la brique a redémarré pendant l'opération ; base neuve temoin_v0a1b2c3d peut-être "
+        "orpheline (à vérifier)")
+
+
+def test_marquer_interrompues_ne_nomme_pas_la_base_devenue_active():
+    operations.basculer_etat("a", "B", "temoin_v0a1b2c3d", "temoin")
+    oid = operations.demarrer("a", "reset")
+    operations.etape("a", oid, "nettoyage", base_neuve="temoin_v0a1b2c3d")
+    operations.marquer_interrompues()
+    assert operations.lire("a")["op"]["message"] == "la brique a redémarré pendant l'opération"
