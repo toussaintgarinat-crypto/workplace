@@ -11,6 +11,7 @@ from pathlib import Path
 from executeur import ErreurExecuteur, Runner, charger_config
 
 PREFIXE = "forgejo/"
+RE_NOM_SAUVEGARDE = re.compile(r"forgejo-\d{8}T\d{6}Z\.zip")
 
 
 def nom_fichier(maintenant: float) -> str:
@@ -25,6 +26,10 @@ def _curl(runner, cfg, args, url, timeout=600):
 
 def sauvegarder(runner, cfg, conteneur="forgejo-forgejo-1", garder=7, maintenant=None,
                 dossier=None) -> dict:
+    if garder < 1:
+        raise ErreurExecuteur(500, "garder doit être ≥ 1")
+    if dossier is None:
+        dossier = "/var/tmp" if Path("/var/tmp").is_dir() else tempfile.gettempdir()
     now = time.time() if maintenant is None else maintenant
     nom = nom_fichier(now)
     base = f"{cfg['S3_ENDPOINT'].rstrip('/')}/{cfg['S3_BUCKET']}"
@@ -48,26 +53,39 @@ def sauvegarder(runner, cfg, conteneur="forgejo-forgejo-1", garder=7, maintenant
             if code != 0 or not m or int(m.group(1)) != taille:
                 raise ErreurExecuteur(502, "taille de l'objet S3 différente du dump local")
         finally:
-            runner.run(["docker", "exec", conteneur, "rm", "-f", f"/tmp/{nom}"])
+            try:
+                runner.run(["docker", "exec", conteneur, "rm", "-f", f"/tmp/{nom}"])
+            except Exception:
+                pass
     supprimes: list[str] = []
+    retention = "ok"
     code, out, _ = _curl(runner, cfg, [], f"{base}?list-type=2&prefix={PREFIXE}", timeout=60)
-    if code == 0:
-        noms = sorted(set(re.findall(r"<Key>" + PREFIXE + r"([^<]+)</Key>", out.decode())) | {nom})
-        for ancien in noms[:-garder] if garder > 0 else []:
+    if code != 0:
+        retention = "listing_echec"
+    else:
+        cles = re.findall(r"<Key>" + PREFIXE + r"([^<]+)</Key>", out.decode(errors="replace"))
+        noms = sorted({c for c in cles if RE_NOM_SAUVEGARDE.fullmatch(c)} | {nom})
+        for ancien in noms[:-garder]:
             if ancien == nom:
                 continue
             c, _, _ = _curl(runner, cfg, ["-X", "DELETE"], f"{base}/{PREFIXE}{ancien}", timeout=60)
             if c == 0:
                 supprimes.append(ancien)
-    return {"fichier": nom, "taille": taille, "supprimes": supprimes}
+            else:
+                retention = "suppression_partielle"
+    return {"fichier": nom, "taille": taille, "supprimes": supprimes, "retention": retention}
 
 
 def main() -> int:
     try:
-        print(json.dumps(sauvegarder(Runner(), charger_config())))
-        return 0
+        res = sauvegarder(Runner(), charger_config())
+        print(json.dumps(res))
+        return 0 if res["retention"] == "ok" else 2
     except ErreurExecuteur as e:
         print(json.dumps({"ok": False, "erreur": e.message}), file=sys.stderr)
+        return 1
+    except Exception:
+        print(json.dumps({"ok": False, "erreur": "erreur interne"}), file=sys.stderr)
         return 1
 
 
