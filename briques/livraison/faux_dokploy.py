@@ -167,6 +167,17 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             b = etat["backups"].get(corps.get("backupId"))
             if not b:
                 return rep(404, {"message": "NOT_FOUND"})
+            # Réel (v0.31.4, relevé en live) : `customName` nul est refusé (doit être absent) ;
+            # `serviceName` et `metadata` sont requis (nuls acceptés), s'ils existent dans la config.
+            champs = {}
+            if "customName" in corps and corps["customName"] is None:
+                champs["customName"] = ["Invalid input: expected string, received null"]
+            for k in ("serviceName", "metadata"):
+                if k in b and k not in corps:
+                    champs[k] = ["Invalid input: expected nonoptional, received undefined"]
+            if champs:
+                return rep(400, {"message": "Input validation failed", "code": "BAD_REQUEST",
+                                 "data": {"zodError": {"fieldErrors": champs}}})
             b.update({k: v for k, v in corps.items() if k != "backupId"})
             return httpx.Response(200, content=b"")
         if chemin == "/api/application.redeploy":

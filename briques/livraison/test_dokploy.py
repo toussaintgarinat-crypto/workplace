@@ -446,8 +446,9 @@ def test_rebaser_sauvegarde_recopie_tous_les_scalaires_de_backup_one():
         "backupId": "B1", "appName": "bk-x", "schedule": "0 2 * * *", "enabled": True,
         "database": "ancienne", "prefix": "pg", "serviceName": None, "destinationId": "DEST",
         "keepLatestCount": 7, "backupType": "database", "databaseType": "postgres",
+        "customName": None,
         "composeId": None, "postgresId": "PG1", "mariadbId": None, "mysqlId": None,
-        "mongoId": None, "userId": None, "metadata": {"postgres": {"databaseUser": "u"}},
+        "mongoId": None, "userId": None, "metadata": None,
         "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-02T00:00:00Z",
         "destination": {"destinationId": "DEST", "secretAccessKey": "SECRET"},
         "postgres": {"postgresId": "PG1", "databasePassword": "SECRET"}, "mysql": None,
@@ -460,7 +461,7 @@ def test_rebaser_sauvegarde_recopie_tous_les_scalaires_de_backup_one():
         "database": "neuve", "prefix": "pg", "serviceName": None, "destinationId": "DEST",
         "keepLatestCount": 7, "backupType": "database", "databaseType": "postgres",
         "composeId": None, "postgresId": "PG1", "mariadbId": None, "mysqlId": None,
-        "mongoId": None, "userId": None}
+        "mongoId": None, "userId": None, "metadata": None}
 
 
 def test_rebaser_sauvegarde_lecture_en_echec_n_est_pas_envoyee():

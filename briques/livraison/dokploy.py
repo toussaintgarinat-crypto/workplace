@@ -306,6 +306,9 @@ class Dokploy:
             raise DokployErreur(e.message, e.statut, envoyee=False) from None
         corps = {k: v for k, v in b.items()
                  if k not in CLES_SAUVEGARDE_LECTURE_SEULE
-                 and (v is None or isinstance(v, (str, int, float, bool)))}
+                 and (v is None or isinstance(v, (str, int, float, bool)))
+                 # Réel : `customName` nul est refusé (absent = inchangé) ; les autres nuls
+                 # (serviceName, metadata…) sont requis et acceptés.
+                 and not (k == "customName" and v is None)}
         corps.update(backupId=backup_id, database=base)
         await self._requete("POST", "/api/backup.update", json=corps)
