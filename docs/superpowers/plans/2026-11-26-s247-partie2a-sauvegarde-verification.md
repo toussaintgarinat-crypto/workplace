@@ -719,7 +719,7 @@ def test_executeur_port_limite_a_l_ip_du_hp():
 def test_executeur_secrets_lus_dans_un_fichier_root_0600_cree_a_la_main():
     t = text()
     assert "EnvironmentFile=/etc/executeur-restauration/env" in t
-    assert "mode: \"0600\"" in t and "ansible.builtin.stat" in t
+    assert 'stat.mode == "0600"' in t and "ansible.builtin.stat" in t
     assert "EXECUTEUR_S3_SECRET=" not in t and "EXECUTEUR_KEY=" not in t
 
 
