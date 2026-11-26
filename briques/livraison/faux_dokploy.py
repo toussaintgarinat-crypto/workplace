@@ -77,10 +77,12 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             return rep(401, {"message": "Unauthorized"})
         if etat.get("limite"):
             return rep(429, {"message": "Rate limit exceeded"})
-        # Panne injectée : `pannes[chemin]` = liste consommée appel par appel (True -> 500).
+        # Panne injectée : `pannes[chemin]` = liste consommée appel par appel (True -> 500,
+        # un entier -> ce statut HTTP, False -> appel normal).
         pannes = (etat.get("pannes") or {}).get(chemin)
-        if pannes and pannes.pop(0):
-            return rep(500, {"message": "panne injectée"})
+        panne = pannes.pop(0) if pannes else False
+        if panne:
+            return rep(500 if panne is True else panne, {"message": "panne injectée"})
         apps = etat["apps"]
         if chemin == "/api/project.all":
             liste = [{"applicationId": a["applicationId"], "name": a["name"],

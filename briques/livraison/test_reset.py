@@ -38,8 +38,10 @@ async def _sans_attente(_s):
 class FauxEx:
     """Exécuteur à scénarios : `verdicts` et `recomptes` sont consommés appel par appel."""
 
-    def __init__(self, verdicts=None, recomptes=None, echec_supprimer=False, cloner_leve=False):
+    def __init__(self, verdicts=None, recomptes=None, echec_supprimer=False, cloner_leve=False,
+                 bloquer_supprimer=False):
         self.appels = []
+        self.bloquer_supprimer = bloquer_supprimer
         self.origine = {"evenements": 42, "membres": 3}
         self.verdicts = list(verdicts or [])
         self.recomptes = list(recomptes or [])
@@ -67,6 +69,8 @@ class FauxEx:
     async def supprimer_base(self, service, utilisateur, base):
         self.appels.append(("supprimer_base", base))
         assert RE_GENEREE.fullmatch(base), base
+        if self.bloquer_supprimer:
+            await asyncio.sleep(3600)
         if self.echec_supprimer:
             raise ExecuteurErreur("boom")
         self.bases.discard(base)
@@ -244,12 +248,22 @@ def test_sabotage_deploiement_error():
 
 def test_sabotage_deploiement_incertain_504_sans_reessai():
     etat, ex = _monde(), FauxEx()
-    etat["pannes"] = {"/api/application.deploy": [True]}
-
-    # 500 sur la mutation -> statut lu ensuite != error -> incertain
+    etat["pannes"] = {"/api/application.deploy": [504]}
     s = _lancer(etat, ex)
     _aucune_bascule(etat, s, ex, "deploiement_incertain")
     assert len(_appels(etat, "/api/application.deploy")) == 1
+    # 504 : incertain d'emblée, sans relire le statut du jumeau après la mutation
+    b = _jumeau(etat)
+    i = etat["appels"].index(_appels(etat, "/api/application.deploy")[0])
+    assert not [a for a in etat["appels"][i + 1:] if a["chemin"] == "/api/application.one"
+                and a["params"].get("applicationId") == b]
+
+
+def test_sabotage_deploiement_500_relit_le_statut():
+    etat, ex = _monde(), FauxEx()
+    etat["pannes"] = {"/api/application.deploy": [True]}
+    s = _lancer(etat, ex)
+    _aucune_bascule(etat, s, ex, "deploiement_incertain")
 
 
 def test_sabotage_sante_ko():
@@ -310,16 +324,26 @@ def test_sauvegarde_sans_fichier_recent():
 
 # ── bascule ──
 
+def _message_bascule_incomplete(s, nouvelle):
+    assert s["op"]["etat"] == "echec" and s["op"]["motif"] == "bascule_incomplete"
+    assert s["op"]["message"] == (
+        f"bascule_incomplete : vérifier les domaines ; sauvegarde sur {nouvelle} ; "
+        f"base neuve {nouvelle} conservée ; l'état indique encore la base temoin")
+
+
 def test_echec_du_second_changer_hote_remet_les_hotes():
     etat, ex = _monde(), FauxEx()
     etat["pannes"] = {"/api/domain.update": [False, True]}
     s = _lancer(etat, ex)
     b = _jumeau(etat)
-    assert s["op"]["etat"] == "echec"
-    assert s["op"]["message"].startswith("bascule_incomplete")
+    nouvelle = ex.noms("cloner")[0]
+    _message_bascule_incomplete(s, nouvelle)
     assert _hotes(etat) == {"A1": PUBLIC, b: TEST}
     assert s["actif"] == "A" and s["base_active"] == "temoin"
-    assert etat["backups"]["BK1"]["database"] == "temoin" and ex.bases == set()
+    # le public a peut-être écrit dans la base neuve : ni suppression ni sauvegarde défaite
+    assert nouvelle in ex.bases and nouvelle not in ex.noms("supprimer_base")
+    assert etat["backups"]["BK1"]["database"] == nouvelle
+    assert [a["corps"]["database"] for a in _appels(etat, "/api/backup.update")] == [nouvelle]
     # jamais sans hôte public : l'actif retrouve le public AVANT que l'inactif ne le rende
     ups = [(a["corps"]["domainId"], a["corps"]["host"]) for a in _appels(etat, "/api/domain.update")]
     dom_a, dom_b = s["emplacements"]["A"]["domaine_id"], s["emplacements"]["B"]["domaine_id"]
@@ -330,10 +354,11 @@ def test_hotes_non_remis_garde_base_et_sauvegarde():
     etat, ex = _monde(), FauxEx()
     etat["pannes"] = {"/api/domain.update": [False, True, True, True]}
     s = _lancer(etat, ex)
-    assert s["op"]["message"].startswith("bascule_incomplete")
     nouvelle = ex.noms("cloner")[0]
+    _message_bascule_incomplete(s, nouvelle)
     # l'état réel est inconnu : on ne détruit pas la base qui sert peut-être le public
     assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == nouvelle
+    assert nouvelle not in ex.noms("supprimer_base")
 
 
 def test_echec_disque_a_la_bascule_remet_les_hotes(monkeypatch):
@@ -343,8 +368,20 @@ def test_echec_disque_a_la_bascule_remet_les_hotes(monkeypatch):
         raise OSError("disque")
     monkeypatch.setattr(operations, "basculer_etat", panne)
     s = _lancer(etat, ex)
-    assert s["op"]["message"].startswith("bascule_incomplete")
+    nouvelle = ex.noms("cloner")[0]
+    _message_bascule_incomplete(s, nouvelle)
     assert _hotes(etat)["A1"] == PUBLIC and s["actif"] == "A"
+    assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == nouvelle
+
+
+def test_premier_changer_hote_en_504_conserve_la_base():
+    # 504 sur une mutation : Dokploy l'a peut-être appliquée, le public a peut-être basculé
+    etat, ex = _monde(), FauxEx()
+    etat["pannes"] = {"/api/domain.update": [504]}
+    s = _lancer(etat, ex)
+    nouvelle = ex.noms("cloner")[0]
+    _message_bascule_incomplete(s, nouvelle)
+    assert nouvelle in ex.bases and etat["backups"]["BK1"]["database"] == nouvelle
 
 
 # ── secrets, verrou, interruption, configuration ──
@@ -409,6 +446,70 @@ def test_interruption_compense_et_relance():
     assert ex.bases == set() and _appels(etat, "/api/domain.update") == []
 
 
+def test_interruption_apres_bascule_enregistree_ne_defait_rien():
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+    _lancer(etat, ex)
+    ex.bloquer_supprimer = True
+    n = len(_appels(etat, "/api/domain.update"))
+
+    async def scenario():
+        oid = operations.demarrer(APP, "reset")
+        t = asyncio.create_task(reset.reset(_dok(etat), ex, ENTREE, APP, "A1", oid,
+                                            sante=_sain, dormir=_sans_attente))
+        while not ex.noms("supprimer_base"):
+            await asyncio.sleep(0.01)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    run(scenario())
+    s = operations.lire(APP)
+    nouvelle = ex.noms("cloner")[-1]
+    assert s["op"]["etat"] == "interrompue" and s["op"]["message"].startswith(
+        "interrompue_par_arret")
+    assert s["actif"] == "B" and s["base_active"] == nouvelle
+    assert len(_appels(etat, "/api/domain.update")) == n + 2      # aucun hôte remis
+    assert _hotes(etat) == {"A1": TEST, _jumeau(etat): PUBLIC}
+    assert etat["backups"]["BK1"]["database"] == nouvelle and nouvelle in ex.bases
+
+
+@pytest.mark.parametrize("base", ["Temoin", "tem-oin", "a" * 32, "temoin_v0a1b2c3d", "",
+                                  "1temoin"])
+def test_nom_de_base_d_origine_invalide_refuse(base):
+    etat, ex = _monde(), FauxEx()
+    entree = {**ENTREE, "bases": [{**ENTREE["bases"][0], "base": base}]}
+    s = _lancer(etat, ex, entree=entree)
+    assert s["op"]["message"] == "configuration_manquante" and etat["appels"] == []
+
+
+def test_entree_effective_refusee():
+    """Garde : reset() doit recevoir l'entrée BRUTE de l'inventaire, pas base_effective()."""
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+    effective = reset.base_effective(ENTREE, operations.lire(APP))
+    n = len(etat["appels"])
+    s = _lancer(etat, ex, entree=effective)
+    assert s["op"]["message"] == "configuration_manquante" and len(etat["appels"]) == n
+
+
+def test_sabotage_au_second_reset_ne_touche_pas_l_actif_b():
+    etat, ex = _monde(), FauxEx()
+    s1 = _lancer(etat, ex)
+    g1, b = s1["base_active"], _jumeau(etat)
+    env_b = etat["apps"][b]["env"]
+    n = len(_appels(etat, "/api/domain.update"))
+    s = _lancer(etat, ex, sante=_malade)
+    assert s["op"]["etat"] == "echec" and s["op"]["message"] == "sante_ko"
+    assert len(_appels(etat, "/api/domain.update")) == n
+    assert etat["apps"][b]["env"] == env_b
+    assert all(a["corps"]["applicationId"] != b for a in
+               _appels(etat, "/api/application.saveEnvironment")[1:])
+    assert s["actif"] == "B" and s["base_active"] == g1
+    assert etat["backups"]["BK1"]["database"] == g1 and ex.bases == {g1}
+    assert _hotes(etat) == {"A1": TEST, b: PUBLIC}
+
+
 def test_sante_par_defaut_ferme_sans_url(monkeypatch):
     monkeypatch.delenv("LIVRAISON_TRAEFIK_URL", raising=False)
     assert run(reset.sante_http(TEST, "/sante", dormir=_sans_attente)) is False
@@ -457,6 +558,68 @@ def test_retour_arriere_sans_base_precedente_refuse():
     s = _retour(etat)
     assert s["op"]["etat"] == "echec" and s["op"]["message"] == "aucun_retour_possible"
     assert _appels(etat, "/api/domain.update") == []
+
+
+def test_retour_arriere_apres_deux_resets():
+    etat, ex = _monde(), FauxEx()
+    s1 = _lancer(etat, ex)
+    s2 = _lancer(etat, ex)
+    s = _retour(etat)
+    assert s["op"]["etat"] == "reussie", s["op"]
+    assert s["actif"] == "B" and s["base_active"] == s1["base_active"]
+    assert etat["backups"]["BK1"]["database"] == s1["base_active"]
+    assert s["base_precedente"] == s2["base_active"]
+
+
+def _refus_retour_invalide(etat, ex):
+    hotes, sauv = _hotes(etat), etat["backups"]["BK1"]["database"]
+    n_dom, n_bk = len(_appels(etat, "/api/domain.update")), len(_appels(etat, "/api/backup.update"))
+    s = _retour(etat)
+    assert s["op"]["etat"] == "echec" and s["op"]["message"] == "retour_invalide", s["op"]
+    assert _hotes(etat) == hotes and etat["backups"]["BK1"]["database"] == sauv
+    assert len(_appels(etat, "/api/domain.update")) == n_dom
+    assert len(_appels(etat, "/api/backup.update")) == n_bk
+    return s
+
+
+def test_retour_arriere_refuse_apres_un_reset_echoue():
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+    s2 = _lancer(etat, ex, sante=_malade)
+    assert s2["op"]["message"] == "sante_ko" and s2["retour_invalide"] is True
+    assert not reset.peut_retour_arriere(s2)
+    s = _refus_retour_invalide(etat, ex)
+    assert s["actif"] == "B"
+
+
+def test_retour_arriere_refuse_si_l_env_de_l_inactif_a_change(monkeypatch):
+    # même si le drapeau n'a pas pu être écrit, l'env de l'inactif est vérifié
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+
+    def panne(*a, **k):
+        raise OSError("disque")
+    monkeypatch.setattr(operations, "invalider_retour", panne)
+    s2 = _lancer(etat, ex, sante=_malade)
+    assert s2["op"]["message"] == "sante_ko" and not s2.get("retour_invalide")
+    assert reset.peut_retour_arriere(s2)
+    _refus_retour_invalide(etat, ex)
+
+
+def test_retour_arriere_refuse_si_env_illisible():
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+    etat["apps"]["A1"]["env"] = "NODE_ENV=production\n"
+    _refus_retour_invalide(etat, ex)
+
+
+def test_reset_reussi_apres_echec_retablit_le_retour():
+    etat, ex = _monde(), FauxEx()
+    _lancer(etat, ex)
+    _lancer(etat, ex, sante=_malade)
+    s = _lancer(etat, ex)
+    assert s["op"]["etat"] == "reussie" and s["retour_invalide"] is False
+    assert _retour(etat)["op"]["etat"] == "reussie"
 
 
 def test_retour_arriere_sante_ko_ne_bascule_pas():

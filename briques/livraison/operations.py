@@ -159,7 +159,18 @@ def basculer_etat(app: str, actif: str, base_active: str, base_precedente: Optio
     with _verrou:
         tout = _lire_tout()
         e = _entree(tout, app)
-        e.update(actif=actif, base_active=base_active, base_precedente=base_precedente)
+        e.update(actif=actif, base_active=base_active, base_precedente=base_precedente,
+                 retour_invalide=False)
+        _ecrire_tout(tout)
+
+
+def invalider_retour(app: str) -> None:
+    """L'emplacement inactif ne porte plus la génération précédente (un reset a réécrit son env
+    puis échoué) : le retour arrière est refusé jusqu'à la prochaine bascule réussie.
+    `base_precedente` est gardée pour que le reset suivant la nettoie."""
+    with _verrou:
+        tout = _lire_tout()
+        _entree(tout, app)["retour_invalide"] = True
         _ecrire_tout(tout)
 
 

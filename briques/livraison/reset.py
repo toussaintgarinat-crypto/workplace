@@ -21,7 +21,7 @@ import httpx
 import operations
 from client_executeur import ExecuteurErreur
 from dokploy import CLES_SOURCE, DokployErreur
-from envreecriture import reecrire_env
+from envreecriture import nomme_la_base, reecrire_env
 from sauvegarde import TOLERANCE_HORLOGE_S, _epoch
 
 log = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ SANTE_ESSAIS, SANTE_PAS_S, SANTE_DELAI_S = 3, 5.0, 10.0
 CONFIRMATION_ESSAIS, CONFIRMATION_PAS_S = 60, 5.0
 SUFFIXE_JUMEAU = "-jumeau"
 RE_GENEREE = re.compile(r"[a-z_][a-z0-9_]{0,30}_v[0-9a-f]{8}")
+RE_RACINE = re.compile(r"[a-z_][a-z0-9_]{0,30}")    # racine dont le nom généré reste supprimable
 Sante = Callable[[str, str], Awaitable[bool]]
 
 
@@ -65,8 +66,8 @@ def peut_retour_arriere(etat: Optional[dict]) -> bool:
         return False
     emp = etat.get("emplacements") or {}
     return bool(etat.get("actif") in ("A", "B") and etat.get("base_active")
-                and etat.get("base_precedente") and isinstance(emp.get("A"), dict)
-                and isinstance(emp.get("B"), dict))
+                and etat.get("base_precedente") and not etat.get("retour_invalide")
+                and isinstance(emp.get("A"), dict) and isinstance(emp.get("B"), dict))
 
 
 async def sante_http(hote: str, chemin: str, dormir: Callable = asyncio.sleep,
@@ -96,6 +97,11 @@ class _Contexte:
         self.etape: Optional[str] = None
         self.nouvelle: Optional[str] = None     # base générée peut-être créée, pas encore active
         self.rebase_tente = self.bascule_tentee = self.bascule_faite = False
+        self.env_ecrit = False          # env de l'inactif peut-être réécrit (retour invalide)
+        self.public_bascule = False     # le public sert peut-être déjà l'inactif
+        self.conserve = False           # base neuve et sauvegarde gardées en l'état
+        self.cible_sauvegarde: Optional[str] = None
+        self.base_active: Optional[str] = None
         self.alertes: list[str] = []
 
     def charger(self, entree) -> None:
@@ -105,6 +111,11 @@ class _Contexte:
         self.service, self.utilisateur = b["service"], b["utilisateur"]
         self.sauvegarde_id, self.prefixe, self.base_racine = (b["sauvegarde_id"],
                                                               b["prefixe_s3"], b["base"])
+        # Une racine hors motif donnerait des bases générées jamais supprimables ; une racine
+        # déjà « générée » trahit une entrée effective (base_effective) au lieu de l'entrée brute.
+        if (not isinstance(self.base_racine, str) or not RE_RACINE.fullmatch(self.base_racine)
+                or RE_GENEREE.fullmatch(self.base_racine)):
+            raise _Echec("configuration_manquante")
         self.cfg = entree["reset"]
 
     def marquer(self, nom: str, **extra) -> None:
@@ -189,7 +200,7 @@ async def _cloner(c: _Contexte) -> None:
     if not fichiers or _epoch(fichiers[0]["date"]) < debut - TOLERANCE_HORLOGE_S:
         raise _Echec("sauvegarde_absente")
     c.heure_sauvegarde = (fichiers[0]["date"] or "")[11:19]
-    c.nouvelle = f"{c.base_racine[:31]}_v{secrets.token_hex(4)}"
+    c.nouvelle = f"{c.base_racine}_v{secrets.token_hex(4)}"
     r = await c.ex.cloner(c.service, c.utilisateur, c.base_active,
                           f"{c.prefixe}/{fichiers[0]['nom']}", c.nouvelle)
     c.comptages = r.get("comptages_origine")
@@ -241,6 +252,7 @@ async def _configurer(c: _Contexte) -> None:
     if any(v is None for v in source.values()):
         raise _Echec("configuration_manquante")
     id_ = c.app_id(c.inactif)
+    c.env_ecrit = True      # avant l'appel : un délai dépassé peut l'avoir appliqué
     await c.d.ecrire_env(id_, env)
     await c.d.configurer_source(id_, source)
     avant = await _dernier_deploiement(c, id_)
@@ -301,6 +313,7 @@ async def _preparer_inactif(c: _Contexte) -> None:
 async def _rebaser(c: _Contexte, base: str) -> None:
     c.marquer("sauvegarde")
     c.rebase_tente = True
+    c.cible_sauvegarde = base
     await c.d.rebaser_sauvegarde(c.sauvegarde_id, base)
 
 
@@ -309,7 +322,16 @@ async def _basculer(c: _Contexte, base_active: str, base_precedente: Optional[st
     c.marquer("bascule")
     c.bascule_tentee = True
     port = c.cfg["port_app"]
-    await c.d.changer_hote(c.dom(c.inactif), c.cfg["domaine_public"], port)
+    try:
+        await c.d.changer_hote(c.dom(c.inactif), c.cfg["domaine_public"], port)
+    except DokployErreur as e:
+        if e.statut == 504:     # mutation peut-être appliquée
+            c.public_bascule = True
+        raise
+    except asyncio.CancelledError:
+        c.public_bascule = True
+        raise
+    c.public_bascule = True     # de vrais utilisateurs écrivent peut-être déjà dans la base neuve
     await c.d.changer_hote(c.dom(c.actif), c.cfg["domaine_test"], port)
     operations.basculer_etat(c.app, c.inactif, base_active, base_precedente)
     c.bascule_faite = True
@@ -327,12 +349,21 @@ async def _remettre_hotes(c: _Contexte) -> bool:
 
 
 async def _compenser(c: _Contexte, motif: str) -> str:
-    """Remet tout dans l'état d'avant (meilleur effort, ne lève jamais) ; rend le motif final."""
+    """Remet tout dans l'état d'avant (meilleur effort, ne lève jamais) ; rend le motif final.
+    Dès que le public a pu servir l'inactif, la base neuve et la sauvegarde sont GARDÉES (des
+    données y ont peut-être été écrites) : seul l'échange des hôtes est défait."""
+    if c.env_ecrit and not c.bascule_faite:
+        try:
+            operations.invalider_retour(c.app)
+        except Exception as e:
+            log.error("reset %s : retour arrière non invalidé (%s)", c.app, _motif(e))
     if c.bascule_tentee and not c.bascule_faite:
-        if not await _remettre_hotes(c):
-            # Qui sert le public est inconnu : on ne détruit ni la base neuve ni la sauvegarde.
-            log.error("reset %s : bascule incomplète, hôtes non remis — vérifier les domaines",
-                      c.app)
+        remis = await _remettre_hotes(c)
+        if c.public_bascule or not remis:
+            log.error("reset %s : bascule incomplète (hôtes %s), base neuve et sauvegarde "
+                      "conservées — vérifier les domaines", c.app,
+                      "remis" if remis else "non remis")
+            c.conserve = True
             return "bascule_incomplete"
         motif = "bascule_incomplete"
     if c.rebase_tente:
@@ -357,8 +388,19 @@ def _terminer(c: _Contexte, etat: str, message: str, motif: Optional[str] = None
         log.warning("reset %s : état final non enregistré (%s)", c.app, _motif(e))
 
 
-def _message_echec(motif: str) -> str:
-    return motif + " : vérifier les domaines" if motif == "bascule_incomplete" else motif
+def _message_echec(c: _Contexte, motif: str) -> str:
+    """Les noms de base ne sont pas des secrets (motif validé) : on les donne pour agir."""
+    if motif != "bascule_incomplete":
+        return motif
+    parties = ["bascule_incomplete : vérifier les domaines"]
+    if c.conserve:
+        if c.cible_sauvegarde:
+            parties.append(f"sauvegarde sur {c.cible_sauvegarde}")
+        if c.nouvelle:
+            parties.append(f"base neuve {c.nouvelle} conservée")
+        if c.cible_sauvegarde and c.base_active and c.cible_sauvegarde != c.base_active:
+            parties.append(f"l'état indique encore la base {c.base_active}")
+    return " ; ".join(parties)
 
 
 async def _executer(c: _Contexte, deroule) -> None:
@@ -370,12 +412,15 @@ async def _executer(c: _Contexte, deroule) -> None:
                       "non fait", "interrompue_par_arret")
         else:
             await _compenser(c, "interrompue_par_arret")
-            _terminer(c, "interrompue", "interrompue_par_arret", "interrompue_par_arret")
+            message = "interrompue_par_arret"
+            if c.conserve:
+                message += " ; " + _message_echec(c, "bascule_incomplete")
+            _terminer(c, "interrompue", message, "interrompue_par_arret")
         raise
     except Exception as e:
         motif = await _compenser(c, _motif(e))
         log.warning("reset %s : échec à l'étape %s (%s)", c.app, c.etape, motif)
-        _terminer(c, "echec", _message_echec(motif), motif)
+        _terminer(c, "echec", _message_echec(c, motif), motif)
 
 
 # ── points d'entrée ──
@@ -388,6 +433,9 @@ def _resume(comptages: dict) -> str:
 async def reset(d, ex, entree, app_nom: str, app_id: str, operation_id: str,
                 sante: Optional[Sante] = None, horloge: Callable[[], float] = time.time,
                 dormir: Callable = asyncio.sleep) -> None:
+    """IMPORTANT : `entree` est l'entrée BRUTE de `inventaire.lire()`, JAMAIS celle de
+    `main._entree_inventaire` / `base_effective` (sa base serait la génération active, refusée
+    en `configuration_manquante`). La base active vient de l'état des opérations."""
     c = _Contexte(d, ex, app_nom, operation_id, sante, horloge, dormir)
 
     async def deroule() -> None:
@@ -425,10 +473,17 @@ async def retour_arriere(d, entree, app_nom: str, operation_id: str,
         c.charger(entree)
         c.marquer("preparation")
         etat = operations.lire(app_nom)
+        if isinstance(etat, dict) and etat.get("retour_invalide"):
+            raise _Echec("retour_invalide")
         if not peut_retour_arriere(etat):
             raise _Echec("aucun_retour_possible")
         c.lire_etat(etat)
         await _verifier_hotes(c)
+        # Défense en profondeur (le drapeau a pu ne pas s'écrire) : l'inactif doit vraiment
+        # lire la base précédente, sinon le public irait sur une base supprimée.
+        inactif = await c.d.app_complete(c.app_id(c.inactif))
+        if not nomme_la_base(inactif.get("env"), c.cfg["variable_env"], c.base_precedente):
+            raise _Echec("retour_invalide")
         c.marquer("sante")
         await _verifier_sante(c)
         quitte, base_quittee = c.actif, c.base_active

@@ -33,3 +33,16 @@ def reecrire_env(env: str, variable: str, ancienne: str, nouvelle: str) -> str:
         raise ValueError("la variable ne pointe pas sur la base attendue")
     lignes[i] = nom + guillemet + nv + guillemet + fin
     return "\n".join(lignes)
+
+
+def nomme_la_base(env, variable: str, base: str) -> bool:
+    """Vrai si l'URL de `variable` nomme exactement `base` (dernier segment du chemin), avec la
+    MÊME analyse que `reecrire_env`. Faux si la variable manque, est ambiguë ou illisible.
+    Ne rend qu'un booléen : ni l'env ni la valeur ne sortent d'ici."""
+    if not isinstance(env, str):
+        return False
+    try:
+        reecrire_env(env, variable, base, base)
+    except ValueError:
+        return False
+    return True

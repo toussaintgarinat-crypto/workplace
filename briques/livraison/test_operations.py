@@ -173,3 +173,25 @@ def test_emplacements_preservent_base_precedente():
     operations.basculer_etat("app", "A", "db1", "db0")
     operations.enregistrer_emplacements("app", {"x": 1}, {"y": 2}, "A", "db1")
     assert operations.lire("app")["base_precedente"] == "db0"
+
+
+def test_invalider_retour_puis_bascule_le_retablit():
+    operations.basculer_etat("app", "B", "g1", "temoin")
+    assert not operations.lire("app").get("retour_invalide")
+    operations.invalider_retour("app")
+    d = operations.lire("app")
+    assert d["retour_invalide"] is True and d["base_precedente"] == "temoin"
+    operations.basculer_etat("app", "A", "g2", "g1")
+    assert operations.lire("app")["retour_invalide"] is False
+
+
+def test_invalider_retour_oserror_propage_etat_intact(data, monkeypatch):
+    operations.basculer_etat("app", "B", "g1", "temoin")
+    avant = json.loads((data / "operations.json").read_text())
+    def boom(*a, **k):
+        raise OSError("disque plein")
+    with monkeypatch.context() as m:
+        m.setattr(os, "replace", boom)
+        with pytest.raises(OSError):
+            operations.invalider_retour("app")
+    assert json.loads((data / "operations.json").read_text()) == avant

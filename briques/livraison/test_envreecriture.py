@@ -113,3 +113,17 @@ def test_urls_douteuses_refusees_sans_citer_la_valeur(url):
     with pytest.raises(ValueError) as e:
         reecrire_env("DATABASE_URL=" + url, "DATABASE_URL", "temoin", "temoin_v0a1b2c3d")
     assert "temoin" not in str(e.value) and "u:a" not in repr(e.value)
+
+
+def test_nomme_la_base():
+    from envreecriture import nomme_la_base
+    assert nomme_la_base(_env(URL), "DATABASE_URL", "temoin")
+    assert nomme_la_base(_env('"postgresql://u:p@h/temoin?sslmode=disable"'), "DATABASE_URL",
+                         "temoin")
+    assert not nomme_la_base(_env(URL), "DATABASE_URL", "temoin_v0a1b2c3d")
+    assert not nomme_la_base(_env("postgresql://u:p@h/temoin_v0a1b2c3d"), "DATABASE_URL",
+                             "temoin")
+    assert not nomme_la_base("A=1\n", "DATABASE_URL", "temoin")
+    assert not nomme_la_base("", "DATABASE_URL", "temoin")
+    assert not nomme_la_base(None, "DATABASE_URL", "temoin")
+    assert not nomme_la_base(_env(URL) + _env(URL), "DATABASE_URL", "temoin")
