@@ -31,7 +31,7 @@ def test_verifier_envoie_la_cle_et_le_corps_et_renvoie_le_json():
                                       (500, "500")])
 def test_erreurs_http_messages_honnetes_sans_secret(code, mot):
     with pytest.raises(ExecuteurErreur) as e:
-        run(cli(lambda r: httpx.Response(code, json={"erreur": "SECRET-INTERNE"})).verifier(
+        run(cli(lambda r: httpx.Response(code, json={"detail": "SECRET-INTERNE"})).verifier(
             "postgres-a-b", "u", "b", "o"))
     assert mot in e.value.message and "SECRET-INTERNE" not in e.value.message
 
@@ -45,3 +45,25 @@ def test_injoignable_et_json_illisible():
     with pytest.raises(ExecuteurErreur):
         run(cli(lambda r: httpx.Response(200, content=b"pas du json")).verifier(
             "postgres-a-b", "u", "b", "o"))
+
+
+def _err(code, corps):
+    with pytest.raises(ExecuteurErreur) as e:
+        run(cli(lambda r: httpx.Response(code, json=corps)).verifier("postgres-a-b", "u", "b", "o"))
+    return e.value.message
+
+
+def test_message_fixe_de_l_executeur_repris():
+    assert "service invalide." in _err(400, {"erreur": "service invalide."})
+    assert "400" in _err(400, {"erreur": "service invalide."})
+
+
+def test_erreur_tronquee_et_nettoyee():
+    m = _err(500, {"erreur": "z" * 5000})
+    assert m.count("z") == 120
+    assert "\x07" not in _err(502, {"erreur": "a\x07b\nc"})
+
+
+def test_erreur_non_str_ou_autre_cle_ignorees():
+    assert _err(400, {"erreur": {"a": 1}}) == "L'exécuteur a répondu 400."
+    assert "SECRET-INTERNE" not in _err(400, {"detail": "SECRET-INTERNE", "erreur": "ok"})

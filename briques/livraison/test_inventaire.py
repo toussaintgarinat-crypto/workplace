@@ -38,3 +38,22 @@ def test_entree_invalide_fail_closed(tmp_path, monkeypatch):
                     {"bases": [{**BASE, "prefixe_s3": "../x"}]}, {"bases": []}, [], "x"):
         _ecrire(tmp_path, monkeypatch, {"a": mauvais})
         assert inventaire.lire("a") is None, mauvais
+
+
+REEL = {"base": "temoin", "service": "postgres-bypass-virtual-circuit-nmmcyt", "utilisateur": "temoin",
+        "sauvegarde_id": "B1", "prefixe_s3": "postgres-bypass-virtual-circuit-nmmcyt/s247-pg"}
+
+
+def test_valeurs_reelles_du_spike_acceptees(tmp_path, monkeypatch):
+    _ecrire(tmp_path, monkeypatch, {"a": {"bases": [REEL]}})
+    assert inventaire.lire("a")["bases"][0]["service"] == "postgres-bypass-virtual-circuit-nmmcyt"
+
+
+def test_memes_regles_que_l_executeur(tmp_path, monkeypatch):
+    mauvais = [{"base": "temoin\n"}, {"base": "Temoin"}, {"service": "abc-def-ghi"},
+               {"service": "postgres-abc\n"}, {"utilisateur": "mon-user"},
+               {"prefixe_s3": "a//b"}, {"prefixe_s3": "a/./b"}, {"prefixe_s3": "a/"},
+               {"prefixe_s3": "a/b\n"}, {"prefixe_s3": "./a"}, {"prefixe_s3": "a/."}]
+    for m in mauvais:
+        _ecrire(tmp_path, monkeypatch, {"a": {"bases": [{**BASE, **m}]}})
+        assert inventaire.lire("a") is None, m

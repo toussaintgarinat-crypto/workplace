@@ -1,5 +1,6 @@
 """Client HTTP de l'exécuteur de restauration (VM 100). Messages d'erreur honnêtes, jamais la clé
 ni le corps brut de la réponse."""
+import re
 from typing import Optional
 
 import httpx
@@ -10,6 +11,21 @@ class ExecuteurErreur(Exception):
         super().__init__(message)
         self.message = message
         self.statut = statut
+
+
+_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _erreur_fixe(r: httpx.Response) -> str:
+    """Seule la chaîne fixe `erreur` de l'exécuteur, nettoyée et bornée ; rien d'autre."""
+    try:
+        d = r.json()
+    except ValueError:
+        return ""
+    e = d.get("erreur") if isinstance(d, dict) else None
+    if not isinstance(e, str):
+        return ""
+    return _CTRL.sub("", e)[:120].strip()
 
 
 class Executeur:
@@ -34,7 +50,9 @@ class Executeur:
         if r.status_code == 409:
             raise ExecuteurErreur("Une vérification est déjà en cours sur l'exécuteur.", 409)
         if r.status_code != 200:
-            raise ExecuteurErreur(f"L'exécuteur a répondu {r.status_code}.", r.status_code)
+            detail = _erreur_fixe(r) if r.status_code in (400, 404, 500, 502) else ""
+            suite = f" : {detail}" if detail else "."
+            raise ExecuteurErreur(f"L'exécuteur a répondu {r.status_code}{suite}", r.status_code)
         try:
             d = r.json()
         except ValueError:

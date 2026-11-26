@@ -114,7 +114,7 @@
     },
     {
       "nom": "livraison_sauvegarder",
-      "description": "Lance une sauvegarde de l'application (bases et volumes déclarés à l'inventaire) vers le stockage S3. Aucun effet sur la production. À utiliser quand l'utilisateur demande de sauvegarder / mettre de côté les données. Pour PROUVER que la sauvegarde est restaurable, utiliser livraison_verifier_sauvegarde. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "Lance une sauvegarde de l'application (bases et volumes déclarés à l'inventaire) vers le stockage S3. Ne modifie pas les données (un volume déclaré avec arrêt du service peut interrompre brièvement l'application). À utiliser quand l'utilisateur demande de sauvegarder / mettre de côté les données. Pour PROUVER que la sauvegarde est restaurable, utiliser livraison_verifier_sauvegarde. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
       "methode": "POST",
       "chemin": "/apps/{app}/sauvegarder",
       "params": {

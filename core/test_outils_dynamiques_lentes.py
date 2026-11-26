@@ -13,7 +13,7 @@ def _cap(chemin):
 
 def test_routes_de_sauvegarde_ont_un_timeout_long():
     assert outils_communs._timeout_dynamique(_cap("/apps/{app}/sauvegarder")) \
-        >= outils_communs.TIMEOUT_MUTATION_LONGUE
+        > outils_communs.TIMEOUT_MUTATION_LONGUE
     assert outils_communs._timeout_dynamique(_cap("/apps/{app}/sauvegardes/verifier")) \
         > outils_communs.TIMEOUT_MUTATION_LONGUE
 

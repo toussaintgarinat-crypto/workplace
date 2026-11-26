@@ -4,10 +4,13 @@ services:
     container_name: workplace_livraison
     image: workplace/livraison:0.1.0          # tag épinglé (pas de :latest flottant)
     env_file:
-      # DOKPLOY_URL, DOKPLOY_API_KEY, FORGEJO_URL, FORGEJO_TOKEN, LIVRAISON_API_KEYS,
-      # EXECUTEUR_URL, EXECUTEUR_KEY
+      # DOKPLOY_URL, DOKPLOY_API_KEY, FORGEJO_URL, FORGEJO_TOKEN, LIVRAISON_API_KEYS
       # viennent du .env racine (jamais littéraux ici). Facultatif.
       - path: ../../.env
+        required: false
+      # EXECUTEUR_URL et EXECUTEUR_KEY : fichier LOCAL à la brique (briques/livraison/.env, 0600),
+      # JAMAIS le .env racine (chargé par ~45 briques et exporté par la sauvegarde). Facultatif.
+      - path: ./.env
         required: false
     ports:
       - "6240:6240"

@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 _CHAMPS_BASE = ("base", "service", "utilisateur", "sauvegarde_id", "prefixe_s3")
-_RE_PREFIXE = re.compile(r"^[A-Za-z0-9._/-]{1,150}$")
+# Mêmes règles que l'exécuteur (outils/executeur-restauration/executeur.py : RE_SERVICE, RE_NOM,
+# RE_OBJET), dupliquées exprès (déployables séparés), toujours avec fullmatch (« $ » accepterait
+# un « \n » final). Une entrée refusée ici = 404 clair, pas un 400 de l'exécuteur.
+_RE_SERVICE = re.compile(r"postgres-[a-z0-9-]{3,60}")
+_RE_NOM = re.compile(r"[a-z_][a-z0-9_]{0,40}")
+_RE_PREFIXE = re.compile(r"[A-Za-z0-9._/-]{1,150}")
 
 
 def _chemin() -> Path:
@@ -25,8 +30,12 @@ def _valide(e) -> bool:
     for b in bases:
         if not (isinstance(b, dict) and all(isinstance(b.get(c), str) and b[c] for c in _CHAMPS_BASE)):
             return False
-        if not _RE_PREFIXE.match(b["prefixe_s3"]) or ".." in b["prefixe_s3"] \
-                or b["prefixe_s3"].startswith("/"):
+        p = b["prefixe_s3"]
+        if not _RE_PREFIXE.fullmatch(p) or ".." in p or p.startswith("/") or p.endswith("/") \
+                or any(seg in ("", ".") for seg in p.split("/")):
+            return False
+        if not (_RE_SERVICE.fullmatch(b["service"]) and _RE_NOM.fullmatch(b["utilisateur"])
+                and _RE_NOM.fullmatch(b["base"])):
             return False
     return all(isinstance(v, dict) and isinstance(v.get("volume_backup_id"), str)
                and v["volume_backup_id"] for v in volumes)
