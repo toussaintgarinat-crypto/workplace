@@ -25,3 +25,10 @@ Méthode : clés lues dans `~/.workplace-secrets/` (jamais recopiées ici), obje
 3. **Droits de la clé** de la brique pour `destination/backup/volumeBackups/domain/project.duplicate` : à vérifier ; sinon créer une clé dédiée à S247 limitée au projet `temoin`.
 4. **Sauvegarde de Forgejo** : `forgejo dump` + envoi S3 (recommandé, 0 dépendance) plutôt que GoBackup (backup seulement, pas de restauration ni de vérification).
 5. **Vrai SeaweedFS du HP** : prévoir une identité S3 dédiée (fichier d'identités) ou accepter d'utiliser l'identité administrateur d'Oria — à décider ; non fait ici volontairement.
+
+## Décisions de l'utilisateur (2026-11-26)
+1. **Restauration** : exécuteur dédié côté VM 100, déclenché par la brique (la brique n'a ni SSH ni socket Docker).
+2. **`/etat` durci** : abandonné ; le repère de rollback mémorisé (S246) reste la règle.
+3. **Clé Dokploy** : une clé unique pour la brique, limitée au projet `temoin` (à tester sur `destination/backup/volumeBackups/domain/project.duplicate` avant de coder ; jamais la clé owner).
+4. **Sauvegarde de Forgejo** : `forgejo dump` + envoi S3 par `curl --aws-sigv4` (pas de GoBackup).
+5. **S3 du HP** : utiliser l'identité administrateur existante d'Oria ; secret posé uniquement dans un fichier root 0600 sur la VM 100, jamais dans le dépôt ni dans un log.
