@@ -14,11 +14,30 @@ _CHAMPS_BASE = ("base", "service", "utilisateur", "sauvegarde_id", "prefixe_s3")
 _RE_SERVICE = re.compile(r"postgres-[a-z0-9-]{3,60}")
 _RE_NOM = re.compile(r"[a-z_][a-z0-9_]{0,40}")
 _RE_PREFIXE = re.compile(r"[A-Za-z0-9._/-]{1,150}")
+# Bloc facultatif « reset » (S247 2b) : une seule base par app, champs exacts, fail closed.
+_CHAMPS_RESET = {"variable_env", "domaine_public", "domaine_test", "port_app", "sante_chemin"}
+_RE_VARIABLE = re.compile(r"[A-Z][A-Z0-9_]{0,60}")
+_RE_DOMAINE = re.compile(r"[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?")
+_RE_SANTE = re.compile(r"/[A-Za-z0-9._~/-]{0,100}")
 
 
 def _chemin() -> Path:
     explicite = os.getenv("LIVRAISON_INVENTAIRE")
     return Path(explicite) if explicite else Path(os.getenv("LIVRAISON_DATA", "/data")) / "inventaire.json"
+
+
+def _reset_valide(r) -> bool:
+    if not isinstance(r, dict) or set(r) != _CHAMPS_RESET:
+        return False
+    v, pub, tst, port, sante = (r["variable_env"], r["domaine_public"], r["domaine_test"],
+                                r["port_app"], r["sante_chemin"])
+    if not all(isinstance(x, str) for x in (v, pub, tst, sante)):
+        return False
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        return False
+    return bool(_RE_VARIABLE.fullmatch(v) and _RE_DOMAINE.fullmatch(pub) and _RE_DOMAINE.fullmatch(tst)
+                and pub != tst and _RE_SANTE.fullmatch(sante)
+                and ".." not in sante.split("/"))
 
 
 def _valide(e) -> bool:
@@ -37,8 +56,12 @@ def _valide(e) -> bool:
         if not (_RE_SERVICE.fullmatch(b["service"]) and _RE_NOM.fullmatch(b["utilisateur"])
                 and _RE_NOM.fullmatch(b["base"])):
             return False
-    return all(isinstance(v, dict) and isinstance(v.get("volume_backup_id"), str)
-               and v["volume_backup_id"] for v in volumes)
+    if not all(isinstance(v, dict) and isinstance(v.get("volume_backup_id"), str)
+               and v["volume_backup_id"] for v in volumes):
+        return False
+    if "reset" in e:
+        return len(bases) == 1 and _reset_valide(e["reset"])
+    return True
 
 
 def lire(nom_app: str) -> Optional[dict]:
@@ -49,4 +72,5 @@ def lire(nom_app: str) -> Optional[dict]:
     e = d.get((nom_app or "").strip().lower()) if isinstance(d, dict) else None
     if not _valide(e):
         return None
-    return {"bases": list(e.get("bases", [])), "volumes": list(e.get("volumes", []))}
+    return {"bases": list(e.get("bases", [])), "volumes": list(e.get("volumes", [])),
+            "reset": dict(e["reset"]) if "reset" in e else None}

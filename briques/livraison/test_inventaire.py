@@ -57,3 +57,65 @@ def test_memes_regles_que_l_executeur(tmp_path, monkeypatch):
     for m in mauvais:
         _ecrire(tmp_path, monkeypatch, {"a": {"bases": [{**BASE, **m}]}})
         assert inventaire.lire("a") is None, m
+
+
+RESET = {"variable_env": "DATABASE_URL", "domaine_public": "app.example.com",
+         "domaine_test": "test.example.com", "port_app": 3000, "sante_chemin": "/api/health"}
+
+
+def _lire_reset(tmp_path, monkeypatch, reset, bases=None):
+    entree = {"bases": [BASE] if bases is None else bases, "volumes": []}
+    if reset is not ABSENT:
+        entree["reset"] = reset
+    _ecrire(tmp_path, monkeypatch, {"a": entree})
+    return inventaire.lire("a")
+
+
+ABSENT = object()
+
+
+def test_reset_valide_renvoye(tmp_path, monkeypatch):
+    r = _lire_reset(tmp_path, monkeypatch, RESET)
+    assert r["reset"] == RESET and r["bases"][0]["base"] == "temoin"
+
+
+def test_reset_absent_entree_valide_sans_reset(tmp_path, monkeypatch):
+    r = _lire_reset(tmp_path, monkeypatch, ABSENT)
+    assert r is not None and r["reset"] is None
+
+
+def test_reset_champ_invalide_invalide_toute_l_entree(tmp_path, monkeypatch):
+    mauvais = [{"variable_env": "database_url"}, {"variable_env": "1A"}, {"variable_env": "A\n"},
+               {"variable_env": "A" * 62}, {"variable_env": ""},
+               {"domaine_public": "App.example.com"}, {"domaine_public": "-a.com"},
+               {"domaine_public": "a.com\n"}, {"domaine_public": "a.com-"}, {"domaine_public": ""},
+               {"domaine_test": "a b.com"}, {"domaine_test": "x" * 254},
+               {"domaine_test": "app.example.com"},  # identique au public
+               {"port_app": 0}, {"port_app": 65536}, {"port_app": True}, {"port_app": "3000"},
+               {"port_app": 3000.0}, {"port_app": None},
+               {"sante_chemin": "api"}, {"sante_chemin": "/a b"}, {"sante_chemin": "/a/../b"},
+               {"sante_chemin": "/a\n"}, {"sante_chemin": "/" + "a" * 101}, {"sante_chemin": 5}]
+    for m in mauvais:
+        assert _lire_reset(tmp_path, monkeypatch, {**RESET, **m}) is None, m
+
+
+def test_reset_champ_manquant_ou_en_trop_ou_mal_type(tmp_path, monkeypatch):
+    for c in RESET:
+        assert _lire_reset(tmp_path, monkeypatch, {k: v for k, v in RESET.items() if k != c}) is None, c
+    for mauvais in ({**RESET, "extra": 1}, [], "x", None, {}):
+        assert _lire_reset(tmp_path, monkeypatch, mauvais) is None, mauvais
+
+
+def test_reset_limites_acceptees(tmp_path, monkeypatch):
+    for m in ({"port_app": 1}, {"port_app": 65535}, {"sante_chemin": "/"}, {"domaine_test": "t"},
+              {"sante_chemin": "/a.b_c~d/e-f"}):
+        assert _lire_reset(tmp_path, monkeypatch, {**RESET, **m}) is not None, m
+
+
+def test_reset_exige_exactement_une_base(tmp_path, monkeypatch):
+    autre = {**BASE, "base": "autre", "sauvegarde_id": "B2", "prefixe_s3": "postgres-abc-def/autre"}
+    assert _lire_reset(tmp_path, monkeypatch, RESET, bases=[BASE, autre]) is None
+    _ecrire(tmp_path, monkeypatch, {"a": {"volumes": [{"volume_backup_id": "V"}], "reset": RESET}})
+    assert inventaire.lire("a") is None
+    # sans reset, plusieurs bases restent valides
+    assert _lire_reset(tmp_path, monkeypatch, ABSENT, bases=[BASE, autre]) is not None
