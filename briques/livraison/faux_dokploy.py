@@ -21,6 +21,45 @@ def _gras(app: dict, etat: Optional[dict] = None) -> dict:
     return sortie
 
 
+def _type_ok(v, t) -> bool:
+    if t is int:
+        return isinstance(v, int) and not isinstance(v, bool)
+    return isinstance(v, t)
+
+
+def _valide(corps, schema: dict) -> bool:
+    """Comme la validation du vrai Dokploy : champ requis absent ou de mauvais type -> refus."""
+    return isinstance(corps, dict) and all(
+        k in corps and _type_ok(corps[k], t) for k, t in schema.items())
+
+
+SCHEMAS = {
+    "/api/application.create": {"name": str, "environmentId": str},
+    "/api/application.saveGitProvider": {
+        "applicationId": str, "customGitUrl": str, "customGitBranch": str,
+        "customGitBuildPath": str, "watchPaths": list, "enableSubmodules": bool},
+    "/api/application.saveBuildType": {
+        "applicationId": str, "buildType": str, "dockerfile": str, "dockerContextPath": str},
+    "/api/application.saveEnvironment": {
+        "applicationId": str, "env": str, "buildArgs": str, "buildSecrets": str,
+        "createEnvFile": bool},
+    "/api/domain.create": {"host": str, "path": str, "port": int, "https": bool,
+                           "applicationId": str, "certificateType": str, "domainType": str},
+    "/api/domain.update": {"domainId": str, "host": str, "path": str, "port": int,
+                           "https": bool, "certificateType": str, "domainType": str},
+    "/api/backup.update": {"backupId": str, "database": str, "schedule": str, "prefix": str,
+                           "enabled": bool, "destinationId": str, "keepLatestCount": int,
+                           "databaseType": str, "backupType": str},
+    "/api/application.deploy": {"applicationId": str},
+}
+CHAMPS_STOCKES = {
+    "/api/application.saveGitProvider": ("customGitUrl", "customGitBranch",
+                                         "customGitBuildPath", "watchPaths", "enableSubmodules"),
+    "/api/application.saveBuildType": ("buildType", "dockerfile", "dockerContextPath"),
+    "/api/application.saveEnvironment": ("env", "buildArgs", "buildSecrets", "createEnvFile"),
+}
+
+
 def fabrique_transport(etat: dict) -> httpx.MockTransport:
     etat.setdefault("appels", [])
     etat.setdefault("domaines", {})
@@ -58,6 +97,8 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             return rep(200, _gras(a, etat))
         if chemin in ("/api/project.duplicate", "/api/application.delete"):
             return rep(401, {"message": "unauthorized to access resource"})
+        if chemin in SCHEMAS and not _valide(corps, SCHEMAS[chemin]):
+            return rep(400, {"message": "Input validation failed"})
         if chemin == "/api/application.create":
             n = etat["compteur"] = etat.get("compteur", 0) + 1
             nouv = {"applicationId": f"NEW{n}", "name": corps["name"], "appName": f"{corps['name']}-n{n}",
@@ -70,7 +111,7 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             a = apps.get((corps or {}).get("applicationId"))
             if not a:
                 return rep(404, {"message": "NOT_FOUND"})
-            a.update({k: v for k, v in corps.items() if k != "applicationId"})
+            a.update({k: corps[k] for k in CHAMPS_STOCKES[chemin]})
             a["sourceType"] = a.get("sourceType") or "git"
             return rep(200, True)
         if chemin == "/api/application.deploy":
@@ -81,6 +122,8 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             a["_lectures_deploy"] = 0
             return httpx.Response(200, content=b"")
         if chemin == "/api/domain.create":
+            if corps["applicationId"] not in apps:
+                return rep(404, {"message": "NOT_FOUND"})
             n = etat["compteur_domaines"] = etat.get("compteur_domaines", 0) + 1
             d = {"domainId": f"DOM{n}", "host": corps["host"], "port": corps["port"],
                  "path": corps.get("path"), "https": corps.get("https"),

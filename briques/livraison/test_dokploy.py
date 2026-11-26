@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 import pytest
-from dokploy import Dokploy, DokployErreur
+from dokploy import Dokploy, DokployErreur, MESSAGE_DELAI_MUTATION
 from faux_dokploy import fabrique_transport
 
 
@@ -283,6 +283,8 @@ def test_app_complete_inconnue_404_et_message_sans_env():
     with pytest.raises(DokployErreur) as ex:
         run(cli(e).app_complete("ZZ"))
     assert ex.value.statut == 404
+    assert ex.value.message == "Ressource Dokploy introuvable."
+    assert "TOKEN" not in ex.value.message and "SECRET" not in ex.value.message
 
 
 def test_aucune_erreur_ne_contient_le_contenu_de_env():
@@ -436,3 +438,160 @@ def test_nouvelles_methodes_cle_inconnue_401():
     with pytest.raises(DokployErreur) as ex:
         run(cli(etat(), cle="mauvaise").creer_app("E1", "n", "d"))
     assert ex.value.statut == 401
+
+
+# --- Revue Task 3 : faux strict, attente tolérante, entrées malformées ---
+
+def _post_brut(e, chemin, corps):
+    t = fabrique_transport(e)
+
+    async def f():
+        async with httpx.AsyncClient(base_url="http://d.test", transport=t) as c:
+            return await c.post(chemin, json=corps, headers={"x-api-key": "k"})
+    return run(f())
+
+
+VALIDES = {
+    "/api/application.create": {"name": "n", "environmentId": "E1"},
+    "/api/application.saveGitProvider": {
+        "applicationId": "A1", "customGitUrl": "u", "customGitBranch": "b",
+        "customGitBuildPath": "/", "watchPaths": [], "enableSubmodules": False},
+    "/api/application.saveBuildType": {
+        "applicationId": "A1", "buildType": "dockerfile", "dockerfile": "D",
+        "dockerContextPath": "."},
+    "/api/application.saveEnvironment": {
+        "applicationId": "A1", "env": "", "buildArgs": "", "buildSecrets": "",
+        "createEnvFile": True},
+    "/api/domain.create": {"host": "h", "path": "/", "port": 80, "https": False,
+                           "applicationId": "A1", "certificateType": "none",
+                           "domainType": "application"},
+    "/api/application.deploy": {"applicationId": "A1"},
+}
+
+
+@pytest.mark.parametrize("chemin", list(VALIDES))
+def test_faux_valide_accepte_puis_refuse_champ_manquant_ou_mauvais_type(chemin):
+    assert _post_brut(etat(), chemin, VALIDES[chemin]).status_code == 200
+    for k in VALIDES[chemin]:
+        manquant = {x: v for x, v in VALIDES[chemin].items() if x != k}
+        r = _post_brut(etat(), chemin, manquant)
+        assert r.status_code == 400 and r.json() == {"message": "Input validation failed"}
+        faux = dict(VALIDES[chemin], **{k: object_mauvais(VALIDES[chemin][k])})
+        assert _post_brut(etat(), chemin, faux).status_code == 400
+
+
+def object_mauvais(v):
+    return 12345 if isinstance(v, (str, list)) or isinstance(v, bool) else "x"
+
+
+def test_faux_domain_update_et_backup_update_valident():
+    e = _etat_backup()
+    e["domaines"] = {"D1": {"domainId": "D1", "host": "a", "port": 1, "applicationId": "A1"}}
+    ok_d = {"domainId": "D1", "host": "h", "path": "/", "port": 80, "https": False,
+            "certificateType": "none", "domainType": "application"}
+    assert _post_brut(e, "/api/domain.update", ok_d).status_code == 200
+    assert _post_brut(e, "/api/domain.update", dict(ok_d, port="80")).status_code == 400
+    assert _post_brut(e, "/api/domain.update", {**ok_d, "domainId": "ZZ"}).status_code == 404
+    ok_b = {"backupId": "B1", "database": "d", "schedule": "s", "prefix": "p", "enabled": True,
+            "destinationId": "X", "keepLatestCount": 3, "databaseType": "postgres",
+            "backupType": "database"}
+    assert _post_brut(e, "/api/backup.update", ok_b).status_code == 200
+    assert _post_brut(e, "/api/backup.update", dict(ok_b, enabled="oui")).status_code == 400
+    assert _post_brut(e, "/api/backup.update",
+                      {k: v for k, v in ok_b.items() if k != "prefix"}).status_code == 400
+
+
+def test_faux_domain_create_application_inconnue_404():
+    r = _post_brut(etat(), "/api/domain.create", dict(VALIDES["/api/domain.create"],
+                                                      applicationId="ZZ"))
+    assert r.status_code == 404
+
+
+def test_faux_ne_stocke_pas_les_cles_inconnues():
+    e = etat()
+    corps = dict(VALIDES["/api/application.saveGitProvider"], intrus="X", refreshToken="Y")
+    assert _post_brut(e, "/api/application.saveGitProvider", corps).status_code == 200
+    corps = dict(VALIDES["/api/application.saveBuildType"], intrus2="X")
+    assert _post_brut(e, "/api/application.saveBuildType", corps).status_code == 200
+    a = e["apps"]["A1"]
+    assert "intrus" not in a and "refreshToken" not in a and "intrus2" not in a
+    assert a["customGitUrl"] == "u" and a["buildType"] == "dockerfile"
+
+
+def test_client_vers_faux_strict_erreur_400_honnete():
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(etat())._requete("POST", "/api/application.create", json={"name": "n"}))
+    assert ex.value.statut == 400
+
+
+def _client_lectures(sequence):
+    """app_complete scripté : exceptions DokployErreur ou statuts."""
+    c = cli(etat())
+    it = iter(sequence)
+
+    async def lire(id_):
+        v = next(it)
+        if isinstance(v, Exception):
+            raise v
+        return {"applicationStatus": v}
+    c.app_complete = lire
+    return c
+
+
+def test_attendre_tolere_une_lecture_transitoire():
+    c = _client_lectures([DokployErreur("x", 503), "done"])
+    h = _Horloge()
+    assert run(c.deployer_et_attendre("A1", "t", horloge=h, dormir=h.dormir)) == "done"
+    assert h.dormis == [5]
+
+
+def test_attendre_compteur_remis_a_zero_apres_lecture_reussie():
+    seq = [DokployErreur("x"), DokployErreur("x", 429), "running", DokployErreur("x", 500),
+           DokployErreur("x", 502), "done"]
+    h = _Horloge()
+    assert run(_client_lectures(seq).deployer_et_attendre(
+        "A1", "t", horloge=h, dormir=h.dormir)) == "done"
+
+
+def test_attendre_trois_lectures_transitoires_consecutives_leve():
+    c = _client_lectures([DokployErreur("x"), DokployErreur("x", 502), DokployErreur("x", 429)])
+    h = _Horloge()
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer_et_attendre("A1", "t", horloge=h, dormir=h.dormir))
+    assert "l'état du déploiement est inconnu" in ex.value.message
+    assert len(h.dormis) == 2
+
+
+def test_attendre_401_leve_immediatement():
+    c = _client_lectures([DokployErreur("Clé API Dokploy refusée.", 401), "done"])
+    h = _Horloge()
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer_et_attendre("A1", "t", horloge=h, dormir=h.dormir))
+    assert ex.value.statut == 401 and h.dormis == []
+
+
+def test_configurer_source_cle_manquante_valeur_error_sans_valeur_ni_appel():
+    e = etat()
+    src = {"customGitUrl": "https://secret-url/x.git", "customGitBranch": "main",
+           "customGitBuildPath": "/", "buildType": "dockerfile", "dockerfile": "Dockerfile"}
+    with pytest.raises(ValueError) as ex:
+        run(cli(e).configurer_source("A1", src))
+    assert "dockerContextPath" in str(ex.value) and "secret-url" not in str(ex.value)
+    assert e["appels"] == []
+
+
+@pytest.mark.parametrize("projets", [{"a": 1}, ["x"], [{"environments": ["x"]}],
+                                     [{"environments": 3}]])
+def test_environnement_id_elements_malformes_erreur_honnete(projets):
+    c = Dokploy("http://d.test", "k",
+                transport=httpx.MockTransport(lambda r: httpx.Response(200, json=projets)))
+    with pytest.raises(DokployErreur) as ex:
+        run(c.environnement_id())
+    assert "inattendue" in ex.value.message
+
+
+def test_timeout_sur_creer_app_est_un_504_avec_le_message_mutation():
+    c = Dokploy("http://d.test", "k", transport=_transport_mutation(httpx.ReadTimeout("x")))
+    with pytest.raises(DokployErreur) as ex:
+        run(c.creer_app("E1", "n", "d"))
+    assert ex.value.statut == 504 and ex.value.message == MESSAGE_DELAI_MUTATION

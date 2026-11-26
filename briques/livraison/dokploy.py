@@ -12,6 +12,9 @@ CHAMPS_APP_COMPLETE = ("applicationId", "name", "appName", "applicationStatus", 
 CHAMPS_DOMAINE = ("domainId", "host", "port", "path", "https")
 CHAMPS_SAUVEGARDE = ("schedule", "prefix", "enabled", "destinationId", "keepLatestCount",
                      "databaseType", "backupType")
+CLES_SOURCE = ("customGitUrl", "customGitBranch", "customGitBuildPath", "buildType",
+               "dockerfile", "dockerContextPath")
+LECTURES_TRANSITOIRES_MAX = 3
 DELAI_LECTURE = 20.0
 DELAI_MUTATION = 60.0
 MESSAGE_DELAI_MUTATION = ("Délai dépassé : l'action a peut-être été exécutée — vérifie avec "
@@ -166,8 +169,14 @@ class Dokploy:
     async def environnement_id(self) -> str:
         """Premier environnement du premier projet (la clé est limitée à un projet)."""
         projets = await self._requete("GET", "/api/project.all")
-        for p in projets if isinstance(projets, list) else []:
+        if projets is not None and not isinstance(projets, list):
+            raise DokployErreur("Réponse de Dokploy inattendue.")
+        for p in projets or []:
+            if not isinstance(p, dict) or not isinstance(p.get("environments") or [], list):
+                raise DokployErreur("Réponse de Dokploy inattendue.")
             for e in p.get("environments") or []:
+                if not isinstance(e, dict):
+                    raise DokployErreur("Réponse de Dokploy inattendue.")
                 if e.get("environmentId"):
                     return e["environmentId"]
         raise DokployErreur("Aucun environnement Dokploy accessible avec cette clé.")
@@ -193,6 +202,9 @@ class Dokploy:
         return {"id": r["applicationId"], "app_name": r.get("appName")}
 
     async def configurer_source(self, id_: str, source: dict) -> None:
+        for k in CLES_SOURCE:
+            if source.get(k) is None:
+                raise ValueError(f"Clé de source manquante : {k}")
         await self._requete("POST", "/api/application.saveGitProvider", json={
             "applicationId": id_, "customGitUrl": source.get("customGitUrl"),
             "customGitBranch": source.get("customGitBranch"),
@@ -230,8 +242,26 @@ class Dokploy:
         # `titre` : `application.deploy` n'en prend pas (corps validé : {applicationId}).
         await self._requete("POST", "/api/application.deploy", json={"applicationId": id_})
         debut = horloge()
+        echecs = 0
         while horloge() - debut < delai_s:
-            statut = (await self.app_complete(id_)).get("applicationStatus")
+            try:
+                statut = (await self.app_complete(id_)).get("applicationStatus")
+                echecs = 0
+            except DokployErreur as e:
+                # Lecture transitoire (réseau, délai, 429, 5xx) : le déploiement tourne
+                # côté Dokploy ; on retente. 401/404 et autres 4xx : on arrête tout de suite.
+                transitoire = e.statut is None or e.statut == 429 or e.statut >= 500
+                echecs += 1
+                if not transitoire:
+                    raise
+                if echecs >= LECTURES_TRANSITOIRES_MAX:
+                    raise DokployErreur("Lectures de l'état impossibles : l'état du "
+                                        "déploiement est inconnu (vérifie-le dans Dokploy).",
+                                        e.statut) from None
+                await dormir(pas_s)
+                continue
+            # Limite connue : sur un REdéploiement, un `done` ancien pourrait être lu avant le
+            # passage à `running` ; les appelants l'utilisent sur une application fraîche.
             if statut == "done":
                 return "done"
             if statut == "error":
