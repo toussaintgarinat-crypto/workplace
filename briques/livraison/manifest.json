@@ -58,7 +58,7 @@
     },
     {
       "nom": "livraison_redemarrer",
-      "description": "Redémarre le conteneur d'une application déployée (même version, aucun nouveau build). À utiliser UNIQUEMENT quand l'utilisateur demande un redémarrage / relance / « restart ». PAS pour revenir à une version antérieure (→ livraison_rollback) ni pour livrer du nouveau code (→ livraison_deployer). L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "Redémarre le conteneur d'une application déployée (même version, aucun nouveau build). À utiliser UNIQUEMENT quand l'utilisateur demande un redémarrage / relance / « restart ». PAS pour revenir à une version antérieure (→ livraison_rollback) ni pour livrer du nouveau code (→ livraison_deployer). APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/redemarrer",
       "params": {
@@ -74,7 +74,7 @@
     },
     {
       "nom": "livraison_deployer",
-      "description": "Relance un build + déploiement d'une application (publie une nouvelle version à partir du code du dépôt). À utiliser quand l'utilisateur demande de déployer / redéployer / mettre en ligne la dernière version. PAS pour un simple redémarrage (→ livraison_redemarrer) ni un retour en arrière (→ livraison_rollback). L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "Relance un build + déploiement d'une application (publie une nouvelle version à partir du code du dépôt). À utiliser quand l'utilisateur demande de déployer / redéployer / mettre en ligne la dernière version. PAS pour un simple redémarrage (→ livraison_redemarrer) ni un retour en arrière (→ livraison_rollback). APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/deployer",
       "params": {
@@ -94,7 +94,7 @@
     },
     {
       "nom": "livraison_rollback",
-      "description": "REVIENT À LA VERSION PRÉCÉDENTE d'une application (retour en arrière, annulation du dernier déploiement). À utiliser quand l'utilisateur dit « reviens en arrière », « version précédente », « annule le dernier déploiement », « rollback ». Par défaut la version précédente ; le paramètre `version` désigne une version précise. Impossible si le rollback n'est pas activé (le dire à l'utilisateur). Ce n'est PAS un redémarrage. PAS après un reset pour revenir à l'instance précédente → livraison_retour_arriere. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "REVIENT À LA VERSION PRÉCÉDENTE d'une application (retour en arrière, annulation du dernier déploiement). À utiliser quand l'utilisateur dit « reviens en arrière », « version précédente », « annule le dernier déploiement », « rollback ». Par défaut la version précédente ; le paramètre `version` désigne une version précise. Impossible si le rollback n'est pas activé (le dire à l'utilisateur). Ce n'est PAS un redémarrage. PAS après un reset pour revenir à l'instance précédente → livraison_retour_arriere. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/rollback",
       "params": {
@@ -114,7 +114,7 @@
     },
     {
       "nom": "livraison_sauvegarder",
-      "description": "Lance une sauvegarde de l'application (bases et volumes déclarés à l'inventaire) vers le stockage S3. Ne modifie pas les données (un volume déclaré avec arrêt du service peut interrompre brièvement l'application). À utiliser quand l'utilisateur demande de sauvegarder / mettre de côté les données. Pour PROUVER que la sauvegarde est restaurable, utiliser livraison_verifier_sauvegarde. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "Lance une sauvegarde de l'application (bases et volumes déclarés à l'inventaire) vers le stockage S3. Ne modifie pas les données (un volume déclaré avec arrêt du service peut interrompre brièvement l'application). À utiliser quand l'utilisateur demande de sauvegarder / mettre de côté les données. Pour PROUVER que la sauvegarde est restaurable, utiliser livraison_verifier_sauvegarde. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/sauvegarder",
       "params": {
@@ -146,7 +146,7 @@
     },
     {
       "nom": "livraison_reset_app",
-      "description": "UNIQUEMENT pour remettre à neuf une application (code propre + données restaurées) ; PAS pour redémarrer, déployer ou revenir à une version ; l'opération dure plusieurs minutes et se lit avec `livraison_operation` ; ne pas dire qu'elle est terminée tant que `livraison_operation` ne répond pas `reussie`. Exige une preuve de sauvegarde fraîche : fais d'abord livraison_verifier_sauvegarde (verdict valide) sur la même application. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "UNIQUEMENT pour remettre à neuf une application (code propre + données restaurées) ; PAS pour redémarrer, déployer ou revenir à une version ; l'opération dure plusieurs minutes et se lit avec `livraison_operation` ; ne pas dire qu'elle est terminée tant que `livraison_operation` ne répond pas `reussie`. Exige une preuve de sauvegarde fraîche : fais d'abord livraison_verifier_sauvegarde (verdict valide) sur la même application. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/reset",
       "params": {
@@ -165,7 +165,7 @@
     },
     {
       "nom": "livraison_retour_arriere",
-      "description": "Revenir à l'instance précédente après un reset ; PAS pour un rollback de version (→ livraison_rollback). Les données écrites depuis la bascule restent dans la base de l'instance quittée. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "description": "Revenir à l'instance précédente après un reset ; PAS pour un rollback de version (→ livraison_rollback). Les données écrites depuis la bascule restent dans la base de l'instance quittée. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/apps/{app}/retour-arriere",
       "params": {
