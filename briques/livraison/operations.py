@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 _verrou = threading.RLock()
 ETATS_FINAUX = {"reussie", "echec", "interrompue"}
 MESSAGE_MAX = 300
+CLES_RESERVEES = {"id", "etat", "type", "debut", "fin", "message"}
 _CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
@@ -35,26 +36,37 @@ def _chemin() -> Path:
     return Path(os.getenv("LIVRAISON_DATA", "/data")) / "operations.json"
 
 
-def _lire_tout() -> dict:
+def _mettre_de_cote(p: Path) -> None:
     try:
-        d = json.loads(_chemin().read_text())
+        os.replace(p, p.with_name(p.name + ".corrompu"))
+    except OSError:
+        log.warning("operations.json corrompu : mise de côté impossible")
+
+
+def _lire_tout() -> dict:
+    """Seuls fichier absent, JSON invalide ou racine non-objet valent « état vide » ; toute
+    autre erreur de lecture (permission, EIO) se propage pour ne rien écraser."""
+    p = _chemin()
+    try:
+        d = json.loads(p.read_text())
     except FileNotFoundError:
         return {}
-    except (OSError, ValueError):
-        log.warning("operations.json illisible ou corrompu : état repris à vide")
-        return {}
+    except ValueError:
+        d = None
     if not isinstance(d, dict):
-        log.warning("operations.json n'est pas un objet : état repris à vide")
+        log.warning("operations.json corrompu : mis de côté (.corrompu), état repris à vide")
+        _mettre_de_cote(p)
         return {}
     return d
 
 
 def _ecrire_tout(tout: dict) -> None:
     p = _chemin()
+    donnees = json.dumps(tout)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
     with open(tmp, "w") as f:
-        f.write(json.dumps(tout))
+        f.write(donnees)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, p)
@@ -114,6 +126,9 @@ def etape(app: str, operation_id: str, nom: str, **extra) -> None:
     with _verrou:
         tout = _lire_tout()
         op = _op_en_cours(tout, app, operation_id)
+        for k in extra:
+            if k in CLES_RESERVEES:
+                raise ValueError(f"clé réservée : {k}")
         op.update(extra)
         op["etape"] = nom
         _ecrire_tout(tout)
@@ -130,11 +145,13 @@ def terminer(app: str, operation_id: str, etat: str, message: Optional[str] = No
 
 
 def enregistrer_emplacements(app: str, a: dict, b: dict, actif: str, base_active: str) -> None:
+    """Pensé pour le premier provisionnement du jumeau ; préserve un `base_precedente` existant."""
     with _verrou:
         tout = _lire_tout()
         e = _entree(tout, app)
         e.update(emplacements={"A": dict(a), "B": dict(b)}, actif=actif,
-                 base_active=base_active, base_precedente=None)
+                 base_active=base_active)
+        e.setdefault("base_precedente", None)
         _ecrire_tout(tout)
 
 

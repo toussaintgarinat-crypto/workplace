@@ -1,6 +1,7 @@
 import json
 import os
 import pytest
+from pathlib import Path
 import operations
 
 
@@ -95,15 +96,28 @@ def test_tmp_orphelin_jamais_lu(data):
     assert operations.lire("app") is None
 
 
-def test_oserror_propage_etat_intact(monkeypatch):
+def test_oserror_propage_etat_intact(data, monkeypatch):
     oid = operations.demarrer("app", "reset")
+    avant = json.loads((data / "operations.json").read_text())
     def boom(*a, **k):
         raise OSError("disque plein")
     with monkeypatch.context() as m:
         m.setattr(os, "replace", boom)
         with pytest.raises(OSError):
             operations.etape("app", oid, "clonage")
-    assert operations.lire("app")["op"].get("etape") != "clonage"
+    assert json.loads((data / "operations.json").read_text()) == avant
+
+
+def test_fsync_oserror_propage_etat_intact(data, monkeypatch):
+    oid = operations.demarrer("app", "reset")
+    avant = json.loads((data / "operations.json").read_text())
+    def boom(*a, **k):
+        raise OSError("fsync")
+    with monkeypatch.context() as m:
+        m.setattr(os, "fsync", boom)
+        with pytest.raises(OSError):
+            operations.etape("app", oid, "clonage")
+    assert json.loads((data / "operations.json").read_text()) == avant
 
 
 def test_demarrer_oserror_ne_demarre_pas(monkeypatch):
@@ -123,3 +137,39 @@ def test_fichier_corrompu(data, contenu):
     oid = operations.demarrer("app", "reset")
     assert operations.lire("app")["op"]["id"] == oid
     assert isinstance(json.loads((data / "operations.json").read_text()), dict)
+
+
+def test_erreur_lecture_propage_fichier_intact(data, monkeypatch):
+    operations.demarrer("app", "reset")
+    brut = (data / "operations.json").read_text()
+    def boom(self, *a, **k):
+        raise PermissionError("refusé")
+    with monkeypatch.context() as m:
+        m.setattr(Path, "read_text", boom)
+        with pytest.raises(PermissionError):
+            operations.lire("app")
+        with pytest.raises(PermissionError):
+            operations.demarrer("autre", "reset")
+    assert (data / "operations.json").read_text() == brut
+
+
+@pytest.mark.parametrize("contenu", ["{pas du json", "[1, 2]"])
+def test_corrompu_renomme(data, contenu):
+    (data / "operations.json").write_text(contenu)
+    operations.demarrer("app", "reset")
+    assert (data / "operations.json.corrompu").read_text() == contenu
+    assert "app" in json.loads((data / "operations.json").read_text())
+
+
+@pytest.mark.parametrize("cle", ["id", "etat", "type", "debut", "fin", "message"])
+def test_etape_cles_reservees(cle):
+    oid = operations.demarrer("app", "reset")
+    with pytest.raises(ValueError, match=cle):
+        operations.etape("app", oid, "x", **{cle: "pirate"})
+    assert operations.lire("app")["op"]["id"] == oid
+
+
+def test_emplacements_preservent_base_precedente():
+    operations.basculer_etat("app", "A", "db1", "db0")
+    operations.enregistrer_emplacements("app", {"x": 1}, {"y": 2}, "A", "db1")
+    assert operations.lire("app")["base_precedente"] == "db0"
