@@ -192,7 +192,13 @@ def marquer_interrompues() -> list:
                 message = "la brique a redémarré pendant l'opération"
                 neuve = op.get("base_neuve")
                 if isinstance(neuve, str) and neuve and neuve != e.get("base_active"):
-                    message += f" ; base neuve {neuve} peut-être orpheline (à vérifier)"
+                    if op.get("etape") in ("sauvegarde", "bascule"):
+                        # Les hôtes ont peut-être déjà été échangés : la base neuve peut être
+                        # la base EN SERVICE. Ne rien supprimer avant d'avoir vérifié les domaines.
+                        message += (f" ; base neuve {neuve} peut-être EN SERVICE : vérifier les "
+                                    "domaines avant toute action, ne pas la supprimer")
+                    else:
+                        message += f" ; base neuve {neuve} peut-être orpheline (à vérifier)"
                 op.update(etat="interrompue", fin=time.time(), message=_propre(message))
                 changes.append(app)
         if changes:

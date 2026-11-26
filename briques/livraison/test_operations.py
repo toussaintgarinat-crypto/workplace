@@ -237,3 +237,15 @@ def test_marquer_interrompues_ne_nomme_pas_la_base_devenue_active():
     operations.etape("a", oid, "nettoyage", base_neuve="temoin_v0a1b2c3d")
     operations.marquer_interrompues()
     assert operations.lire("a")["op"]["message"] == "la brique a redémarré pendant l'opération"
+
+
+def test_marquer_interrompues_pendant_la_bascule_ne_parle_pas_d_orpheline(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVRAISON_DATA", str(tmp_path))
+    import operations
+    oid = operations.demarrer("app1", "reset")
+    operations.enregistrer_emplacements("app1", {"app_id": "A", "domaine_id": "d1"},
+                                        {"app_id": "B", "domaine_id": "d2"}, "A", "temoin")
+    operations.etape("app1", oid, "bascule", base_neuve="temoin_v0a1b2c3d")
+    assert operations.marquer_interrompues() == ["app1"]
+    msg = operations.lire("app1")["op"]["message"]
+    assert "EN SERVICE" in msg and "orpheline" not in msg and "temoin_v0a1b2c3d" in msg

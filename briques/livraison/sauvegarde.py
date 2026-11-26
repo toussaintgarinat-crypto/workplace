@@ -32,7 +32,9 @@ class SauvegardeDesynchronisee(Exception):
 
     def __init__(self, base: str):
         super().__init__(f"{MOTIF_DESYNCHRONISEE} : la sauvegarde Dokploy ne vise pas la base "
-                         f"{base} (base active) ; la remettre sur {base} dans Dokploy")
+                         f"{base} (base active) ; la remettre sur {base} dans Dokploy (si une "
+                         "opération de reset a été interrompue : vérifier d'abord les domaines, "
+                         "la base neuve est peut-être celle en service)")
         self.base = base
 
 
