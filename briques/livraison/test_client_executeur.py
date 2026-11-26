@@ -67,3 +67,58 @@ def test_erreur_tronquee_et_nettoyee():
 def test_erreur_non_str_ou_autre_cle_ignorees():
     assert _err(400, {"erreur": {"a": 1}}) == "L'exécuteur a répondu 400."
     assert "SECRET-INTERNE" not in _err(400, {"detail": "SECRET-INTERNE", "erreur": "ok"})
+
+
+# --- S247 2b : cloner / comptages / supprimer_base ---
+
+_CAS = [
+    ("cloner", ("pg-a-b", "u", "b", "p/o", "b_neuve"), "/cloner",
+     {"service": "pg-a-b", "utilisateur": "u", "base": "b", "objet": "p/o",
+      "nouvelle_base": "b_neuve"}),
+    ("comptages", ("pg-a-b", "u", "b"), "/comptages",
+     {"service": "pg-a-b", "utilisateur": "u", "base": "b"}),
+    ("supprimer_base", ("pg-a-b", "u", "b"), "/supprimer-base",
+     {"service": "pg-a-b", "utilisateur": "u", "base": "b"}),
+]
+
+
+@pytest.mark.parametrize("nom,args,chemin,corps", _CAS)
+def test_nouvelles_methodes_chemin_cle_corps(nom, args, chemin, corps):
+    vus = []
+
+    def h(req):
+        vus.append((req.method, req.url.path, req.headers.get("x-api-key"),
+                    json.loads(req.content)))
+        return httpx.Response(200, json={"ok": True})
+    assert run(getattr(cli(h), nom)(*args)) == {"ok": True}
+    assert vus == [("POST", chemin, "k", corps)]
+
+
+@pytest.mark.parametrize("nom,args,chemin,corps", _CAS)
+def test_nouvelles_methodes_memes_erreurs(nom, args, chemin, corps):
+    for code, mot in [(401, "clé"), (409, "opération"), (400, "400")]:
+        with pytest.raises(ExecuteurErreur) as e:
+            run(getattr(cli(lambda r, c=code: httpx.Response(
+                c, json={"erreur": "x.", "detail": "SECRET"})), nom)(*args))
+        assert mot in e.value.message and "SECRET" not in e.value.message
+        assert e.value.statut == code
+
+    def boom(req):
+        raise httpx.ConnectError("x")
+    with pytest.raises(ExecuteurErreur) as e:
+        run(getattr(cli(boom), nom)(*args))
+    assert "injoignable" in e.value.message
+
+
+def test_cloner_a_un_delai_plus_long_que_verifier():
+    delais = {}
+
+    def h(req):
+        delais[req.url.path] = req.extensions["timeout"]["read"]
+        return httpx.Response(200, json={})
+    c = cli(h)
+    run(c.verifier("s", "u", "b", "o"))
+    run(c.cloner("s", "u", "b", "o", "n"))
+    run(c.comptages("s", "u", "b"))
+    assert delais["/cloner"] == 960 > delais["/verifier"] == 280
+    assert delais["/comptages"] == delais["/verifier"]

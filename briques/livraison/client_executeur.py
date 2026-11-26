@@ -28,18 +28,20 @@ def _erreur_fixe(r: httpx.Response) -> str:
     return _CTRL.sub("", e)[:120].strip()
 
 
+# Au-dessus des 900 s de pg_restore côté exécuteur.
+DELAI_CLONER = 960.0
+
+
 class Executeur:
     def __init__(self, base_url: str, cle: str,
                  transport: Optional[httpx.AsyncBaseTransport] = None, delai: float = 280.0):
         self._base, self._cle, self._transport, self._delai = base_url.rstrip("/"), cle, transport, delai
 
-    async def verifier(self, service: str, utilisateur: str, base: str, objet: str) -> dict:
+    async def _post(self, chemin: str, corps: dict, delai: float) -> dict:
         try:
             async with httpx.AsyncClient(base_url=self._base, transport=self._transport,
-                                         timeout=self._delai) as c:
-                r = await c.post("/verifier", headers={"X-API-Key": self._cle},
-                                 json={"service": service, "utilisateur": utilisateur,
-                                       "base": base, "objet": objet})
+                                         timeout=delai) as c:
+                r = await c.post(chemin, headers={"X-API-Key": self._cle}, json=corps)
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise ExecuteurErreur("Exécuteur de restauration injoignable.") from None
         except httpx.HTTPError:
@@ -48,7 +50,7 @@ class Executeur:
         if r.status_code == 401:
             raise ExecuteurErreur("L'exécuteur a refusé la clé.", 401)
         if r.status_code == 409:
-            raise ExecuteurErreur("Une vérification est déjà en cours sur l'exécuteur.", 409)
+            raise ExecuteurErreur("Une opération est déjà en cours sur l'exécuteur.", 409)
         if r.status_code != 200:
             detail = _erreur_fixe(r) if r.status_code in (400, 404, 500, 502) else ""
             suite = f" : {detail}" if detail else "."
@@ -60,3 +62,22 @@ class Executeur:
         if not isinstance(d, dict):
             raise ExecuteurErreur("Réponse inattendue de l'exécuteur.")
         return d
+
+    async def verifier(self, service: str, utilisateur: str, base: str, objet: str) -> dict:
+        return await self._post("/verifier", {"service": service, "utilisateur": utilisateur,
+                                              "base": base, "objet": objet}, self._delai)
+
+    async def cloner(self, service: str, utilisateur: str, base: str, objet: str,
+                     nouvelle_base: str) -> dict:
+        """Restaure une sauvegarde dans une base neuve (pg_restore plafonné à 900 s côté exécuteur)."""
+        return await self._post("/cloner", {"service": service, "utilisateur": utilisateur,
+                                            "base": base, "objet": objet,
+                                            "nouvelle_base": nouvelle_base}, DELAI_CLONER)
+
+    async def comptages(self, service: str, utilisateur: str, base: str) -> dict:
+        return await self._post("/comptages", {"service": service, "utilisateur": utilisateur,
+                                               "base": base}, self._delai)
+
+    async def supprimer_base(self, service: str, utilisateur: str, base: str) -> dict:
+        return await self._post("/supprimer-base", {"service": service, "utilisateur": utilisateur,
+                                                    "base": base}, self._delai)
