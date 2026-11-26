@@ -40,8 +40,15 @@ def cle_api_fermee(cle: str = Depends(cle_api)) -> str:
 @app.on_event("startup")
 def _marquer_operations_interrompues():
     """Une opération restée `en_cours` sur disque n'a plus de tâche vivante : on la clôt."""
+    import logging
     import operations
-    operations.marquer_interrompues()
+    try:
+        operations.marquer_interrompues()
+    except OSError:
+        # Un état illisible ne doit pas empêcher la brique de servir ses autres capacités ;
+        # les opérations longues, elles, refuseront de démarrer tant que le disque est en défaut.
+        logging.getLogger(__name__).warning("état des opérations illisible au démarrage",
+                                            exc_info=True)
 
 
 @app.get("/sante")

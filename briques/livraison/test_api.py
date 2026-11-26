@@ -522,3 +522,14 @@ def test_demarrage_marque_les_operations_interrompues(tmp_path, monkeypatch):
         pass
     op = operations.lire("calendrier-familial")["op"]
     assert op["etat"] == "interrompue"
+
+
+def test_demarrage_survit_a_un_etat_des_operations_illisible(monkeypatch):
+    import operations
+    from fastapi.testclient import TestClient
+
+    def boom():
+        raise PermissionError("disque")
+    monkeypatch.setattr(operations, "marquer_interrompues", boom)
+    with TestClient(main.app) as c:
+        assert c.get("/sante").status_code == 200
