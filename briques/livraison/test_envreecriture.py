@@ -102,3 +102,14 @@ def test_erreurs_ne_citent_jamais_la_valeur():
             reecrire_env(env, var, "temoin", "n")
         for s in (str(e.value), repr(e.value)):
             assert MDP not in s and "postgresql://" not in s and "S3cr" not in s
+
+
+@pytest.mark.parametrize("url", [
+    "postgresql://u:a/temoin?@h/temoin",      # « ? » dans le mot de passe : segment ambigu
+    "postgresql://u:a/temoin#@h/temoin",
+    "postgresql://h//temoin",                 # chemin vide avant la base
+])
+def test_urls_douteuses_refusees_sans_citer_la_valeur(url):
+    with pytest.raises(ValueError) as e:
+        reecrire_env("DATABASE_URL=" + url, "DATABASE_URL", "temoin", "temoin_v0a1b2c3d")
+    assert "temoin" not in str(e.value) and "u:a" not in repr(e.value)

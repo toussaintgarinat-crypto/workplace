@@ -22,7 +22,12 @@ def reecrire_env(env: str, variable: str, ancienne: str, nouvelle: str) -> str:
     nom, valeur = m.groups()
     guillemet = valeur[:1] if len(valeur) >= 2 and valeur[:1] in "\"'" and valeur[-1:] == valeur[:1] else ""
     coeur = valeur[1:-1] if guillemet else valeur
-    nv, n = re.subn(r"^(\w[\w+.-]*://[^?#]*/)" + re.escape(ancienne) + r"(?=$|[?#])",
+    # Un « ? » ou « # » non encodé dans le mot de passe rendrait la coupure ambiguë : si la
+    # suite (requête/fragment) contient un « @ », l'URL est douteuse et on refuse.
+    reste = re.split(r"[?#]", coeur, maxsplit=1)
+    if len(reste) == 2 and "@" in reste[1]:
+        raise ValueError("URL de base ambiguë")
+    nv, n = re.subn(r"^(\w[\w+.-]*://[^?#]*[^/?#]/)" + re.escape(ancienne) + r"(?=$|[?#])",
                     lambda mm: mm.group(1) + nouvelle, coeur)
     if n != 1:
         raise ValueError("la variable ne pointe pas sur la base attendue")
