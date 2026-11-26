@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 import pytest
-from dokploy import Dokploy, DokployErreur, MESSAGE_DELAI_MUTATION
+from dokploy import Dokploy, DokployErreur, MESSAGE_DELAI_MUTATION, peut_etre_appliquee
 from faux_dokploy import fabrique_transport
 
 
@@ -174,6 +174,27 @@ def test_mutation_erreur_de_connexion_reste_injoignable(exc):
     with pytest.raises(DokployErreur) as ex:
         run(c.deployer("A1", "t"))
     assert "injoignable" in ex.value.message and ex.value.statut != 504
+    assert ex.value.envoyee is False and not peut_etre_appliquee(ex.value)
+
+
+@pytest.mark.parametrize("exc", [httpx.ReadError("x"), httpx.RemoteProtocolError("x"),
+                                 httpx.ReadTimeout("x"), httpx.WriteError("x")])
+def test_mutation_erreur_apres_envoi_peut_avoir_ete_appliquee(exc):
+    c = Dokploy("http://d.test", "k", transport=_transport_mutation(exc))
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer("A1", "t"))
+    assert ex.value.envoyee is True and peut_etre_appliquee(ex.value)
+
+
+@pytest.mark.parametrize("statut,appliquee", [(500, True), (502, True), (503, True),
+                                              (504, True), (400, False), (401, False),
+                                              (404, False), (429, False)])
+def test_mutation_statut_http_peut_avoir_ete_appliquee(statut, appliquee):
+    c = Dokploy("http://d.test", "k",
+                transport=httpx.MockTransport(lambda r: httpx.Response(statut, json={})))
+    with pytest.raises(DokployErreur) as ex:
+        run(c.deployer("A1", "t"))
+    assert ex.value.envoyee is True and peut_etre_appliquee(ex.value) is appliquee
 
 
 def test_delais_lecture_20s_mutation_60s(monkeypatch):
@@ -413,8 +434,45 @@ def test_rebaser_sauvegarde_relit_puis_ne_change_que_database():
     assert e["appels"][1]["corps"] == {
         "backupId": "B1", "database": "neuve", "schedule": "0 2 * * *", "prefix": "pg",
         "enabled": True, "destinationId": "DEST", "keepLatestCount": 7,
-        "databaseType": "postgres", "backupType": "database"}
+        "databaseType": "postgres", "backupType": "database", "secretInterne": "SECRET"}
     assert e["backups"]["B1"]["database"] == "neuve"
+
+
+def test_rebaser_sauvegarde_recopie_tous_les_scalaires_de_backup_one():
+    """Forme riche de `backup.one` (Dokploy 0.31.4) : tout scalaire est recopié (les champs
+    requis par apiUpdateBackup y sont), relations et horodatages en lecture seule écartés."""
+    e = etat()
+    e["backups"] = {"B1": {
+        "backupId": "B1", "appName": "bk-x", "schedule": "0 2 * * *", "enabled": True,
+        "database": "ancienne", "prefix": "pg", "serviceName": None, "destinationId": "DEST",
+        "keepLatestCount": 7, "backupType": "database", "databaseType": "postgres",
+        "composeId": None, "postgresId": "PG1", "mariadbId": None, "mysqlId": None,
+        "mongoId": None, "userId": None, "metadata": {"postgres": {"databaseUser": "u"}},
+        "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-02T00:00:00Z",
+        "destination": {"destinationId": "DEST", "secretAccessKey": "SECRET"},
+        "postgres": {"postgresId": "PG1", "databasePassword": "SECRET"}, "mysql": None,
+        "mariadb": None, "mongo": None, "compose": None, "user": None, "deployments": [],
+        "liste": [1, 2]}}
+    run(cli(e).rebaser_sauvegarde("B1", "neuve"))
+    corps = e["appels"][1]["corps"]
+    assert corps == {
+        "backupId": "B1", "appName": "bk-x", "schedule": "0 2 * * *", "enabled": True,
+        "database": "neuve", "prefix": "pg", "serviceName": None, "destinationId": "DEST",
+        "keepLatestCount": 7, "backupType": "database", "databaseType": "postgres",
+        "composeId": None, "postgresId": "PG1", "mariadbId": None, "mysqlId": None,
+        "mongoId": None, "userId": None}
+
+
+def test_rebaser_sauvegarde_lecture_en_echec_n_est_pas_envoyee():
+    e = _etat_backup()
+    e["pannes"] = {"/api/backup.one": [True]}
+    with pytest.raises(DokployErreur) as ex:
+        run(cli(e).rebaser_sauvegarde("B1", "neuve"))
+    assert ex.value.envoyee is False and not peut_etre_appliquee(ex.value)
+
+
+def test_base_sauvegarde_lit_database():
+    assert run(cli(_etat_backup()).base_sauvegarde("B1")) == "ancienne"
 
 
 def test_rebaser_sauvegarde_backup_one_refuse_ne_poste_rien():

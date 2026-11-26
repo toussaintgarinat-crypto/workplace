@@ -10,8 +10,11 @@ CHAMPS_APP_COMPLETE = ("applicationId", "name", "appName", "applicationStatus", 
                        "customGitUrl", "customGitBranch", "customGitBuildPath", "buildType",
                        "dockerfile", "dockerContextPath", "env")
 CHAMPS_DOMAINE = ("domainId", "host", "port", "path", "https")
-CHAMPS_SAUVEGARDE = ("schedule", "prefix", "enabled", "destinationId", "keepLatestCount",
-                     "databaseType", "backupType")
+# Clés de `backup.one` en lecture seule (relations, horodatages) : jamais renvoyées à
+# `backup.update`. Tout le reste (scalaire) est recopié tel quel (voir rebaser_sauvegarde).
+CLES_SAUVEGARDE_LECTURE_SEULE = frozenset({"createdAt", "updatedAt", "destination", "postgres",
+                                           "mysql", "mariadb", "mongo", "compose", "user",
+                                           "deployments"})
 CLES_SOURCE = ("customGitUrl", "customGitBranch", "customGitBuildPath", "buildType",
                "dockerfile", "dockerContextPath")
 LECTURES_TRANSITOIRES_MAX = 3
@@ -24,10 +27,20 @@ MESSAGE_DELAI_MUTATION = ("Délai dépassé : l'action a peut-être été exécu
 class DokployErreur(Exception):
     """Erreur honnête : `.message` ne contient jamais la clé ni un corps brut."""
 
-    def __init__(self, message: str, statut: Optional[int] = None):
+    def __init__(self, message: str, statut: Optional[int] = None, envoyee: bool = True):
         super().__init__(message)
         self.message = message
         self.statut = statut
+        # False seulement quand la requête n'est provablement JAMAIS partie (connexion refusée,
+        # délai de connexion, pool saturé) ; True par défaut (prudence).
+        self.envoyee = envoyee
+
+
+def peut_etre_appliquee(e: DokployErreur) -> bool:
+    """Une MUTATION en erreur a-t-elle pu être exécutée par Dokploy ? Oui si la requête est
+    partie et que la réponse manque (coupure, délai : statut None/504) ou vaut 5xx ; non si
+    elle n'est jamais partie ou si Dokploy l'a refusée (4xx)."""
+    return bool(e.envoyee and (e.statut is None or e.statut >= 500))
 
 
 class Dokploy:
@@ -51,7 +64,8 @@ class Dokploy:
                                     headers={"x-api-key": self._cle})
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
             # Avant envoi : la requête n'est jamais partie, rien n'a été exécuté.
-            raise DokployErreur("Dokploy injoignable (réseau ou service arrêté).") from None
+            raise DokployErreur("Dokploy injoignable (réseau ou service arrêté).",
+                                envoyee=False) from None
         except httpx.TimeoutException:
             # Après envoi (lecture/écriture) : sur une MUTATION, Dokploy a peut-être exécuté
             # l'action. Le dire (504) évite une double exécution à la réapprobation.
@@ -270,12 +284,28 @@ class Dokploy:
         raise DokployErreur("Délai dépassé : le déploiement de l'instance neuve n'est pas "
                             "terminé (vérifie son état dans Dokploy).")
 
-    async def rebaser_sauvegarde(self, backup_id: str, base: str) -> None:
-        """Repointe la sauvegarde sur `base` : relève la config (champs obligatoires de
-        `backup.update`), recopie tout, ne change que `database`."""
+    async def _config_sauvegarde(self, backup_id: str) -> dict:
         b = await self._requete("GET", "/api/backup.one", params={"backupId": backup_id})
         if not isinstance(b, dict):
             raise DokployErreur("Réponse de Dokploy inattendue (sauvegarde).")
-        corps = {"backupId": backup_id, "database": base}
-        corps.update({k: b.get(k) for k in CHAMPS_SAUVEGARDE})
+        return b
+
+    async def base_sauvegarde(self, backup_id: str) -> Optional[str]:
+        """Nom de la base que la sauvegarde Dokploy vise réellement (`database`)."""
+        base = (await self._config_sauvegarde(backup_id)).get("database")
+        return base if isinstance(base, str) else None
+
+    async def rebaser_sauvegarde(self, backup_id: str, base: str) -> None:
+        """Repointe la sauvegarde sur `base` : relève la config, recopie TOUS ses champs
+        scalaires (les champs requis par `apiUpdateBackup` y sont, quels qu'ils soient), sauf
+        les clés en lecture seule, et ne change que `database`. Une erreur AVANT l'envoi de
+        `backup.update` porte `envoyee=False` : rien n'a été modifié."""
+        try:
+            b = await self._config_sauvegarde(backup_id)
+        except DokployErreur as e:
+            raise DokployErreur(e.message, e.statut, envoyee=False) from None
+        corps = {k: v for k, v in b.items()
+                 if k not in CLES_SAUVEGARDE_LECTURE_SEULE
+                 and (v is None or isinstance(v, (str, int, float, bool)))}
+        corps.update(backupId=backup_id, database=base)
         await self._requete("POST", "/api/backup.update", json=corps)

@@ -69,6 +69,20 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
         return httpx.Response(code, json=corps)
 
     def handler(req: httpx.Request) -> httpx.Response:
+        # Panne injectée : `pannes[chemin]` = liste consommée appel par appel (True -> 500,
+        # un entier -> ce statut HTTP, "lecture" -> appel TRAITÉ puis réponse perdue
+        # (httpx.ReadError), "connexion" -> jamais parti (httpx.ConnectError, non enregistré),
+        # False -> appel normal).
+        pannes = (etat.get("pannes") or {}).get(req.url.path)
+        panne = pannes.pop(0) if pannes else False
+        if panne == "connexion":
+            raise httpx.ConnectError("connexion refusée", request=req)
+        if panne == "lecture":
+            traiter(req)
+            raise httpx.ReadError("réponse perdue", request=req)
+        return traiter(req, panne)
+
+    def traiter(req: httpx.Request, panne=False) -> httpx.Response:
         chemin = req.url.path
         corps = json.loads(req.content) if req.content else None
         etat["appels"].append({"methode": req.method, "chemin": chemin, "corps": corps,
@@ -77,10 +91,6 @@ def fabrique_transport(etat: dict) -> httpx.MockTransport:
             return rep(401, {"message": "Unauthorized"})
         if etat.get("limite"):
             return rep(429, {"message": "Rate limit exceeded"})
-        # Panne injectée : `pannes[chemin]` = liste consommée appel par appel (True -> 500,
-        # un entier -> ce statut HTTP, False -> appel normal).
-        pannes = (etat.get("pannes") or {}).get(chemin)
-        panne = pannes.pop(0) if pannes else False
         if panne:
             return rep(500 if panne is True else panne, {"message": "panne injectée"})
         apps = etat["apps"]
