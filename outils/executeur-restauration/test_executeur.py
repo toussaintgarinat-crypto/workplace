@@ -40,7 +40,7 @@ class FauxRunner:
             if "pg_restore" in argv:
                 return self.pg_restore, b"", b""
             sql, base = argv[-1], argv[argv.index("-d") + 1]
-            if re.match(r"(create|drop) (database|role)", sql) or "drop database" in sql:
+            if re.match(r"(create|drop|alter|reassign)\b", sql) or "drop database" in sql:
                 return 0, b"", b""
             tables = self.restaure if base.startswith("restore_") else self.origine
             if "information_schema" in sql:
