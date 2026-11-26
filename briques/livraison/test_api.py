@@ -512,3 +512,13 @@ def test_repere_non_ecrivable_ne_fait_pas_echouer_le_rollback(ea, monkeypatch):
     monkeypatch.setenv("LIVRAISON_DATA", "/proc/interdit/livraison")
     r = ca.post("/apps/calendrier/rollback")
     assert r.status_code == 200 and r.json()["ok"] is True
+
+
+def test_demarrage_marque_les_operations_interrompues(tmp_path, monkeypatch):
+    import operations
+    monkeypatch.setenv("LIVRAISON_DATA", str(tmp_path))
+    operations.demarrer("calendrier-familial", "reset")
+    with TestClient(main.app):
+        pass
+    op = operations.lire("calendrier-familial")["op"]
+    assert op["etat"] == "interrompue"

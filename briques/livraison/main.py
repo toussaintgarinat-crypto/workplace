@@ -37,6 +37,13 @@ def cle_api_fermee(cle: str = Depends(cle_api)) -> str:
     return cle
 
 
+@app.on_event("startup")
+def _marquer_operations_interrompues():
+    """Une opération restée `en_cours` sur disque n'a plus de tâche vivante : on la clôt."""
+    import operations
+    operations.marquer_interrompues()
+
+
 @app.get("/sante")
 def sante():
     return {"ok": True, "brique": "livraison",
