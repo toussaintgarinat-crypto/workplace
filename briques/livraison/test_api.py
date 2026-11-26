@@ -452,9 +452,9 @@ def test_logs_non_coupes_intacts(e):
     assert c.get("/apps/A1/logs").json()["logs"] == "un\ndeux\n"
 
 
-def test_manifeste_relayer_erreurs_sur_les_8_capacites():
+def test_manifeste_relayer_erreurs_sur_les_11_capacites():
     m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
-    assert len(m["capacites"]) == 8
+    assert len(m["capacites"]) == 11
     assert all(x.get("relayer_erreurs") is True for x in m["capacites"])
 
 
@@ -533,3 +533,196 @@ def test_demarrage_survit_a_un_etat_des_operations_illisible(monkeypatch):
     monkeypatch.setattr(operations, "marquer_interrompues", boom)
     with TestClient(main.app) as c:
         assert c.get("/sante").status_code == 200
+
+
+# ── Reset bleu/vert : routes, manifeste (S247 2b, tâche 7) ──
+import asyncio
+import inventaire
+import operations
+import preuve
+
+BASE_INV = {"base": "temoin", "service": "postgres-temoin", "utilisateur": "temoin",
+            "sauvegarde_id": "S1", "prefixe_s3": "temoin/db"}
+RESET_INV = {"variable_env": "DATABASE_URL", "domaine_public": "app.example.com",
+             "domaine_test": "test.example.com", "port_app": 3000, "sante_chemin": "/api/health"}
+
+
+def _inventaire(tmp_path, monkeypatch, avec_reset=True, nom="calendrier"):
+    entree = {"bases": [dict(BASE_INV)], "volumes": []}
+    if avec_reset:
+        entree["reset"] = dict(RESET_INV)
+    f = tmp_path / "inv.json"
+    f.write_text(json.dumps({nom: entree}))
+    monkeypatch.setenv("LIVRAISON_INVENTAIRE", str(f))
+
+
+@pytest.fixture
+def er(ea, tmp_path, monkeypatch):
+    """Reset : inventaire avec bloc reset, exécuteur configuré, preuve valide, reset factice."""
+    _inventaire(tmp_path, monkeypatch)
+    monkeypatch.setenv("EXECUTEUR_URL", "http://ex.test")
+    monkeypatch.setenv("EXECUTEUR_KEY", "k")
+    ea["apps"]["A1"]["env"] = "DATABASE_URL=postgres://u:SECRETXYZ@h/temoin\nPASSWORD=SECRETXYZ"
+    preuve.noter("A1", "P1", "valide", {})
+    appels = []
+
+    async def faux_reset(d, ex, entree, app_nom, app_id, operation_id, **kw):
+        appels.append(("reset", entree, app_nom, app_id))
+        operations.terminer(app_nom, operation_id, "reussie", "ok")
+
+    async def faux_retour(d, entree, app_nom, operation_id, **kw):
+        appels.append(("retour", entree, app_nom))
+        operations.terminer(app_nom, operation_id, "reussie", "ok")
+
+    monkeypatch.setattr(main.reset, "reset", faux_reset)
+    monkeypatch.setattr(main.reset, "retour_arriere", faux_retour)
+    ea["appels_reset"] = appels
+    return ea
+
+
+@pytest.fixture
+def cr(er):
+    """Client à boucle persistante : les tâches de fond (reset) survivent à la requête 202."""
+    with TestClient(main.app, headers={"X-API-Key": CLE}) as client:
+        yield client
+
+
+def _fin(client, nom="calendrier"):
+    import time
+    for _ in range(300):
+        o = client.get(f"/apps/{nom}/operation").json()
+        if o["etat"] != "en_cours":
+            return o
+        time.sleep(0.01)
+    raise AssertionError("l'opération ne se termine pas")
+
+
+def _poser_deux_emplacements(nom="calendrier", base_active="temoin_v0123abcd", precedente="temoin"):
+    operations.enregistrer_emplacements(nom, {"app_id": "A1"}, {"app_id": "B1"}, "A", "temoin")
+    operations.basculer_etat(nom, "B", base_active, precedente)
+
+
+def test_reset_sans_cle_refuse(er, monkeypatch):
+    nue = TestClient(main.app)
+    assert nue.post("/apps/calendrier/reset").status_code in (401, 403)
+    assert nue.post("/apps/calendrier/retour-arriere").status_code in (401, 403)
+    assert er["appels_reset"] == []
+
+
+def test_reset_sans_preuve_409(er):
+    preuve.noter("A1", "P2", "invalide", {})
+    r = ca.post("/apps/calendrier/reset")
+    assert r.status_code == 409 and "preuve" in r.json()["detail"]
+    assert operations.lire("calendrier") is None
+
+
+def test_reset_sans_bloc_reset_409(er, tmp_path, monkeypatch):
+    _inventaire(tmp_path, monkeypatch, avec_reset=False)
+    r = ca.post("/apps/calendrier/reset")
+    assert r.status_code == 409 and "reset non configuré pour cette application" in r.json()["detail"]
+    assert ca.post("/apps/calendrier/retour-arriere").status_code == 409
+
+
+def test_reset_sans_executeur_503_et_404_inventaire_prime(er, monkeypatch):
+    monkeypatch.delenv("EXECUTEUR_URL")
+    assert ca.post("/apps/calendrier/reset").status_code == 503
+    assert ca.post("/apps/vide/reset").status_code == 404      # app sans inventaire : 404 avant 503
+
+
+def test_reset_app_inconnue_et_jumeau_404(er):
+    assert ca.post("/apps/zzz/reset").status_code == 404
+    er["apps"]["A5"] = {**er["apps"]["A1"], "applicationId": "A5", "name": "calendrier-jumeau"}
+    assert ca.post("/apps/calendrier-jumeau/reset").status_code == 404
+
+
+def test_reset_nominal_202_puis_reussie(er, cr):
+    r = cr.post("/apps/calendrier/reset")
+    assert r.status_code == 202
+    d = r.json()
+    assert d["ok"] is True and d["app"] == "calendrier" and d["etat"] == "en_cours" and d["operation"]
+    o = _fin(cr)
+    assert o["etat"] == "reussie" and o["operation"] == d["operation"]
+    assert o["app"] == "calendrier" and o["message"] == "ok"
+    (appel,) = er["appels_reset"]
+    assert appel[2] == "calendrier" and appel[3] == "A1"
+
+
+def test_second_post_pendant_en_cours_409(er):
+    oid = operations.demarrer("calendrier", "reset")
+    r = ca.post("/apps/calendrier/reset")
+    assert r.status_code == 409 and "déjà en cours" in r.json()["detail"]
+    _poser_deux_emplacements()
+    assert ca.post("/apps/calendrier/retour-arriere").status_code == 409
+    assert ca.get("/apps/calendrier/operation").json()["operation"] == oid
+
+
+def test_operation_aucune(er):
+    d = ca.get("/apps/calendrier/operation").json()
+    assert d["etat"] == "aucune" and d["app"] == "calendrier" and d["retour_possible"] is False
+
+
+def test_operation_ne_fuit_ni_env_ni_mot_de_passe(er):
+    _poser_deux_emplacements()
+    oid = operations.demarrer("calendrier", "reset")
+    operations.etape("calendrier", oid, "sante", domaine_id="DOM42")
+    r = ca.get("/apps/calendrier/operation")
+    d = r.json()
+    assert d["etat"] == "en_cours" and d["etape"] == "sante" and d["base_active"] == "temoin_v0123abcd"
+    assert set(d) == {"app", "etat", "etape", "operation", "message", "actif", "base_active",
+                      "retour_possible"}
+    low = r.text.lower()
+    assert "secretxyz" not in low and "password" not in low and "env" not in low
+    assert "DOM42" not in r.text and "postgres://" not in r.text
+
+
+def test_operation_protegee_par_cle(er):
+    assert TestClient(main.app).get("/apps/calendrier/operation").status_code == 401
+
+
+def test_retour_arriere_sans_generation_precedente_409(er):
+    r = ca.post("/apps/calendrier/retour-arriere")
+    assert r.status_code == 409
+    assert operations.lire("calendrier") is None      # refusé AVANT demarrer
+    assert er["appels_reset"] == []
+
+
+def test_retour_arriere_nominal_202_puis_reussie(er, cr):
+    _poser_deux_emplacements()
+    assert ca.get("/apps/calendrier/operation").json()["retour_possible"] is True
+    r = cr.post("/apps/calendrier/retour-arriere")
+    assert r.status_code == 202 and r.json()["etat"] == "en_cours"
+    o = _fin(cr)
+    assert o["etat"] == "reussie"
+    (appel,) = er["appels_reset"]
+    assert appel[0] == "retour" and appel[2] == "calendrier"
+
+
+def test_reset_recoit_l_entree_brute_apres_un_premier_reset(er, cr):
+    _poser_deux_emplacements(base_active="temoin_v0123abcd")
+    assert cr.post("/apps/calendrier/reset").status_code == 202
+    _fin(cr)
+    (appel,) = er["appels_reset"]
+    assert appel[1]["bases"][0]["base"] == "temoin"            # base racine, pas la base active
+    assert appel[1]["reset"] == RESET_INV
+
+
+def test_sauvegarder_garde_l_entree_effective(er):
+    _poser_deux_emplacements(base_active="temoin_v0123abcd")
+    assert main._entree_inventaire("calendrier")["bases"][0]["base"] == "temoin_v0123abcd"
+    assert main._entree_brute("calendrier")["bases"][0]["base"] == "temoin"
+
+
+def test_manifeste_capacites_reset():
+    m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
+    caps = {x["nom"]: x for x in m["capacites"]}
+    r, b, o = caps["livraison_reset_app"], caps["livraison_retour_arriere"], caps["livraison_operation"]
+    assert r["methode"] == "POST" and r["chemin"] == "/apps/{app}/reset" and r["action"] is True
+    assert r["sensibilite"] == "donnees" and r["prerequis"] == ["preuve_sauvegarde"]
+    assert "fournit_preuve" not in r
+    assert "livraison_verifier_sauvegarde" in r["description"] and "livraison_operation" in r["description"]
+    assert b["methode"] == "POST" and b["chemin"] == "/apps/{app}/retour-arriere"
+    assert b["sensibilite"] == "donnees" and "prerequis" not in b and "fournit_preuve" not in b
+    assert o["methode"] == "GET" and o["chemin"] == "/apps/{app}/operation"
+    assert o["action"] is False and "sensibilite" not in o
+    for x in (r, b, o):
+        assert x["params"]["app"]["requis"] is True and x["relayer_erreurs"] is True

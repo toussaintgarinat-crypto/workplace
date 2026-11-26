@@ -143,6 +143,56 @@
       "action": false,
       "fournit_preuve": "preuve_sauvegarde",
       "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_reset_app",
+      "description": "UNIQUEMENT pour remettre à neuf une application (code propre + données restaurées) ; PAS pour redémarrer, déployer ou revenir à une version ; l'opération dure plusieurs minutes et se lit avec `livraison_operation` ; ne pas dire qu'elle est terminée tant que `livraison_operation` ne répond pas `reussie`. Exige une preuve de sauvegarde fraîche : fais d'abord livraison_verifier_sauvegarde (verdict valide) sur la même application. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/reset",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": true,
+      "sensibilite": "donnees",
+      "prerequis": [
+        "preuve_sauvegarde"
+      ],
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_retour_arriere",
+      "description": "Revenir à l'instance précédente après un reset ; PAS pour un rollback de version (→ livraison_rollback). Les données écrites depuis la bascule restent dans la base de l'instance quittée. L'exécution attend l'approbation de l'utilisateur sur Telegram.",
+      "methode": "POST",
+      "chemin": "/apps/{app}/retour-arriere",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": true,
+      "sensibilite": "donnees",
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_operation",
+      "description": "État de la dernière opération longue d'une application (reset ou retour arrière) : aucune, en_cours, reussie, echec ou interrompue, avec l'étape, le message et la possibilité d'un retour arrière. À appeler pour suivre un reset. Lecture seule.",
+      "methode": "GET",
+      "chemin": "/apps/{app}/operation",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application (voir livraison_apps). Ex : « calendrier ».",
+          "requis": true
+        }
+      },
+      "action": false,
+      "relayer_erreurs": true
     }
   ],
   "taches": []

@@ -1,4 +1,5 @@
 """Brique « livraison » — exploitation des apps déployées sur Dokploy (S246)."""
+import asyncio
 import os
 from typing import Optional
 
@@ -323,3 +324,83 @@ async def verifier_sauvegarde(app_: str, _: str = Depends(cle_api_fermee)):
     entree = _entree_inventaire(a["nom"])   # avant executeur() : un 404 prime sur un 503
     r = await sauvegarde.verifier(d, executeur(), entree, a["id"])
     return {"app": a["nom"], "app_id": a["id"], **r}
+
+
+# ── Reset bleu/vert (S247 2b) ──
+_taches_en_fond: set = set()   # références fortes : une tâche sans référence peut être ramassée
+
+
+def _entree_brute(nom_app: str) -> dict:
+    """Entrée d'inventaire TELLE QUE LUE (base racine) : `reset` recalcule lui-même la base
+    active depuis l'état des opérations ; `_entree_inventaire` casserait `base_racine`."""
+    e = inventaire.lire(nom_app)
+    if not e:
+        raise HTTPException(404, "aucun inventaire de sauvegarde valide pour cette application")
+    return e
+
+
+def _lancer(app_nom: str, type_: str, coro_fabrique) -> dict:
+    """Réserve l'opération (409 si déjà en cours) puis lance la tâche de fond ; 202."""
+    try:
+        oid = operations.demarrer(app_nom, type_)
+    except operations.OperationEnCours:
+        raise HTTPException(409, "une opération est déjà en cours pour cette application") from None
+    except OSError:
+        raise HTTPException(503, "état des opérations illisible") from None
+    tache = asyncio.create_task(coro_fabrique(oid))
+    _taches_en_fond.add(tache)
+    tache.add_done_callback(_taches_en_fond.discard)
+    return {"ok": True, "app": app_nom, "operation": oid, "etat": "en_cours"}
+
+
+@app.post("/apps/{app_}/reset", status_code=202)
+async def reset_app(app_: str, _: str = Depends(cle_api_fermee)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+    except DokployErreur as e:
+        raise _erreur(e)
+    entree = _entree_brute(a["nom"])
+    if not entree.get("reset"):
+        raise HTTPException(409, "reset non configuré pour cette application")
+    ex = executeur()
+    exiger_preuve(a["id"])
+    return _lancer(a["nom"], "reset", lambda oid: reset.reset(d, ex, entree, a["nom"], a["id"], oid))
+
+
+@app.post("/apps/{app_}/retour-arriere", status_code=202)
+async def retour_arriere_app(app_: str, _: str = Depends(cle_api_fermee)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+    except DokployErreur as e:
+        raise _erreur(e)
+    entree = _entree_brute(a["nom"])
+    if not entree.get("reset"):
+        raise HTTPException(409, "reset non configuré pour cette application")
+    try:
+        etat = operations.lire(a["nom"])
+    except OSError:
+        raise HTTPException(503, "état des opérations illisible") from None
+    if not reset.peut_retour_arriere(etat):
+        raise HTTPException(409, "aucun retour arrière possible pour cette application")
+    return _lancer(a["nom"], "retour_arriere",
+                   lambda oid: reset.retour_arriere(d, entree, a["nom"], oid))
+
+
+@app.get("/apps/{app_}/operation")
+async def operation_app(app_: str, _: str = Depends(cle_api)):
+    d = fournisseur()
+    try:
+        a = await _resoudre(d, app_)
+    except DokployErreur as e:
+        raise _erreur(e)
+    try:
+        etat = operations.lire(a["nom"])
+    except OSError:
+        raise HTTPException(503, "état des opérations illisible") from None
+    op = (etat or {}).get("op") or {}
+    return {"app": a["nom"], "etat": op.get("etat") or "aucune", "etape": op.get("etape"),
+            "operation": op.get("id"), "message": op.get("message"),
+            "actif": (etat or {}).get("actif"), "base_active": (etat or {}).get("base_active"),
+            "retour_possible": reset.peut_retour_arriere(etat)}
