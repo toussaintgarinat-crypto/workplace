@@ -57,3 +57,22 @@ def noter(app_id: str, preuve_id: str, verdict: str, comptages: dict,
     tmp.write_text(json.dumps(tout))
     tmp.replace(p)
     return rec
+
+
+def revoquer(app_id: str) -> None:
+    """Supprime la preuve de cette app (écriture atomique, comme `noter`). Absence de fichier ou
+    d'entrée : sans effet. Toute erreur disque (OSError) remonte à l'appelant, qui doit échouer
+    fermé : une preuve qu'on n'a pas pu retirer reste potentiellement valide."""
+    p = _chemin()
+    try:
+        d = json.loads(p.read_text())
+    except FileNotFoundError:
+        return
+    except ValueError:
+        d = {}
+    if not isinstance(d, dict) or app_id not in d:
+        return
+    del d[app_id]
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d))
+    tmp.replace(p)

@@ -101,3 +101,27 @@ def test_expire_a_non_numerique_vaut_aucune_preuve(tmp_path, monkeypatch):
     (tmp_path / "d2" / "preuves_sauvegarde.json").write_text(json.dumps(
         {"A1": {"preuve_id": "P9", "verdict": "valide", "expire_a": None}}))
     assert preuve.valide("A1", T0 + 1) is None
+
+
+def test_revoquer_supprime_la_preuve_et_laisse_les_autres():
+    preuve.noter("A1", "P1", "valide", {}, maintenant=T0)
+    preuve.noter("A2", "P2", "valide", {}, maintenant=T0)
+    preuve.revoquer("A1")
+    assert preuve.lire("A1") is None and preuve.valide("A2", T0) is not None
+
+
+def test_revoquer_sans_fichier_ni_entree_est_sans_effet():
+    preuve.revoquer("A1")
+    preuve.noter("A2", "P2", "valide", {}, maintenant=T0)
+    preuve.revoquer("A1")
+    assert preuve.valide("A2", T0) is not None
+
+
+def test_revoquer_propage_oserror(monkeypatch):
+    preuve.noter("A1", "P1", "valide", {}, maintenant=T0)
+
+    def boom(self, *a, **k):
+        raise OSError("disque")
+    monkeypatch.setattr("pathlib.Path.replace", boom)
+    with pytest.raises(OSError):
+        preuve.revoquer("A1")

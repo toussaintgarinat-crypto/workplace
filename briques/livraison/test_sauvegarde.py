@@ -182,7 +182,7 @@ def test_verifier_delai_global_depasse_invalide_et_note_la_preuve(e):
     preuve.noter("A1", "ANCIENNE", "valide", {})
     r = run(sauvegarde.verifier(_dok(e), _Lent(), _entree(), "A1", delai_global=0.05))
     assert r["verdict"] == "invalide" and "délai global de vérification dépassé" in r["raisons"]
-    assert preuve.valide("A1") is None and preuve.lire("A1")["verdict"] == "invalide"
+    assert preuve.valide("A1") is None and preuve.lire("A1") is None
 
 
 def test_route_executeur_non_configure_503_si_inventaire_present(e, monkeypatch):
@@ -213,3 +213,72 @@ def test_sauvegarde_et_verification_suivent_la_base_active(e):
                                         "temoin_v0a1b2c3d")
     assert main._entree_inventaire("calendrier")["bases"][0]["base"] == "temoin_v0a1b2c3d"
     assert inventaire.lire("calendrier")["bases"][0]["base"] == "temoin"
+
+
+def _get_preuve():
+    return c.get("/apps/calendrier/preuve", headers=H).json()
+
+
+def test_route_verdict_invalide_ne_laisse_aucune_preuve(e, monkeypatch):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    bad = {**OK, "verdict": "invalide", "raison": "comptages différents"}
+    monkeypatch.setattr(main, "executeur", lambda: _executeur(bad, []))
+    assert c.post("/apps/calendrier/sauvegardes/verifier", headers=H).json()["verdict"] == "invalide"
+    g = _get_preuve()
+    assert g["valide"] is False and g["preuve_id"] is None
+
+
+def test_route_exception_executeur_ne_laisse_aucune_preuve(e, monkeypatch):
+    class Boum:
+        async def verifier(self, *a, **k):
+            raise RuntimeError("boum")
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    monkeypatch.setattr(main, "executeur", lambda: Boum())
+    with pytest.raises(RuntimeError):
+        c.post("/apps/calendrier/sauvegardes/verifier", headers=H)
+    g = _get_preuve()
+    assert g["valide"] is False and g["preuve_id"] is None
+
+
+def test_preuve_valide_anterieure_ne_survit_pas_a_un_echec_dokploy(e):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    e["echec_sauvegarde"] = True
+    run(sauvegarde.verifier(_dok(e), _executeur(OK, []), _entree(), "A1"))
+    assert preuve.lire("A1") is None
+
+
+def test_annulation_revoque_la_preuve_et_relance_cancelled(e):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+
+    async def scenario():
+        t = asyncio.create_task(sauvegarde.verifier(_dok(e), _Lent(), _entree(), "A1"))
+        await asyncio.sleep(0.1)
+        assert preuve.valide("A1") is None   # déjà révoquée pendant la vérification
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+    run(scenario())
+    assert preuve.lire("A1") is None
+
+
+def test_preuve_revoquee_des_le_debut_de_la_verification(e):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    vu = []
+
+    class Espion:
+        async def verifier(self, *a, **k):
+            vu.append(preuve.valide("A1"))
+            return OK
+    run(sauvegarde.verifier(_dok(e), Espion(), _entree(), "A1"))
+    assert vu == [None]
+
+
+def test_erreur_disque_a_la_revocation_initiale_invalide_sans_sauvegarde(e, monkeypatch):
+    def boom(app_id):
+        raise OSError("disque")
+    monkeypatch.setattr(preuve, "revoquer", boom)
+    monkeypatch.setattr(main, "executeur", lambda: _executeur(OK, []))
+    r = c.post("/apps/calendrier/sauvegardes/verifier", headers=H)
+    d = r.json()
+    assert r.status_code == 200 and d["verdict"] == "invalide" and d["raisons"]
+    assert e["appels"] == [] or all("backup" not in str(a).lower() for a in e["appels"])

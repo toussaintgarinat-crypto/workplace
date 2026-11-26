@@ -41,6 +41,29 @@ async def verifier(d: Dokploy, ex: Executeur, entree: dict, app_id: str,
     comptages. Toute défaillance (Dokploy, exécuteur, comptages, délai global, disque) donne un
     verdict `invalide` avec `ok: True` : le Cœur révoque alors toute preuve antérieure (fail
     closed)."""
+    preuve_id = secrets.token_hex(8)
+    try:
+        # Une vérification en cours ne laisse JAMAIS subsister une preuve antérieure : si elle
+        # échoue, est interrompue ou coupée, il n'y a aucune preuve valide (fail closed).
+        preuve.revoquer(app_id)
+    except OSError:
+        return {"ok": True, "verdict": "invalide", "preuve_id": preuve_id,
+                "raisons": ["preuve antérieure non révoquée (erreur disque) : vérification "
+                            "non lancée"],
+                "alertes": [], "comptages": {}, "expire_a": float(horloge()),
+                "volumes_non_verifies": len(entree.get("volumes", []))}
+    try:
+        return await _verifier(d, ex, entree, app_id, preuve_id, horloge, delai_global)
+    except BaseException:
+        # Exception inattendue, annulation (client HTTP déconnecté) : on révoque et on relance.
+        try:
+            preuve.revoquer(app_id)
+        except OSError:
+            pass
+        raise
+
+
+async def _verifier(d, ex, entree, app_id, preuve_id, horloge, delai_global) -> dict:
     debut = horloge()
     raisons: list[str] = []
     alertes: list[str] = []
@@ -75,14 +98,21 @@ async def verifier(d: Dokploy, ex: Executeur, entree: dict, app_id: str,
     except asyncio.TimeoutError:
         raisons.append("délai global de vérification dépassé")
     verdict = "valide" if not raisons else "invalide"
-    preuve_id = secrets.token_hex(8)
+    expire_a = float(horloge())
     try:
-        expire_a = preuve.noter(app_id, preuve_id, verdict, comptages)["expire_a"]
+        if verdict == "valide":
+            expire_a = preuve.noter(app_id, preuve_id, verdict, comptages)["expire_a"]
+        else:
+            preuve.revoquer(app_id)   # invalide : aucune preuve, pas même une entrée `invalide`
     except OSError:
-        # Preuve non écrite : rien n'est garanti. Verdict forcé `invalide` (le Cœur révoque).
+        # Preuve non écrite/révoquée : rien n'est garanti. Verdict forcé `invalide`.
         verdict = "invalide"
         raisons.append("preuve non enregistrée (erreur disque)")
         expire_a = float(horloge())
+        try:
+            preuve.revoquer(app_id)
+        except OSError:
+            pass
     return {"ok": True, "verdict": verdict, "preuve_id": preuve_id, "raisons": raisons,
             "alertes": alertes, "comptages": comptages, "expire_a": expire_a,
             "volumes_non_verifies": len(entree.get("volumes", []))}
