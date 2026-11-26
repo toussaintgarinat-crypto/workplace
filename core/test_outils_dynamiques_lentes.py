@@ -20,3 +20,8 @@ def test_routes_de_sauvegarde_ont_un_timeout_long():
 
 def test_route_quelconque_garde_le_timeout_du_client():
     assert outils_communs._timeout_dynamique(_cap("/apps/{app}/etat")) is None
+
+
+def test_timeout_verification_depasse_le_delai_global_de_la_brique():
+    # 540 = sauvegarde.DELAI_GLOBAL_S (briques/livraison) : le Cœur ne doit jamais couper avant.
+    assert outils_communs.TIMEOUT_VERIFICATION > 540

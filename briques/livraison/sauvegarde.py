@@ -1,4 +1,5 @@
 """Sauvegarde et vérification par restauration jetable (S247)."""
+import asyncio
 import secrets
 import time
 from datetime import datetime, timezone
@@ -10,6 +11,9 @@ from dokploy import Dokploy, DokployErreur
 
 # Tolérance d'horloge entre le HP (qui mesure `debut`) et la VM 100 (qui date le fichier).
 TOLERANCE_HORLOGE_S = 120
+# Délai TOTAL de la vérification, propre à la brique. Le Cœur (core/outils_communs.py,
+# TIMEOUT_VERIFICATION = 600) doit rester strictement au-dessus : il ne coupe jamais avant.
+DELAI_GLOBAL_S = 540.0
 
 
 def _epoch(iso: Optional[str]) -> float:
@@ -31,39 +35,54 @@ async def sauvegarder(d: Dokploy, entree: dict) -> dict:
 
 
 async def verifier(d: Dokploy, ex: Executeur, entree: dict, app_id: str,
-                   horloge: Callable[[], float] = time.time) -> dict:
+                   horloge: Callable[[], float] = time.time,
+                   delai_global: float = DELAI_GLOBAL_S) -> dict:
     """Sauvegarde FRAÎCHE de chaque base, restauration jetable (exécuteur), comparaison des
-    comptages. Toute défaillance (Dokploy, exécuteur, comptages) donne un verdict `invalide` avec
-    `ok: True` : le Cœur révoque alors toute preuve antérieure (fail closed)."""
+    comptages. Toute défaillance (Dokploy, exécuteur, comptages, délai global, disque) donne un
+    verdict `invalide` avec `ok: True` : le Cœur révoque alors toute preuve antérieure (fail
+    closed)."""
     debut = horloge()
     raisons: list[str] = []
-    comptages: dict = {}
     alertes: list[str] = []
+    comptages: dict = {}
     bases = entree.get("bases", [])
     if not bases:
         raisons.append("aucune base déclarée à l'inventaire : rien à vérifier")
-    for b in bases:
-        nom = b["base"]
-        try:
-            await d.sauvegarder_base(b["sauvegarde_id"])
-            fichiers = await d.fichiers_sauvegarde(b["sauvegarde_id"])
-            if not fichiers or _epoch(fichiers[0]["date"]) < debut - TOLERANCE_HORLOGE_S:
-                raisons.append(f"{nom} : aucune sauvegarde récente")
+
+    async def _boucle() -> None:
+        for b in bases:
+            nom = b["base"]
+            try:
+                await d.sauvegarder_base(b["sauvegarde_id"])
+                fichiers = await d.fichiers_sauvegarde(b["sauvegarde_id"])
+                if not fichiers or _epoch(fichiers[0]["date"]) < debut - TOLERANCE_HORLOGE_S:
+                    raisons.append(f"{nom} : aucune sauvegarde récente")
+                    continue
+                r = await ex.verifier(b["service"], b["utilisateur"], b["base"],
+                                      f"{b['prefixe_s3']}/{fichiers[0]['nom']}")
+            except (DokployErreur, ExecuteurErreur) as e:
+                raisons.append(f"{nom} : {e.message}")
                 continue
-            r = await ex.verifier(b["service"], b["utilisateur"], b["base"],
-                                  f"{b['prefixe_s3']}/{fichiers[0]['nom']}")
-        except (DokployErreur, ExecuteurErreur) as e:
-            raisons.append(f"{nom} : {e.message}")
-            continue
-        comptages[nom] = r.get("comptages_restaures") or {}
-        if r.get("nettoyage") == "echec":
-            alertes.append(f"{nom} : base jetable restore_* non supprimée sur la VM de "
-                           "restauration (à nettoyer à la main)")
-        if r.get("verdict") != "valide":
-            raisons.append(f"{nom} : {r.get('raison') or 'restauration non conforme'}")
+            comptages[nom] = r.get("comptages_restaures") or {}
+            if r.get("nettoyage") == "echec":
+                alertes.append(f"{nom} : base jetable restore_* non supprimée sur la VM de "
+                               "restauration (à nettoyer à la main)")
+            if r.get("verdict") != "valide":
+                raisons.append(f"{nom} : {r.get('raison') or 'restauration non conforme'}")
+
+    try:
+        await asyncio.wait_for(_boucle(), delai_global)
+    except asyncio.TimeoutError:
+        raisons.append("délai global de vérification dépassé")
     verdict = "valide" if not raisons else "invalide"
     preuve_id = secrets.token_hex(8)
-    rec = preuve.noter(app_id, preuve_id, verdict, comptages)
+    try:
+        expire_a = preuve.noter(app_id, preuve_id, verdict, comptages)["expire_a"]
+    except OSError:
+        # Preuve non écrite : rien n'est garanti. Verdict forcé `invalide` (le Cœur révoque).
+        verdict = "invalide"
+        raisons.append("preuve non enregistrée (erreur disque)")
+        expire_a = float(horloge())
     return {"ok": True, "verdict": verdict, "preuve_id": preuve_id, "raisons": raisons,
-            "alertes": alertes, "comptages": comptages, "expire_a": rec["expire_a"],
+            "alertes": alertes, "comptages": comptages, "expire_a": expire_a,
             "volumes_non_verifies": len(entree.get("volumes", []))}

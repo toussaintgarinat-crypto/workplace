@@ -158,3 +158,49 @@ def test_verifier_nettoyage_en_echec_alerte_sans_changer_le_verdict(e):
 def test_verifier_alertes_vide_par_defaut(e):
     r = run(sauvegarde.verifier(_dok(e), _executeur({**OK, "nettoyage": "ok"}, []), _entree(), "A1"))
     assert r["alertes"] == []
+
+
+def test_verifier_erreur_disque_sur_la_preuve_force_invalide(e, monkeypatch):
+    def boom(*a, **k):
+        raise OSError("disque plein")
+    monkeypatch.setattr(preuve, "noter", boom)
+    monkeypatch.setattr(main, "executeur", lambda: _executeur(OK, []))
+    r = c.post("/apps/calendrier/sauvegardes/verifier", headers=H)
+    d = r.json()
+    assert r.status_code == 200 and d["ok"] is True and d["verdict"] == "invalide"
+    assert "preuve non enregistrée (erreur disque)" in d["raisons"]
+    assert d["preuve_id"] and isinstance(d["expire_a"], float)
+
+
+class _Lent:
+    async def verifier(self, *a, **k):
+        await asyncio.sleep(5)
+        return OK
+
+
+def test_verifier_delai_global_depasse_invalide_et_note_la_preuve(e):
+    preuve.noter("A1", "ANCIENNE", "valide", {})
+    r = run(sauvegarde.verifier(_dok(e), _Lent(), _entree(), "A1", delai_global=0.05))
+    assert r["verdict"] == "invalide" and "délai global de vérification dépassé" in r["raisons"]
+    assert preuve.valide("A1") is None and preuve.lire("A1")["verdict"] == "invalide"
+
+
+def test_route_executeur_non_configure_503_si_inventaire_present(e, monkeypatch):
+    monkeypatch.delenv("EXECUTEUR_URL", raising=False)
+    monkeypatch.delenv("EXECUTEUR_KEY", raising=False)
+    assert c.post("/apps/calendrier/sauvegardes/verifier", headers=H).status_code == 503
+
+
+def test_verifier_multi_base_une_en_echec_une_ok(e):
+    e["fichiers"]["B2"] = []
+    autre = {**BASE, "base": "autre", "sauvegarde_id": "B2", "prefixe_s3": "pg2/s247"}
+
+    def h(req):
+        corps = json.loads(req.content)
+        if corps["base"] == "autre":
+            return httpx.Response(200, json={**OK, "verdict": "invalide", "raison": "comptages différents"})
+        return httpx.Response(200, json=OK)
+    ex = Executeur("http://exec.test", "k", transport=httpx.MockTransport(h))
+    r = run(sauvegarde.verifier(_dok(e), ex, {"bases": [BASE, autre], "volumes": []}, "A1"))
+    assert r["verdict"] == "invalide" and len(r["raisons"]) == 1 and r["raisons"][0].startswith("autre :")
+    assert "temoin" in r["comptages"]

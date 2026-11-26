@@ -120,8 +120,8 @@ def timeout_proxy(chemin: str, longs: tuple[tuple[str, float], ...]) -> float:
 # plus deux lectures de 20 s) : le Cœur ne doit pas couper avant elle, sinon une action qui
 # aboutit est rapportée en échec puis réapprouvée (double exécution). Cf. `timeout_proxy`.
 TIMEOUT_MUTATION_LONGUE = 120.0
-# Vérification par restauration : la brique attend l'exécuteur 280 s, le Cœur ne coupe jamais avant.
-TIMEOUT_VERIFICATION = 300.0
+# Vérification par restauration : la brique borne le total à 540 s (sauvegarde.DELAI_GLOBAL_S), le Cœur ne coupe jamais avant.
+TIMEOUT_VERIFICATION = 600.0
 _ROUTES_DYNAMIQUES_LENTES = (("/redemarrer", TIMEOUT_MUTATION_LONGUE),
                              ("/rollback", TIMEOUT_MUTATION_LONGUE),
                              ("/deployer", TIMEOUT_MUTATION_LONGUE),
