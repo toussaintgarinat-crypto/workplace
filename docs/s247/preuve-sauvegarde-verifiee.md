@@ -30,4 +30,10 @@ Rôle jetable : la restauration et la relecture se font avec `restore_<hex>` (sa
 ## Pièges
 - `prefixe_s3` de l'inventaire = préfixe COMPLET `<appName>/<préfixe Dokploy>` (l'objet est `<appName>/<prefix>/<horodatage>.sql.gz`).
 - Les routes de sauvegarde Forgejo écrivent sous `forgejo/` dans le même bucket.
-- Reste à constater : la preuve enregistrée côté Cœur depuis le chat (capacité `livraison_verifier_sauvegarde`), et la partie 2b (reset, bascule).
+- **Le Cœur lit les manifestes dans `/briques`, monté depuis la copie git du HP** (pas dans son image) : reconstruire le Cœur ne suffit pas, il faut mettre à jour `briques/livraison/manifest.json` sur le HP puis redémarrer le Cœur. Sans cela l'assistant répond « l'outil n'existe pas » et invente des chiffres (constaté : comptages et tailles fantaisistes dans sa 1ʳᵉ réponse — ne jamais se fier à un récit de l'assistant sans la preuve).
+- Le HP porte deux écarts non commités : `docker-compose.yml` et `manifest.json` de `briques/livraison` (rustines S247). `git checkout` de ces deux fichiers avant le prochain `git pull`.
+
+## Preuve côté Cœur (depuis le chat)
+Demande explicite « utilise `livraison_verifier_sauvegarde` pour calendrier-familial » : verdict `valide`, preuve `4878d0a6506f00cc`, comptages `{"evenements": 42}`. Le Cœur a enregistré la preuve (table `preuves` de `approbations.db`) pour le compte de l'utilisateur sous les deux clés `calendrier-familial` et l'identifiant Dokploy, avec l'expiration de la brique. La 1ʳᵉ formulation vague (« vérifie la sauvegarde ») a fait choisir `/etat` à l'assistant : le routage d'outils reste à surveiller.
+
+Reste : partie 2b (reset de l'app entière, bascule, retour arrière).
