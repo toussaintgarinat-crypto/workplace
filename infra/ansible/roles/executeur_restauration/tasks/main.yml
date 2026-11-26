@@ -18,13 +18,17 @@
     dest: "{{ executeur_dir }}/{{ item }}"
     owner: root
     mode: "0750"
-  loop: [executeur.py, sauvegarde_forgejo.py]
+  loop: [executeur.py, sauvegarde_forgejo.py, retention_registre.py]
 - name: Executor unit
   ansible.builtin.template: {src: executeur-restauration.service.j2, dest: /etc/systemd/system/executeur-restauration.service, mode: "0644"}
 - name: Forgejo backup unit
   ansible.builtin.template: {src: forgejo-sauvegarde.service.j2, dest: /etc/systemd/system/forgejo-sauvegarde.service, mode: "0644"}
 - name: Forgejo backup timer
   ansible.builtin.template: {src: forgejo-sauvegarde.timer.j2, dest: /etc/systemd/system/forgejo-sauvegarde.timer, mode: "0644"}
+- name: Forgejo registry retention unit
+  ansible.builtin.template: {src: forgejo-retention.service.j2, dest: /etc/systemd/system/forgejo-retention.service, mode: "0644"}
+- name: Forgejo registry retention timer
+  ansible.builtin.template: {src: forgejo-retention.timer.j2, dest: /etc/systemd/system/forgejo-retention.timer, mode: "0644"}
 - name: Allow only the HP to call the executor
   ansible.builtin.command: ufw allow from {{ executeur_client_ip }} to any port {{ executeur_port }} proto tcp
   changed_when: true
@@ -35,3 +39,10 @@
     state: restarted
     daemon_reload: true
   loop: [executeur-restauration.service, forgejo-sauvegarde.timer]
+- name: Enable the registry retention timer (only when explicitly activated)
+  ansible.builtin.systemd:
+    name: forgejo-retention.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: executeur_retention_active | bool

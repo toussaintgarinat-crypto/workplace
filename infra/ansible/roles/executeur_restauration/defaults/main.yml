@@ -9,3 +9,8 @@ forgejo_sauvegardes_gardees: 7
 # À passer à false UNIQUEMENT si l'accès au socket Docker ou à curl casse sous ce confinement
 # (retombe alors sur ProtectSystem=full, capacités par défaut). Les autres directives restent.
 executeur_confinement_strict: true
+# Rétention du registre Forgejo (images de retour arrière). Le timer n'est activé que si
+# `executeur_retention_active` est true ET que EXECUTEUR_FORGEJO_REGISTRY_TOKEN +
+# EXECUTEUR_RETENTION_PREFIXES sont dans le fichier d'environnement (posés à la main).
+# À blanc tant que EXECUTEUR_RETENTION_APPLIQUER=1 n'y est pas.
+executeur_retention_active: false

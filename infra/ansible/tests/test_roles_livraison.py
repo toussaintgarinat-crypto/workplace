@@ -84,3 +84,13 @@ def test_executeur_unit_confinee_par_systemd():
 
 def test_timer_forgejo_quotidien():
     assert "OnCalendar=*-*-* 03:15:00" in text()
+
+
+def test_retention_registre_installee_inactive_par_defaut():
+    role = BASE / "roles/executeur_restauration"
+    assert "retention_registre.py" in (role / "tasks/main.yml").read_text()
+    assert "executeur_retention_active: false" in (role / "defaults/main.yml").read_text()
+    assert "when: executeur_retention_active | bool" in (role / "tasks/main.yml").read_text()
+    assert "OnCalendar=*-*-* 04:15:00" in (role / "templates/forgejo-retention.timer.j2").read_text()
+    svc = (role / "templates/forgejo-retention.service.j2").read_text()
+    assert "retention_registre.py" in svc and "NoNewPrivileges=true" in svc

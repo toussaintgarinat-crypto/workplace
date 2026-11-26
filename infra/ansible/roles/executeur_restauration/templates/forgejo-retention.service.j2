@@ -1,0 +1,14 @@
+[Unit]
+Description=Rétention du registre Forgejo (images de retour arrière, S247)
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/executeur-restauration/env
+WorkingDirectory={{ executeur_dir }}
+ExecStart=/usr/bin/python3 {{ executeur_dir }}/retention_registre.py
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateTmp=true
+CapabilityBoundingSet=
