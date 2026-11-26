@@ -1,0 +1,11 @@
+[Unit]
+Description=Sauvegarde de Forgejo vers le S3 (S247)
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/executeur-restauration/env
+WorkingDirectory={{ executeur_dir }}
+ExecStart=/usr/bin/python3 {{ executeur_dir }}/sauvegarde_forgejo.py
+NoNewPrivileges=true
+ProtectHome=true

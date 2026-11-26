@@ -1,0 +1,7 @@
+executeur_dir: /opt/executeur-restauration
+executeur_env_file: /etc/executeur-restauration/env
+executeur_port: 8090
+executeur_bind: "{{ ansible_default_ipv4.address }}"
+executeur_client_ip: 192.168.1.89     # le HP (seule machine autorisée à appeler l'exécuteur)
+forgejo_conteneur: forgejo-forgejo-1
+forgejo_sauvegardes_gardees: 7

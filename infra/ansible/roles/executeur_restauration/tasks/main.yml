@@ -1,0 +1,37 @@
+- name: Require the private environment file (created by hand, never by Ansible)
+  ansible.builtin.stat: {path: "{{ executeur_env_file }}"}
+  register: executeur_env
+- name: Stop here when the environment file is missing or not private
+  ansible.builtin.assert:
+    that:
+      - executeur_env.stat.exists
+      - executeur_env.stat.pw_name == "root"
+      - executeur_env.stat.mode == "0600"
+    fail_msg: >-
+      Créer {{ executeur_env_file }} (root, mode 0600) avec EXECUTEUR_KEY, EXECUTEUR_S3_ENDPOINT,
+      EXECUTEUR_S3_BUCKET, EXECUTEUR_S3_KEY, EXECUTEUR_S3_SECRET ; ne jamais le mettre dans git.
+- name: Directory for the scripts
+  ansible.builtin.file: {path: "{{ executeur_dir }}", state: directory, owner: root, mode: "0750"}
+- name: Install the scripts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../outils/executeur-restauration/{{ item }}"
+    dest: "{{ executeur_dir }}/{{ item }}"
+    owner: root
+    mode: "0750"
+  loop: [executeur.py, sauvegarde_forgejo.py]
+- name: Executor unit
+  ansible.builtin.template: {src: executeur-restauration.service.j2, dest: /etc/systemd/system/executeur-restauration.service, mode: "0644"}
+- name: Forgejo backup unit
+  ansible.builtin.template: {src: forgejo-sauvegarde.service.j2, dest: /etc/systemd/system/forgejo-sauvegarde.service, mode: "0644"}
+- name: Forgejo backup timer
+  ansible.builtin.template: {src: forgejo-sauvegarde.timer.j2, dest: /etc/systemd/system/forgejo-sauvegarde.timer, mode: "0644"}
+- name: Allow only the HP to call the executor
+  ansible.builtin.command: ufw allow from {{ executeur_client_ip }} to any port {{ executeur_port }} proto tcp
+  changed_when: true
+- name: Enable and start the executor and the backup timer
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  loop: [executeur-restauration.service, forgejo-sauvegarde.timer]

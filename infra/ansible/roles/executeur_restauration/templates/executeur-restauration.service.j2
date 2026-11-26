@@ -1,0 +1,19 @@
+[Unit]
+Description=Exécuteur de restauration jetable (S247)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/etc/executeur-restauration/env
+Environment=EXECUTEUR_BIND={{ executeur_bind }}
+Environment=EXECUTEUR_PORT={{ executeur_port }}
+ExecStart=/usr/bin/python3 {{ executeur_dir }}/executeur.py
+User=root
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
