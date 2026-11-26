@@ -66,5 +66,21 @@ def test_executeur_unit_durcie():
     assert "NoNewPrivileges=true" in t and "ProtectHome=true" in t
 
 
+def test_executeur_unit_confinee_par_systemd():
+    t = text()
+    for d in ("NoNewPrivileges=true", "ProtectHome=true", "PrivateTmp=true",
+              "ProtectKernelTunables=true", "ProtectControlGroups=true",
+              "RestrictNamespaces=true", "LockPersonality=true",
+              "RestrictAddressFamilies=AF_INET AF_UNIX", "MemoryMax=1G", "TasksMax=64",
+              "ProtectSystem=strict", "CapabilityBoundingSet=\n"):
+        assert d in t, d
+    unit = (BASE / "roles/executeur_restauration/templates/executeur-restauration.service.j2").read_text()
+    # seuls ProtectSystem=strict et CapabilityBoundingSet= dépendent de la variable
+    m = re.search(r"\{% if executeur_confinement_strict \| bool %\}(.*?)\{% else %\}", unit, re.S)
+    assert m and set(m.group(1).split()) == {"ProtectSystem=strict", "CapabilityBoundingSet="}
+    assert "executeur_confinement_strict: true" in (
+        BASE / "roles/executeur_restauration/defaults/main.yml").read_text()
+
+
 def test_timer_forgejo_quotidien():
     assert "OnCalendar=*-*-* 03:15:00" in text()
