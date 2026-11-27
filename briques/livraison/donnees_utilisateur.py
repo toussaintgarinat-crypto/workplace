@@ -9,6 +9,10 @@ import chiffrement
 import paquets
 from client_executeur import ExecuteurErreur
 
+# Budget global d'UNE orchestration (route). Le Cœur coupe à TIMEOUT_DONNEES = 600 s
+# (core/outils_communs.py) : toujours plus grand que ce budget. Lu à l'appel (injectable en test).
+DELAI_GLOBAL_DONNEES_S = 540.0
+
 
 async def exporter_et_stocker(app, ex, utilisateur: str, maintenant: Optional[float] = None) -> dict:
     h = paquets.empreinte_utilisateur(utilisateur)
@@ -61,7 +65,7 @@ async def verifier_paquet(app, ex, utilisateur: str, maintenant: Optional[float]
         paquets.marquer_verifie(pid, maintenant)
     paquets.journaliser("verifier", app.nom, r["h"], pid, verdict == "valide", maintenant)
     now = maintenant if maintenant is not None else time.time()
-    return {"ok": True, "verdict": verdict, "paquet_id": pid, "empreinte": r["empreinte"],
+    return {"ok": True, "verdict": verdict, "paquet_id": pid, "preuve_id": pid, "empreinte": r["empreinte"],
             "comptages": r["comptages"], "raisons": raisons,
             "expire_a": min(now + paquets.PREUVE_TTL_S, r["expire_a"])}
 

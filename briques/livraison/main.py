@@ -472,26 +472,70 @@ def _traduire(e: Exception) -> HTTPException:
     return HTTPException(500, "erreur interne")
 
 
-async def _donnees(app_: str, corps: CorpsUtilisateur, fabrique):
+async def _donnees(app_: str, fabrique, sur_delai):
+    """Garde commune : 503 sans clé, contrat/exécuteur résolus, budget GLOBAL (le Cœur coupe plus
+    tard : jamais de coupure mid-flight). `sur_delai()` rend le résultat (ou lève) à l'expiration."""
     try:
         chiffrement._cle()                    # 503 avant tout appel à l'app (fail closed)
         app = contrats.ouvrir(app_)
         ex = executeur()
-        return await fabrique(app, ex, corps.utilisateur)
+        try:
+            return await asyncio.wait_for(fabrique(app, ex), DU.DELAI_GLOBAL_DONNEES_S)
+        except asyncio.TimeoutError:          # avant OSError (TimeoutError en est une sous-classe)
+            return sur_delai()
+    except DU.RefusDonnees as e:
+        raise HTTPException(e.statut, e.message) from None
     except (contrats.ContratErreur, chiffrement.CleAbsente, ExecuteurErreur, OSError) as e:
         raise _traduire(e) from None
 
 
+def _delai(message: str):
+    def f():
+        raise HTTPException(504, message)
+    return f
+
+
 @app.post("/contrats/{app_}/exporter")
 async def exporter_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
-    r = await _donnees(app_, corps, DU.exporter_et_stocker)
+    r = await _donnees(app_, lambda a, ex: DU.exporter_et_stocker(a, ex, corps.utilisateur),
+                       _delai("délai global dépassé : l'export a peut-être été stocké, relance"))
     r.pop("h")
     return {"ok": True, "app": app_.strip().lower(), **r}
 
 
+def _verdict_delai() -> dict:
+    """Délai global de vérification : verdict invalide S247-style, jamais marqué vérifié (le Cœur
+    ignore un verdict sans `preuve_id`)."""
+    return {"ok": True, "verdict": "invalide", "paquet_id": None, "preuve_id": None,
+            "empreinte": None, "comptages": None, "expire_a": None,
+            "raisons": ["délai global de vérification dépassé"]}
+
+
 @app.post("/contrats/{app_}/verifier")
 async def verifier_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
-    r = await _donnees(app_, corps, DU.verifier_paquet)
+    r = await _donnees(app_, lambda a, ex: DU.verifier_paquet(a, ex, corps.utilisateur), _verdict_delai)
+    return {"app": app_.strip().lower(), **r}
+
+
+class CorpsRestitution(CorpsUtilisateur):
+    paquet_id: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+
+
+@app.post("/contrats/{app_}/reinitialiser")
+async def reinitialiser_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
+    r = await _donnees(app_, lambda a, ex: DU.reinitialiser_donnees(a, ex, corps.utilisateur),
+                       _delai("délai global dépassé : la remise à zéro a peut-être été effectuée, "
+                              "vérifie avec livraison_donnees_verifier avant de réessayer ; le "
+                              "paquet consommé reste restituable avec livraison_donnees_restituer"))
+    return {"app": app_.strip().lower(), **r}
+
+
+@app.post("/contrats/{app_}/restituer")
+async def restituer_donnees(app_: str, corps: CorpsRestitution, _: str = Depends(cle_api_fermee)):
+    r = await _donnees(app_, lambda a, ex: DU.restituer_donnees(a, ex, corps.utilisateur,
+                                                                corps.paquet_id),
+                       _delai("délai global dépassé : la restitution a peut-être été appliquée, "
+                              "vérifie l'état avant de réessayer"))
     return {"app": app_.strip().lower(), **r}
 
 

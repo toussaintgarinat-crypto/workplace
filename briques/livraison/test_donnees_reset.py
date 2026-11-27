@@ -754,3 +754,93 @@ def test_reset_resurrection_message_donne_l_id_du_paquet():
     with pytest.raises(D.RefusDonnees) as e:
         run(D.reinitialiser_donnees(app, ex, "claire"))
     assert f"le paquet {_id(v)} reste restituable avec livraison_donnees_restituer" in e.value.message
+
+
+# ── Délai global des routes (S248 3b) : un timeout est ambigu, jamais un succès ni un « rien fait » ──
+import time  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import main  # noqa: E402
+
+_cl = TestClient(main.app)
+_H = {"X-API-Key": "k"}
+
+
+class Lent:
+    """Enveloppe d'app dont l'opération nommée dort bien au-delà du budget."""
+    def __init__(self, app, lent):
+        self._a, self._lent, self.nom, self.version_schema = app, lent, app.nom, app.version_schema
+
+    def __getattr__(self, n):
+        f = getattr(self._a, n)
+        if n not in self._lent:
+            return f
+
+        async def lent(*a, **k):
+            await asyncio.sleep(5)
+            return await f(*a, **k)
+        return lent
+
+
+def _brancher(monkeypatch, app, ex):
+    monkeypatch.setenv("LIVRAISON_API_KEYS", "k")
+    monkeypatch.setattr(main.contrats, "ouvrir", lambda nom: app)
+    monkeypatch.setattr(main, "executeur", lambda: ex)
+    monkeypatch.setattr(D, "DELAI_GLOBAL_DONNEES_S", 0.05)
+
+
+def test_delai_global_constante():
+    assert D.DELAI_GLOBAL_DONNEES_S == 540.0   # le Cœur (TIMEOUT_DONNEES = 600) ne coupe jamais avant
+
+
+def test_exporter_delai_global_504(monkeypatch):
+    _brancher(monkeypatch, Lent(AppAEtat(), {"exporter"}), FauxExecuteur())
+    t = time.monotonic()
+    r = _cl.post("/contrats/studio/exporter", json={"utilisateur": "claire"}, headers=_H)
+    assert r.status_code == 504 and "peut-être été stocké" in r.json()["detail"]
+    assert time.monotonic() - t < 3 and "claire" not in r.text
+
+
+def test_verifier_delai_global_verdict_invalide_non_verifie(monkeypatch):
+    _brancher(monkeypatch, Lent(AppAEtat(), {"verifier"}), FauxExecuteur())
+    r = _cl.post("/contrats/studio/verifier", json={"utilisateur": "claire"}, headers=_H)
+    j = r.json()
+    assert r.status_code == 200 and j["ok"] is True and j["verdict"] == "invalide"
+    assert j["raisons"] == ["délai global de vérification dépassé"]
+    assert j["paquet_id"] is None and j["preuve_id"] is None
+    assert P.dernier_verifie("studio", P.empreinte_utilisateur("claire")) is None
+
+
+def test_reinitialiser_delai_global_504_ambigu_paquet_consomme_verrou_libere(monkeypatch):
+    app, ex = AppAEtat(), FauxExecuteur()
+    pid = _verifie(app, ex)["paquet_id"]
+    _brancher(monkeypatch, Lent(app, {"reinitialiser"}), ex)
+    r = _cl.post("/contrats/studio/reinitialiser", json={"utilisateur": "claire"}, headers=_H)
+    assert r.status_code == 504 and "peut-être été effectuée" in r.json()["detail"]
+    assert "livraison_donnees_verifier" in r.json()["detail"] and "restituable" in r.json()["detail"]
+    h = P.empreinte_utilisateur("claire")
+    assert [x["id"] for x in P.candidats_a_restituer("studio", h, time.time())] == [pid]
+    assert not D._EN_COURS                       # verrou relâché
+    assert app.donnees == {"series": 2, "profils": 1}
+
+
+def test_restituer_delai_global_504(monkeypatch):
+    app, ex = AppAEtat(), FauxExecuteur()
+    pid = _verifie(app, ex)["paquet_id"]
+    _brancher(monkeypatch, Lent(app, {"importer"}), ex)
+    r = _cl.post("/contrats/studio/restituer",
+                 json={"utilisateur": "claire", "paquet_id": pid}, headers=_H)
+    assert r.status_code == 504 and "peut-être été appliquée" in r.json()["detail"]
+    assert not D._EN_COURS
+
+
+def test_reinitialiser_et_restituer_routes_nominales(monkeypatch):
+    app, ex = AppAEtat(), FauxExecuteur()
+    pid = _verifie(app, ex)["paquet_id"]
+    _brancher(monkeypatch, app, ex)
+    monkeypatch.setattr(D, "DELAI_GLOBAL_DONNEES_S", 30.0)
+    r = _cl.post("/contrats/studio/reinitialiser", json={"utilisateur": "claire"}, headers=_H)
+    assert r.status_code == 200 and r.json()["etat"] == "reinitialise" and r.json()["app"] == "studio"
+    r = _cl.post("/contrats/studio/restituer", json={"utilisateur": "claire"}, headers=_H)
+    assert r.status_code == 200 and r.json()["etat"] == "restitue" and r.json()["paquet_id"] == pid

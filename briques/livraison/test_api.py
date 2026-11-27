@@ -452,9 +452,9 @@ def test_logs_non_coupes_intacts(e):
     assert c.get("/apps/A1/logs").json()["logs"] == "un\ndeux\n"
 
 
-def test_manifeste_relayer_erreurs_sur_les_13_capacites():
+def test_manifeste_relayer_erreurs_sur_les_15_capacites():
     m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
-    assert len(m["capacites"]) == 13
+    assert len(m["capacites"]) == 15
     assert all(x.get("relayer_erreurs") is True for x in m["capacites"])
 
 
@@ -817,16 +817,31 @@ def test_manifeste_rollback_renvoie_au_retour_arriere_apres_reset():
             in caps["livraison_rollback"]["description"])
 
 
-def test_manifeste_declare_les_outils_donnees_et_pas_de_preuve_avant_3b():
+def test_manifeste_declare_les_outils_donnees():
     m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
     caps = {x["nom"]: x for x in m["capacites"]}
     e, v = caps["livraison_donnees_exporter"], caps["livraison_donnees_verifier"]
     assert (e["chemin"], e["methode"], e["sensibilite"]) == ("/contrats/{app}/exporter", "POST", "reversible")
     assert e["action"] is True
     assert (v["chemin"], v["methode"]) == ("/contrats/{app}/verifier", "POST")
-    assert "fournit_preuve" not in v and "sensibilite" not in v
+    assert "sensibilite" not in v
     for x in (e, v):
         assert set(x["params"]) == {"app", "utilisateur"} and x["relayer_erreurs"] is True
     routes = {(r.path, tuple(sorted(r.methods))) for r in main.app.routes if hasattr(r, "methods")}
     assert ("/contrats/{app_}/exporter", ("POST",)) in routes
     assert ("/contrats/{app_}/verifier", ("POST",)) in routes
+
+
+def test_manifeste_outils_donnees_3b():
+    m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
+    caps = {x["nom"]: x for x in m["capacites"]}
+    assert caps["livraison_donnees_verifier"]["fournit_preuve"] == "paquet_verifie"
+    rz, rs = caps["livraison_donnees_reinitialiser"], caps["livraison_donnees_restituer"]
+    assert (rz["sensibilite"], rz["prerequis"], rz["chemin"]) == ("donnees", ["paquet_verifie"],
+                                                                   "/contrats/{app}/reinitialiser")
+    assert (rs["sensibilite"], rs["chemin"]) == ("donnees", "/contrats/{app}/restituer")
+    assert "prerequis" not in rs and rz["action"] is True and rs["action"] is True
+    assert {"app", "utilisateur"} <= set(rz["params"]) and "paquet_id" in rs["params"]
+    assert rz["relayer_erreurs"] is True and rs["relayer_erreurs"] is True
+    assert "paquet_id" in rs["description"] and "vide" in rs["description"]   # sémantique implicite
+    assert "504" in rz["description"] and "verifier" in rz["description"]

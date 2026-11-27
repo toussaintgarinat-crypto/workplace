@@ -80,6 +80,7 @@ def test_verifier_valide_relit_depuis_le_stockage():
     ex, app = FauxExecuteur(), FauxApp()
     r = run(D.verifier_paquet(app, ex, "claire"))
     assert r["ok"] is True and r["verdict"] == "valide" and r["raisons"] == []
+    assert r["preuve_id"] == r["paquet_id"]
     assert app.recu_verif == b"PAQUET-CLAIR"   # l'app a vérifié le paquet RELU puis déchiffré
     assert P.lire(r["paquet_id"])["verifie_a"] is not None
 
@@ -220,3 +221,19 @@ def test_route_registre_illisible_503_sans_fuite(monkeypatch):
     open(os.path.join(d, "paquets.json"), "w").write("{corrompu")
     r = c.post("/contrats/studio/exporter", json={"utilisateur": "claire"}, headers={"X-API-Key": "k"})
     assert r.status_code == 503 and r.json()["detail"] == "registre des paquets illisible"
+
+
+def test_routes_reset_et_restitution_codes(monkeypatch):
+    monkeypatch.setenv("LIVRAISON_API_KEYS", "k")
+    H = {"X-API-Key": "k"}
+    for route in ("reinitialiser", "restituer"):
+        assert c.post(f"/contrats/studio/{route}", json={"utilisateur": "claire"}).status_code == 401
+    monkeypatch.setattr(main.contrats, "ouvrir", lambda nom: FauxApp())
+    monkeypatch.setattr(main, "executeur", lambda: FauxExecuteur())
+    r = c.post("/contrats/studio/reinitialiser", json={"utilisateur": "claire"}, headers=H)
+    assert r.status_code == 409 and "paquet vérifié" in r.json()["detail"]
+    assert "claire" not in r.text
+    r = c.post("/contrats/studio/restituer", json={"utilisateur": "claire"}, headers=H)
+    assert r.status_code == 404
+    r = c.post("/contrats/studio/restituer", json={"utilisateur": "claire", "paquet_id": "zz"}, headers=H)
+    assert r.status_code == 422
