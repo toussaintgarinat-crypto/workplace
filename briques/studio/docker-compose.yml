@@ -7,6 +7,10 @@ services:
       # Secrets/réglages partagés à la racine — source unique (GATEWAY_KEY pour le LLM).
       - path: ../../.env
         required: false
+      # STUDIO_SUPPORT_KEY (S248) : fichier LOCAL à la brique (briques/studio/.env, 0600), JAMAIS le
+      # .env racine (chargé par ~40 briques : l'une d'elles pourrait appeler /support/* en direct).
+      - path: ./.env
+        required: false
     ports:
       # Port 6060 (pas 6000 : 6000 = X11, bloqué par Chrome ⇒ iframe ERR_UNSAFE_PORT).
       - "6060:6060"
