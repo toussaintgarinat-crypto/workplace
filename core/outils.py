@@ -612,19 +612,29 @@ async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, re
         if d.get("ok") is not True or d.get("verdict") not in ("valide", "invalide"):
             return
         pid = d.get("preuve_id")
-        cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
+        if str(preuve) in approbations.PREUVES_PAR_CIBLE:
+            # Preuve par cible : la clé vient des ARGUMENTS exécutés ; `app`/`app_id` du résultat
+            # sont ignorés (un verdict ne peut pas élargir la portée de la preuve). L'app_id EST
+            # la clé composite : sinon l'alias ferait partager une seule preuve à tous les users.
+            cle = approbations.cle_preuve(str(preuve), args)
+            if cle is None:
+                return
+            cles, app_id = [cle], cle
+        else:
+            cles = [(args or {}).get("app"), d.get("app"), d.get("app_id")]
+            app_id = _id_app(d)
         if d.get("verdict") == "invalide":
             # La dernière vérification fait foi : un verdict invalide annule toute preuve valide.
             if isinstance(pid, str) and pid.strip():
                 approbations.revoquer_preuve(str(preuve), [k for k in cles if k],
-                                             app_id=_id_app(d))
+                                             app_id=app_id)
             return
         expire_a = d["expire_a"]
         if (not isinstance(pid, str) or not pid.strip() or isinstance(expire_a, bool)
                 or not isinstance(expire_a, (int, float)) or not math.isfinite(expire_a)):
             return
         libres = approbations.enregistrer_preuve(
-            str(preuve), [k for k in cles if k], pid, float(expire_a), app_id=_id_app(d))
+            str(preuve), [k for k in cles if k], pid, float(expire_a), app_id=app_id)
     except Exception as exc:  # noqa: BLE001 — fail closed : aucune preuve, résultat inchangé
         if not isinstance(exc, (ValueError, KeyError, TypeError, AttributeError)):
             logging.getLogger(__name__).warning("enregistrement de preuve en échec : %s", exc)
