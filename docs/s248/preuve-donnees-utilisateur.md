@@ -145,3 +145,9 @@ temoin-b {"comptes": 0, "journaux": 0, "ponts": 0, "profils": 0, "series": 1} e7
 nettoyé {'temoin-a': 0, 'temoin-b': 0}
 FIN
 ```
+
+## Note 2026-11-27 : vérificateur désormais approuvé
+
+La preuve LIVE a été jouée AVANT que `livraison_donnees_verifier` soit soumis à approbation
+(`reversible`). Le flux à 3 approbations (vérifier -> réinitialiser -> restituer) doit donc être
+revérifié en LIVE après déploiement. Résultat : à renseigner par le contrôleur.

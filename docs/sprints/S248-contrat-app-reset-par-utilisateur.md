@@ -35,7 +35,7 @@ l'identité demandée est bien l'utilisateur ciblé (leçon des escalades de pri
 
 ## Séquence d'une remise à zéro utilisateur
 
-exporter → **vérifier** (importer le paquet dans une instance/espace jetable, comparer les comptages)
+exporter → **vérifier** [approbation `reversible` : il stocke une copie] (importer le paquet dans une instance/espace jetable, comparer les comptages)
 → approbation Telegram (niveau `donnees`, prérequis = paquet vérifié) → réinitialiser → importer →
 contrôle final → réponse à l'utilisateur. Le paquet est gardé N jours (rétention à fixer).
 
@@ -113,3 +113,9 @@ Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utili
    contrat incompatibles). Vérifier les tags réels par `docker inspect`.
 5. Jouer le scénario du modèle sur des utilisateurs témoins, consigner, nettoyer, retirer
    `STUDIO_SUPPORT_KEY` si l'usage n'est pas voulu.
+
+## Note 2026-11-27 : vérificateur désormais approuvé
+
+La preuve LIVE a été jouée AVANT que `livraison_donnees_verifier` soit soumis à approbation
+(`reversible`). Le flux à 3 approbations (vérifier -> réinitialiser -> restituer) doit donc être
+revérifié en LIVE après déploiement. Résultat : à renseigner par le contrôleur.

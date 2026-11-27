@@ -824,7 +824,7 @@ def test_manifeste_declare_les_outils_donnees():
     assert (e["chemin"], e["methode"], e["sensibilite"]) == ("/contrats/{app}/exporter", "POST", "reversible")
     assert e["action"] is True
     assert (v["chemin"], v["methode"]) == ("/contrats/{app}/verifier", "POST")
-    assert "sensibilite" not in v
+    assert v["sensibilite"] == "reversible" and v["action"] is True   # le vérificateur crée une copie
     for x in (e, v):
         assert set(x["params"]) == {"app", "utilisateur"} and x["relayer_erreurs"] is True
     routes = {(r.path, tuple(sorted(r.methods))) for r in main.app.routes if hasattr(r, "methods")}

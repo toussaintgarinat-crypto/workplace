@@ -136,9 +136,12 @@ autre, envoyée dans le header `X-Support-Key`. Elle est lue fraîche à chaque 
   Une restitution dont l'issue est ambiguë répond 504 ; vérifier l'état avant de réessayer.
 - **Empreinte `h` non salée** : `h = sha256(utilisateur)[:16]` est devinable pour une identité à
   faible entropie, et figure dans les clés S3 (`contrat/<app>/<h>/<id>.bin`), le registre et le journal.
-- **Chaque vérification stocke un paquet**, conservé 14 jours, SANS approbation :
-  `livraison_donnees_verifier` est `action: false` (même précédent que le vérificateur de S247).
-  L'export est, lui, approuvé (`reversible`).
+- **Chaque vérification stocke un paquet**, conservé 14 jours : c'est une copie des données d'un
+  utilisateur, donc `livraison_donnees_verifier` est approuvé (`reversible`, comme l'export) ; la
+  garde couvre l'EFFET, pas seulement l'outil nommé « exporter ». Flux complet :
+  vérifier [approbation] → réinitialiser [approbation] → restituer [approbation]. Conséquence :
+  re-vérifier la même cible dans les 5 min suivant une vérification exécutée n'ouvre pas de
+  nouvelle demande (anti-rappel de la garde).
 - **Verrou par cible en mémoire** (`_EN_COURS`, par (app, h)) : valable dans UN processus. Deux
   instances de `livraison` ne se verrouilleraient pas entre elles.
 - **Fenêtre TOCTOU de la restitution implicite** : l'état « vide ou identique » est contrôlé puis

@@ -59,11 +59,11 @@ Export chiffré des données d'UN utilisateur d'une application à contrat (ex. 
   ne retire que les paquets EXPIRÉS. Après une rotation, ré-exporter.
 - Journaux d'accès uvicorn désactivés (`--no-access-log`) : le Cœur duplique les arguments des POST dans
   la query string, l'identité de l'utilisateur y serait écrite en clair.
-- `livraison_donnees_verifier` (`action: false`, pas d'approbation) déclare `fournit_preuve: paquet_verifie`.
+- `livraison_donnees_verifier` (`action: true`, `sensibilite: reversible`) exige une approbation humaine (il stocke une copie chiffrée 14 jours) et déclare `fournit_preuve: paquet_verifie`.
 
 ### Remise à zéro et restitution (S248 3b)
 
-Flux : `livraison_donnees_verifier` -> [approbation Telegram, niveau `donnees`]
+Flux : [approbation `reversible`] `livraison_donnees_verifier` -> [approbation Telegram, niveau `donnees`]
 `livraison_donnees_reinitialiser` -> `livraison_donnees_restituer` (approbation `donnees`).
 Routes : `POST /contrats/{app}/exporter|verifier|reinitialiser|restituer`, `POST /contrats/purger`.
 

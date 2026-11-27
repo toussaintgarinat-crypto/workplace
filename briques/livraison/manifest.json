@@ -217,7 +217,7 @@
     },
     {
       "nom": "livraison_donnees_verifier",
-      "description": "PROUVE que les données d'UN utilisateur d'une application à contrat sont restaurables : exporte à neuf, stocke chiffré, relit le stockage, puis fait rejouer l'import dans un espace jetable et comparer l'empreinte. Renvoie un verdict valide/invalide, des comptages et une empreinte (jamais le contenu). N'affecte pas la production. La vérification stocke un paquet chiffré, conservé 14 jours.",
+      "description": "PROUVE que les données d'UN utilisateur d'une application à contrat sont restaurables : exporte à neuf, stocke chiffré (copie conservée 14 jours), relit le stockage, puis fait rejouer l'import dans un espace jetable et comparer l'empreinte. Renvoie un verdict valide/invalide, des comptages et une empreinte (jamais le contenu). N'affecte pas la production, MAIS crée une copie stockée des données de l'utilisateur : elle exige donc son approbation. Un verdict valide est ce qui autorise ensuite le reset (livraison_donnees_reinitialiser) pour la MÊME application et le MÊME utilisateur. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram, puis l'exécution attend l'accord de l'utilisateur. Ne dis JAMAIS « demande envoyée » ou « en attente » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/contrats/{app}/verifier",
       "params": {
@@ -232,13 +232,14 @@
           "requis": true
         }
       },
-      "action": false,
+      "action": true,
+      "sensibilite": "reversible",
       "relayer_erreurs": true,
       "fournit_preuve": "paquet_verifie"
     },
     {
       "nom": "livraison_donnees_reinitialiser",
-      "description": "REMET À ZÉRO les données d'UN SEUL utilisateur d'une application à contrat de données (ex. le Studio), sans toucher aux autres. Exige d'abord un verdict VALIDE de livraison_donnees_verifier sur la MÊME application ET le MÊME utilisateur (identité identique au caractère près) ; les données sont ensuite effacées et le paquet vérifié, mis de côté, permet de les restituer (livraison_donnees_restituer, 14 jours). Pas pour redémarrer ni réinitialiser une application entière (→ livraison_reset_app). En cas d'échec ambigu (504 : l'application n'a pas répondu ou délai global dépassé) le message donne l'identifiant du paquet d'origine quand il est connu et les données ont peut-être déjà été effacées : ne JAMAIS réessayer à l'aveugle, vérifie d'abord l'état (livraison_donnees_verifier). N'affirme jamais que c'est fait sans le résultat « reinitialise » de l'outil. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram. Ne dis JAMAIS « demande envoyée » sans avoir réellement appelé l'outil dans ce tour.",
+      "description": "REMET À ZÉRO les données d'UN SEUL utilisateur d'une application à contrat de données (ex. le Studio), sans toucher aux autres. Exige d'abord un verdict VALIDE de livraison_donnees_verifier (qui exige lui aussi une approbation : appelle-le d'abord) sur la MÊME application ET le MÊME utilisateur (identité identique au caractère près) ; les données sont ensuite effacées et le paquet vérifié, mis de côté, permet de les restituer (livraison_donnees_restituer, 14 jours). Pas pour redémarrer ni réinitialiser une application entière (→ livraison_reset_app). En cas d'échec ambigu (504 : l'application n'a pas répondu ou délai global dépassé) le message donne l'identifiant du paquet d'origine quand il est connu et les données ont peut-être déjà été effacées : ne JAMAIS réessayer à l'aveugle, vérifie d'abord l'état (livraison_donnees_verifier). N'affirme jamais que c'est fait sans le résultat « reinitialise » de l'outil. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram. Ne dis JAMAIS « demande envoyée » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/contrats/{app}/reinitialiser",
       "params": {
