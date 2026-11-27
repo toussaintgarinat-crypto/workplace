@@ -4,6 +4,7 @@ contenu ni l'identité en clair (empreinte sha256[:16]). Écriture atomique ; to
 JSONL : qui/quoi/quand, jamais de contenu."""
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -76,7 +77,8 @@ def enregistrer(paquet_id: str, app: str, h: str, objet: str, empreinte: str, co
     now = maintenant if maintenant is not None else time.time()
     rec = {"id": paquet_id, "app": app, "h": h, "objet": objet, "empreinte": empreinte,
            "comptages": comptages, "version_schema": version_schema,
-           "cree_a": now, "expire_a": now + RETENTION_S, "verifie_a": None, "consomme_a": None}
+           "cree_a": now, "expire_a": now + RETENTION_S, "verifie_a": None, "consomme_a": None,
+           "restitue_a": None}
     tout = _lire_strict()
     tout[paquet_id] = rec
     _ecrire_tout(tout)
@@ -109,34 +111,81 @@ def marquer_consomme(paquet_id: str, maintenant: Optional[float] = None) -> Opti
     return r
 
 
+def marquer_restitue(paquet_id: str, maintenant: Optional[float] = None) -> Optional[dict]:
+    """Un paquet restitué ne doit plus être ré-importé implicitement par-dessus des données plus
+    récentes."""
+    tout = _lire_strict()
+    r = tout.get(paquet_id)
+    if not isinstance(r, dict):
+        return None
+    r["restitue_a"] = maintenant if maintenant is not None else time.time()
+    _ecrire_tout(tout)
+    return r
+
+
+def _date_verif(r: dict, now: float) -> Optional[float]:
+    """`verifie_a` utilisable (fini, <= now) d'un enregistrement non expiré, sinon None."""
+    try:
+        v = r.get("verifie_a")
+        if v is None or _est_expire(r, now):
+            return None
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v <= now else None
+
+
 def dernier_verifie(app: str, h: str, maintenant: Optional[float] = None,
                     preuve_s: Optional[float] = PREUVE_TTL_S,
                     inclure_consommes: bool = False) -> Optional[dict]:
     """Paquet (app, h) vérifié le plus récemment, non expiré, preuve fraîche si preuve_s ;
-    lecteur pur : une date illisible rend l'entrée inéligible, jamais d'exception."""
+    lecteur pur : une date illisible, non finie ou future rend l'entrée inéligible."""
     now = maintenant if maintenant is not None else time.time()
     candidats = []
     for r in _lire_tout().values():
         if not (isinstance(r, dict) and r.get("app") == app and r.get("h") == h):
             continue
-        try:
-            v = r.get("verifie_a")
-            if v is None or _est_expire(r, now):
-                continue
-            v = float(v)
-            if not inclure_consommes and r.get("consomme_a") is not None:
-                continue
-            if preuve_s is not None and v + preuve_s <= now:
-                continue
-        except (TypeError, ValueError):
+        v = _date_verif(r, now)
+        if v is None:
+            continue
+        if not inclure_consommes and r.get("consomme_a") is not None:
+            continue
+        if preuve_s is not None and v + preuve_s <= now:
             continue
         candidats.append((v, r))
     return max(candidats, key=lambda c: c[0])[1] if candidats else None
 
 
+def dernier_a_restituer(app: str, h: str, maintenant: Optional[float] = None) -> Optional[dict]:
+    """Choix implicite d'une restitution : le paquet vérifié, non expiré, CONSOMMÉ (donc utilisé
+    pour un effacement) et pas encore restitué, le plus récemment consommé ; à défaut, le dernier
+    vérifié non consommé. Jamais le plus frais vérifié : après un reset douteux, une nouvelle
+    vérification photographie un état vide ou partiel."""
+    now = maintenant if maintenant is not None else time.time()
+    candidats = []
+    for r in _lire_tout().values():
+        if not (isinstance(r, dict) and r.get("app") == app and r.get("h") == h):
+            continue
+        if _date_verif(r, now) is None or r.get("restitue_a") is not None:
+            continue
+        try:
+            c = r.get("consomme_a")
+            if c is None:
+                continue
+            c = float(c)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(c):
+            candidats.append((c, r))
+    if candidats:
+        return max(candidats, key=lambda c: c[0])[1]
+    return dernier_verifie(app, h, now, preuve_s=None)
+
+
 def _est_expire(r: dict, now: float) -> bool:
     try:
-        return float(r.get("expire_a", 0)) <= now
+        e = float(r.get("expire_a", 0))
+        return not math.isfinite(e) or e <= now
     except (TypeError, ValueError):
         return True     # date illisible : traité comme expiré, pour que l'entrée soit purgée
 

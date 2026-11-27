@@ -115,16 +115,20 @@ def test_reset_refuse_si_preuve_de_plus_de_6h():
     ex, app = FauxExecuteur(), AppAEtat()
     v = run(D.verifier_paquet(app, ex, "claire", maintenant=1000.0))
     assert v["verdict"] == "valide"
-    with pytest.raises(D.RefusDonnees):
+    with pytest.raises(D.RefusDonnees) as e:
         run(D.reinitialiser_donnees(app, ex, "claire", maintenant=1000.0 + 6 * 3600 + 1))
+    assert e.value.statut == 409 and e.value.message.startswith("aucun paquet vérifié")
+    assert "reinitialiser" not in app.appels
 
 
 def test_un_paquet_ne_sert_qu_a_un_reset():
     ex, app = FauxExecuteur(), AppAEtat()
     _verifie(app, ex)
     run(D.reinitialiser_donnees(app, ex, "claire"))
-    with pytest.raises(D.RefusDonnees):
+    app.donnees = {"series": 2, "profils": 1}          # même état : l'empreinte ne refuse pas
+    with pytest.raises(D.RefusDonnees) as e:
         run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and e.value.message.startswith("aucun paquet vérifié")
 
 
 def test_resurrection_detectee_reset_jamais_declare_reussi():
@@ -269,8 +273,10 @@ def test_reseau_pendant_reinitialiser_est_ambigu_504(exc):
     with pytest.raises(D.RefusDonnees) as e:
         run(D.reinitialiser_donnees(app, ex, "claire"))
     assert e.value.statut == 504
-    assert e.value.message == ("l'application n'a pas répondu : la remise à zéro a peut-être été "
-                               "effectuée, vérifie avec livraison_donnees_verifier avant de réessayer")
+    assert e.value.message.startswith(
+        "l'application n'a pas répondu : la remise à zéro a peut-être été effectuée, vérifie avec "
+        "livraison_donnees_verifier avant de réessayer ; le paquet ")
+    assert e.value.message.endswith(" reste restituable avec livraison_donnees_restituer")
 
 
 def test_empreinte_refusee_par_l_app_au_reset_est_409_donnees_changees():
@@ -339,3 +345,201 @@ def test_restitution_journal_en_oserror_ne_change_pas_le_succes(monkeypatch):
     run(D.reinitialiser_donnees(app, ex, "claire"))
     monkeypatch.setattr(P, "journaliser", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
     assert run(D.restituer_donnees(app, ex, "claire"))["etat"] == "restitue"
+
+
+# --- S248 3b fix : C2 (choix implicite), C1 (ambigu reset), I2 (ambigu restitution), M3, M4, M5 ---
+
+def test_c2_resurrection_puis_reverification_puis_restitution_redonne_l_original():
+    ex, app = FauxExecuteur(), AppAEtat(resurrection=True)
+    orig = _verifie(app, ex)
+    with pytest.raises(D.RefusDonnees):
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert app.donnees == {"series": 1, "profils": 0}
+    _verifie(app, ex)                                   # « relance la vérification »
+    back = run(D.restituer_donnees(app, ex, "claire"))
+    assert back["paquet_id"] == orig["paquet_id"]
+    assert back["comptages"] == {"series": 2, "profils": 1}
+    assert P.lire(orig["paquet_id"])["restitue_a"] is not None
+
+
+def test_c2_app_500_apres_effacement_reverification_puis_restitution_redonne_l_original():
+    ex, app = FauxExecuteur(), AppAEtat()
+    orig = _verifie(app, ex)
+    vrai = app.reinitialiser
+
+    async def efface_puis_500(u, emp):
+        await vrai(u, emp)
+        raise ContratErreur("x", 500, "erreur")
+    app.reinitialiser = efface_puis_500
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert e.value.statut == 504 and orig["paquet_id"] in e.value.message
+    assert app.donnees == {"series": 0, "profils": 0}
+    _verifie(app, ex)                                   # paquet de l'état vide
+    back = run(D.restituer_donnees(app, ex, "claire"))
+    assert back["paquet_id"] == orig["paquet_id"] and app.donnees == {"series": 2, "profils": 1}
+
+
+def test_c2_une_restitution_marque_le_paquet_et_la_seconde_ne_reimporte_pas_le_meme():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    run(D.restituer_donnees(app, ex, "claire"))
+    assert P.lire(v["paquet_id"])["restitue_a"] is not None
+    app.donnees = {"series": 9, "profils": 9}           # données plus récentes
+    avant = app.appels.count("importer")
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 404 and app.appels.count("importer") == avant
+    assert app.donnees == {"series": 9, "profils": 9}
+
+
+def test_c2_marquer_restitue_en_oserror_ne_change_pas_le_succes(monkeypatch):
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    monkeypatch.setattr(P, "marquer_restitue", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
+    assert run(D.restituer_donnees(app, ex, "claire"))["etat"] == "restitue"
+
+
+def _reset_avec_erreur(exc, efface=True):
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+    vrai = app.reinitialiser
+
+    async def casse(u, emp):
+        if efface:
+            await vrai(u, emp)
+        raise exc
+    app.reinitialiser = casse
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    return ex, app, v, e.value
+
+
+@pytest.mark.parametrize("exc", [ContratErreur("x", 500, "erreur"), ContratErreur("x", 502, "erreur"),
+                                 ContratErreur("x", 503, "erreur"), ContratErreur("x", 200, "reponse"),
+                                 ContratErreur("x", None, "erreur")])
+def test_c1_reset_ambigu_5xx_ou_200_illisible_504_et_paquet_consomme(exc):
+    ex, app, v, e = _reset_avec_erreur(exc)
+    assert e.statut == 504
+    assert e.message == ("l'application n'a pas répondu : la remise à zéro a peut-être été "
+                         f"effectuée, vérifie avec livraison_donnees_verifier avant de réessayer ; "
+                         f"le paquet {v['paquet_id']} reste restituable avec "
+                         "livraison_donnees_restituer")
+    assert P.lire(v["paquet_id"])["consomme_a"] is not None
+
+
+@pytest.mark.parametrize("exc,statut", [(ContratErreur("x", 401, "cle_refusee"), 502),
+                                        (ContratErreur("x", 404, "erreur"), 502),
+                                        (ContratErreur("x", 413, "trop_gros"), 502),
+                                        (ContratErreur("x", 503, "desactive"), 502),
+                                        (ContratErreur("x", 422, "refus"), 409)])
+def test_c1_refus_certain_avant_effet_reste_un_refus_non_consomme(exc, statut):
+    ex, app, v, e = _reset_avec_erreur(exc, efface=False)
+    assert e.statut == statut and "l'application refuse" in e.message
+    assert P.lire(v["paquet_id"])["consomme_a"] is None
+
+
+def test_c1_annulation_pendant_reinitialiser_marque_consomme_et_relance():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+
+    async def scenario():
+        bloque = asyncio.Event()
+
+        async def lent(u, emp):
+            bloque.set()
+            await asyncio.sleep(3600)
+        app.reinitialiser = lent
+        t = asyncio.ensure_future(D.reinitialiser_donnees(app, ex, "claire"))
+        await bloque.wait()
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+    run(scenario())
+    assert P.lire(v["paquet_id"])["consomme_a"] is not None
+    assert ("studio", P.empreinte_utilisateur("claire")) not in D._EN_COURS
+
+
+def _app_import(app, exc=None, avant=None):
+    vrai = app.importer
+
+    async def importer(u, p):
+        r = await vrai(u, p) if avant else None
+        if exc:
+            raise exc
+        return r
+    app.importer = importer
+
+
+@pytest.mark.parametrize("exc", [ContratErreur("x", 500, "erreur"), ContratErreur("x", 200, "reponse"),
+                                 ContratErreur("x", None, "delai"), ContratErreur("x", 502, "erreur")])
+def test_i2_import_ambigu_504(exc):
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    _app_import(app, exc)
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 504
+    assert e.value.message == ("l'application n'a pas répondu : la restitution a peut-être "
+                               "été appliquée, vérifie l'état avant de réessayer")
+
+
+def test_i2_import_ok_puis_controle_en_echec_502_applique():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+
+    async def exporter(u):
+        raise ContratErreur("x", 500, "erreur")
+    app.exporter = exporter
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 502
+    assert e.value.message == ("restitution appliquée mais le contrôle final a échoué : vérifie "
+                               "l'état de l'application")
+    assert app.donnees == {"series": 2, "profils": 1}
+    assert P.lire(v['paquet_id'])['restitue_a'] is None    # pas marqué : contrôle non concluant
+
+
+def test_m3_restitution_504_reseau():
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    _app_import(app, ContratErreur("x", None, "injoignable"))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 504 and "peut-être" in e.value.message
+
+
+def test_restitution_refus_certain_avant_effet_reste_un_refus():
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    _app_import(app, ContratErreur("x", 409, "conflit"))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "l'application refuse" in e.value.message
+
+
+@pytest.mark.parametrize("val,attendu", [({}, False), (False, False), ({"a": 0}, True),
+                                         ({"a": 0, "b": 0}, True), ({"a": False}, False),
+                                         ({"a": 0, "b": 1}, False), ({"a": 0.0}, False),
+                                         ({"a": None}, False)])
+def test_m4_tout_a_zero_strict(val, attendu):
+    assert D._tout_a_zero(val) is attendu
+
+
+def test_m4_comptages_vides_apres_reset_ne_sont_pas_un_succes():
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    reel = app.exporter
+    n = {"i": 0}
+
+    async def exporter(u):
+        n["i"] += 1
+        if n["i"] >= 2:
+            return b"x", {"empreinte": "e", "comptages": {}}
+        return await reel(u)
+    app.exporter = exporter
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "incomplet" in e.value.message

@@ -1,6 +1,7 @@
 """Orchestration des paquets de données utilisateur (S248 3a) : export → chiffrement → dépôt
 SeaweedFS (via l'exécuteur) → registre ; vérification par RELECTURE du stockage. Jamais le contenu
 en retour, jamais l'identité en clair."""
+import asyncio
 import time
 from typing import Optional
 
@@ -91,11 +92,20 @@ class RefusDonnees(Exception):
 _EN_COURS: set = set()     # (app, h) ayant une opération en cours : un reset ne double jamais
 _RACINE_AMBIGU = ("l'application n'a pas répondu : la remise à zéro a peut-être été effectuée, "
                   "vérifie avec livraison_donnees_verifier avant de réessayer")
-_RESEAU = ("injoignable", "delai")
 
 
-def _tout_a_zero(comptages: dict) -> bool:
-    return all(isinstance(v, int) and v == 0 for v in comptages.values())
+_AVANT_EFFET = (401, 404, 413, 409, 422)
+
+
+def _certain_avant_effet(e) -> bool:
+    """Seuls ces refus se lisent « rien n'a été fait » ; tout le reste (pas de statut, 5xx, 200
+    illisible) est ambigu : l'application n'a pas de retour arrière, l'effet peut avoir eu lieu."""
+    return e.statut in _AVANT_EFFET or (e.statut == 503 and e.raison == "desactive")
+
+
+def _tout_a_zero(comptages) -> bool:
+    return (isinstance(comptages, dict) and bool(comptages)
+            and all(type(v) is int and v == 0 for v in comptages.values()))
 
 
 def _journal(operation: str, app: str, h: str, pid: str, ok: bool, maintenant) -> None:
@@ -121,6 +131,13 @@ def _refus_app(e, avant_effacement: bool) -> RefusDonnees:
     statut = 409 if e.statut in (409, 422) else 502
     suite = " ; les données sont intactes" if avant_effacement else ""
     return RefusDonnees(statut, f"l'application refuse : {e.raison or 'erreur'}{suite}")
+
+
+def _consommer(pid: str, maintenant) -> None:
+    try:
+        paquets.marquer_consomme(pid, maintenant)
+    except OSError:
+        pass
 
 
 def _prendre(app, h):
@@ -157,14 +174,17 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
             if e.raison == "empreinte":
                 raise RefusDonnees(409, "les données ont changé depuis la vérification : "
                                         "relance livraison_donnees_verifier") from None
-            if e.statut is None or e.raison in _RESEAU:
-                raise RefusDonnees(504, _RACINE_AMBIGU) from None   # effacement peut-être fait
+            if not _certain_avant_effet(e):                 # effacement peut-être fait
+                _consommer(rec["id"], maintenant)
+                _journal("reinitialiser", app.nom, h, rec["id"], False, maintenant)
+                raise RefusDonnees(504, f"{_RACINE_AMBIGU} ; le paquet {rec['id']} reste "
+                                        "restituable avec livraison_donnees_restituer") from None
             raise _refus_app(e, False) from None
+        except asyncio.CancelledError:
+            _consommer(rec["id"], maintenant)               # l'effacement a pu avoir lieu
+            raise
         # --- ICI les données sont effacées : plus rien ne doit se lire comme « rien ne s'est passé » ---
-        try:
-            paquets.marquer_consomme(rec["id"], maintenant)         # d'abord, au mieux
-        except OSError:
-            pass
+        _consommer(rec["id"], maintenant)                           # d'abord, au mieux
         try:
             _, apres = await app.exporter(utilisateur)
             reste = apres["comptages"]
@@ -204,24 +224,32 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
                 raise RefusDonnees(404, "paquet introuvable, expiré ou non vérifié pour cet "
                                         "utilisateur")
         else:
-            rec = paquets.dernier_verifie(app.nom, h, maintenant, preuve_s=None,
-                                          inclure_consommes=True)
+            rec = paquets.dernier_a_restituer(app.nom, h, maintenant)
             if rec is None:
                 raise RefusDonnees(404, "aucun paquet vérifié disponible pour cet utilisateur")
         clair = await _relire(ex, rec)
         try:
             await app.importer(utilisateur, clair)
-            _, apres = await app.exporter(utilisateur)
         except ContratErreur as e:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
-            if e.statut is None or e.raison in _RESEAU:
+            if not _certain_avant_effet(e):                 # import peut-être partiel
                 raise RefusDonnees(504, "l'application n'a pas répondu : la restitution a peut-être "
                                         "été appliquée, vérifie l'état avant de réessayer") from None
             raise _refus_app(e, False) from None
+        try:
+            _, apres = await app.exporter(utilisateur)
+        except Exception:
+            _journal("restituer", app.nom, h, rec["id"], False, maintenant)
+            raise RefusDonnees(502, "restitution appliquée mais le contrôle final a échoué : "
+                                    "vérifie l'état de l'application") from None
         if apres["empreinte"] != rec["empreinte"]:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
             raise RefusDonnees(409, "restitution incomplète : l'état restauré ne correspond pas "
                                     "au paquet")
+        try:
+            paquets.marquer_restitue(rec["id"], maintenant)
+        except OSError:
+            pass
         _journal("restituer", app.nom, h, rec["id"], True, maintenant)
         return {"ok": True, "etat": "restitue", "paquet_id": rec["id"],
                 "comptages": apres["comptages"]}

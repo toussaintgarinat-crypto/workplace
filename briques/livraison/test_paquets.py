@@ -158,3 +158,103 @@ def test_dernier_verifie_ignore_dates_illisibles():
         P._ecrire_tout(tout)
         assert P.dernier_verifie("studio", H, 300.0)["id"] == bon
         P.retirer(mauvais)
+
+
+# --- S248 3b fix : restitue_a, dernier_a_restituer, dates non finies / futures ---
+
+def _verifie_a(t_verif, t_cree=1.0, consomme=None, restitue=None, app="studio"):
+    r = _enreg(t=t_cree, app=app)
+    P.marquer_verifie(r["id"], t_verif)
+    if consomme is not None:
+        P.marquer_consomme(r["id"], consomme)
+    if restitue is not None:
+        P.marquer_restitue(r["id"], restitue)
+    return r["id"]
+
+
+def test_enregistrer_pose_restitue_a_none_et_marquer_restitue():
+    r = _enreg()
+    assert r["restitue_a"] is None
+    assert P.marquer_restitue(r["id"], 42.0)["restitue_a"] == 42.0
+    assert P.lire(r["id"])["restitue_a"] == 42.0
+    assert P.marquer_restitue("0" * 32, 1.0) is None
+
+
+def test_marquer_restitue_refuse_registre_corrompu(tmp_path):
+    _enreg()
+    (P._dossier() / "paquets.json").write_text("{pas du json")
+    with pytest.raises(OSError):
+        P.marquer_restitue("0" * 32, 1.0)
+
+
+def test_dernier_a_restituer_prefere_le_consomme_non_restitue_le_plus_recemment_consomme():
+    a = _verifie_a(10.0, consomme=100.0)
+    b = _verifie_a(20.0, consomme=200.0)
+    _verifie_a(500.0)                                   # plus frais verifié, non consommé
+    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == b
+    P.marquer_restitue(b, 300.0)
+    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == a
+
+
+def test_dernier_a_restituer_repli_sur_dernier_verifie_non_consomme_ou_none():
+    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+    x = _verifie_a(10.0, consomme=100.0, restitue=150.0)
+    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+    y = _verifie_a(20.0)
+    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == y
+    assert x != y
+
+
+def test_dernier_a_restituer_ignore_expire_non_verifie_autre_cible():
+    _verifie_a(10.0, consomme=100.0)
+    assert P.dernier_a_restituer("studio", H, 1.0 + 14 * 86400) is None      # expire_a == now exclu
+    assert P.dernier_a_restituer("studio", H, 1.0 + 14 * 86400 - 1) is not None
+    assert P.dernier_a_restituer("autre", H, 1000.0) is None
+    assert P.dernier_a_restituer("studio", "f" * 16, 1000.0) is None
+    r = _enreg(t=1.0)
+    P.marquer_consomme(r["id"], 5.0)                                          # non vérifié
+    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] != r["id"]
+
+
+@pytest.mark.parametrize("v", [float("nan"), float("inf"), "abc", 10 ** 12])
+def test_dernier_a_restituer_dates_illisibles_ou_futures_inegibles(v):
+    r = _enreg(t=1.0)
+    tout = json.loads((P._dossier() / "paquets.json").read_text())
+    tout[r["id"]]["verifie_a"] = v
+    tout[r["id"]]["consomme_a"] = 5.0
+    (P._dossier() / "paquets.json").write_text(json.dumps(tout))   # json.dumps écrit NaN/Infinity
+    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+
+
+def test_dernier_a_restituer_consomme_a_non_fini_inegible():
+    r = _enreg(t=1.0)
+    P.marquer_verifie(r["id"], 10.0)
+    tout = json.loads((P._dossier() / "paquets.json").read_text())
+    tout[r["id"]]["consomme_a"] = float("nan")
+    (P._dossier() / "paquets.json").write_text(json.dumps(tout))
+    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+
+
+def test_dernier_verifie_frontieres_exactes_et_dates_futures():
+    pid = _verifie_a(100.0)
+    assert P.dernier_verifie("studio", H, 100.0 + P.PREUVE_TTL_S) is None          # == exclu
+    assert P.dernier_verifie("studio", H, 100.0 + P.PREUVE_TTL_S - 1)["id"] == pid
+    assert P.dernier_verifie("studio", H, 99.0) is None                            # verifie_a futur
+    assert P.dernier_verifie("studio", H, 99.0, preuve_s=None) is None
+    assert P.dernier_verifie("studio", H, 100.0)["id"] == pid                      # == now accepté
+
+
+def test_dernier_verifie_nan_inf_et_expire_a_non_fini():
+    r = _enreg(t=1.0)
+    P.marquer_verifie(r["id"], 10.0)
+    tout = json.loads((P._dossier() / "paquets.json").read_text())
+    for cle, val in (("verifie_a", float("nan")), ("verifie_a", float("inf"))):
+        t2 = json.loads(json.dumps(tout))
+        t2[r["id"]][cle] = val
+        (P._dossier() / "paquets.json").write_text(json.dumps(t2))
+        assert P.dernier_verifie("studio", H, 20.0, preuve_s=None) is None
+    t3 = json.loads(json.dumps(tout))
+    t3[r["id"]]["expire_a"] = float("inf")
+    (P._dossier() / "paquets.json").write_text(json.dumps(t3))
+    assert P.dernier_verifie("studio", H, 20.0, preuve_s=None) is None
+    assert P.expires(20.0)
