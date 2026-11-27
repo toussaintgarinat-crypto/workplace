@@ -452,9 +452,9 @@ def test_logs_non_coupes_intacts(e):
     assert c.get("/apps/A1/logs").json()["logs"] == "un\ndeux\n"
 
 
-def test_manifeste_relayer_erreurs_sur_les_11_capacites():
+def test_manifeste_relayer_erreurs_sur_les_13_capacites():
     m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
-    assert len(m["capacites"]) == 11
+    assert len(m["capacites"]) == 13
     assert all(x.get("relayer_erreurs") is True for x in m["capacites"])
 
 
@@ -815,3 +815,18 @@ def test_manifeste_rollback_renvoie_au_retour_arriere_apres_reset():
     caps = {x["nom"]: x for x in m["capacites"]}
     assert ("PAS après un reset pour revenir à l'instance précédente → livraison_retour_arriere"
             in caps["livraison_rollback"]["description"])
+
+
+def test_manifeste_declare_les_outils_donnees_et_pas_de_preuve_avant_3b():
+    m = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text())
+    caps = {x["nom"]: x for x in m["capacites"]}
+    e, v = caps["livraison_donnees_exporter"], caps["livraison_donnees_verifier"]
+    assert (e["chemin"], e["methode"], e["sensibilite"]) == ("/contrats/{app}/exporter", "POST", "reversible")
+    assert e["action"] is True
+    assert (v["chemin"], v["methode"]) == ("/contrats/{app}/verifier", "POST")
+    assert "fournit_preuve" not in v and "sensibilite" not in v
+    for x in (e, v):
+        assert set(x["params"]) == {"app", "utilisateur"} and x["relayer_erreurs"] is True
+    routes = {(r.path, tuple(sorted(r.methods))) for r in main.app.routes if hasattr(r, "methods")}
+    assert ("/contrats/{app_}/exporter", ("POST",)) in routes
+    assert ("/contrats/{app_}/verifier", ("POST",)) in routes

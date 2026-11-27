@@ -193,6 +193,47 @@
       },
       "action": false,
       "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_donnees_exporter",
+      "description": "MET DE CÔTÉ les données d'UN SEUL utilisateur d'une application qui a un contrat de données (ex. le Studio) : crée un paquet chiffré conservé 14 jours. Ne modifie rien et ne lit jamais le contenu : renvoie seulement un identifiant de paquet, des comptages et une empreinte. Ce n'est PAS une sauvegarde de l'application entière (→ livraison_sauvegarder). Pour PROUVER que le paquet est restaurable → livraison_donnees_verifier. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram. Ne dis JAMAIS « demande envoyée » sans avoir réellement appelé l'outil dans ce tour.",
+      "methode": "POST",
+      "chemin": "/contrats/{app}/exporter",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application à contrat de données. Ex : « studio ».",
+          "requis": true
+        },
+        "utilisateur": {
+          "type": "string",
+          "description": "Identité exacte de l'utilisateur visé dans l'application (jamais devinée : la demander).",
+          "requis": true
+        }
+      },
+      "action": true,
+      "sensibilite": "reversible",
+      "relayer_erreurs": true
+    },
+    {
+      "nom": "livraison_donnees_verifier",
+      "description": "PROUVE que les données d'UN utilisateur d'une application à contrat sont restaurables : exporte à neuf, stocke chiffré, relit le stockage, puis fait rejouer l'import dans un espace jetable et comparer l'empreinte. Renvoie un verdict valide/invalide, des comptages et une empreinte (jamais le contenu). N'affecte pas la production.",
+      "methode": "POST",
+      "chemin": "/contrats/{app}/verifier",
+      "params": {
+        "app": {
+          "type": "string",
+          "description": "Nom de l'application à contrat de données. Ex : « studio ».",
+          "requis": true
+        },
+        "utilisateur": {
+          "type": "string",
+          "description": "Identité exacte de l'utilisateur visé (la même que pour l'export).",
+          "requis": true
+        }
+      },
+      "action": false,
+      "relayer_erreurs": true
     }
   ],
   "taches": []

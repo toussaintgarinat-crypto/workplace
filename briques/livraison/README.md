@@ -36,3 +36,20 @@ revenir en arrière).
 
 `forgejo.py` (client Forgejo lecture seule) et `FORGEJO_URL`/`FORGEJO_TOKEN` : codés et testés,
 **non branchés** sur une route en v1.
+
+## Données utilisateur (S248)
+
+Export chiffré des données d'UN utilisateur d'une application à contrat (ex. Studio) :
+`livraison_donnees_exporter` / `livraison_donnees_verifier` (`POST /contrats/{app}/exporter|verifier`).
+
+- Variables dans `briques/livraison/.env` (0600) : `LIVRAISON_CHIFFREMENT_CLE` (chiffrement
+  AES-GCM des paquets) et `STUDIO_SUPPORT_KEY` (même valeur que côté Studio).
+- Registre des apps à contrat : `contrats.json`, à copier depuis `contrats.exemple.json` dans
+  le volume `/data`.
+- Rétention : 14 jours ; purge automatique toutes les heures, déclenchable à la main par
+  `POST /contrats/purger`.
+- Journal d'accès : `acces.jsonl` (qui a exporté/vérifié/purgé quoi, jamais le contenu).
+- Exécuteur : redéployer `executeur.py` sur la VM 100 (nouvelles routes `/objets/`).
+- Piège : changer `STUDIO_SUPPORT_KEY` OU `LIVRAISON_CHIFFREMENT_CLE` rend les paquets déjà
+  stockés illisibles. Vider les paquets (purge) avant toute rotation.
+- `livraison_donnees_verifier` ne déclare volontairement pas `fournit_preuve` (réservé à 3b).
