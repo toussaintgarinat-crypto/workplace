@@ -76,7 +76,7 @@ def enregistrer(paquet_id: str, app: str, h: str, objet: str, empreinte: str, co
     now = maintenant if maintenant is not None else time.time()
     rec = {"id": paquet_id, "app": app, "h": h, "objet": objet, "empreinte": empreinte,
            "comptages": comptages, "version_schema": version_schema,
-           "cree_a": now, "expire_a": now + RETENTION_S, "verifie_a": None}
+           "cree_a": now, "expire_a": now + RETENTION_S, "verifie_a": None, "consomme_a": None}
     tout = _lire_strict()
     tout[paquet_id] = rec
     _ecrire_tout(tout)
@@ -96,6 +96,42 @@ def marquer_verifie(paquet_id: str, maintenant: Optional[float] = None) -> Optio
     r["verifie_a"] = maintenant if maintenant is not None else time.time()
     _ecrire_tout(tout)
     return r
+
+
+def marquer_consomme(paquet_id: str, maintenant: Optional[float] = None) -> Optional[dict]:
+    """Un paquet utilisé pour un reset ne peut plus autoriser un second reset."""
+    tout = _lire_strict()
+    r = tout.get(paquet_id)
+    if not isinstance(r, dict):
+        return None
+    r["consomme_a"] = maintenant if maintenant is not None else time.time()
+    _ecrire_tout(tout)
+    return r
+
+
+def dernier_verifie(app: str, h: str, maintenant: Optional[float] = None,
+                    preuve_s: Optional[float] = PREUVE_TTL_S,
+                    inclure_consommes: bool = False) -> Optional[dict]:
+    """Paquet (app, h) vérifié le plus récemment, non expiré, preuve fraîche si preuve_s ;
+    lecteur pur : une date illisible rend l'entrée inéligible, jamais d'exception."""
+    now = maintenant if maintenant is not None else time.time()
+    candidats = []
+    for r in _lire_tout().values():
+        if not (isinstance(r, dict) and r.get("app") == app and r.get("h") == h):
+            continue
+        try:
+            v = r.get("verifie_a")
+            if v is None or _est_expire(r, now):
+                continue
+            v = float(v)
+            if not inclure_consommes and r.get("consomme_a") is not None:
+                continue
+            if preuve_s is not None and v + preuve_s <= now:
+                continue
+        except (TypeError, ValueError):
+            continue
+        candidats.append((v, r))
+    return max(candidats, key=lambda c: c[0])[1] if candidats else None
 
 
 def _est_expire(r: dict, now: float) -> bool:
