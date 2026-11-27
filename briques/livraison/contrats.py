@@ -92,7 +92,7 @@ class AppContrat:
         try:
             async with httpx.AsyncClient(base_url=self._e["url"], transport=self._transport,
                                          timeout=self._delai) as c:
-                r = await c.request(methode, chemin, headers={"X-Support-Key": self._cle}, **kw)
+                r = await c.request(methode, chemin, headers={"X-Support-Key": self._cle, **kw.pop("headers", {})}, **kw)
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise ContratErreur("application injoignable", None, "injoignable") from None
         except httpx.HTTPError:
@@ -126,7 +126,7 @@ class AppContrat:
         return r.content, {"empreinte": emp, "comptages": comptages}
 
     async def verifier(self, utilisateur: str, paquet: bytes) -> dict:
-        r = await self._appel("POST", CHEMIN_VERIFIER, params={"utilisateur": utilisateur},
+        r = await self._appel("POST", CHEMIN_VERIFIER, headers={"X-Utilisateur": utilisateur},
                               content=paquet)
         return _json_dict(r)
 
@@ -137,5 +137,5 @@ class AppContrat:
 
     async def importer(self, utilisateur: str, paquet: bytes) -> dict:
         r = await self._appel("POST", self._action("importer"),
-                              params={"utilisateur": utilisateur}, content=paquet)
+                              headers={"X-Utilisateur": utilisateur}, content=paquet)
         return _json_dict(r)

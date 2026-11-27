@@ -36,14 +36,14 @@ segment `..`. Un test de la brique doit l'appeler sur son propre manifeste.
 ## 3. Les routes
 
 Toutes en `POST`, toutes protégées par `X-Support-Key` (section 4). L'identité visée est
-**explicite** (`utilisateur`) ; le cloisonnement ne repose pas sur `X-User-Id`.
+**explicite** (`utilisateur`, en JSON ou en en-tête `X-Utilisateur`, jamais dans l'URL : les journaux d'accès l'écriraient) ; le cloisonnement ne repose pas sur `X-User-Id`.
 
 | Chemin | Entrée | Réponse | Refus |
 |---|---|---|---|
 | `/support/exporter` | JSON `{"utilisateur": "..."}` | 200, corps = paquet `application/gzip` ; en-têtes `X-Empreinte` (empreinte des données) et `X-Comptages` (JSON, nombre d'objets par type) | 422 si `utilisateur` vide |
-| `/support/verifier` | query `?utilisateur=`, corps = octets du paquet | 200 `{"ok", "comptages", "empreinte", "version_schema"}` ; rejoue l'import dans un dossier jetable, ré-exporte, compare l'empreinte ; n'écrit jamais dans le volume réel | 422 paquet invalide/refusé |
+| `/support/verifier` | en-tête `X-Utilisateur`, corps = octets du paquet | 200 `{"ok", "comptages", "empreinte", "version_schema"}` ; rejoue l'import dans un dossier jetable, ré-exporte, compare l'empreinte ; n'écrit jamais dans le volume réel | 422 paquet invalide/refusé |
 | `/support/reinitialiser` | JSON `{"utilisateur", "empreinte"}` | 200 `{"ok": true, "supprimes": {comptages}}` | 409 `empreinte` ; 422 sinon |
-| `/support/importer` | query `?utilisateur=`, corps = octets du paquet | 200 `{"ok": true, "comptages": {...}}` | 409 `conflit` ; 422 sinon |
+| `/support/importer` | en-tête `X-Utilisateur`, corps = octets du paquet | 200 `{"ok": true, "comptages": {...}}` | 409 `conflit` ; 422 sinon |
 
 Codes communs : **401** clé de support invalide ou absente de la requête, **503** fonction
 désactivée (variable d'environnement non définie), **409** pour les raisons `empreinte` et
@@ -138,8 +138,6 @@ autre, envoyée dans le header `X-Support-Key`. Elle est lue fraîche à chaque 
   **annulé** à la sauvegarde : le fichier de la série réapparaît (ressuscité). La vérification
   d'empreinte ne peut pas le voir. Parade pour la partie 3 : après un reset, ré-exporter et exiger
   que tous les comptages soient à zéro (ou prendre un verrou par utilisateur).
-- **Identité dans la query string** : l'utilisateur figure dans `?utilisateur=` (journaux d'accès
-  uvicorn du Studio) et dans `meta.json`. À déplacer dans un en-tête avant que la 3b passe LIVE.
 - **Empreinte non salée** : `h = sha256(utilisateur)[:16]` (registre, clés d'objet, journal) est
   devinable pour une identité à faible entropie.
 - **Rotation de clé** : les paquets sont signés avec la clé de support de l'app et chiffrés avec

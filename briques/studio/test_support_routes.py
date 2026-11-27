@@ -74,7 +74,7 @@ def test_utilisateur_avec_espaces_422_partout(u):
     assert client.post("/support/reinitialiser", json={"utilisateur": u, "empreinte": "e"},
                        headers=H).status_code == 422
     for route in ("verifier", "importer"):
-        r = client.post(f"/support/{route}", params={"utilisateur": u}, content=b"x", headers=H)
+        r = client.post(f"/support/{route}", content=b"x", headers={**H, "X-Utilisateur": u})
         assert r.status_code == 422 and r.json()["detail"] == "utilisateur invalide"
 
 
@@ -95,7 +95,7 @@ def test_exporter_expose_les_metadonnees_en_entetes():
 def test_verifier_route():
     peupler("claire")
     paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
-    r = client.post("/support/verifier", params={"utilisateur": "claire"}, content=paquet, headers=H)
+    r = client.post("/support/verifier", content=paquet, headers={**H, "X-Utilisateur": "claire"})
     assert r.status_code == 200 and r.json()["ok"] is True
 
 
@@ -103,7 +103,7 @@ def test_verifier_paquet_falsifie_422_sans_donnee_perso():
     peupler("claire")
     paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
     mauvais = paquet[:20] + bytes([paquet[20] ^ 0xFF]) + paquet[21:]
-    r = client.post("/support/verifier", params={"utilisateur": "claire"}, content=mauvais, headers=H)
+    r = client.post("/support/verifier", content=mauvais, headers={**H, "X-Utilisateur": "claire"})
     assert r.status_code == 422 and r.json()["detail"] in {"illisible", "signature", "somme_controle"}
 
 
@@ -118,7 +118,7 @@ def test_reinitialiser_mauvaise_empreinte_409_et_rien_efface():
 def test_importer_paquet_d_un_autre_utilisateur_422():
     peupler("claire")
     paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
-    r = client.post("/support/importer", params={"utilisateur": "marina"}, content=paquet, headers=H)
+    r = client.post("/support/importer", content=paquet, headers={**H, "X-Utilisateur": "marina"})
     assert r.status_code == 422 and r.json()["detail"] == "utilisateur"
 
 
@@ -127,17 +127,17 @@ def test_importer_conflit_409():
     objets = {"series": [{"id": "serie-marina", "cree_par": "claire"}], "profils": [],
               "journaux": [], "comptes": [], "ponts": []}
     paquet = C.construire_paquet("studio", "claire", "1", objets, CLE.encode())
-    r = client.post("/support/importer", params={"utilisateur": "claire"}, content=paquet, headers=H)
+    r = client.post("/support/importer", content=paquet, headers={**H, "X-Utilisateur": "claire"})
     assert r.status_code == 409
 
 
 def test_toutes_les_routes_refusent_cle_absente_fausse_ou_non_configuree(monkeypatch):
     appels = [
         lambda h: client.post("/support/exporter", json={"utilisateur": "c"}, headers=h),
-        lambda h: client.post("/support/verifier", params={"utilisateur": "c"}, content=b"x", headers=h),
+        lambda h: client.post("/support/verifier", content=b"x", headers={**h, "X-Utilisateur": "c"}),
         lambda h: client.post("/support/reinitialiser",
                               json={"utilisateur": "c", "empreinte": "e"}, headers=h),
-        lambda h: client.post("/support/importer", params={"utilisateur": "c"}, content=b"x", headers=h),
+        lambda h: client.post("/support/importer", content=b"x", headers={**h, "X-Utilisateur": "c"}),
     ]
     for appel in appels:
         assert appel({}).status_code == 401
@@ -168,7 +168,7 @@ class AdaptateurStudio:
             raise Refus(r.json()["detail"])
 
     def importer(self, u, octets):
-        r = client.post("/support/importer", params={"utilisateur": u}, content=octets, headers=H)
+        r = client.post("/support/importer", content=octets, headers={**H, "X-Utilisateur": u})
         if r.status_code >= 400:
             raise Refus(r.json()["detail"])
 
@@ -219,13 +219,13 @@ def test_manifeste_declare_un_contrat_valide():
 def test_corps_trop_gros_413_sur_verifier_et_importer(monkeypatch):
     monkeypatch.setattr(main, "CORPS_SUPPORT_MAX", 100)
     for route in ("verifier", "importer"):
-        r = client.post(f"/support/{route}?utilisateur=claire", content=b"x" * 200, headers=H)
+        r = client.post(f"/support/{route}", content=b"x" * 200, headers={**H, "X-Utilisateur": "claire"})
         assert r.status_code == 413, route
         assert r.json()["detail"] == "trop_gros"
 
 
 def test_corps_borne_ne_masque_pas_le_401():
-    r = client.post("/support/verifier?utilisateur=claire", content=b"x" * 10)
+    r = client.post("/support/verifier", content=b"x" * 10, headers={"X-Utilisateur": "claire"})
     assert r.status_code == 401
 
 
@@ -235,3 +235,18 @@ def test_identite_egale_a_une_cle_secrete_refusee(monkeypatch, secret_env):
     cible = "cle-secrete-123" if secret_env == "API_KEYS" else "autre-cle-xyz, cle-secrete-123"
     r = client.post("/support/exporter", json={"utilisateur": cible}, headers=H)
     assert r.status_code == 422 and r.json()["detail"] == "identite_interdite"
+
+
+def test_verifier_et_importer_exigent_l_entete_et_ignorent_la_query():
+    for route in ("verifier", "importer"):
+        r = client.post(f"/support/{route}?utilisateur=claire", content=b"x", headers=H)
+        assert r.status_code == 422, route                       # la query ne suffit plus
+        r = client.post(f"/support/{route}", content=b"x", headers={**H, "X-Utilisateur": "  "})
+        assert r.status_code == 422, route
+
+
+def test_importer_lit_l_utilisateur_dans_l_entete():
+    peupler("claire")
+    paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
+    r = client.post("/support/verifier", content=paquet, headers={**H, "X-Utilisateur": "claire"})
+    assert r.status_code == 200 and r.json()["ok"] is True

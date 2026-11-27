@@ -1580,6 +1580,12 @@ def _cible(utilisateur: str) -> str:
     return utilisateur
 
 
+def _cible_entete(x_utilisateur: Optional[str] = Header(None)) -> str:
+    """Identité visée par `verifier`/`importer` : EN-TÊTE, jamais la query (les journaux d'accès
+    d'uvicorn écrivent l'URL). Mêmes contrôles que `_cible`."""
+    return _cible(x_utilisateur or "")
+
+
 def _refus_http(e: Exception) -> HTTPException:
     """Le `detail` ne porte QUE la raison (jamais de donnée de l'utilisateur)."""
     raison = getattr(e, "raison", "refus")
@@ -1626,9 +1632,8 @@ def support_exporter(body: CibleSupport, cle: bytes = Depends(cle_support)):
 
 
 @app.post("/support/verifier", tags=["support"])
-async def support_verifier(request: Request, utilisateur: str,
-                           cle: bytes = Depends(cle_support)):
-    u = _cible(utilisateur)
+async def support_verifier(request: Request, cle: bytes = Depends(cle_support),
+                           u: str = Depends(_cible_entete)):
     try:
         return SUP.verifier(await _corps_borne(request), cle, u)
     except (C.PaquetInvalide, SUP.Refus) as e:
@@ -1644,9 +1649,8 @@ def support_reinitialiser(body: ReinitSupport, _cle: bytes = Depends(cle_support
 
 
 @app.post("/support/importer", tags=["support"])
-async def support_importer(request: Request, utilisateur: str,
-                           cle: bytes = Depends(cle_support)):
-    u = _cible(utilisateur)
+async def support_importer(request: Request, cle: bytes = Depends(cle_support),
+                           u: str = Depends(_cible_entete)):
     try:
         meta, objets = C.lire_paquet(await _corps_borne(request), cle, SUP.APP, u, SUP.VERSION_SCHEMA)
         objets = SUP.migrer(objets, meta["version_schema"])

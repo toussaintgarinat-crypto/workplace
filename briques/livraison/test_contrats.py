@@ -83,9 +83,10 @@ def test_exporter_sans_entetes_refuse(monkeypatch):
         asyncio.run(_app(lambda r: httpx.Response(200, content=b"P"), monkeypatch).exporter("c"))
 
 
-def test_verifier_envoie_les_octets_et_l_utilisateur_en_query(monkeypatch):
+def test_verifier_envoie_les_octets_et_l_utilisateur_en_entete(monkeypatch):
     def h(req):
-        assert req.url.path == "/support/verifier" and req.url.params["utilisateur"] == "claire"
+        assert req.url.path == "/support/verifier" and req.headers["x-utilisateur"] == "claire"
+        assert "utilisateur" not in req.url.params and "claire" not in str(req.url)
         assert req.content == b"PAQUET"
         return httpx.Response(200, json={"ok": True, "empreinte": "abc", "comptages": {}})
     assert asyncio.run(_app(h, monkeypatch).verifier("claire", b"PAQUET"))["empreinte"] == "abc"
