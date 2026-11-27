@@ -37,3 +37,6 @@ Rôle jetable : la restauration et la relecture se font avec `restore_<hex>` (sa
 Demande explicite « utilise `livraison_verifier_sauvegarde` pour calendrier-familial » : verdict `valide`, preuve `4878d0a6506f00cc`, comptages `{"evenements": 42}`. Le Cœur a enregistré la preuve (table `preuves` de `approbations.db`) pour le compte de l'utilisateur sous les deux clés `calendrier-familial` et l'identifiant Dokploy, avec l'expiration de la brique. La 1ʳᵉ formulation vague (« vérifie la sauvegarde ») a fait choisir `/etat` à l'assistant : le routage d'outils reste à surveiller.
 
 Reste : partie 2b (reset de l'app entière, bascule, retour arrière).
+
+## Indexation par `app_id` — preuve LIVE 2026-11-27 (`bccf7a5`)
+Vérification via le Cœur du HP sur `Calendrier-Familial` (casse mixte) : verdict `valide` (evenements 42), preuve enregistrée sous `app_id` `xqQe_Nyab0Wjjk-jDbO0q` + alias `calendrier-familial`. `preuve_valide` vrai par nom, nom avec casse/espaces et identifiant ; faux pour le jumeau (`calendrier-familial-jumeau`, `GUp9sNCbesdb5JS8K6N3K`). Reset non rejoué (pas de Telegram sollicité).

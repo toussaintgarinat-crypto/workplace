@@ -89,7 +89,7 @@ Limites connues : un miroir ne copie que le code git (pas tickets/PR) ; Dokploy 
 ## Clôture (2026-11-27)
 Preuves : `docs/s247/preuve-sauvegarde-verifiee.md`, `docs/s247/preuve-reset-bleu-vert.md`, `docs/s247/spike-registre-forgejo.md` (réalisation). Sur main : `0718c8c` (2b), `9a18daa` (descriptions d'outils), `bf5427e`/`4f248e9` (rétention).
 **Reporté (backlog, rien d'urgent)** :
-- Cœur : indexer la preuve de sauvegarde par `app_id` (aujourd'hui par nom, la brique impose le lien).
+- ~~Cœur : indexer la preuve de sauvegarde par `app_id`~~ FAIT 2026-11-27 (`bccf7a5`, déployé HP) : la preuve vit sous `app_id`, les noms sont des alias appris (`preuves_alias`) ; app recréée sous le même nom = pas d'héritage. Retour arrière : image `core-core:avant-s247-appid`.
 - Cas limites non joués en live : écriture dans la base quittée (I2), échange d'hôtes partiel provoqué, 503 sans `LIVRAISON_TRAEFIK_URL`, concurrence pendant un reset, plantage de la brique pendant la bascule.
 - Suppression automatique de la génération N-2 après un retour arrière (aujourd'hui la base quittée est conservée et nommée, à supprimer à la main).
 - Rétention du registre : garde « versions référencées par un rollback Dokploy » non faite (remplacée par « 10 dernières versions ») ; le `DELETE` réel n'a pas encore été exercé.
