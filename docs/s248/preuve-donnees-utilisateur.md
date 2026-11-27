@@ -151,3 +151,62 @@ FIN
 La preuve LIVE a été jouée AVANT que `livraison_donnees_verifier` soit soumis à approbation
 (`reversible`). Le flux à 3 approbations (vérifier -> réinitialiser -> restituer) doit donc être
 revérifié en LIVE après déploiement. Résultat : à renseigner par le contrôleur.
+
+
+## Partie C — vérificateur soumis à approbation (2026-11-27, après `0195d03`, Cœur recréé)
+
+`livraison_donnees_verifier` est désormais `reversible` : flux complet **vérification [approbation] → remise à zéro [approbation] → restitution [approbation]**, trois approbations Telegram données par l'utilisateur. Utilisateurs témoins `temoin-c` (cible) et `temoin-d` (voisin).
+
+Constats : (1) la demande de vérification est créée sans rien exécuter ; avant l'approbation le prérequis du reset de `temoin-c` reste non satisfait ; (2) après approbation et exécution, la preuve ne se lève que pour `temoin-c` (celui de `temoin-d` reste non satisfait) ; (3) reset exécuté après approbation, `temoin-d` intact ; (4) restitution exacte (empreinte `70fb0b70796fc1e6` identique à l'état initial). Une première tentative avec `temoin-a`/`temoin-b` n'était pas propre : une preuve `paquet_verifie` de la veille (6 h) et un paquet vérifié non consommé, encore valides pour `temoin-a`, avaient levé le prérequis dès la création ; l'utilisateur a approuvé le reset à l'arrivée du message et la brique l'a exécuté **légitimement** (paquet vérifié frais d'empreinte identique). Observation : la preuve du Cœur n'est pas consommée par l'usage (seule la brique consomme le paquet) ; la défense en profondeur de la brique évite tout reset sans paquet frais.
+
+```
+=== B0. Semis TÉMOINS + outils exposés par le Cœur
+seed ok
+temoin-c {"comptes": 1, "journaux": 0, "ponts": 0, "profils": 1, "series": 2} 70fb0b70796fc1e6
+temoin-d {"comptes": 0, "journaux": 0, "ponts": 0, "profils": 0, "series": 1} 388bca91e35fb20e
+outils livraison_donnees_* exposés: ['livraison_donnees_exporter', 'livraison_donnees_reinitialiser', 'livraison_donnees_restituer', 'livraison_donnees_verifier']
+identité du test (compte de l'approbateur Telegram): Toussaint
+
+=== B1. Reset de temoin-c SANS vérification => demande créée, prérequis NON satisfait (pas de preuve)
+réponse outil: (…)
+demande temoin-c: en_attente donnees {"paquet_verifie": false}
+
+=== B2. Reset de temoin-d SANS vérification => idem
+réponse outil: (…)
+demande temoin-d: en_attente donnees {"paquet_verifie": false}
+
+=== B3. Vérification de temoin-c via le Cœur : DÉSORMAIS soumise à approbation (reversible) => rien ne s'exécute avant l'accord
+réponse outil: (…)
+demande verifier temoin-c: en_attente reversible
+avant approbation -> reset temoin-c prérequis: {"paquet_verifie": false} | reset temoin-d prérequis: {"paquet_verifie": false}
+>>> ACTION HUMAINE 1/3 : approuver sur Telegram la VÉRIFICATION de temoin-c
+  [verification temoin-c] statut = en_attente
+  [verification temoin-c] statut = executee
+issue: executee | {"app": "studio", "ok": true, "verdict": "valide", "paquet_id": "416f5db1b5180ad951e9563343874998", "preuve_id": "416f5db1b5180ad951e9563343874998", "empreinte": "70fb0b70796fc1e6b0ca792751afba39a00ae
+après approbation+exécution -> reset temoin-c prérequis: {"paquet_verifie": true} | reset temoin-d prérequis: {"paquet_verifie": false} <= b doit rester non satisfait
+>>> ACTION HUMAINE 2/3 : approuver la REMISE À ZÉRO de temoin-c ; NE PAS approuver temoin-d
+
+=== B4. Attente de l'approbation humaine du reset de temoin-c (le Cœur rejoue l'action après accord)
+  [reset temoin-c] statut = en_attente
+  [reset temoin-c] statut = executee
+issue: executee | {"app": "studio", "ok": true, "etat": "reinitialise", "paquet_id": "416f5db1b5180ad951e9563343874998", "supprimes": {"comptes": 1, "journaux": 0, "ponts": 0, "profils": 1, "series": 2}}
+temoin-c {"comptes": 0, "journaux": 0, "ponts": 0, "profils": 0, "series": 0} abdf5599fa43b159
+temoin-d {"comptes": 0, "journaux": 0, "ponts": 0, "profils": 0, "series": 1} 388bca91e35fb20e
+
+=== B5. temoin-d : jamais approuvé => rien exécuté ; on REFUSE la demande restante
+refus de la demande temoin-d: (True, 'ok')
+
+=== B6. Restitution de temoin-c via le Cœur (niveau donnees, approbation Telegram)
+réponse outil: (…)
+demande restitution: en_attente donnees {}
+>>> ACTION HUMAINE 3/3 : approuver sur Telegram la RESTITUTION de temoin-c
+  [restitution temoin-c] statut = en_attente
+  [restitution temoin-c] statut = executee
+issue: executee | {"app": "studio", "ok": true, "etat": "restitue", "mode": "exacte", "paquet_id": "416f5db1b5180ad951e9563343874998", "comptages": {"comptes": 1, "journaux": 0, "ponts": 0, "profils": 1, "series": 2}}
+temoin-c {"comptes": 1, "journaux": 0, "ponts": 0, "profils": 1, "series": 2} 70fb0b70796fc1e6
+temoin-d {"comptes": 0, "journaux": 0, "ponts": 0, "profils": 0, "series": 1} 388bca91e35fb20e
+
+=== B7. Nettoyage
+nettoyé {'temoin-c': 0, 'temoin-d': 0}
+FIN
+```
