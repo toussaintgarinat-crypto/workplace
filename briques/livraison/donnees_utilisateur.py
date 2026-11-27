@@ -95,15 +95,25 @@ _RACINE_AMBIGU = ("l'application n'a pas répondu : la remise à zéro a peut-ê
 
 
 _AVANT_EFFET = (401, 404, 413, 409, 422)
+_RAISONS_NON_ENVOYEES = ("injoignable", "identite")   # la requête n'est jamais partie
+_MESSAGES_NON_ENVOYEE = {"injoignable": "application injoignable : rien n'a été modifié",
+                         "identite": "identité non transmissible : rien n'a été modifié"}
+_SUITE_RESTITUABLE = "reste restituable avec livraison_donnees_restituer (paquet_id)"
 
 
 def _certain_avant_effet(e) -> bool:
     """Seuls ces refus se lisent « rien n'a été fait » ; tout le reste (pas de statut, 5xx, 200
     illisible) est ambigu : l'application n'a pas de retour arrière, l'effet peut avoir eu lieu."""
-    return e.statut in _AVANT_EFFET or (e.statut == 503 and e.raison == "desactive")
+    return (e.statut in _AVANT_EFFET or (e.statut == 503 and e.raison == "desactive")
+            or (e.statut is None and e.raison in _RAISONS_NON_ENVOYEES))
 
 
-def _tout_a_zero(comptages) -> bool:
+def _tout_a_zero(comptages, cles=None) -> bool:
+    """Tous les comptages valent exactement 0 ; avec `cles` (comptages de référence), ils doivent
+    aussi avoir exactement les MÊMES clés (une application qui en perd une n'est pas « à zéro »)."""
+    if cles is not None and not (isinstance(cles, dict) and isinstance(comptages, dict)
+                                 and set(comptages) == set(cles)):
+        return False
     return (isinstance(comptages, dict) and bool(comptages)
             and all(type(v) is int and v == 0 for v in comptages.values()))
 
@@ -131,6 +141,14 @@ def _refus_app(e, avant_effacement: bool) -> RefusDonnees:
     statut = 409 if e.statut in (409, 422) else 502
     suite = " ; les données sont intactes" if avant_effacement else ""
     return RefusDonnees(statut, f"l'application refuse : {e.raison or 'erreur'}{suite}")
+
+
+def _refus_non_envoye(e) -> RefusDonnees:
+    """Refus certain avant effet d'un appel d'effet (reset/import) : requête jamais partie, ou
+    refus net de l'application."""
+    if e.statut is None and e.raison in _MESSAGES_NON_ENVOYEE:
+        return RefusDonnees(502, _MESSAGES_NON_ENVOYEE[e.raison])
+    return _refus_app(e, False)
 
 
 def _consommer(pid: str, maintenant) -> None:
@@ -165,6 +183,7 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
             _, meta = await app.exporter(utilisateur)
         except ContratErreur as e:
             raise _refus_app(e, True) from None
+        avant = meta.get("comptages")
         if meta.get("empreinte") != rec["empreinte"]:
             raise RefusDonnees(409, "les données ont changé depuis la vérification : "
                                     "relance livraison_donnees_verifier")
@@ -179,7 +198,7 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
                 _journal("reinitialiser", app.nom, h, rec["id"], False, maintenant)
                 raise RefusDonnees(504, f"{_RACINE_AMBIGU} ; le paquet {rec['id']} reste "
                                         "restituable avec livraison_donnees_restituer") from None
-            raise _refus_app(e, False) from None
+            raise _refus_non_envoye(e) from None
         except asyncio.CancelledError:
             _consommer(rec["id"], maintenant)               # l'effacement a pu avoir lieu
             raise
@@ -188,17 +207,17 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
         try:
             _, apres = await app.exporter(utilisateur)
             reste = apres["comptages"]
-            zero = _tout_a_zero(reste)
+            zero = _tout_a_zero(reste, avant)
         except Exception:
             _journal("reinitialiser", app.nom, h, rec["id"], False, maintenant)
             raise RefusDonnees(502, "remise à zéro effectuée mais le contrôle final a échoué : "
-                                    "vérifie l'état de l'application (le paquet reste "
-                                    "restituable)") from None
+                                    f"vérifie l'état de l'application ; le paquet {rec['id']} "
+                                    f"{_SUITE_RESTITUABLE}") from None
         _journal("reinitialiser", app.nom, h, rec["id"], zero, maintenant)
         if not zero:
             raise RefusDonnees(409, "remise à zéro au résultat incomplet : des données sont réapparues (une "
-                                    "opération de l'application était en cours) ; le paquet reste "
-                                    "restituable, relance la vérification puis réessaie")
+                                    f"opération de l'application était en cours) ; le paquet {rec['id']} "
+                                    f"{_SUITE_RESTITUABLE}")
         supprimes = r.get("supprimes", {}) if isinstance(r, dict) else {}
         return {"ok": True, "etat": "reinitialise", "paquet_id": rec["id"], "supprimes": supprimes}
     finally:
@@ -211,22 +230,33 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
     h = paquets.empreinte_utilisateur(utilisateur)
     cible = _prendre(app, h)
     try:
-        if paquet_id:
+        now = maintenant if maintenant is not None else time.time()
+        if paquet_id:                         # choix délibéré : peut écraser, pas d'état exigé
             rec = paquets.lire(paquet_id)
-            try:
-                valide = bool(rec and rec["app"] == app.nom and rec["h"] == h
-                              and rec.get("verifie_a") is not None
-                              and float(rec["expire_a"]) > (maintenant if maintenant is not None
-                                                            else time.time()))
-            except (KeyError, TypeError, ValueError):
-                valide = False
-            if not valide:
+            if not (isinstance(rec, dict) and rec.get("app") == app.nom and rec.get("h") == h
+                    and paquets._date_verif(rec, now) is not None):
                 raise RefusDonnees(404, "paquet introuvable, expiré ou non vérifié pour cet "
                                         "utilisateur")
         else:
-            rec = paquets.dernier_a_restituer(app.nom, h, maintenant)
-            if rec is None:
-                raise RefusDonnees(404, "aucun paquet vérifié disponible pour cet utilisateur")
+            candidats = paquets.candidats_a_restituer(app.nom, h, now)
+            if not candidats:
+                raise RefusDonnees(404, "aucun paquet à restituer : aucune remise à zéro n'a "
+                                        "consommé de paquet pour cet utilisateur (précise "
+                                        "paquet_id pour un paquet vérifié)")
+            if len(candidats) > 1:
+                raise RefusDonnees(409, "plusieurs paquets sont candidats ("
+                                        + ", ".join(c["id"] for c in candidats)
+                                        + ") : précise paquet_id")
+            rec = candidats[0]
+            try:                                # lecture seule : jamais d'écrasement silencieux
+                _, actuel = await app.exporter(utilisateur)
+            except ContratErreur as e:
+                raise _refus_app(e, True) from None
+            if not (_tout_a_zero(actuel.get("comptages"), rec.get("comptages"))
+                    or actuel.get("empreinte") == rec["empreinte"]):
+                raise RefusDonnees(409, "l'état actuel de l'utilisateur n'est ni vide ni identique "
+                                        f"au paquet {rec['id']} : rien n'a été restitué ; précise "
+                                        "paquet_id pour écraser volontairement")
         clair = await _relire(ex, rec)
         try:
             await app.importer(utilisateur, clair)
@@ -235,13 +265,14 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
             if not _certain_avant_effet(e):                 # import peut-être partiel
                 raise RefusDonnees(504, "l'application n'a pas répondu : la restitution a peut-être "
                                         "été appliquée, vérifie l'état avant de réessayer") from None
-            raise _refus_app(e, False) from None
+            raise _refus_non_envoye(e) from None
         try:
             _, apres = await app.exporter(utilisateur)
         except Exception:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
             raise RefusDonnees(502, "restitution appliquée mais le contrôle final a échoué : "
-                                    "vérifie l'état de l'application") from None
+                                    f"vérifie l'état de l'application ; le paquet {rec['id']} "
+                                    f"{_SUITE_RESTITUABLE}") from None
         if apres["empreinte"] != rec["empreinte"]:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
             raise RefusDonnees(409, "restitution incomplète : l'état restauré ne correspond pas "

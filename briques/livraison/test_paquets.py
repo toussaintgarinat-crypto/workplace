@@ -187,52 +187,65 @@ def test_marquer_restitue_refuse_registre_corrompu(tmp_path):
         P.marquer_restitue("0" * 32, 1.0)
 
 
-def test_dernier_a_restituer_prefere_le_consomme_non_restitue_le_plus_recemment_consomme():
+def _ids(app="studio", now=1000.0):
+    return [r["id"] for r in P.candidats_a_restituer(app, H, now)]
+
+
+def test_candidats_tries_par_consommation_decroissante_sans_repli_sur_non_consomme():
     a = _verifie_a(10.0, consomme=100.0)
     b = _verifie_a(20.0, consomme=200.0)
-    _verifie_a(500.0)                                   # plus frais verifié, non consommé
-    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == b
+    _verifie_a(500.0)                                   # plus frais verifié, non consommé : exclu
+    assert _ids() == [b, a]
     P.marquer_restitue(b, 300.0)
-    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == a
+    assert _ids() == [a]
 
 
-def test_dernier_a_restituer_repli_sur_dernier_verifie_non_consomme_ou_none():
-    assert P.dernier_a_restituer("studio", H, 1000.0) is None
-    x = _verifie_a(10.0, consomme=100.0, restitue=150.0)
-    assert P.dernier_a_restituer("studio", H, 1000.0) is None
-    y = _verifie_a(20.0)
-    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] == y
-    assert x != y
+def test_candidats_vide_sans_consomme_meme_avec_un_verifie():
+    assert _ids() == []
+    _verifie_a(10.0, consomme=100.0, restitue=150.0)
+    _verifie_a(20.0)                                    # simplement vérifié : PAS un candidat
+    assert _ids() == []
 
 
-def test_dernier_a_restituer_ignore_expire_non_verifie_autre_cible():
-    _verifie_a(10.0, consomme=100.0)
-    assert P.dernier_a_restituer("studio", H, 1.0 + 14 * 86400) is None      # expire_a == now exclu
-    assert P.dernier_a_restituer("studio", H, 1.0 + 14 * 86400 - 1) is not None
-    assert P.dernier_a_restituer("autre", H, 1000.0) is None
-    assert P.dernier_a_restituer("studio", "f" * 16, 1000.0) is None
+def test_candidats_ignore_expire_non_verifie_autre_cible():
+    a = _verifie_a(10.0, consomme=100.0)
+    assert _ids(now=1.0 + 14 * 86400) == []             # expire_a == now exclu
+    assert _ids(now=1.0 + 14 * 86400 - 1) == [a]
+    assert _ids("autre") == []
+    assert P.candidats_a_restituer("studio", "f" * 16, 1000.0) == []
     r = _enreg(t=1.0)
     P.marquer_consomme(r["id"], 5.0)                                          # non vérifié
-    assert P.dernier_a_restituer("studio", H, 1000.0)["id"] != r["id"]
+    assert _ids() == [a]
 
 
 @pytest.mark.parametrize("v", [float("nan"), float("inf"), "abc", 10 ** 12])
-def test_dernier_a_restituer_dates_illisibles_ou_futures_inegibles(v):
+def test_candidats_verifie_a_illisible_ou_futur_inegible(v):
     r = _enreg(t=1.0)
     tout = json.loads((P._dossier() / "paquets.json").read_text())
     tout[r["id"]]["verifie_a"] = v
     tout[r["id"]]["consomme_a"] = 5.0
     (P._dossier() / "paquets.json").write_text(json.dumps(tout))   # json.dumps écrit NaN/Infinity
-    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+    assert _ids() == []
 
 
-def test_dernier_a_restituer_consomme_a_non_fini_inegible():
+@pytest.mark.parametrize("v", [float("nan"), float("inf"), "abc", [1]])
+def test_candidats_consomme_a_non_fini_ou_illisible_inegible(v):
     r = _enreg(t=1.0)
     P.marquer_verifie(r["id"], 10.0)
     tout = json.loads((P._dossier() / "paquets.json").read_text())
-    tout[r["id"]]["consomme_a"] = float("nan")
+    tout[r["id"]]["consomme_a"] = v
     (P._dossier() / "paquets.json").write_text(json.dumps(tout))
-    assert P.dernier_a_restituer("studio", H, 1000.0) is None
+    assert _ids() == []
+
+
+def test_candidats_expire_a_non_fini_inegible():
+    r = _enreg(t=1.0)
+    P.marquer_verifie(r["id"], 10.0)
+    P.marquer_consomme(r["id"], 20.0)
+    tout = json.loads((P._dossier() / "paquets.json").read_text())
+    tout[r["id"]]["expire_a"] = float("inf")
+    (P._dossier() / "paquets.json").write_text(json.dumps(tout))
+    assert _ids() == []
 
 
 def test_dernier_verifie_frontieres_exactes_et_dates_futures():

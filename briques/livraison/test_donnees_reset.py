@@ -176,13 +176,13 @@ def test_restituer_sans_paquet_404_et_paquet_id_explicite():
 
 def test_restitution_conflit_de_l_app_remonte_en_409():
     ex, app = FauxExecuteur(), AppAEtat()
-    _verifie(app, ex)
+    v = _verifie(app, ex)
 
     async def conflit(u, p):
         raise ContratErreur("x", 409, "conflit")
     app.importer = conflit
     with pytest.raises(D.RefusDonnees) as e:
-        run(D.restituer_donnees(app, ex, "claire"))
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 409 and "conflit" in e.value.message
 
 
@@ -224,7 +224,8 @@ def test_controle_final_en_echec_apres_effacement_502_et_paquet_reste_restituabl
         run(D.reinitialiser_donnees(app, ex, "claire"))
     assert e.value.statut == 502
     assert e.value.message == ("remise à zéro effectuée mais le contrôle final a échoué : vérifie "
-                               "l'état de l'application (le paquet reste restituable)")
+                               f"l'état de l'application ; le paquet {v['paquet_id']} reste "
+                               "restituable avec livraison_donnees_restituer (paquet_id)")
     assert app.donnees == {"series": 0, "profils": 0}
     assert P.lire(v["paquet_id"])["consomme_a"] is not None          # marqué AVANT le contrôle
     app.exporter = app._exporter_reel
@@ -261,8 +262,7 @@ def test_journal_en_oserror_sur_resurrection_laisse_le_refus_incomplet(monkeypat
     assert e.value.statut == 409 and "incomplet" in e.value.message
 
 
-@pytest.mark.parametrize("exc", [ContratErreur("x", None, "injoignable"),
-                                 ContratErreur("x", None, "delai")])
+@pytest.mark.parametrize("exc", [ContratErreur("x", None, "delai")])
 def test_reseau_pendant_reinitialiser_est_ambigu_504(exc):
     ex, app = FauxExecuteur(), AppAEtat()
     _verifie(app, ex)
@@ -349,14 +349,19 @@ def test_restitution_journal_en_oserror_ne_change_pas_le_succes(monkeypatch):
 
 # --- S248 3b fix : C2 (choix implicite), C1 (ambigu reset), I2 (ambigu restitution), M3, M4, M5 ---
 
-def test_c2_resurrection_puis_reverification_puis_restitution_redonne_l_original():
+def test_c2_resurrection_puis_reverification_restitution_implicite_refusee_explicite_redonne_l_original():
     ex, app = FauxExecuteur(), AppAEtat(resurrection=True)
     orig = _verifie(app, ex)
     with pytest.raises(D.RefusDonnees):
         run(D.reinitialiser_donnees(app, ex, "claire"))
     assert app.donnees == {"series": 1, "profils": 0}
     _verifie(app, ex)                                   # « relance la vérification »
-    back = run(D.restituer_donnees(app, ex, "claire"))
+    avant = app.appels.count("importer")
+    with pytest.raises(D.RefusDonnees) as e:            # état partiel : ni vide ni identique
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "ni vide ni identique" in e.value.message
+    assert app.appels.count("importer") == avant
+    back = run(D.restituer_donnees(app, ex, "claire", paquet_id=orig["paquet_id"]))
     assert back["paquet_id"] == orig["paquet_id"]
     assert back["comptages"] == {"series": 2, "profils": 1}
     assert P.lire(orig["paquet_id"])["restitue_a"] is not None
@@ -396,9 +401,9 @@ def test_c2_une_restitution_marque_le_paquet_et_la_seconde_ne_reimporte_pas_le_m
 
 def test_c2_marquer_restitue_en_oserror_ne_change_pas_le_succes(monkeypatch):
     ex, app = FauxExecuteur(), AppAEtat()
-    _verifie(app, ex)
+    v = _verifie(app, ex)
     monkeypatch.setattr(P, "marquer_restitue", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
-    assert run(D.restituer_donnees(app, ex, "claire"))["etat"] == "restitue"
+    assert run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))["etat"] == "restitue"
 
 
 def _reset_avec_erreur(exc, efface=True):
@@ -476,10 +481,10 @@ def _app_import(app, exc=None, avant=None):
                                  ContratErreur("x", None, "delai"), ContratErreur("x", 502, "erreur")])
 def test_i2_import_ambigu_504(exc):
     ex, app = FauxExecuteur(), AppAEtat()
-    _verifie(app, ex)
+    v = _verifie(app, ex)
     _app_import(app, exc)
     with pytest.raises(D.RefusDonnees) as e:
-        run(D.restituer_donnees(app, ex, "claire"))
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 504
     assert e.value.message == ("l'application n'a pas répondu : la restitution a peut-être "
                                "été appliquée, vérifie l'état avant de réessayer")
@@ -494,29 +499,30 @@ def test_i2_import_ok_puis_controle_en_echec_502_applique():
         raise ContratErreur("x", 500, "erreur")
     app.exporter = exporter
     with pytest.raises(D.RefusDonnees) as e:
-        run(D.restituer_donnees(app, ex, "claire"))
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 502
     assert e.value.message == ("restitution appliquée mais le contrôle final a échoué : vérifie "
-                               "l'état de l'application")
+                               f"l'état de l'application ; le paquet {v['paquet_id']} reste "
+                               "restituable avec livraison_donnees_restituer (paquet_id)")
     assert app.donnees == {"series": 2, "profils": 1}
     assert P.lire(v['paquet_id'])['restitue_a'] is None    # pas marqué : contrôle non concluant
 
 
 def test_m3_restitution_504_reseau():
     ex, app = FauxExecuteur(), AppAEtat()
-    _verifie(app, ex)
-    _app_import(app, ContratErreur("x", None, "injoignable"))
+    v = _verifie(app, ex)
+    _app_import(app, ContratErreur("x", None, "delai"))
     with pytest.raises(D.RefusDonnees) as e:
-        run(D.restituer_donnees(app, ex, "claire"))
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 504 and "peut-être" in e.value.message
 
 
 def test_restitution_refus_certain_avant_effet_reste_un_refus():
     ex, app = FauxExecuteur(), AppAEtat()
-    _verifie(app, ex)
+    v = _verifie(app, ex)
     _app_import(app, ContratErreur("x", 409, "conflit"))
     with pytest.raises(D.RefusDonnees) as e:
-        run(D.restituer_donnees(app, ex, "claire"))
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 409 and "l'application refuse" in e.value.message
 
 
@@ -543,3 +549,208 @@ def test_m4_comptages_vides_apres_reset_ne_sont_pas_un_succes():
     with pytest.raises(D.RefusDonnees) as e:
         run(D.reinitialiser_donnees(app, ex, "claire"))
     assert e.value.statut == 409 and "incomplet" in e.value.message
+
+
+# --- S248 3b fix 2 : restitution implicite non ambiguë, jamais d'écrasement silencieux ---
+
+def _id(v):
+    return v["paquet_id"]
+
+
+def _import_appele(app):
+    return "importer" in app.appels
+
+
+def test_scen_a_resurrection_puis_verif_partielle_puis_reset_implicite_refuse_liste_a_et_b():
+    ex, app = FauxExecuteur(), AppAEtat(resurrection=True)
+    a = _verifie(app, ex)
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and _id(a) in e.value.message      # (4) l'id du paquet est donné
+    app.resurrection = False
+    b = _verifie(app, ex)                                           # instantané partiel
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409
+    m = e.value.message
+    assert m.startswith("plusieurs paquets sont candidats (") and m.endswith(") : précise paquet_id")
+    assert set(m[len("plusieurs paquets sont candidats ("):-len(") : précise paquet_id")].split(", ")) \
+        == {_id(a), _id(b)}
+    assert not _import_appele(app)
+    back = run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))
+    assert back["paquet_id"] == _id(a) and app.donnees == {"series": 2, "profils": 1}
+
+
+def test_scen_e_deux_resets_ambigus_restitution_implicite_refusee():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    vrai = app.reinitialiser
+
+    async def efface_puis_500(u, emp):
+        await vrai(u, emp)
+        raise ContratErreur("x", 500, "erreur")
+    app.reinitialiser = efface_puis_500
+    with pytest.raises(D.RefusDonnees):
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    b = _verifie(app, ex)                                           # état vide
+    with pytest.raises(D.RefusDonnees):
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and _id(a) in e.value.message and _id(b) in e.value.message
+    assert not _import_appele(app)
+    assert run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))["etat"] == "restitue"
+    assert app.donnees == {"series": 2, "profils": 1}
+
+
+def test_scen6_donnees_nouvelles_apres_reset_restitution_implicite_refusee_explicite_ecrase():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    app.donnees = {"series": 5, "profils": 3}                       # Claire a recréé des données
+    _verifie(app, ex)
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409
+    assert e.value.message == (f"l'état actuel de l'utilisateur n'est ni vide ni identique au paquet "
+                               f"{_id(a)} : rien n'a été restitué ; précise paquet_id pour écraser "
+                               "volontairement")
+    assert not _import_appele(app) and app.donnees == {"series": 5, "profils": 3}
+    back = run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))
+    assert back["etat"] == "restitue" and app.donnees == {"series": 2, "profils": 1}
+
+
+def test_restitution_implicite_apres_reset_normal_puis_seconde_404():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert run(D.restituer_donnees(app, ex, "claire"))["paquet_id"] == _id(a)
+    assert P.lire(_id(a))["restitue_a"] is not None
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 404
+
+
+def test_restitution_implicite_sans_candidat_message_fixe_meme_avec_un_verifie():
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)                                               # vérifié mais jamais consommé
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 404
+    assert e.value.message == ("aucun paquet à restituer : aucune remise à zéro n'a consommé de "
+                               "paquet pour cet utilisateur (précise paquet_id pour un paquet "
+                               "vérifié)")
+    assert not _import_appele(app)
+
+
+def test_restitution_implicite_etat_identique_au_paquet_est_accepte():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    app.donnees = {"series": 2, "profils": 1}                       # revenu à l'identique
+    assert run(D.restituer_donnees(app, ex, "claire"))["paquet_id"] == _id(a)
+
+
+def test_restitution_implicite_pre_export_en_echec_refus_avant_effet():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+
+    async def casse(u):
+        raise ContratErreur("x", None, "delai")
+    app.exporter = casse
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 502 and "intactes" in e.value.message
+    assert not _import_appele(app) and P.lire(_id(a))["restitue_a"] is None
+
+
+def test_restitution_explicite_ne_fait_pas_de_pre_export():
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    n = app.appels.count("exporter")
+    run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))
+    assert app.appels.count("exporter") == n + 1                    # seulement le contrôle final
+
+
+@pytest.mark.parametrize("champ,val", [("expire_a", float("inf")), ("expire_a", "abc"),
+                                       ("verifie_a", "abc"), ("verifie_a", float("nan")),
+                                       ("verifie_a", 10 ** 12), ("verifie_a", None)])
+def test_restitution_explicite_dates_illisibles_refusee_404(champ, val):
+    import json
+    ex, app = FauxExecuteur(), AppAEtat()
+    a = _verifie(app, ex)
+    f = P._dossier() / "paquets.json"
+    tout = json.loads(f.read_text())
+    tout[_id(a)][champ] = val
+    f.write_text(json.dumps(tout))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))
+    assert e.value.statut == 404 and not _import_appele(app)
+
+
+@pytest.mark.parametrize("raison,texte", [("injoignable", "application injoignable : rien n'a été modifié"),
+                                          ("identite", "identité non transmissible : rien n'a été modifié")])
+def test_reset_injoignable_ou_identite_certain_avant_effet_502_non_consomme(raison, texte):
+    ex, app, v, e = _reset_avec_erreur(ContratErreur("x", None, raison), efface=False)
+    assert e.statut == 502 and e.message == texte
+    assert P.lire(_id(v))["consomme_a"] is None
+
+
+def test_reset_injoignable_puis_restitution_implicite_404_aucun_candidat():
+    ex, app, v, e = _reset_avec_erreur(ContratErreur("x", None, "injoignable"), efface=False)
+    app.donnees = {"series": 4, "profils": 4}                       # l'utilisateur continue
+    with pytest.raises(D.RefusDonnees) as e2:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e2.value.statut == 404 and not _import_appele(app)
+    assert app.donnees == {"series": 4, "profils": 4}
+
+
+@pytest.mark.parametrize("raison,texte", [("injoignable", "application injoignable : rien n'a été modifié"),
+                                          ("identite", "identité non transmissible : rien n'a été modifié")])
+def test_restitution_injoignable_ou_identite_certain_avant_effet_502(raison, texte):
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+    _app_import(app, ContratErreur("x", None, raison))
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(v)))
+    assert e.value.statut == 502 and e.value.message == texte
+    assert P.lire(_id(v))["restitue_a"] is None
+
+
+def test_reset_delai_reste_ambigu_504_et_consomme():
+    ex, app, v, e = _reset_avec_erreur(ContratErreur("x", None, "delai"))
+    assert e.statut == 504 and P.lire(_id(v))["consomme_a"] is not None
+
+
+def test_tout_a_zero_exige_les_memes_cles():
+    assert D._tout_a_zero({"a": 0, "b": 0}, {"a": 5, "b": 1}) is True
+    assert D._tout_a_zero({"a": 0}, {"a": 5, "b": 1}) is False        # clé disparue
+    assert D._tout_a_zero({"a": 0, "b": 0, "c": 0}, {"a": 5, "b": 1}) is False
+    assert D._tout_a_zero({"a": 0}) is True                           # sans référence : inchangé
+
+
+def test_reset_controle_qui_perd_une_cle_n_est_pas_un_succes():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _verifie(app, ex)
+    reel = app.exporter
+    n = {"i": 0}
+
+    async def exporter(u):
+        n["i"] += 1
+        if n["i"] >= 2:
+            return b"x", {"empreinte": "e", "comptages": {"series": 0}}   # « profils » a disparu
+        return await reel(u)
+    app.exporter = exporter
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "incomplet" in e.value.message and _id(v) in e.value.message
+
+
+def test_reset_resurrection_message_donne_l_id_du_paquet():
+    ex, app = FauxExecuteur(), AppAEtat(resurrection=True)
+    v = _verifie(app, ex)
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert f"le paquet {_id(v)} reste restituable avec livraison_donnees_restituer" in e.value.message

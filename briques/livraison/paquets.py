@@ -156,11 +156,11 @@ def dernier_verifie(app: str, h: str, maintenant: Optional[float] = None,
     return max(candidats, key=lambda c: c[0])[1] if candidats else None
 
 
-def dernier_a_restituer(app: str, h: str, maintenant: Optional[float] = None) -> Optional[dict]:
-    """Choix implicite d'une restitution : le paquet vérifié, non expiré, CONSOMMÉ (donc utilisé
-    pour un effacement) et pas encore restitué, le plus récemment consommé ; à défaut, le dernier
-    vérifié non consommé. Jamais le plus frais vérifié : après un reset douteux, une nouvelle
-    vérification photographie un état vide ou partiel."""
+def candidats_a_restituer(app: str, h: str, maintenant: Optional[float] = None) -> list:
+    """Candidats d'une restitution IMPLICITE : vérifiés (date valide), non expirés, CONSOMMÉS par
+    une remise à zéro (date finie) et pas encore restitués, du plus récemment consommé au plus
+    ancien. Aucun repli sur un paquet simplement vérifié : après un reset douteux, une nouvelle
+    vérification photographie un état vide ou partiel. L'appelant refuse si ce n'est pas un seul."""
     now = maintenant if maintenant is not None else time.time()
     candidats = []
     for r in _lire_tout().values():
@@ -177,9 +177,8 @@ def dernier_a_restituer(app: str, h: str, maintenant: Optional[float] = None) ->
             continue
         if math.isfinite(c):
             candidats.append((c, r))
-    if candidats:
-        return max(candidats, key=lambda c: c[0])[1]
-    return dernier_verifie(app, h, now, preuve_s=None)
+    candidats.sort(key=lambda c: c[0], reverse=True)
+    return [r for _, r in candidats]
 
 
 def _est_expire(r: dict, now: float) -> bool:
