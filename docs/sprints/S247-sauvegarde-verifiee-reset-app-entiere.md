@@ -1,6 +1,6 @@
 # S247 — Sauvegarde vérifiée + remise à zéro de l'app entière
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **en cours (partie 1 codée sur `sprint/s247-sauvegarde-verifiee`, spike Dokploy à faire)**.
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **CLOS 2026-11-27 — prouvé en live sur main** (1 sauvegarde vérifiée, 2a vérification par exécuteur, 2b reset bleu/vert + retour arrière, 2c rétention du registre Forgejo).
 Dépend de : S245 (prérequis d'approbation), S246 (Dokploy, brique `livraison`).
 Lire d'abord : `docs/specs` S236 (sauvegardes cohérentes), S237b (SeaweedFS), note mémoire
 `sprint-sauvegarde-continue-rpo`.
@@ -84,3 +84,14 @@ Limites connues : un miroir ne copie que le code git (pas tickets/PR) ; Dokploy 
 - Dokploy 0.31.4 : sauvegardes natives pour les bases et le compose, pas pour une application simple (à confirmer au spike, `docs/s247/spike-dokploy.md`).
 - `satisfaire_prerequis` n'a toujours pas de verrou (limite 4 de S245b) ; `enregistrer_preuve` l'appelle séquentiellement et reste idempotent.
 - Reste mineur noté en revue : course minuscule dans `creer` (prérequis calculés hors de la transaction d'insertion), `expire_a=NaN` accepté mais jamais honoré, écritures du registre de preuves de la brique non verrouillées (1 worker à confirmer).
+
+
+## Clôture (2026-11-27)
+Preuves : `docs/s247/preuve-sauvegarde-verifiee.md`, `docs/s247/preuve-reset-bleu-vert.md`, `docs/s247/spike-registre-forgejo.md` (réalisation). Sur main : `0718c8c` (2b), `9a18daa` (descriptions d'outils), `bf5427e`/`4f248e9` (rétention).
+**Reporté (backlog, rien d'urgent)** :
+- Cœur : indexer la preuve de sauvegarde par `app_id` (aujourd'hui par nom, la brique impose le lien).
+- Cas limites non joués en live : écriture dans la base quittée (I2), échange d'hôtes partiel provoqué, 503 sans `LIVRAISON_TRAEFIK_URL`, concurrence pendant un reset, plantage de la brique pendant la bascule.
+- Suppression automatique de la génération N-2 après un retour arrière (aujourd'hui la base quittée est conservée et nommée, à supprimer à la main).
+- Rétention du registre : garde « versions référencées par un rollback Dokploy » non faite (remplacée par « 10 dernières versions ») ; le `DELETE` réel n'a pas encore été exercé.
+- Assistant : il lui arrive d'annoncer une demande sans appeler l'outil (corrigé par les descriptions, à surveiller) ; toujours vérifier la table `approbations` du Cœur.
+- Piège dérive Ansible VM 100 : le playbook complet n'est pas rejoué (ROOT_URL de Forgejo, docker_user_guard) ; unités posées à la main = mêmes contenus que le rôle.
