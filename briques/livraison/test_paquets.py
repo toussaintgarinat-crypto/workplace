@@ -1,0 +1,65 @@
+import json
+
+import pytest
+
+import paquets as P
+
+H = "0123456789abcdef"
+
+
+def _enreg(pid=None, t=1000.0, app="studio"):
+    pid = pid or P.nouveau_id()
+    return P.enregistrer(pid, app, H, P.cle_objet(app, H, pid), "emp", {"series": 1}, "1", t)
+
+
+def test_empreinte_utilisateur_stable_et_sans_clair():
+    assert P.empreinte_utilisateur("claire") == P.empreinte_utilisateur("claire")
+    assert len(P.empreinte_utilisateur("claire")) == 16 and "claire" not in P.empreinte_utilisateur("claire")
+
+
+def test_cle_objet_forme_valide():
+    import re
+    pid = P.nouveau_id()
+    assert re.fullmatch(r"contrat/[a-z0-9_-]{1,40}/[0-9a-f]{16}/[0-9a-f]{32}\.bin",
+                        P.cle_objet("studio", H, pid))
+
+
+@pytest.mark.parametrize("app", ["../x", "Studio", "a/b", "", "x" * 41])
+def test_cle_objet_refuse_app_dangereuse(app):
+    with pytest.raises(ValueError):
+        P.cle_objet(app, H, P.nouveau_id())
+
+
+def test_enregistrer_lire_retention_14_jours():
+    r = _enreg(t=1000.0)
+    assert P.lire(r["id"])["expire_a"] == 1000.0 + 14 * 86400
+    assert P.lire(r["id"])["verifie_a"] is None and "utilisateur" not in r
+
+
+def test_marquer_verifie_et_inconnu():
+    r = _enreg()
+    assert P.marquer_verifie(r["id"], 2000.0)["verifie_a"] == 2000.0
+    assert P.marquer_verifie("0" * 32) is None
+
+
+def test_expires_et_retirer():
+    a, b = _enreg(t=0.0), _enreg(t=10 * 86400.0)
+    ids = [x["id"] for x in P.expires(maintenant=15 * 86400.0)]
+    assert ids == [a["id"]]
+    P.retirer(a["id"])
+    assert P.lire(a["id"]) is None and P.lire(b["id"]) is not None
+    P.retirer(a["id"])  # idempotent
+
+
+def test_registre_illisible_se_lit_comme_vide(tmp_path, monkeypatch):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "paquets.json").write_text("{pas du json")
+    assert P.lire("0" * 32) is None and P.expires() == []
+
+
+def test_journal_sans_donnee_perso():
+    P.journaliser("exporter", "studio", H, "a" * 32, True, 5.0)
+    import os
+    ligne = json.loads(open(os.path.join(os.environ["LIVRAISON_DATA"], "acces.jsonl")).read().strip())
+    assert ligne == {"t": 5.0, "operation": "exporter", "app": "studio", "h": H,
+                     "paquet": "a" * 32, "ok": True}
