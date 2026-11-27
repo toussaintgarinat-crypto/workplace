@@ -18,6 +18,7 @@ persistante, à usage unique, expirante, journalisée.
   l'app) pour `destructif`, et le TTL court.
 - Les capacités sans champ `sensibilite` : comportement inchangé.
 """
+import hashlib
 import hmac
 import json
 import logging
@@ -244,7 +245,7 @@ def creer(capacite: str, args: dict, resume: str, sensibilite: str, origine: str
             "ORDER BY cree_a DESC LIMIT 1", (capacite, emp, sensibilite, user, now)).fetchone()
         if ex:
             return _vue(ex)
-        deja = {p: _preuve_valide_c(c, p, (args or {}).get("app"), user, now) for p in prerequis}
+        deja = {p: _preuve_valide_c(c, p, cle_preuve(p, args), user, now) for p in prerequis}
         id_ = secrets.token_hex(16)
         code = f"{secrets.randbelow(10 ** 6):06d}" if sensibilite == "destructif" else None
         c.execute(
@@ -445,6 +446,25 @@ def _norm_cle(cle) -> str:
     return str(cle or "").strip().lower()
 
 
+# Preuves liées à une CIBLE (utilisateur visé) en plus de l'app : S248 3b. Les autres preuves
+# (`preuve_sauvegarde`, S247) restent liées à l'app seule.
+PREUVES_PAR_CIBLE = frozenset({"paquet_verifie"})
+
+
+def cle_preuve(nom: str, args: dict | None):
+    """Clé sous laquelle une preuve `nom` est enregistrée/cherchée pour ces arguments.
+    Hors `PREUVES_PAR_CIBLE` : l'`app` telle quelle (comportement S247). Par cible : `app|h` où
+    `h = sha256(utilisateur)[:16]` (jamais l'identité en clair en base) ; `None` si l'app ou
+    l'utilisateur visé manque (fail closed : aucune preuve ne peut s'y rattacher)."""
+    a = args or {}
+    if nom not in PREUVES_PAR_CIBLE:
+        return a.get("app")
+    app, cible = a.get("app"), a.get("utilisateur")
+    if not (isinstance(app, str) and app.strip() and isinstance(cible, str) and cible.strip()):
+        return None
+    return f"{_norm_cle(app)}|{hashlib.sha256(cible.encode('utf-8')).hexdigest()[:16]}"
+
+
 def _assurer_preuves(c) -> None:
     c.execute("""CREATE TABLE IF NOT EXISTS preuves (
                     nom TEXT NOT NULL, cle TEXT NOT NULL, utilisateur TEXT NOT NULL,
@@ -500,7 +520,7 @@ def _prerequis_tenus(c, r, args: dict, now: float) -> bool:
         return True
     changes = False
     for nom, v in p.items():
-        if v and not _preuve_valide_c(c, nom, (args or {}).get("app"), r["utilisateur"], now):
+        if v and not _preuve_valide_c(c, nom, cle_preuve(nom, args), r["utilisateur"], now):
             p[nom] = False
             changes = True
     if changes:
@@ -543,7 +563,7 @@ def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None
                            "AND statut IN ('en_attente','approuvee')", (user,)).fetchall():
             try:
                 cle_demande = _cle_canonique(
-                    c, nom, json.loads(r["args"] or "{}").get("app"), user)
+                    c, nom, cle_preuve(nom, json.loads(r["args"] or "{}")), user)
                 prereq = json.loads(r["prerequis"] or "{}")
             except (ValueError, AttributeError):
                 continue
@@ -580,7 +600,7 @@ def enregistrer_preuve(nom: str, cles: list[str], preuve_id: str, expire_a: floa
         rows = c.execute(
             "SELECT id, prerequis, args FROM approbations WHERE statut='en_attente' "
             "AND utilisateur=? AND expire_a>?", (user, now)).fetchall()
-        rows = [(r, _cle_canonique(c, nom, _args_de_ligne(r).get("app"), user)) for r in rows]
+        rows = [(r, _cle_canonique(c, nom, cle_preuve(nom, _args_de_ligne(r)), user)) for r in rows]
     liberees = []
     for r, cle_demande in rows:
         try:
