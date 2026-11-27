@@ -134,3 +134,20 @@ def test_lire_refuse_nom_d_app_hors_forme(monkeypatch, tmp_path):
     _ecrire(monkeypatch, tmp_path, {"my.app": ENTREE, "studio": ENTREE})
     assert contrats.lire("my.app") is None
     assert contrats.lire("studio") is not None
+
+
+def test_la_cle_support_n_est_pas_remplacable_par_un_en_tete_appelant(monkeypatch):
+    def h(req):
+        assert req.headers["x-support-key"] == "cle-support"
+        return httpx.Response(200, json={"ok": True})
+    app = _app(h, monkeypatch)
+    asyncio.run(app._appel("POST", "/support/verifier", headers={"X-Support-Key": "pirate"}))
+
+
+@pytest.mark.parametrize("methode", ["verifier", "importer"])
+def test_identite_non_ascii_refusee_avant_toute_requete(monkeypatch, methode):
+    appels = []
+    app = _app(lambda r: appels.append(r) or httpx.Response(200, json={}), monkeypatch)
+    with pytest.raises(ContratErreur) as e:
+        asyncio.run(getattr(app, methode)("clairé", b"P"))
+    assert not appels and "clairé" not in str(e.value) and e.value.raison == "identite"

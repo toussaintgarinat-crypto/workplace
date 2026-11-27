@@ -238,15 +238,33 @@ def test_identite_egale_a_une_cle_secrete_refusee(monkeypatch, secret_env):
 
 
 def test_verifier_et_importer_exigent_l_entete_et_ignorent_la_query():
+    peupler("claire")
+    paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
     for route in ("verifier", "importer"):
-        r = client.post(f"/support/{route}?utilisateur=claire", content=b"x", headers=H)
-        assert r.status_code == 422, route                       # la query ne suffit plus
-        r = client.post(f"/support/{route}", content=b"x", headers={**H, "X-Utilisateur": "  "})
-        assert r.status_code == 422, route
+        r = client.post(f"/support/{route}?utilisateur=claire", content=paquet, headers=H)
+        assert r.status_code == 422 and r.json()["detail"] == "utilisateur manquant", route
+        r = client.post(f"/support/{route}", content=paquet, headers={**H, "X-Utilisateur": "  "})
+        assert r.status_code == 422 and r.json()["detail"] == "utilisateur manquant", route
 
 
 def test_importer_lit_l_utilisateur_dans_l_entete():
     peupler("claire")
-    paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
-    r = client.post("/support/verifier", content=paquet, headers={**H, "X-Utilisateur": "claire"})
+    exp = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H)
+    paquet, emp = exp.content, exp.headers["x-empreinte"]
+    comptages = json.loads(exp.headers["x-comptages"])
+    r = client.post("/support/reinitialiser",
+                    json={"utilisateur": "claire", "empreinte": emp}, headers=H)
+    assert r.status_code == 200 and not os.path.exists(S._path("serie-claire"))
+    r = client.post("/support/importer", content=paquet, headers={**H, "X-Utilisateur": "claire"})
     assert r.status_code == 200 and r.json()["ok"] is True
+    assert r.json()["comptages"] == comptages and os.path.exists(S._path("serie-claire"))
+
+
+def test_cle_prioritaire_sur_l_identite_manquante(monkeypatch):
+    for route in ("verifier", "importer"):
+        assert client.post(f"/support/{route}", content=b"x").status_code == 401
+        assert client.post(f"/support/{route}", content=b"x",
+                           headers={"X-Support-Key": "fausse"}).status_code == 401
+    monkeypatch.delenv("STUDIO_SUPPORT_KEY")
+    for route in ("verifier", "importer"):
+        assert client.post(f"/support/{route}", content=b"x", headers=H).status_code == 503

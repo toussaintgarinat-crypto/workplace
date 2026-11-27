@@ -22,6 +22,11 @@ CHEMIN_VERIFIER = "/support/verifier"   # fixe : hors bloc (le bloc n'a que 3 ac
 DELAI_S = 120.0
 
 
+def _identite_transmissible(utilisateur: str) -> None:
+    if not utilisateur.isascii():
+        raise ContratErreur("identité non transmissible", None, "identite")
+
+
 class ContratErreur(Exception):
     def __init__(self, message: str, statut: Optional[int] = None, raison: str = ""):
         super().__init__(message)
@@ -92,7 +97,7 @@ class AppContrat:
         try:
             async with httpx.AsyncClient(base_url=self._e["url"], transport=self._transport,
                                          timeout=self._delai) as c:
-                r = await c.request(methode, chemin, headers={"X-Support-Key": self._cle, **kw.pop("headers", {})}, **kw)
+                r = await c.request(methode, chemin, headers={**kw.pop("headers", {}), "X-Support-Key": self._cle}, **kw)
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise ContratErreur("application injoignable", None, "injoignable") from None
         except httpx.HTTPError:
@@ -126,6 +131,7 @@ class AppContrat:
         return r.content, {"empreinte": emp, "comptages": comptages}
 
     async def verifier(self, utilisateur: str, paquet: bytes) -> dict:
+        _identite_transmissible(utilisateur)
         r = await self._appel("POST", CHEMIN_VERIFIER, headers={"X-Utilisateur": utilisateur},
                               content=paquet)
         return _json_dict(r)
@@ -136,6 +142,7 @@ class AppContrat:
         return _json_dict(r)
 
     async def importer(self, utilisateur: str, paquet: bytes) -> dict:
+        _identite_transmissible(utilisateur)
         r = await self._appel("POST", self._action("importer"),
                               headers={"X-Utilisateur": utilisateur}, content=paquet)
         return _json_dict(r)
