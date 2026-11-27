@@ -24,6 +24,15 @@ TAILLE_MAX = 64 * 1024 * 1024
 MEMBRES = ("meta.json", "donnees.json")
 ACTIONS = ("exporter", "reinitialiser", "importer")
 _CHIFFRES_ASCII = re.compile(r"[0-9]+")
+_CHEMIN_SUR = re.compile(r"/support/[A-Za-z0-9._~/-]+")
+
+
+def chemin_support_sur(chemin) -> bool:
+    """Chemin interne `/support/...` : alphabet restreint (donc ni `%`, ni `\\`, ni espace, ni `?`),
+    aucun segment vide, `.` ou `..`, pas de `/` final."""
+    if not (isinstance(chemin, str) and _CHEMIN_SUR.fullmatch(chemin)):
+        return False
+    return all(seg not in ("", ".", "..") for seg in chemin.split("/")[1:])
 
 
 class PaquetInvalide(Exception):
@@ -149,8 +158,6 @@ def valider_bloc_contrat(bloc) -> list:
             continue
         if a.get("methode") != "POST":
             erreurs.append(f"{action}.methode doit être POST")
-        chemin = a.get("chemin")
-        if not (isinstance(chemin, str) and chemin.startswith("/support/")
-                and ".." not in chemin.split("/")):
-            erreurs.append(f"{action}.chemin doit commencer par /support/")
+        if not chemin_support_sur(a.get("chemin")):
+            erreurs.append(f"{action}.chemin doit commencer par /support/ et rester sûr")
     return erreurs

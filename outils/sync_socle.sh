@@ -20,7 +20,7 @@ SOCLE_BRIQUES=(studio personnages restaurant)
 # Consommateurs du design system CSS (briques servant un front.html autoporté).
 CSS_BRIQUES=(synopsis voix personnages studio transcription atelier-veille atelier-images-video)
 # Consommateurs de la bibliothèque du contrat de données (S248) — stdlib pure.
-CONTRAT_BRIQUES=(studio)
+CONTRAT_BRIQUES=(studio livraison)
 
 n=0
 for b in "${SOCLE_BRIQUES[@]}"; do

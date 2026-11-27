@@ -225,3 +225,25 @@ def test_surrogate_dans_meta_refusee_signature():
     meta["app"] = "\ud800"
     m["meta.json"] = json.dumps(meta).encode()
     assert _raison(_tar(m)) == "signature"
+
+
+BLOC_OK = {"version_schema": "1",
+           "exporter": {"methode": "POST", "chemin": "/support/exporter"},
+           "reinitialiser": {"methode": "POST", "chemin": "/support/reinitialiser"},
+           "importer": {"methode": "POST", "chemin": "/support/importer"}}
+
+
+@pytest.mark.parametrize("chemin", [
+    "/support/%2e%2e/x", "/support/%2E%2E/x", "/support/./x", "/support//x",
+    "/support/a\\b", "/support/exporter/", "/support/a b", "/support/a?x=1", "/support/é",
+    "/support/", "/supportx/exporter"])
+def test_chemin_dangereux_refuse(chemin):
+    assert C.chemin_support_sur(chemin) is False
+    bloc = dict(BLOC_OK, exporter={"methode": "POST", "chemin": chemin})
+    assert C.valider_bloc_contrat(bloc)
+
+
+def test_chemins_sains_acceptes():
+    for ch in ("/support/exporter", "/support/v1/exporter", "/support/a-b_c.d~e"):
+        assert C.chemin_support_sur(ch) is True
+    assert C.valider_bloc_contrat(BLOC_OK) == []
