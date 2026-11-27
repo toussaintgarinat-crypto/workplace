@@ -36,6 +36,57 @@
 
 ---
 
+### Task 0 : L'identité hors de l'URL (prérequis levé par la revue finale de 3a)
+
+**Pourquoi :** `/support/verifier` et `/support/importer` reçoivent `?utilisateur=` : l'identité visée apparaît dans les journaux d'accès d'uvicorn (Studio), ce qui contredit « jamais en clair ». Les routes `exporter`/`reinitialiser` la reçoivent déjà dans un corps JSON. On la passe en en-tête `X-Utilisateur` pour `verifier` et `importer`, et on ne l'accepte PLUS en query.
+
+**Files :**
+- Modify : `briques/studio/main.py` (routes `support_verifier`, `support_importer`, `_cible`)
+- Modify : `briques/livraison/contrats.py` (`AppContrat.verifier`, `AppContrat.importer`)
+- Modify (tests) : `briques/studio/test_support_routes.py` (toutes les occurrences de `?utilisateur=` / `params={"utilisateur"…}`, y compris l'adaptateur `AdaptateurStudio` du harnais), `briques/livraison/test_contrats.py` (`test_verifier_envoie_les_octets_et_l_utilisateur_en_query` → en-tête)
+- Modify (docs) : `docs/GUIDE-contrat-donnees.md` (tableau §3 : `verifier`/`importer` prennent l'en-tête `X-Utilisateur` ; retirer la limite « identité dans la query string »)
+
+**Interfaces :**
+- Produces : en-tête `X-Utilisateur` (texte ASCII, mêmes règles que `_cible`) obligatoire sur `POST /support/verifier` et `POST /support/importer` ; `?utilisateur=` n'est plus lu (une requête sans l'en-tête → 422 `utilisateur manquant`, même avec la query).
+
+- [ ] **Step 1 : Tests qui échouent** — dans `test_support_routes.py`, ajouter :
+
+```python
+def test_verifier_et_importer_exigent_l_entete_et_ignorent_la_query():
+    for route in ("verifier", "importer"):
+        r = client.post(f"/support/{route}?utilisateur=claire", content=b"x", headers=H)
+        assert r.status_code == 422, route                       # la query ne suffit plus
+        r = client.post(f"/support/{route}", content=b"x", headers={**H, "X-Utilisateur": "  "})
+        assert r.status_code == 422, route
+
+
+def test_importer_lit_l_utilisateur_dans_l_entete():
+    peupler("claire")
+    paquet = client.post("/support/exporter", json={"utilisateur": "claire"}, headers=H).content
+    r = client.post("/support/verifier", content=paquet, headers={**H, "X-Utilisateur": "claire"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+```
+et mettre à jour dans `test_contrats.py` le test d'envoi pour qu'il asserte `req.headers["x-utilisateur"] == "claire"` et `"utilisateur" not in req.url.params` (et l'absence de `utilisateur` dans `str(req.url)`).
+
+- [ ] **Step 2 :** `cd briques/studio && /usr/local/bin/python3.11 -m pytest test_support_routes.py -q -p no:cacheprovider` et `cd ../livraison && … test_contrats.py` → FAIL.
+
+- [ ] **Step 3 : Implémenter** — `briques/studio/main.py`, après `_cible` :
+
+```python
+def _cible_entete(x_utilisateur: Optional[str] = Header(None)) -> str:
+    """Identité visée par `verifier`/`importer` : EN-TÊTE, jamais la query (les journaux d'accès
+    d'uvicorn écrivent l'URL). Mêmes contrôles que `_cible`."""
+    return _cible(x_utilisateur or "")
+```
+et remplacer, dans `support_verifier` et `support_importer`, le paramètre `utilisateur: str` par `u: str = Depends(_cible_entete)` (supprimer la ligne `u = _cible(utilisateur)`). `briques/livraison/contrats.py` : dans `verifier` et `importer`, remplacer `params={"utilisateur": utilisateur}` par `headers={"X-Utilisateur": utilisateur}` et faire fusionner `_appel` les en-têtes : `headers={"X-Support-Key": self._cle, **kw.pop("headers", {})}`.
+Mettre à jour tous les autres appels de test (grep `utilisateur=` dans `briques/studio/test_*.py` et `shared/`) vers l'en-tête.
+
+- [ ] **Step 4 :** `cd briques/studio && … pytest -q -p no:cacheprovider` ; `cd ../livraison && … pytest -q -p no:cacheprovider` ; `cd ../.. && /usr/local/bin/python3.11 -m pytest shared -q -p no:cacheprovider` → PASS.
+
+- [ ] **Step 5 : Commit** `git commit -am "fix(s248): l'identité visée passe en en-tête X-Utilisateur (plus dans l'URL des journaux d'accès)"`
+
+---
+
 ### Task 1 : Cœur — clé de preuve composite par cible
 
 **Files :**
