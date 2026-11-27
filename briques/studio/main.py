@@ -70,15 +70,8 @@ def cle_api(x_api_key: Optional[str] = Header(None),
 
 
 def _identite_effective(serie: dict) -> str:
-    """Normalise `cree_par` à la LECTURE (jamais réécrit dans le fichier, S187) : une valeur
-    legacy — mode ouvert historique (`"public"`) ou ancienne `STUDIO_KEY` brute d'avant ce
-    sprint — est traitée comme `"perso"`, le bucket mono-user par défaut du dialecte par
-    personne. N'affecte PAS le dialecte BYO : la clé d'un client reste sa propre identité."""
-    valeur = serie.get("cree_par")
-    studio_key = os.environ.get("STUDIO_KEY", "").strip()
-    if studio_key and (valeur in (None, "public") or valeur == studio_key):
-        return "perso"
-    return valeur if valeur is not None else "public"
+    """Voir `studio.identite_effective` (même règle, S187) — conservé comme alias."""
+    return S.identite_effective(serie)
 
 
 def charger(serie_id: str, identite: str) -> dict:

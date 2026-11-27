@@ -170,6 +170,18 @@ def _save_compte(identite: str, compte: dict) -> None:
         json.dump(compte, f, ensure_ascii=False, indent=2)
 
 
+def identite_effective(objet: dict) -> str:
+    """Normalise `cree_par` à la LECTURE (jamais réécrit dans le fichier, S187) : une valeur
+    legacy — mode ouvert historique (`"public"`) ou ancienne `STUDIO_KEY` brute d'avant S187 —
+    est traitée comme `"perso"`, le bucket mono-user par défaut du dialecte par personne.
+    N'affecte PAS le dialecte BYO : la clé d'un client reste sa propre identité."""
+    valeur = objet.get("cree_par")
+    studio_key = os.environ.get("STUDIO_KEY", "").strip()
+    if studio_key and (valeur in (None, "public") or valeur == studio_key):
+        return "perso"
+    return valeur if valeur is not None else "public"
+
+
 # ── Hiérarchie : Série → Cycles → Tomes → Chapitres (= episodes) ──
 
 def _tous_tomes(serie: dict) -> list:

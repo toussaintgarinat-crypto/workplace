@@ -19,6 +19,8 @@ CSS="shared/static/workplace.css"
 SOCLE_BRIQUES=(studio personnages restaurant)
 # Consommateurs du design system CSS (briques servant un front.html autoporté).
 CSS_BRIQUES=(synopsis voix personnages studio transcription atelier-veille atelier-images-video)
+# Consommateurs de la bibliothèque du contrat de données (S248) — stdlib pure.
+CONTRAT_BRIQUES=(studio)
 
 n=0
 for b in "${SOCLE_BRIQUES[@]}"; do
@@ -36,5 +38,10 @@ done
 # Le Cœur sert aussi le design system (dashboard) ; contexte de build = core/.
 cp "$CSS" "core/workplace.css"
 echo "→ core/workplace.css"; n=$((n+1))
+
+for b in "${CONTRAT_BRIQUES[@]}"; do
+  cp "shared/contrat_donnees.py" "briques/$b/contrat_donnees.py"
+  echo "→ briques/$b/contrat_donnees.py"; n=$((n+1))
+done
 
 echo "Assets front synchronisés dans $n cible(s)."
