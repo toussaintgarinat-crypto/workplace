@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import io
 import json
+import re
 import tarfile
 import zlib
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ FORMAT = 1
 TAILLE_MAX = 64 * 1024 * 1024
 MEMBRES = ("meta.json", "donnees.json")
 ACTIONS = ("exporter", "reinitialiser", "importer")
+_CHIFFRES_ASCII = re.compile(r"[0-9]+")
 
 
 class PaquetInvalide(Exception):
@@ -32,7 +34,7 @@ class PaquetInvalide(Exception):
 
 def _canon(obj) -> bytes:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
+                      separators=(",", ":")).encode("utf-8", "surrogatepass")
 
 
 def empreinte(objets: dict) -> str:
@@ -48,13 +50,13 @@ def _signer(meta_sans_signature: dict, cle: bytes) -> str:
 
 
 def _version(v) -> int:
-    try:
-        n = int(str(v))
-    except ValueError:
+    s = str(v)
+    if not _CHIFFRES_ASCII.fullmatch(s):
         raise PaquetInvalide("format", "version_schema non numérique")
-    if n < 0:
-        raise PaquetInvalide("format", "version_schema négative")
-    return n
+    try:
+        return int(s)
+    except ValueError:   # chaîne plus longue que la limite de conversion de int
+        raise PaquetInvalide("format", "version_schema trop longue")
 
 
 def construire_paquet(app: str, utilisateur: str, version_schema: str, objets: dict,
@@ -105,10 +107,13 @@ def lire_paquet(octets: bytes, cle: bytes, app: str, utilisateur: str,
         meta = json.loads(membres["meta.json"])
         if not isinstance(meta, dict):
             raise ValueError
-    except ValueError:
+    except (ValueError, RecursionError):
         raise PaquetInvalide("illisible", "meta.json")
     signature = meta.pop("signature", "")
-    if not isinstance(signature, str) or not hmac.compare_digest(signature, _signer(meta, cle)):
+    # Comparaison en octets : compare_digest refuse les str non ASCII (TypeError).
+    if not isinstance(signature, str) or not hmac.compare_digest(
+            signature.encode("utf-8", "surrogatepass"),
+            _signer(meta, cle).encode("ascii")):
         raise PaquetInvalide("signature")
     if meta.get("format") != FORMAT:
         raise PaquetInvalide("format")
@@ -118,7 +123,7 @@ def lire_paquet(octets: bytes, cle: bytes, app: str, utilisateur: str,
         objets = json.loads(membres["donnees.json"])
         if not isinstance(objets, dict):
             raise ValueError
-    except ValueError:
+    except (ValueError, RecursionError):
         raise PaquetInvalide("illisible", "donnees.json")
     if meta.get("app") != app:
         raise PaquetInvalide("app")
@@ -135,7 +140,7 @@ def valider_bloc_contrat(bloc) -> list:
         return ["contrat_donnees absent ou n'est pas un objet"]
     erreurs = []
     v = bloc.get("version_schema")
-    if not (isinstance(v, str) and v.isdigit()):
+    if not (isinstance(v, str) and _CHIFFRES_ASCII.fullmatch(v)):
         erreurs.append("version_schema doit être une chaîne numérique")
     for action in ACTIONS:
         a = bloc.get(action)
@@ -145,6 +150,7 @@ def valider_bloc_contrat(bloc) -> list:
         if a.get("methode") != "POST":
             erreurs.append(f"{action}.methode doit être POST")
         chemin = a.get("chemin")
-        if not (isinstance(chemin, str) and chemin.startswith("/support/")):
+        if not (isinstance(chemin, str) and chemin.startswith("/support/")
+                and ".." not in chemin.split("/")):
             erreurs.append(f"{action}.chemin doit commencer par /support/")
     return erreurs
