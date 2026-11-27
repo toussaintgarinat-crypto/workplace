@@ -6,6 +6,7 @@ Docker. Ce service est le seul à toucher Docker : il n'accepte qu'UN ordre, val
 Stdlib seule. Secrets S3 : configuration d'environnement, passés à curl par stdin (jamais argv).
 """
 import gzip
+import hashlib
 import hmac
 import json
 import os
@@ -127,6 +128,42 @@ def telecharger(runner, cfg: dict, objet: str, dest: Path) -> None:
                              "--max-filesize", "536870912", "-K", "-", "-o", str(dest), url], stdin=identifiants, timeout=600)
     if code != 0:
         raise ErreurExecuteur(502, "téléchargement de la sauvegarde impossible")
+
+
+RE_CLE_OBJET = re.compile(r"contrat/[a-z0-9_-]{1,40}/[0-9a-f]{16}/[0-9a-f]{32}\.bin")
+MAX_OBJET = 80 * 1024 * 1024
+PREFIXE_OBJETS = "/objets/"
+
+
+def cle_objet(chemin: str) -> str:
+    cle = chemin[len(PREFIXE_OBJETS):] if chemin.startswith(PREFIXE_OBJETS) else ""
+    if not RE_CLE_OBJET.fullmatch(cle):
+        raise ErreurExecuteur(400, "objet invalide")
+    return cle
+
+
+def _curl_objet(runner, cfg: dict, cle: str, args: list, echec: str) -> None:
+    url = f"{cfg['S3_ENDPOINT'].rstrip('/')}/{cfg['S3_BUCKET']}/{cle}"
+    identifiants = f'user = "{cfg["S3_KEY"]}:{cfg["S3_SECRET"]}"\n'.encode()
+    code, _, _ = runner.run(["curl", "-sS", "-f", "--aws-sigv4", f"aws:amz:{cfg['S3_REGION']}:s3",
+                             *args, "-K", "-", url], stdin=identifiants, timeout=600)
+    if code != 0:
+        raise ErreurExecuteur(502, echec)
+
+
+def deposer_objet(runner, cfg: dict, cle: str, source: Path) -> None:
+    sha = hashlib.sha256(source.read_bytes()).hexdigest()   # signé explicitement (pas d'UNSIGNED-PAYLOAD)
+    _curl_objet(runner, cfg, cle, ["-X", "PUT", "-H", f"x-amz-content-sha256: {sha}",
+                                   "-T", str(source)], "dépôt de l'objet impossible")
+
+
+def lire_objet(runner, cfg: dict, cle: str, dest: Path) -> None:
+    _curl_objet(runner, cfg, cle, ["--max-filesize", str(MAX_OBJET), "-o", str(dest)],
+                "lecture de l'objet impossible")
+
+
+def supprimer_objet(runner, cfg: dict, cle: str) -> None:
+    _curl_objet(runner, cfg, cle, ["-X", "DELETE"], "suppression de l'objet impossible")
 
 
 def _resultat(verdict, raison, origine, restaure, debut, nettoyage="ok"):
@@ -292,7 +329,62 @@ def fabrique_handler(runner, cfg: dict):
             self.end_headers()
             self.wfile.write(corps)
 
+        def _authentifie(self) -> bool:
+            presentee = self.headers.get("X-API-Key", "")
+            if hmac.compare_digest(presentee.encode(), cfg["KEY"].encode()):
+                return True
+            self._rep(401, {"erreur": "clé invalide"})
+            return False
+
+        def _objet(self, methode: str):
+            if not self.path.startswith(PREFIXE_OBJETS):
+                return self._rep(404, {"erreur": "introuvable"})
+            if not self._authentifie():
+                return
+            try:
+                cle = cle_objet(self.path)
+                with tempfile.TemporaryDirectory() as tmp:
+                    f = Path(tmp) / "objet.bin"
+                    if methode == "PUT":
+                        taille = int(self.headers.get("Content-Length", "0") or 0)
+                        if taille <= 0:
+                            raise ErreurExecuteur(400, "corps invalide")
+                        if taille > MAX_OBJET:
+                            raise ErreurExecuteur(413, "objet trop gros")
+                        restant = taille
+                        with open(f, "wb") as out:
+                            while restant:
+                                morceau = self.rfile.read(min(restant, 1 << 20))
+                                if not morceau:
+                                    raise ErreurExecuteur(400, "corps incomplet")
+                                out.write(morceau)
+                                restant -= len(morceau)
+                        deposer_objet(runner, cfg, cle, f)
+                        return self._rep(200, {"ok": True})
+                    if methode == "DELETE":
+                        supprimer_objet(runner, cfg, cle)
+                        return self._rep(200, {"ok": True})
+                    lire_objet(runner, cfg, cle, f)
+                    octets = f.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(octets)))
+                self.end_headers()
+                self.wfile.write(octets)
+            except ErreurExecuteur as e:
+                self._rep(e.statut, {"erreur": e.message})
+            except Exception:   # jamais de détail ni de trace vers le client
+                self._rep(500, {"erreur": "erreur interne de l'exécuteur"})
+
+        def do_PUT(self):
+            self._objet("PUT")
+
+        def do_DELETE(self):
+            self._objet("DELETE")
+
         def do_GET(self):
+            if self.path.startswith(PREFIXE_OBJETS):
+                return self._objet("GET")
             if self.path == "/sante":
                 return self._rep(200, {"ok": True, "service": "executeur-restauration"})
             self._rep(404, {"erreur": "introuvable"})
