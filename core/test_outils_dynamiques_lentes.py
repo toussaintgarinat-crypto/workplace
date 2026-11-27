@@ -25,3 +25,19 @@ def test_route_quelconque_garde_le_timeout_du_client():
 def test_timeout_verification_depasse_le_delai_global_de_la_brique():
     # 540 = sauvegarde.DELAI_GLOBAL_S (briques/livraison) : le Cœur ne doit jamais couper avant.
     assert outils_communs.TIMEOUT_VERIFICATION > 540
+
+
+def test_routes_contrat_de_donnees_ont_le_timeout_donnees():
+    for chemin in ("/contrats/{app}/exporter", "/contrats/{app}/verifier",
+                   "/contrats/{app}/reinitialiser", "/contrats/{app}/restituer"):
+        assert outils_communs._timeout_dynamique(_cap(chemin)) == outils_communs.TIMEOUT_DONNEES, chemin
+
+
+def test_sauvegardes_verifier_garde_son_propre_timeout():
+    assert outils_communs._timeout_dynamique(_cap("/apps/{app}/sauvegardes/verifier")) \
+        == outils_communs.TIMEOUT_VERIFICATION
+
+
+def test_timeout_donnees_depasse_le_delai_global_de_la_brique():
+    # 540 = donnees_utilisateur.DELAI_GLOBAL_DONNEES_S (briques/livraison) : jamais de coupure avant.
+    assert outils_communs.TIMEOUT_DONNEES > 540

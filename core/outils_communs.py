@@ -123,11 +123,19 @@ TIMEOUT_MUTATION_LONGUE = 120.0
 TIMEOUT_SAUVEGARDE = 180.0  # enchaîne plusieurs appels Dokploy de 60 s
 # Vérification par restauration : la brique borne le total à 540 s (sauvegarde.DELAI_GLOBAL_S), le Cœur ne coupe jamais avant.
 TIMEOUT_VERIFICATION = 600.0
+# Contrat de données (livraison, S248 3b) : la brique borne chaque orchestration à 540 s
+# (donnees_utilisateur.DELAI_GLOBAL_DONNEES_S). Couper à 30 s (défaut du client) rapporterait en
+# échec une remise à zéro qui aboutit derrière (S246 : double exécution) : le Cœur ne coupe jamais avant.
+TIMEOUT_DONNEES = 600.0
 _ROUTES_DYNAMIQUES_LENTES = (("/redemarrer", TIMEOUT_MUTATION_LONGUE),
                              ("/rollback", TIMEOUT_MUTATION_LONGUE),
                              ("/deployer", TIMEOUT_MUTATION_LONGUE),
                              ("/sauvegarder", TIMEOUT_SAUVEGARDE),
-                             ("/sauvegardes/verifier", TIMEOUT_VERIFICATION))
+                             ("/sauvegardes/verifier", TIMEOUT_VERIFICATION),
+                             ("/exporter", TIMEOUT_DONNEES),
+                             ("/verifier", TIMEOUT_DONNEES),
+                             ("/reinitialiser", TIMEOUT_DONNEES),
+                             ("/restituer", TIMEOUT_DONNEES))
 
 
 def _timeout_dynamique(cap: dict) -> float | None:
