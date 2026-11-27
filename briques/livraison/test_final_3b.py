@@ -127,7 +127,7 @@ def test_restitution_504_et_409_portent_l_id_et_le_409_dit_applique():
 
     async def importer_partiel(u, p):
         await vrai(u, p)
-        app.donnees = {"series": 9, "profils": 9}
+        app.donnees = {"series": 1, "profils": 0}      # moins que le paquet : import partiel
     app.importer = importer_partiel
     with pytest.raises(D.RefusDonnees) as e:
         run(D.restituer_donnees(app, ex, "claire", paquet_id=pid))

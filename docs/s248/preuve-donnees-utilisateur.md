@@ -5,15 +5,19 @@ réelle tant qu'elle n'est pas remplie. Utilisateurs TÉMOINS uniquement, jamais
 
 ## Prérequis et déploiement
 
+Ordre obligatoire : 1) image du Cœur (3b) reconstruite sur le Mac et chargée (`docker save | ssh
+debian@192.168.1.89 docker load`) ; 2) Studio 0.6.2 et livraison 0.3.0 ensemble ; 3) Cœur recréé
+(relit le registre des manifestes). Un ancien Cœur indexe la preuve par app seule et coupe à 30 s.
+
 | Étape | Commande / vérification | Résultat |
 |---|---|---|
 | Images construites sur le Mac (livraison, studio : tags du compose, code 3b ; Studio reconstruit : en-tête `X-Utilisateur`) | `docker save \| ssh debian@192.168.1.89 docker load` | |
-| Retour arrière gardé (`livraison:0.1.0`, `studio:0.6.0`) | `docker images` | |
+| Retour arrière gardé (`workplace/livraison:0.2.0`, `workplace/studio:0.6.1`, image du Cœur : tag à relever sur le HP avant build : `docker inspect`) | `docker images` | |
 | `executeur.py` sur la VM 100, service redémarré | `GET /sante` | |
 | Limite du reverse proxy (80 Mio) | | |
 | `LIVRAISON_CHIFFREMENT_CLE`, `STUDIO_SUPPORT_KEY` posées (0600, même valeur côté Studio) | | |
 | `/data/contrats.json` avec l'URL réelle du Studio | | |
-| Cœur redémarré ; tags réels en service | `docker inspect` | |
+| Cœur recréé en dernier (image 3b déjà chargée) ; tags réels en service | `docker inspect` | |
 
 ## Jeu de données
 
@@ -41,7 +45,7 @@ réelle tant qu'elle n'est pas remplie. Utilisateurs TÉMOINS uniquement, jamais
 | a | Modifier un octet de l'objet dans SeaweedFS puis reset | refus 409 « illisible », rien effacé | |
 | b | Écrire une série pour temoin-a entre vérification et reset | refus 409 « les données ont changé » | |
 | c | Restitution implicite avec espace NON vide | refus 409 (« ni vide ni identique »), rien restitué | |
-| d | Restitution implicite avec 2 paquets consommés candidats | refus 409 listant les identifiants ; `paquet_id` explicite = écrasement voulu | |
+| d | Restitution implicite avec 2 paquets consommés candidats | refus 409 listant les identifiants ; `paquet_id` explicite = fusion voulue (objets du paquet remplaçant ceux de même identifiant, plus récents conservés ; réponse `mode: fusion`) | |
 | e | 504 ambigu (app coupée/lente pendant le reset) | message avec l'id du paquet ; `verifier` puis `restituer` si des données manquent | |
 | f | Preuve croisée : vérifier temoin-a puis reset temoin-b | refus, prérequis `False` | |
 | g | Reset rejoué avec le même paquet (déjà consommé) | refus 409 « aucun paquet vérifié et récent » | |

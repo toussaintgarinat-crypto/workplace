@@ -244,6 +244,17 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
         _EN_COURS.discard(cible)
 
 
+def _contient_le_paquet(apres, paquet) -> bool:
+    """Contrôle grossier d'une fusion : chaque comptage du paquet est présent et au moins égal."""
+    if not isinstance(apres, dict) or not isinstance(paquet, dict):
+        return False
+    for k, n in paquet.items():
+        v = apres.get(k)
+        if isinstance(v, bool) or not isinstance(v, int) or not isinstance(n, int) or v < n:
+            return False
+    return True
+
+
 async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] = None,
                             maintenant: Optional[float] = None) -> dict:
     from contrats import ContratErreur
@@ -251,7 +262,7 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
     cible = _prendre(app, h)
     try:
         now = maintenant if maintenant is not None else time.time()
-        if paquet_id:                         # choix délibéré : peut écraser, pas d'état exigé
+        if paquet_id:                         # choix délibéré : fusion, pas d'état exigé
             rec = paquets.lire(paquet_id)
             if not (isinstance(rec, dict) and rec.get("app") == app.nom and rec.get("h") == h
                     and paquets._date_verif(rec, now) is not None):
@@ -278,7 +289,7 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
                     or actuel.get("empreinte") == rec["empreinte"]):
                 raise RefusDonnees(409, "l'état actuel de l'utilisateur n'est ni vide ni identique "
                                         f"au paquet {rec['id']} : rien n'a été restitué ; précise "
-                                        "paquet_id pour écraser volontairement")
+                                        "paquet_id pour fusionner volontairement le paquet dans l'espace actuel")
         try:
             await app.importer(utilisateur, clair)
         except ContratErreur as e:
@@ -295,7 +306,11 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
             raise RefusDonnees(502, "restitution appliquée mais le contrôle final a échoué : "
                                     f"vérifie l'état de l'application ; le paquet {rec['id']} "
                                     f"{_SUITE_RESTITUABLE}") from None
-        if apres["empreinte"] != rec["empreinte"]:
+        if paquet_id:                         # fusion : l'import ne supprime rien, il remplace par identifiant
+            complet = _contient_le_paquet(apres.get("comptages"), rec.get("comptages"))
+        else:
+            complet = apres["empreinte"] == rec["empreinte"]
+        if not complet:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
             raise RefusDonnees(409, "restitution incomplète : le paquet "
                                     f"{rec['id']} a été importé mais l'état restauré ne lui "
@@ -305,7 +320,8 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
         except OSError:
             pass
         _journal("restituer", app.nom, h, rec["id"], True, maintenant)
-        return {"ok": True, "etat": "restitue", "paquet_id": rec["id"],
+        return {"ok": True, "etat": "restitue",
+                "mode": "fusion" if paquet_id else "exacte", "paquet_id": rec["id"],
                 "comptages": apres["comptages"]}
     finally:
         _EN_COURS.discard(cible)

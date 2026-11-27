@@ -262,7 +262,7 @@
     },
     {
       "nom": "livraison_donnees_restituer",
-      "description": "RESTITUE à un utilisateur ses données mises de côté (paquet chiffré vérifié, conservé 14 jours) : réimporte son espace dans l'application. Sans paquet_id : restitue le paquet mis de côté par la dernière remise à zéro, uniquement si l'espace de l'utilisateur est vide (ou identique au paquet) ; si plusieurs paquets sont possibles ou si l'espace n'est pas vide, l'outil refuse et indique les identifiants : redemande alors avec paquet_id, ce qui écrase volontairement l'état actuel. À utiliser après une remise à zéro, à la demande de l'utilisateur lui-même. N'affirme jamais que c'est fait sans le résultat « restitue » de l'outil ; en cas de 504 l'import a peut-être été appliqué : vérifie l'état avant de réessayer. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram. Ne dis JAMAIS « demande envoyée » sans avoir réellement appelé l'outil dans ce tour.",
+      "description": "RESTITUE à un utilisateur ses données mises de côté (paquet chiffré vérifié, conservé 14 jours) : réimporte son espace dans l'application. Sans paquet_id : restitue le paquet mis de côté par la dernière remise à zéro, uniquement si l'espace de l'utilisateur est vide (ou identique au paquet) ; si plusieurs paquets sont possibles ou si l'espace n'est pas vide, l'outil refuse et indique les identifiants : redemande alors avec paquet_id, ce qui FUSIONNE le paquet dans l'espace actuel : les objets du paquet remplacent ceux de même identifiant, les objets plus récents sont conservés (rien n'est supprimé). À utiliser après une remise à zéro, à la demande de l'utilisateur lui-même. N'affirme jamais que c'est fait sans le résultat « restitue » de l'outil ; en cas de 504 l'import a peut-être été appliqué : vérifie l'état avant de réessayer. APPELLE CET OUTIL DIRECTEMENT quand l'utilisateur le demande : c'est l'appel qui crée la demande d'approbation et envoie les boutons Telegram. Ne dis JAMAIS « demande envoyée » sans avoir réellement appelé l'outil dans ce tour.",
       "methode": "POST",
       "chemin": "/contrats/{app}/restituer",
       "params": {
@@ -278,7 +278,7 @@
         },
         "paquet_id": {
           "type": "string",
-          "description": "Identifiant d'un paquet précis (optionnel). Sans lui : seulement le paquet de la dernière remise à zéro, si l'espace est vide. Avec lui : écrase volontairement l'état actuel."
+          "description": "Identifiant d'un paquet précis (optionnel). Sans lui : seulement le paquet de la dernière remise à zéro, si l'espace est vide. Avec lui : fusionne : les objets du paquet remplacent ceux de même identifiant, les objets plus récents sont conservés ; réservé au cas où l'implicite refuse."
         }
       },
       "action": true,

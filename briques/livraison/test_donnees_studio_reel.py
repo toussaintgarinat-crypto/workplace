@@ -188,3 +188,21 @@ def test_cle_absente_cote_livraison_503_non_configure(monkeypatch):
     with pytest.raises(ContratErreur) as e:
         AppContrat("studio", _entree())
     assert e.value.statut == 503
+
+
+def test_i1_restitution_explicite_fusionne_apres_creation_d_une_serie(monde):
+    """Scénario de la revue : reset -> nouvelle série -> implicite refusée -> explicite = fusion."""
+    app, ex, vol, S = monde["app"], monde["ex"], monde["vol"], monde["S"]
+    v = run(D.verifier_paquet(app, ex, "claire"))
+    assert v["verdict"] == "valide", v
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    S._save({"id": "serie-claire-neuve", "titre": "Neuve", "cree_par": "claire", "episodes": []})
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "fusionner volontairement" in e.value.message
+    r = run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
+    assert r["ok"] is True and r["mode"] == "fusion" and r["etat"] == "restitue"
+    assert r["comptages"]["series"] == 2
+    assert S._load("serie-claire") and S._load("serie-claire-neuve")
+    assert P.lire(v["paquet_id"]).get("restitue_a")
+    assert {k: _instantane(vol).get(k) for k in monde["paul"]} == monde["paul"]

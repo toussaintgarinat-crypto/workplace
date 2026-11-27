@@ -604,7 +604,7 @@ def test_scen_e_deux_resets_ambigus_restitution_implicite_refusee():
     assert app.donnees == {"series": 2, "profils": 1}
 
 
-def test_scen6_donnees_nouvelles_apres_reset_restitution_implicite_refusee_explicite_ecrase():
+def test_scen6_donnees_nouvelles_apres_reset_restitution_implicite_refusee_explicite_fusionne():
     ex, app = FauxExecuteur(), AppAEtat()
     a = _verifie(app, ex)
     run(D.reinitialiser_donnees(app, ex, "claire"))
@@ -614,8 +614,8 @@ def test_scen6_donnees_nouvelles_apres_reset_restitution_implicite_refusee_expli
         run(D.restituer_donnees(app, ex, "claire"))
     assert e.value.statut == 409
     assert e.value.message == (f"l'état actuel de l'utilisateur n'est ni vide ni identique au paquet "
-                               f"{_id(a)} : rien n'a été restitué ; précise paquet_id pour écraser "
-                               "volontairement")
+                               f"{_id(a)} : rien n'a été restitué ; précise paquet_id pour fusionner "
+                               "volontairement le paquet dans l'espace actuel")
     assert not _import_appele(app) and app.donnees == {"series": 5, "profils": 3}
     back = run(D.restituer_donnees(app, ex, "claire", paquet_id=_id(a)))
     assert back["etat"] == "restitue" and app.donnees == {"series": 2, "profils": 1}
@@ -844,3 +844,49 @@ def test_reinitialiser_et_restituer_routes_nominales(monkeypatch):
     assert r.status_code == 200 and r.json()["etat"] == "reinitialise" and r.json()["app"] == "studio"
     r = _cl.post("/contrats/studio/restituer", json={"utilisateur": "claire"}, headers=_H)
     assert r.status_code == 200 and r.json()["etat"] == "restitue" and r.json()["paquet_id"] == pid
+
+
+def _etat_apres_reset_avec_nouvel_objet(app, ex):
+    v = _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    app.donnees = {"series": 1, "profils": 0}           # l'utilisateur recrée une série après le reset
+    return v
+
+
+def test_i1_restitution_explicite_est_une_fusion_ok_si_objets_en_plus():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _etat_apres_reset_avec_nouvel_objet(app, ex)
+    with pytest.raises(D.RefusDonnees) as e:             # l'implicite refuse et le dit
+        run(D.restituer_donnees(app, ex, "claire"))
+    assert e.value.statut == 409 and "fusionner volontairement" in e.value.message
+
+    async def importe_en_fusion(u, p):                   # fusion : l'objet récent est conservé
+        app.donnees = {"series": 3, "profils": 1}
+        return {"ok": True}
+    app.importer = importe_en_fusion
+    back = run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
+    assert back["ok"] is True and back["etat"] == "restitue" and back["mode"] == "fusion"
+    assert back["comptages"] == {"series": 3, "profils": 1}
+    assert P.lire(v["paquet_id"])["restitue_a"] is not None
+    assert P.candidats_a_restituer("studio", P.empreinte_utilisateur("claire"), time.time()) == []
+
+
+def test_i1_restitution_explicite_comptages_inferieurs_au_paquet_409():
+    ex, app = FauxExecuteur(), AppAEtat()
+    v = _etat_apres_reset_avec_nouvel_objet(app, ex)
+
+    async def importe_trop_peu(u, p):
+        app.donnees = {"series": 1, "profils": 1}
+        return {"ok": True}
+    app.importer = importe_trop_peu
+    with pytest.raises(D.RefusDonnees) as e:
+        run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
+    assert e.value.statut == 409 and "incomplète" in e.value.message
+    assert P.lire(v["paquet_id"])["restitue_a"] is None
+
+
+def test_i1_restitution_implicite_mode_exacte():
+    ex, app = FauxExecuteur(), AppAEtat()
+    _verifie(app, ex)
+    run(D.reinitialiser_donnees(app, ex, "claire"))
+    assert run(D.restituer_donnees(app, ex, "claire"))["mode"] == "exacte"

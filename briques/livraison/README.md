@@ -43,7 +43,11 @@ Export chiffré des données d'UN utilisateur d'une application à contrat (ex. 
 `livraison_donnees_exporter` / `livraison_donnees_verifier` (`POST /contrats/{app}/exporter|verifier`).
 
 - Variables dans `briques/livraison/.env` (0600) : `LIVRAISON_CHIFFREMENT_CLE` (chiffrement
-  AES-GCM des paquets) et `STUDIO_SUPPORT_KEY` (même valeur que côté Studio).
+  AES-GCM des paquets) et `STUDIO_SUPPORT_KEY` (même valeur que côté Studio). `LIVRAISON_API_KEYS`,
+  `EXECUTEUR_KEY`, `LIVRAISON_CHIFFREMENT_CLE` et `STUDIO_SUPPORT_KEY` vont dans
+  `briques/livraison/.env` (0600), JAMAIS dans le `.env` racine : celui-ci est lu par ~40 briques, et
+  n'importe laquelle pourrait alors appeler directement les routes d'écriture et contourner la
+  porte d'approbation.
 - Registre des apps à contrat : `contrats.json`, à copier depuis `contrats.exemple.json` dans
   le volume `/data`.
 - Rétention : 14 jours ; purge automatique toutes les heures, déclenchable à la main par
@@ -70,15 +74,20 @@ Routes : `POST /contrats/{app}/exporter|verifier|reinitialiser|restituer`, `POST
 - **Fraîcheur** : 6 h (`PREUVE_TTL_S`). **Un paquet sert UN reset** : il est marqué consommé dès que
   l'effacement a eu lieu ou est possible ; un second reset exige une nouvelle vérification.
 - **Budget global** : 540 s par orchestration (`DELAI_GLOBAL_DONNEES_S`) ; le Cœur attend 600 s
-  (`TIMEOUT_DONNEES`), donc jamais de coupure côté Cœur avant la brique.
+  (`TIMEOUT_DONNEES`), donc jamais de coupure côté Cœur avant la brique. Quand les 540 s expirent,
+  la brique cesse d'attendre mais une requête déjà envoyée au Studio peut encore tourner, et le
+  verrou est relâché : vérifier l'état (`livraison_donnees_verifier`) avant tout nouvel essai.
 - **Avant l'effacement**, la brique relit et déchiffre le paquet, ré-exporte et compare l'empreinte
   (écart : 409 « les données ont changé »). Après : contrôle final, tous les comptages doivent être à
   zéro (sinon 409 « résultat incomplet », le paquet reste restituable).
 - **Restitution implicite** (sans `paquet_id`) : uniquement le paquet unique CONSOMMÉ par une remise à
   zéro et pas encore restitué, et seulement si l'espace de l'utilisateur est vide (tous comptages à 0,
   mêmes clés) ou identique au paquet. 0 candidat : 404 ; 2 candidats ou plus : 409 qui liste les
-  identifiants ; espace non vide : 409. **Avec `paquet_id`** : choix délibéré, il écrase l'état actuel
-  (le paquet doit être vérifié, non expiré, de la même app et du même utilisateur).
+  identifiants ; espace non vide : 409. **Avec `paquet_id`** : choix délibéré, c'est une
+  FUSION (le Studio écrit les objets par identifiant et ne supprime rien : ceux du paquet remplacent
+  les objets de même identifiant, les plus récents sont conservés). Succès si l'export final contient
+  au moins les comptages du paquet (réponse `mode: "fusion"`) ; l'implicite exige l'empreinte exacte
+  (`mode: "exacte"`). Le paquet doit être vérifié, non expiré, de la même app et du même utilisateur.
 - **504 ambigu** (l'application n'a pas répondu, ou budget global dépassé après un appel d'effet) :
   l'effacement a peut-être eu lieu. Ne PAS réessayer à l'aveugle : lancer `livraison_donnees_verifier`
   pour lire l'état. L'identifiant du paquet est dans le message ; il reste restituable avec

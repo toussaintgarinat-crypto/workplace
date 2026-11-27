@@ -142,7 +142,9 @@ autre, envoyée dans le header `X-Support-Key`. Elle est lue fraîche à chaque 
 - **Verrou par cible en mémoire** (`_EN_COURS`, par (app, h)) : valable dans UN processus. Deux
   instances de `livraison` ne se verrouilleraient pas entre elles.
 - **Fenêtre TOCTOU de la restitution implicite** : l'état « vide ou identique » est contrôlé puis
-  l'import a lieu ; une écriture de l'app entre les deux n'est pas vue (l'import écrase alors).
+  l'import a lieu ; une écriture de l'app entre les deux n'est pas vue (l'import écrase alors ; la restitution avec `paquet_id` est une fusion : objets du paquet remplaçant ceux de même identifiant, plus récents conservés).
+- **Budget de 540 s** : à l'expiration, `livraison` cesse d'attendre mais une requête déjà envoyée au
+  Studio peut encore tourner et le verrou est relâché : vérifier l'état avant de réessayer.
 - **Une vérification qui dépasse le délai n'annule pas une preuve antérieure** : le verdict de délai
   est invalide sans `preuve_id`, le Cœur l'ignore ; l'ancienne preuve (6 h) reste donc utilisable.
 - **Un 503 d'une app est toujours lu « désactivé »** (clé de support absente) : traité comme refus

@@ -85,7 +85,7 @@ Guide du contrat : [GUIDE-contrat-donnees.md](../GUIDE-contrat-donnees.md).
   vérification n'autorise jamais le reset d'un autre utilisateur ; fraîcheur 6 h, un paquet = un reset.
 - Orchestration : relecture + ré-export avant effacement, contrôle final à zéro, budget global 540 s
   (Cœur 600 s), 504 ambigus explicites, restitution implicite stricte (paquet consommé unique, espace
-  vide), `paquet_id` = écrasement délibéré.
+  vide), `paquet_id` = FUSION délibérée (le Studio ne supprime rien à l'import ; succès si l'export final contient au moins les comptages du paquet).
 - Journaux d'accès uvicorn coupés ; procédure de reprise du registre dans le README de `livraison`.
 - Studio : identité en en-tête `X-Utilisateur` (Task 0) ; test de livraison contre le vrai Studio.
 - Limites connues : `docs/GUIDE-contrat-donnees.md` section 7.
@@ -102,7 +102,14 @@ Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utili
    Task 0 a changé ses routes `/support/*` (identité en en-tête `X-Utilisateur`) ; l'ancienne image est
    incompatible avec la nouvelle `livraison`. `docker save | ssh debian@192.168.1.89 docker load`
    (build pip impossible sur le HP).
-4. Redémarrer le Cœur (nouveau registre d'outils et logique de preuve par cible) ; `up -d` des deux
-   briques et vérifier le tag réel par `docker inspect`.
+4. Ordre de déploiement OBLIGATOIRE : (1) reconstruire sur le Mac l'image du Cœur (code 3b : le code
+   du Cœur est dans son image, pas de montage source, un simple redémarrage ne suffit PAS) et la
+   transférer (`docker save | ssh debian@192.168.1.89 docker load`) ; (2) Studio 0.6.2 et livraison
+   0.3.0 ENSEMBLE ; (3) recréer le Cœur pour qu'il relise le registre des manifestes. Pourquoi : avec
+   l'ANCIEN Cœur et la nouvelle livraison, la preuve `paquet_verifie` est indexée par app seule
+   (vérifier temoin-a lèverait le prérequis du reset de temoin-b ; seul le contrôle propre de la
+   brique le bloquerait encore) et l'ancien Cœur coupe `/reinitialiser` à 30 s (motif de double
+   exécution de S246). Versions Studio/livraison mélangées : échec fermé (422 du Studio, ancien/nouveau
+   contrat incompatibles). Vérifier les tags réels par `docker inspect`.
 5. Jouer le scénario du modèle sur des utilisateurs témoins, consigner, nettoyer, retirer
    `STUDIO_SUPPORT_KEY` si l'usage n'est pas voulu.
