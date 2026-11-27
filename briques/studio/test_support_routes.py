@@ -214,3 +214,16 @@ def test_manifeste_declare_un_contrat_valide():
         bloc = json.load(f).get("contrat_donnees")
     assert C.valider_bloc_contrat(bloc) == []
     assert bloc["version_schema"] == SUP.VERSION_SCHEMA
+
+
+def test_corps_trop_gros_413_sur_verifier_et_importer(monkeypatch):
+    monkeypatch.setattr(main, "CORPS_SUPPORT_MAX", 100)
+    for route in ("verifier", "importer"):
+        r = client.post(f"/support/{route}?utilisateur=claire", content=b"x" * 200, headers=H)
+        assert r.status_code == 413, route
+        assert r.json()["detail"] == "trop_gros"
+
+
+def test_corps_borne_ne_masque_pas_le_401():
+    r = client.post("/support/verifier?utilisateur=claire", content=b"x" * 10)
+    assert r.status_code == 401

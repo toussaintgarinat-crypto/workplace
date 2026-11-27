@@ -1580,6 +1580,27 @@ def _refus_http(e: Exception) -> HTTPException:
     return HTTPException(409 if raison in ("empreinte", "conflit") else 422, raison)
 
 
+CORPS_SUPPORT_MAX = C.TAILLE_MAX + 1024 * 1024   # le paquet est borné par la bibliothèque (64 Mio)
+
+
+async def _corps_borne(request: Request) -> bytes:
+    """Lit le corps EN FLUX avec plafond : refuse (413) dès le dépassement, que le client annonce
+    ou non un Content-Length. La clé de support est déjà vérifiée (dépendance) avant d'arriver ici."""
+    try:
+        annonce = int(request.headers.get("content-length", "0") or 0)
+    except ValueError:
+        raise HTTPException(400, "content-length invalide")
+    if annonce > CORPS_SUPPORT_MAX:
+        raise HTTPException(413, "trop_gros")
+    morceaux, total = [], 0
+    async for m in request.stream():
+        total += len(m)
+        if total > CORPS_SUPPORT_MAX:
+            raise HTTPException(413, "trop_gros")
+        morceaux.append(m)
+    return b"".join(morceaux)
+
+
 class CibleSupport(BaseModel):
     utilisateur: str
 
@@ -1603,7 +1624,7 @@ async def support_verifier(request: Request, utilisateur: str,
                            cle: bytes = Depends(cle_support)):
     u = _cible(utilisateur)
     try:
-        return SUP.verifier(await request.body(), cle, u)
+        return SUP.verifier(await _corps_borne(request), cle, u)
     except (C.PaquetInvalide, SUP.Refus) as e:
         raise _refus_http(e)
 
@@ -1621,7 +1642,7 @@ async def support_importer(request: Request, utilisateur: str,
                            cle: bytes = Depends(cle_support)):
     u = _cible(utilisateur)
     try:
-        meta, objets = C.lire_paquet(await request.body(), cle, SUP.APP, u, SUP.VERSION_SCHEMA)
+        meta, objets = C.lire_paquet(await _corps_borne(request), cle, SUP.APP, u, SUP.VERSION_SCHEMA)
         objets = SUP.migrer(objets, meta["version_schema"])
         return {"ok": True, "comptages": SUP.importer(u, objets)}
     except (C.PaquetInvalide, SUP.Refus) as e:
