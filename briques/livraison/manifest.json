@@ -217,7 +217,7 @@
     },
     {
       "nom": "livraison_donnees_verifier",
-      "description": "PROUVE que les données d'UN utilisateur d'une application à contrat sont restaurables : exporte à neuf, stocke chiffré, relit le stockage, puis fait rejouer l'import dans un espace jetable et comparer l'empreinte. Renvoie un verdict valide/invalide, des comptages et une empreinte (jamais le contenu). N'affecte pas la production.",
+      "description": "PROUVE que les données d'UN utilisateur d'une application à contrat sont restaurables : exporte à neuf, stocke chiffré, relit le stockage, puis fait rejouer l'import dans un espace jetable et comparer l'empreinte. Renvoie un verdict valide/invalide, des comptages et une empreinte (jamais le contenu). N'affecte pas la production. La vérification stocke un paquet chiffré, conservé 14 jours.",
       "methode": "POST",
       "chemin": "/contrats/{app}/verifier",
       "params": {

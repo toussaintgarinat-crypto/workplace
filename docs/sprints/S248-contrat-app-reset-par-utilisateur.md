@@ -1,6 +1,6 @@
 # S248 — Contrat d'app + remise à zéro par utilisateur
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2 codées, partie 3 à planifier** (voir « Décisions »).
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2+3a codées ; 3b (reset/restitution, preuve par cible) à exécuter** (voir [plan 3b](../superpowers/plans/2026-11-27-s248-partie3b-reset-restitution-preuve-cible.md) et « Décisions »).
 Dépend de : S245, S247 (sauvegarde vérifiée, SeaweedFS). Lire d'abord : `docs/sprints/S182-S187`
 (isolation multi-utilisateur), ADR `studio-famille-compte-unique-portabilite-profil` (portabilité par
 `profil_id`), `GUIDE-ajouter-une-brique.md`.

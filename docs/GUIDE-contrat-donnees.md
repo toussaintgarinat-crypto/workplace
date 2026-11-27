@@ -138,25 +138,20 @@ autre, envoyée dans le header `X-Support-Key`. Elle est lue fraîche à chaque 
   **annulé** à la sauvegarde : le fichier de la série réapparaît (ressuscité). La vérification
   d'empreinte ne peut pas le voir. Parade pour la partie 3 : après un reset, ré-exporter et exiger
   que tous les comptages soient à zéro (ou prendre un verrou par utilisateur).
-- **Corps de requête non plafonné côté HTTP** : la bibliothèque borne le paquet (64 Mio et taille
-  de chaque membre avant décompression), mais le corps est lu en entier avant ; un plafond
-  `Content-Length` (413) reste à ajouter.
-- **Identité visible hors du paquet** : l'utilisateur figure dans la query string
-  `?utilisateur=` (journaux d'accès uvicorn) et dans `meta.json`. Dans le dialecte BYO l'identité
-  EST la clé API du client ; dans d'anciens fichiers de séries, `cree_par` peut valoir l'ancienne
-  `STUDIO_KEY` brute, qui se retrouve alors en clair dans `donnees.json`. Sans gravité tant que le
-  paquet reste sur le volume ; À TRAITER avant de stocker les paquets ailleurs (partie 3 : purger
-  le `cree_par` legacy vers `perso` à l'export et l'accepter à l'import, ou refuser les identités
-  BYO sur `/support/*`).
+- **Identité dans la query string** : l'utilisateur figure dans `?utilisateur=` (journaux d'accès
+  uvicorn du Studio) et dans `meta.json`. À déplacer dans un en-tête avant que la 3b passe LIVE.
+- **Empreinte non salée** : `h = sha256(utilisateur)[:16]` (registre, clés d'objet, journal) est
+  devinable pour une identité à faible entropie.
+- **Rotation de clé** : les paquets sont signés avec la clé de support de l'app et chiffrés avec
+  `LIVRAISON_CHIFFREMENT_CLE` ; changer l'une ou l'autre rend les paquets stockés inutilisables
+  jusqu'à leur expiration (14 jours).
 - **`verifier` peut accepter un paquet que `importer` refuse (409)** : le dossier jetable n'a
   aucun conflit avec le volume réel. Comportement attendu.
-- **`chemin` du bloc de manifeste** : `valider_bloc_contrat` ne rejette pas les valeurs contenant
-  `%2e%2e`, des segments `.` ou des antislashs. À corriger en partie 3, quand le Cœur
-  commencera à exploiter le bloc.
 - **Autres limites restantes** : exceptions non-`Refus` (hook de migration, `OSError`) remontées en
   500 ; handlers `async` aux E/S bloquantes ; pas de test positif « clé de support correcte alors
   que `STUDIO_KEY`/`API_KEYS` sont configurées » ; `CORS_ORIGINS` à resserrer. Corrigés depuis les
   revues : collision d'id `-journal` (refusé à l'import, ignoré à l'export), `fullmatch` pour les
   identifiants, ids non-`str` (refus `incoherent`), utilisateur avec espaces (422).
-- **Hors parties 1+2 (partie 3)** : chiffrement au repos, stockage SeaweedFS, rétention de 14
-  jours, journal d'accès, outils de l'assistant, validation du bloc par le Cœur, preuve LIVE.
+- **Fait en 3a (livraison)** : stockage SeaweedFS chiffré, rétention de 14 jours, journal
+  d'accès, outils `livraison_donnees_exporter` / `livraison_donnees_verifier`.
+- **Reste pour la 3b** : reset/restitution, validation du bloc par le Cœur, preuve LIVE par cible.

@@ -51,5 +51,6 @@ Export chiffré des données d'UN utilisateur d'une application à contrat (ex. 
 - Journal d'accès : `acces.jsonl` (qui a exporté/vérifié/purgé quoi, jamais le contenu).
 - Exécuteur : redéployer `executeur.py` sur la VM 100 (nouvelles routes `/objets/`).
 - Piège : changer `STUDIO_SUPPORT_KEY` OU `LIVRAISON_CHIFFREMENT_CLE` rend les paquets déjà
-  stockés illisibles. Vider les paquets (purge) avant toute rotation.
+  stockés illisibles jusqu'à leur expiration (14 jours au plus) : la purge (`POST /contrats/purger`)
+  ne retire que les paquets EXPIRÉS. Après une rotation, ré-exporter.
 - `livraison_donnees_verifier` ne déclare volontairement pas `fournit_preuve` (réservé à 3b).
