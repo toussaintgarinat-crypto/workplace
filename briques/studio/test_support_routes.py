@@ -227,3 +227,11 @@ def test_corps_trop_gros_413_sur_verifier_et_importer(monkeypatch):
 def test_corps_borne_ne_masque_pas_le_401():
     r = client.post("/support/verifier?utilisateur=claire", content=b"x" * 10)
     assert r.status_code == 401
+
+
+@pytest.mark.parametrize("secret_env", ["STUDIO_KEY", "API_KEYS"])
+def test_identite_egale_a_une_cle_secrete_refusee(monkeypatch, secret_env):
+    monkeypatch.setenv(secret_env, "autre-cle-xyz, cle-secrete-123")
+    cible = "cle-secrete-123" if secret_env == "API_KEYS" else "autre-cle-xyz, cle-secrete-123"
+    r = client.post("/support/exporter", json={"utilisateur": cible}, headers=H)
+    assert r.status_code == 422 and r.json()["detail"] == "identite_interdite"

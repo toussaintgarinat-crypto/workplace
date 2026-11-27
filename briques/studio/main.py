@@ -1571,6 +1571,12 @@ def _cible(utilisateur: str) -> str:
         raise HTTPException(422, "utilisateur manquant")
     if utilisateur != utilisateur.strip():
         raise HTTPException(422, "utilisateur invalide")  # jamais « corrigé » en silence
+    secrets_ = {k.strip() for var in ("STUDIO_KEY", "API_KEYS")
+                for k in os.environ.get(var, "").split(",") if k.strip()}
+    secrets_.add(os.environ.get("STUDIO_KEY", "").strip())  # identite_effective la compare en entier
+    secrets_.discard("")
+    if utilisateur in secrets_:
+        raise HTTPException(422, "identite_interdite")  # identité BYO = clé API : jamais dans un paquet
     return utilisateur
 
 

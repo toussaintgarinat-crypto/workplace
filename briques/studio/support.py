@@ -112,6 +112,10 @@ def exporter(utilisateur: str, racine: Optional[str] = None) -> dict:
     # servirait à fabriquer un chemin.
     series = [s for stem, s in _json_dossier(d["series"])
               if _id_sur(stem) and s.get("id") == stem and _appartient(s, utilisateur, True)]
+    # Jamais de secret dans un paquet qui peut quitter le volume : une série dont `cree_par` est
+    # l'ancienne STUDIO_KEY brute est exportée sous l'identité normalisée (copie, fichier intact).
+    series = [dict(s, cree_par=S.identite_effective(s)) if s.get("cree_par") != S.identite_effective(s)
+              else s for s in series]
     profils = [p for stem, p in _json_dossier(d["profils"], "-journal.json")
                if _id_profil_sur(stem) and p.get("id") == stem and _appartient(p, utilisateur, False)]
     journaux = []

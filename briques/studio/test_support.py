@@ -333,3 +333,12 @@ def test_identite_legacy_perso(racine, monkeypatch):
     SUP.importer("perso", o)
     assert sorted(s["id"] for s in SUP.exporter("perso")["series"]) == ["s-brute", "s-pub", "s-sans"]
     assert [s["id"] for s in SUP.exporter("marina")["series"]] == ["s-marina"]
+
+
+def test_export_ne_contient_pas_la_studio_key_legacy(monkeypatch, racine):
+    monkeypatch.setenv("STUDIO_KEY", "cle-brute-secrete")
+    S._save({"id": "s-legacy", "titre": "Ancienne", "cree_par": "cle-brute-secrete", "episodes": []})
+    objets = SUP.exporter("perso")
+    assert [s["id"] for s in objets["series"]] == ["s-legacy"]
+    assert "cle-brute-secrete" not in json.dumps(objets)
+    assert objets["series"][0]["cree_par"] == "perso"
