@@ -12,13 +12,14 @@ Le studio COMPOSE d'autres briques (il ne les absorbe pas) :
 
 Auth BYO optionnelle (API_KEYS) pour vendre la brique seule ; mode ouvert par défaut.
 """
+import hmac
 import json
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -26,8 +27,10 @@ from typing import Optional
 
 import agents
 import composition
+import contrat_donnees as C
 import studio as S
 import stockage_pont
+import support as SUP
 
 app = FastAPI(title="Studio — atelier d'audio-séries", version="0.4.0")
 # Origines navigateur autorisées : liste explicite via CORS_ORIGINS (CSV). Défaut "*"
@@ -1547,3 +1550,78 @@ async def etendre_branche(serie_id: str, noeud_id: str, body: Etendre,
     noeud.setdefault("enfants", []).append({"choix": body.choix, "noeud": nouveau})
     S._save(serie)
     return {"noeud": nouveau, "deja": False}
+
+
+# ── Contrat de données utilisateur (S248) — routes INTERNES ──────
+# Clé DÉDIÉE (STUDIO_SUPPORT_KEY, lue fraîche) : ni STUDIO_KEY ni API_KEYS n'ouvrent ces
+# routes. Absente = fonction désactivée (503), jamais de repli ouvert. Le paquet est signé avec
+# cette même clé. L'identité visée est EXPLICITE (`utilisateur`) ; le cloisonnement est assuré
+# par support.py (filtre unique), pas par X-User-Id.
+def cle_support(x_support_key: Optional[str] = Header(None)) -> bytes:
+    attendue = os.environ.get("STUDIO_SUPPORT_KEY", "").strip()
+    if not attendue:
+        raise HTTPException(503, "Support désactivé (STUDIO_SUPPORT_KEY non définie).")
+    if not x_support_key or not hmac.compare_digest(x_support_key.encode("utf-8"), attendue.encode("utf-8")):
+        raise HTTPException(401, "Clé de support invalide (header X-Support-Key).")
+    return attendue.encode("utf-8")
+
+
+def _cible(utilisateur: str) -> str:
+    u = (utilisateur or "").strip()
+    if not u:
+        raise HTTPException(422, "utilisateur manquant")
+    return u
+
+
+def _refus_http(e: Exception) -> HTTPException:
+    """Le `detail` ne porte QUE la raison (jamais de donnée de l'utilisateur)."""
+    raison = getattr(e, "raison", "refus")
+    return HTTPException(409 if raison in ("empreinte", "conflit") else 422, raison)
+
+
+class CibleSupport(BaseModel):
+    utilisateur: str
+
+
+class ReinitSupport(BaseModel):
+    utilisateur: str
+    empreinte: str
+
+
+@app.post("/support/exporter", tags=["support"])
+def support_exporter(body: CibleSupport, cle: bytes = Depends(cle_support)):
+    u = _cible(body.utilisateur)
+    objets = SUP.exporter(u)
+    paquet = C.construire_paquet(SUP.APP, u, SUP.VERSION_SCHEMA, objets, cle)
+    return Response(content=paquet, media_type="application/gzip", headers={
+        "X-Empreinte": C.empreinte(objets), "X-Comptages": json.dumps(C.comptages(objets))})
+
+
+@app.post("/support/verifier", tags=["support"])
+async def support_verifier(request: Request, utilisateur: str,
+                           cle: bytes = Depends(cle_support)):
+    u = _cible(utilisateur)
+    try:
+        return SUP.verifier(await request.body(), cle, u)
+    except (C.PaquetInvalide, SUP.Refus) as e:
+        raise _refus_http(e)
+
+
+@app.post("/support/reinitialiser", tags=["support"])
+def support_reinitialiser(body: ReinitSupport, _cle: bytes = Depends(cle_support)):
+    try:
+        return {"ok": True, "supprimes": SUP.reinitialiser(_cible(body.utilisateur), body.empreinte)}
+    except SUP.Refus as e:
+        raise _refus_http(e)
+
+
+@app.post("/support/importer", tags=["support"])
+async def support_importer(request: Request, utilisateur: str,
+                           cle: bytes = Depends(cle_support)):
+    u = _cible(utilisateur)
+    try:
+        meta, objets = C.lire_paquet(await request.body(), cle, SUP.APP, u, SUP.VERSION_SCHEMA)
+        objets = SUP.migrer(objets, meta["version_schema"])
+        return {"ok": True, "comptages": SUP.importer(u, objets)}
+    except (C.PaquetInvalide, SUP.Refus) as e:
+        raise _refus_http(e)

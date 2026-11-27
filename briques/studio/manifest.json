@@ -31,6 +31,12 @@
   ],
   "besoin": [],
   "taches": [],
+"contrat_donnees": {
+  "version_schema": "1",
+  "exporter":      {"methode": "POST", "chemin": "/support/exporter"},
+  "reinitialiser": {"methode": "POST", "chemin": "/support/reinitialiser"},
+  "importer":      {"methode": "POST", "chemin": "/support/importer"}
+},
   "capacites": [
     {
       "nom": "studio_series_lister",
