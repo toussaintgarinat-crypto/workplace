@@ -120,3 +120,24 @@ def test_verdict_plus_recent_avec_autre_app_id_ne_donne_pas_de_preuve_a_paul(env
     assert [n[1] for n in env["notifs"]] == [{"paquet_verifie": False}] * 3
     _run("livraison_donnees_reinitialiser", {"app": "studio", "utilisateur": "claire"})
     assert env["notifs"][-1][1] == {"paquet_verifie": True}
+
+
+def test_alias_app_id_du_resultat_ne_partage_pas_la_preuve_entre_utilisateurs(env):
+    """Un verdict `app_id` identique pour deux utilisateurs ne doit pas mélanger leurs preuves."""
+    env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="P0", app_id="A1")
+    _run("livraison_donnees_verifier", {"app": "studio", "utilisateur": "paul"})
+    env["resultat_verif"] = _verdict(verdict="valide", app_id="A1")
+    _run("livraison_donnees_verifier", {"app": "studio", "utilisateur": "claire"})
+    _run("livraison_donnees_reinitialiser", {"app": "studio", "utilisateur": "paul"})
+    assert env["notifs"][-1][1] == {"paquet_verifie": False}
+    _run("livraison_donnees_reinitialiser", {"app": "studio", "utilisateur": "claire"})
+    assert env["notifs"][-1][1] == {"paquet_verifie": True}
+
+
+def test_verdict_forgeant_la_cle_composite_d_un_autre_est_ignore(env):
+    """Un verdict dont `app`/`app_id` valent la clé composite de Paul ne lui donne aucune preuve."""
+    cle_paul = approbations.cle_preuve("paquet_verifie", {"app": "studio", "utilisateur": "paul"})
+    env["resultat_verif"] = _verdict(app=cle_paul, app_id=cle_paul)
+    _run("livraison_donnees_verifier", {"app": "studio", "utilisateur": "claire"})
+    _run("livraison_donnees_reinitialiser", {"app": "studio", "utilisateur": "paul"})
+    assert env["notifs"][-1][1] == {"paquet_verifie": False}
