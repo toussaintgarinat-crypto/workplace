@@ -23,10 +23,10 @@ async def exporter_et_stocker(app, ex, utilisateur: str, maintenant: Optional[fl
     try:
         rec = paquets.enregistrer(pid, app.nom, h, objet, meta["empreinte"], meta["comptages"],
                                   app.version_schema, maintenant)
-    except OSError:
-        try:
-            await ex.supprimer(objet)     # pas d'objet orphelin hors registre
-        except ExecuteurErreur:
+    except (OSError, asyncio.CancelledError):
+        try:                              # pas d'objet orphelin hors registre (la purge suit le registre)
+            await asyncio.shield(ex.supprimer(objet))
+        except Exception:
             pass
         raise
     paquets.journaliser("exporter", app.nom, h, pid, True, maintenant)
@@ -130,10 +130,13 @@ def _journal(operation: str, app: str, h: str, pid: str, ok: bool, maintenant) -
         pass
 
 
-async def _relire(ex, rec) -> bytes:
+async def _relire(ex, rec, restitution: bool = False) -> bytes:
     try:
         return chiffrement.dechiffrer(await ex.lire(rec["objet"]), rec["objet"])
     except chiffrement.Illisible:
+        if restitution:       # un reset a pu avoir lieu : « refaire une vérification » serait inutile
+            raise RefusDonnees(409, f"paquet {rec['id']} stocké illisible (altéré ou clé changée) : "
+                                    "restitution impossible avec ce paquet") from None
         raise RefusDonnees(409, "paquet stocké illisible (altéré ou clé changée) : "
                                 "refais une vérification") from None
     except (ExecuteurErreur, chiffrement.CleAbsente, KeyError, OSError):
@@ -170,7 +173,18 @@ def _prendre(app, h):
     return cible
 
 
-async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[float] = None) -> dict:
+def message_delai_reset(pid: Optional[str]) -> str:
+    """504 du budget global de la remise à zéro, vrai que l'expiration tombe avant OU après l'effacement.
+    Sans paquet choisi, aucun appel à l'application n'a eu lieu : rien n'a été touché (certain)."""
+    if not pid:
+        return "délai global dépassé avant tout appel à l'application : rien n'a été modifié, réessaie"
+    return ("délai global dépassé : la remise à zéro a peut-être été effectuée ; vérifie l'état avec "
+            "livraison_donnees_verifier avant de réessayer ; si des données manquent, le paquet "
+            f"{pid} reste restituable avec livraison_donnees_restituer (paquet_id)")
+
+
+async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[float] = None,
+                                suivi: Optional[dict] = None) -> dict:
     """Efface les données d'UN utilisateur, sous preuve fraîche (≤ 6 h), empreinte inchangée.
     Avant `app.reinitialiser` : tout échec laisse les données intactes. Après : plus aucune
     exception brute ni refus laissant croire que rien n'a eu lieu."""
@@ -182,6 +196,8 @@ async def reinitialiser_donnees(app, ex, utilisateur: str, maintenant: Optional[
         if rec is None:
             raise RefusDonnees(409, "aucun paquet vérifié et récent pour cet utilisateur : "
                                     "lance d'abord livraison_donnees_verifier")
+        if suivi is not None:
+            suivi["paquet_id"] = rec["id"]             # lisible par la route si le délai global tombe
         await _relire(ex, rec)                         # le paquet est TOUJOURS restituable
         try:
             _, meta = await app.exporter(utilisateur)
@@ -252,6 +268,8 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
                                         + ", ".join(c["id"] for c in candidats)
                                         + ") : précise paquet_id")
             rec = candidats[0]
+        clair = await _relire(ex, rec, restitution=True)   # avant le contrôle d'état : fenêtre TOCTOU réduite
+        if not paquet_id:
             try:                                # lecture seule : jamais d'écrasement silencieux
                 _, actuel = await app.exporter(utilisateur)
             except ContratErreur as e:
@@ -261,14 +279,14 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
                 raise RefusDonnees(409, "l'état actuel de l'utilisateur n'est ni vide ni identique "
                                         f"au paquet {rec['id']} : rien n'a été restitué ; précise "
                                         "paquet_id pour écraser volontairement")
-        clair = await _relire(ex, rec)
         try:
             await app.importer(utilisateur, clair)
         except ContratErreur as e:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
             if not _certain_avant_effet(e):                 # import peut-être partiel
-                raise RefusDonnees(504, "l'application n'a pas répondu : la restitution a peut-être "
-                                        "été appliquée, vérifie l'état avant de réessayer") from None
+                raise RefusDonnees(504, "l'application n'a pas répondu : la restitution du paquet "
+                                        f"{rec['id']} a peut-être été appliquée, vérifie l'état avant "
+                                        "de réessayer") from None
             raise _refus_non_envoye(e) from None
         try:
             _, apres = await app.exporter(utilisateur)
@@ -279,8 +297,9 @@ async def restituer_donnees(app, ex, utilisateur: str, paquet_id: Optional[str] 
                                     f"{_SUITE_RESTITUABLE}") from None
         if apres["empreinte"] != rec["empreinte"]:
             _journal("restituer", app.nom, h, rec["id"], False, maintenant)
-            raise RefusDonnees(409, "restitution incomplète : l'état restauré ne correspond pas "
-                                    "au paquet")
+            raise RefusDonnees(409, "restitution incomplète : le paquet "
+                                    f"{rec['id']} a été importé mais l'état restauré ne lui "
+                                    "correspond pas ; vérifie l'état avant de réessayer")
         try:
             paquets.marquer_restitue(rec["id"], maintenant)
         except OSError:

@@ -127,6 +127,9 @@ TIMEOUT_VERIFICATION = 600.0
 # (donnees_utilisateur.DELAI_GLOBAL_DONNEES_S). Couper à 30 s (défaut du client) rapporterait en
 # échec une remise à zéro qui aboutit derrière (S246 : double exécution) : le Cœur ne coupe jamais avant.
 TIMEOUT_DONNEES = 600.0
+# Suffixes GÉNÉRIQUES : `/exporter`, `/verifier`, `/reinitialiser`, `/restituer` valent pour tout chemin de
+# capacité de brique finissant ainsi ; ils ne font qu'ALLONGER l'attente, jamais la raccourcir. Une brique
+# qui ajoute un tel chemin hérite donc de TIMEOUT_DONNEES.
 _ROUTES_DYNAMIQUES_LENTES = (("/redemarrer", TIMEOUT_MUTATION_LONGUE),
                              ("/rollback", TIMEOUT_MUTATION_LONGUE),
                              ("/deployer", TIMEOUT_MUTATION_LONGUE),

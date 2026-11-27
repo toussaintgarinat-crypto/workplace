@@ -486,8 +486,8 @@ def test_i2_import_ambigu_504(exc):
     with pytest.raises(D.RefusDonnees) as e:
         run(D.restituer_donnees(app, ex, "claire", paquet_id=v["paquet_id"]))
     assert e.value.statut == 504
-    assert e.value.message == ("l'application n'a pas répondu : la restitution a peut-être "
-                               "été appliquée, vérifie l'état avant de réessayer")
+    assert e.value.message == ("l'application n'a pas répondu : la restitution du paquet "
+                               f"{v['paquet_id']} a peut-être été appliquée, vérifie l'état avant de réessayer")
 
 
 def test_i2_import_ok_puis_controle_en_echec_502_applique():

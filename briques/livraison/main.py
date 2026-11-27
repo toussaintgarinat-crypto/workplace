@@ -523,10 +523,9 @@ class CorpsRestitution(CorpsUtilisateur):
 
 @app.post("/contrats/{app_}/reinitialiser")
 async def reinitialiser_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
-    r = await _donnees(app_, lambda a, ex: DU.reinitialiser_donnees(a, ex, corps.utilisateur),
-                       _delai("délai global dépassé : la remise à zéro a peut-être été effectuée, "
-                              "vérifie avec livraison_donnees_verifier avant de réessayer ; le "
-                              "paquet consommé reste restituable avec livraison_donnees_restituer"))
+    suivi: dict = {}              # le paquet choisi par l'orchestration, lisible si le budget tombe
+    r = await _donnees(app_, lambda a, ex: DU.reinitialiser_donnees(a, ex, corps.utilisateur, suivi=suivi),
+                       lambda: _delai(DU.message_delai_reset(suivi.get("paquet_id")))())
     return {"app": app_.strip().lower(), **r}
 
 

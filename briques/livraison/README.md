@@ -53,4 +53,6 @@ Export chiffré des données d'UN utilisateur d'une application à contrat (ex. 
 - Piège : changer `STUDIO_SUPPORT_KEY` OU `LIVRAISON_CHIFFREMENT_CLE` rend les paquets déjà
   stockés illisibles jusqu'à leur expiration (14 jours au plus) : la purge (`POST /contrats/purger`)
   ne retire que les paquets EXPIRÉS. Après une rotation, ré-exporter.
+- Journaux d'accès uvicorn désactivés (`--no-access-log`) : le Cœur duplique les arguments des POST dans
+  la query string, l'identité de l'utilisateur y serait écrite en clair.
 - `livraison_donnees_verifier` ne déclare volontairement pas `fournit_preuve` (réservé à 3b).
