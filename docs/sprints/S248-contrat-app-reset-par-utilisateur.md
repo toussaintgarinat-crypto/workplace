@@ -1,6 +1,6 @@
 # S248 — Contrat d'app + remise à zéro par utilisateur
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **spécifié, non codé**.
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2 codées, partie 3 à planifier** (voir « Décisions »).
 Dépend de : S245, S247 (sauvegarde vérifiée, SeaweedFS). Lire d'abord : `docs/sprints/S182-S187`
 (isolation multi-utilisateur), ADR `studio-famille-compte-unique-portabilite-profil` (portabilité par
 `profil_id`), `GUIDE-ajouter-une-brique.md`.
@@ -67,8 +67,14 @@ prouvée (S182-S187), schéma stable, risque faible. Livrer aussi un **gabarit/g
 Généraliser le contrat à toutes les apps (au fil de l'eau). Export RGPD « public » destiné à l'usager
 final (le paquet de support est un outil interne).
 
-## Questions à trancher
+## Décisions (2026-11-27)
 
-1. Quelle app pilote ?
-2. Durée de rétention des paquets ; qui peut les restituer à l'utilisateur ?
-3. Format du paquet : JSON + fichiers dans une archive signée, ou autre ?
+1. App pilote = **Studio** (isolation par personne prouvée S187, `profil_id` portable, données en JSON fichier).
+2. Rétention = **14 jours** puis suppression automatique ; restitution à l'utilisateur seulement par lui-même, après validation Telegram (partie 3).
+3. Format = **tar.gz** (`meta.json` signé HMAC + `donnees.json` canonique) ; **chiffrement au repos assuré par `livraison`** (le Studio reste stdlib seule), clé hors dépôt (partie 3).
+
+Reset : l'app exige l'empreinte exacte des données courantes (paquet = état actuel). Clé dédiée `STUDIO_SUPPORT_KEY`.
+
+Guide du contrat : [GUIDE-contrat-donnees.md](../GUIDE-contrat-donnees.md).
+
+État : Parties 1+2 codées — plan `docs/superpowers/plans/2026-11-27-s248-partie1-2-contrat-donnees-studio.md` ; partie 3 à planifier.
