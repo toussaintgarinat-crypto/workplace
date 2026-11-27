@@ -122,3 +122,30 @@ def test_cloner_a_un_delai_plus_long_que_verifier():
     run(c.comptages("s", "u", "b"))
     assert delais["/cloner"] == 960 > delais["/verifier"] == 280
     assert delais["/comptages"] == delais["/verifier"]
+
+
+CLE_OBJ = "contrat/studio/0123456789abcdef/" + "a" * 32 + ".bin"
+
+
+def test_deposer_lire_supprimer():
+    vu = {}
+
+    def h(req: httpx.Request):
+        vu[req.method] = (str(req.url.path), req.headers.get("x-api-key"), req.content)
+        return httpx.Response(200, content=b"retour" if req.method == "GET" else b"{}")
+
+    ex = cli(h)
+    run(ex.deposer(CLE_OBJ, b"abc"))
+    assert run(ex.lire(CLE_OBJ)) == b"retour"
+    run(ex.supprimer(CLE_OBJ))
+    assert vu["PUT"] == ("/objets/" + CLE_OBJ, "k", b"abc")
+    assert set(vu) == {"PUT", "GET", "DELETE"}
+
+
+@pytest.mark.parametrize("statut,attendu", [(401, "refusé la clé"), (413, "trop gros"),
+                                            (502, "502"), (500, "500")])
+def test_objets_erreurs_sans_corps_brut(statut, attendu):
+    ex = cli(lambda r: httpx.Response(statut, json={"erreur": "SECRET-INTERNE"}))
+    with pytest.raises(ExecuteurErreur) as e:
+        run(ex.deposer(CLE_OBJ, b"x"))
+    assert attendu in e.value.message and "SECRET" not in e.value.message

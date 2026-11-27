@@ -30,6 +30,7 @@ def _erreur_fixe(r: httpx.Response) -> str:
 
 # Au-dessus des 900 s de pg_restore côté exécuteur.
 DELAI_CLONER = 960.0
+DELAI_OBJET = 300.0
 
 
 class Executeur:
@@ -81,3 +82,31 @@ class Executeur:
     async def supprimer_base(self, service: str, utilisateur: str, base: str) -> dict:
         return await self._post("/supprimer-base", {"service": service, "utilisateur": utilisateur,
                                                     "base": base}, self._delai)
+
+    async def _objet(self, methode: str, cle: str, contenu: Optional[bytes] = None) -> bytes:
+        try:
+            async with httpx.AsyncClient(base_url=self._base, transport=self._transport,
+                                         timeout=DELAI_OBJET) as c:
+                r = await c.request(methode, "/objets/" + cle, headers={"X-API-Key": self._cle},
+                                    content=contenu)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise ExecuteurErreur("Exécuteur de restauration injoignable.") from None
+        except httpx.HTTPError:
+            raise ExecuteurErreur("Échec de la communication avec l'exécuteur "
+                                  "(délai dépassé ?).") from None
+        if r.status_code == 401:
+            raise ExecuteurErreur("L'exécuteur a refusé la clé.", 401)
+        if r.status_code == 413:
+            raise ExecuteurErreur("Objet trop gros pour l'exécuteur.", 413)
+        if r.status_code != 200:
+            raise ExecuteurErreur(f"L'exécuteur a répondu {r.status_code}.", r.status_code)
+        return r.content
+
+    async def deposer(self, cle: str, octets: bytes) -> None:
+        await self._objet("PUT", cle, octets)
+
+    async def lire(self, cle: str) -> bytes:
+        return await self._objet("GET", cle)
+
+    async def supprimer(self, cle: str) -> None:
+        await self._objet("DELETE", cle)
