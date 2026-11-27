@@ -12,7 +12,11 @@ import studio as S
 import support as SUP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from shared.conformite_contrat import Refus, verifier_conformite  # noqa: E402
+try:  # absent dans l'image Docker (pas de racine du dépôt) : seuls les tests du harnais sautent
+    from shared.conformite_contrat import Refus, verifier_conformite  # noqa: E402
+except ImportError:
+    Refus = verifier_conformite = None
+harnais = pytest.mark.skipif(verifier_conformite is None, reason="hors monorepo (image Docker)")
 
 CLE = "cle-support-test"
 client = TestClient(main.app)
@@ -62,6 +66,16 @@ def test_la_cle_studio_et_les_api_keys_n_ouvrent_pas_le_support(monkeypatch):
         r = client.post("/support/exporter", json={"utilisateur": "claire"},
                         headers={"X-API-Key": k, "X-Support-Key": k})
         assert r.status_code == 401
+
+
+@pytest.mark.parametrize("u", [" claire", "claire ", "claire\n"])
+def test_utilisateur_avec_espaces_422_partout(u):
+    assert client.post("/support/exporter", json={"utilisateur": u}, headers=H).status_code == 422
+    assert client.post("/support/reinitialiser", json={"utilisateur": u, "empreinte": "e"},
+                       headers=H).status_code == 422
+    for route in ("verifier", "importer"):
+        r = client.post(f"/support/{route}", params={"utilisateur": u}, content=b"x", headers=H)
+        assert r.status_code == 422 and r.json()["detail"] == "utilisateur invalide"
 
 
 def test_utilisateur_vide_422():
@@ -159,10 +173,12 @@ class AdaptateurStudio:
             raise Refus(r.json()["detail"])
 
 
+@harnais
 def test_studio_est_conforme_au_contrat():
     verifier_conformite(AdaptateurStudio())
 
 
+@harnais
 def test_mutation_filtre_utilisateur_neutralise_est_detecte(monkeypatch):
     """Si le filtre d'appartenance est neutralisé, le harnais DOIT échouer (sinon le test
     d'isolation ne protège rien)."""
@@ -172,6 +188,7 @@ def test_mutation_filtre_utilisateur_neutralise_est_detecte(monkeypatch):
     assert str(exc.value)
 
 
+@harnais
 def test_mutation_change_reellement_le_comportement(monkeypatch):
     """Avec le filtre neutralisé, l'export de claire CONTIENT la série de marina : la mutation
     agit vraiment, l'échec du harnais n'est pas accidentel."""

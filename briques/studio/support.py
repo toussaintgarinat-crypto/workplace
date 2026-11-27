@@ -13,8 +13,12 @@ Limite documentée : les médias (images, audio) des séries vivent dans d'autre
 paquet n'en contient que les références.
 
 Limites connues (documentées, non corrigées) : pas de retour arrière si une écriture échoue en
-cours d'import (disque plein) ; pas de verrou entre la vérification d'empreinte du reset et ses
-suppressions (une écriture dans cette fenêtre est perdue).
+cours d'import (disque plein). PAS DE VERROU face aux handlers async du Studio : ils chargent une
+série, attendent des appels LLM/voix/images (secondes à minutes) puis appellent `S._save(serie)`.
+Un reset exécuté pendant cette attente est ANNULÉ à la sauvegarde (le fichier de la série
+réapparaît, ressuscité) ; la vérification d'empreinte ne peut pas le voir. Parade pour la partie 3 :
+après un reset, ré-exporter et exiger que tous les comptages soient à zéro (ou verrou par
+utilisateur).
 """
 import hashlib
 import json
@@ -32,7 +36,8 @@ VERSION_SCHEMA = "1"
 MIGRATIONS: dict = {}
 
 CLES = ("series", "profils", "journaux", "comptes", "ponts")
-_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")  # appliquée par fullmatch : ^[A-Za-z0-9_-]{1,64}$
+_SUFFIXE_JOURNAL = "-journal"
 
 
 class Refus(Exception):
@@ -43,7 +48,13 @@ class Refus(Exception):
 
 def _id_sur(valeur) -> bool:
     """Un identifiant n'entre dans un chemin que s'il est sûr (anti-évasion de la racine)."""
-    return isinstance(valeur, str) and _ID.match(valeur) is not None
+    return isinstance(valeur, str) and _ID.fullmatch(valeur) is not None
+
+
+def _id_profil_sur(valeur) -> bool:
+    """Un id de profil finissant par `-journal` désignerait le fichier journal d'un autre
+    profil (`pb-journal.json` = journal de `pb`) : refusé."""
+    return _id_sur(valeur) and not valeur.endswith(_SUFFIXE_JOURNAL)
 
 
 def _chemins(racine: str) -> dict:
@@ -102,7 +113,7 @@ def exporter(utilisateur: str, racine: Optional[str] = None) -> dict:
     series = [s for stem, s in _json_dossier(d["series"])
               if _id_sur(stem) and s.get("id") == stem and _appartient(s, utilisateur, True)]
     profils = [p for stem, p in _json_dossier(d["profils"], "-journal.json")
-               if _id_sur(stem) and p.get("id") == stem and _appartient(p, utilisateur, False)]
+               if _id_profil_sur(stem) and p.get("id") == stem and _appartient(p, utilisateur, False)]
     journaux = []
     for p in profils:
         j = _lire(os.path.join(d["profils"], f"{p['id']}-journal.json"))
@@ -191,7 +202,7 @@ def _valider(utilisateur: str, objets: dict, racine: str) -> None:
         if _existe_etranger(os.path.join(d["series"], f"{s['id']}.json"), utilisateur, True):
             raise Refus("conflit", "série")
     for p in objets.get("profils", []):
-        if not isinstance(p, dict) or not _id_sur(p.get("id")):
+        if not isinstance(p, dict) or not _id_profil_sur(p.get("id")):
             raise Refus("format", "identifiant de profil invalide")
         ids_profils.add(p["id"])
         if not _appartient(p, utilisateur, False):
@@ -203,13 +214,15 @@ def _valider(utilisateur: str, objets: dict, racine: str) -> None:
         raise Refus("format", "doublon")
     vus_j, vus_p = set(), set()
     for j in objets.get("journaux", []):
-        if not isinstance(j, dict) or j.get("profil_id") not in ids_profils:
+        if not isinstance(j, dict) or not _id_sur(j.get("profil_id")) \
+                or j["profil_id"] not in ids_profils:
             raise Refus("incoherent", "journal sans profil")
         if j["profil_id"] in vus_j:
             raise Refus("format", "doublon")
         vus_j.add(j["profil_id"])
     for pt in objets.get("ponts", []):
-        if not isinstance(pt, dict) or pt.get("serie_id") not in ids_series:
+        if not isinstance(pt, dict) or not _id_sur(pt.get("serie_id")) \
+                or pt["serie_id"] not in ids_series:
             raise Refus("incoherent", "pont sans série")
         if pt["serie_id"] in vus_p:
             raise Refus("format", "doublon")

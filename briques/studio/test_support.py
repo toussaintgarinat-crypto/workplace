@@ -134,13 +134,14 @@ def test_importer_ne_garde_rien_si_refus(racine):
     assert not os.path.exists(S._path("ok-1"))   # rien d'écrit avant la validation complète
 
 
-@pytest.mark.parametrize("mauvais_id", ["../evil", "a/b", "", "x" * 65, "a b"])
+@pytest.mark.parametrize("mauvais_id", ["../evil", "a/b", "", "x" * 65, "a b", "a\n"])
 def test_importer_refuse_les_identifiants_dangereux(racine, mauvais_id):
     o = {"series": [{"id": mauvais_id, "cree_par": "claire"}],
          "profils": [], "journaux": [], "comptes": [], "ponts": []}
     with pytest.raises(SUP.Refus) as e:
         SUP.importer("claire", o)
     assert e.value.raison == "format"
+    assert [f for f in os.listdir(racine) if f.endswith(".json")] == []
 
 
 def test_importer_refuse_journal_orphelin(racine):
@@ -282,7 +283,7 @@ def test_importer_refuse_si_la_cible_existe_mais_est_illisible(racine):
         assert f.read() == "{corrompu"
 
 
-@pytest.mark.parametrize("mauvais", ["../evil", "a/b", "", "x" * 65, "a b"])
+@pytest.mark.parametrize("mauvais", ["../evil", "a/b", "", "x" * 65, "a b", "a\n"])
 def test_importer_refuse_journal_ou_pont_a_id_dangereux(racine, mauvais):
     for o in ({**VIDE, "journaux": [{"profil_id": mauvais}]},
               {**VIDE, "ponts": [{"serie_id": mauvais}]},
@@ -290,3 +291,45 @@ def test_importer_refuse_journal_ou_pont_a_id_dangereux(racine, mauvais):
         with pytest.raises(SUP.Refus) as e:
             SUP.importer("claire", o)
         assert e.value.raison in ("incoherent", "format")
+
+
+# ── Revue finale : collision -journal, ids non-str, identité legacy ──
+def test_profil_en_journal_ne_peut_pas_ecrire_chez_un_autre(racine):
+    S._save_profil({"id": "pb", "nom": "B", "cible": "6-8", "cree_par": "marina"})
+    o = {**VIDE, "profils": [{"id": "pb-journal", "cree_par": "claire"}]}
+    with pytest.raises(SUP.Refus) as e:
+        SUP.importer("claire", o)
+    assert e.value.raison == "format"
+    assert not os.path.exists(os.path.join(racine, "profils", "pb-journal.json"))
+
+
+def test_profil_dont_l_id_finit_par_journal_n_est_pas_exporte(racine):
+    with open(os.path.join(racine, "profils", "x-journal.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": "x-journal", "cree_par": "claire"}, f)
+    assert SUP.exporter("claire", racine)["profils"] == []
+
+
+@pytest.mark.parametrize("faux", [["a"], {"a": 1}, None, 3])
+def test_importer_refuse_ids_non_str_proprement(racine, faux):
+    for o in ({**VIDE, "journaux": [{"profil_id": faux}]},
+              {**VIDE, "ponts": [{"serie_id": faux}]}):
+        with pytest.raises(SUP.Refus) as e:
+            SUP.importer("claire", o)
+        assert e.value.raison == "incoherent"
+
+
+def test_identite_legacy_perso(racine, monkeypatch):
+    monkeypatch.setenv("STUDIO_KEY", "cle-brute")
+    for sid, cp in (("s-pub", "public"), ("s-brute", "cle-brute")):
+        S._save({"id": sid, "titre": sid, "cree_par": cp, "episodes": []})
+    S._save({"id": "s-sans", "titre": "x", "episodes": []})
+    S._save({"id": "s-marina", "titre": "m", "cree_par": "marina", "episodes": []})
+    o = SUP.exporter("perso")
+    assert sorted(s["id"] for s in o["series"]) == ["s-brute", "s-pub", "s-sans"]
+    assert [s["id"] for s in SUP.exporter("marina")["series"]] == ["s-marina"]
+    SUP.reinitialiser("perso", C.empreinte(o))
+    assert SUP.exporter("perso")["series"] == []
+    assert os.path.exists(S._path("s-marina"))
+    SUP.importer("perso", o)
+    assert sorted(s["id"] for s in SUP.exporter("perso")["series"]) == ["s-brute", "s-pub", "s-sans"]
+    assert [s["id"] for s in SUP.exporter("marina")["series"]] == ["s-marina"]

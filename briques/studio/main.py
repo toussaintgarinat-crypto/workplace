@@ -1567,10 +1567,11 @@ def cle_support(x_support_key: Optional[str] = Header(None)) -> bytes:
 
 
 def _cible(utilisateur: str) -> str:
-    u = (utilisateur or "").strip()
-    if not u:
+    if not (utilisateur or "").strip():
         raise HTTPException(422, "utilisateur manquant")
-    return u
+    if utilisateur != utilisateur.strip():
+        raise HTTPException(422, "utilisateur invalide")  # jamais « corrigé » en silence
+    return utilisateur
 
 
 def _refus_http(e: Exception) -> HTTPException:
