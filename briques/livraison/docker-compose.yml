@@ -2,7 +2,7 @@ services:
   livraison:
     build: .
     container_name: workplace_livraison
-    image: workplace/livraison:0.2.0          # tag épinglé (pas de :latest flottant)
+    image: workplace/livraison:0.3.0          # tag épinglé (pas de :latest flottant)
     env_file:
       # DOKPLOY_URL, DOKPLOY_API_KEY, FORGEJO_URL, FORGEJO_TOKEN, LIVRAISON_API_KEYS
       # viennent du .env racine (jamais littéraux ici). Facultatif.

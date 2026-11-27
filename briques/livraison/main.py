@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Livraison — exploitation Dokploy", version="0.2.0")
+app = FastAPI(title="Livraison — exploitation Dokploy", version="0.3.0")
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 

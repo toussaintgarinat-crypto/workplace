@@ -98,10 +98,7 @@ Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utili
 2. Poser `LIVRAISON_CHIFFREMENT_CLE` et `STUDIO_SUPPORT_KEY` dans `briques/livraison/.env` (0600) ;
    `STUDIO_SUPPORT_KEY` (même valeur) côté Studio ; copier `contrats.exemple.json` en
    `/data/contrats.json` (volume `livraison_data`) avec l'URL réelle du Studio.
-3. Images : les `docker-compose.yml` épinglent `workplace/livraison:0.2.0` et `workplace/studio:0.6.1`
-   (commit 1b06195), AVANT les changements de 3b. Construire sur le Mac les images depuis le HEAD de la
-   branche sous ces tags si elles n'ont jamais été construites ; sinon bumper (ex. 0.2.1 / 0.6.2) dans
-   les compose. Le tag déployé doit contenir le code 3b. **L'image Studio DOIT être reconstruite** : la
+3. Images : 3a est déployée sous `workplace/livraison:0.2.0` et `workplace/studio:0.6.1`. Les compose épinglent maintenant `workplace/livraison:0.3.0` et `workplace/studio:0.6.2` (code 3b) : construire ces deux images sur le Mac depuis `main`, puis `docker save | ssh docker load`. **L'image Studio DOIT être reconstruite** : la
    Task 0 a changé ses routes `/support/*` (identité en en-tête `X-Utilisateur`) ; l'ancienne image est
    incompatible avec la nouvelle `livraison`. `docker save | ssh debian@192.168.1.89 docker load`
    (build pip impossible sur le HP).
