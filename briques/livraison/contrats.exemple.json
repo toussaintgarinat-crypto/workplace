@@ -1,0 +1,12 @@
+{
+  "studio": {
+    "url": "http://host.docker.internal:6060",
+    "cle_env": "STUDIO_SUPPORT_KEY",
+    "bloc": {
+      "version_schema": "1",
+      "exporter":      {"methode": "POST", "chemin": "/support/exporter"},
+      "reinitialiser": {"methode": "POST", "chemin": "/support/reinitialiser"},
+      "importer":      {"methode": "POST", "chemin": "/support/importer"}
+    }
+  }
+}
