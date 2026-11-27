@@ -48,6 +48,21 @@ def _lire_tout() -> dict:
         return {}
 
 
+def _lire_strict() -> dict:
+    """Pour les ÉCRIVAINS : fichier absent = registre vide ; présent mais illisible = on refuse
+    (sinon l'écriture suivante écraserait les autres entrées)."""
+    p = _chemin()
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text())
+    except (OSError, ValueError):
+        raise OSError("registre illisible") from None
+    if not isinstance(d, dict):
+        raise OSError("registre illisible")
+    return d
+
+
 def _ecrire_tout(tout: dict) -> None:
     p = _chemin()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +77,7 @@ def enregistrer(paquet_id: str, app: str, h: str, objet: str, empreinte: str, co
     rec = {"id": paquet_id, "app": app, "h": h, "objet": objet, "empreinte": empreinte,
            "comptages": comptages, "version_schema": version_schema,
            "cree_a": now, "expire_a": now + RETENTION_S, "verifie_a": None}
-    tout = _lire_tout()
+    tout = _lire_strict()
     tout[paquet_id] = rec
     _ecrire_tout(tout)
     return rec
@@ -74,7 +89,7 @@ def lire(paquet_id: str) -> Optional[dict]:
 
 
 def marquer_verifie(paquet_id: str, maintenant: Optional[float] = None) -> Optional[dict]:
-    tout = _lire_tout()
+    tout = _lire_strict()
     r = tout.get(paquet_id)
     if not isinstance(r, dict):
         return None
@@ -83,14 +98,20 @@ def marquer_verifie(paquet_id: str, maintenant: Optional[float] = None) -> Optio
     return r
 
 
+def _est_expire(r: dict, now: float) -> bool:
+    try:
+        return float(r.get("expire_a", 0)) <= now
+    except (TypeError, ValueError):
+        return True     # date illisible : traité comme expiré, pour que l'entrée soit purgée
+
+
 def expires(maintenant: Optional[float] = None) -> list:
     now = maintenant if maintenant is not None else time.time()
-    return [r for r in _lire_tout().values()
-            if isinstance(r, dict) and float(r.get("expire_a", 0)) <= now]
+    return [r for r in _lire_tout().values() if isinstance(r, dict) and _est_expire(r, now)]
 
 
 def retirer(paquet_id: str) -> None:
-    tout = _lire_tout()
+    tout = _lire_strict()
     if paquet_id in tout:
         del tout[paquet_id]
         _ecrire_tout(tout)

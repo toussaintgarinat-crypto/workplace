@@ -1,12 +1,13 @@
 """Brique « livraison » — exploitation des apps déployées sur Dokploy (S246)."""
 import asyncio
+import logging
 import os
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Livraison — exploitation Dokploy", version="0.1.0")
+app = FastAPI(title="Livraison — exploitation Dokploy", version="0.2.0")
 _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 
@@ -466,6 +467,8 @@ def _traduire(e: Exception) -> HTTPException:
         return HTTPException(503, "chiffrement des paquets non configuré (LIVRAISON_CHIFFREMENT_CLE)")
     if isinstance(e, ExecuteurErreur):
         return HTTPException(502, e.message)
+    if isinstance(e, OSError):
+        return HTTPException(503, "registre des paquets illisible")
     return HTTPException(500, "erreur interne")
 
 
@@ -500,12 +503,16 @@ async def purger_contrats(_: str = Depends(cle_api_fermee)):
         raise _traduire(e) from None
 
 
+async def _purger_une_fois():
+    try:
+        await DU.purger_expires(executeur())
+    except Exception as exc:        # exécuteur non configuré/injoignable : on réessaiera
+        logging.getLogger(__name__).warning("purge des paquets en échec : %s", type(exc).__name__)
+
+
 async def _boucle_purge():
     while True:
-        try:
-            await DU.purger_expires(executeur())
-        except Exception:           # exécuteur non configuré/injoignable : on réessaiera
-            pass
+        await _purger_une_fois()
         await asyncio.sleep(3600)
 
 

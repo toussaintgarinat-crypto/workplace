@@ -16,6 +16,7 @@ import contrat_donnees as C
 
 _RE_CLE_ENV = re.compile(r"[A-Z][A-Z0-9_]{0,60}_SUPPORT_KEY")
 _RE_RAISON = re.compile(r"[a-z_]{1,30}")
+_RE_NOM = re.compile(r"[a-z0-9_-]{1,40}")
 _CHAMPS = {"url", "cle_env", "bloc"}
 CHEMIN_VERIFIER = "/support/verifier"   # fixe : hors bloc (le bloc n'a que 3 actions)
 DELAI_S = 120.0
@@ -51,8 +52,21 @@ def lire(nom_app: str) -> Optional[dict]:
         d = json.loads(_chemin().read_text())
     except (OSError, ValueError):
         return None
-    e = d.get((nom_app or "").strip().lower()) if isinstance(d, dict) else None
+    nom = (nom_app or "").strip().lower()
+    if not _RE_NOM.fullmatch(nom):
+        return None
+    e = d.get(nom) if isinstance(d, dict) else None
     return json.loads(json.dumps(e)) if _valide(e) else None
+
+
+def _json_dict(r: httpx.Response) -> dict:
+    try:
+        d = r.json()
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        raise ContratErreur("réponse de l'application illisible", 200, "reponse")
+    return d
 
 
 def ouvrir(nom_app: str, transport: Optional[httpx.AsyncBaseTransport] = None) -> "AppContrat":
@@ -114,14 +128,14 @@ class AppContrat:
     async def verifier(self, utilisateur: str, paquet: bytes) -> dict:
         r = await self._appel("POST", CHEMIN_VERIFIER, params={"utilisateur": utilisateur},
                               content=paquet)
-        return r.json()
+        return _json_dict(r)
 
     async def reinitialiser(self, utilisateur: str, empreinte: str) -> dict:
         r = await self._appel("POST", self._action("reinitialiser"),
                               json={"utilisateur": utilisateur, "empreinte": empreinte})
-        return r.json()
+        return _json_dict(r)
 
     async def importer(self, utilisateur: str, paquet: bytes) -> dict:
         r = await self._appel("POST", self._action("importer"),
                               params={"utilisateur": utilisateur}, content=paquet)
-        return r.json()
+        return _json_dict(r)

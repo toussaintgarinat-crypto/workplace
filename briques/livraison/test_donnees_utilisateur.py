@@ -157,3 +157,66 @@ def test_route_app_inconnue_404(monkeypatch):
     monkeypatch.setenv("LIVRAISON_API_KEYS", "k")
     r = c.post("/contrats/inconnue/exporter", json={"utilisateur": "claire"}, headers={"X-API-Key": "k"})
     assert r.status_code == 404
+
+
+class AppCasse(FauxApp):
+    def __init__(self, retour=None, exc=None):
+        super().__init__()
+        self.retour, self.exc = retour, exc
+
+    async def verifier(self, u, paquet):
+        if self.exc:
+            raise self.exc
+        return self.retour
+
+
+@pytest.mark.parametrize("app", [AppCasse(exc=ValueError("secret")), AppCasse(retour=[1]),
+                                 AppCasse(retour=None)])
+def test_verifier_erreur_inattendue_invalide_sans_exception(app):
+    r = run(D.verifier_paquet(app, FauxExecuteur(), "claire"))
+    assert r["ok"] is True and r["verdict"] == "invalide" and r["raisons"]
+    assert "secret" not in str(r) and P.lire(r["paquet_id"])["verifie_a"] is None
+
+
+def test_verifier_registre_sans_le_paquet_invalide(monkeypatch):
+    monkeypatch.setattr(D.paquets, "lire", lambda pid: None)
+    r = run(D.verifier_paquet(FauxApp(), FauxExecuteur(), "claire"))
+    assert r["ok"] is True and r["verdict"] == "invalide"
+    assert r["raisons"] == ["paquet introuvable dans le registre"]
+
+
+def test_purge_une_erreur_disque_n_arrete_pas_les_suivants(monkeypatch):
+    ex = FauxExecuteur()
+    a = run(D.exporter_et_stocker(FauxApp(), ex, "a", maintenant=0.0))
+    b = run(D.exporter_et_stocker(FauxApp(), ex, "b", maintenant=0.0))
+    reel = P.retirer
+
+    def retirer(pid):
+        if pid == a["paquet_id"]:
+            raise OSError("disque")
+        reel(pid)
+    monkeypatch.setattr(D.paquets, "retirer", retirer)
+    r = run(D.purger_expires(ex, maintenant=20 * 86400.0))
+    assert r == {"supprimes": 1, "restants": 1}
+    assert P.lire(b["paquet_id"]) is None
+
+
+def test_boucle_purge_journalise_un_avertissement(monkeypatch, caplog):
+    async def echoue(ex):
+        raise RuntimeError("detail-secret")
+    monkeypatch.setattr(main.DU, "purger_expires", echoue)
+    monkeypatch.setattr(main, "executeur", lambda: FauxExecuteur())
+    with caplog.at_level("WARNING"):
+        run(main._purger_une_fois())
+    assert "RuntimeError" in caplog.text and "detail-secret" not in caplog.text
+
+
+def test_route_registre_illisible_503_sans_fuite(monkeypatch):
+    monkeypatch.setenv("LIVRAISON_API_KEYS", "k")
+    monkeypatch.setattr(main.contrats, "ouvrir", lambda nom: FauxApp())
+    monkeypatch.setattr(main, "executeur", lambda: FauxExecuteur())
+    d = os.path.join(os.environ["LIVRAISON_DATA"])
+    os.makedirs(d)
+    open(os.path.join(d, "paquets.json"), "w").write("{corrompu")
+    r = c.post("/contrats/studio/exporter", json={"utilisateur": "claire"}, headers={"X-API-Key": "k"})
+    assert r.status_code == 503 and r.json()["detail"] == "registre des paquets illisible"

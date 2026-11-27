@@ -63,3 +63,32 @@ def test_journal_sans_donnee_perso():
     ligne = json.loads(open(os.path.join(os.environ["LIVRAISON_DATA"], "acces.jsonl")).read().strip())
     assert ligne == {"t": 5.0, "operation": "exporter", "app": "studio", "h": H,
                      "paquet": "a" * 32, "ok": True}
+
+
+def test_registre_corrompu_non_ecrase_par_les_ecrivains(tmp_path):
+    f = tmp_path / "data" / "paquets.json"
+    f.parent.mkdir()
+    f.write_text("{pas du json")
+    with pytest.raises(OSError):
+        _enreg()
+    with pytest.raises(OSError):
+        P.retirer("0" * 32)
+    assert f.read_text() == "{pas du json"
+    f.write_text("[1]")
+    with pytest.raises(OSError):
+        _enreg()
+    assert f.read_text() == "[1]"
+
+
+def test_registre_absent_enregistrer_fonctionne():
+    r = _enreg()
+    assert P.lire(r["id"]) is not None
+
+
+def test_expire_a_illisible_compte_comme_expire():
+    r = _enreg()
+    f = P._chemin()
+    d = json.loads(f.read_text())
+    d[r["id"]]["expire_a"] = "n'importe quoi"
+    f.write_text(json.dumps(d))
+    assert [x["id"] for x in P.expires(maintenant=0.0)] == [r["id"]]

@@ -117,3 +117,19 @@ def test_exemple_a_jour_avec_le_manifeste_du_studio():
         pytest.skip("hors monorepo (image Docker)")
     exemple = json.loads((pathlib.Path(__file__).parent / "contrats.exemple.json").read_text())
     assert exemple["studio"]["bloc"] == json.loads(manifeste.read_text())["contrat_donnees"]
+
+
+@pytest.mark.parametrize("corps", [b"pas du json", b"[1, 2]"])
+@pytest.mark.parametrize("methode", ["verifier", "reinitialiser", "importer"])
+def test_reponse_200_illisible_ou_non_objet_refusee(monkeypatch, methode, corps):
+    app = _app(lambda r: httpx.Response(200, content=corps), monkeypatch)
+    args = {"verifier": ("c", b"P"), "reinitialiser": ("c", "e"), "importer": ("c", b"P")}[methode]
+    with pytest.raises(ContratErreur) as e:
+        asyncio.run(getattr(app, methode)(*args))
+    assert e.value.message == "réponse de l'application illisible" and e.value.raison == "reponse"
+
+
+def test_lire_refuse_nom_d_app_hors_forme(monkeypatch, tmp_path):
+    _ecrire(monkeypatch, tmp_path, {"my.app": ENTREE, "studio": ENTREE})
+    assert contrats.lire("my.app") is None
+    assert contrats.lire("studio") is not None

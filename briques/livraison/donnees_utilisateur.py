@@ -36,8 +36,10 @@ async def verifier_paquet(app, ex, utilisateur: str, maintenant: Optional[float]
     from contrats import ContratErreur
     r = await exporter_et_stocker(app, ex, utilisateur, maintenant)
     pid, raisons = r["paquet_id"], []
-    rec = paquets.lire(pid)
     try:
+        rec = paquets.lire(pid)
+        if rec is None:
+            raise LookupError
         blob = await ex.lire(rec["objet"])
         clair = chiffrement.dechiffrer(blob, rec["objet"])
         retour = await app.verifier(utilisateur, clair)
@@ -49,14 +51,18 @@ async def verifier_paquet(app, ex, utilisateur: str, maintenant: Optional[float]
         raisons.append(f"refus de l'application : {e.raison or 'erreur'}")
     except ExecuteurErreur as e:
         raisons.append(f"stockage : {e.message}")
+    except LookupError:
+        raisons.append("paquet introuvable dans le registre")
+    except Exception:   # fail closed : jamais d'exception brute (ni son message) vers l'appelant
+        raisons.append("erreur inattendue pendant la vérification")
     verdict = "valide" if not raisons else "invalide"
     if verdict == "valide":
         paquets.marquer_verifie(pid, maintenant)
     paquets.journaliser("verifier", app.nom, r["h"], pid, verdict == "valide", maintenant)
     now = maintenant if maintenant is not None else time.time()
-    return {"ok": True, "verdict": verdict, "paquet_id": pid, "empreinte": rec["empreinte"],
-            "comptages": rec["comptages"], "raisons": raisons,
-            "expire_a": min(now + paquets.PREUVE_TTL_S, rec["expire_a"])}
+    return {"ok": True, "verdict": verdict, "paquet_id": pid, "empreinte": r["empreinte"],
+            "comptages": r["comptages"], "raisons": raisons,
+            "expire_a": min(now + paquets.PREUVE_TTL_S, r["expire_a"])}
 
 
 async def purger_expires(ex, maintenant: Optional[float] = None) -> dict:
@@ -64,10 +70,10 @@ async def purger_expires(ex, maintenant: Optional[float] = None) -> dict:
     for rec in paquets.expires(maintenant):
         try:
             await ex.supprimer(rec["objet"])
-        except ExecuteurErreur:
-            restants += 1          # on réessaiera : l'entrée reste tant que l'objet n'est pas parti
+            paquets.retirer(rec["id"])
+            paquets.journaliser("purger", rec["app"], rec["h"], rec["id"], True, maintenant)
+        except (ExecuteurErreur, OSError, KeyError, TypeError, ValueError):
+            restants += 1          # on réessaiera : une entrée en échec n'arrête pas les autres
             continue
-        paquets.retirer(rec["id"])
-        paquets.journaliser("purger", rec["app"], rec["h"], rec["id"], True, maintenant)
         supprimes += 1
     return {"supprimes": supprimes, "restants": restants}
