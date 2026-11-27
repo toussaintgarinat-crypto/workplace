@@ -1,6 +1,6 @@
 # S248 — Contrat d'app + remise à zéro par utilisateur
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2+3a codées ; 3b (reset/restitution, preuve par cible) à exécuter** (voir [plan 3b](../superpowers/plans/2026-11-27-s248-partie3b-reset-restitution-preuve-cible.md) et « Décisions »).
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2+3a+3b codées ; preuve LIVE (SLIVE) à faire** (voir [plan 3b](../superpowers/plans/2026-11-27-s248-partie3b-reset-restitution-preuve-cible.md) et « Décisions »).
 Dépend de : S245, S247 (sauvegarde vérifiée, SeaweedFS). Lire d'abord : `docs/sprints/S182-S187`
 (isolation multi-utilisateur), ADR `studio-famille-compte-unique-portabilite-profil` (portabilité par
 `profil_id`), `GUIDE-ajouter-une-brique.md`.
@@ -77,4 +77,35 @@ Reset : l'app exige l'empreinte exacte des données courantes (paquet = état ac
 
 Guide du contrat : [GUIDE-contrat-donnees.md](../GUIDE-contrat-donnees.md).
 
-État : Parties 1+2 codées — plan `docs/superpowers/plans/2026-11-27-s248-partie1-2-contrat-donnees-studio.md` ; partie 3 à planifier.
+## Livré en 3b (codé et testé sans Docker)
+
+- Outils `livraison_donnees_reinitialiser` et `livraison_donnees_restituer` (niveau `donnees`) ;
+  `livraison_donnees_verifier` fournit la preuve `paquet_verifie`.
+- Preuve liée à (app, utilisateur visé) dans le Cœur (`PREUVES_PAR_CIBLE`, `cle_preuve`) : une
+  vérification n'autorise jamais le reset d'un autre utilisateur ; fraîcheur 6 h, un paquet = un reset.
+- Orchestration : relecture + ré-export avant effacement, contrôle final à zéro, budget global 540 s
+  (Cœur 600 s), 504 ambigus explicites, restitution implicite stricte (paquet consommé unique, espace
+  vide), `paquet_id` = écrasement délibéré.
+- Journaux d'accès uvicorn coupés ; procédure de reprise du registre dans le README de `livraison`.
+- Studio : identité en en-tête `X-Utilisateur` (Task 0) ; test de livraison contre le vrai Studio.
+- Limites connues : `docs/GUIDE-contrat-donnees.md` section 7.
+
+## Reste pour la preuve LIVE (SLIVE)
+
+Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utilisateur.md).
+
+1. Copier `outils/executeur-restauration/executeur.py` sur la VM 100, redémarrer le service, `GET /sante`.
+2. Poser `LIVRAISON_CHIFFREMENT_CLE` et `STUDIO_SUPPORT_KEY` dans `briques/livraison/.env` (0600) ;
+   `STUDIO_SUPPORT_KEY` (même valeur) côté Studio ; copier `contrats.exemple.json` en
+   `/data/contrats.json` (volume `livraison_data`) avec l'URL réelle du Studio.
+3. Images : les `docker-compose.yml` épinglent `workplace/livraison:0.2.0` et `workplace/studio:0.6.1`
+   (commit 1b06195), AVANT les changements de 3b. Construire sur le Mac les images depuis le HEAD de la
+   branche sous ces tags si elles n'ont jamais été construites ; sinon bumper (ex. 0.2.1 / 0.6.2) dans
+   les compose. Le tag déployé doit contenir le code 3b. **L'image Studio DOIT être reconstruite** : la
+   Task 0 a changé ses routes `/support/*` (identité en en-tête `X-Utilisateur`) ; l'ancienne image est
+   incompatible avec la nouvelle `livraison`. `docker save | ssh debian@192.168.1.89 docker load`
+   (build pip impossible sur le HP).
+4. Redémarrer le Cœur (nouveau registre d'outils et logique de preuve par cible) ; `up -d` des deux
+   briques et vérifier le tag réel par `docker inspect`.
+5. Jouer le scénario du modèle sur des utilisateurs témoins, consigner, nettoyer, retirer
+   `STUDIO_SUPPORT_KEY` si l'usage n'est pas voulu.

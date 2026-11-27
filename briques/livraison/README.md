@@ -55,4 +55,49 @@ Export chiffré des données d'UN utilisateur d'une application à contrat (ex. 
   ne retire que les paquets EXPIRÉS. Après une rotation, ré-exporter.
 - Journaux d'accès uvicorn désactivés (`--no-access-log`) : le Cœur duplique les arguments des POST dans
   la query string, l'identité de l'utilisateur y serait écrite en clair.
-- `livraison_donnees_verifier` ne déclare volontairement pas `fournit_preuve` (réservé à 3b).
+- `livraison_donnees_verifier` (`action: false`, pas d'approbation) déclare `fournit_preuve: paquet_verifie`.
+
+### Remise à zéro et restitution (S248 3b)
+
+Flux : `livraison_donnees_verifier` -> [approbation Telegram, niveau `donnees`]
+`livraison_donnees_reinitialiser` -> `livraison_donnees_restituer` (approbation `donnees`).
+Routes : `POST /contrats/{app}/exporter|verifier|reinitialiser|restituer`, `POST /contrats/purger`.
+
+- **Preuve `paquet_verifie`**, liée à (app, utilisateur visé) : la clé de preuve du Cœur est
+  `app|sha256(utilisateur)[:16]` (`core/approbations.py::cle_preuve`, `PREUVES_PAR_CIBLE`). Une
+  vérification pour un utilisateur n'autorise JAMAIS la remise à zéro d'un autre. L'identité doit
+  être identique au caractère près.
+- **Fraîcheur** : 6 h (`PREUVE_TTL_S`). **Un paquet sert UN reset** : il est marqué consommé dès que
+  l'effacement a eu lieu ou est possible ; un second reset exige une nouvelle vérification.
+- **Budget global** : 540 s par orchestration (`DELAI_GLOBAL_DONNEES_S`) ; le Cœur attend 600 s
+  (`TIMEOUT_DONNEES`), donc jamais de coupure côté Cœur avant la brique.
+- **Avant l'effacement**, la brique relit et déchiffre le paquet, ré-exporte et compare l'empreinte
+  (écart : 409 « les données ont changé »). Après : contrôle final, tous les comptages doivent être à
+  zéro (sinon 409 « résultat incomplet », le paquet reste restituable).
+- **Restitution implicite** (sans `paquet_id`) : uniquement le paquet unique CONSOMMÉ par une remise à
+  zéro et pas encore restitué, et seulement si l'espace de l'utilisateur est vide (tous comptages à 0,
+  mêmes clés) ou identique au paquet. 0 candidat : 404 ; 2 candidats ou plus : 409 qui liste les
+  identifiants ; espace non vide : 409. **Avec `paquet_id`** : choix délibéré, il écrase l'état actuel
+  (le paquet doit être vérifié, non expiré, de la même app et du même utilisateur).
+- **504 ambigu** (l'application n'a pas répondu, ou budget global dépassé après un appel d'effet) :
+  l'effacement a peut-être eu lieu. Ne PAS réessayer à l'aveugle : lancer `livraison_donnees_verifier`
+  pour lire l'état. L'identifiant du paquet est dans le message ; il reste restituable avec
+  `livraison_donnees_restituer` (`paquet_id`). Sans paquet choisi, le 504 dit « rien n'a été modifié ».
+- **Journaux d'accès uvicorn désactivés** (`--no-access-log`) : le Cœur duplique les arguments des POST
+  dans la query string, l'identité y serait écrite en clair. `acces.jsonl` ne porte que `h`.
+
+### Procédure de reprise : `paquets.json` corrompu
+
+Symptôme : les écritures (export, vérification, reset, restitution) répondent **503 « registre des
+paquets illisible »** ; les lectures voient un registre vide ; la purge, aveugle, ne retire rien.
+
+1. Ne rien supprimer. Arrêter ou isoler les opérations de données.
+2. Inspecter `/data/paquets.json` (volume `livraison_data`) ; si le contenu est réparable (JSON
+   tronqué), le corriger à la main, sinon le **déplacer de côté** (`mv paquets.json paquets.json.corrompu`).
+   Absent = registre vide, les écritures reprennent.
+3. Les objets S3 `contrat/<app>/<h>/<id>.bin` des paquets perdus deviennent **orphelins** : la purge
+   suit le registre et ne les voit plus. Les lister (via l'exécuteur ou SeaweedFS) et les supprimer
+   à la main ; ils sont chiffrés mais gardent le nom de l'app et `h`.
+4. Les anciennes vérifications ne sont plus reconnues : refaire `livraison_donnees_verifier` avant
+   tout reset. Un paquet perdu ne peut plus être restitué par `paquet_id` (registre) ; l'objet reste
+   lisible seulement avec la clé et son nom d'objet (nom = contexte de chiffrement).

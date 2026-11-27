@@ -127,29 +127,47 @@ autre, envoyée dans le header `X-Support-Key`. Elle est lue fraîche à chaque 
 
 ## 7. Limites connues
 
+État après 3a+3b (orchestration dans `briques/livraison/donnees_utilisateur.py`).
+
 - **Médias hors paquet** : les images et l'audio des séries vivent dans d'autres briques ; le
-  paquet n'en contient que les références. Restaurer un paquet ne restaure pas les fichiers
-  médias.
-- **Pas de retour arrière** si une écriture échoue en cours d'import (disque plein) : les objets
-  déjà écrits restent. La validation préalable écarte les refus logiques, pas les pannes d'E/S.
-- **Pas de verrou face aux handlers async du Studio** (risque réel, à l'inverse de ce qu'on
-  croirait) : ces handlers chargent une série, attendent des appels LLM/voix/images (secondes à
-  minutes) puis appellent `S._save(serie)`. Un reset qui s'exécute pendant cette attente est
-  **annulé** à la sauvegarde : le fichier de la série réapparaît (ressuscité). La vérification
-  d'empreinte ne peut pas le voir. Parade pour la partie 3 : après un reset, ré-exporter et exiger
-  que tous les comptages soient à zéro (ou prendre un verrou par utilisateur).
-- **Empreinte non salée** : `h = sha256(utilisateur)[:16]` (registre, clés d'objet, journal) est
-  devinable pour une identité à faible entropie.
-- **Rotation de clé** : les paquets sont signés avec la clé de support de l'app et chiffrés avec
-  `LIVRAISON_CHIFFREMENT_CLE` ; changer l'une ou l'autre rend les paquets stockés inutilisables
-  jusqu'à leur expiration (14 jours).
-- **`verifier` peut accepter un paquet que `importer` refuse (409)** : le dossier jetable n'a
-  aucun conflit avec le volume réel. Comportement attendu.
-- **Autres limites restantes** : exceptions non-`Refus` (hook de migration, `OSError`) remontées en
-  500 ; handlers `async` aux E/S bloquantes ; pas de test positif « clé de support correcte alors
-  que `STUDIO_KEY`/`API_KEYS` sont configurées » ; `CORS_ORIGINS` à resserrer. Corrigés depuis les
-  revues : collision d'id `-journal` (refusé à l'import, ignoré à l'export), `fullmatch` pour les
-  identifiants, ids non-`str` (refus `incoherent`), utilisateur avec espaces (422).
-- **Fait en 3a (livraison)** : stockage SeaweedFS chiffré, rétention de 14 jours, journal
-  d'accès, outils `livraison_donnees_exporter` / `livraison_donnees_verifier`.
-- **Reste pour la 3b** : reset/restitution, validation du bloc par le Cœur, preuve LIVE par cible.
+  paquet n'en contient que les références. Restaurer un paquet ne restaure pas les fichiers médias.
+- **Pas de retour arrière d'un import partiel** (disque plein, panne d'E/S en cours d'écriture) : les
+  objets déjà écrits restent. La validation préalable écarte les refus logiques, pas les pannes.
+  Une restitution dont l'issue est ambiguë répond 504 ; vérifier l'état avant de réessayer.
+- **Empreinte `h` non salée** : `h = sha256(utilisateur)[:16]` est devinable pour une identité à
+  faible entropie, et figure dans les clés S3 (`contrat/<app>/<h>/<id>.bin`), le registre et le journal.
+- **Chaque vérification stocke un paquet**, conservé 14 jours, SANS approbation :
+  `livraison_donnees_verifier` est `action: false` (même précédent que le vérificateur de S247).
+  L'export est, lui, approuvé (`reversible`).
+- **Verrou par cible en mémoire** (`_EN_COURS`, par (app, h)) : valable dans UN processus. Deux
+  instances de `livraison` ne se verrouilleraient pas entre elles.
+- **Fenêtre TOCTOU de la restitution implicite** : l'état « vide ou identique » est contrôlé puis
+  l'import a lieu ; une écriture de l'app entre les deux n'est pas vue (l'import écrase alors).
+- **Une vérification qui dépasse le délai n'annule pas une preuve antérieure** : le verdict de délai
+  est invalide sans `preuve_id`, le Cœur l'ignore ; l'ancienne preuve (6 h) reste donc utilisable.
+- **Un 503 d'une app est toujours lu « désactivé »** (clé de support absente) : traité comme refus
+  certain avant effet, même si la cause réelle est autre.
+- **Handlers async du Studio sans verrou** : un handler qui a chargé une série, attendu un appel
+  LLM/voix/images puis appelé `S._save(serie)` peut ressusciter un fichier après un reset. Parade
+  livrée : contrôle final (ré-export après reset, tous les comptages à 0 avec les mêmes clés),
+  sinon 409 « résultat incomplet » et paquet restituable.
+- **`verifier` peut accepter un paquet que `importer` refuse (409)** : le dossier jetable n'a aucun
+  conflit avec le volume réel. Comportement attendu.
+- **Rotation de clé** : changer `STUDIO_SUPPORT_KEY` (signature) ou `LIVRAISON_CHIFFREMENT_CLE` rend
+  les paquets stockés inutilisables jusqu'à leur expiration (14 jours) ; ré-exporter.
+- **Registre `paquets.json` corrompu** : écritures bloquées (503), voir la procédure de reprise du
+  README de `briques/livraison`.
+- **Autres** : exceptions non-`Refus` (hook de migration, `OSError`) remontées en 500 ; E/S bloquantes
+  dans des handlers `async` ; `CORS_ORIGINS` à resserrer.
+- **Reste à faire** : la preuve LIVE (SLIVE), voir `docs/s248/preuve-donnees-utilisateur.md`.
+
+## 8. Pour le contrat des autres apps
+
+L'orchestrateur (`livraison`) s'appuie sur deux exigences, à respecter dans toute nouvelle app :
+
+1. **Un refus de `reinitialiser` (409, 422, 401, 404, 413, 503) doit survenir AVANT toute suppression.**
+   L'orchestrateur lit ces codes comme « rien n'a été effacé » et laisse le paquet inchangé ; tout
+   autre résultat (pas de réponse, 5xx autre que 503, 200 illisible) est traité comme ambigu et
+   consomme le paquet.
+2. **Un `importer` valide TOUT avant d'écrire** (voir section 6) : un refus ne modifie rien. Sinon une
+   restitution refusée laisserait un état partiel que l'orchestrateur croit intact.
