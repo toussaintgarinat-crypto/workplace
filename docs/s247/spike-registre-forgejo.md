@@ -12,3 +12,9 @@ Méthode : lecture seule avec le jeton `FORGEJO_REGISTRY_TOKEN` (jamais affiché
 - **Combien** : garder les **10 dernières versions `vN` par paquet** ET toute version encore référencée par un déploiement de rollback Dokploy de l'application (à lire via la brique : `application.one → deployments[].rollback`), jamais `latest`.
 - **Garde-fous** : ne toucher qu'aux paquets `container` du propriétaire `wp-admin` dont le nom correspond à un `appName` connu de Dokploy ; mode « à blanc » (liste ce qui serait supprimé) activé par défaut tant que l'utilisateur n'a pas validé ; journal des suppressions ; refuser si moins de 3 versions resteraient.
 - **Test** : sur le paquet du témoin, créer >10 versions par redéploiements, vérifier que les 10 dernières et les versions de rollback restent.
+
+## Réalisation (2026-11-27, S247 2c)
+- Script `outils/executeur-restauration/retention_registre.py` (+ 11 tests) ; rôle Ansible : service + timer `forgejo-retention` (04:15), **inactif** tant que `executeur_retention_active` n'est pas vrai.
+- Règle livrée : garder les **10 dernières versions** de chaque paquet dont le nom commence par un préfixe autorisé (frontière `-`), jamais `latest`, refus si GARDER < 3, **à blanc par défaut** (`EXECUTEUR_RETENTION_APPLIQUER=1` pour supprimer), échec de suppression ⇒ code 2, listage en échec ⇒ rien supprimé.
+- **Écart au spike** : la garde « versions référencées par un rollback Dokploy » n'est PAS implémentée (la VM 100 n'a pas de clé Dokploy) ; elle est remplacée par « 10 dernières versions », qui couvre les retours arrière récents.
+- Live VM 100 : jeton + préfixe posés dans `/etc/executeur-restauration/env` (0600) ; script lancé à blanc sous le confinement de l'unité : lecture OK, 0 suppression (9 versions) ; simulation GARDER=3 : sélectionne `calendrier-familial-sq5rzh:v1` et `:v2`. Le `DELETE` réel avec cette logique n'a pas encore été exercé (il le sera au premier dépassement de 10 versions).
