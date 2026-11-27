@@ -452,10 +452,29 @@ def _assurer_preuves(c) -> None:
                     PRIMARY KEY (nom, cle, utilisateur))""")
 
 
+def _assurer_alias(c) -> None:
+    """Alias (nom saisi -> identifiant d'application) appris des verdicts de la brique."""
+    c.execute("""CREATE TABLE IF NOT EXISTS preuves_alias (
+                    nom TEXT NOT NULL, alias TEXT NOT NULL, utilisateur TEXT NOT NULL,
+                    app_id TEXT NOT NULL, PRIMARY KEY (nom, alias, utilisateur))""")
+
+
+def _cle_canonique(c, nom: str, cle, utilisateur: str) -> str:
+    """Clé sous laquelle chercher la preuve : l'identifiant d'application si `cle` est un alias
+    connu (nom d'app appris d'un verdict), sinon `cle` elle-même (identifiant, ou ancien format).
+    L'alias le plus RÉCENT gagne : une app recréée sous un ancien nom ne hérite pas de la preuve
+    de l'ancienne."""
+    _assurer_alias(c)
+    k = _norm_cle(cle)
+    r = c.execute("SELECT app_id FROM preuves_alias WHERE nom=? AND alias=? AND utilisateur=?",
+                  (nom, k, utilisateur)).fetchone()
+    return r["app_id"] if r else k
+
+
 def _preuve_valide_c(c, nom: str, cle, utilisateur: str, maintenant: float) -> bool:
     _assurer_preuves(c)
     r = c.execute("SELECT expire_a FROM preuves WHERE nom=? AND cle=? AND utilisateur=?",
-                  (nom, _norm_cle(cle), utilisateur)).fetchone()
+                  (nom, _cle_canonique(c, nom, cle, utilisateur), utilisateur)).fetchone()
     return bool(r and r["expire_a"] > maintenant)
 
 
@@ -490,7 +509,21 @@ def _prerequis_tenus(c, r, args: dict, now: float) -> bool:
     return all(p.values())
 
 
-def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None) -> list[str]:
+def _poser_alias(c, nom: str, cles_n: set, app_id, user: str) -> set:
+    """Enregistre cles_n -> app_id et renvoie l'ensemble canonique ({app_id}) ; sans app_id
+    (ancien format), renvoie cles_n inchangé."""
+    aid = _norm_cle(app_id)
+    if not aid:
+        return cles_n
+    _assurer_alias(c)
+    for k in cles_n - {aid}:
+        c.execute("INSERT OR REPLACE INTO preuves_alias (nom, alias, utilisateur, app_id) "
+                  "VALUES (?,?,?,?)", (nom, k, user, aid))
+    return {aid}
+
+
+def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None,
+                    app_id: str | None = None) -> list[str]:
     """Annule la preuve (verdict `invalide` plus récent) : supprime l'enregistrement et rebaisse le
     drapeau sur les demandes `en_attente`/`approuvee` de CET utilisateur visant ces apps."""
     user = _utilisateur(utilisateur)
@@ -501,12 +534,16 @@ def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None
     with _conn() as c:
         c.execute("BEGIN IMMEDIATE")
         _assurer_preuves(c)
+        # Les anciennes preuves indexées par nom restent révoquées aussi (cles_n d'origine).
+        anciennes = set(cles_n)
+        cles_n = _poser_alias(c, nom, cles_n, app_id, user) | anciennes
         for k in cles_n:
             c.execute("DELETE FROM preuves WHERE nom=? AND cle=? AND utilisateur=?", (nom, k, user))
         for r in c.execute("SELECT id, prerequis, args FROM approbations WHERE utilisateur=? "
                            "AND statut IN ('en_attente','approuvee')", (user,)).fetchall():
             try:
-                cle_demande = _norm_cle(json.loads(r["args"] or "{}").get("app"))
+                cle_demande = _cle_canonique(
+                    c, nom, json.loads(r["args"] or "{}").get("app"), user)
                 prereq = json.loads(r["prerequis"] or "{}")
             except (ValueError, AttributeError):
                 continue
@@ -521,7 +558,8 @@ def revoquer_preuve(nom: str, cles: list[str], *, utilisateur: str | None = None
 
 def enregistrer_preuve(nom: str, cles: list[str], preuve_id: str, expire_a: float, *,
                        utilisateur: str | None = None,
-                       maintenant: float | None = None) -> list[str]:
+                       maintenant: float | None = None,
+                       app_id: str | None = None) -> list[str]:
     """Enregistre une preuve (par utilisateur ET par clé d'app) puis lève ce prérequis sur les
     demandes `en_attente` de CET utilisateur visant cette app. Renvoie les ids des demandes dont
     tous les prérequis sont désormais réunis (à renotifier avec boutons)."""
@@ -533,16 +571,19 @@ def enregistrer_preuve(nom: str, cles: list[str], preuve_id: str, expire_a: floa
         return []
     with _conn() as c:
         _assurer_preuves(c)
+        # Avec `app_id` (verdict de la brique) : la preuve vit sous l'identifiant ; les noms
+        # saisis ne sont que des alias. Sans : ancien format (clé = nom).
+        cles_n = _poser_alias(c, nom, cles_n, app_id, user)
         for k in cles_n:
             c.execute("INSERT OR REPLACE INTO preuves (nom, cle, utilisateur, preuve_id, expire_a) "
                       "VALUES (?,?,?,?,?)", (nom, k, user, preuve_id, expire_a))
         rows = c.execute(
             "SELECT id, prerequis, args FROM approbations WHERE statut='en_attente' "
             "AND utilisateur=? AND expire_a>?", (user, now)).fetchall()
+        rows = [(r, _cle_canonique(c, nom, _args_de_ligne(r).get("app"), user)) for r in rows]
     liberees = []
-    for r in rows:
+    for r, cle_demande in rows:
         try:
-            cle_demande = _norm_cle(json.loads(r["args"] or "{}").get("app"))
             prereq = json.loads(r["prerequis"] or "{}")
         except (ValueError, AttributeError):
             continue

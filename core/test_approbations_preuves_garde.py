@@ -171,3 +171,40 @@ def test_echec_de_revocation_ne_fait_rien_echapper(env, monkeypatch):
     monkeypatch.setattr(approbations, "revoquer_preuve", boom)
     env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="P2")
     assert _run("livraison_verifier_sauvegarde", {"app": "calendrier"}) == env["resultat_verif"]
+
+
+# ── Indexation par identifiant d'application (backlog S247) ──────────────────
+
+def test_preuve_donnee_par_nom_vaut_pour_l_identifiant_et_inversement(env):
+    env["resultat_verif"] = _verdict()
+    _run("livraison_verifier_sauvegarde", {"app": "Calendrier"})
+    _run("livraison_reset_app", {"app": "A1"})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": True}
+    _run("livraison_reset_app", {"app": " CALENDRIER "})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": True}
+
+
+def test_app_recreee_sous_le_meme_nom_n_herite_pas_de_la_preuve(env):
+    env["resultat_verif"] = _verdict()
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    # L'ancienne app disparaît ; une autre (A2) porte le même nom, vérifiée INVALIDE.
+    env["resultat_verif"] = _verdict(app_id="A2", verdict="invalide", preuve_id="P2")
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    _run("livraison_reset_app", {"app": "calendrier"})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": False}
+
+
+def test_verdict_invalide_par_identifiant_revoque_aussi_le_nom(env):
+    env["resultat_verif"] = _verdict()
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    env["resultat_verif"] = _verdict(verdict="invalide", preuve_id="P2")
+    _run("livraison_verifier_sauvegarde", {"app": "A1"})
+    _run("livraison_reset_app", {"app": "calendrier"})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": False}
+
+
+def test_preuve_d_une_app_ne_vaut_pas_pour_une_autre(env):
+    env["resultat_verif"] = _verdict()
+    _run("livraison_verifier_sauvegarde", {"app": "calendrier"})
+    _run("livraison_reset_app", {"app": "autre"})
+    assert env["notifs"][-1][1] == {"preuve_sauvegarde": False}

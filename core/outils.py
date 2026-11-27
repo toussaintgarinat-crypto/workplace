@@ -596,6 +596,11 @@ def est_prerequis(nom: str, registre) -> tuple[str, ...]:
     return tuple(str(p).strip() for p in brut if str(p).strip())
 
 
+def _id_app(d: dict) -> str | None:
+    v = d.get("app_id")
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, registre) -> None:
     """Si `nom` déclare `fournit_preuve`, lit le verdict DANS le résultat de la brique (jamais
     dans les arguments), enregistre la preuve et renotifie les demandes libérées."""
@@ -611,14 +616,15 @@ async def _enregistrer_preuve_eventuelle(nom: str, args: dict, resultat: str, re
         if d.get("verdict") == "invalide":
             # La dernière vérification fait foi : un verdict invalide annule toute preuve valide.
             if isinstance(pid, str) and pid.strip():
-                approbations.revoquer_preuve(str(preuve), [k for k in cles if k])
+                approbations.revoquer_preuve(str(preuve), [k for k in cles if k],
+                                             app_id=_id_app(d))
             return
         expire_a = d["expire_a"]
         if (not isinstance(pid, str) or not pid.strip() or isinstance(expire_a, bool)
                 or not isinstance(expire_a, (int, float)) or not math.isfinite(expire_a)):
             return
         libres = approbations.enregistrer_preuve(
-            str(preuve), [k for k in cles if k], pid, float(expire_a))
+            str(preuve), [k for k in cles if k], pid, float(expire_a), app_id=_id_app(d))
     except Exception as exc:  # noqa: BLE001 — fail closed : aucune preuve, résultat inchangé
         if not isinstance(exc, (ValueError, KeyError, TypeError, AttributeError)):
             logging.getLogger(__name__).warning("enregistrement de preuve en échec : %s", exc)
