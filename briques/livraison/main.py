@@ -67,7 +67,10 @@ import inventaire  # noqa: E402
 import sauvegarde  # noqa: E402
 import operations  # noqa: E402
 import reset  # noqa: E402
-from client_executeur import Executeur  # noqa: E402
+from client_executeur import Executeur, ExecuteurErreur  # noqa: E402
+import chiffrement  # noqa: E402
+import contrats  # noqa: E402
+import donnees_utilisateur as DU  # noqa: E402
 
 TAIL_BRIQUE_MAX = 500
 LOGS_MAX = 20000
@@ -219,7 +222,7 @@ def _masquer_puis_couper(logs: str) -> str:
 
 
 # ── Actions réversibles (gardées par approbation côté Cœur, S245) ──
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 TITRE_DEFAUT = "Déploiement demandé via l'assistant"
 
@@ -449,3 +452,65 @@ async def operation_app(app_: str, _: str = Depends(cle_api)):
             "operation": op.get("id"), "message": op.get("message"),
             "actif": (etat or {}).get("actif"), "base_active": (etat or {}).get("base_active"),
             "retour_possible": reset.peut_retour_arriere(etat)}
+
+
+# ── Données utilisateur (S248 3a) ──
+class CorpsUtilisateur(BaseModel):
+    utilisateur: str = Field(pattern=r"^[A-Za-z0-9_.@-]{1,128}$")   # moteur regex Rust (pydantic v2) : pas de \Z ; `$` = fin de texte stricte
+
+
+def _traduire(e: Exception) -> HTTPException:
+    if isinstance(e, contrats.ContratErreur):
+        return HTTPException(e.statut if e.statut in (404, 409, 422, 503) else 502, e.message)
+    if isinstance(e, chiffrement.CleAbsente):
+        return HTTPException(503, "chiffrement des paquets non configuré (LIVRAISON_CHIFFREMENT_CLE)")
+    if isinstance(e, ExecuteurErreur):
+        return HTTPException(502, e.message)
+    return HTTPException(500, "erreur interne")
+
+
+async def _donnees(app_: str, corps: CorpsUtilisateur, fabrique):
+    try:
+        chiffrement._cle()                    # 503 avant tout appel à l'app (fail closed)
+        app = contrats.ouvrir(app_)
+        ex = executeur()
+        return await fabrique(app, ex, corps.utilisateur)
+    except (contrats.ContratErreur, chiffrement.CleAbsente, ExecuteurErreur, OSError) as e:
+        raise _traduire(e) from None
+
+
+@app.post("/contrats/{app_}/exporter")
+async def exporter_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
+    r = await _donnees(app_, corps, DU.exporter_et_stocker)
+    r.pop("h")
+    return {"ok": True, "app": app_.strip().lower(), **r}
+
+
+@app.post("/contrats/{app_}/verifier")
+async def verifier_donnees(app_: str, corps: CorpsUtilisateur, _: str = Depends(cle_api_fermee)):
+    r = await _donnees(app_, corps, DU.verifier_paquet)
+    return {"app": app_.strip().lower(), **r}
+
+
+@app.post("/contrats/purger")
+async def purger_contrats(_: str = Depends(cle_api_fermee)):
+    try:
+        return {"ok": True, **await DU.purger_expires(executeur())}
+    except ExecuteurErreur as e:
+        raise _traduire(e) from None
+
+
+async def _boucle_purge():
+    while True:
+        try:
+            await DU.purger_expires(executeur())
+        except Exception:           # exécuteur non configuré/injoignable : on réessaiera
+            pass
+        await asyncio.sleep(3600)
+
+
+@app.on_event("startup")
+async def _demarrer_purge():
+    t = asyncio.create_task(_boucle_purge())
+    _taches_en_fond.add(t)
+    t.add_done_callback(_taches_en_fond.discard)
