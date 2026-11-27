@@ -11,6 +11,10 @@ Disposition sous la racine (identique au volume réel) :
 
 Limite documentée : les médias (images, audio) des séries vivent dans d'autres briques ; le
 paquet n'en contient que les références.
+
+Limites connues (documentées, non corrigées) : pas de retour arrière si une écriture échoue en
+cours d'import (disque plein) ; pas de verrou entre la vérification d'empreinte du reset et ses
+suppressions (une écriture dans cette fenêtre est perdue).
 """
 import hashlib
 import json
@@ -61,6 +65,8 @@ def _appartient(objet: dict, utilisateur: str, serie: bool) -> bool:
 
 
 def _json_dossier(dossier: str, exclure_suffixe: Optional[str] = None) -> list:
+    """Retourne des couples (nom de fichier sans .json, objet) : seul le fichier réellement lu
+    fait foi, jamais le champ `id` contenu dedans."""
     out = []
     if not os.path.isdir(dossier):
         return out
@@ -76,7 +82,7 @@ def _json_dossier(dossier: str, exclure_suffixe: Optional[str] = None) -> list:
         except (OSError, ValueError):
             continue
         if isinstance(data, dict):
-            out.append(data)
+            out.append((fn[:-5], data))
     return out
 
 
@@ -93,10 +99,10 @@ def exporter(utilisateur: str, racine: Optional[str] = None) -> dict:
     d = _chemins(racine)
     # Les objets à identifiant non sûr ne sont ni exportés ni (donc) supprimés : leur id
     # servirait à fabriquer un chemin.
-    series = [s for s in _json_dossier(d["series"])
-              if _id_sur(s.get("id")) and _appartient(s, utilisateur, True)]
-    profils = [p for p in _json_dossier(d["profils"], "-journal.json")
-               if _id_sur(p.get("id")) and _appartient(p, utilisateur, False)]
+    series = [s for stem, s in _json_dossier(d["series"])
+              if _id_sur(stem) and s.get("id") == stem and _appartient(s, utilisateur, True)]
+    profils = [p for stem, p in _json_dossier(d["profils"], "-journal.json")
+               if _id_sur(stem) and p.get("id") == stem and _appartient(p, utilisateur, False)]
     journaux = []
     for p in profils:
         j = _lire(os.path.join(d["profils"], f"{p['id']}-journal.json"))
@@ -133,11 +139,13 @@ def reinitialiser(utilisateur: str, empreinte_attendue: str,
     objets = exporter(utilisateur, racine)
     if C.empreinte(objets) != empreinte_attendue:
         raise Refus("empreinte", "les données ont changé depuis l'export (ou paquet d'un autre état)")
+    # On ne supprime QUE ce qui figure dans l'export (id == nom de fichier, garanti par exporter).
     for s in objets["series"]:
         _supprimer(os.path.join(d["series"], f"{s['id']}.json"))
     for p in objets["profils"]:
         _supprimer(os.path.join(d["profils"], f"{p['id']}.json"))
-        _supprimer(os.path.join(d["profils"], f"{p['id']}-journal.json"))
+    for j in objets["journaux"]:
+        _supprimer(os.path.join(d["profils"], f"{j['profil_id']}-journal.json"))
     for pt in objets["ponts"]:
         _supprimer(os.path.join(d["ponts"], f"{pt['serie_id']}.json"))
     if objets["comptes"]:
@@ -156,6 +164,15 @@ def migrer(objets: dict, version_paquet) -> dict:
     return objets
 
 
+def _existe_etranger(chemin: str, utilisateur: str, serie: bool) -> bool:
+    """Vrai si la cible existe et n'est pas (prouvablement) à `utilisateur` — un fichier
+    illisible est traité comme un conflit plutôt qu'écrasé."""
+    if not os.path.exists(chemin):
+        return False
+    existant = _lire(chemin)
+    return not (isinstance(existant, dict) and _appartient(existant, utilisateur, serie))
+
+
 def _valider(utilisateur: str, objets: dict, racine: str) -> None:
     """Toutes les vérifications AVANT la moindre écriture."""
     d = _chemins(racine)
@@ -171,8 +188,7 @@ def _valider(utilisateur: str, objets: dict, racine: str) -> None:
         ids_series.add(s["id"])
         if not _appartient(s, utilisateur, True):
             raise Refus("objet_etranger", "série")
-        existant = _lire(os.path.join(d["series"], f"{s['id']}.json"))
-        if isinstance(existant, dict) and not _appartient(existant, utilisateur, True):
+        if _existe_etranger(os.path.join(d["series"], f"{s['id']}.json"), utilisateur, True):
             raise Refus("conflit", "série")
     for p in objets.get("profils", []):
         if not isinstance(p, dict) or not _id_sur(p.get("id")):
@@ -180,15 +196,24 @@ def _valider(utilisateur: str, objets: dict, racine: str) -> None:
         ids_profils.add(p["id"])
         if not _appartient(p, utilisateur, False):
             raise Refus("objet_etranger", "profil")
-        existant = _lire(os.path.join(d["profils"], f"{p['id']}.json"))
-        if isinstance(existant, dict) and not _appartient(existant, utilisateur, False):
+        if _existe_etranger(os.path.join(d["profils"], f"{p['id']}.json"), utilisateur, False):
             raise Refus("conflit", "profil")
+    if len(ids_series) != len(objets.get("series", [])) or \
+            len(ids_profils) != len(objets.get("profils", [])):
+        raise Refus("format", "doublon")
+    vus_j, vus_p = set(), set()
     for j in objets.get("journaux", []):
         if not isinstance(j, dict) or j.get("profil_id") not in ids_profils:
             raise Refus("incoherent", "journal sans profil")
+        if j["profil_id"] in vus_j:
+            raise Refus("format", "doublon")
+        vus_j.add(j["profil_id"])
     for pt in objets.get("ponts", []):
         if not isinstance(pt, dict) or pt.get("serie_id") not in ids_series:
             raise Refus("incoherent", "pont sans série")
+        if pt["serie_id"] in vus_p:
+            raise Refus("format", "doublon")
+        vus_p.add(pt["serie_id"])
     if len(objets.get("comptes", [])) > 1 or any(
             not isinstance(c, dict) for c in objets.get("comptes", [])):
         raise Refus("format", "compte")

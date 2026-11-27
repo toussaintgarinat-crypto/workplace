@@ -50,9 +50,23 @@ def test_exporter_cles_toujours_presentes_meme_vide(racine):
         "series": [], "profils": [], "journaux": [], "comptes": [], "ponts": []}
 
 
-def test_export_deterministe(racine):
-    peupler("claire")
-    assert C.empreinte(SUP.exporter("claire")) == C.empreinte(SUP.exporter("claire"))
+def test_export_deterministe_quel_que_soit_l_ordre_de_creation(racine, tmp_path_factory, monkeypatch):
+    def construire(ordre):
+        r = str(tmp_path_factory.mktemp("r"))
+        for sous in ("profils", "comptes", "pont"):
+            os.makedirs(os.path.join(r, sous))
+        monkeypatch.setattr(S, "ATELIERS_DIR", r)
+        monkeypatch.setattr(S, "PROFILS_DIR", os.path.join(r, "profils"))
+        monkeypatch.setattr(S, "COMPTES_DIR", os.path.join(r, "comptes"))
+        monkeypatch.setattr(stockage_pont, "ATELIERS_DIR", r)
+        monkeypatch.setattr(stockage_pont, "PONT_DIR", os.path.join(r, "pont"))
+        for n in ordre:
+            S._save({"id": f"s{n}", "titre": f"T{n}", "cree_par": "claire", "episodes": []})
+            S._save_profil({"id": f"p{n}", "nom": f"N{n}", "cible": "6-8", "cree_par": "claire"})
+            stockage_pont.fixer_monde(f"s{n}", f"m{n}")
+        return SUP.exporter("claire", r)
+    e1, e2 = construire([1, 2, 3]), construire([3, 1, 2])
+    assert e1 == e2 and C.empreinte(e1) == C.empreinte(e2)
 
 
 def test_reinitialiser_refuse_si_empreinte_differente(racine):
@@ -167,10 +181,12 @@ def test_verifier_valide_et_ne_touche_pas_le_vrai_volume(racine):
     objets = SUP.exporter("claire")
     paquet = C.construire_paquet("studio", "claire", "1", objets, b"k")
     SUP.reinitialiser("claire", C.empreinte(objets))        # espace réel vide
+    peupler("marina")
+    avant = {u: SUP.exporter(u) for u in ("claire", "marina")}
     rapport = SUP.verifier(paquet, b"k", "claire")
     assert rapport["ok"] and rapport["comptages"]["series"] == 1
     assert rapport["empreinte"] == C.empreinte(objets)
-    assert SUP.exporter("claire")["series"] == []           # la vérification n'a rien écrit
+    assert {u: SUP.exporter(u) for u in ("claire", "marina")} == avant   # rien écrit
 
 
 def test_verifier_refuse_paquet_falsifie(racine):
@@ -185,3 +201,92 @@ def test_exporter_ignore_un_id_non_sur_dans_un_fichier(racine):
     with open(os.path.join(racine, "forge.json"), "w", encoding="utf-8") as f:
         json.dump({"id": "../evil", "cree_par": "claire"}, f)
     assert SUP.exporter("claire")["series"] == []
+
+
+def _ecrire_json(chemin, data):
+    with open(chemin, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def test_reinitialiser_garde_un_journal_au_profil_id_different(racine):
+    peupler("claire")
+    chemin = os.path.join(racine, "profils", "profil-claire-journal.json")
+    _ecrire_json(chemin, {"profil_id": "autre", "evenements": []})
+    emp = C.empreinte(SUP.exporter("claire"))
+    SUP.reinitialiser("claire", emp)
+    assert os.path.exists(chemin)
+
+
+def test_reinitialiser_garde_un_pont_au_serie_id_different(racine):
+    peupler("claire")
+    chemin = os.path.join(racine, "pont", "serie-claire.json")
+    _ecrire_json(chemin, {"serie_id": "autre", "monde": "x"})
+    emp = C.empreinte(SUP.exporter("claire"))
+    SUP.reinitialiser("claire", emp)
+    assert os.path.exists(chemin)
+
+
+def test_fichier_serie_forge_ni_exporte_ni_cause_de_suppression(racine):
+    peupler("marina")
+    _ecrire_json(os.path.join(racine, "forge.json"), {"id": "serie-marina", "cree_par": "claire"})
+    avant_marina = SUP.exporter("marina")
+    o = SUP.exporter("claire")
+    assert o["series"] == []
+    SUP.reinitialiser("claire", C.empreinte(o))
+    assert os.path.exists(S._path("serie-marina"))
+    assert SUP.exporter("marina") == avant_marina
+
+
+def test_fichier_profil_forge_ni_exporte_ni_cause_de_suppression(racine):
+    peupler("marina")
+    _ecrire_json(os.path.join(racine, "profils", "forge.json"),
+                 {"id": "profil-marina", "cree_par": "claire"})
+    avant_marina = SUP.exporter("marina")
+    o = SUP.exporter("claire")
+    assert o["profils"] == []
+    SUP.reinitialiser("claire", C.empreinte(o))
+    assert os.path.exists(os.path.join(racine, "profils", "profil-marina.json"))
+    assert os.path.exists(os.path.join(racine, "profils", "profil-marina-journal.json"))
+    assert SUP.exporter("marina") == avant_marina
+
+
+VIDE = {"series": [], "profils": [], "journaux": [], "comptes": [], "ponts": []}
+
+
+@pytest.mark.parametrize("cle,obj", [
+    ("series", {"id": "a", "cree_par": "claire"}),
+    ("profils", {"id": "a", "cree_par": "claire"}),
+    ("journaux", {"profil_id": "p", "evenements": []}),
+    ("ponts", {"serie_id": "s"}),
+])
+def test_importer_refuse_les_doublons(racine, cle, obj):
+    o = {**VIDE, "series": [{"id": "s", "cree_par": "claire"}],
+         "profils": [{"id": "p", "cree_par": "claire"}]}
+    if cle in ("series", "profils"):
+        o[cle] = [obj, dict(obj)]
+    else:
+        o[cle] = [obj, dict(obj)]
+    with pytest.raises(SUP.Refus) as e:
+        SUP.importer("claire", o)
+    assert e.value.raison == "format"
+
+
+def test_importer_refuse_si_la_cible_existe_mais_est_illisible(racine):
+    with open(S._path("ok-1"), "w", encoding="utf-8") as f:
+        f.write("{corrompu")
+    o = {**VIDE, "series": [{"id": "ok-1", "cree_par": "claire"}]}
+    with pytest.raises(SUP.Refus) as e:
+        SUP.importer("claire", o)
+    assert e.value.raison == "conflit"
+    with open(S._path("ok-1"), encoding="utf-8") as f:
+        assert f.read() == "{corrompu"
+
+
+@pytest.mark.parametrize("mauvais", ["../evil", "a/b", "", "x" * 65, "a b"])
+def test_importer_refuse_journal_ou_pont_a_id_dangereux(racine, mauvais):
+    for o in ({**VIDE, "journaux": [{"profil_id": mauvais}]},
+              {**VIDE, "ponts": [{"serie_id": mauvais}]},
+              {**VIDE, "profils": [{"id": mauvais, "cree_par": "claire"}]}):
+        with pytest.raises(SUP.Refus) as e:
+            SUP.importer("claire", o)
+        assert e.value.raison in ("incoherent", "format")
