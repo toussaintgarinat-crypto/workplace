@@ -1,6 +1,6 @@
 # S248 — Contrat d'app + remise à zéro par utilisateur
 
-Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **parties 1+2+3a+3b codées ; preuve LIVE (SLIVE) à faire** (voir [plan 3b](../superpowers/plans/2026-11-27-s248-partie3b-reset-restitution-preuve-cible.md) et « Décisions »).
+Épopée : [livraison + support](EPOPEE-livraison-support-assistant.md). Statut : **CLOS 2026-11-27 : parties 1+2+3a+3b mergées sur main, déployées sur le HP, preuve LIVE faite** ([preuve](../s248/preuve-donnees-utilisateur.md) : brique + garde Telegram + vérificateur approuvé). Restant optionnel : `h` du registre non salé (voir [plan 3b](../superpowers/plans/2026-11-27-s248-partie3b-reset-restitution-preuve-cible.md) et « Décisions »).
 Dépend de : S245, S247 (sauvegarde vérifiée, SeaweedFS). Lire d'abord : `docs/sprints/S182-S187`
 (isolation multi-utilisateur), ADR `studio-famille-compte-unique-portabilite-profil` (portabilité par
 `profil_id`), `GUIDE-ajouter-une-brique.md`.
@@ -90,7 +90,7 @@ Guide du contrat : [GUIDE-contrat-donnees.md](../GUIDE-contrat-donnees.md).
 - Studio : identité en en-tête `X-Utilisateur` (Task 0) ; test de livraison contre le vrai Studio.
 - Limites connues : `docs/GUIDE-contrat-donnees.md` section 7.
 
-## Reste pour la preuve LIVE (SLIVE)
+## Activation et preuve LIVE (FAIT le 2026-11-27 — historique des étapes)
 
 Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utilisateur.md).
 
@@ -116,6 +116,6 @@ Modèle : [docs/s248/preuve-donnees-utilisateur.md](../s248/preuve-donnees-utili
 
 ## Note 2026-11-27 : vérificateur désormais approuvé
 
-La preuve LIVE a été jouée AVANT que `livraison_donnees_verifier` soit soumis à approbation
-(`reversible`). Le flux à 3 approbations (vérifier -> réinitialiser -> restituer) doit donc être
-revérifié en LIVE après déploiement. Résultat : à renseigner par le contrôleur.
+`livraison_donnees_verifier` est soumis à approbation (`reversible`, commit `0195d03`). Le flux à 3
+approbations (vérifier -> réinitialiser -> restituer) a été revérifié en LIVE après déploiement (partie C
+de la preuve) : voir [preuve-donnees-utilisateur.md](../s248/preuve-donnees-utilisateur.md).

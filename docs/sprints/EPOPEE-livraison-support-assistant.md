@@ -5,7 +5,7 @@
 > rédigés, au niveau conception). **Ne lire que le fichier du sprint en cours.** Au démarrage d'un
 > sprint : relire son fichier, lever ses « questions à trancher », puis `writing-plans`.
 
-Créé le 2026-11-25 (brainstorming). Statut global : **S245 codé + revu (preuve LIVE Telegram différée en SLIVE) ; S246-S249 spécifiés**.
+Créé le 2026-11-25 (brainstorming). Statut global : **S245 codé + revu (preuve LIVE Telegram différée en SLIVE) ; S246+S247+S248 livrés et prouvés LIVE ; S249 spécifié**.
 
 ## Objectif
 
@@ -47,7 +47,7 @@ Workplace **orchestre** ces outils ; il ne les réimplémente pas.
 | S245 | Socle d'approbation Telegram (demandes liées à l'action, niveaux, journal) | S75/S76 existants | [S245-socle-approbation-telegram.md](S245-socle-approbation-telegram.md) | codé + revu + S245b (liaison utilisateur, reprise, `CONNEXION_API_KEYS`) ; LIVE à prouver |
 | S246 | Forgejo + Dokploy, outils d'exploitation (logs, redémarrer, rollback) | S245 | [S246-forgejo-dokploy-exploitation.md](S246-forgejo-dokploy-exploitation.md) | LIVRÉ + LIVE (redémarrer/déployer/rollback approuvés sur Telegram) ; approbations ACTIVES sur le HP |
 | S247 | Sauvegarde vérifiée + reset app entière (bleu/vert) | S246 | [S247-sauvegarde-verifiee-reset-app-entiere.md](S247-sauvegarde-verifiee-reset-app-entiere.md) | en cours (partie 1 codée, spike à faire) |
-| S248 | Contrat d'app + reset par utilisateur (app pilote) | S247 | [S248-contrat-app-reset-par-utilisateur.md](S248-contrat-app-reset-par-utilisateur.md) | parties 1+2 codées (contrat + Studio) ; partie 3 (outils, chiffrement, approbations) à faire |
+| S248 | Contrat d'app + reset par utilisateur (app pilote) | S247 | [S248-contrat-app-reset-par-utilisateur.md](S248-contrat-app-reset-par-utilisateur.md) | **CLOS 2026-11-27** : contrat + Studio pilote + stockage chiffré + reset/restitution par utilisateur, LIVE HP prouvé |
 | S249 | Collecte d'erreurs (GlitchTip), bouton « signaler », diagnostic auto ; puis Android (runner), iOS (Mac) | S246 | [S249-collecte-erreurs-signalement-diagnostic.md](S249-collecte-erreurs-signalement-diagnostic.md) | spécifié |
 
 ## Points ouverts
